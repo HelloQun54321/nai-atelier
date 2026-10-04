@@ -1405,7 +1405,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         >
           {!selectedWork ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">
-              选择左侧作品后，这里会显示所有图片和操作按钮
+              选择作品
             </div>
           ) : isDetailLoading && !selectedDetail ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-400">加载详情中...</div>

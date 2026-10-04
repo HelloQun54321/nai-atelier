@@ -69,9 +69,6 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="font-semibold text-gray-900 dark:text-white">Windows 桌面启动器</h4>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            Windows 安装依赖后自动创建调色盘快捷方式；桌面只保留 NAI Atelier 图标，启动脚本位于项目内。这里可以重新创建或修复入口。
-          </p>
         </div>
         <div className="flex items-center gap-1.5 flex-none">
           <Monitor className="h-4 w-4 text-indigo-500" />
@@ -90,9 +87,9 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
             <div className="flex items-start gap-2.5 rounded-lg bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
               <Info className="h-4 w-4 flex-none mt-0.5 text-amber-500" />
               <div className="space-y-1">
-                <p>桌面启动器主要针对 Windows 本地宿主机系统（当前环境：{status.platform}）。</p>
+                <p>仅支持 Windows（当前：{status.platform}）。</p>
                 <p className="text-meta text-amber-700 dark:text-amber-300">
-                  当前系统请在项目目录运行 npm run dev:local；Windows 部署会自动建立桌面入口。
+                  运行 npm run dev:local
                 </p>
               </div>
             </div>

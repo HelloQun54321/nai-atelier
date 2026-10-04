@@ -246,8 +246,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
       {/* 模拟画板（“布”）交互区 */}
       <div className="rounded-xl border border-gray-200 bg-gray-100 p-3 dark:border-gray-800 dark:bg-gray-950/80">
         <div className="mb-2 flex items-center justify-between text-meta text-gray-500 dark:text-gray-400">
-          <span className="font-semibold text-gray-700 dark:text-gray-200">画幅模拟摆放台</span>
-          <span className="text-micro">可直接拖拽原图 · 64px 动态吸附</span>
+          <span className="font-semibold text-gray-700 dark:text-gray-200" title="拖动原图 · 64px 吸附">画幅预览</span>
         </div>
 
         <div

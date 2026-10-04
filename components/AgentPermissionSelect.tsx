@@ -101,11 +101,10 @@ export const AgentPermissionSelect: React.FC<{ disabled?: boolean }> = ({ disabl
     </button>
     {error && <p role="alert" className="max-w-64 break-words text-xs text-red-600 dark:text-red-400">{error}</p>}
     {open && createPortal(<div ref={menu} role="menu" data-agent-surface aria-label="选择 Agent 权限" onKeyDown={keyboard} style={{ ...position, visibility: position ? 'visible' : 'hidden' }} className="appearance-panel z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-      <p className="px-3 pb-2 pt-1 text-xs text-gray-500 dark:text-gray-400">Agent 可以执行哪些操作？</p>
       {levels.map(item => { const LevelIcon = item.icon; const active = item.mode === mode; return <button key={item.mode} type="button" role="menuitemradio" aria-checked={active} disabled={busy || disabled} onClick={() => void change(item.mode)} className={`flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] disabled:opacity-50 ${active ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800/60'} ${item.mode === 'full' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>
         <LevelIcon className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{item.name}</span><span className={`mt-0.5 block text-xs leading-5 ${item.mode === 'full' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>{item.description}</span></span>{active && <Check aria-label="已选择" className="mt-0.5 h-4 w-4 shrink-0" />}
       </button>; })}
-      <p className="mt-1 border-t border-gray-100 px-3 pb-1 pt-2 text-xs leading-5 text-gray-500 dark:border-gray-800 dark:text-gray-400">本地文件能力限于图片。生图、删除与清空仍会请你确认。</p>
+      <p className="mt-1 border-t border-gray-100 px-3 pb-1 pt-2 text-xs leading-5 text-gray-500 dark:border-gray-800 dark:text-gray-400">仅图片文件；生图／删除／清空需确认。</p>
     </div>, document.body)}
   </div>;
 };

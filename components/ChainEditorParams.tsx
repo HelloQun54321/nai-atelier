@@ -124,7 +124,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
     return (
         <div className="space-y-4">
-            {lowConsumption.enabled && <p role="status" className="text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗 · 本次 {effectiveParams.steps} 步{mode === 'text-to-image' ? ` · ${effectiveParams.width} × ${effectiveParams.height} · Vibe 最多 4 个` : ' · 仅 Focused 局部重绘'}。关闭后恢复完整功能。</p>}
+
             {presetSource && (
                 <div className="mb-3 flex min-w-0 items-center gap-2">
                     <span className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64" title={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`}>来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</span>
@@ -217,7 +217,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         >
                             {BUILTIN_ASPECT_RATIOS.map(item => (
                                 <option key={item.id} value={item.id}>
-                                    {item.label} ({item.baseWidth}x{item.baseHeight}) · {item.description}
+                                    {item.label} ({item.baseWidth}x{item.baseHeight})
                                 </option>
                             ))}
                         </select>
@@ -371,7 +371,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             }}
                             className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-gray-800"
                         >
-                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b><span className="mt-0.5 block text-micro text-gray-400">引导模型生成透明背景</span></span>
+                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b></span>
                             <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
                         </button>
                         {params.transparent && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">

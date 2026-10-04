@@ -16,7 +16,7 @@ export const ImageTaggerModelManager: React.FC<{ notify: (message: string, type?
   const button = 'mobile-touch flex flex-none items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800';
   return <div>
     <h4 className="font-semibold text-gray-900 dark:text-white">图片反推模型</h4>
-    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">在电脑本地识别，不消耗 Anlas。可提前下载或首次使用时自动下载；下载与使用分别选择。</p>
+    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">本地识别 · 0 Anlas</p>
     {error && <p role="alert" className="mt-3 text-xs text-red-600 dark:text-red-300">{error}</p>}
     {!status && !error && <p className="mt-3 text-xs text-gray-400">正在检查模型…</p>}
     <div className="mt-3 space-y-2">{status?.models.map(model => {

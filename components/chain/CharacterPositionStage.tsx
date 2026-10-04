@@ -36,11 +36,11 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
   return <div className="mb-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/60">
     <div className="flex flex-wrap items-center justify-between gap-2 text-micro text-gray-500 dark:text-gray-400">
       <span>{freeform ? '自由定位' : '5 × 5 格点'} · {width} × {height}</span>
-      <span>{useCoords ? '选择角色后点击或拖动，方向键微调' : '点击或拖动将切换为手动定位'}</span>
+
     </div>
     <div className="flex flex-wrap items-start justify-center gap-3">
       <div
-        role="group" aria-label="角色定位画布"
+        role="group" aria-label="角色定位画布" title={useCoords ? '拖动定位 · 方向键微调' : '拖动切换手动定位'}
         className="relative isolate touch-none overflow-hidden rounded border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800"
         style={{ width: Math.min(320, 224 * ratio), maxWidth: '100%', aspectRatio: `${ratio}` }}
         onPointerDown={event => {

@@ -29,6 +29,21 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
 }));
 
 describe('四模式的分享入口', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 空预览只说明当前状态，保留生成动作与费用', operation => {
+    const generate = vi.fn();
+    if (operation === 'text-to-image') renderPreview(generate);
+    else render(React.createElement(ImageEditPreview, {
+      operation, image: null, error: null, generationCostLabel: '免费', canGenerate: true,
+      onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png',
+    }));
+    expect(screen.getByText('暂无生成结果')).toBeTruthy();
+    expect(screen.queryByText(/选择编辑模式|在左侧/)).toBeNull();
+    const action = screen.getByRole('button', { name: /生成.*免费/ });
+    fireEvent.click(action);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /上一张|下一张/ })).toBeNull();
+  });
+
   it('分享与删除使用紧凑尺寸，左右分组一致，点击不误开大图', () => {
     const onCover = vi.fn();
     const onOpen = vi.fn();

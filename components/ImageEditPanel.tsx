@@ -1094,7 +1094,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           if (!control || control === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
         }}
       >
-        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">支持 PNG、JPEG、WebP；导入后自动检查并提示规范化尺寸</span></div></div>}
+        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
         <ImageEditControls
           operation={operation}
           draft={draft}

@@ -51,7 +51,7 @@ describe('DesktopLauncherManager', () => {
     expect(screen.queryByTitle('刷新桌面状态')).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('link', { name: /下载启动脚本/ })).toBeNull();
-    expect(screen.getByText(/Windows 安装依赖后自动创建/)).toBeTruthy();
+    expect(screen.queryByText(/Windows 安装依赖后自动创建/)).toBeNull();
     const updateBtn = screen.getByText('修复桌面快捷方式');
     fireEvent.click(updateBtn);
 
@@ -85,8 +85,8 @@ describe('DesktopLauncherManager', () => {
     render(React.createElement(DesktopLauncherManager, { notify }));
 
     await waitFor(() => {
-      expect(screen.getByText(/桌面启动器主要针对 Windows 本地宿主机系统/)).toBeTruthy();
-      expect(screen.getByText(/当前系统请在项目目录运行 npm run dev:local/)).toBeTruthy();
+      expect(screen.getByText(/仅支持 Windows（当前：linux）/)).toBeTruthy();
+      expect(screen.getByText(/^运行 npm run dev:local$/)).toBeTruthy();
       expect(screen.queryByRole('button', { name: /桌面快捷方式/ })).toBeNull();
     });
   });

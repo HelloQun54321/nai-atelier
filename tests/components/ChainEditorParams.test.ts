@@ -151,17 +151,20 @@ describe('ChainEditorParams', () => {
     const { container, rerender } = renderParams({ params: original, mode, enforceFreeStepLimit: false, setParams });
     expect(container.querySelector<HTMLInputElement>('input[max="23"]')?.value).toBe('23');
     expect(screen.queryByText('已解除上限')).toBeNull();
-    expect(screen.getByText(/低消耗 · 本次/).textContent).toContain('本次 23 步');
+    expect(screen.queryByText(/低消耗 · 本次/)).toBeNull();
     expect(setParams).not.toHaveBeenCalled();
     lowMode.enabled = false;
     rerender(React.createElement(ChainEditorParams, { params: original, mode, enforceFreeStepLimit: false, canEdit: true, setParams, markChange: vi.fn() }));
     expect(container.querySelector<HTMLInputElement>('input[max="50"]')?.value).toBe('40');
   });
-  it('低消耗 V4.5 显示 28 步，尺寸说明与实际免费面积一致', () => {
+  it('低消耗 V4.5 保持实际 28 步与免费尺寸，无重复说明', () => {
     lowMode.enabled = true;
     const { container } = renderParams({ params: { ...params, steps: 40, width: 1536, height: 1536 } });
     expect(container.querySelector<HTMLInputElement>('input[max="28"]')?.value).toBe('28');
-    expect(screen.getByText(/低消耗 · 本次/).textContent).toContain('1024 × 1024');
+    const ratio = screen.getByRole('combobox', { name: '图片画幅比例' }) as HTMLSelectElement;
+    expect(ratio.value).toBe('1:1');
+    expect(ratio.selectedOptions[0].textContent).toContain('1024x1024');
+    expect(screen.queryByText(/低消耗 · 本次/)).toBeNull();
   });
   it('低消耗隐藏尺寸放大，画幅切换不继承隐藏的高倍缩放，关闭恢复放大工具', () => {
     lowMode.enabled = true;

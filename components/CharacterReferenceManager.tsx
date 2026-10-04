@@ -180,7 +180,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           {enabledCount ? <>
             <p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{references.slots.map(slot => slot.assetName || '未知参考').join(' · ')}</p>
             <p className="mt-0.5 text-meta font-medium text-amber-600 dark:text-amber-400">本次生成额外消耗 {enabledCount} × 5 = {enabledCount * 5} Anlas</p>
-          </> : <p className="mt-1 text-xs text-gray-500">未启用 · 每张参考图每次生成消耗 5 Anlas</p>}
+          </> : <p className="mt-1 text-xs text-gray-500">未启用 · 5 Anlas／张／次</p>}
         </div>
         <span className="flex-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300">管理</span>
       </button>
@@ -203,7 +203,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
             {detail && <BackButton onClick={backToList} className="mobile-touch" />}
             <div className="min-w-0">
               <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : '角色参考 (Character Reference)'}</h2>
-              <p className="text-meta text-gray-500">启用后与 Vibe Transfer 互斥 · 每张每次生成 5 Anlas</p>
+              <p className="text-meta text-gray-500">与 Vibe 互斥 · 5 Anlas／张／次</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -251,7 +251,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
               {loading && !allAssets.length ? <PageSpinner label="加载中…" className="py-20" /> : assets.length ? <div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = references.slots.some(slot => slot.assetId === asset.id); return <article key={asset.id} className={`overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'}`}>
                 <button type="button" onClick={() => archived ? showDetail(asset) : addAsset(asset)} className="block w-full text-left"><div className="relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"><SmartImage src={asset.thumbnailUrl || asset.originalImageUrl} alt={asset.name} className="h-full w-full object-contain" />{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-meta text-gray-500">每次生图 5 Anlas</p></div></button>
                 <button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">详情</button>
-              </article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? '没有已归档的角色参考' : '还没有角色参考图'}</p><p className="mt-1 text-xs text-gray-500">上传图片后即可选择，无需预先编码</p></div>}
+              </article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? '没有已归档的角色参考' : '还没有角色参考图'}</p></div>}
             </div>
             <aside className="workspace-manager-selection overflow-y-auto border-t border-gray-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col">
               <div>
@@ -260,14 +260,14 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
                   <div className="flex items-center gap-2"><span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{index + 1}</span>{allAssets.find(asset => asset.id === slot.assetId)?.thumbnailUrl && <div className="h-8 w-7 flex-none"><SmartImage src={allAssets.find(asset => asset.id === slot.assetId)!.thumbnailUrl} alt="" className="h-full w-full object-contain" /></div>}<p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.assetName || '资产缺失'}</p><button type="button" onClick={() => removeSlot(index)} className="mobile-touch flex h-9 w-9 items-center justify-center p-0 text-lg leading-none text-gray-400 hover:text-red-500" aria-label="移除">×</button></div>
                   <details className="mt-2"><summary className="cursor-pointer text-xs text-gray-500">参数 · {referenceTypes.find(item => item.value === slot.type)?.label} · 强度 {slot.strength.toFixed(2)}</summary><label className="mt-2 block text-meta text-gray-500">参考类型</label><select value={slot.type} onChange={event => updateSlot(index, { type: event.target.value as CharacterReferenceSelection['type'] })} className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{referenceTypes.map(item => <option key={item.value} value={item.value}>{item.label} · {item.hint}</option>)}</select>
                   {(['strength', 'fidelity'] as const).map(field => <div key={field} className="mt-2 grid grid-cols-[42px_minmax(0,1fr)_58px] items-center gap-2"><span className="text-meta text-gray-500">{field === 'strength' ? '强度' : '保真'}</span><input type="range" min="-1" max="2" step="0.05" value={slot[field]} onChange={event => updateSlot(index, { [field]: Number(event.target.value) })} className="min-w-0 accent-indigo-600" /><input type="number" min="-1" max="2" step="0.05" value={slot[field]} onChange={event => updateSlot(index, { [field]: Math.max(-1, Math.min(2, Number(event.target.value))) })} className="rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>)}</details>
-                </div>)}{!references.slots.length && <p className="rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">选择参考图后在这里调节参数</p>}</div>
-                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>本次额外消耗 {references.slots.length * 5} Anlas</b><p className="mt-1 opacity-80">{references.slots.length} 张参考图 × 5；每次生成都会重新计费。</p>{references.slots.filter(slot => slot.type !== 'style').length > 1 && <p className="mt-1 font-medium">多个角色参考会被 NovelAI 混合为一个角色，不会自动对应为多个独立人物。</p>}</div>}
+                </div>)}{!references.slots.length && <p className="rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">未选择参考图</p>}</div>
+                {references.slots.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300"><b>本次额外消耗 {references.slots.length * 5} Anlas</b><p className="mt-1 opacity-80">{references.slots.length} 张参考图 × 5；每次生成都会重新计费。</p>{references.slots.filter(slot => slot.type !== 'style').length > 1 && <p className="mt-1 font-medium">多个参考会混合为单个角色</p>}</div>}
               </div>
 
             </aside>
           </main>
           </div>
-          <footer className="operation-footer flex flex-none items-center justify-between gap-3 border-t border-gray-200 dark:border-gray-800"><p className="text-xs text-gray-500">当前选择与参数即时生效</p><button type="button" onClick={closeManager} className="mobile-touch rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300">完成</button></footer>
+          <footer className="operation-footer flex flex-none items-center justify-between gap-3 border-t border-gray-200 dark:border-gray-800"><button type="button" onClick={closeManager} className="mobile-touch rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300" title="本次选择即时生效">完成</button></footer>
       </div>
     </div></ImagePreviewPortal>}
   </>;

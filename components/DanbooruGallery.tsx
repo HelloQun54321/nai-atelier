@@ -575,7 +575,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 ))}
               </div>
             ) : (
-              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Danbooru 浏览足迹" hint="点开作品后将自动记录到此处，方便秒级回溯。" />
+              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Danbooru 浏览足迹" />
             )
           ) : loading && !displayedItems.length ? (
             <PageSpinner label="正在读取 Danbooru…" className="min-h-72" />
@@ -643,7 +643,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag); void handleApplyFilter({ inputVal: tag }); } }))} />
                 </section>)}
               </>} />
-          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择一张作品后查看图片、Tag 和导入操作。</div>}
+          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择作品</div>}
         </DetailSidePanel>
       </div>
     </div>

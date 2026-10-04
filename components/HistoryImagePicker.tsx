@@ -105,7 +105,6 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
               <h2 className="font-bold text-gray-900 dark:text-white">选择历史图片</h2>
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">全部 {totalCount} 张</span>
             </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">数据与历史页面一致；默认只替换底图，勾选「同时导入该图参数」才载入提示词与参数。</p>
           </div>
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="关闭历史图片选择"><X className="h-5 w-5" /></button>

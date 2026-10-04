@@ -26,7 +26,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
         <div className="appearance-surface rounded-2xl border border-gray-200 bg-white px-6 py-8 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <h1 className="text-base font-bold text-gray-800 dark:text-gray-100">界面遇到了意外错误</h1>
           <p className="mt-2 max-w-md text-xs leading-5 text-gray-500 dark:text-gray-400">
-            本地数据不受影响。可以尝试刷新页面恢复；若反复出现，请把下面的错误信息反馈给开发者。
+            本地数据保留，请刷新重试。
           </p>
           <pre className="mt-4 max-w-md overflow-auto rounded-lg bg-gray-100 p-3 text-left text-meta leading-4 text-gray-600 dark:bg-gray-800 dark:text-gray-300">{this.state.error.message}</pre>
           <button

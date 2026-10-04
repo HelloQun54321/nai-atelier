@@ -145,6 +145,24 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用完整配置和编辑提示词', operation => {
+    const { container, onPasteImage, onSelectImageSource, onPromptChange } = renderControls(operation);
+    expect(container.textContent).not.toMatch(/可直接粘贴|独立保存|绘制重绘区域|生成结果在右侧/);
+    expect(screen.getByRole('button', { name: '上传图片' })).toBeTruthy();
+    const paste = screen.getByRole('button', { name: '粘贴' });
+    expect(paste.title).toContain('Ctrl+V');
+    fireEvent.click(paste);
+    expect(onPasteImage).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '文生图最新' }));
+    expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'history prompt', params: expect.objectContaining({ width: 832, height: 1216 }),
+    }), 'generated');
+    const placeholder = operation === 'image-to-image' ? '图生图提示词' : operation === 'inpaint' ? '重绘提示词' : '扩图提示词';
+    fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'new scene' } });
+    expect(onPromptChange).toHaveBeenCalledWith('new scene');
+    if (operation === 'image-to-image') expect(screen.getByText('无免费档')).toBeTruthy();
+  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 定位区按原图比例且沿用模型能力，手动定位原子更新开关和角色', operation => {
     const character = { id: 'role', prompt: 'girl', negativePrompt: 'hat', x: 0.223, y: 0.887 };
     const { onDraftChange } = renderControls(operation, false, false, false,
@@ -198,7 +216,7 @@ describe('ImageEditControls', () => {
     expect(screen.queryByText('角色参考')).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Focused Inpainting' })).toBeNull();
     expect(screen.getByRole('checkbox', { name: 'AI 自动构图' })).toBeTruthy();
-    expect(screen.getByText(/低消耗仅使用 Focused 局部重绘/)).toBeTruthy();
+    expect(screen.getByText(/Focused 重绘 · 先框选，再涂画/)).toBeTruthy();
     expect(screen.getByRole('slider', { name: 'Strength' })).toBeTruthy();
     expect(screen.getByTestId('edit-canvas')).toBeTruthy();
   });
@@ -356,7 +374,7 @@ describe('ImageEditControls', () => {
       onApplyOutpaint: vi.fn(),
     }));
     expect(screen.queryByAltText('图生图底图')).toBeNull();
-    expect(screen.getByText(/请先上传/)).toBeTruthy();
+    expect(screen.getByText(/^选择底图$/)).toBeTruthy();
   });
 
   it('局部重绘显示蒙版工具和 Focused，但不显示扩图四边', () => {
@@ -389,7 +407,7 @@ describe('ImageEditControls', () => {
 
     expect(screen.getByText('智能画幅扩展')).toBeTruthy();
     expect(screen.getByText('目标画幅比例（画布外框）')).toBeTruthy();
-    expect(screen.getByText('画幅模拟摆放台')).toBeTruthy();
+    expect(screen.getByText('画幅预览')).toBeTruthy();
     expect(screen.getByRole('button', { name: '靠左' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '靠右' })).toBeTruthy();
     expect(screen.getByText('上 (top)')).toBeTruthy();
@@ -409,7 +427,7 @@ describe('ImageEditControls', () => {
   it('安全模式开启时禁用局部重绘和扩图的全部蒙版交互', () => {
     renderControls('inpaint', false, true);
 
-    expect(screen.getByRole('status').textContent).toContain('安全模式已开启');
+    expect(screen.getByRole('status').textContent).toContain('安全模式下不可绘制蒙版');
     expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('checkbox', { name: 'Focused Inpainting' }) as HTMLInputElement).disabled).toBe(true);
     cleanup();
@@ -478,7 +496,7 @@ describe('ImageEditControls', () => {
     }));
 
     expect(screen.getByText('底图尺寸需要规范化')).toBeTruthy();
-    expect(screen.getByText(/当前 1024 × 1368，编辑接口建议使用 1024 × 1344/)).toBeTruthy();
+    expect(screen.getByText(/当前 1024 × 1368，需调整为 1024 × 1344/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /居中裁剪/ }));
     expect(onNormalize).toHaveBeenCalledWith('crop');
     fireEvent.click(screen.getByRole('button', { name: /完整保留并填充/ }));

@@ -699,7 +699,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             onClick={event => event.stopPropagation()}
           >
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">新建自定义还原角色</h2>
-            <p className="mt-1 text-sm text-gray-500">适合 NovelAI 没有收录角色 Tag，需要手工组合外貌与服装的角色。</p>
             <input autoFocus value={newName} onChange={event => setNewName(event.target.value)} placeholder="角色名称，例如：穆宁雪" className="mt-5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
             <textarea value={newDescription} onChange={event => setNewDescription(event.target.value)} placeholder="简单描述（可选）" className="mt-3 h-24 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
             <div className="mt-5 flex justify-end gap-2"><button onClick={() => setShowCreate(false)} className="rounded px-4 py-2 text-sm text-gray-500">取消</button><button onClick={submitCreate} disabled={!newName.trim()} className="rounded bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">创建并编辑</button></div>

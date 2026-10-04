@@ -224,7 +224,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             })
             .catch(error => {
                 console.warn('Artist tag catalog is unavailable:', error);
-                notify('画师 Tag 目录加载失败：请先在“全局设置 → Tag 词库”中安装/更新词库数据', 'error');
+                notify('画师目录不可用，请在全局设置更新 Tag 词库。', 'error');
             })
             .finally(() => {
                 if (!cancelled && generation === catalogLoadGenerationRef.current) {

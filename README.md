@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.34.6-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.34.7-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -39,6 +39,8 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 | 📚 **个人资产持续复用** | 风格串、角色、Vibe、参考图与历史集中保存在电脑，长期积累可复用的创作配置 |
 | 📱 **电脑与手机共用工坊** | 手机通过家庭局域网使用电脑的数据、网络与生成能力，电脑本机免密，手机以四位密码授权 |
 | 🔋 **费用可见、过程可控** | 区分 Anlas 点数与 Opus 限额，按 Key 记录预算与用量，支持单张观察、调整和继续创作 |
+
+界面省去常驻功能介绍，费用、隐私与操作后果使用简短提示。
 
 项目 Agent 可协助观察图片、整理资产与调整实验室配置；st-chatu8 连接器让酒馆与工坊之间复用预设、Vibe 和生成历史。
 

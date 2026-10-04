@@ -612,7 +612,7 @@ const renderSettings = () => {
       <i class="fa-solid fa-chevron-down npm-bridge-chevron" aria-hidden="true"></i>
     </summary>
     <div class="npm-bridge-content">
-    <p class="npm-bridge-hint">Atelier 挑选 → 待同步 → 接收确认。对方移除后可手动重新加入。</p>
+
     <div class="npm-bridge-row">
       <label for="npm-bridge-base-url" class="npm-bridge-field-label">服务地址 (Base URL)</label>
       <input id="npm-bridge-base-url" type="url" class="text_pole npm-bridge-base-url" placeholder="${DEFAULT_URL}" value="${escapeHtml(currentSettings.baseUrl || DEFAULT_URL)}">

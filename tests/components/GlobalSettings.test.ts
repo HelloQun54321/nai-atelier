@@ -87,6 +87,17 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 };
 
 describe('GlobalSettings', () => {
+  it('设置首页省去分类说明，仍可进入分类并保留隐私后果', async () => {
+    const { container } = render(React.createElement(SettingsHarness, { initialSection: 'home' }));
+    expect(container.textContent).not.toMatch(/独立页面中打开|主题预设、防社死|连接信息和本地数据维护/);
+    const entries = screen.getAllByRole('button', { name: '隐私与分享' });
+    fireEvent.click(entries.at(-1)!);
+    const toggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
+    fireEvent.click(toggle);
+    expect(getCleanSharedImages()).toBe(true);
+  });
+
   beforeEach(() => {
     subscriptionFixture.expired = false;
     subscriptionFixture.balance = undefined;
@@ -142,7 +153,7 @@ describe('GlobalSettings', () => {
     view.unmount();
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
     expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText(/原图和历史参数完整保留/)).toBeTruthy();
+    expect(screen.getByText(/原图与历史保留/)).toBeTruthy();
   });
   it('当前 Key 订阅过期时显示琥珀色订阅状态，提示 Paid Anlas，不误标为密钥失效', async () => {
     subscriptionFixture.expired = true;
@@ -160,12 +171,12 @@ describe('GlobalSettings', () => {
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     const balanceRow = await screen.findByRole('button', { name: /个人剩余预算 1,666 点.*账号剩余点数 300 点/ });
     expect(balanceRow.title).toContain('订阅赠送：100 点；Paid Anlas：200 点');
-    expect(screen.getByText('个人预算 / 账号余额，电脑与手机共用；官方余额不会覆盖本地预算。')).toBeTruthy();
+    expect(screen.getByText('本地预算 ≠ 官方余额')).toBeTruthy();
     fireEvent.click(balanceRow);
     expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
     expect((screen.getByRole('spinbutton', { name: '可支配 Anlas 点数' }) as HTMLInputElement).value).toBe('1666');
   });
-  it('低消耗开关按当前 Key 保存，明确两模式和隐藏付费功能，保留 Vibe 编码确认', async () => {
+  it('低消耗开关按当前 Key 保存，保留零 Anlas 与 Opus 后果', async () => {
     sessionStorage.setItem('nai_api_key', 'settings-test-key');
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
     const toggle = await screen.findByRole('checkbox', { name: '低消耗模式' });
@@ -173,10 +184,7 @@ describe('GlobalSettings', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(lowMode.save).toHaveBeenCalledWith(true, 'settings-test-key'));
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByText(/生成仅走零点数路径/).textContent).toContain('不会自动重置预算或重试生成');
-    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('V4／V4.5 最高 28 步');
-    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('隐藏图生图、扩图、角色参考和付费尺寸放大');
-    expect(screen.getByText(/V5 最高 23 步/).textContent).toContain('手动新编码仍需费用确认');
+    expect(screen.getByText('仅零 Anlas 文生图／Focused 重绘；V5 仍消耗 Opus。')).toBeTruthy();
     expect(screen.queryByText(/低消耗可用 1500 点/)).toBeNull();
   });
   it('尚未配置 Key 时开关禁用', async () => {
@@ -189,14 +197,14 @@ describe('GlobalSettings', () => {
     const { container, rerender } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
     expect(container.querySelectorAll('details')).toHaveLength(2);
     expect(screen.queryByText('生成步数锁定在免费额度内')).toBeNull();
-    expect(screen.queryByText('角色参考图与相关参数')).toBeNull();
+    expect(screen.queryByText(/^\d+\. 角色参考$/)).toBeNull();
     expect(screen.queryByText('图生图')).toBeNull();
     expect(screen.queryByText('扩图')).toBeNull();
     lowMode.enabled = false;
     rerender(React.createElement(SettingsHarness, { initialSection: 'generation' }));
     expect(container.querySelectorAll('details')).toHaveLength(4);
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getAllByText('角色参考图与相关参数').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^\d+\. 角色参考$/).length).toBeGreaterThan(0);
   });
 
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
@@ -327,8 +335,8 @@ describe('GlobalSettings', () => {
 
     render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 
-    expect(await screen.findByText('移动端已锁定')).toBeTruthy();
-    expect(screen.getByText(/移动端已采用三段式标签流/)).toBeTruthy();
+    expect(await screen.findByText('手机端固定')).toBeTruthy();
+    expect(screen.queryByText(/三段式标签流|当前设备处于移动视图/)).toBeNull();
     const resetBtn = screen.getByRole('button', { name: /全部推荐/ }) as HTMLButtonElement;
     expect(resetBtn.disabled).toBe(true);
   });

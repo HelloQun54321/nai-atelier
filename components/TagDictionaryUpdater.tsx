@@ -123,7 +123,6 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
             <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
               <div>
                 <h2 className="font-bold text-gray-900 dark:text-white">Tag 补全词库</h2>
-                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">源自 ffdkj 开源中英对照库 · 本地按需下载生成</p>
               </div>
               <CloseButton onClick={() => { if (!isRunning) setIsOpen(false); }} className={isRunning ? 'pointer-events-none opacity-40' : ''} size="sm" />
             </div>
@@ -151,9 +150,6 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
                 </div>
               )}
 
-              <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                检查时会先比较上游版本；没有变化便不会重复下载。网络中断时会自动重试并切换备用线路，现有词库不会受到影响。
-              </p>
             </div>
 
             <div className="operation-footer flex flex-none justify-end gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">

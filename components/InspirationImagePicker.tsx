@@ -106,9 +106,6 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
                 {filteredItems.length} / {items.length} 张
               </span>
             </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-              从灵感库挑选图片作为底图；勾选「同时导入该图参数」可一并载入提示词与参数。
-            </p>
           </div>
           <div className="flex flex-none items-center gap-1">
             <button

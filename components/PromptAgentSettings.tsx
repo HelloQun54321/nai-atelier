@@ -158,7 +158,6 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <div className="flex items-center justify-between gap-2">
           <div>
             <b className="block text-sm text-gray-900 dark:text-white">API 连接</b>
-            <span className="block text-micro text-gray-400">填写地址和 Key，选择模型即可使用</span>
           </div>
           <button type="button" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-3.5 w-3.5" />连接 API</button>
         </div>
@@ -194,7 +193,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
 
           {customProviders.length === 0 && (
             <div className="rounded-xl border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400 dark:border-gray-800">
-              还没有连接。点击「连接 API」填写地址和 Key。
+              尚未连接 API
             </div>
           )}
         </div>
@@ -203,7 +202,6 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">生图协作</h3>
         <AgentGenerationOptions />
       </section>
-      <p className="text-meta leading-5 text-gray-500 dark:text-gray-400">这里设置新对话的默认模型；已有对话可在发送键旁切换。图片观察使用当前模型，展示已有图片无需识图能力。Agent 可按权限读取电脑图片和保存结果，也可搜索公网。Key 加密保存在电脑，不进入浏览器存储。</p>
     </div>
     )}
 

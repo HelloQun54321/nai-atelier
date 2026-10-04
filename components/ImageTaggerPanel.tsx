@@ -188,7 +188,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
   return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
-        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">{selectedModel?.label || 'WD Tagger V3'} · 图片只在你的电脑上处理</p></div>
+        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">{selectedModel?.label || 'WD Tagger V3'} · 本地处理</p></div>
         <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
       </header>
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
@@ -245,7 +245,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>
         </section>
         <section className="min-h-72 p-4 md:overflow-y-auto">
-          {!result && !busy && <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-sm text-gray-400"><p className="font-bold">选择一张图片开始识别</p><p className="mt-1 max-w-sm text-xs">结果是模型预测，不等于图片原始 Prompt；模型不会识别画师身份。</p></div>}
+          {!result && !busy && <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-sm text-gray-400"><p className="font-bold">选择一张图片开始识别</p><p className="mt-1 max-w-sm text-xs">预测 Tag，非原始 Prompt；不识别画师。</p></div>}
           {result && <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">识别出 {result.tags.length} 个 Tag</p><p className="text-micro text-gray-500">角色 {result.character.length} · 普通 {result.general.length}{result.rating ? ` · 分级预测 ${result.rating.name} ${percent(result.rating.confidence)}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">全选</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">清空</button></div></div>
             <div className="grid gap-2 sm:grid-cols-2">{visibleTags.map(tag => {

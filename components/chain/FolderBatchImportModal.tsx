@@ -927,7 +927,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">批量导入文件夹图片为风格串</h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400">智能过滤已存在风格串并使用原图作为封面</p>
             </div>
           </div>
           <button
@@ -964,9 +963,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               <h3 className="mb-1 text-base font-bold text-gray-800 dark:text-gray-200">
                 将图片文件夹或多张图片拖到此处
               </h3>
-              <p className="mb-6 max-w-md text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                自动提取 NovelAI 生成参数、智能排除已存在的相同风格串，并以原图为封面沉淀为风格串
-              </p>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <input
@@ -1185,9 +1181,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                       <EyeOff className="h-3.5 w-3.5 text-amber-500" />
                       <span>标记为「待实测」</span>
-                      <span className="text-meta font-normal text-gray-500 dark:text-gray-400">
-                        （首次生成后会自动去除）
-                      </span>
                     </div>
                   </label>
 
@@ -1215,9 +1208,6 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                         <Trash2 className="h-3.5 w-3.5 text-indigo-500" />
                         <span>导入后删除本地源文件</span>
-                        <span className="text-meta font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
-                          （已转存至本地，保持文件夹整洁）
-                        </span>
                       </div>
                     </label>
 
@@ -1332,7 +1322,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-gray-900 dark:text-white">清理本地无意义图片</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">从本地文件夹中物理删除无元数据、非 NAI 或重复图片</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">永久删除所选本地文件</p>
                 </div>
               </div>
               <button
@@ -1471,7 +1461,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             <div className="flex flex-none flex-col gap-3 border-t border-gray-200 p-4 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900/60 rounded-b-2xl">
               <div className="flex items-center gap-2 text-meta text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4 flex-none" />
-                <span>注意：删除操作将直接修改本地文件系统，物理删除选中的文件且无法从回收站恢复，请谨慎操作。</span>
+                <span>永久删除所选文件，无法从回收站恢复。</span>
               </div>
 
               <div className="flex items-center justify-between gap-3">

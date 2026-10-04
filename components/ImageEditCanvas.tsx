@@ -226,11 +226,10 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       {isFullscreen && (
         <div className="mb-3 flex items-center justify-between gap-3 text-gray-900 dark:text-gray-100">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold">全屏大画板精修</span>
+            <span className="text-sm font-bold" title="右键／空格拖动 · Ctrl+滚轮缩放">全屏大画板精修</span>
             <span className="text-xs text-gray-400">{width} × {height} 像素</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-meta text-gray-400 hidden sm:inline">鼠标右键/中键或按住空格拖拽平移 · Ctrl+滚轮缩放</span>
             <button
               type="button"
               onClick={() => setIsFullscreen(false)}
@@ -349,7 +348,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             />
           </div>}
         </div>
-        {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">请先生成图片、选择历史图片或导入 PNG、JPEG、WebP 底图</div>}
+        {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">选择底图</div>}
       </div>
     </div>
     </CanvasLayer>

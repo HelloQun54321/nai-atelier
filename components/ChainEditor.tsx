@@ -1533,7 +1533,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     console.warn('生成过程预览中断：', streamError);
                     const retry = await confirmAction({
                         title: '过程预览连接中断',
-                        message: '无法确认 NovelAI 是否已完成本次生成。直接重新生成可能产生重复扣费；若刚才已实际扣费，结果会稍晚出现在历史中。',
+                        message: '生成状态未知，重试可能重复扣费；已扣费结果可能稍后入库。',
                         confirmLabel: '重新生成',
                         tone: 'danger',
                     });
@@ -1753,7 +1753,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     console.warn('图片编辑过程预览中断：', streamError);
                     const retry = await confirmAction({
                         title: '过程预览连接中断',
-                        message: '无法确认 NovelAI 是否已完成本次编辑。直接重新生成可能产生重复扣费；若刚才已实际扣费，结果会稍晚出现在历史中。',
+                        message: '编辑状态未知，重试可能重复扣费；已扣费结果可能稍后入库。',
                         confirmLabel: '重新生成',
                         tone: 'danger',
                     });
@@ -1945,7 +1945,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!coverImage || !isOwner || chain.id === 'playground') return;
         if (await confirmAction({
             title: '将当前图片设为封面并保存？',
-            message: '当前生成图片将成为该串的新封面，并自动保存当前所有提示词与参数改动；原有上传封面将被替换。',
+            message: '替换原封面，并保存当前提示词与参数。',
             confirmLabel: '更换封面并保存',
             tone: 'danger',
         })) {
@@ -2040,7 +2040,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             <FileDown className="h-6 w-6" />
                         </div>
                         <div className="text-base font-bold text-gray-900 dark:text-white">松手导入配置</div>
-                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">支持 PNG 图片元数据或 JSON 元数据，并覆盖当前 Prompt 与生成参数</div>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">PNG / JSON · 替换提示词与参数</div>
                     </div>
                 </div>
             )}

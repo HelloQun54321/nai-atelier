@@ -1379,9 +1379,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             ✨
                         </div>
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">已加入灵感库</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                            图片与完整参数已保存，可前往灵感库继续添加灵感板、标签和备注。
-                        </p>
                         <button
                             onClick={() => setShowSuccessModal(false)}
                             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"

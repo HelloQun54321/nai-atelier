@@ -28,7 +28,7 @@ const FALLBACK_MANIFEST = JSON.stringify({
   css: `style.css?v=${BRIDGE_VERSION}`,
   author: 'HelloQun54321',
   version: BRIDGE_VERSION,
-  description: '在 Atelier 开启智慧姬同步后发送选定的 V4.5 / V5 风格串，全量接收 st-chatu8 风格串，互通 Vibe 与原图历史索引。',
+  description: '同步工坊精选、酒馆预设、Vibe 与历史图片。',
 }, null, 2);
 
 export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = ({ notify }) => {
@@ -239,7 +239,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         <span className="min-w-0">
           <span className="block font-semibold text-gray-900 dark:text-white">智慧姬同步</span>
           <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-            开启后在风格串页面选择要发送的 V4.5 / V5 风格串；接收 st-chatu8 全部风格串，并互通 Vibe 与原图历史索引。关闭后停止同步，保留已选范围和已有资料。
+            发送工坊精选，接收酒馆预设；关闭保留资料。
           </span>
         </span>
         <input type="checkbox" aria-label="智慧姬同步" checked={preferences.enabled} disabled={!preferences.ready || preferences.busy || installing || exporting}

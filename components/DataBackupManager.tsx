@@ -162,9 +162,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            完整备份 <code>local-data</code>（数据库、生成的原图、历史、配置与密钥）至外部安全位置。
-          </p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">含密钥，请妥善保管备份。</p>
         </div>
         <div className="flex flex-none items-center gap-2">
           <button
@@ -376,7 +374,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="border-t border-gray-200 p-3 dark:border-gray-700">
             {backups.length === 0 ? (
               <div className="py-6 text-center text-xs text-gray-400 dark:text-gray-500">
-                暂无历史备份记录，点击上方「立即完整备份」创建第一份存档。
+                暂无备份
               </div>
             ) : (
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">

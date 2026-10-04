@@ -87,7 +87,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     <PresetSourceBadges sources={characterPresetSources} />
                 </div>
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-                    <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(!positionOpen)}
+                    <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
                         className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
                         <MapPin className="h-3.5 w-3.5" />角色定位
                     </button>
@@ -114,7 +114,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 </div>
             </div>
 
-            {coordinateHint && params.useCoords === true && <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">{coordinateHint}</p>}
+
             {positionOpen && <CharacterPositionStage key={scopeKey} characters={characters} freeform={freeformPosition}
                 width={positionSize?.width || params.width} height={positionSize?.height || params.height} image={positionImage}
                 canEdit={canEdit} useCoords={params.useCoords === true} onPosition={(index, position) => {

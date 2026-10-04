@@ -108,7 +108,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
           </div>
         </div>
 
-        <p className="mt-7 text-sm leading-6 text-gray-600 dark:text-gray-300">请输入电脑启动窗口中显示的四位密码。验证后，这台设备将在30天内保持授权。</p>
+        <p className="mt-7 text-sm leading-6 text-gray-600 dark:text-gray-300">密码见电脑启动窗口 · 授权 30 天</p>
 
         <label className="mt-6 block text-xs font-medium text-gray-500 dark:text-gray-400" htmlFor="lan-access-pin">四位数字密码</label>
         <input
@@ -125,13 +125,13 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
         />
 
         <div id="lan-access-message" className={`min-h-8 pt-2 text-center text-sm ${message ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`}>
-          {message || '电脑本机访问不需要输入密码'}
+          {message}
         </div>
 
         <button type="submit" disabled={submitting || pin.length !== 4} className="mt-2 min-h-14 w-full rounded-2xl bg-indigo-600 px-5 text-base font-bold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40">
           {submitting ? '正在验证…' : '进入项目'}
         </button>
-        <p className="mt-5 text-center text-meta leading-5 text-gray-500 dark:text-gray-400">连续输错5次会暂停1分钟。请勿将电脑端口映射到公网。</p>
+        <p className="mt-5 text-center text-meta leading-5 text-gray-500 dark:text-gray-400">输错 5 次暂停 1 分钟；勿开放公网。</p>
       </form>
     </div>
   );

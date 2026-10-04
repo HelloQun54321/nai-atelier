@@ -245,7 +245,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const code = (startError as PixivLoginError).code;
       if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
         setLanMode(true);
-        setLoginMessage('请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览');
+        setLoginMessage('请在电脑上登录，手机共用');
       } else {
         setLoginMessage(startError instanceof Error ? startError.message : '登录启动失败');
       }
@@ -295,7 +295,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       const code = (cancelError as PixivLoginError).code;
       if (code === 'PIXIV_CONNECT_LOCAL_ONLY') {
         setLanMode(true);
-        setLoginMessage('请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览');
+        setLoginMessage('请在电脑上登录，手机共用');
       } else {
         setLoginMessage(cancelError instanceof Error ? cancelError.message : '取消失败，请稍后重试');
       }
@@ -689,10 +689,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
             <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">Pixiv 图库</h2>
-            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">使用你平时的默认浏览器打开 Pixiv，保留已有的 Google、Pixiv 登录状态；账号密码只输入 Pixiv 官方页面。</p>
+            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">账号密码仅输入 Pixiv 官方页面。</p>
 
             {lanMode ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览</div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在电脑上登录，手机共用</div>
             ) : (
               <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
                 {waiting ? <><RefreshCw className="animate-spin" />等待完成…</> : <><LogIn />在默认浏览器登录</>}
@@ -705,7 +705,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   {activeLogin.automaticCallback ? (
                     <>
                       <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
-                      <div className="mt-1">登录完成后保持白页片刻，NAI Atelier 会自动识别并完成连接。</div>
+                      <div className="mt-1">登录后等待自动连接</div>
                     </>
                   ) : (
                     <div>{activeLogin.message || '当前无法自动识别登录结果'}</div>
@@ -735,7 +735,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <details className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700">
               <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-meta font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">高级：手动连接</summary>
               <form onSubmit={handleConnect} className="border-t border-gray-100 p-3 dark:border-gray-800">
-                <p className="mb-3 text-meta leading-relaxed text-gray-500">备用方式：粘贴 Pixiv App 的 refresh token。Token 仅以加密形式保存在本机 local-data，操作完成后立即清空。</p>
+                <p className="mb-3 text-meta leading-relaxed text-gray-500">Token 加密保存在本机</p>
                 <label className="mb-1 block text-meta font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
                 <input
                   id="pixiv-refresh-token"
@@ -750,7 +750,6 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </form>
             </details>
           </div>
-          <p className="mt-4 max-w-sm text-center text-meta leading-relaxed text-gray-400">Pixiv 图库仅在本机媒体网关可用；推荐、搜索与榜单接口返回的内容原样展示，不做年龄分级过滤。</p>
         </div>
       </div>
     );
@@ -1052,7 +1051,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 ))}
               </div>
             ) : (
-              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Pixiv 浏览足迹" hint="点开作品后将自动记录到此处，方便秒级回溯。" />
+              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Pixiv 浏览足迹" />
             )
           ) : loading && !items.length ? (
             <PageSpinner label="正在读取 Pixiv…" className="min-h-72" />
@@ -1114,7 +1113,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </DetailImageStage>
               {selected.type === 'ugoira' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                  动图（ugoira）：这里展示首帧，动画请到 Pixiv 查看。
+                  动图首帧 · 在 Pixiv 查看动画
                 </div>
               )}
               <div className="flex min-w-0 items-center gap-3 text-meta text-gray-500">
@@ -1182,7 +1181,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">
-              选择一张作品后查看图片、分页和导入操作。
+              选择作品
             </div>
           )}
         </DetailSidePanel>
