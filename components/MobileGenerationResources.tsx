@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronUp } from 'lucide-react';
 import type { useAnlasBudget } from '../services/anlasBudget';
 import { isActiveOpusSubscription, usageRemainingPercent, type useNovelaiUsage } from '../services/naiUsage';
 import { describeNaiRuntimeSyncProblem, isNaiRuntimeSyncUnhealthy, type NaiRuntimeConfig } from '../services/naiRuntime';
@@ -15,10 +14,11 @@ interface MobileGenerationResourcesProps {
   budget: Pick<ReturnType<typeof useAnlasBudget>, 'remaining' | 'loading'>;
   subscription: ReturnType<typeof useNovelaiUsage>;
   runtime: NaiRuntimeConfig | null;
+  keyboardOffset?: number;
 }
 
 /** 四模式共用手机资源入口；复用工作台状态，不另建预算、订阅轮询或费用规则。 */
-export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps> = ({ apiKey, budget, subscription, runtime }) => {
+export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps> = ({ apiKey, budget, subscription, runtime, keyboardOffset = 0 }) => {
   const [open, setOpen] = useState(false);
   const [keyName, setKeyName] = useState<{ key: string; name: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -60,6 +60,14 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const balanceText = total === null ? loading ? '…' : '未知' : `${compactPoints(total)}${error ? '（旧值）' : ''}`;
   const summary = !apiKey ? '未配置 Key'
     : `预算 ${budget.loading ? '…' : compactPoints(budget.remaining)} · 余额 ${balanceText} · ${opusText}${runtimeBroken ? ' · 规则异常' : ''}`;
+  // 收起时只保留两组标签和数值；旧值／过期／失败用颜色与符号标记，说明放入详情。
+  const footerBudget = !apiKey ? '—' : budget.loading ? '…' : compactPoints(budget.remaining);
+  const footerBalance = !apiKey || total === null ? '—' : compactPoints(total);
+  const footerQuota = apiKey && isActiveOpusSubscription(info) && usage ? `${usageRemainingPercent(usage)}%` : '—';
+  const warning = Boolean(apiKey && (error || runtimeBroken || info?.active === false));
+  const footerTone = warning ? 'text-amber-600 dark:text-amber-400'
+    : usage?.isNegative ? 'text-red-600 dark:text-red-400'
+      : usage && usageRemainingPercent(usage) <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
   const balance = info?.trainingStepsLeft;
   const openSettings = () => {
     const navigate = () => {
@@ -77,9 +85,10 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   };
   return <>
     <button type="button" aria-label={`查看账户资源：${summary}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}
-      className="appearance-panel mobile-touch flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-gray-200 bg-white/95 px-3 py-2 text-left text-micro shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900/95 md:hidden">
-      <span className={`min-w-0 flex-1 break-words tabular-nums ${error || runtimeBroken || info?.active === false ? 'text-amber-600 dark:text-amber-400' : usage?.isNegative ? 'text-red-600 dark:text-red-400' : usage && usageRemainingPercent(usage) <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-300'}`}>{summary}</span>
-      <ChevronUp className="h-4 w-4 shrink-0" aria-hidden="true" />
+      style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
+      className="mobile-touch fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
+      <span className={`whitespace-nowrap tabular-nums ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
+      <span className={`whitespace-nowrap tabular-nums ${footerTone}`}>Opus额度 {footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span>
     </button>
     <ImagePreviewPortal>
       <MobileBottomSheet open={open} title="账户资源" onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white">账户设置</button>}>
@@ -92,6 +101,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
             <dt>本地预算</dt><dd className="text-right tabular-nums">{budget.loading ? '加载中' : `${budget.remaining.toLocaleString('zh-CN')} 点`}</dd>
             <dt>官方余额</dt><dd className="text-right tabular-nums">{total === null ? '未知' : `${total.toLocaleString('zh-CN')} 点`}</dd>
+            <dt>订阅状态</dt><dd className="text-right">{!apiKey ? '未配置 Key' : !info ? '尚未同步' : info.active === false ? '订阅过期' : isActiveOpusSubscription(info) ? 'Opus' : '非 Opus'}</dd>
             {total !== null && balance && <><dt>订阅赠送 / Paid</dt><dd className="text-right tabular-nums">{balance.fixedTrainingStepsLeft.toLocaleString('zh-CN')} / {balance.purchasedTrainingSteps.toLocaleString('zh-CN')}</dd></>}
             <dt>最近成功同步</dt><dd className="text-right">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString('zh-CN', { hour12: false }) : '尚未同步'}</dd>
           </dl>

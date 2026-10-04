@@ -199,6 +199,12 @@ html[data-design-theme='nai-atelier'] ::selection {
   background: color-mix(in srgb, var(--nai-accent) 28%, transparent);
 }
 
+/* 手机给贴底资源入口留出触控空间；平板沿用原来的图片／生成浮动位置。 */
+.mobile-generation-actions {
+  --mobile-generation-bottom: max(1rem, env(safe-area-inset-bottom));
+  bottom: var(--mobile-generation-bottom);
+}
+
 /* 主要生成按钮：静止时保持轻量，交互和生成中才提高强调度。 */
 .generation-action-button {
   position: relative;
@@ -871,6 +877,10 @@ body,
     min-width: var(--mobile-touch);
     min-height: var(--mobile-touch);
     touch-action: manipulation;
+  }
+
+  .mobile-generation-actions {
+    --mobile-generation-bottom: calc(env(safe-area-inset-bottom) + 3.25rem);
   }
 
   .mobile-page-header {

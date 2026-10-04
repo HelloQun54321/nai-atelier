@@ -45,6 +45,9 @@ describe('手机实验室账户资源', () => {
     const entry = screen.getByRole('button', { name: /预算 1666 · 余额 6.84万 · Opus 196%/ });
     expect(entry.className).toContain('md:hidden');
     expect(entry.className.split(' ')).not.toContain('hidden');
+    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus额度 196%');
+    expect(entry.querySelector('svg')).toBeNull();
+    expect(entry.className).not.toContain('appearance-panel');
     entry.focus(); fireEvent.click(entry);
     const dialog = screen.getByRole('dialog', { name: '账户资源' });
     expect(await within(dialog).findByText('合成主号')).toBeTruthy();
@@ -80,6 +83,7 @@ describe('手机实验室账户资源', () => {
     render(<MobileGenerationResources {...props()} budget={{ remaining: 0, loading: false }} />);
     const entry = screen.getByRole('button', { name: /预算 0 · 余额 0 · Opus 已用尽/ });
     expect(entry.querySelector('span')?.className).toContain('text-red-600');
+    expect(entry.textContent).toBe('Anlas 0/0Opus额度 0%');
     openPanel();
     expect(screen.getAllByText('0 点')).toHaveLength(2);
     expect(screen.getByText('额度已用尽，生成将消耗 Anlas')).toBeTruthy();
@@ -88,7 +92,8 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.error = '合成网络断开';
     fixture.runtime!.health = { ok: false, reason: 'extract-failed', missed: ['freeMaxSteps'] };
     render(<MobileGenerationResources {...props()} />);
-    expect(screen.getByRole('button', { name: /余额 6.84万（旧值）.*Opus 196% · 旧值 · 规则异常/ })).toBeTruthy();
+    const entry = screen.getByRole('button', { name: /余额 6.84万（旧值）.*Opus 196% · 旧值 · 规则异常/ });
+    expect(entry.textContent).toBe('Anlas 1666/6.84万Opus额度 196%!');
     openPanel();
     expect(screen.getByText('显示上次余额：合成网络断开')).toBeTruthy();
     expect(screen.getByText('上次额度 196%（≈3391 张）：合成网络断开')).toBeTruthy();
@@ -112,6 +117,7 @@ describe('手机实验室账户资源', () => {
     fixture.subscription!.info!.active = false;
     render(<MobileGenerationResources {...props()} />);
     expect(screen.getByRole('button', { name: /余额 6.84万 · 订阅过期/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^查看账户资源/ }).textContent).toBe('Anlas 1666/6.84万Opus额度 —!');
     openPanel();
     expect(screen.queryByText('196%')).toBeNull();
     expect(screen.getByRole('status', { name: /订阅已过期 · Paid Anlas：68,320 点/ })).toBeTruthy();
@@ -166,5 +172,17 @@ describe('手机实验室账户资源', () => {
     act(() => { desktop.matches = true; resize(); });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(desktop.removeEventListener).toHaveBeenCalledWith('change', resize);
+  });
+  it('两项作为同一组居中贴底，键盘弹起后整体避让，收起只显示标签和数值', () => {
+    fixture.subscription!.info!.trainingStepsLeft = { fixedTrainingStepsLeft: 100, purchasedTrainingSteps: 9885 };
+    fixture.subscription!.usage!.percent = 100;
+    const view = render(<MobileGenerationResources {...props()} />);
+    const entry = screen.getByRole('button', { name: /^查看账户资源/ });
+    expect(entry.textContent).toBe('Anlas 1666/9985Opus额度 100%');
+    for (const token of ['fixed', 'inset-x-0', 'mx-auto', 'w-max', 'justify-center', 'gap-3', 'text-meta']) expect(entry.className.split(' ')).toContain(token);
+    expect(entry.className).not.toContain('justify-between');
+    expect(entry.style.bottom).toBe('');
+    view.rerender(<MobileGenerationResources {...props()} keyboardOffset={260} />);
+    expect(entry.style.bottom).toBe('calc(260px + env(safe-area-inset-bottom))');
   });
 });

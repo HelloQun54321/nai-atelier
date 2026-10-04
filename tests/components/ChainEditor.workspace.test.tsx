@@ -134,12 +134,46 @@ it('四模式共用手机资源入口，切 Key 时继续使用当前工作台�
     // 小于 md 显示；md 及以上保留桌面侧栏，不能把响应式方向写反。
     expect(resources.className).toContain('md:hidden');
     expect(resources.className.split(' ')).not.toContain('hidden');
-    expect(resources.closest('.lg\\:hidden')).toBeTruthy();
+    expect(resources.closest('.mobile-generation-actions')).toBeNull();
+    expect(resources.textContent).toBe('Anlas —/—Opus额度 —');
     act(() => { sessionStorage.setItem('nai_api_key', 'mobile-workspace-fixture'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'mobile-workspace-fixture' })); });
     expect(screen.getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();
     act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
   }
   expect(state.generate).not.toHaveBeenCalled();
+});
+
+it('贴底资源不占图片／生成操作行，图片入口继续打开大图且关闭后恢复资源', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  const { container } = setup({ ...chain, previewImage: '/synthetic/preview.png' });
+  const preview = await screen.findByRole('button', { name: '查看当前预览图' });
+  const actions = container.querySelector<HTMLElement>('.mobile-generation-actions')!;
+  expect(actions.contains(preview)).toBe(true);
+  const generate = within(actions).getByRole('button', { name: /^生成 ·/ });
+  expect(preview.parentElement).toBe(generate.parentElement?.parentElement);
+  expect(actions.contains(screen.getByRole('button', { name: /^查看账户资源/ }))).toBe(false);
+  fireEvent.click(preview);
+  const lightbox = await screen.findByRole('dialog', { name: '图片预览' });
+  expect(screen.queryByRole('button', { name: /^查看账户资源/ })).toBeNull();
+  fireEvent.click(lightbox);
+  expect(screen.getByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it('提示词软键盘避让同时移动贴底资源与生成操作，收起后恢复各自锚点', () => {
+  let resize!: () => void;
+  const viewport = { height: 600, addEventListener: vi.fn((_event: string, handler: () => void) => { resize = handler; }), removeEventListener: vi.fn() };
+  vi.stubGlobal('visualViewport', viewport);
+  vi.stubGlobal('innerHeight', 800);
+  const { container } = setup();
+  act(() => { textPrompt().focus(); });
+  const resources = screen.getByRole('button', { name: /^查看账户资源/ });
+  const actions = container.querySelector<HTMLElement>('.mobile-generation-actions')!;
+  expect(resources.style.bottom).toBe('calc(200px + env(safe-area-inset-bottom))');
+  expect(actions.style.bottom).toBe('calc(200px + var(--mobile-generation-bottom))');
+  act(() => { viewport.height = 800; resize(); });
+  expect(resources.style.bottom).toBe('');
+  expect(actions.style.bottom).toBe('');
 });
 
 describe('历史明确指定实验室导入模式', () => {

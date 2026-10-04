@@ -2406,9 +2406,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <div className="flex fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + max(1rem, env(safe-area-inset-bottom)))` } : undefined}>
+            {!lightboxImg && !showImportPreset && !importCandidate && <>
+            <div className="mobile-generation-actions flex fixed right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + var(--mobile-generation-bottom))` } : undefined}>
                 {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
-                <MobileGenerationResources apiKey={apiKey} budget={anlasBudget} subscription={novelaiStatus} runtime={naiRuntimeConfig} />
                 <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
                     {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
                     <div className="flex flex-col items-end gap-2">
@@ -2416,7 +2416,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
                     </div>
                 </div>
-            </div>}
+            </div>
+            <MobileGenerationResources apiKey={apiKey} budget={anlasBudget} subscription={novelaiStatus} runtime={naiRuntimeConfig} keyboardOffset={keyboardOffset} />
+            </>}
 
             {/* Lightbox Modal */}
             {lightboxImg && (
