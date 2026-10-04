@@ -38,6 +38,11 @@ describe('parseErrorResponse', () => {
   const jsonResponse = (status: number, body: unknown): Response =>
     new Response(JSON.stringify(body), { status });
 
+  it('保留结构化等待时间，忽略无效和负值', async () => {
+    expect(await parseErrorResponse(jsonResponse(403, { error: '需要验证', code: 'DANBOORU_CHALLENGE', retryAfter: 300 }))).toMatchObject({ status: 403, code: 'DANBOORU_CHALLENGE', retryAfter: 300 });
+    for (const retryAfter of [-1, '300', null]) expect((await parseErrorResponse(jsonResponse(429, { error: '等待', retryAfter }))).retryAfter).toBeUndefined();
+  });
+
   it('takes the message field from the JSON payload and attaches code/status', async () => {
     const error = await parseErrorResponse(jsonResponse(499, { error: '已取消排队', code: 'QUEUE_CANCELLED' }));
     expect(error).toBeInstanceOf(ApiError);

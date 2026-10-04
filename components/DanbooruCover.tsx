@@ -4,6 +4,7 @@ import { DanbooruCoverCandidate, DanbooruCoverSet, danbooruService } from '../se
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import { selectThumbnailVariant } from '../services/mobileImageCache';
 import { createMediaPrewarmSession } from '../services/mediaPrewarm';
+import { ApiError } from '../services/api';
 
 interface DanbooruCoverProps {
   tag: string;
@@ -20,8 +21,11 @@ const firstCandidateIndex = (result: DanbooruCoverSet) => {
   return representativeIndex >= 0 ? representativeIndex : 0;
 };
 
-const lookupErrorMessage = (error: unknown) => error instanceof Error && /429/.test(error.message)
-  ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
+const lookupErrorMessage = (error: unknown) => {
+  if (error instanceof ApiError && (error.code?.startsWith('DANBOORU_') || error.status === 403 || error.status === 429)) return error.message;
+  return error instanceof Error && /429/.test(error.message)
+    ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
+};
 
 export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad }) => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -105,8 +109,15 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         latestFallbackTried.current = Boolean(result.latestFallbackTried);
         setNextSourcePage(result.nextPage || 1);
         setCandidateIndex(firstCandidateIndex(result));
-      } catch {
+      } catch (error) {
         if (!active || controller.signal.aborted) return;
+        // 后台已做有限重试；验证、拒绝和限流应立即反馈，不能在两秒后再次联网。
+        if (error instanceof ApiError && (error.code?.startsWith('DANBOORU_') || error.status === 403 || error.status === 429)) {
+          loadedKey.current = key;
+          setCoverSet(null);
+          setLookupError(lookupErrorMessage(error));
+          return;
+        }
         await new Promise(resolve => window.setTimeout(resolve, 2000));
         if (!active) return;
         try {

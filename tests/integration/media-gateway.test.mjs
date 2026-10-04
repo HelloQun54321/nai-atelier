@@ -1,5 +1,45 @@
 import '../support/node-environment.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from '../../scripts/media-memory-cache.mjs';
+import { createDanbooruLimiter } from '../../scripts/danbooru-loading.mjs';
+
+test('验证／拒绝／限流网页保留原始分类与等待时间，冷却不联网，缓存仍可读', async () => {
+  for (const [status, code, extra] of [[403, 'DANBOORU_CHALLENGE', { 'cf-mitigated': 'challenge' }], [403, 'DANBOORU_FORBIDDEN', {}], [429, 'DANBOORU_RATE_LIMIT', { 'retry-after': '90' }]]) {
+    const url = new URL('http://localhost/__internal/danbooru-fetch?url=' + encodeURIComponent('https://danbooru.donmai.us/posts.json?tags=synthetic'));
+    const req = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-nai-internal-secret': 'synthetic-secret' } };
+    const limiter = createDanbooruLimiter(), cache = createResponseMemoryCache(); let calls = 0;
+    const remote = async () => { calls++; return new Response('<html>verification-or-limit</html>', { status, headers: { 'content-type': 'text/html', ...extra } }); };
+    const reply = async () => {
+      let actual, data; const headers = {};
+      const res = { setHeader(key, value) { headers[key] = value; }, writeHead(value) { actual = value; }, end(value) { data = JSON.parse(String(value)); } };
+      await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache, limiter);
+      return { actual, data, headers };
+    };
+    const first = await reply(), second = await reply();
+    for (const result of [first, second]) {
+      assert.equal(result.actual, status); assert.equal(result.data.code, code); assert.equal(result.data.upstreamStatus, status);
+      assert.ok(result.data.retryAfter > 0); assert.equal(result.headers['Retry-After'], String(result.data.retryAfter));
+      assert.doesNotMatch(result.data.error, /non-JSON|<html>/);
+    }
+    assert.equal(calls, 1);
+    await cache.get(url.searchParams.get('url'), async () => ({ status: 200, contentType: 'application/json', body: Buffer.from('[{"id":1}]') }), 1000);
+    assert.equal((await reply()).actual, 200); assert.equal(calls, 1);
+  }
+});
+
+test('握手前断开保留可重试网络错误，失败不写缓存，下一次可成功', async () => {
+  const url = new URL('http://localhost/__internal/danbooru-fetch?url=' + encodeURIComponent('https://danbooru.donmai.us/posts.json'));
+  const req = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-nai-internal-secret': 'synthetic-secret' } };
+  const cache = createResponseMemoryCache(); let calls = 0, status, data;
+  const res = { writeHead(value) { status = value; }, end(value) { data = JSON.parse(String(value)); } };
+  const remote = async () => {
+    if (++calls === 1) throw Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET', message: 'Client network socket disconnected before secure TLS connection was established' } });
+    return new Response('[]', { headers: { 'content-type': 'application/json' } });
+  };
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache);
+  assert.equal(status, 502); assert.equal(data.code, 'DANBOORU_NETWORK_ERROR'); assert.equal(data.causeCode, 'ECONNRESET');
+  await handleDanbooruRemoteRequest(req, res, url, 'synthetic-secret', remote, cache);
+  assert.equal(status, 200); assert.deepEqual(data, []); assert.equal(calls, 2);
+});
 test('公开封面磁盘命中不消耗联网预算，跨内存会话复用仍逐次鉴权', async () => {
   const target = 'https://danbooru.donmai.us/posts.json?tags=synthetic+order:score+-status:banned';
   const url = new URL(`http://localhost/__internal/danbooru-fetch?url=${encodeURIComponent(target)}`);

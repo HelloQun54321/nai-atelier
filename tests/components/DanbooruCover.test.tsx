@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DanbooruCover } from '../../components/DanbooruCover';
 import { danbooruService, type DanbooruCoverCandidate } from '../../services/danbooruService';
 import { ImageActivityContext } from '../../components/SmartImage';
+import { ApiError } from '../../services/api';
 
 vi.mock('../../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn(), getCoverFallback: vi.fn() } }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
@@ -210,6 +211,19 @@ it('连续请求失败显示连接错误，手动重试成功后恢复，不误�
   await act(async () => {});
   expect(image().src).toBe(candidate(7).sampleUrl);
   expect(screen.queryByText('暂时无法读取 Danbooru 封面，请重试')).toBeNull();
+});
+
+it.each([
+  [403, 'DANBOORU_CHALLENGE', 'Danbooru 要求网站验证'],
+  [429, 'DANBOORU_RATE_LIMIT', 'Danbooru 请求过于频繁'],
+  [502, 'DANBOORU_NETWORK_ERROR', '连接 Danbooru 失败，请稍后重试'],
+])('结构化失败 %s 立即显示实际原因，不叠加后台的三次重试', async (status, code, message) => {
+  vi.useFakeTimers(); covers.mockRejectedValue(new ApiError(String(message), Number(status), String(code)));
+  render(<DanbooruCover tag="blocked" kind="artist" alt="封面" />);
+  await act(async () => {});
+  expect(screen.getByText(String(message))).toBeTruthy();
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(covers).toHaveBeenCalledTimes(1); expect(screen.queryByText('暂无可用的 Danbooru 封面')).toBeNull();
 });
 
 it('真实空结果仍显示无封面，429 限流可辨认且不无限重试', async () => {

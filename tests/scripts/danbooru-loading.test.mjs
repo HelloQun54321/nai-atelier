@@ -74,6 +74,20 @@ test('429 尊重 Retry-After 与指数冷却，403 停五分钟，冷却中不�
   await assert.rejects(limiter.run(async () => 4), /300 秒/);
 });
 
+test('验证冷却和队列都保留 403 原因，迟到的 429 不改写为限流，到期可恢复', async () => {
+  const time = clock(), limiter = createDanbooruLimiter(time);
+  const started = limiter.run(async () => 1); await time.advance(0); await started;
+  const queued = limiter.run(async () => assert.fail('验证后不应联网')).catch(error => error);
+  const failure = { status: 403, code: 'DANBOORU_CHALLENGE', error: '需要网站验证', upstreamStatus: 403 };
+  const blocked = limiter.observe(403, undefined, failure);
+  assert.equal(blocked.status, 403); assert.equal(blocked.retryAfter, 300);
+  assert.equal((await queued).code, 'DANBOORU_CHALLENGE');
+  await time.advance(10_000); limiter.observe(429, '60');
+  await assert.rejects(limiter.run(async () => 1), error => error.status === 403 && error.code === 'DANBOORU_CHALLENGE' && error.retryAfter === 290);
+  await time.advance(290_000);
+  const recovered = limiter.run(async () => 2); await time.advance(1000); assert.equal(await recovered, 2);
+});
+
 test('公共响应共享取消不误伤其他消费者，最后退出才中止，新请求不被迟到旧响应污染', async () => {
   const cache = createResponseMemoryCache(); let signal, release;
   const load = async nextSignal => { signal = nextSignal; return new Promise(resolve => { release = resolve; }); };

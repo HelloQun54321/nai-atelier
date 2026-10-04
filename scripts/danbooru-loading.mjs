@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, stat, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
+import { readDanbooruRetryAfter } from '../services/danbooruErrors.mjs';
 
 // 官方读取上限为短时 10 次／秒、长期建议约 1 次／秒；20 次是本机首屏突发预算，并非官方公布的池大小。
 const READ_BURST = 20;
@@ -12,7 +13,11 @@ export const createDanbooruLimiter = ({ now = Date.now, setTimer = setTimeout, c
   const queue = [];
   let tokens = READ_BURST, updated = now(), active = 0, nextStart = 0, blockedUntil = 0, failures = 0, timer;
   let popularTokens = popularBurst, popularUpdated = now();
-  const cooldownError = () => Object.assign(new Error(`Danbooru 429：已暂停联网查询，请 ${Math.ceil((blockedUntil - now()) / 1000)} 秒后重试`), { status: 429, retryAfter: Math.ceil((blockedUntil - now()) / 1000) });
+  let blockedReason;
+  const cooldownError = () => {
+    const retryAfter = Math.max(1, Math.ceil((blockedUntil - now()) / 1000));
+    return Object.assign(new Error(`${blockedReason.error}；已暂停联网查询，请 ${retryAfter} 秒后重试`), blockedReason, { retryAfter });
+  };
   const wake = () => {
     if (timer !== undefined) { clearTimer(timer); timer = undefined; }
     pump();
@@ -47,16 +52,22 @@ export const createDanbooruLimiter = ({ now = Date.now, setTimer = setTimeout, c
         signal?.addEventListener('abort', task.abort, { once: true }); queue.push(task); wake();
       });
     },
-    observe(status, retryAfter) {
-      if (status === 429 || status === 403) {
+    observe(status, retryAfter, failure) {
+      const blockedStatus = failure?.code === 'DANBOORU_CHALLENGE' ? 403 : status;
+      if (blockedStatus === 429 || blockedStatus === 403) {
         failures++;
-        const seconds = /^\d+(?:\.\d+)?$/.test(retryAfter || '') ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter || '') - now());
+        const seconds = readDanbooruRetryAfter(retryAfter, now()) * 1000;
+        // 同批迟到的限流响应不能覆盖仍有效的拒绝／验证原因。
+        if (blockedUntil <= now() || blockedReason?.status !== 403 || blockedStatus === 403) {
+          blockedReason = failure || { status: blockedStatus, code: blockedStatus === 403 ? 'DANBOORU_FORBIDDEN' : 'DANBOORU_RATE_LIMIT', error: blockedStatus === 403 ? 'Danbooru 拒绝了后台访问' : 'Danbooru 请求过于频繁', upstreamStatus: status };
+        }
         // 禁止立刻换端点／身份重试；尊重 Retry-After，连续限流指数延长。
-        blockedUntil = Math.max(blockedUntil, now() + Math.max(Number.isFinite(seconds) ? seconds : 0, status === 403 ? 5 * 60_000 : Math.min(5 * 60_000, 30_000 * 2 ** Math.min(failures - 1, 4))));
+        blockedUntil = Math.max(blockedUntil, now() + Math.max(seconds, blockedStatus === 403 ? 5 * 60_000 : Math.min(5 * 60_000, 30_000 * 2 ** Math.min(failures - 1, 4))));
         tokens = 0; updated = blockedUntil;
         // 排队项及时报告冷却，不占住浏览器连接等几分钟；缓存读取仍可正常完成。
         for (const task of queue.splice(0)) { task.signal?.removeEventListener('abort', task.abort); task.reject(cooldownError()); }
         wake();
+        return cooldownError();
       } else if (status === 200 && blockedUntil <= now()) failures = 0;
     },
   };

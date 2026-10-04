@@ -65,16 +65,44 @@ it('取消排队项不发请求，单项取消不打断同批，全部离开才�
   expect(values[10].name).toBe('AbortError'); expect(values[5].query).toBe('5'); expect(batches).toHaveLength(2);
 });
 
-it('单项失败／429 不冒充空结果，尚未启动的批次共同退避且可以恢复', async () => {
+it('429 及时拒绝排队项，等待期间不发新批次，到期可恢复', async () => {
   const { batches, request } = harness();
   const pending = Array.from({ length: 11 }, (_, index) => request(query(String(index))).catch(error => error));
   await vi.advanceTimersByTimeAsync(100);
   batches[0].reply({ index: 0, status: 429, data: { error: 'Danbooru 429' } });
   complete(batches[0]); complete(batches[1]);
-  await vi.advanceTimersByTimeAsync(1999); expect(batches).toHaveLength(2);
-  await vi.advanceTimersByTimeAsync(1); expect(batches).toHaveLength(3);
-  complete(batches[2]); const values = await Promise.all(pending);
-  expect(values[0].status).toBe(429); expect(values[10].query).toBe('10');
+  const values = await Promise.all(pending);
+  expect(values[0].status).toBe(429); expect(values[10].status).toBe(429); expect(values[10].retryAfter).toBe(30);
+  await vi.advanceTimersByTimeAsync(29_999); expect(batches).toHaveLength(2);
+  await expect(request(query('cooling'))).rejects.toMatchObject({ status: 429, retryAfter: 1 });
+  await vi.advanceTimersByTimeAsync(1);
+  const recovered = request(query('10')); await vi.advanceTimersByTimeAsync(50);
+  complete(batches[2]); expect((await recovered).query).toBe('10');
+});
+
+it('验证页保持 403 和错误码，遵守真实等待时长，取消优先于冷却', async () => {
+  const { batches, request } = harness();
+  const pending = Array.from({ length: 11 }, (_, index) => request(query(String(index))).catch(error => error));
+  await vi.advanceTimersByTimeAsync(100);
+  batches[0].reply({ index: 0, status: 403, data: { error: 'Danbooru 要求网站验证', code: 'DANBOORU_CHALLENGE', retryAfter: 420 } });
+  complete(batches[0]); complete(batches[1]);
+  const values = await Promise.all(pending);
+  expect(values[10]).toMatchObject({ status: 403, code: 'DANBOORU_CHALLENGE', retryAfter: 420 });
+  await vi.advanceTimersByTimeAsync(419_999);
+  await expect(request(query('blocked'))).rejects.toMatchObject({ status: 403, code: 'DANBOORU_CHALLENGE', retryAfter: 1 });
+  const controller = new AbortController(); controller.abort();
+  await expect(request(query('aborted'), controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  expect(batches).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1);
+  const recovered = request(query('ok')); await vi.advanceTimersByTimeAsync(50); complete(batches[2]); await recovered;
+});
+
+it('普通错误文本中的 429 不触发等待', async () => {
+  const { batches, request } = harness();
+  const first = request(query('first')).catch(error => error); await vi.advanceTimersByTimeAsync(50);
+  batches[0].reply({ index: 0, status: 502, data: { error: 'post 429 unavailable' } }); batches[0].end(); await first;
+  const second = request(query('second')); await vi.advanceTimersByTimeAsync(50); expect(batches).toHaveLength(2);
+  complete(batches[1]); await second;
 });
 
 it('流中断只拒绝未完成项，已经收到的结果仍可使用', async () => {

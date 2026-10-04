@@ -1,6 +1,7 @@
 // Danbooru 公开检索与目录封面批次流，共用候选规范化和官方权限边界。
 import { json, error, clampInt, type Env, type RouteContext } from './types';
 import { matchesDanbooruImageFilters, parseDanbooruExploreQuery, splitDanbooruQuery, validateDanbooruQuery } from '../../services/danbooruQuery';
+import { createDanbooruResponseFailure, createDanbooruNetworkFailure, isRetryableDanbooruNetworkError, readDanbooruRetryAfter } from '../../services/danbooruErrors.mjs';
 
 const DANBOORU_BASE_URL = 'https://danbooru.donmai.us';
 const DANBOORU_MAX_PAGE_SIZE = 200;
@@ -21,14 +22,21 @@ function buildLocalDanbooruFetch(targetUrl: string, env?: Env) {
   };
 }
 
-// Danbooru 在负载高时会对重查询返回 500 time-out（官方文档亦有多项说明）；
-// 上游 500 time-out 自动重试，网络超时同样重试，避免瞬时负载造成偶发失败。
+const waitForDanbooruRetry = (delay: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  signal?.throwIfAborted();
+  const finish = () => { signal?.removeEventListener('abort', abort); resolve(); };
+  const timer = setTimeout(finish, delay);
+  const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(signal?.reason); };
+  signal?.addEventListener('abort', abort, { once: true });
+});
+
+// 重查询 500 time-out 和临时连接故障最多三次；网关传回的网络错误也参与判定。
 async function fetchDanbooruJson(target: URL, env?: Env, signal?: AbortSignal, background = false) {
   const maxAttempts = 3;
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     signal?.throwIfAborted();
-    if (attempt > 0) { const { promise, resolve } = Promise.withResolvers<void>(); setTimeout(resolve, 1000 * attempt); await promise; }
+    if (attempt > 0) await waitForDanbooruRetry(1000 * attempt, signal);
     try {
       const localFetch = buildLocalDanbooruFetch(target.toString(), env);
       const response = await fetch(localFetch.url, {
@@ -41,27 +49,36 @@ async function fetchDanbooruJson(target: URL, env?: Env, signal?: AbortSignal, b
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       });
       const text = await response.text();
-      if (!response.ok) {
-        let message = text.slice(0, 240);
-        try { message = JSON.parse(text)?.message || JSON.parse(text)?.error || message; } catch { /* Plain-text error. */ }
+      let payload: any;
+      try { payload = JSON.parse(text); } catch { /* 非 JSON 交由统一分类。 */ }
+      const relayFailure = env?.DANBOORU_LOCAL_PROXY_URL && !response.ok && typeof payload?.code === 'string' && typeof payload?.error === 'string';
+      const failure = relayFailure ? {
+        status: response.status, error: payload.error, code: payload.code,
+        causeCode: payload.causeCode, upstreamStatus: payload.upstreamStatus,
+        retryAfter: readDanbooruRetryAfter(response.headers.get('retry-after')) || readDanbooruRetryAfter(payload.retryAfter) || undefined,
+      } : createDanbooruResponseFailure(response.status, response.headers, text);
+      if (failure) {
+        const message = failure.error;
         const isServerTimeOut = response.status === 500 && /timeout|timed out/i.test(message);
         if (isServerTimeOut && attempt < maxAttempts - 1) {
           lastError = new Error(`Danbooru ${response.status}: ${message}`);
           continue;
         }
         if (isServerTimeOut) {
-          throw Object.assign(new Error('Danbooru 数据库查询超时（随机检索繁忙），请稍后再试'), { status: 502, danbooruDetail: message });
+          throw Object.assign(new Error('Danbooru 数据库查询超时（随机检索繁忙），请稍后再试'), { status: 502, code: 'DANBOORU_QUERY_TIMEOUT', upstreamStatus: 500, danbooruDetail: message });
         }
-        throw Object.assign(new Error(`Danbooru ${response.status}: ${message}`), { status: response.status });
+        throw Object.assign(new Error(message), failure);
       }
-      try { return JSON.parse(text); } catch { throw new Error('Danbooru 返回了无效 JSON'); }
+      if (payload === undefined) throw Object.assign(new Error('Danbooru 返回了无效 JSON'), { status: 502, code: 'DANBOORU_INVALID_RESPONSE', upstreamStatus: response.status });
+      return payload;
     } catch (error: any) {
+      signal?.throwIfAborted();
       lastError = error;
-      const networkTimeOut = error?.name === 'TimeoutError'
-        || error?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT'
-        || error?.cause?.code === 'UND_ERR_HEADERS_TIMEOUT'
-        || error?.cause?.code === 'UND_ERR_SOCKET';
-      if (networkTimeOut && attempt < maxAttempts - 1) continue;
+      if (isRetryableDanbooruNetworkError(error) && attempt < maxAttempts - 1) continue;
+      if (!error?.status) {
+        const failure = createDanbooruNetworkFailure(error);
+        throw Object.assign(new Error(failure.error), failure);
+      }
       throw error;
     }
   }
@@ -174,7 +191,7 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
               else await startCoverQuery(signal, body.background === true);
               const response = (await handleDanbooruRoute({ ...ctx, url: target, path: target.pathname, method: 'GET', request: new Request(target, { signal, headers: body.background === true ? { 'X-Nai-Cover-Background': '1' } : {} }) }))!;
               const data = await response.json();
-              if (response.status === 429) nextCoverStartAt = Math.max(nextCoverStartAt, Date.now() + 2000);
+              if (response.status === 429 || response.status === 403) nextCoverStartAt = Math.max(nextCoverStartAt, Date.now() + (readDanbooruRetryAfter(data.retryAfter) || (response.status === 403 ? 300 : 30)) * 1000);
               emit(output, `event: result\ndata: ${JSON.stringify({ index, status: response.status, data })}\n\n`);
             } catch (e) {
               emit(output, `event: result\ndata: ${JSON.stringify({ index, status: 502, data: { error: e instanceof Error ? e.message : '封面查询失败' } })}\n\n`);
@@ -221,7 +238,9 @@ export async function handleDanbooruRoute(ctx: RouteContext): Promise<Response |
         'Cache-Control': isRandom ? 'no-cache, no-store' : 'private, max-age=120',
       });
     } catch (e: any) {
-      return error(e?.message || 'Danbooru 查询失败', Number(e?.status) >= 400 && Number(e?.status) < 500 ? Number(e.status) : 502);
+      const status = Number(e?.status) >= 400 && Number(e?.status) <= 599 ? Number(e.status) : 502;
+      const retryAfter = readDanbooruRetryAfter(e?.retryAfter);
+      return json({ error: e?.message || 'Danbooru 查询失败', code: e?.code, causeCode: e?.causeCode, upstreamStatus: e?.upstreamStatus, ...(retryAfter ? { retryAfter } : {}) }, status, retryAfter ? { 'Retry-After': String(retryAfter) } : {});
     }
   }
 

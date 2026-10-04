@@ -15,6 +15,7 @@ const getHeaders = (extraHeaders?: Record<string, string>) => {
 export class ApiError extends Error {
   code?: string;
   status?: number;
+  retryAfter?: number;
 
   constructor(message: string, status?: number, code?: string) {
     super(message);
@@ -32,6 +33,7 @@ const QUEUE_CANCELLED_STATUS = 499;
 export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
   let message = `请求失败 (${res.status})`;
   let code: string | undefined;
+  let retryAfter: number | undefined;
   const truncated = (text: string) => text.length > 500 ? `${text.slice(0, 500)}…` : text;
   try {
     const payload: unknown = await res.clone().json();
@@ -40,6 +42,7 @@ export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
       const error = typeof record.error === 'string' ? record.error : undefined;
       const fallbackMessage = typeof record.message === 'string' ? record.message : undefined;
       if (typeof record.code === 'string' && record.code) code = record.code;
+      if (typeof record.retryAfter === 'number' && Number.isFinite(record.retryAfter) && record.retryAfter > 0) retryAfter = Math.ceil(record.retryAfter);
       const candidate = error || fallbackMessage || code;
       if (candidate) message = truncated(candidate);
     }
@@ -49,7 +52,7 @@ export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
       message = truncated((await res.clone().text()).trim() || message);
     } catch { /* 响应体不可读时保留默认文案。 */ }
   }
-  return new ApiError(message, res.status, code);
+  return Object.assign(new ApiError(message, res.status, code), retryAfter ? { retryAfter } : {});
 };
 
 /** 网关终态判定：结构化 code 为 QUEUE_CANCELLED 或 HTTP 499，兜底匹配旧的“已取消排队”文案。 */

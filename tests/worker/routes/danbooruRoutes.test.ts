@@ -6,10 +6,10 @@ const post = (id = 1, overrides = {}) => ({
   id, preview_file_url: `https://cdn.donmai.us/preview/${id}.jpg`, file_url: `https://cdn.donmai.us/original/${id}.png`,
   rating: 'g', image_width: 800, image_height: 1200, tag_string_general: 'solo', ...overrides,
 });
-const invoke = async (tags: string, page = 1, limit = 2, env: Partial<Env> = {}) => {
+const invoke = async (tags: string, page = 1, limit = 2, env: Partial<Env> = {}, signal?: AbortSignal) => {
   const url = new URL('http://localhost/api/danbooru/posts');
   url.search = new URLSearchParams({ tags, page: String(page), limit: String(limit) }).toString();
-  const response = (await handleDanbooruRoute({ url, path: url.pathname, method: 'GET', env } as RouteContext))!;
+  const response = (await handleDanbooruRoute({ url, path: url.pathname, method: 'GET', env, ...(signal ? { request: new Request(url, { signal }) } : {}) } as RouteContext))!;
   return { response, body: await response.json() };
 };
 const mockFetch = (payload: unknown) => {
@@ -55,7 +55,7 @@ describe('封面合并流', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       starts.push(Date.now());
       if (new URL(url).searchParams.get('tags') === 'slow') await blocked;
-      return new Response(JSON.stringify([post(1, { rating: 'e' })]));
+      return new Response(JSON.stringify([post(1, { rating: 'e' })]), { headers: { 'content-type': 'application/json' } });
     }));
     const response = await invokeBatch([coverQuery('slow'), coverQuery('fast')]);
     expect(response.headers.get('Content-Type')).toContain('text/event-stream');
@@ -74,13 +74,13 @@ describe('封面合并流', () => {
     const starts: number[] = [];
     vi.stubGlobal('fetch', vi.fn(async () => {
       starts.push(Date.now());
-      return starts.length === 1 ? new Response('{"message":"rate limited"}', { status: 429 }) : new Response('[]');
+      return starts.length === 1 ? new Response('{"message":"rate limited"}', { status: 429, headers: { 'retry-after': '45', 'content-type': 'application/json' } }) : new Response('[]', { headers: { 'content-type': 'application/json' } });
     }));
     const response = await invokeBatch([coverQuery('first'), coverQuery('second')], true);
     const finished = response.text();
-    await vi.advanceTimersByTimeAsync(1999); expect(starts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(44_999); expect(starts).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1); expect(starts).toHaveLength(2);
-    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(2000);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(45_000);
     expect(await finished).toContain('"status":429');
     const background = (await invokeBatch([coverQuery('a'), coverQuery('b')], true)).text();
     await vi.runAllTimersAsync(); await background;
@@ -195,10 +195,72 @@ describe('Danbooru 请求、筛选与分页', () => {
   it('无效列表不冒充空结果，上游 400 不自动重试', async () => {
     const fetchMock = mockFetch({ success: false });
     expect((await invoke('order:rank')).response.status).toBe(502);
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: 'invalid query' }), { status: 400 }));
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: 'invalid query' }), { status: 400, headers: { 'content-type': 'application/json' } }));
     const failed = await invoke('order:rank');
     expect(failed.response.status).toBe(400);
     expect(failed.body.error).toContain('invalid query');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Danbooru 网络故障与验证', () => {
+  const env = { DANBOORU_LOCAL_PROXY_URL: 'http://127.0.0.1:3000/__internal/danbooru-fetch', LAN_ACCESS_SECRET: 'synthetic-secret' };
+  const failure = (status = 502, code = 'DANBOORU_NETWORK_ERROR', causeCode = 'ECONNRESET') => new Response(JSON.stringify({ error: '连接失败', code, causeCode }), { status, headers: { 'content-type': 'application/json' } });
+  it('网关握手断开后重试同地址，第三次成功，不更换端点或身份', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementationOnce(() => failure()).mockImplementationOnce(() => failure()).mockImplementation(() => new Response(JSON.stringify([post()]), { headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = invoke('synthetic', 1, 2, env); await vi.runAllTimersAsync();
+    expect((await pending).response.status).toBe(200); expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(new Set(fetchMock.mock.calls.map(call => String(call[0]))).size).toBe(1);
+    expect(fetchMock.mock.calls.every(call => call[1].headers['X-Nai-Internal-Secret'] === 'synthetic-secret')).toBe(true);
+  });
+  it('持续断线最多三次，最终仍保留机器可读原因', async () => {
+    vi.useFakeTimers(); const fetchMock = vi.fn(() => failure()); vi.stubGlobal('fetch', fetchMock);
+    const pending = invoke('synthetic', 1, 2, env); await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(3); expect(result.body).toMatchObject({ code: 'DANBOORU_NETWORK_ERROR', causeCode: 'ECONNRESET' });
+  });
+  it('网关超时和直接连接重置都可恢复，上游查询超时仍有限重试', async () => {
+    vi.useFakeTimers();
+    const success = () => new Response('[]', { headers: { 'content-type': 'application/json' } });
+    for (const [localEnv, failed] of [
+      [env, () => new Response('{"error":"连接超时","code":"DANBOORU_TIMEOUT"}', { status: 504, headers: { 'content-type': 'application/json' } })],
+      [{}, () => { throw Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNRESET' } }); }],
+      [env, () => new Response('{"error":"Danbooru 500：query timed out","code":"DANBOORU_UPSTREAM_ERROR","upstreamStatus":500}', { status: 500, headers: { 'content-type': 'application/json' } })],
+    ] as const) {
+      const fetchMock = vi.fn().mockImplementationOnce(failed).mockImplementation(success); vi.stubGlobal('fetch', fetchMock);
+      const pending = invoke('synthetic', 1, 2, localEnv); await vi.runAllTimersAsync();
+      expect((await pending).response.status).toBe(200); expect(fetchMock).toHaveBeenCalledTimes(2);
+    }
+  });
+  it('重试等待可立即取消，不继续联网', async () => {
+    vi.useFakeTimers(); const fetchMock = vi.fn(() => failure()); vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController(); const pending = invoke('synthetic', 1, 2, env, controller.signal);
+    await vi.advanceTimersByTimeAsync(0); controller.abort(); await pending;
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each([403, 429])('网关 %s 保留原因与 Retry-After，不自动重试', async status => {
+    const code = status === 403 ? 'DANBOORU_CHALLENGE' : 'DANBOORU_RATE_LIMIT';
+    const fetchMock = vi.fn(() => new Response(JSON.stringify({ error: '需要等待', code, retryAfter: 360, upstreamStatus: status }), { status, headers: { 'content-type': 'application/json', 'retry-after': '360' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await invoke('synthetic', 1, 2, env);
+    expect(result.response.status).toBe(status); expect(result.response.headers.get('Retry-After')).toBe('360');
+    expect(result.body).toMatchObject({ code, retryAfter: 360, upstreamStatus: status }); expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('直接请求遇到验证页时不报 502，也不把 HTML 返回界面', async () => {
+    const fetchMock = vi.fn(() => new Response('<html>verify</html>', { status: 403, headers: { 'cf-mitigated': 'challenge' } })); vi.stubGlobal('fetch', fetchMock);
+    const result = await invoke('synthetic');
+    expect(result.response.status).toBe(403); expect(result.body.code).toBe('DANBOORU_CHALLENGE');
+    expect(result.body.error).toContain('网站验证'); expect(result.body.error).not.toContain('<html>'); expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it.each(['CERT_HAS_EXPIRED', 'ENOTFOUND'])('直接连接永久错误 %s 不重试', async code => {
+    const fetchMock = vi.fn().mockRejectedValue(Object.assign(new Error('fetch failed'), { cause: { code } })); vi.stubGlobal('fetch', fetchMock);
+    const result = await invoke('synthetic');
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(result.body.causeCode).toBe(code);
+  });
+  it('任意 502 不因文字包含连接失败就自动重试', async () => {
+    const fetchMock = vi.fn(() => failure(502, 'DANBOORU_INVALID_RESPONSE', '')); vi.stubGlobal('fetch', fetchMock);
+    expect((await invoke('synthetic', 1, 2, env)).response.status).toBe(502); expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

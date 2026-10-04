@@ -23,6 +23,7 @@ import { getDesktopLauncherStatus, createDesktopLauncher, openDesktopFolder, gen
 import { StyleCollector, collectorLocalRequest } from './style-collector.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
 import { createDanbooruLimiter, createDanbooruDiskCache } from './danbooru-loading.mjs';
+import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../services/danbooruErrors.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2412,11 +2413,18 @@ export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remo
             'user-agent': 'NAI-Atelier/0.5 (+local personal use)',
           },
         });
-        limiter?.observe(response.status, response.headers.get('retry-after'));
         const contentType = response.headers.get('content-type') || '';
+        // 响应头足以识别验证／拒绝／限流，先暂停队列，再读取响应体。
+        let failure = createDanbooruResponseFailure(response.status, response.headers, '');
+        const blocked = limiter?.observe(response.status, response.headers.get('retry-after'), failure);
+        if (blocked) {
+          await response.body?.cancel().catch(() => {});
+          throw blocked;
+        }
         const body = await readLimitedResponse(response);
         if (body.length > 16 * 1024 * 1024) throw new Error('Danbooru response is too large');
-        if (!contentType.toLowerCase().includes('json')) throw new Error('Danbooru returned a non-JSON response');
+        failure = createDanbooruResponseFailure(response.status, response.headers, body.toString('utf8'));
+        if (failure) throw Object.assign(new Error(failure.error), failure);
         const result = { status: response.status, contentType, body };
         if (!signal?.aborted) await diskCache?.set(target.toString(), result, ttl);
         return result;
@@ -2436,10 +2444,10 @@ export const handleDanbooruRemoteRequest = async (req, res, url, lanSecret, remo
     return res.end(result.body);
   } catch (error) {
     if (res.destroyed) return;
-    if (error.retryAfter) res.setHeader?.('Retry-After', String(error.retryAfter));
-    return sendJson(res, error.status === 429 ? 429 : error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 504 : 502, {
-      error: `电脑无法连接 Danbooru：${error?.cause?.message || error?.message || '未知错误'}`,
-    });
+    const failure = error?.status && error?.code ? { ...error, error: error.message } : createDanbooruNetworkFailure(error);
+    const { status, error: message, code, causeCode, upstreamStatus, retryAfter } = failure;
+    if (retryAfter) res.setHeader?.('Retry-After', String(retryAfter));
+    return sendJson(res, status, { error: message, code, causeCode, upstreamStatus, retryAfter });
   }
 };
 
