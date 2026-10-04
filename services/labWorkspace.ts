@@ -147,6 +147,27 @@ export const loadLabWorkspaceSession = (key: string, fallback: LabWorkspaceSessi
   }
 };
 
+/** 自由实验室复开只恢复文字与参数；图片及其坐标状态属于本次打开，预设工作台仍完整恢复。 */
+export const openLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession): LabWorkspaceSession => {
+  const session = loadLabWorkspaceSession(key, fallback);
+  if (key !== 'playground') return session;
+  return {
+    ...session,
+    edits: Object.fromEntries(Object.entries(session.edits).map(([operation, draft]) => [operation, {
+      ...draft,
+      baseImageRef: undefined,
+      baseImageSource: undefined,
+      parentHistoryId: undefined,
+      maskRef: undefined,
+      resultImageRef: undefined,
+      focusedRect: undefined,
+      appliedExpansion: undefined,
+      expansion: { ...emptyExpansion },
+      promptSource: draft.promptSource === 'history' ? 'current' : draft.promptSource,
+    }])) as LabWorkspaceSession['edits'],
+  };
+};
+
 export const saveLabWorkspaceSession = (key: string, session: LabWorkspaceSession) => {
   if (typeof window === 'undefined') return;
   try {

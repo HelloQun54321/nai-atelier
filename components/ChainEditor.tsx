@@ -32,7 +32,7 @@ import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -193,6 +193,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [previewHistory, setPreviewHistory] = useState<LocalGenItem[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
+    const previewHistoryLoadRevisionRef = useRef(0);
+    const previewSelectionRevisionRef = useRef(0);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const generationInFlightRef = useRef(false);
     // 生成是长任务：用户在生成途中离开编辑页（edit 视图不常驻）后，异步回调只能写持久层，
@@ -213,7 +215,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     for (const draft of Object.values(workspaceFallback.edits)) {
         draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
     }
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => loadLabWorkspaceSession(workspaceKey, workspaceFallback));
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean; unavailableLabel?: string } | null>(null);
@@ -300,7 +302,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
     const activeLabLayout = labPageLayouts[activeGenerationMode];
     const latestTextToImageItem = previewHistory.find(item => !item.edit);
-    const selectedPreviewItem = previewMode === 'history' ? previewHistory[previewIndex] || null : null;
+    const selectedPreviewItem = previewMode === 'history' ? previewHistory.find(item => item.imageUrl === generatedImage) || null : null;
+    const selectedPreviewIndex = selectedPreviewItem ? previewHistory.indexOf(selectedPreviewItem) : previewIndex;
     const displayedPreviewImage = selectedPreviewItem?.imageUrl || generatedImage;
     const displayedPreviewItem = previewHistory.find(item => item.imageUrl === displayedPreviewImage);
     // 移动端浮动圆圈：编辑模式显示最近一次编辑结果（底图已移入左侧「底图与导入」），文生图沿用最近生成结果
@@ -315,7 +318,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const canSaveCurrentChain = hasChanges || hasPendingPreviewCover;
     const lightboxItem = lightboxImg ? previewHistory.find(item => item.imageUrl === lightboxImg) || null : null;
     const currentPreviewPosition = selectedPreviewItem
-        ? `${previewIndex + 1} / ${previewHistory.length}`
+        ? `${selectedPreviewIndex + 1} / ${previewHistory.length}`
         : previewMode === 'result'
             ? '刚刚生成 · 正在保存历史'
         : previewMode === 'unsaved'
@@ -325,8 +328,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             : '当前封面';
 
     const reloadPreviewHistory = async (targetSourceChainId = sourceChainId) => {
+        const loadRevision = ++previewHistoryLoadRevisionRef.current;
+        const selectionRevision = previewSelectionRevisionRef.current;
         const history = await localHistory.getBySourceChain(targetSourceChainId);
-        setPreviewHistory(history);
+        if (!mountedRef.current || loadRevision !== previewHistoryLoadRevisionRef.current) return;
+        // 历史请求可能晚于本次生成完成；合并新结果，不能把预览拉回请求时的旧图。
+        setPreviewHistory(previous => [...new Map([...history, ...previous].map(item => [item.id, item])).values()]
+            .sort((a, b) => b.createdAt - a.createdAt));
+        if (targetSourceChainId === 'playground' || selectionRevision !== previewSelectionRevisionRef.current) return;
         setPreviewIndex(0);
         if (history.length > 0) {
             setPreviewMode('history');
@@ -341,16 +350,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (previewHistory.length === 0) return;
         const nextIndex = (index + previewHistory.length) % previewHistory.length;
         const nextImage = previewHistory[nextIndex].imageUrl;
-        setPreviewIndex(nextIndex);
-        setPreviewMode('history');
-        setGeneratedImage(nextImage);
+        if (activeEditOperation) {
+            setImageEditPreviewImage(nextImage);
+        } else {
+            previewSelectionRevisionRef.current += 1;
+            setPreviewIndex(nextIndex);
+            setPreviewMode('history');
+            setGeneratedImage(nextImage);
+        }
         if (lightboxImg) {
             setLightboxImg(nextImage);
         }
     };
 
-    const showPreviousHistory = () => showHistoryAt(previewIndex - 1);
-    const showNextHistory = () => showHistoryAt(previewIndex + 1);
+    const activePreviewIndex = activeEditOperation && imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : selectedPreviewIndex;
+    const showPreviousHistory = () => showHistoryAt(activePreviewIndex - 1);
+    const showNextHistory = () => showHistoryAt(activePreviewIndex + 1);
 
     const handleRemoveCurrentHistory = async (targetItem = selectedPreviewItem) => {
         if (!targetItem) return;
@@ -362,7 +377,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const nextHistory = previewHistory.filter(item => item.id !== targetItem.id);
             setPreviewHistory(nextHistory);
 
-            if (nextHistory.length === 0) {
+            if (activeEditOperation) {
+                const nextImage = nextHistory[Math.min(Math.max(0, removedIndex), nextHistory.length - 1)]?.imageUrl || null;
+                setImageEditPreviewImage(nextImage);
+                if (lightboxImg) setLightboxImg(nextImage);
+            } else if (nextHistory.length === 0) {
                 setPreviewIndex(0);
                 setPreviewMode('cover');
                 setGeneratedImage(null);
@@ -398,6 +417,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setPreviewIndex(0);
             setPreviewMode('cover');
             setGeneratedImage(null);
+            setImageEditPreviewImage(null);
             setLightboxImg(null);
             notify(`已清除 ${count} 张图片的当前风格串归属，历史页仍会保留。`, 'success');
         } catch (error) {
@@ -412,9 +432,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (prevChainIdRef.current === chain.id) return;
 
         prevChainIdRef.current = chain.id;
+        previewHistoryLoadRevisionRef.current += 1;
+        previewSelectionRevisionRef.current += 1;
+        setPreviewHistory([]);
+        setPreviewIndex(0);
+        setPreviewMode('cover');
+        setGeneratedImage(null);
         clearPresetSources();
 
-        const storedWorkspace = loadLabWorkspaceSession(workspaceKey, workspaceFallback);
+        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback);
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -688,7 +714,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const restoredBaseImage = blob ? await blobToDataUrl(blob) : null;
             if (resolveRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
             setImageEditBaseImage(restoredBaseImage);
-            // 有「生成本草稿」时右侧优先显示结果；否则显示底图
+            // 复开自由实验室时旧图片引用已隔离，同次打开内切换模式仍恢复各自新结果。
             let restoredResult: string | null = null;
             if (draft.resultImageRef) {
                 const resultBlob = await readLabWorkspaceAsset(draft.resultImageRef);
@@ -1359,8 +1385,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setImageEditBaseImage(null);
             setImageEditPreviewImage(null);
             setImageEditMaskData(undefined);
-            setGeneratedImage(null);
-            setPreviewMode('cover');
+            if (chain.id !== 'playground') {
+                setGeneratedImage(null);
+                setPreviewMode('cover');
+            }
             notify(`${modeLabel}已重置`);
             return;
         }
@@ -1471,6 +1499,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const generationParams = override?.params ?? params;
         const previousGeneratedImage = generatedImage;
         const previousPreviewMode = previewMode;
+        previewSelectionRevisionRef.current += 1;
         let streamedPreviewShown = false;
         setIsGenerating(true);
         setGenerationProgress(null);
@@ -1708,9 +1737,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 try {
                     result = await generateImageEditStream(apiKey, request.prompt, request.negativePrompt, editParams, request, preview => {
                         streamedPreviewShown = true;
-                        setGeneratedImage(preview.image);
+                        if (chain.id !== 'playground') {
+                            setGeneratedImage(preview.image);
+                            setPreviewMode('result');
+                        }
                         setImageEditPreviewImage(preview.image);
-                        setPreviewMode('result');
                         setGenerationProgress(preview.step ? { step: preview.step, total: editParams.steps } : null);
                     }, streamSupported);
                 } catch (streamError) {
@@ -1735,9 +1766,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             lastGeneratedBlobRef.current = result.blob;
             // 先显示结果再落盘历史；离开编辑页时跳过 UI 更新直接落库。
             if (mountedRef.current) {
-                setGeneratedImage(result.image);
+                if (chain.id !== 'playground') {
+                    setGeneratedImage(result.image);
+                    setPreviewMode('result');
+                }
                 setImageEditPreviewImage(result.image);
-                setPreviewMode('result');
                 if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
                 // Leave the current task so React can commit and the browser can paint.
                 await new Promise<void>(resolve => window.setTimeout(resolve, 0));
@@ -1779,9 +1812,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (options?.agent) agentGenerationReceiptRef.current = historyItem.id;
             if (!mountedRef.current) return true;
             setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
-            setPreviewIndex(0);
-            setPreviewMode('history');
-            setGeneratedImage(historyItem.imageUrl);
+            if (chain.id !== 'playground') {
+                previewSelectionRevisionRef.current += 1;
+                setPreviewIndex(0);
+                setPreviewMode('history');
+                setGeneratedImage(historyItem.imageUrl);
+            }
             setImageEditPreviewImage(historyItem.imageUrl);
             setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
             // 把本次结果持久化为当前编辑模式的「生成本草稿」，历史导航不再覆盖工作区结果
@@ -1800,8 +1836,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         } catch (editError) {
             if (mountedRef.current) {
                 if (streamedPreviewShown) {
-                    setGeneratedImage(previousGeneratedImage);
-                    setPreviewMode(previousPreviewMode);
+                    if (chain.id !== 'playground') {
+                        setGeneratedImage(previousGeneratedImage);
+                        setPreviewMode(previousPreviewMode);
+                    }
                     setImageEditPreviewImage(previousEditPreviewImage);
                 }
                 const message = editError instanceof Error ? editError.message : '图片编辑失败';
@@ -2208,7 +2246,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     handleUploadCover={handleUploadCover}
                     getDownloadFilename={getDownloadFilename}
                     hideCoverActions={chain.id === 'playground'}
-                    canNavigateHistory={previewHistory.length > 1}
+                    canNavigateHistory={previewHistory.length > 1 && (chain.id !== 'playground' || Boolean(displayedPreviewImage))}
                     historyLabel={displayedPreviewImage ? currentPreviewPosition : undefined}
                     onPreviousHistory={showPreviousHistory}
                     onNextHistory={showNextHistory}
@@ -2242,15 +2280,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 enforceFreeStepLimit={enforceFreeStepLimit}
                 latestTextToImageItem={latestTextToImageItem}
                 onOpenLightbox={image => {
-                    const historyIndex = image ? previewHistory.findIndex(item => item.imageUrl === image) : -1;
-                    if (historyIndex >= 0) {
-                        setPreviewIndex(historyIndex);
-                        setPreviewMode('history');
-                    }
                     setLightboxImg(image);
                 }}
                 getDownloadFilename={getDownloadFilename}
-                canNavigateHistory={previewHistory.length > 1}
+                canNavigateHistory={previewHistory.length > 1 && (chain.id !== 'playground' || Boolean(imageEditPreviewImage))}
                 historyLabel={imageEditPreviewHistoryLabel}
                 onPreviousHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) - 1)}
                 onNextHistory={() => showHistoryAt((imageEditPreviewHistoryIndex >= 0 ? imageEditPreviewHistoryIndex : previewIndex) + 1)}
@@ -2428,7 +2461,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                     {lightboxItem && (
                         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
-                            {previewIndex + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
+                            {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
                         </div>
                     )}
 

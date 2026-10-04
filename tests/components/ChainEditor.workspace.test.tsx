@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PromptChain } from '../../types';
+import type { LocalGenItem, PromptChain } from '../../types';
 import { cloneDefaultLabPageLayouts } from '../../services/appearancePreferences';
 import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 import { ChainEditor } from '../../components/ChainEditor';
@@ -11,7 +11,9 @@ type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/
 const state = vi.hoisted(() => ({
   agent: null as React.ComponentProps<typeof import('../../components/chain/PresetSourceBadges').PromptAgentOverlayController> | null,
   low: { enabled: false },
-  history: vi.fn(async () => []),
+  history: vi.fn(async (): Promise<LocalGenItem[]> => []),
+  addHistory: vi.fn(),
+  unlinkHistory: vi.fn(async () => {}),
   confirm: vi.fn(async () => true),
   generate: vi.fn(),
   assets: new Map<string, Blob>(),
@@ -34,12 +36,13 @@ vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
   useAnlasBudget: () => ({ remaining: 1666 }),
 }));
-vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history } }));
+vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history, add: state.addHistory, unlinkFromSourceChain: state.unlinkHistory } }));
 vi.mock('../../services/labWorkspace', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/labWorkspace')>(),
   cleanupLabWorkspaceAssets: async () => {},
   readLabWorkspaceAsset: async (id: string) => id === 'delayed-base' && state.delayedAsset ? state.delayedAsset : state.assets.get(id) || null,
   deleteLabWorkspaceAsset: async () => {},
+  saveLabWorkspaceAsset: async (blob: Blob, id: string) => { state.assets.set(id, blob); return id; },
   dataUrlToWorkspaceAsset: async (dataUrl: string, id = 'synthetic-pasted-asset') => {
     state.assets.set(id, new Blob([Uint8Array.from(atob(dataUrl.split(',')[1]), character => character.charCodeAt(0))], { type: 'image/png' }));
     return id;
@@ -51,7 +54,12 @@ vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () =>
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
 vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; onValueChange: (value: string) => void }) => <textarea value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
-vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: () => null }));
+vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
+  <output aria-label="文生图结果">{props.generatedImage}</output>
+  <output aria-label="预览历史编号">{props.historyLabel}</output>
+  {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览下一张</button>}
+  <button onClick={() => { void props.handleGenerate(); }}>生成合成文生图</button>
+</section> }));
 vi.mock('../../components/VibeManager', () => ({ VibeManager: () => null }));
 vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => null }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerPanel: () => null }));
@@ -69,6 +77,9 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <output aria-label="编辑强度">{props.draft.strength}</output>
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
+  <output aria-label="编辑结果">{props.previewImage}</output>
+  {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览编辑下一张</button>}
+  {props.canManageHistoryGroup && <button onClick={props.onRemoveCurrentHistory}>移除编辑历史</button>}
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,cGFzdGVk', 'clipboard', 'old-parent'); }}>粘贴合成底图</button>
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'upload', undefined, { prompt: '', negativePrompt: '', params: { ...props.draft.params, characters: [{ id: 'imported', prompt: 'imported character', x: 0.2, y: 0.8 }] } }); }}>上传分角色底图</button>
   <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.3, y: 0.7 }], useCoords: true } })}>修改编辑角色</button>
@@ -100,13 +111,148 @@ beforeEach(() => {
   state.low.enabled = false;
   state.assets.clear();
   state.delayedAsset = null;
-  state.confirm.mockClear(); state.history.mockClear(); state.generate.mockReset();
+  state.confirm.mockClear(); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
+  state.addHistory.mockImplementation(async (_blob, prompt, params, negativePrompt, source) => ({
+    ...source, id: `new-${state.addHistory.mock.calls.length}`, imageUrl: `/synthetic/new-${state.addHistory.mock.calls.length}.png`,
+    prompt, params, negativePrompt, createdAt: 100 + state.addHistory.mock.calls.length,
+  }));
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+describe('自由实验室图片只保留本次打开', () => {
+  const lab = { ...chain, id: 'playground' };
+  const oldHistory: LocalGenItem[] = Array.from({ length: 80 }, (_, index) => ({
+    id: `old-${index}`, imageUrl: `/synthetic/old-${index}.png`, prompt: 'old prompt', params: chain.params, createdAt: 80 - index,
+  }));
+  const generation = { image: 'data:image/png;base64,AQID', blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), params: chain.params, seed: 123 };
+  const allowSyntheticGeneration = () => {
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    state.generate.mockResolvedValue(generation);
+  };
+
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('复开 %s 留空底图及结果，80 张历史不自动占位，文字参数仍恢复', async mode => {
+    const session = fallback(); session.activeMode = mode;
+    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      session.edits[operation] = { ...session.edits[operation], prompt: `draft-${operation}`, strength: 0.42,
+        baseImageRef: 'old-base', maskRef: 'old-mask', resultImageRef: 'old-result', parentHistoryId: 'old-0',
+        focusedRect: { x: 8, y: 8, width: 64, height: 64 }, appliedExpansion: { top: 0, right: 128, bottom: 0, left: 0 } };
+    }
+    for (const id of ['old-base', 'old-mask', 'old-result']) state.assets.set(id, generation.blob);
+    saveLabWorkspaceSession('playground', session);
+    state.history.mockResolvedValue(oldHistory);
+    setup(lab);
+    await waitFor(() => expect(state.history).toHaveBeenCalledWith('playground'));
+    await act(async () => {});
+    if (mode === 'text-to-image') {
+      expect(screen.getByLabelText('文生图结果').textContent).toBe('');
+      expect(screen.getByLabelText('预览历史编号').textContent).toBe('');
+      expect(screen.queryByRole('button', { name: '浏览下一张' })).toBeNull();
+      expect(textPrompt().value).toBe('saved style');
+    }
+    for (const [operation, label] of [['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const) {
+      await switchTo(label);
+      expect(screen.getByLabelText('编辑底图').textContent).toBe('');
+      expect(screen.getByLabelText('编辑蒙版').textContent).toBe('');
+      expect(screen.getByLabelText('编辑结果').textContent).toBe('');
+      expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe(`draft-${operation}`);
+      expect(screen.getByLabelText('编辑强度').textContent).toBe('0.42');
+      expect(loadLabWorkspaceSession('playground', fallback()).edits[operation].focusedRect).toBeUndefined();
+    }
+  });
+
+  it.each([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('本次文生图及 %s 生成即时显示，切模式分别恢复，复开后图片留空', async (operation, label) => {
+    allowSyntheticGeneration();
+    state.history.mockResolvedValue(oldHistory);
+    const view = setup(lab);
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
+    await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png'));
+    await switchTo(label);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(screen.getByLabelText('编辑结果').textContent).toBe('/synthetic/new-2.png'));
+    await switchTo('文生图');
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png');
+    expect(screen.getByLabelText('预览历史编号').textContent).toBe('2 / 82');
+    await switchTo(label);
+    await waitFor(() => expect(screen.getByLabelText('编辑结果').textContent).toBe('data:image/png;base64,AQID'));
+    expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,cGFzdGVk');
+    view.unmount();
+    setup(lab);
+    await waitFor(() => expect(screen.getByRole('region', { name: operation })).toBeTruthy());
+    expect(screen.getByLabelText('编辑底图').textContent).toBe('');
+    expect(screen.getByLabelText('编辑结果').textContent).toBe('');
+    await switchTo('文生图');
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('');
+  });
+
+  it.each(['playground', chain.id])('%s 迟到的历史加载不覆盖新生成结果，也不丢掉新记录', async id => {
+    allowSyntheticGeneration();
+    let release!: (items: LocalGenItem[]) => void;
+    state.history.mockReturnValueOnce(new Promise(resolve => { release = resolve; }));
+    setup({ ...chain, id, previewImage: '/synthetic/saved-cover.png' });
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
+    await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png'));
+    await act(async () => release(oldHistory));
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png');
+    expect(screen.getByLabelText('预览历史编号').textContent).toBe('1 / 81');
+  });
+
+  it('编辑模式翻图、移除及重置只改变编辑预览，文生图保留自己的结果', async () => {
+    allowSyntheticGeneration(); state.history.mockResolvedValue(oldHistory);
+    const view = setup(lab);
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
+    await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png'));
+    await switchTo('局部重绘');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(screen.getByLabelText('编辑结果').textContent).toBe('/synthetic/new-2.png'));
+    fireEvent.click(screen.getByRole('button', { name: '浏览编辑下一张' }));
+    expect(screen.getByLabelText('编辑结果').textContent).toBe('/synthetic/new-1.png');
+    fireEvent.click(screen.getByRole('button', { name: '浏览编辑下一张' }));
+    expect(screen.getByLabelText('编辑结果').textContent).toBe('/synthetic/old-0.png');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '移除编辑历史' })));
+    expect(state.unlinkHistory).toHaveBeenCalledWith('old-0');
+    await act(async () => fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })));
+    expect(screen.getByLabelText('编辑底图').textContent).toBe('');
+    expect(screen.getByLabelText('编辑结果').textContent).toBe('');
+    await switchTo('文生图');
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png');
+  });
+
+  it('切换工作台后，旧工作台迟到的历史响应不会回填', async () => {
+    let release!: (items: LocalGenItem[]) => void;
+    state.history.mockReturnValueOnce(new Promise(resolve => { release = resolve; }));
+    const view = setup();
+    await waitFor(() => expect(state.history).toHaveBeenCalledWith(chain.id));
+    view.rerender(<ChainEditor {...view.props} chain={lab} allChains={[lab]} />);
+    await waitFor(() => expect(state.history).toHaveBeenCalledWith('playground'));
+    await act(async () => release(oldHistory));
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('');
+    expect(screen.queryByRole('button', { name: '浏览下一张' })).toBeNull();
+  });
+
+  it('风格串工作台仍自动显示其历史，恢复底图及结果', async () => {
+    const session = fallback(); session.activeMode = 'inpaint';
+    session.edits.inpaint = { ...session.edits.inpaint, baseImageRef: 'old-base', resultImageRef: 'old-result' };
+    saveLabWorkspaceSession(chain.id, session);
+    state.assets.set('old-base', generation.blob); state.assets.set('old-result', generation.blob);
+    state.history.mockResolvedValue(oldHistory);
+    setup({ ...chain, previewImage: '/synthetic/saved-cover.png' });
+    await waitFor(() => expect(screen.getByLabelText('编辑结果').textContent).toBe('data:image/png;base64,AQID'));
+    expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID');
+    await switchTo('文生图');
+    expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/old-0.png');
+  });
+});
 
 describe('统一工作台真实状态链路', () => {
   it('历史复制配置进入扩图；删除全局及角色后生成入口收到空内容，不补回文生图旧词', async () => {

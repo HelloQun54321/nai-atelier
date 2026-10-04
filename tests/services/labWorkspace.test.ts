@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, saveLabWorkspaceSession } from '../../services/labWorkspace';
+import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, openLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -13,6 +13,33 @@ const params = {
 
 describe('lab workspace session', () => {
   beforeEach(() => sessionStorage.clear());
+
+  it('自由实验室复开隔离全部旧图片及关联坐标，保留各模式文字参数且不改原草稿', () => {
+    const session = createLabWorkspaceSession('base', 'subject', 'negative', params, { light: true });
+    session.activeMode = 'outpaint';
+    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      session.edits[operation] = { ...session.edits[operation], prompt: `draft-${operation}`, strength: 0.4,
+        baseImageRef: 'base', baseImageSource: 'history', parentHistoryId: 'parent', maskRef: 'mask', resultImageRef: 'result',
+        promptSource: 'history', expansion: { top: 64, right: 128, bottom: 0, left: 0 },
+        appliedExpansion: { top: 0, right: 128, bottom: 0, left: 0 }, focusedRect: { x: 64, y: 64, width: 128, height: 128 } };
+    }
+    saveLabWorkspaceSession('playground', session);
+    const opened = openLabWorkspaceSession('playground', session);
+    expect(opened.activeMode).toBe('outpaint');
+    expect(opened.textToImage).toEqual(session.textToImage);
+    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      const draft = opened.edits[operation];
+      expect(draft).toMatchObject({ prompt: `draft-${operation}`, params: session.edits[operation].params, strength: 0.4,
+        expansion: { top: 0, right: 0, bottom: 0, left: 0 }, promptSource: 'current' });
+      for (const key of ['baseImageRef', 'baseImageSource', 'parentHistoryId', 'maskRef', 'resultImageRef', 'appliedExpansion', 'focusedRect'] as const) {
+        expect(draft[key]).toBeUndefined();
+        expect(session.edits[operation][key]).toBeDefined();
+      }
+    }
+    expect(loadLabWorkspaceSession('playground', session).edits.inpaint.resultImageRef).toBe('result');
+    saveLabWorkspaceSession('preset', session);
+    expect(openLabWorkspaceSession('preset', session)).toEqual(loadLabWorkspaceSession('preset', session));
+  });
 
   it('透明权重随草稿保存恢复，四模式独立，旧数据不强制覆盖原提示词权重', () => {
     const fallback = createLabWorkspaceSession('original', '', '', params, {});
