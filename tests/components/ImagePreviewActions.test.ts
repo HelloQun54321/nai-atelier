@@ -23,7 +23,7 @@ describe('小图和全屏大图的共用操作', () => {
     const removeButton = screen.getByRole('button', { name: '删除' });
     const clearButton = screen.getByRole('button', { name: '清除' });
     const coverButton = screen.getByRole('button', { name: '设为封面' });
-    const left = removeButton.parentElement!;
+    const left = removeButton.closest<HTMLElement>('[data-card-action]')!;
     const right = coverButton.parentElement!;
     expect(left.classList.contains('top-4')).toBe(true);
     expect(left.classList.contains('left-4')).toBe(true);
@@ -32,7 +32,7 @@ describe('小图和全屏大图的共用操作', () => {
     expect(right.classList.contains('right-4')).toBe(true);
     expect(right.classList.contains('w-28')).toBe(false);
     expect(right.classList.contains('md:w-32')).toBe(false);
-    expect(left.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
+    expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-touch' : 'hover-reveal-lg')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['复制', '下载', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '删除', '清除'] : ['删除', '清除']);
@@ -53,6 +53,8 @@ describe('小图和全屏大图的共用操作', () => {
       expect(backButtonRef.current).toBe(screen.getByRole('button', { name: '返回小图' }));
       expect(backButtonRef.current?.querySelector('svg.lucide-arrow-left')).toBeTruthy();
       expect(backButtonRef.current?.classList.contains('h-12')).toBe(true);
+      expect(left.classList.contains('pointer-events-none')).toBe(true);
+      expect(backButtonRef.current?.classList.contains('pointer-events-auto')).toBe(true);
       expect(backButtonRef.current?.classList.contains('w-12')).toBe(true);
       expect(backButtonRef.current?.querySelector('svg')?.classList.contains('h-7')).toBe(true);
       fireEvent.click(backButtonRef.current!);

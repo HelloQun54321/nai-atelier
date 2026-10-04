@@ -1,3 +1,5 @@
+import { PressRevealSurface } from '../../components/PressRevealSurface';
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -10,7 +12,7 @@ vi.mock('../../services/imageSharing', async importOriginal => ({
   copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}),
 }));
 beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().mockResolvedValue(); vi.mocked(downloadSharedImage).mockReset().mockResolvedValue(); });
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('共用图片分享操作', () => {
   it('复制带入当前图片的生成快照，下载仍只输出图片并跟随清洗设置', async () => {
@@ -45,16 +47,19 @@ describe('共用图片分享操作', () => {
     expect(parentPointerDown).not.toHaveBeenCalled();
   });
 
-  it('缩略图使用无文字圆形图标，忙碌时保持可见，失败通过现有通知反馈', async () => {
+  it('缩略图忙碌状态仍服从长按显隐，滚动收起后失败通过现有通知反馈', async () => {
     let rejectDownload!: (error: Error) => void;
     vi.mocked(downloadSharedImage).mockImplementation(() => new Promise((_, reject) => { rejectDownload = reject; }));
     const notify = vi.fn();
-    render(React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'md:opacity-0' }));
+    const view = render(React.createElement(PressRevealSurface, { role: 'button', 'aria-label': '作品' }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'hover-reveal-md' })));
+    const card = view.container.querySelector('.press-reveal-surface')!; longPress(card);
+    expect(card.getAttribute('data-press-revealed')).toBe('true');
     const download = screen.getByRole('button', { name: '下载' });
     expect(download.textContent).toBe('');
     expect(screen.getByRole('button', { name: '复制' }).textContent).toBe('');
     fireEvent.click(download);
-    expect(download.parentElement?.classList.contains('!opacity-100')).toBe(true);
+    fireEvent.scroll(card); expect(card.hasAttribute('data-press-revealed')).toBe(false);
+    expect(download.parentElement?.classList.contains('!opacity-100')).toBe(false);
     expect((screen.getByRole('button', { name: '复制' }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => rejectDownload(new Error('下载失败')));
     expect(notify).toHaveBeenCalledWith('下载失败', 'error');

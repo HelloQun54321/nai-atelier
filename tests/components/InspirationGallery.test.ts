@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
@@ -218,11 +219,12 @@ it('实际新建灵感板窗口和颜色选择可被 Agent 读取', async () => 
 it('手机管理当前灵感板可修改名称与颜色，编辑焦点正确，关闭后回到原筛选面板', async () => {
   vi.stubGlobal('innerWidth', 390);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
-  await screen.findByRole('button', { name: '管理灵感板：角色设计' });
+  await screen.findByRole('button', { name: '编辑灵感板：角色设计' });
   fireEvent.click(screen.getByRole('button', { name: '筛选' })); const filter = screen.getByRole('dialog', { name: '筛选灵感' });
-  fireEvent.change(within(filter).getByRole('combobox', { name: '灵感板' }), { target: { value: 'board-1' } });
-  fireEvent.click(within(filter).getByRole('button', { name: '管理灵感板：角色设计' }));
-  fireEvent.click(screen.getByRole('button', { name: '编辑名称 / 颜色' }));
+  fireEvent.click(within(filter).getByRole('button', { name: '选择灵感板：角色设计' }));
+  const surface = within(filter).getByRole('button', { name: '选择灵感板：角色设计' }).closest('.press-reveal-surface')!;
+  longPress(surface); expect(surface.getAttribute('data-press-revealed')).toBe('true');
+  fireEvent.click(within(filter).getByRole('button', { name: '编辑灵感板：角色设计' }));
   const editor = screen.getByRole('dialog', { name: '编辑灵感板' }); const input = within(editor).getByRole('textbox');
   expect(document.activeElement).toBe(input);
   fireEvent.change(input, { target: { value: '新名称' } }); fireEvent.click(within(editor).getByRole('button', { name: '颜色 #ec4899' }));
@@ -234,17 +236,28 @@ it('手机管理当前灵感板可修改名称与颜色，编辑焦点正确，�
 it.each([390, 1280])('宽度 %s 的灵感板删除可发现且必须确认，取消不删除，确认后回到未整理语义', async width => {
   vi.stubGlobal('innerWidth', width); const refresh = vi.fn();
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: refresh, notify: vi.fn() }));
-  await screen.findByRole('button', { name: '管理灵感板：角色设计' });
+  await screen.findByRole('button', { name: '编辑灵感板：角色设计' });
   let root: HTMLElement = document.body;
   if (width < 768) {
     fireEvent.click(screen.getByRole('button', { name: '筛选' })); root = screen.getByRole('dialog', { name: '筛选灵感' });
-    fireEvent.change(within(root).getByRole('combobox', { name: '灵感板' }), { target: { value: 'board-1' } });
+    fireEvent.click(within(root).getByRole('button', { name: '选择灵感板：角色设计' }));
   }
-  const remove = () => { fireEvent.click(within(root).getByRole('button', { name: '管理灵感板：角色设计' })); fireEvent.click(screen.getByRole('button', { name: '删除灵感板' })); };
+  const remove = () => { const button = within(root).getByRole('button', { name: '删除灵感板：角色设计' }); longPress(button.closest('.press-reveal-surface')!); fireEvent.click(button); };
   confirmAction.mockResolvedValue(false); remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
   expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: '板内灵感不会删除，它们会回到“未整理”。' }));
   expect(db.deleteInspirationBoard).not.toHaveBeenCalled();
   confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(db.deleteInspirationBoard).toHaveBeenCalledExactlyOnceWith('board-1'));
   expect(refresh).toHaveBeenCalledOnce();
-  if (width < 768) expect((within(root).getByRole('combobox', { name: '灵感板' }) as HTMLSelectElement).value).toBe('');
+  if (width < 768) expect(within(root).getByRole('button', { name: '全部灵感板' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('手机长按灵感封面显露选择入口，松手不打开详情，选择后保留批量流程', () => {
+  vi.stubGlobal('innerWidth', 390);
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  const card = view.container.querySelector('.media-card') as HTMLElement;
+  const image = card.querySelector('button')!; longPress(image);
+  expect(card.getAttribute('data-press-revealed')).toBe('true');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(within(card).getByRole('button', { name: '选择灵感' }));
+  expect(screen.getByText('已选 1 项')).toBeTruthy();
 });

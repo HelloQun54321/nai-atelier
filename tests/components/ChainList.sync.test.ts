@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -147,15 +148,17 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(screen.queryByRole('button', { name: /更多操作：/ })).toBeNull();
   });
 
-  it.each([390, 1024, 1280])('宽度 %s 的触屏菜单可查看并复制组合，子操作不打开工作台', async width => {
+  it.each([390, 1024, 1280])('宽度 %s 的触屏长按显露原位操作，可查看并复制组合，子操作不打开工作台', async width => {
     vi.stubGlobal('innerWidth', width);
     const writeText = vi.fn(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const p = props(); render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], basePrompt: 'synthetic style', description: '完整组合说明' }] }));
-    const more = screen.getByRole('button', { name: '更多操作：风格 A' });
-    expect(more.classList.contains('touch-only-action')).toBe(true);
-    expect(more.classList.contains('bottom-2')).toBe(true);
-    fireEvent.click(more);
-    fireEvent.click(screen.getByRole('button', { name: '复制 / 查看组合详情' }));
+    const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
+    expect(screen.queryByRole('button', { name: '更多操作：风格 A' })).toBeNull();
+    expect(card.hasAttribute('data-press-revealed')).toBe(false); longPress(card);
+    expect(card.getAttribute('data-press-revealed')).toBe('true');
+    const controls = card.querySelector('[data-card-action]')!;
+    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['编辑风格串信息：风格 A', '删除：风格 A', '复制/查看详情：风格 A']);
+    fireEvent.click(within(card).getByRole('button', { name: '复制/查看详情：风格 A' }));
     const copy = screen.getByRole('dialog', { name: '复制风格串内容' });
     expect(within(copy).getByText('完整组合说明')).toBeTruthy();
     fireEvent.click(within(copy).getByRole('button', { name: /复制选中/ }));
@@ -163,16 +166,17 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
   });
 
-  it('手机删除菜单先确认，取消无副作用；访客菜单只允许查看与复制', async () => {
+  it('手机原位删除继续确认，取消无副作用；访客只允许查看与复制', async () => {
     vi.stubGlobal('innerWidth', 390);
     const p = props(); const view = render(React.createElement(ChainList, p));
-    const remove = () => { fireEvent.click(screen.getByRole('button', { name: '更多操作：风格 A' })); fireEvent.click(within(screen.getByRole('dialog', { name: '更多操作：风格 A' })).getByRole('button', { name: '删除' })); };
+    const remove = () => { longPress(screen.getByRole('button', { name: '打开风格串：风格 A' })); fireEvent.click(screen.getByRole('button', { name: '删除：风格 A' })); };
     remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
     expect(p.onDelete).not.toHaveBeenCalled();
     confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(p.onDelete).toHaveBeenCalledExactlyOnceWith('a'));
     view.rerender(React.createElement(ChainList, { ...p, isGuest: true }));
-    fireEvent.click(screen.getByRole('button', { name: '更多操作：风格 A' }));
-    expect(within(screen.getByRole('dialog', { name: '更多操作：风格 A' })).queryByRole('button', { name: '删除' })).toBeNull();
+    longPress(screen.getByRole('button', { name: '打开风格串：风格 A' }));
+    expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
+    expect(screen.getByRole('button', { name: '复制/查看详情：风格 A' })).toBeTruthy();
     expect(p.onSelect).not.toHaveBeenCalled();
   });
 

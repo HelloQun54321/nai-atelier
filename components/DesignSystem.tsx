@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import React from 'react';
 import { ArrowLeft, ChevronDown, Heart, Inbox, LoaderCircle, Search, X } from 'lucide-react';
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
@@ -61,7 +62,7 @@ export const FavoriteButton: React.FC<{ active: boolean; onClick: (e: React.Mous
     return (
       <button
         type="button"
-        aria-label={hint}
+        data-card-action="true" aria-label={hint}
         aria-pressed={active}
         title={hint}
         onClick={onClick}
@@ -79,7 +80,7 @@ export const FavoriteButton: React.FC<{ active: boolean; onClick: (e: React.Mous
   return (
     <button
       type="button"
-      aria-label={hint}
+      data-card-action="true" aria-label={hint}
       aria-pressed={active}
       title={hint}
       onClick={onClick}
@@ -199,10 +200,11 @@ export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>
 export const MediaCardShell: React.FC<React.HTMLAttributes<HTMLElement> & {
   as?: 'article' | 'div';
   selected?: boolean;
-}> = ({ as = 'article', selected = false, className = '', children, ...props }) => {
-  const Element = as;
+  pressReveal?: boolean;
+}> = ({ as = 'article', selected = false, pressReveal = false, className = '', children, ...props }) => {
+  const Element = pressReveal ? PressRevealSurface : as;
   return (
-    <Element className={`media-card overflow-hidden rounded-2xl border bg-white transition dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800/80 dark:hover:border-gray-700'} ${className}`} {...props}>
+    <Element {...(pressReveal ? { as } : {})} className={`media-card overflow-hidden rounded-2xl border bg-white transition dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800/80 dark:hover:border-gray-700'} ${className}`} {...props}>
       {children}
     </Element>
   );

@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
@@ -45,7 +46,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                             const displayImg = artist.imageUrl || artist.previewUrl || artist.benchmarks?.[0] || '';
 
                             return (
-                                <div
+                                <PressRevealSurface
                                     key={artist.id}
                                     data-safe-mode-work="true"
                                     role="button"
@@ -84,7 +85,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                         {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
                                         {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>
-                                </div>
+                                </PressRevealSurface>
                             )
     };
 

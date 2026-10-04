@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -95,7 +96,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             const favorite = favorites.has(card.key);
             const selected = selectedKeys.has(card.key);
             return (
-              <article key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={`选择角色：${card.name}`} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
+              <PressRevealSurface as="article" key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={`选择角色：${card.name}`} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-colors cursor-pointer dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
@@ -146,7 +147,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     </div>
                   )}
                 </div>
-              </article>
+              </PressRevealSurface>
             );
     };
 

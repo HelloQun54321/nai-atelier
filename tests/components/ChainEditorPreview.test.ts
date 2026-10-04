@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -29,11 +30,14 @@ const renderPreview = (onGenerate: () => void, isGenerating = false) => render(R
 }));
 
 describe('四模式的分享入口', () => {
-  it('历史前后翻图共用触屏可见规则，按钮点击不误开大图', () => {
+  it('历史前后翻图共用触屏长按显露规则，按钮点击不误开大图', () => {
     const previous = vi.fn(), next = vi.fn(), open = vi.fn();
     render(React.createElement(ChainEditorPreview, { isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
       setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
       canNavigateHistory: true, onPreviousHistory: previous, onNextHistory: next }));
+    const image = screen.getByRole('img'); longPress(image);
+    expect(image.closest('.press-reveal-surface')?.getAttribute('data-press-revealed')).toBe('true');
+    expect(open).not.toHaveBeenCalled();
     for (const label of ['上一张历史图', '下一张历史图']) {
       const button = screen.getByRole('button', { name: label }); expect(button.classList.contains('hover-reveal-lg')).toBe(true); fireEvent.click(button);
     }
@@ -70,7 +74,7 @@ describe('四模式的分享入口', () => {
     expect(cover.parentElement?.classList.contains('right-4')).toBe(true);
     expect(cover.parentElement?.classList.contains('w-28')).toBe(false);
     const remove = screen.getByRole('button', { name: '删除' });
-    expect(remove.parentElement?.classList.contains('left-4')).toBe(true);
+    expect(remove.closest('[data-card-action]')?.classList.contains('left-4')).toBe(true);
     expect(remove.classList.contains('py-1.5')).toBe(true);
     expect(remove.classList.contains('text-xs')).toBe(cover.classList.contains('text-xs'));
     const download = screen.getByRole('button', { name: '下载' });

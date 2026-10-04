@@ -1,3 +1,4 @@
+import { longPress } from '../../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -49,6 +50,8 @@ it('手机可从候选列表移除单项，保留其他勾选项，不上传、�
   fireEvent.change(screen.getByLabelText('批量导入 PNG 图片'), { target: { files } });
   const remove = await screen.findByRole('button', { name: '移除导入候选：first' });
   expect(remove.classList.contains('hover-reveal-md')).toBe(true); expect(remove.className).not.toContain('hidden');
+  const card = screen.getByRole('checkbox', { name: '导入条目：first' }); longPress(card);
+  expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-checked')).toBe('true');
   fireEvent.click(remove);
   await waitFor(() => expect(screen.queryByRole('checkbox', { name: '导入条目：first' })).toBeNull());
   expect(screen.getByRole('checkbox', { name: '导入条目：second' }).getAttribute('aria-checked')).toBe('true');

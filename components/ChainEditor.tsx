@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult } from '../services/agentOperation.mjs';
 import { AgentDraftReview } from './AgentDraftReview';
@@ -2423,7 +2424,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             {/* Lightbox Modal */}
             {lightboxImg && (
                 <ImagePreviewPortal>
-                <div role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
+                <PressRevealSurface pressResetKey={lightboxImg} role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
                     <ImagePreviewActions
                         imageUrl={lightboxImg}
                         generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
@@ -2439,8 +2440,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         backButtonRef={lightboxCloseBtnRef}
                     />
                     {previewHistory.length > 1 && (
-                        <button
-                            className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                        <button data-card-action="true"
+                            className="hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showPreviousHistory();
@@ -2455,8 +2456,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                     <OriginalImage src={lightboxImg} data-safe-mode-ignore="true" className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
                     {previewHistory.length > 1 && (
-                        <button
-                            className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                        <button data-card-action="true"
+                            className="hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showNextHistory();
@@ -2475,7 +2476,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </div>
                     )}
 
-                </div>
+                </PressRevealSurface>
                 </ImagePreviewPortal>
             )}
 

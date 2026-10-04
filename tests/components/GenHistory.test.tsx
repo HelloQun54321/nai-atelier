@@ -1,3 +1,4 @@
+import { installPointerEvents, longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -128,7 +129,7 @@ describe('历史缩略图就地操作', () => {
             await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(items[0].imageUrl, 'NAI-2026-10-02-02-30-01.png', clean));
             await waitFor(() => expect((download as HTMLButtonElement).disabled).toBe(false));
         }
-        expect(timer.mock.calls.some(([, delay]) => delay === 550)).toBe(false);
+        expect(timer.mock.calls.some(([, delay]) => delay === 450)).toBe(false);
         expect(screen.queryByText('图片详情')).toBeNull();
         expect(screen.queryByText(/多选模式/)).toBeNull();
         expect(localHistory.delete).not.toHaveBeenCalled();
@@ -144,7 +145,7 @@ describe('历史缩略图就地操作', () => {
         fireEvent.pointerDown(remove); fireEvent.click(remove);
         expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ title: '删除这张历史图片？', tone: 'danger' }));
         expect(localHistory.delete).not.toHaveBeenCalled();
-        expect(timer.mock.calls.some(([, delay]) => delay === 550)).toBe(false);
+        expect(timer.mock.calls.some(([, delay]) => delay === 450)).toBe(false);
         expect(screen.queryByText('图片详情')).toBeNull();
     });
 
@@ -386,16 +387,31 @@ describe('历史连续浏览会话', () => {
         expect(screen.getByText('当前显示第 1 - 44 张')).toBeTruthy();
     });
 
-    it('卡片键盘可打开，滚动位移会取消长按选择', async () => {
-        vi.stubGlobal('PointerEvent', MouseEvent);
+    it('卡片键盘可打开，滚动位移会取消长按显露', async () => {
+        installPointerEvents();
         const { cards } = await setup();
         vi.useFakeTimers();
         fireEvent.pointerDown(cards[0], { clientX: 10, clientY: 10, button: 0 });
         fireEvent.pointerMove(cards[0], { clientX: 10, clientY: 40, button: 0 });
         act(() => vi.advanceTimersByTime(600));
+        expect(cards[0].hasAttribute('data-press-revealed')).toBe(false);
         expect(screen.queryByText(/多选模式/)).toBeNull();
         fireEvent.keyDown(cards[0], { key: 'Enter' });
         expect(screen.getByRole('dialog', { name: '历史图片查看器' })).toBeTruthy();
+    });
+
+    it('手机长按只显露操作，松手不打开大图、不进入多选；批量选择仍从管理进入', async () => {
+        const { cards } = await setup(390);
+        const favorite = within(cards[0]).getByRole('button', { name: '收藏' });
+        expect(favorite.closest('[data-card-action]')?.classList.contains('hover-reveal-touch')).toBe(true);
+        longPress(cards[0]);
+        expect(cards[0].getAttribute('data-press-revealed')).toBe('true');
+        expect(screen.queryByRole('dialog', { name: '历史图片查看器' })).toBeNull();
+        expect(screen.queryByText(/多选模式/)).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+        fireEvent.click(cards[0]);
+        expect(screen.getByText('已选 1 张')).toBeTruthy();
     });
 
     it('追加失败保留已经加载的图片，用户重试成功后继续同一顺序', async () => {

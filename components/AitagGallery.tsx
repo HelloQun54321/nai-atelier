@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AitagCacheStatus,
@@ -387,7 +388,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     const measuredRatio = aitagRatios[work.id];
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
     return (
-      <div
+      <PressRevealSurface
         key={work.id}
         data-safe-mode-work="true"
         data-gallery-work-id={work.id}
@@ -440,7 +441,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                   e.stopPropagation();
                   void toggleFavorite(work);
                 }}
-                className="flex-shrink-0"
+                className="hover-reveal-touch flex-shrink-0"
               />
             </span>
           </div>
@@ -451,7 +452,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
         </div>
         <div className={`h-1 ${cardTone.marker}`} />
-      </div>
+      </PressRevealSurface>
     );
   };
   const cacheNeedsMoreData = isOfflineCache && visibleItems.length === 0;

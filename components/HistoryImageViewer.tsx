@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Info, LoaderCircle, Maximize, Minus, Plus, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../types';
@@ -167,18 +168,18 @@ export const HistoryImageViewer: React.FC<Props> = props => {
         </header>
         <div className="history-viewer-content">
           <div className="history-viewer-image-column">
-            <div ref={stageRef} data-agent-interaction="pan" aria-label="历史图片平移与缩放" className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button')) zoom === 1 ? zoomAt(1 / fit) : reset(); }}>
+            <PressRevealSurface elementRef={stageRef} pressResetKey={item.id} data-agent-interaction="pan" aria-label="历史图片平移与缩放" className={`history-viewer-stage ${zoom > 1 ? 'history-viewer-stage--zoomed' : ''}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} onDoubleClick={event => { if (!(event.target as HTMLElement).closest('button')) zoom === 1 ? zoomAt(1 / fit) : reset(); }}>
               <OriginalImage key={`${item.id}:${retry}`} src={item.imageUrl} alt="历史生成图片预览" draggable={false} data-safe-mode-ignore="true" className="history-viewer-image" style={{ width, height, transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }} onLoad={event => { const image = event.currentTarget; if (image.naturalWidth && image.naturalHeight) setNatural({ width: image.naturalWidth, height: image.naturalHeight }); }} onError={() => setImageFailed(true)} />
-              {imageFailed && <button className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>原图加载失败 · 重试</button>}
-              <div className="history-viewer-manage">
+              {imageFailed && <button data-card-action="true" className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>原图加载失败 · 重试</button>}
+              <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">
                 <button className="history-viewer-button" aria-label={item.isFavorite ? '取消收藏' : '收藏'} aria-pressed={Boolean(item.isFavorite)} disabled={props.favoritePending} onClick={props.onFavorite}>{props.favoritePending ? <LoaderCircle className="animate-spin" /> : <Heart className={item.isFavorite ? 'fill-current text-rose-400' : ''} />}</button>
                 <button className="history-viewer-button history-viewer-delete" aria-label="删除这张历史图片" onClick={props.onDelete}><Trash2 /></button>
               </div>
-              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" />
-              <button className="history-viewer-button history-viewer-previous" aria-label="上一张图片" disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
-              <button className="history-viewer-button history-viewer-next" aria-label="下一张图片" disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
+              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="hover-reveal-touch history-viewer-share" />
+              <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label="上一张图片" disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
+              <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label="下一张图片" disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
               {navigating && <span role="status" className="history-viewer-loading"><LoaderCircle className="animate-spin" />正在加载图片</span>}
-            </div>
+            </PressRevealSurface>
             <footer className="history-viewer-zoom">
               <button className="history-viewer-button" aria-label="缩小图片" disabled={zoom <= 1} onClick={() => zoomAt(zoom / 1.25)}><Minus /></button>
               <span aria-label="图片缩放比例">{Math.round(fit * zoom * 100)}%</span>

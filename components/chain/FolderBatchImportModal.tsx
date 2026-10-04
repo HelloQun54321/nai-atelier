@@ -1,3 +1,4 @@
+import { PressRevealSurface } from '../PressRevealSurface';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, CheckSquare, EyeOff, FileQuestion, FolderOpen, FolderUp, Layers, Loader2, RefreshCw, Sparkles, Square, Trash2, X } from 'lucide-react';
 import { extractMetadata, parseNovelAIMetadata } from '../../services/metadataService';
@@ -1097,7 +1098,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               {/* Items Grid */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 max-h-[42dvh] overflow-y-auto pr-1">
                 {detectedItems.map(item => (
-                  <div
+                  <PressRevealSurface
                     key={item.id}
                     role="checkbox" aria-label={`导入条目：${item.name}`} aria-checked={item.selected} tabIndex={0} onClick={() => toggleSelectItem(item.id)}
                     className={`group relative flex flex-col rounded-xl border p-2.5 transition cursor-pointer select-none ${
@@ -1133,7 +1134,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         {item.params.width}×{item.params.height}
                       </span>
                       <button type="button" onClick={event => { event.stopPropagation(); removeItem(item.id); }}
-                        className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
+                        data-card-action="true" className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
                         title="从本次导入列表移除，不删除原文件" aria-label={`移除导入候选：${item.name}`}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1158,7 +1159,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       </p>
                     </div>
 
-                  </div>
+                  </PressRevealSurface>
                 ))}
               </div>
 

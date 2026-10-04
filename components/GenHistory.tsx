@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 
 import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
@@ -102,7 +103,6 @@ const HistoryCard = React.memo(function HistoryCard({
     selectionMode,
     isFavoritePending,
     onToggleSelect,
-    onLongPressSelect,
     onOpen,
     onFavorite,
     onDelete,
@@ -116,56 +116,30 @@ const HistoryCard = React.memo(function HistoryCard({
     selectionMode: boolean;
     isFavoritePending: boolean;
     onToggleSelect: (itemId: string) => void;
-    onLongPressSelect: (itemId: string) => void;
     onOpen: (item: LocalGenItem) => void;
     onFavorite: (item: LocalGenItem, e: React.MouseEvent) => void;
     onDelete: (item: LocalGenItem, e: React.MouseEvent) => void;
     onImageLoadRatio: (itemId: string, ratio: number) => void;
     notify: GenHistoryProps['notify'];
 }) {
-    // 卡片自身的手势时间戳放在组件内：长按进入多选，结束时清除计时，避免误触选择。
-    const longPressTimerRef = useRef<number | null>(null);
-    const longPressTriggeredRef = useRef(false);
-    const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-    const cancelLongPress = () => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); };
-    useEffect(() => () => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }, []);
-
     // 图片区展示比例：真实测量比 → params → 默认；父级传下来时随真实比例更新（只影响这张卡）
     const ratio = useMemo(() => resolveHistoryImageRatio(item, measuredRatio), [item, measuredRatio]);
 
     const createdAt = useMemo(() => new Date(item.createdAt).toLocaleString(), [item.createdAt]);
 
     return (
-        <div
+        <PressRevealSurface pressDisabled={selectionMode}
             data-history-id={item.id}
             role="button"
             tabIndex={0}
             aria-label={`查看生成于 ${createdAt} 的图片`}
             className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
-            onPointerDown={event => {
-                if (event.button !== 0) return;
-                cancelLongPress();
-                pointerStartRef.current = { x: event.clientX, y: event.clientY };
-                longPressTriggeredRef.current = false;
-                longPressTimerRef.current = window.setTimeout(() => {
-                    longPressTriggeredRef.current = true;
-                    onLongPressSelect(item.id);
-                }, 550);
-            }}
-            onPointerUp={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-            onPointerCancel={() => { if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current); }}
-            onPointerLeave={cancelLongPress}
-            onPointerMove={event => {
-                const start = pointerStartRef.current;
-                if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) cancelLongPress();
-            }}
             onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault();
                 if (selectionMode) onToggleSelect(item.id); else onOpen(item);
             }}
             onClick={() => {
-                if (longPressTriggeredRef.current) return;
                 if (selectionMode) onToggleSelect(item.id);
                 else onOpen(item);
             }}
@@ -178,16 +152,16 @@ const HistoryCard = React.memo(function HistoryCard({
                 }} />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                 {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
-                {!selectionMode && <div className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
+                {!selectionMode && <div data-card-action="true" className="hover-reveal-touch absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
                     {isFavoritePending ? (
                         // 收藏写入中只替换心形，下载和复制仍能使用。
-                        <span role="status" aria-label="正在更新收藏" className="pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
+                        <span role="status" aria-label="正在更新收藏" className="hover-reveal-touch pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
                     ) : (
-                        <FavoriteButton overlay active={Boolean(item.isFavorite)} className="!h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
+                        <FavoriteButton overlay active={Boolean(item.isFavorite)} className="hover-reveal-touch !h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
                     )}
                     <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
                 </div>}
-                {!selectionMode && <div className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
+                {!selectionMode && <div data-card-action="true" className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
                     <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label="删除历史图片" title="删除">
                         <Trash2 className="h-4 w-4" />
                     </button>
@@ -197,7 +171,7 @@ const HistoryCard = React.memo(function HistoryCard({
                 </div>
             </div>
             <div className="truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
-        </div>
+        </PressRevealSurface>
     );
 });
 
@@ -1049,12 +1023,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         });
     }, []);
 
-    const handleLongPressSelect = useCallback((itemId: string) => {
-        // 长按进入多选并把当前卡片选中；已处于多选时仅累加选中，不重复开启
-        setSelectionMode(true);
-        setSelectedIds(previous => new Set(previous).add(itemId));
-    }, []);
-
     const handleOpenHistoryItem = useCallback((item: LocalGenItem) => {
         returnItemRef.current = item.id;
         setPublishTitle('');
@@ -1082,7 +1050,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             selectionMode={selectionMode}
             isFavoritePending={pendingFavoriteIds.has(item.id)}
             onToggleSelect={handleToggleSelect}
-            onLongPressSelect={handleLongPressSelect}
             onOpen={handleOpenHistoryItem}
             onFavorite={handleCardFavorite}
             onDelete={handleCardDelete}

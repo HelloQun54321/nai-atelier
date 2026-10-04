@@ -1,3 +1,4 @@
+import { PressRevealSurface } from './PressRevealSurface';
 
 import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
@@ -79,7 +80,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden lg:min-h-[400px]">
                 {/* Generated Image */}
-                <div
+                <PressRevealSurface pressResetKey={generatedImage || previewImage}
                     className={`flex-1 min-h-0 lg:min-h-[300px] rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : 'bg-white dark:bg-gray-950/50'}`}
                     onClick={() => {
                         const img = generatedImage || previewImage;
@@ -88,7 +89,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 >
                     {canNavigateHistory && (
                         <>
-                            <button
+                            <button data-card-action="true"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onPreviousHistory?.();
@@ -101,7 +102,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
                                 </svg>
                             </button>
-                            <button
+                            <button data-card-action="true"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onNextHistory?.();
@@ -158,7 +159,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         onUploadCover={isOwner && !hideCoverActions ? handleUploadCover : undefined}
                         isUploading={isUploading}
                     />
-                </div>
+                </PressRevealSurface>
 
                 <div className="mt-4 flex flex-none flex-col items-center">
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}

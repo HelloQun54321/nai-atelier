@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -316,4 +317,12 @@ it('相邻的加入灵感库同样显示进度并拦截连点，保持原本不�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('已加入灵感库'));
   expect(mocks.navigate).not.toHaveBeenCalled(); expect(mocks.createChain).not.toHaveBeenCalled();
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
+});
+
+it('手机 AITag 卡片长按显露收藏，松手不打开详情，收藏不选择作品', async () => {
+  vi.stubGlobal('innerWidth', 390); await setup(); const item = card(1); longPress(item);
+  expect(item.getAttribute('data-press-revealed')).toBe('true'); expect(item.getAttribute('aria-pressed')).toBe('false');
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  const button = within(item).getByRole('button', { name: '收藏' }); expect(button.classList.contains('hover-reveal-touch')).toBe(true);
+  fireEvent.click(button); await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalledOnce()); expect(item.getAttribute('aria-pressed')).toBe('false');
 });

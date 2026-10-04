@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -286,4 +287,20 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   expect(screen.getByRole('heading', { name: '新的角色名称' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: custom.name })).toBeNull();
   expect(generateImage).not.toHaveBeenCalled();
+});
+
+it.each<Kind>(['artist', 'character'])('%s 手机卡片长按显露收藏，松手不选择 Tag；收藏不改变所选', async kind => {
+  renderLibrary(kind, 390);
+  const entry = entriesFor(kind)[0];
+  const card = await screen.findByRole('button', { name: `选择${kind === 'artist' ? '画师' : '角色'}：${kind === 'artist' ? entry.name : entry.chinese}` });
+  longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
+  const favorite = within(card).getByRole('button', { name: '收藏' });
+  expect(favorite.classList.contains('hover-reveal-touch')).toBe(true); fireEvent.click(favorite);
+  expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy(); expect(card.getAttribute('aria-pressed')).toBe('false');
+});
+it('自定义角色长按显露编辑和收藏，松手不打开图或选择；编辑只走信息窗口', () => {
+  renderLibrary('character', 390, [custom]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
+  longPress(card); expect(card.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
+  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
 });

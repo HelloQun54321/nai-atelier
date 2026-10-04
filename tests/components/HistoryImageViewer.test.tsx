@@ -1,6 +1,7 @@
+import { installPointerEvents, longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryImageViewer, clampImagePan } from '../../components/HistoryImageViewer';
 import type { LocalGenItem } from '../../types';
@@ -29,9 +30,12 @@ describe('历史图片缩放与手势', () => {
     const result = render(<HistoryImageViewer {...props} item={item}><button>合成操作</button></HistoryImageViewer>);
     const details = screen.getByLabelText('图片详情面板');
     details.scrollTop = 500;
+    const stage = screen.getByLabelText('历史图片平移与缩放'); longPress(stage); expect(stage.getAttribute('data-press-revealed')).toBe('true');
     result.rerender(<HistoryImageViewer {...props} item={{ ...item, id: 'next-synthetic' }}><button>合成操作</button></HistoryImageViewer>);
     expect(screen.getByLabelText('图片详情面板')).toBe(details);
     expect(details.scrollTop).toBe(0);
+    expect(stage.hasAttribute('data-press-revealed')).toBe(false);
+    expect(screen.getByLabelText('历史图片平移与缩放')).toBe(stage);
   });
   it('100% 使用实际像素尺寸，适应窗口复位，翻图快捷键不会抢输入/前景确认框', () => {
     const { image, dialog, onNavigate, onClose, container } = setup();
@@ -81,4 +85,20 @@ describe('历史图片缩放与手势', () => {
     expect(clampImagePan({ x: 500, y: -500 }, 300, 600, { width: 800, height: 600 }, 2)).toEqual({ x: 0, y: -300 });
     expect(clampImagePan({ x: 500, y: 500 }, 300, 600, { width: 800, height: 600 }, 1)).toEqual({ x: 0, y: 0 });
   });
+});
+
+it('历史大图触屏长按显露辅助按钮，松手不翻图；双指操作会取消长按并正常缩放', () => {
+  vi.stubGlobal('innerWidth', 390); const { stage, image, onNavigate, onClose } = setup(false);
+  longPress(image); expect(stage.getAttribute('data-press-revealed')).toBe('true');
+  expect(onNavigate).not.toHaveBeenCalled(); expect(onClose).not.toHaveBeenCalled();
+  for (const name of ['收藏', '删除这张历史图片', '复制', '下载', '上一张图片', '下一张图片']) {
+    expect(screen.getByRole('button', { name }).closest('.hover-reveal-touch')).toBeTruthy();
+  }
+  installPointerEvents(); vi.useFakeTimers();
+  fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 1, clientX: 100, clientY: 100, button: 0 });
+  fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 2, isPrimary: false, clientX: 200, clientY: 100, button: 0 });
+  fireEvent.pointerMove(stage, { pointerType: 'touch', pointerId: 2, clientX: 300, clientY: 100 });
+  act(() => vi.advanceTimersByTime(500));
+  expect(stage.hasAttribute('data-press-revealed')).toBe(false); expect(screen.getByLabelText('图片缩放比例').textContent).toBe('120%');
+  vi.useRealTimers();
 });

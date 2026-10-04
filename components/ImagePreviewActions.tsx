@@ -26,22 +26,22 @@ export const ImagePreviewActions: React.FC<Props> = ({
   onSetCover, onUploadCover, isUploading = false, onBack, backButtonRef,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const visibility = onBack ? '' : 'hover-reveal-lg';
+  const visibility = onBack ? 'hover-reveal-touch' : 'hover-reveal-lg';
   return <>
-    {(onBack || (imageUrl && canManageHistoryGroup)) && <div className={`absolute top-4 left-4 z-30 flex flex-col items-start ${onBack ? 'gap-6' : 'gap-2'} ${visibility}`} onClick={event => event.stopPropagation()}>
-      {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回小图" title="返回小图" className="mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-lg bg-black/70 text-white hover:bg-black/85">
+    {(onBack || (imageUrl && canManageHistoryGroup)) && <div data-card-action="true" className={`pointer-events-none absolute top-4 left-4 z-30 flex flex-col items-start ${onBack ? 'gap-6' : 'gap-2'} ${onBack ? '' : visibility}`} onClick={event => event.stopPropagation()}>
+      {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回小图" title="返回小图" className="pointer-events-auto mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-lg bg-black/70 text-white hover:bg-black/85">
         <ArrowLeft className="h-7 w-7" aria-hidden="true" />
       </button>}
-      {imageUrl && canManageHistoryGroup && <>
+      {imageUrl && canManageHistoryGroup && <div className={`flex flex-col ${onBack ? 'gap-6' : 'gap-2'} ${visibility}`}>
         <button type="button" onClick={() => onRemoveCurrentHistory?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-red-600/90 text-white shadow-lg backdrop-blur hover:bg-red-500`} title="从当前风格串历史组移除这张图，历史页仍会保留">删除</button>
         <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-gray-900/85 text-white shadow-lg backdrop-blur hover:bg-gray-800`} title="清空当前风格串历史组，历史页仍会保留">清除</button>
-      </>}
+      </div>}
     </div>}
-    {imageUrl && <div className={`absolute top-4 right-4 z-30 flex flex-col items-stretch gap-2 ${visibility}`} onClick={event => event.stopPropagation()}>
+    {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-stretch gap-2 ${visibility}`} onClick={event => event.stopPropagation()}>
       <ImageShareActions imageUrl={imageUrl} generationData={generationData} filename={filename} notify={notify} variant="overlay" className="flex-col" />
       {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-indigo-600/90 text-white hover:bg-indigo-600`}>{isUploading ? '上传中...' : '设为封面'}</button>}
     </div>}
-    {onUploadCover && <div className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>
+    {onUploadCover && <div data-card-action="true" className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>
       <input aria-label="上传作品封面" type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onUploadCover} />
       <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-gray-800/80 text-white shadow-lg backdrop-blur hover:bg-gray-700`}>{isUploading ? '上传中...' : '手动上传'}</button>
     </div>}

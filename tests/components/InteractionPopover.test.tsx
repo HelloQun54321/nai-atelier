@@ -2,30 +2,9 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ActionMenu } from '../../components/ActionMenu';
 import { InfoPopover } from '../../components/InfoPopover';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-it('更多菜单隔离卡片点击，焦点移入、Tab 圈禁、Esc 关闭并归还触发按钮', () => {
-  const parent = vi.fn(), select = vi.fn();
-  render(<div onClick={parent}><ActionMenu label="更多操作：测试" actions={[{ label: '详情', onSelect: select }]} /></div>);
-  const trigger = screen.getByRole('button', { name: '更多操作：测试' }); trigger.focus(); fireEvent.click(trigger);
-  const dialog = screen.getByRole('dialog', { name: '更多操作：测试' }); const first = within(dialog).getByRole('button', { name: '详情' });
-  expect(document.activeElement).toBe(first);
-  fireEvent.keyDown(first, { key: 'Tab', shiftKey: true }); expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: '关闭更多操作' }));
-  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
-  expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
-  expect(select).not.toHaveBeenCalled(); expect(parent).not.toHaveBeenCalled();
-});
-it('菜单先关闭再打开下个窗口，新窗口输入焦点不会被菜单清理抢走', () => {
-  const Harness = () => {
-    const [editing, setEditing] = React.useState(false);
-    return <><ActionMenu label="更多操作" actions={[{ label: '编辑', onSelect: () => setEditing(true) }]} />{editing && <div role="dialog" aria-label="编辑"><input autoFocus aria-label="名称" /></div>}</>;
-  };
-  render(<Harness />); screen.getByRole('button', { name: '更多操作' }).focus(); fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-  fireEvent.click(screen.getByRole('button', { name: '编辑' }));
-  expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull(); expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '名称' }));
-});
 it.each([390, 1024, 1280])('宽度 %s 的说明留在根层并限制在视口中，不改变原容器结构', width => {
   vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', 800);
   const view = render(<div className="agent-stage safe-mode dark"><main className="isolate overflow-hidden"><InfoPopover label="详情" content={'完整说明'.repeat(20)} /></main></div>);

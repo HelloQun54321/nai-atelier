@@ -1,3 +1,4 @@
+import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -154,6 +155,8 @@ it('贴底资源不占图片／生成操作行，图片入口继续打开大图�
   expect(actions.contains(screen.getByRole('button', { name: /^查看账户资源/ }))).toBe(false);
   fireEvent.click(preview);
   const lightbox = await screen.findByRole('dialog', { name: '图片预览' });
+  longPress(lightbox); expect(lightbox.getAttribute('data-press-revealed')).toBe('true');
+  expect(screen.getByRole('dialog', { name: '图片预览' })).toBe(lightbox);
   expect(screen.queryByRole('button', { name: /^查看账户资源/ })).toBeNull();
   fireEvent.click(lightbox);
   expect(screen.getByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
