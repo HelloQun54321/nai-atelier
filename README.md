@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -21,6 +21,8 @@
 ## 🧭 项目定位
 
 NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不是单纯的 Prompt 输入框，而是围绕长期个人使用建立的完整工作流：
+
+电脑端提供 **Windows EXE 安装**与**源码本地部署**两种使用方式，任选一种即可；两种方式都在自己的电脑保存数据，并支持手机局域网访问。
 
 > **收集画师与角色 → 组合 Prompt → 调用 NovelAI → 保存原图和参数 → 整理历史与灵感 → 在电脑和手机之间继续使用。**
 
@@ -91,22 +93,35 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 创作工坊。它不�
 
 ## 🚀 首次使用
 
-### Windows 安装版（无需部署工具）
+先选择一种方式。Windows 普通使用者推荐 EXE 安装；需要修改代码、使用开发环境或在其他系统运行时，可选择源码本地部署。
 
-安装包通过项目的 [GitHub Releases](https://github.com/HelloQun54321/nai-atelier/releases) 分发；首次 Release 发布前由维护者直接提供。下载对应版本的 `NAI-Atelier-Setup-<版本>-x64.exe`，GitHub 自动附带的 `Source code` 是源码归档。维护者发布流程见 [GitHub Release 发布](./docs/GITHUB_RELEASE.md)。
+| 使用方式 | 运行准备 | 开始入口 |
+| --- | --- | --- |
+| **EXE 安装** | Windows 10／11 x64，无需 Node.js、npm 或 Git | [下载 Windows 安装版](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.37.1)，按下方方式一安装 |
+| **源码本地部署** | Node.js 与 npm；使用 Git 克隆或下载源码 ZIP | 按下方方式二安装依赖、启动本地服务 |
 
-Windows 10／11 **64 位**电脑可使用单独分发的 `NAI-Atelier-Setup-<版本>-x64.exe`：双击安装包，在安装向导中选择程序位置，完成后从桌面或开始菜单打开 **NAI Atelier**。窗口与完整本地服务均已内置，不需要安装 Node.js、npm 或 Git。安装器直接检查微软 Visual C++ x64 运行库（14.44 或更新版本）；缺少时，在安装程序文件前提示到[微软官方下载页面](https://learn.microsoft.com/zh-cn/cpp/windows/latest-supported-vc-redist)选择 X64，安装运行库后重新运行工坊安装包。运行库安装可能要求管理员授权，工坊安装器不下载或执行联网 PowerShell 脚本。
+两种方式都提供完整工坊能力，需要使用者自己的 NovelAI Key 和能访问相应服务的电脑网络；Tag 词库与反推模型按需另行下载。安装版与源码版使用各自的数据工作区，不会自动合并已有资料。
 
-安装版首次运行是独立空工坊，添加使用者自己的 NovelAI Key，并在「Tag 补全词库」安装所需词库；原图、历史、账户、密钥、已下载词库和反推模型均不随安装包分发。个人数据保存在 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，程序目录可以自选，数据目录保持独立；卸载默认保留个人数据。关闭窗口后托盘继续运行，通过托盘「退出工坊」停止后台。更完整的安装、升级、数据路径与发布验证说明见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)。
+### 方式一：EXE 安装（Windows）
 
-### 源码部署：运行准备
+1. 打开 [v1.37.1 Windows 安装版下载页](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.37.1)，下载 **[NAI-Atelier-Setup-1.37.1-x64.exe](https://github.com/HelloQun54321/nai-atelier/releases/download/v1.37.1/NAI-Atelier-Setup-1.37.1-x64.exe)**，约 **263.7 MB**。页面中的 `Source code` 是源码归档，供方式二使用。
+2. 双击 EXE，在安装向导中选择程序安装位置。
+3. 完成后从桌面或开始菜单打开 **NAI Atelier**，按下方「生成第一张图」配置自己的工坊。
+
+窗口与完整本地服务均已内置，无需安装部署工具。安装器检查微软 Visual C++ x64 运行库（14.44 或更新版本）；缺少时，到[微软官方下载页面](https://learn.microsoft.com/zh-cn/cpp/windows/latest-supported-vc-redist)安装 X64 运行库，再重新运行工坊安装包。运行库安装可能要求管理员授权。当前安装版为预发布，Windows 11 已实测，Windows 10 尚未单独实测；安装包尚无发布者代码签名，系统可能显示未知发布者。
+
+首次运行是独立空工坊，不携带开发者的原图、历史、账户、Key、下载词库或模型缓存。个人数据位于 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，独立于自选程序目录；系统卸载程序默认保留个人数据。更多安装、升级和数据说明见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)，后续版本见 [GitHub Releases](https://github.com/HelloQun54321/nai-atelier/releases)。
+
+### 方式二：源码本地部署
+
+#### 运行准备
 
 - 安装 **Node.js 24.x 与 npm**；若使用 Node.js 22，至少需要 **22.19.0**，以满足当前 Agent 依赖。词库工具还使用内置 `node:sqlite`，该模块从 22.13.0 起无需实验启动参数（[Node.js 文档](https://nodejs.org/download/release/latest-v24.x/docs/api/sqlite.html)）。
 - 使用下方克隆命令需要 Git；也可以下载仓库 ZIP，解压后在项目根目录打开终端。
 - 准备 `pst-` 开头的 NovelAI API Key；免费创作需有效 **Opus** 订阅，过期账号使用已有 Paid Anlas 时应关闭低消耗并确认付费。电脑需要能访问 NovelAI。Agent、Pixiv 与公共队列均为可选配置。
 - 预留依赖、词库与原图存储空间；本地 WD Tagger 首次使用还会下载约 379 MB 模型。Windows 提供桌面启动器，其他系统使用命令行入口。
 
-### 源码部署：安装并启动
+#### 安装并启动
 
 ```bash
 git clone https://github.com/HelloQun54321/nai-atelier.git
@@ -119,17 +134,23 @@ Windows 上 `npm install`／`npm ci` 完成依赖安装后会自动创建桌面�
 
 ### 生成第一张图
 
+完成任一方式的安装与启动后，接下来的创作步骤相同：
+
 1. 打开「系统设置 → NovelAI 与 Anlas」，添加并启用自己的 Key，检查订阅与额度状态；按需要设置该 Key 的 **Anlas 本地预算**。
-2. 项目在「Tag 补全词库」中提供 **ffdkj 中英 Tag 数据库的 GitHub 下载入口**：点击「检查并更新」，或运行 `npm run update:tags`，下载后生成本地词库。数据库及生成的词库不随源码内置；未下载时，Tag 补全和画师／角色目录不可用，仍可手动输入 Prompt。
+2. 在「Tag 补全词库」点击「检查并更新」，从项目提供的 **ffdkj 中英 Tag 数据库 GitHub 入口**下载并生成本地词库。两种方式都可在设置中完成，无需另开终端；词库未下载时，仍可手动输入 Prompt，Tag 补全和画师／角色目录暂不可用。源码版也可运行 `npm run update:tags`。
 3. 进入「生图实验室 → 文生图」，输入 Prompt。可先使用默认 V4.5 Full、`832 × 1216`、28 步，暂不添加付费参考图。
 4. 检查生成按钮显示的费用与额度状态，再生成一张。结果出现后确认历史保存成功，可继续修改 Prompt，或将满意配置保存为风格串。
-5. 在「系统设置 → 数据与维护」配置备份位置；Windows 桌面入口已自动创建，接下来可连接手机。
+5. 在「系统设置 → 数据与维护」配置备份位置，接下来可按「手机局域网访问」连接手机。
 
-首次启动失败时，先查看终端报错并核对 `node --version`；词库为空先完成下载。手机无法连接时，确认电脑服务仍在运行、设备处于同一局域网，并检查防火墙是否允许家庭网络访问 3000 端口。
+安装版启动失败时，在启动窗口查看日志并按提示重试；源码版查看终端报错并核对 `node --version`。词库为空时先完成下载。手机无法连接时，确认电脑工坊仍在运行、设备处于同一局域网，并检查防火墙是否允许家庭网络访问本次启动的实际端口。
 
 ---
 
 ## 🚀 日常启动
+
+### EXE 安装版
+
+从桌面、开始菜单或安装目录打开 **NAI Atelier**。重复打开会回到已有窗口；关闭窗口收进系统托盘，选择托盘「退出工坊」才停止后台。升级前结束当前任务、备份数据并退出工坊，再运行新版安装包。
 
 ### 源码版 Windows 桌面启动器
 
@@ -141,9 +162,9 @@ Windows 上 `npm install`／`npm ci` 完成依赖安装后会自动创建桌面�
   - **旧入口迁移**：先更新并核验快捷方式目标，再移除与本项目旧生成模板完全一致的桌面 BAT；修改过的脚本、其他项目的脚本及自定义快捷方式会保留。项目内启动文件不被重新生成或覆盖。
   - **特殊环境**：CI 和非 Windows 环境不创建 Windows 快捷方式；可通过环境变量 `NAI_NO_DESKTOP_SHORTCUT=1` 跳过自动创建。桌面不可写或系统组件不可用时提示原因，依赖安装与服务启动仍可完成。
 
-### 命令行启动
+### 源码版命令行启动
 
-完成[首次安装](#-首次使用)后，在项目根目录运行：
+完成上述源码本地部署后，在项目根目录运行：
 
 ```bash
 npm run dev:local
@@ -183,7 +204,7 @@ npm run dev:local
 http://192.168.x.x:3000
 ```
 
-手机与电脑连接同一家庭局域网，在手机浏览器打开终端显示的实际地址，输入启动终端显示的四位密码即可授权；保持电脑服务运行。
+手机与电脑连接同一家庭局域网，在手机浏览器打开本次启动日志中的实际地址，输入其中显示的四位密码即可授权；源码版查看终端，安装版查看工坊的启动日志，使用期间保持电脑工坊运行。
 
 手机生图使用电脑的网络与 Key，无需单独开启代理或导入证书。电脑需能连接 NovelAI；浏览器插件代理不会覆盖 Node.js 网关，需使用系统代理或 TUN 模式。仅在可信的家庭网络中使用，不开放公网。
 
@@ -641,10 +662,10 @@ Vibe／角色参考管理共用资料库／归档工具栏，按实际窗口宽�
 
 #### 下载与更新方式
 
-项目提供的是 **GitHub 下载与本地生成工具**，ffdkj 数据库和生成的词库文件均不随源码分发。首次使用或需要同步最新数据时：
+项目提供的是 **GitHub 下载与本地生成工具**，ffdkj 数据库和生成的词库文件均不随源码或 EXE 安装包分发。首次使用或需要同步最新数据时：
 
-1. **设置面板一键下载**：在「全局设置 → Tag 补全词库」点击「检查并更新」即可自动完成下载与分片生成；
-2. **终端命令行执行**：在项目根目录运行：
+1. **设置面板一键下载（两种方式通用）**：在「全局设置 → Tag 补全词库」点击「检查并更新」即可自动完成下载与分片生成；
+2. **终端命令行执行（仅源码版）**：在项目根目录运行：
    ```bash
    npm run update:tags
    ```
@@ -948,11 +969,12 @@ flowchart TD
 
 ### 备份范围
 
-本工坊自身的持久化数据应完整备份：
+两种使用方式都应完整备份所在工坊的 `local-data`，位置分别为：
 
-```text
-<项目根目录>/local-data/
-```
+| 使用方式 | 完整持久化数据位置 |
+| --- | --- |
+| 源码本地部署 | `<项目根目录>/local-data/` |
+| EXE 安装版 | `%LOCALAPPDATA%\NAI Atelier\workspace\local-data` |
 
 其中包含 D1 数据库、R2 原图、局域网认证、模型凭据与 Agent 会话。不要只挑选 SQLite 或 blobs 文件；恢复还依赖相匹配的项目代码与存储标识。
 
@@ -969,15 +991,15 @@ flowchart TD
 
 ### 停服手动备份
 
-1. 等待生成与保存完成，停止工坊服务和相关开发监听进程，确认其他设备不再写入。
+1. 等待生成与保存完成，停止工坊服务，确认其他设备不再写入；安装版通过托盘「退出工坊」，源码版停止服务和相关开发监听进程。
 2. 将整个 `local-data/` 复制到外部备份位置；不要移动、改名或删除源目录中的文件。外部桥接原图按上述范围另外备份。
 3. 记录当前 Git 提交或项目版本，并保留对应 `wrangler.toml` 的存储配置。复制完成后核对文件数量、大小与备份可读性，再重新启动。
 
 备份含有 API Key、令牌、私人图片与对话，应保存在受访问控制的位置；内置备份本身不加密。
 
-### 恢复到独立目录
+### 源码版恢复到独立目录
 
-目前界面提供创建、查看和删除备份，**没有一键还原**。建议先在独立目录验证恢复，保留现有项目与原备份：
+两种方式的界面均提供创建、查看和删除备份，**没有一键还原**。以下步骤用于源码版，建议先在独立目录验证恢复，保留现有项目与原备份；安装版的数据路径与重装保留规则见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)，不自动将源码备份迁入安装版。
 
 1. 停止原工坊服务，在新目录准备与备份对应版本的源码，先不要启动。
 2. 确认 `wrangler.toml` 的 `database_id`、`database_name`、`bucket_name` 与 binding 名和备份时一致；不要用新标识替代旧值。
@@ -991,7 +1013,7 @@ flowchart TD
 - `node_modules/` 与 `dist/`（项目依赖与构建包，运行 `npm install` / `npm run build` 即可重构）
 - 手机端浏览器的离线缓存
 
-**GitHub 只保存代码，不能代替资产备份。** `local-data/` 默认被 Git 忽略；浏览器尚未保存的草稿也不在该目录的备份范围内。`local-cache/` 与词库可重新生成，但重新下载仍依赖网络。
+**GitHub 保存公开代码与安装包，不能代替个人资产备份。** `local-data/` 默认被 Git 忽略；浏览器尚未保存的草稿也不在该目录的备份范围内。`local-cache/` 与词库可重新生成，但重新下载仍依赖网络。
 
 ---
 
@@ -999,7 +1021,7 @@ flowchart TD
 
 - **纯个人本地私有工具**：NAI Atelier 定位为个人专属的本地创作工坊，未针对公网暴露做多租户隔离与防 DDoS 加固；局域网访问仅推荐在可信的家庭 Wi-Fi 下使用，**切勿随意开启路由器公网端口转发或做公网穿透**。
 - **网络与服务依赖**：生图依赖 NovelAI 官方 API 与电脑网络；WD Tagger 模型下载后在本地推理，读取远端图片时仍需网络；外部图库（Pixiv / Danbooru / AITag）同样依赖远端服务，若遇外部网络波动或服务故障，仅能浏览本地已抓取和缓存的离线资源。
-- **数据主权在你自己手中**：代码仓库与 GitHub 只负责存放开源源码；持久化资产主要保存在 `local-data/`；生图会向 NovelAI 发送请求内容，Agent 会向配置的供应商发送对话及使用到的图片。外部索引原图与浏览器活动 Key 的边界见前文，备份范围与恢复方法见「备份与数据持久化」。
+- **数据主权在你自己手中**：GitHub 保存公开源码与分发安装包，个人持久化资产保存在所在工坊的 `local-data/`；生图会向 NovelAI 发送请求内容，Agent 会向配置的供应商发送对话及使用到的图片。外部索引原图与浏览器活动 Key 的边界见前文，备份范围与恢复方法见「备份与数据持久化」。
 - **第三方资源版权**：Pixiv 与 Danbooru / Safebooru 展示的所有插画与作品版权均归各自创作者或版权方所有，工具仅提供辅助检索、学习参考与个人画风研究通道。
 
 ---
@@ -1016,7 +1038,9 @@ flowchart TD
 | 局域网认证 | 四位密码、签名 Cookie、错误次数限制 |
 | NovelAI 请求 | 浏览器 → 本地网关 → 电脑网络/VPN → NovelAI API |
 
-### 常用脚本
+### 源码版常用脚本
+
+以下命令用于源码部署、开发与维护；EXE 安装版使用应用入口与设置，无需执行这些命令。维护者构建和发布安装包的步骤见 [Windows 安装版](./docs/WINDOWS_DESKTOP.md)及 [GitHub Release 发布](./docs/GITHUB_RELEASE.md)。
 
 | 命令 | 用途 |
 | --- | --- |

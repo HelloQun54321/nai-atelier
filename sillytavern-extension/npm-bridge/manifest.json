@@ -5,9 +5,9 @@
   "optional": [
     "st-chatu8"
   ],
-  "js": "index.js?v=1.37.2",
-  "css": "style.css?v=1.37.2",
+  "js": "index.js?v=1.37.3",
+  "css": "style.css?v=1.37.3",
   "author": "HelloQun54321",
-  "version": "1.37.2",
+  "version": "1.37.3",
   "description": "同步工坊精选、酒馆预设、Vibe 与历史图片。"
 }
