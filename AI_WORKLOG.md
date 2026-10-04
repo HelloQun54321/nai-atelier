@@ -6,6 +6,8 @@
 
 ## 2026-10-05
 
+- **Antigravity（Gemini 3.8 Flash）**：在 README 中补充低消耗模式、角色框粘贴反推与收集模式置顶小窗体验；校准 Vibe 为官方能力复现与本地资产化增强；同步更新 CHANGELOG 并递增 patch 版本。
+
 - **Antigravity（Gemini 3.8 Flash）**：全面脱水精简 README.md（体积减少 82%，精炼至 345 行），叙述重心从“技术如何实现”彻底转为“使用时能够获得什么创作体验”；将酒馆/st-chatu8 深度桥接规格抽离至 docs/SILLYTAVERN_BRIDGE.md；突出移动端心流、资产沉淀、智能防超额与数据红线；同步更新 CHANGELOG 并递增 patch 版本。
 
 - **Antigravity（Gemini 3.8 Flash）**：评估并重构优化 README.md。按用户要求去除暂停 APK 等解释创作意图的非使用向叙述；更新 Windows 安装包下载指引为 GitHub Releases 最新发布链接；结构化重构风格串、项目 Agent 及 Danbooru 图库等密集长段落，并将底层网络流量调度与全站外观治理收纳至折叠块；同步更新 CHANGELOG 并递增 patch 版本。

@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.6-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -148,7 +148,7 @@ flowchart LR
 - **模块化解耦分层**：全局提示词、可独立开关的风格模块与全局负面词清晰分层，避免反复手动拼词；
 - **多角色独立图层**：每个角色拥有独立正负面词，文生图与编辑模式均支持直观的 X/Y 构图定位（V4/V4.5 格点吸附，V5 自由定位）；
 - **参数全套封存**：画面比例、尺寸、Steps、CFG、Variety+、采样器与 Seed 一并封存；
-- **风格串收集模式（Windows）**：在电脑开启收集模式后，在 Discord 或浏览器中复制任意 NovelAI 作品直链，工坊自动下载并解析隐藏的 Alpha 生成参数，完整还原提示词、角色与参数并入库。
+- **风格串收集模式（Windows 懒人置顶窗）**：在 Discord 频道或推特刷到心仪作品时，开启置顶小窗后只需右键「复制图片链接」，工坊在后台自动静默下载并提取 NovelAI Alpha 透明通道隐藏的完整提示词、结构化角色与生成参数，无需切回工坊窗口即可自动沉淀为新预设。
 
 ---
 
@@ -198,8 +198,8 @@ flowchart LR
 
 ### 🌌 永久 Vibe 与 🧬 角色参考
 
-- **永久 Vibe Transfer（编码一次，长期复用）**：上传参考画风图片，调用 NovelAI 提取编码（仅首次消耗 2 Anlas），生成不可逆特征编码后永久保存在电脑中。后续生图使用该 Vibe 不再扣费；支持多达 16 个 Vibe 自由调权组合；
-- **Precise Reference（角色参考）**：支持角色外貌与特征深度迁移，自动适配官方竖图/横图画布，生成时无缝保留角色一致性。
+- **Vibe Transfer 官方能力复现与本地永久沉淀**：Vibe Transfer 本身是 NovelAI 官方原生的画风迁移能力，工坊在本地完整复现了该功能，并做了资产化增强——调用官方接口提取编码后（仅首次需 2 Anlas），将特征编码永久落盘保存在电脑本地。后续在工坊中使用该 Vibe 生图无需重复编码扣费，并支持多达 16 个 Vibe 自由混合与调权组合；
+- **Precise Reference（角色参考）**：复现官方角色与风格参考能力，自动适配官方竖图/横图画布，生成时无缝保留角色一致性。
 
 ---
 
@@ -225,7 +225,8 @@ flowchart LR
 
 ### 🔍 本地图片反推 Tag（WD Tagger）
 
-直接在电脑本地使用 CPU 对图片反推 Danbooru Tag，**无需上传第三方云端，零 Anlas 消耗**。支持 WD ViT V3、WD SwinV2 V3、WD EVA02-Large V3 模型，首次按需下载后即可离线运行。
+直接在电脑本地使用 CPU 对图片反推 Danbooru Tag，**无需上传第三方云端，零 Anlas 消耗**。支持 WD ViT V3、WD SwinV2 V3、WD EVA02-Large V3 模型，首次按需下载后即可离线运行：
+- **角色框一键粘贴反推（Paste-to-Tag）**：在多角色创作时，手头有参考图无需单独打开反推面板，直接在目标角色中按 `Ctrl+V` 或点击「粘贴反推」，系统自动识别并把角色特征 Tag 秒级追加到该角色专属提示词中，交互行云流水。
 
 ---
 
@@ -241,6 +242,13 @@ flowchart LR
 
 - **本地预算守卫机制**：创作者自主设定期望分配给工坊的本地安全预算（默认 1666 点）；
 - **扣费透明阻断**：当免费额度用尽跨入付费、或启用角色参考时，生图按钮会明确切换为「消耗 XX 点」，并在生图前弹出确认面板列明扣费清单，预算不足直接拦截，防止不知情下过度消耗云端点数。
+
+### 🛡️ 低消耗模式（Opus 零点数探索保护伞）
+
+专为不想消耗 Anlas 点数的创作者量身定制的“绝对白嫖保险”：
+- **全自动收敛至免费路径**：开启后工作台自动隐藏付费尺寸，隐藏容易扣点的图生图与扩图模式；
+- **步数与能力严格封顶**：步数强制锁定在官方免费门槛内（V5 最多 23 步，V4/V4.5 最多 28 步），局部重绘临时固定为零点数的 Focused 模式；
+- **资产安全复用**：仅允许使用已有 Vibe 编码，关闭付费角色参考，点数不足或额度异常时直接拦截，杜绝任何意外扣费。
 
 ### 🕶️ 沉浸式防窥（图片安全模式）
 
