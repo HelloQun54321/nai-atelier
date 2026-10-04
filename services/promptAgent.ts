@@ -336,9 +336,17 @@ export const promptAgentService = {
     return response.json();
   },
   updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>>): Promise<PromptAgentSession> => {
-    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-    if (!response.ok) return readError(response) as never;
-    return response.json();
+    // 本地设置也可能遇到后台暂停，不能让发送与模型入口永久停留在保存状态。
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: controller.signal });
+      if (!response.ok) return await readError(response) as never;
+      return await response.json();
+    } catch (reason) {
+      if (controller.signal.aborted) throw new Error('设置保存超时，请检查本地服务是否响应后重试');
+      throw reason;
+    } finally { clearTimeout(timer); }
   },
   deleteSession: async (sessionId: string) => {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });

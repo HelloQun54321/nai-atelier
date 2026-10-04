@@ -5,13 +5,21 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { AgentModelControl } from './AgentModelControl';
 import type { PromptAgentModel, PromptAgentThinkingLevel } from '../services/promptAgent';
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const first = { id: 'vendor/synthetic-model', provider: 'first', providerName: '合成服务甲', reasoning: true, thinkingLevels: ['off', 'low', 'high'], imageInput: true } as PromptAgentModel;
 const second = { ...first, provider: 'second', providerName: '合成服务乙', reasoning: false, thinkingLevels: ['off'], imageInput: false } as PromptAgentModel;
 const defaults = { choose: vi.fn(async (_model: PromptAgentModel) => {}), think: vi.fn(async (_level: PromptAgentThinkingLevel) => {}) };
-const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first, configure = () => {}, initialLevel = 'low' }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel; configure?: () => void; initialLevel?: PromptAgentThinkingLevel }) => {
+const Control = ({ disabled = false, choose = defaults.choose, think = defaults.think, model = first, configure = () => {}, initialLevel = 'low', onBusyChange = () => {} }: { disabled?: boolean; choose?: (model: PromptAgentModel) => Promise<void>; think?: (level: PromptAgentThinkingLevel) => Promise<void>; model?: PromptAgentModel; configure?: () => void; initialLevel?: PromptAgentThinkingLevel; onBusyChange?: (busy: boolean) => void }) => {
   const [open, setOpen] = useState(false), [selected, setSelected] = useState(model), [level, setLevel] = useState<PromptAgentThinkingLevel>(initialLevel);
-  return <AgentModelControl models={[first, second]} activeModel={selected} thinkingLevels={selected.thinkingLevels} thinkingLevel={selected.thinkingLevels.includes(level) ? level : 'off'} disabled={disabled} open={open} onOpenChange={setOpen} onModelChange={async next => { await choose(next); setSelected(next); }} onThinkingChange={async next => { await think(next); setLevel(next); }} onBusyChange={() => {}} onConfigure={configure} />;
+  return <AgentModelControl models={[first, second]} activeModel={selected} thinkingLevels={selected.thinkingLevels} thinkingLevel={selected.thinkingLevels.includes(level) ? level : 'off'} disabled={disabled} open={open} onOpenChange={setOpen} onModelChange={async next => { await choose(next); setSelected(next); }} onThinkingChange={async next => { await think(next); setLevel(next); }} onBusyChange={onBusyChange} onConfigure={configure} />;
+};
+const deferred = () => {
+  let resolve!: () => void, reject!: (reason: Error) => void;
+  const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+};
+const releaseAt = (slider: HTMLElement, value: string) => {
+  fireEvent.pointerDown(slider); fireEvent.change(slider, { target: { value } }); fireEvent.pointerUp(slider);
 };
 it('当前模型和强度直接可见，只展示本模型支持的思考档位', async () => {
   const think = vi.fn(async () => {}); render(<Control think={think} />);
@@ -139,6 +147,78 @@ it('保存中保留滑条与卡片结构，状态提示不撑高卡片且没有�
   fireEvent.change(slider, { target: { value: '2' } }); fireEvent.pointerUp(slider);
   expect(screen.getByRole('status').className).toBe('sr-only'); expect(screen.getByRole('slider')).toBe(slider);
   await act(async () => resolve()); expect(screen.queryByRole('status')).toBeNull();
+});
+it('点击跳档保存时不禁用或丢失焦点，释放后的原生 change 不把吸附值改回小数', async () => {
+  const pending = deferred(), think = vi.fn(() => pending.promise);
+  render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider') as HTMLInputElement, dialog = screen.getByRole('dialog');
+  releaseAt(slider, '1.85'); fireEvent.change(slider, { target: { value: '1.85' } });
+  expect(slider.value).toBe('2'); expect(slider.disabled).toBe(false); expect(document.activeElement).toBe(slider);
+  expect(dialog.querySelector('.animate-spin')).toBeNull(); expect(think).toHaveBeenCalledTimes(1);
+  await act(async () => pending.resolve());
+  expect(slider.value).toBe('2'); expect(document.activeElement).toBe(slider); expect(screen.getByRole('dialog')).toBe(dialog);
+});
+it('快速点击只串行保存最后待选档位，旧响应不拉回滑块且全程暂缓发送', async () => {
+  const firstSave = deferred(), lastSave = deferred(), busy = vi.fn();
+  const think = vi.fn().mockImplementationOnce(() => firstSave.promise).mockImplementationOnce(() => lastSave.promise);
+  render(<Control think={think} onBusyChange={busy} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider') as HTMLInputElement;
+  releaseAt(slider, '2'); releaseAt(slider, '0'); releaseAt(slider, '1');
+  expect(slider.value).toBe('1'); expect(think.mock.calls).toEqual([['high']]); expect(busy.mock.calls).toEqual([[true]]);
+  await act(async () => firstSave.resolve());
+  expect(think.mock.calls).toEqual([['high'], ['low']]); expect(slider.value).toBe('1'); expect(slider.getAttribute('aria-valuetext')).toBe('低');
+  expect(busy.mock.calls).toEqual([[true]]); expect(screen.getByRole('status')).toBeTruthy();
+  await act(async () => lastSave.resolve());
+  expect(busy.mock.calls).toEqual([[true], [false]]); expect(screen.queryByRole('status')).toBeNull();
+  expect(screen.getByRole('button', { name: '模型与思考设置' }).textContent).toContain('低');
+});
+it('快速调节最终回到正在保存的档位时不追加重复请求', async () => {
+  const pending = deferred(), think = vi.fn(() => pending.promise);
+  render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider'); releaseAt(slider, '2'); releaseAt(slider, '0'); releaseAt(slider, '2');
+  await act(async () => pending.resolve()); expect(think.mock.calls).toEqual([['high']]); expect((slider as HTMLInputElement).value).toBe('2');
+});
+it('上一档保存完成时保留正在拖动的位置，取消拖动恢复已确认档位', async () => {
+  const pending = deferred(); render(<Control think={() => pending.promise} />);
+  fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' })); const slider = screen.getByRole('slider') as HTMLInputElement;
+  releaseAt(slider, '2'); fireEvent.pointerDown(slider); fireEvent.change(slider, { target: { value: '0.65' } });
+  await act(async () => pending.resolve()); expect(slider.value).toBe('0.65');
+  fireEvent.pointerCancel(slider); expect(slider.value).toBe('2'); expect(slider.getAttribute('aria-valuetext')).toBe('高');
+});
+it('上一档仍在保存时取消新拖动，恢复最后释放的档位', async () => {
+  const pending = deferred(); render(<Control think={() => pending.promise} />);
+  fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' })); const slider = screen.getByRole('slider') as HTMLInputElement;
+  releaseAt(slider, '2'); fireEvent.pointerDown(slider); fireEvent.change(slider, { target: { value: '0.4' } }); fireEvent.pointerCancel(slider);
+  expect(slider.value).toBe('2'); await act(async () => pending.resolve()); expect(slider.value).toBe('2');
+});
+it('后续档位保存失败回到最后成功档位，不回到整轮调节的旧值', async () => {
+  const firstSave = deferred(), lastSave = deferred();
+  const think = vi.fn().mockImplementationOnce(() => firstSave.promise).mockImplementationOnce(() => lastSave.promise);
+  render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider') as HTMLInputElement; releaseAt(slider, '2'); releaseAt(slider, '0');
+  await act(async () => firstSave.resolve()); expect(slider.value).toBe('0');
+  await act(async () => lastSave.reject(new Error('最后一档保存失败')));
+  expect(screen.getByRole('alert').textContent).toBe('最后一档保存失败'); expect(slider.value).toBe('2'); expect(slider.disabled).toBe(false);
+});
+it('卸载后清空待选档位，不继续发起保存并释放发送状态', async () => {
+  const pending = deferred(), think = vi.fn(() => pending.promise), busy = vi.fn();
+  const view = render(<Control think={think} onBusyChange={busy} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider'); releaseAt(slider, '2'); releaseAt(slider, '0'); view.unmount();
+  await act(async () => pending.resolve()); expect(think.mock.calls).toEqual([['high']]); expect(busy.mock.calls).toEqual([[true], [false]]);
+});
+it('进入任务执行状态后关闭面板，不继续保存尚未发送的档位', async () => {
+  const pending = deferred(), think = vi.fn(() => pending.promise);
+  const view = render(<Control think={think} />); fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+  const slider = screen.getByRole('slider'); releaseAt(slider, '2'); releaseAt(slider, '0');
+  view.rerender(<Control think={think} disabled />); expect(screen.queryByRole('dialog')).toBeNull();
+  await act(async () => pending.resolve()); expect(think.mock.calls).toEqual([['high']]);
+});
+it('短保存不闪加载图标，持续保存超过 300 毫秒才显示且不禁用滑条', async () => {
+  vi.useFakeTimers(); const pending = deferred(); render(<Control think={() => pending.promise} />);
+  fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' })); const slider = screen.getByRole('slider') as HTMLInputElement;
+  releaseAt(slider, '2'); act(() => vi.advanceTimersByTime(299)); expect(document.querySelector('.animate-spin')).toBeNull();
+  act(() => vi.advanceTimersByTime(1)); expect(document.querySelector('.animate-spin')).toBeTruthy(); expect(slider.disabled).toBe(false);
+  await act(async () => pending.resolve()); expect(document.querySelector('.animate-spin')).toBeNull();
 });
 it('模型触发器无常驻底色，圆环显示真实比例；未知与超过窗口分别处理', () => {
   const base = { models: [first], activeModel: first, thinkingLevels: first.thinkingLevels, thinkingLevel: 'low' as const, open: false, disabled: false, onOpenChange: () => {}, onModelChange: async () => {}, onThinkingChange: async () => {}, onBusyChange: () => {}, onConfigure: () => {} };
