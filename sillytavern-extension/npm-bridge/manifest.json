@@ -5,9 +5,9 @@
   "optional": [
     "st-chatu8"
   ],
-  "js": "index.js?v=1.32.0",
-  "css": "style.css?v=1.32.0",
+  "js": "index.js?v=1.32.1",
+  "css": "style.css?v=1.32.1",
   "author": "HelloQun54321",
-  "version": "1.32.0",
+  "version": "1.32.1",
   "description": "在 Atelier 开启智慧姬同步后发送选定的 V4.5 / V5 风格串，全量接收 st-chatu8 风格串，互通 Vibe 与原图历史索引。"
 }

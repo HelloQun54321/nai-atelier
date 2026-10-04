@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.32.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.32.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据与图片存储)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网访问)
@@ -1004,6 +1004,8 @@ flowchart TD
 
 提交前的密钥扫描、ESLint 与 TypeScript 检查由 pre-commit 执行。按改动范围选择验证方式，详见 [AGENTS.md](./AGENTS.md)；纯文档修改无需运行全量构建。
 
+产品文档按职责维护：[VIBER_INTENT.md](./VIBER_INTENT.md) 提炼长期目标、核心概念与设计原则，[AGENTS.md](./AGENTS.md) 规定如何随用户意图及时修订并保持精简；[产品决策记录](./docs/PRODUCT_DECISIONS.md) 保存影响后续维护的模块约定，相关任务开始前按需阅读。具体功能使用本 README，内置助手运行行为使用 [PROJECT_AGENT.md](./PROJECT_AGENT.md)，变更经过留在更新日志与 AI 工作日志。
+
 ### 重要目录
 
 ```text
@@ -1019,6 +1021,7 @@ NAI Atelier/
 ├─ CHANGELOG.md         按真实日期倒序记录的修改历史
 ├─ AGENTS.md            AI 协作强制规则（提交、版本、CHANGELOG、工作日志）
 ├─ VIBER_INTENT.md      产品意图与创作原则
+├─ docs/PRODUCT_DECISIONS.md 模块已确认约定（按需阅读）
 ├─ AI_WORKLOG.md        AI 工作日志，按模型与日期登记每次修改
 └─ README.md            项目总览与使用说明
 ```
