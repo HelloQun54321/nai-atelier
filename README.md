@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.8-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.9-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -69,11 +69,11 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。�
 </div>
 
 <div align="center">
-  <p><strong>🗃️ 社区作品交流与灵感参考（AITag）</strong></p>
+  <p><strong>🗃️ 公网作品索引与参数参考（AITag）</strong></p>
   <a href="./docs/screenshots/desktop-aitag-browser.webp">
-    <img src="./docs/screenshots/desktop-aitag-browser.webp" width="860" alt="社区作品交流与灵感参考" />
+    <img src="./docs/screenshots/desktop-aitag-browser.webp" width="860" alt="公网作品索引与参数参考" />
   </a>
-  <p><em>社区精选作品浏览、公开 Prompt 与生成参数学习借鉴、一键导入工坊探索</em></p>
+  <p><em>精选生成案例检索、Prompt 与模型参数构成参考、一键载入工坊深入研究</em></p>
 </div>
 
 ### 📱 手机端：家庭局域网移动端触控界面
@@ -245,7 +245,7 @@ flowchart LR
 
 ### 🌐 外部素材发现：Pixiv · Danbooru · AITag
 
-- **AITag 社区**：直连 NovelAI 创作者交流社区，浏览社区公开分享的精选佳作与完整提示词方案，一键导入工坊学习优秀构图与角色配方；
+- **AITag 索引**：聚合公网 NovelAI 生成案例与元数据索引，方便创作者横向对比不同画风的实际渲染表现，直观查阅作品的 Prompt 组织与参数结构，作为构图与角色设计的灵感参考；
 - **Pixiv 图库**：直连官方 App API，支持日/周/月榜、Tag 搜索与画师作品，详情图片一键反推 Tag 并收入灵感库；
 - **Danbooru 素材库**：通用级构图与标签参考，具备本地智能调度与防限流保护。
 
