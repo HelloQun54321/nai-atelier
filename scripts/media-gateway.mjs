@@ -15,6 +15,7 @@ import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-b
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { lowConsumptionOperationViolation, lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
+import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '../worker/naiBilling.mjs';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
@@ -726,74 +727,32 @@ const getNaiModelCapability = (model, runtime = getNaiRuntime()) => {
   return undefined;
 };
 
-/** NovelAI's current V4/V4.5 cost formula for the generation features supported here. */
-export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false, opusSubscriber = false) => {
-  const parameters = payload?.parameters || {};
-  const width = Math.max(1, Number(parameters.width) || 1);
-  const height = Math.max(1, Number(parameters.height) || 1);
-  const area = Math.max(65_536, width * height);
-  const steps = Math.max(1, Number(parameters.steps) || 1);
-  const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
-  // 系数与免费档门槛来自官方 Web 应用常量同步（见 DEFAULT_NAI_RUNTIME / syncNaiRuntime）。
-  const runtime = getNaiRuntime();
-  const { costCoefficientArea, costCoefficientSteps, freeMaxArea, freeMaxSteps } = runtime;
-  const raw = Math.ceil(costCoefficientArea * area + costCoefficientSteps * area * steps);
-  const smeaMultiplier = parameters.sm_dyn ? 1.4 : parameters.sm ? 1.2 : 1;
-  const strength = parameters.mask
-    ? Number(parameters.inpaintImg2ImgStrength ?? 1)
-    : parameters.image ? Number(parameters.strength ?? 1) : 1;
-  const baseCost = Math.max(Math.ceil(raw * smeaMultiplier * Math.max(0, strength)), 2);
-  const preciseReferences = Array.isArray(parameters.director_reference_images_cached)
-    ? parameters.director_reference_images_cached.length
-    : Array.isArray(parameters.director_reference_images) ? parameters.director_reference_images.length : 0;
-  const vibeCount = Array.isArray(parameters.reference_image_multiple_cached)
-    ? parameters.reference_image_multiple_cached.length
-    : Array.isArray(parameters.reference_image_multiple) ? parameters.reference_image_multiple.length : 0;
-  // Precise Reference is a per-reference surcharge, not an img2img base image.
-  const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
-  const focusedEdit = parameters._local_focused_inpainting === true
-    && payload?.action === 'infill'
-    && parameters._local_edit_operation === 'inpaint'
-    && opusSubscriber
-    && !opusUsageExhausted
-    && samples === 1
-    && preciseReferences === 0
-    && vibeCount === 0;
-  // Opus 免费额度仅对高于 V4.5 的模型（V5 系）设限；透支后所有图都按 Anlas 计费。
-  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const freeSamples = focusedEdit
-    ? 1
-    : opusSubscriber && isPlainGeneration && !(opusUsageExhausted && isUsageLimitedModel) && area <= freeMaxArea && steps <= freeMaxSteps ? 1 : 0;
-  const base = baseCost * Math.max(0, samples - freeSamples);
-  return base + Math.max(0, vibeCount - 4) * 2 * samples + preciseReferences * 5 * samples;
+/** 将实际请求字段交给前后台共用计费函数；本地扣减仍属于估算。 */
+const billingForPayload = (payload, runtime, opusSubscriber, usageExhausted) => {
+  const p = payload?.parameters || {};
+  return estimateNaiBilling({
+    width: p.width, height: p.height, steps: p.steps, samples: p.n_samples,
+    image: Boolean(p.image) || payload?.action === 'img2img',
+    mask: Boolean(p.mask) || payload?.action === 'infill',
+    strength: p.mask ? p.inpaintImg2ImgStrength ?? 1 : p.image ? p.strength ?? 1 : 1,
+    sm: p.sm, sm_dyn: p.sm_dyn,
+    referenceCount: Array.isArray(p.director_reference_images_cached) ? p.director_reference_images_cached.length
+      : Array.isArray(p.director_reference_images) ? p.director_reference_images.length : 0,
+    vibeCount: Array.isArray(p.reference_image_multiple_cached) ? p.reference_image_multiple_cached.length
+      : Array.isArray(p.reference_image_multiple) ? p.reference_image_multiple.length : 0,
+  }, payload?.model || 'nai-diffusion-4-5-full', runtime, opusSubscriber, usageExhausted);
 };
 
-/**
- * 成功生成后的个人用量增量（按密钥账号累计，供设置页展示）：
- * - anlasDelta：本次实际扣减的 Anlas（估算口径与本地预算一致）；
- * - opusImagesDelta：计入 Opus 免费额度的张数——仅“活跃 Opus + 受限模型（V5 系）+ 免费档
- *   （单张、无底图、面积/步数达标）+ 未透支”的生成才消耗共享额度。
- */
+export const estimateNovelAiGenerationCost = (payload, opusUsageExhausted = false, opusSubscriber = false) =>
+  billingForPayload(payload, getNaiRuntime(), opusSubscriber, opusUsageExhausted).cost;
+
+/** 成功后统计同 Key 的估算点数及受限模型免费档张数，编辑与文生图共用资格。 */
 export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExhausted, runtime = getNaiRuntime(), generationSucceeded = true, opusSubscriber = false) => {
   if (!generationSucceeded) return { anlasDelta: 0, opusImagesDelta: 0 };
-  const parameters = payload?.parameters || {};
-  const samples = Math.max(1, Math.floor(Number(parameters.n_samples) || 1));
-  const width = Math.max(1, Number(parameters.width) || 1);
-  const height = Math.max(1, Number(parameters.height) || 1);
-  const area = Math.max(65_536, width * height);
-  const steps = Math.max(1, Number(parameters.steps) || 1);
-  const isPlainGeneration = payload?.action === 'generate' && !parameters.image && !parameters.mask;
-  const isUsageLimitedModel = isNaiUsageLimitedModel(payload?.model, runtime);
-  const isFocusedEdit = parameters._local_focused_inpainting === true
-    && payload?.action === 'infill'
-    && parameters._local_edit_operation === 'inpaint'
-    && opusSubscriber === true
-    && samples === 1;
-  const opusImagesDelta = opusSubscriber === true && !usageExhausted && (
-    (isUsageLimitedModel && isPlainGeneration && area <= runtime.freeMaxArea && steps <= runtime.freeMaxSteps)
-    || isFocusedEdit
-  ) ? samples : 0;
-  return { anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)), opusImagesDelta };
+  return {
+    anlasDelta: Math.max(0, Math.floor(Number(estimatedCost) || 0)),
+    opusImagesDelta: billingForPayload(payload, runtime, opusSubscriber, usageExhausted).opusImages,
+  };
 };
 
 const spendAnlasBudget = async (req, workerPort, amount, reason, personal = null) => {
@@ -1144,6 +1103,7 @@ export const DEFAULT_NAI_RUNTIME = {
   /** Opus 免费档门槛：无角色参考、面积与步数不超过上限。 */
   freeMaxArea: 1_048_576,
   freeMaxSteps: 28,
+  billing: DEFAULT_NAI_BILLING,
   models: [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
@@ -1229,9 +1189,46 @@ export const extractNaiCostCoefficients = text => {
 };
 
 export const extractNaiFreeTierLimits = text => {
-  const m = text.match(/!\w+\.characterRef&&\w+\.width\*\w+\.height<=(\d+)&&\w+\.steps<=(\d+)/);
+  const m = text.match(/function \w+\(\w+\)\{return[^{};]*\w+\.width\*\w+\.height<=(\d+)&&[^{};]*\w+\.steps<=(\d+)[^{};]*\}/);
   if (!m) return null;
   return { freeMaxArea: Number(m[1]), freeMaxSteps: Number(m[2]) };
+};
+
+/** 只解析已识别的官方算式，不执行远端代码；结构变化必须进入健康告警。 */
+export const extractNaiBillingRules = text => {
+  const free = text.match(/function \w+\((\w+)\)\{return([^{};]+\.width\*\w+\.height<=\d+[^{};]+\.steps<=\d+)\}/);
+  if (!free) return null;
+  const variable = free[1];
+  const clauses = free[2].split('&&');
+  if (!clauses.every(clause => new RegExp(`^(?:!${variable}\\.(?:characterRef|image|mask)|${variable}\\.width\\*${variable}\\.height<=\\d+|${variable}\\.steps<=\\d+)$`).test(clause))) return null;
+  const formula = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+\)\*\(\w+\?([\d.]+):\w+\?([\d.]+):1\)/);
+  if (!formula) return null;
+  const calculator = text.slice(Math.max(0, formula.index - 1200), formula.index + 2300);
+  const minimum = calculator.match(/Math\.max\(Math\.ceil\(\w+\*\w+\),(\d+)\)/);
+  const freeSamples = calculator.match(/subscription\.tier>=3[^;]{0,150}&&\(\w+-=(\d+)\)/);
+  const vibe = text.match(/(?:let |var |,)(\w+)=(\d+);function \w+\((\w+)\)\{return Math\.max\(0,\3-(\d+)\)\*\1\}/);
+  const reference = text.match(/characterReferences&&([\w]+)\.length>0[^;]{0,160}\(\w+\+=([\d.]+)\*\1\.length\*\w+\.n_samples\)/);
+  const encoding = text.match(/async getPrice\([^)]*\)\{[^{}]{0,200}[\s\S]{0,500}?getEncoding\([^)]*\)\?\{exists:!0,price:0\}:\{exists:!1,price:(\d+)\}/);
+  if (!minimum || !freeSamples || !vibe || !reference || !encoding) return null;
+  const modelMultipliers = {};
+  const multipliers = [...calculator.matchAll(/\(0,\w+\.\w+\)\(\w+\)===\w+\.\w+\.(v\d+)&&\(\w+\*=([\d.]+)\)/g)];
+  // 倍率不再是已识别的常数算式时，不把缺项误读为倍率 1。
+  if ([...calculator.matchAll(/\w+\*=/g)].length !== multipliers.length
+    || [...calculator.matchAll(/===\w+\.\w+\.v\d+&&/g)].length !== multipliers.length) return null;
+  for (const match of multipliers) {
+    modelMultipliers[match[1]] = Number(match[2]);
+  }
+  const rules = {
+    minimumCost: Number(minimum[1]), freeSamples: Number(freeSamples[1]),
+    freeImageToImage: !clauses.includes(`!${variable}.image`),
+    freeInpainting: !clauses.includes(`!${variable}.mask`),
+    freeWithCharacterReference: !clauses.includes(`!${variable}.characterRef`),
+    modelMultipliers,
+    smeaMultiplier: Number(formula[4]), smeaDynamicMultiplier: Number(formula[3]),
+    freeVibeCount: Number(vibe[4]), extraVibeCost: Number(vibe[2]),
+    characterReferenceCost: Number(reference[2]), vibeEncodingCost: Number(encoding[1]),
+  };
+  return isNaiBillingRules(rules) ? rules : null;
 };
 
 /**
@@ -1424,6 +1421,11 @@ export const computeNaiRuntimeSync = text => {
     Object.assign(next, freeTier);
     health.extracted.push('freeTier');
   } else health.missed.push('freeTier');
+  const billing = extractNaiBillingRules(text);
+  if (billing) {
+    next.billing = billing;
+    health.extracted.push('billing');
+  } else health.missed.push('billing');
   const capabilities = extractNaiModelCapabilities(text);
   if (capabilities.models.length && capabilities.usageLimitedModels.every(id => capabilities.models.includes(id))) {
     next.models = capabilities.models;
@@ -1470,6 +1472,7 @@ const persistNaiRuntimeState = async () => {
         costCoefficientSteps: naiRuntimeState.costCoefficientSteps,
         freeMaxArea: naiRuntimeState.freeMaxArea,
         freeMaxSteps: naiRuntimeState.freeMaxSteps,
+        billing: naiRuntimeState.billing,
         models: naiRuntimeState.models,
         usageLimitedModels: naiRuntimeState.usageLimitedModels,
         streamedModels: naiRuntimeState.streamedModels,
@@ -1555,7 +1558,9 @@ export const initNaiRuntimeSync = async (requestRemote = fetch) => {
       // 历史失败记录只可能由旧版本写入（新版本失败不落盘），加载时降级为 pending，
       // 由启动后的延迟同步刷新为真实结果，避免跨重启残留红色同步警告。
       let health;
-      if (!saved.health) {
+      if (!isNaiBillingRules(saved.runtime.billing)) {
+        health = { ok: false, reason: 'pending', missed: ['billing'] };
+      } else if (!saved.health) {
         health = { ok: true, extracted: [], missed: [] };
       } else if (saved.health.missed?.length) {
         health = { ...saved.health, ok: false, reason: 'partial' };
@@ -1567,6 +1572,7 @@ export const initNaiRuntimeSync = async (requestRemote = fetch) => {
       naiRuntimeState = {
         ...DEFAULT_NAI_RUNTIME,
         ...saved.runtime,
+        billing: isNaiBillingRules(saved.runtime.billing) ? saved.runtime.billing : DEFAULT_NAI_BILLING,
         syncedAt: Number(saved.syncedAt) || 0,
         health,
       };
@@ -2095,7 +2101,8 @@ const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, 
           throw error;
         }
         const encodeKeyHash = createHash('sha256').update(authorization.slice(7)).digest('hex');
-        const anlasBudget = await spendAnlasBudget(req, workerPort, 2, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: 2, opusImagesDelta: 0 });
+        const cost = getNaiRuntime().billing.vibeEncodingCost;
+        const anlasBudget = await spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 });
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
@@ -3317,6 +3324,7 @@ const serveDistFile = async (req, res, url) => {
             await promptAgent.run(body, emit, undefined, {
               keyHash: cloudQueueScope.keyHash,
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
+              getNaiRuntime,
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: setAgentQueuePreferences(cloudQueueScope),
               tagDictionary: method => requestTagDictionaryControl(method),

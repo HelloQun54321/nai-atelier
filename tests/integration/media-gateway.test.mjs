@@ -1,4 +1,5 @@
 import '../support/node-environment.mjs';
+import { NAI_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from '../../scripts/media-memory-cache.mjs';
 import { createDanbooruLimiter } from '../../scripts/danbooru-loading.mjs';
 
@@ -214,6 +215,7 @@ import {
   extractNaiImagesPerPercent,
   extractNaiCostCoefficients,
   extractNaiFreeTierLimits,
+  extractNaiBillingRules,
   extractNaiModelCapabilities,
   extractNaiPromptPresets,
   extractNaiMetadataModelMappings,
@@ -969,7 +971,7 @@ test('NovelAI V4.5 costs follow Opus free limits and current web formula', () =>
   assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
     ...payload.parameters,
     director_reference_images_cached: [{ cache_secret_key: 'character' }],
-  } }, false, true), 5);
+  } }, false, true), 22);
 });
 
 test('过期订阅保留 Paid Anlas，隐藏残留免费额度并只透传余额字段', () => {
@@ -1152,8 +1154,44 @@ test('成本估算跟随同步的运行时常量', () => {
   }
 });
 
+test('官方计费提取覆盖免费资格、模型倍率与附加费，结构失配必须告警', () => {
+  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), DEFAULT_NAI_RUNTIME.billing);
+  const changed = NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.characterRef&&!e.image&&!e.mask&&')
+    .replace('w*=1.5', 'w*=2').replace('v-=1', 'v-=2').replace('e-4', 'e-3')
+    .replace(',p=2;', ',p=4;').replace('g+=5', 'g+=7').replace('price:2', 'price:6');
+  assert.deepEqual(extractNaiBillingRules(changed), { ...DEFAULT_NAI_RUNTIME.billing,
+    freeImageToImage: false, freeInpainting: false, freeSamples: 2, modelMultipliers: { v5: 2 },
+    freeVibeCount: 3, extraVibeCost: 4, characterReferenceCost: 7, vibeEncodingCost: 6 });
+  for (const broken of [NAI_BILLING_BUNDLE.replace('w*=1.5', 'w*=getPrice(a)'),
+    NAI_BILLING_BUNDLE.replace('w*=1.5', 'w+=2'),
+    NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.newRestriction&&'),
+    NAI_BILLING_BUNDLE.replace('Math.max(0,e-4)*p', 'newFee(e)')]) {
+    assert.equal(extractNaiBillingRules(broken), null);
+    assert.ok(computeNaiRuntimeSync(broken).health.missed.includes('billing'));
+  }
+  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE.replace('let y=', '(0,r.Jg)(a)===r.lh.v6&&(w*=2);let y=')).modelMultipliers, { v5: 1.5, v6: 2 });
+});
+
+test('共享计费覆盖多张、参考资格、Strength 舍入及同步规则变更', () => {
+  const parameters = { width: 832, height: 1216, steps: 28, n_samples: 2 };
+  const base = { model: 'nai-diffusion-5-full', parameters };
+  assert.equal(estimateNovelAiGenerationCost(base, false, true), 30);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, reference_image_multiple_cached: Array(5).fill({}) } }, false, true), 32);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, director_reference_images_cached: [{}] } }, false, true), 70);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0.7 } }, true, true), 42);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0 } }, true, true), 4);
+  assert.deepEqual(computeGenerationPersonalUsage(base, 30, false, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 30, opusImagesDelta: 1 });
+  try {
+    const billing = { ...DEFAULT_NAI_RUNTIME.billing, freeImageToImage: false, modelMultipliers: { v5: 2 }, extraVibeCost: 4 };
+    applyNaiRuntimeOverride({ billing });
+    assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 1 } }, false, true), 80);
+    assert.equal(estimateNovelAiGenerationCost(base, false, true), 40);
+  } finally { applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing }); }
+});
+
 test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   const fullBundle = [
+    NAI_BILLING_BUNDLE,
     'function h(e){return e.timeUntilNextPercent<=0?0:Math.round(86400/e.timeUntilNextPercent*10)/10}function g(e){return Math.round(17.3*e)}',
     'return Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)',
     'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
@@ -1172,14 +1210,14 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
   const broken = computeNaiRuntimeSync('console.log("redesigned site")');
   assert.equal(broken.health.ok, false);
-  assert.equal(broken.health.missed.length, 8);
+  assert.equal(broken.health.missed.length, 9);
   assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
   assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
 
   // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
   const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
   assert.equal(partial.health.ok, true);
-  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'streamedModels', 'promptPresets', 'metadataModels']);
+  assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'billing', 'streamedModels', 'promptPresets', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
 });
 
@@ -1614,7 +1652,7 @@ test('个人用量统计：只有成功的受限模型免费档生成计入 Opus
   assert.deepEqual(computeGenerationPersonalUsage({ ...base, model: 'nai-diffusion-6-full' }, 0, false, futureRuntime, true, true), { anlasDelta: 0, opusImagesDelta: 1 });
 });
 
-test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focused Inpainting 只对 Opus 免费', () => {
+test('图像编辑费用：免费档依据实际尺寸、账号与额度，普通／聚焦重绘同源', () => {
   const base = {
     action: 'infill',
     model: 'nai-diffusion-5-full-inpainting',
@@ -1629,11 +1667,12 @@ test('图像编辑费用：普通编辑不套用 V5 普通生图免费档，Focu
       _local_focused_inpainting: true,
     },
   };
-  assert.ok(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_focused_inpainting: false } }, false, true) > 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_focused_inpainting: false } }, false, true), 0);
   assert.equal(estimateNovelAiGenerationCost(base, false, true), 0);
   assert.ok(estimateNovelAiGenerationCost(base, false, false) > 0);
   assert.equal(computeGenerationPersonalUsage(base, 0, false).opusImagesDelta, 0);
-  assert.ok(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_edit_operation: 'outpaint' } }, false, true) > 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, _local_edit_operation: 'outpaint' } }, false, true), 0);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...base.parameters, width: 1216, height: 960, _local_edit_operation: 'outpaint' } }, false, true), 35);
   assert.equal(computeGenerationPersonalUsage(base, 0, false, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 1);
   assert.equal(computeGenerationPersonalUsage(base, 0, true, DEFAULT_NAI_RUNTIME, true, true).opusImagesDelta, 0);
 });

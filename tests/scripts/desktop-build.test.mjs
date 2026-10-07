@@ -8,6 +8,7 @@ import { RUNTIME_FILES, DESKTOP_FILES, RUNTIME_DEPENDENCIES, createRuntimePackag
 import builder from '../../desktop/builder.config.mjs';
 
 test('分发边界识别数据、缓存、词库、环境变量与测试资料，公开运行文件均不落保护区', async () => {
+  assert.ok(RUNTIME_FILES.includes('worker/naiBilling.mjs'), '安装版必须包含网关共用的计费模块');
   for (const name of ['local-data/prompt-agent.key', 'PUBLIC/TAG-DATA/tags.json', 'x\\local-cache\\model.onnx', '.env.local', '.dev.vars', '.git/config', 'logs/tests/gateway.log', 'tests/fixtures/synthetic.json', '.wrangler/tmp/test']) assert.equal(isPrivateDistributionPath(name), true, name);
   for (const name of RUNTIME_FILES) {
     assert.equal(isPrivateDistributionPath(name), false, name);

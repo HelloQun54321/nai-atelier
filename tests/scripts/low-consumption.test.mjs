@@ -85,6 +85,32 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   const label = handler === handleGenerateRequest ? 'ZIP' : 'SSE';
   const success = () => new Response(handler === handleGenerateRequest ? 'zip' : 'event: final\ndata: {"image":"fake"}\n\n');
   const settleGeneration = async () => ({ estimatedCost: 0, anlasBudget: null });
+  test(`${label}：免费图生图与普通重绘不扣本地 Anlas，成功才按当前 Key 记录 Opus`, async () => {
+    const spends = [];
+    const worker = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      spends.push(JSON.parse(Buffer.concat(chunks).toString()));
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ remaining: 1666 }));
+    });
+    worker.listen(0, '127.0.0.1');
+    await once(worker, 'listening');
+    try {
+      for (const action of ['img2img', 'infill']) {
+        const key = `free-edit-${label}-${action}`, res = new Output();
+        const body = payload({ image: 'fake', strength: 0.7,
+          ...(action === 'infill' ? { mask: 'fake', inpaintImg2ImgStrength: 1, _local_focused_inpainting: false } : {}) },
+        { action, model: action === 'infill' ? 'nai-diffusion-5-full-inpainting' : 'nai-diffusion-5-full' });
+        await handler(request(key, body), res, '', worker.address().port, idleQueue(), { enabled: false },
+          async url => url.endsWith('/user/subscription') ? json(subscription) : success(), { checkLowConsumption: async () => false });
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(spends.at(-1), { amount: 0, reason: 'generation', keyHash: createHash('sha256').update(key).digest('hex'), anlasDelta: 0, opusImagesDelta: 1 });
+        if (handler === handleGenerateRequest) assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], '0');
+        else assert.match(res.body(), /"estimatedSpent":0/);
+      }
+    } finally { await new Promise(resolve => worker.close(resolve)); }
+  });
   for (const model of ['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full']) {
     test(`${label} ${model}：普通模式允许过期订阅请求，成功按当前 Key 记付费点数，不记 Opus 用量`, async () => {
       const spends = [], calls = [];
@@ -111,9 +137,10 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
         assert.equal(res.statusCode, 200);
         assert.equal(calls.filter(url => url.endsWith('/user/subscription')).length, 1);
         assert.equal(calls.filter(url => url.includes('/ai/generate-image')).length, 1);
-        assert.deepEqual(spends, [{ amount: 20, reason: 'generation', keyHash: createHash('sha256').update(key).digest('hex'), anlasDelta: 20, opusImagesDelta: 0 }]);
-        if (handler === handleGenerateRequest) assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], '20');
-        else assert.match(res.body(), /"estimatedSpent":20/);
+        const cost = /^nai-diffusion-5-/.test(model) ? 30 : 20;
+        assert.deepEqual(spends, [{ amount: cost, reason: 'generation', keyHash: createHash('sha256').update(key).digest('hex'), anlasDelta: cost, opusImagesDelta: 0 }]);
+        if (handler === handleGenerateRequest) assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], String(cost));
+        else assert.match(res.body(), new RegExp(`"estimatedSpent":${cost}`));
       } finally { await new Promise(resolve => worker.close(resolve)); }
     });
   }

@@ -2,7 +2,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { ANLAS_BUDGET_CHANGED_EVENT, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
+import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { isActiveOpusSubscription } from '../../services/naiUsage';
 
 const responseFor = (payload: unknown) => ({
@@ -77,11 +78,12 @@ describe('formatGenerationCostLabel', () => {
     for (const model of ['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full']) {
       const params = { model, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
       const cost = estimateV45GenerationCost(params, opus, false);
-      expect(cost).toBe(20);
-      expect(formatGenerationCostLabel(cost, model)).toBe('20 点');
+      const expected = /^nai-diffusion-5-/.test(model) ? 30 : 20;
+      expect(cost).toBe(expected);
+      expect(formatGenerationCostLabel(cost, model)).toBe(`${expected} 点`);
       const editCost = estimateImageEditCost(params, 'inpaint', 1, true, opus ? expired.tier : 0, false);
-      expect(editCost).toBe(20);
-      expect(formatImageEditCostLabel(editCost, 'inpaint', true, opus ? expired.tier : 0)).toBe('20 点');
+      expect(editCost).toBe(expected);
+      expect(formatImageEditCostLabel(editCost, 'inpaint', true, opus ? expired.tier : 0)).toBe(`${expected} 点`);
     }
   });
   it('V5 免费档提示会消耗 Opus 额度而不是免费', () => {
@@ -98,18 +100,18 @@ describe('formatGenerationCostLabel', () => {
 describe('image edit cost estimation', () => {
   const params = { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
 
-  it('does not apply ordinary Opus free generation to image edits', () => {
-    expect(estimateImageEditCost(params, 'image-to-image', 1, false, 4, false)).toBeGreaterThan(0);
-    expect(estimateImageEditCost(params, 'inpaint', 1, false, 4, false)).toBeGreaterThan(0);
-    expect(estimateImageEditCost(params, 'outpaint', 1, false, 4, false)).toBeGreaterThan(0);
+  it('图生图、普通重绘与扩图按实际请求尺寸享受 Opus 免费档', () => {
+    expect(estimateImageEditCost(params, 'image-to-image', 1, false, 4, false)).toBe(0);
+    expect(estimateImageEditCost(params, 'inpaint', 1, false, 4, false)).toBe(0);
+    expect(estimateImageEditCost(params, 'outpaint', 1, false, 4, false)).toBe(0);
   });
 
   it('only marks focused inpainting free for a confirmed Opus account', () => {
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 3, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 4, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 2, false)).toBeGreaterThan(0);
-    expect(formatImageEditCostLabel(0, 'inpaint', true, 3)).toBe('Opus 免费');
-    expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('Opus 免费');
+    expect(formatImageEditCostLabel(0, 'inpaint', true, 3)).toBe('零 Anlas');
+    expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('零 Anlas');
     expect(formatImageEditCostLabel(0, 'inpaint', true, undefined)).toBe('费用以官方返回为准');
   });
 
@@ -127,10 +129,27 @@ describe('image edit cost estimation', () => {
   });
 
   it('treats strength 0 as a valid minimum that scales cost to near zero', () => {
-    const atFull = estimateImageEditCost(params, 'image-to-image', 1, false, 4, false);
-    const atZero = estimateImageEditCost(params, 'image-to-image', 0, false, 4, false);
+    const atFull = estimateImageEditCost(params, 'image-to-image', 1, false, 0, false);
+    const atZero = estimateImageEditCost(params, 'image-to-image', 0, false, 0, false);
     expect(atZero).toBeLessThan(atFull);
     expect(atZero).toBeLessThanOrEqual(2);
+  });
+
+  it('付费倍率、免费资格与参考附加费跟随动态规则，实际扩图超面积收费', () => {
+    expect(estimateImageEditCost(params, 'outpaint', 1, false, 3, false, { width: 1216, height: 960 })).toBe(35);
+    expect(estimateImageEditCost(params, 'inpaint', 1, false, 3, true)).toBe(30);
+    const referenced = { ...params, characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
+    expect(estimateV45GenerationCost(referenced, true)).toBe(35);
+    try {
+      applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing,
+        modelMultipliers: { v5: 2 }, freeImageToImage: false, characterReferenceCost: 7 } });
+      expect(estimateImageEditCost(params, 'image-to-image', 1, false, 3)).toBe(40);
+      expect(estimateImageEditCost(params, 'inpaint', 1, false, 3)).toBe(40);
+      expect(estimateV45GenerationCost(referenced, true)).toBe(47);
+      applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, usageLimitedModels: [] });
+      expect(isOpusUsageLimitedModel(params.model)).toBe(false);
+      expect(estimateV45GenerationCost(params, true, true)).toBe(0);
+    } finally { applyEstimatorRuntime(DEFAULT_NAI_RUNTIME); }
   });
 });
 

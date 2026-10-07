@@ -220,7 +220,7 @@ describe('ImageEditControls', () => {
     const placeholder = operation === 'image-to-image' ? '图生图提示词' : operation === 'inpaint' ? '重绘提示词' : '扩图提示词';
     fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'new scene' } });
     expect(onPromptChange).toHaveBeenCalledWith('new scene');
-    if (operation === 'image-to-image') expect(screen.getByText('无免费档')).toBeTruthy();
+    expect(screen.queryByText('无免费档')).toBeNull();
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 定位区按原图比例且沿用模型能力，手动定位原子更新开关和角色', operation => {

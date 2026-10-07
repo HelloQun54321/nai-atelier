@@ -377,11 +377,6 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
       <LabModuleSection moduleId="editSettings" label="编辑参数" order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>
         <section className="space-y-4">
-          {operation === 'image-to-image' && (
-            <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-meta leading-5 text-indigo-700 dark:border-indigo-900/40 dark:bg-indigo-950/30 dark:text-indigo-300">
-              图生图消耗 Anlas，<b>无免费档</b>。
-            </div>
-          )}
           <div>
             <div className="mb-1 flex items-center justify-between">
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">Strength</label>

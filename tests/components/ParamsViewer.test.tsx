@@ -5,6 +5,12 @@ import { afterEach, expect, it } from 'vitest';
 import { ParamsViewer } from '../../components/ParamsViewer';
 
 afterEach(cleanup);
+it('历史参考参数不把当前估算价格冒充当时的实际扣费', () => {
+  const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
+  render(<ParamsViewer params={params} />);
+  expect(screen.getByText('角色参考 (1)')).toBeTruthy();
+  expect(screen.queryByText(/Anlas/)).toBeNull();
+});
 it('手机可点按完整采样器和种子，内容在浮层中换行，原参数不变化', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'custom_very_long_sampler_name', seed: 987654321, qualityToggle: true, ucPreset: 4 };
   const snapshot = JSON.stringify(params); render(<ParamsViewer params={params} />);

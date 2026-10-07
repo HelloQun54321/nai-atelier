@@ -58,6 +58,24 @@ describe('naiRuntime refresh', () => {
     expect(afterRecover.syncedAt).toBe(456);
     expect(afterRecover.health?.ok).toBe(true);
   });
+
+  it('旧网关缺少计费规则必须示警，恢复后接收新倍率与免费资格', async () => {
+    const old = { ...DEFAULT_NAI_RUNTIME, billing: undefined, health: { ok: true, missed: [] } };
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => old } as Response);
+    expect((await refreshNaiRuntimeConfig()).health).toMatchObject({ ok: false, missed: ['billing'] });
+    const billing = { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: { v5: 2 }, freeImageToImage: false };
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ...DEFAULT_NAI_RUNTIME, billing, health: { ok: true, missed: [] } }) } as Response);
+    const recovered = await refreshNaiRuntimeConfig();
+    expect(recovered.billing).toEqual(billing);
+    expect(recovered.health?.ok).toBe(true);
+  });
+
+  it.each([{}, { ...DEFAULT_NAI_RUNTIME.billing, extraVibeCost: -1 }, { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: [] }])('损坏计费响应不伪装成同步成功：%s', async billing => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ...DEFAULT_NAI_RUNTIME, billing, health: { ok: true, missed: [] } }) } as Response);
+    const result = await refreshNaiRuntimeConfig();
+    expect(result.health).toMatchObject({ ok: false, missed: ['billing'] });
+    expect(result.billing).toEqual(DEFAULT_NAI_RUNTIME.billing);
+  });
 });
 
 describe('useNaiRuntime 共享订阅', () => {

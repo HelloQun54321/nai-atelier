@@ -169,8 +169,8 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
     summary: 'Vibe Transfer 从图片提取风格与构图线索，可调整强度和信息提取量。',
     facts: [
       '多个 Vibe 的总强度通常建议不超过 1.0，V4 及以上可自动归一化。',
-      'V4 及以上编码一个信息提取量变体一次性消耗 2 ImageAnlas，已编码变体可复用。',
-      '最多可使用 16 个 Vibe；V4 及以上超过四个后，每多一个会增加 2 ImageAnlas。',
+      '新信息提取量变体一次性支付编码费用，已编码变体可复用；费用以当前官方运行时同步为准。',
+      '最多可使用 16 个 Vibe；免费参考数量与超出后的附加费用以当前官方运行时同步为准。',
       '图片下载得到的 PNG 元数据可包含编码后的 Vibe，但不包含原始参考图片。',
     ],
     caveats: ['V5 当前仍未开放 Vibe Transfer；项目永久编码资产仍使用 V4.5 Full 编码管线，实际可用模型由官方运行时能力表决定。'],
@@ -186,7 +186,7 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
     sourceUrl: `${OFFICIAL_DOCS_ROOT}/precisereference/`,
     summary: 'Precise Reference 可分别参考角色、风格或两者，Strength 与 Fidelity 控制影响程度。',
     facts: [
-      '每张 Precise Reference 每次生成额外消耗 5 ImageAnlas，费用随参考图数量增加。',
+      '每张 Precise Reference 每次生成额外消耗 ImageAnlas，费用随参考图数量增加；单价与基础生成的免费资格以当前官方运行时同步为准。',
       'Strength 控制参考图视觉线索的影响强度，Fidelity 控制参考被执行的严格程度。',
       '多张角色参考目前会互相混合，并不会自动对应为多个独立角色。',
       'Precise Reference 可用于 Inpainting。',

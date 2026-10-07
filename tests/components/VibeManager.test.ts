@@ -4,9 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VibeManager } from '../../components/VibeManager';
 import type { NAIParams } from '../../types';
-const fixtures = vi.hoisted(() => ({ enabled: true, needsEncoding: false, encode: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
+const fixtures = vi.hoisted(() => ({ encodingCost: 2, enabled: true, needsEncoding: false, encode: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
 vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: fixtures.enabled }) }));
-vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
+vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: fixtures.encodingCost } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true }) }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 1666 }) }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: fixtures.refresh }), isNovelaiSubscriptionInactive: (info: { active: boolean }) => info?.active === false }));
@@ -16,11 +16,21 @@ vi.mock('../../services/vibeService', () => ({ vibeService: {
   listGroups: async () => [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
   encode: fixtures.encode,
 } }));
-afterEach(() => { cleanup(); fixtures.enabled = true; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
+afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.enabled = true; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
 const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
 describe('低消耗 Vibe 复用入口', () => {
+  it('新编码确认与预算预测跟随官方动态单价', async () => {
+    fixtures.encodingCost = 6; fixtures.needsEncoding = true; fixtures.confirm.mockResolvedValueOnce(false);
+    render(React.createElement(VibeManager, { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    fireEvent.click(await screen.findByRole('button', { name: /新 Vibe/ }));
+    await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({
+      confirmLabel: '支付 6 Anlas 并生成', message: expect.stringContaining('1666 → 1660'),
+    })));
+    expect(fixtures.encode).not.toHaveBeenCalled();
+  });
   it('费用确认期间切换 Key 时不发出旧 Key 的编码请求', async () => {
     fixtures.needsEncoding = true;
     let confirm!: (value: boolean) => void;
@@ -45,7 +55,7 @@ describe('低消耗 Vibe 复用入口', () => {
     const add = await screen.findByRole('button', { name: /新 Vibe/ });
     fireEvent.click(add);
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledTimes(1));
-    expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: '支付 2 Anlas 并生成', message: expect.stringContaining('本次消耗：2 Anlas') }));
+    expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: '支付 2 Anlas 并生成', message: expect.stringContaining('本次估算：2 Anlas') }));
     expect(fixtures.encode).not.toHaveBeenCalled();
     expect(setParams).not.toHaveBeenCalled();
     fireEvent.click(add);

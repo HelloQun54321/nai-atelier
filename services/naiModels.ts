@@ -5,7 +5,7 @@ import type { NaiModelRuntimeCapability, NaiRuntimeConfig } from './naiRuntime';
  *
  * 模型标识与能力均对照 2026-08-22 抓取的官方 Web 应用（novelai.net）模型注册表核对：
  * - V5 于 2026-08-21 发布，未引入 v5_prompt，继续使用 v4_prompt 结构与 params_version 4；
- * - V4 / V4.5 / V5 在官方成本计算中共用同一公式（见 services/anlasBudget.ts）；
+ * - 各代模型共用基础算式，模型倍率与免费资格通过官方运行时同步；
  * - 官方无公开的“列出模型”接口，注册表同样打包在官方前端内，故此处内置同样清单。
  */
 export interface NaiModelInfo {

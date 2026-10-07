@@ -169,7 +169,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
             {params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (
                 <div>
                     <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-                        角色参考 ({params.characterReferences.slots.length}) · +{params.characterReferences.slots.length * 5} Anlas
+                        角色参考 ({params.characterReferences.slots.length})
                     </label>
                     <div className="space-y-2">
                         {params.characterReferences.slots.map((slot, index) => (

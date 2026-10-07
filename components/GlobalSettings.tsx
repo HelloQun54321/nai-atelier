@@ -1244,7 +1244,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     <>
                       <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                         <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
-                          <div className="text-meta text-gray-500 dark:text-gray-400">个人已花 Anlas</div>
+                          <div className="text-meta text-gray-500 dark:text-gray-400">个人估算消耗 Anlas</div>
                           <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{personal.anlasSpent}</div>
                         </div>
                         <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">

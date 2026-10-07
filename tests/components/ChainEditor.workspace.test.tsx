@@ -233,7 +233,7 @@ describe('历史明确指定实验室导入模式', () => {
     setup();
     await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
     expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe(String(focused ?? true));
-    expect(loadLabWorkspaceSession(chain.id, fallback()).edits.inpaint.focused).toBe(focused ?? true);
+    await waitFor(() => expect(loadLabWorkspaceSession(chain.id, fallback()).edits.inpaint.focused).toBe(focused ?? true));
     expect(state.generate).not.toHaveBeenCalled();
   });
 });

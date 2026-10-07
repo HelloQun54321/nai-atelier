@@ -7,6 +7,23 @@ import { PromptAgentService, assemblePromptContext, estimateContextTokens, sanit
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../../services/agentThinking.mjs';
 
+test('助手编码确认使用网关当前单价，未知费用不提出付费请求', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  let cost = 6, patch;
+  const project = { agentSessionId: 's', getNaiRuntime: () => ({ billing: { vibeEncodingCost: cost } }) };
+  const tools = service.createTools({ params: {} }, {}, event => {
+    patch = event.action.patch;
+    service.controlSession('s', 'confirm', '', { requestId: patch.requestId, accepted: false });
+  }, project);
+  const tool = tools.find(item => item.name === 'request_vibe_encoding');
+  await assert.rejects(tool.execute('id', { vibeId: 'ref', informationExtracted: 1 }), /用户取消/);
+  assert.match(patch.consequence, /本次估算：6 Anlas/);
+  assert.equal(patch.payload.estimatedCost, 6);
+  cost = NaN; patch = undefined;
+  await assert.rejects(tool.execute('id', { vibeId: 'ref', informationExtracted: 1 }), /费用不可用/);
+  assert.equal(patch, undefined);
+}));
+
 const isolated = async fn => {
   const root = await mkdtemp(join(tmpdir(), 'nai-agent-test-'));
   const service = new PromptAgentService({ lanSecret: 'synthetic', configFile: root });

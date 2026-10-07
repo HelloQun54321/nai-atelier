@@ -3,14 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /**
  * NovelAI Opus 免费生成限额（2026-08-21 随 V5 引入）。
  *
- * 规则（与官方说明一致）：Opus 订阅在「单张、无底图、≤1024x1024、≤28 步」条件下
- * 可免费生成；该免费额度对高于 V4.5 的模型（即 V5）有限额，透支后所有生图都会
- * 消耗 Anlas，额度随时间自动恢复。V4.5 及以下不受限额影响。
+ * 免费资格、面积、步数与受限模型来自官方 Web 应用动态同步；
+ * 图生图与重绘也按实际请求尺寸判定。受限模型额度透支后按 Anlas 估算，
+ * 额度随时间恢复；是否消耗共享额度与是否支付 Anlas 分别统计。
  */
 export interface NovelaiUsageState {
   /** 剩余百分比（0–100）。 */
   percent: number;
-  /** 是否已透支（透支后所有生图消耗 Anlas，直到额度恢复为正）。 */
+  /** 是否已透支（受限模型转为 Anlas 计费，直到额度恢复为正）。 */
   isNegative: boolean;
   /** 恢复 1% 额度所需的秒数。 */
   timeUntilNextPercent: number;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_NAI_METADATA_MODEL_MAPPINGS } from './naiModels';
+import { DEFAULT_NAI_BILLING, isNaiBillingRules, type NaiBillingRules } from '../worker/naiBilling.mjs';
 
 /**
  * NovelAI 运行时常量（模型清单、限额换算系数、免费档门槛、成本公式系数）。
@@ -46,6 +47,8 @@ export interface NaiRuntimeConfig {
   /** Opus 免费档门槛：面积与步数上限。 */
   freeMaxArea: number;
   freeMaxSteps: number;
+  /** 官方免费资格、模型倍率、参考附加费与新编码费。 */
+  billing: NaiBillingRules;
   models: string[];
   usageLimitedModels: string[];
   /** 官方能力表中 streamedResponses=true 的模型。 */
@@ -172,6 +175,7 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
   costCoefficientSteps: 5.753298233447344e-7,
   freeMaxArea: 1_048_576,
   freeMaxSteps: 28,
+  billing: DEFAULT_NAI_BILLING,
   models: [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
@@ -262,6 +266,8 @@ const resolveRuntimePayload = (payload: unknown): NaiRuntimeConfig | null => {
   const resolved: NaiRuntimeConfig = {
     ...DEFAULT_NAI_RUNTIME,
     ...next,
+    billing: isNaiBillingRules(next.billing) ? next.billing : DEFAULT_NAI_BILLING,
+    ...(!isNaiBillingRules(next.billing) ? { health: { ...next.health, ok: false, reason: 'partial', missed: [...new Set([...(next.health.missed || []), 'billing'])] } } : {}),
     modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
       ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
       : DEFAULT_NAI_RUNTIME.modelCapabilities,

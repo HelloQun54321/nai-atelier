@@ -37,6 +37,8 @@ npm run test:gateway -- --test-name-pattern="同步健康记录" tests/integrati
 npm run test:live-sync
 ```
 
+联网自检抓取当前官方 Web 应用，逐项验证模型、免费门槛、倍率与附加费提取，并在无文件／网络／进程能力的测试沙箱中对照官方完整计价函数，覆盖尺寸、步数、订阅、额度、多张、参考与 Strength 的组合；不调用生图或付费编码接口。
+
 [run.mjs](./run.mjs) 保留终端输出，同时将日志写入 `unit.log`、`gateway.log` 或 `live-sync.log`，子进程失败的退出码原样传回。新增 Node 测试不需要再手动更新 `package.json` 的文件清单；Vitest 自动发现集中目录中的 `*.test.ts` 和 `*.test.tsx`。两类入口均排除 `tests/.tmp/`；目录回归检查防止正式测试重新散落到源码目录。
 
 例如 `components/AgentModelControl.tsx` 对应 `tests/components/AgentModelControl.test.tsx`；针对同一实现的多个测试变体也放在对应目录。分类依据是主要维护归属，模块目录可以包含集成验证，不强制把所有使用多个模块的测试移入 `integration/`。

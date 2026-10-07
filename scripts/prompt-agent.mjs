@@ -697,7 +697,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时直接使用本地文件工具。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
 9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。全部工具已注册，可直接调用；enable_tool_group 仅用于查询分类目录。
 10. 优先执行与当前要求相关的工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
-10. Precise/角色参考每张每次生图增加 5 Anlas，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
+10. Precise/角色参考每张每次生图增加 Anlas，费用以当前官方同步规则与生成前确认估算为准，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
 const techBlock = `
@@ -2624,7 +2624,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_vibe_from_history', label: '从历史创建 Vibe', description: '把一张项目生成历史原图保存为待编码Vibe资产。创建资产不扣费；之后需要调用request_vibe_encoding并由用户确认2 Anlas。',
+        name: 'create_vibe_from_history', label: '从历史创建 Vibe', description: '把一张项目生成历史原图保存为待编码Vibe资产。创建资产不扣费；之后需要调用request_vibe_encoding并由用户确认当前编码费用。',
         parameters: Type.Object({ historyId: Type.String(), name: Type.String() }),
         execute: async (_id, args) => {
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
@@ -2825,9 +2825,13 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_vibe_encoding', label: '准备 Vibe 编码', description: '请求为已有Vibe生成指定提取量的永久编码。每个新编码消耗2 Anlas，必须由用户确认。',
+        name: 'request_vibe_encoding', label: '准备 Vibe 编码', description: '请求为已有Vibe生成指定提取量的永久编码。每个新编码费用以当前官方同步规则估算，必须由用户确认。',
         parameters: Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), informationExtracted: Type.Number() }),
-        execute: async (_id, args) => pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次消耗：2 Anlas。编码完成后可以免费重复用于生图。`, { informationExtracted: clamp(args.informationExtracted, 0, 1, 1) }),
+        execute: async (_id, args) => {
+          const cost = project.getNaiRuntime?.().billing?.vibeEncodingCost;
+          if (!Number.isFinite(cost) || cost < 0) throw new Error('当前编码费用不可用，请刷新官方规则后重试');
+          return pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次估算：${cost} Anlas。编码永久复用；生成仍按参考数量计费。`, { informationExtracted: clamp(args.informationExtracted, 0, 1, 1), estimatedCost: cost });
+        },
       },
       {
         name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、灵感、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
@@ -3036,7 +3040,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_character_references', label: '设置角色参考', description: '从角色参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成增加5 Anlas。',
+        name: 'set_character_references', label: '设置角色参考', description: '从角色参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
         parameters: Type.Object({ slots: Type.Array(Type.Object({
           assetId: Type.String(),
           type: Type.Optional(Type.Union([Type.Literal('character'), Type.Literal('style'), Type.Literal('character_style')])),

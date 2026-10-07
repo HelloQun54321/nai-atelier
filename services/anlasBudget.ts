@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
-import { getNaiModelInfo } from './naiModels';
+import { DEFAULT_NAI_MODEL } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
+import { estimateNaiBilling } from '../worker/naiBilling.mjs';
 
 export const DEFAULT_ANLAS_BUDGET = 1666;
 export const ANLAS_BUDGET_CHANGED_EVENT = 'nai-anlas-budget-changed';
@@ -43,11 +44,10 @@ export const applyEstimatorRuntime = (config: NaiRuntimeConfig) => { estimatorRu
 
 /**
  * 该模型是否受 Opus 免费生成额度约束（V5 等高于 V4.5 的模型）。
- * 与 estimateV45GenerationCost 内部的 allowanceBlocksFree 判定同源：注册表
- * 标志 + 网关运行时同步的受限模型清单都要查，保证未知新模型的判断与估算一致。
+ * 与共享计费函数同源，按网关运行时同步的受限模型清单判断。
  */
 export const isOpusUsageLimitedModel = (model?: string): boolean =>
-  getNaiModelInfo(model).opusUsageLimit || estimatorRuntime.usageLimitedModels.includes(model ?? '');
+  estimatorRuntime.usageLimitedModels.includes(model || DEFAULT_NAI_MODEL);
 
 /**
  * 生成前判定“Opus 额度是否已透支”：受限模型强制刷新真实额度后再判定，
@@ -66,34 +66,20 @@ export const usageForCostEstimate = async (
 
 /** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。 */
 export const formatGenerationCostLabel = (cost: number, model?: string): string => {
-  const usesOpusAllowance = getNaiModelInfo(model).opusUsageLimit
-    || Boolean(model && estimatorRuntime.usageLimitedModels.includes(model));
+  const usesOpusAllowance = isOpusUsageLimitedModel(model);
   if (cost > 0) return `${cost} 点`;
   return usesOpusAllowance ? '消耗额度' : '免费';
 };
 
 /**
- * Mirrors NovelAI's web cost calculator for this project's supported generation
- * fields. Since V5, free Opus generations additionally require remaining Opus
- * usage allowance: when the allowance is overdrawn every image costs Anlas, so
- * opusUsageExhausted removes the free sample for limited models only.
+ * 按官方同步规则估算，不将本地预算扣减冒充官方实际结算。
  */
 export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUsageExhausted = false) => {
-  const width = Math.max(1, Number(params.width) || 1);
-  const height = Math.max(1, Number(params.height) || 1);
-  const area = Math.max(65_536, width * height);
-  const steps = Math.max(1, Number(params.steps) || 1);
-  const samples = 1;
-  const vibeCount = params.vibes?.enabled ? params.vibes.slots.length : 0;
-  const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
-  const baseRaw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);
-  const baseCost = Math.max(baseRaw, 2);
-  const allowanceBlocksFree = opusUsageExhausted
-    && (estimatorRuntime.usageLimitedModels.includes(params.model ?? '') || getNaiModelInfo(params.model).opusUsageLimit);
-  const freeSamples = opus && !allowanceBlocksFree && area <= estimatorRuntime.freeMaxArea && steps <= estimatorRuntime.freeMaxSteps ? 1 : 0;
-  const generationCost = baseCost * Math.max(0, samples - freeSamples);
-  const extraVibeCost = Math.max(0, vibeCount - 4) * 2 * samples;
-  return generationCost + extraVibeCost + preciseReferenceCount * 5 * samples;
+  return estimateNaiBilling({
+    width: params.width, height: params.height, steps: params.steps,
+    vibeCount: params.vibes?.enabled ? params.vibes.slots.length : 0,
+    referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
+  }, params.model || DEFAULT_NAI_MODEL, estimatorRuntime, opus, opusUsageExhausted).cost;
 };
 
 export const estimateImageEditCost = (
@@ -108,31 +94,17 @@ export const estimateImageEditCost = (
   const sourceWidth = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
   const sourceHeight = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
   const requestDimensions = imageEditRequestDimensions(sourceWidth, sourceHeight, operation, focused, dimensions?.focusedRect, dimensions?.minimumContextArea);
-  const width = Math.max(1, Number(requestDimensions.width) || 1);
-  const height = Math.max(1, Number(requestDimensions.height) || 1);
-  const area = Math.max(65_536, width * height);
-  const steps = Math.max(1, Number(params.steps) || 1);
-  const raw = Math.ceil(estimatorRuntime.costCoefficientArea * area + estimatorRuntime.costCoefficientSteps * area * steps);
-  const baseCost = Math.max(2, Math.ceil(raw * Math.max(0, Math.min(1, Number(strength) || 0))));
-  const vibeCount = operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0;
-  const preciseReferenceCount = params.characterReferences?.enabled ? params.characterReferences.slots.length : 0;
-  const isOpus = typeof opusTier === 'number' && opusTier >= 3;
-  const focusedFree = operation === 'inpaint'
-    && focused
-    && isOpus
-    && !opusUsageExhausted
-    && vibeCount === 0
-    && preciseReferenceCount === 0;
-  const editCost = focusedFree ? 0 : baseCost;
-  return editCost + Math.max(0, vibeCount - 4) * 2 + preciseReferenceCount * 5;
+  return estimateNaiBilling({
+    ...requestDimensions, steps: params.steps, strength,
+    image: true, mask: operation !== 'image-to-image',
+    vibeCount: operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0,
+    referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
+  }, params.model || DEFAULT_NAI_MODEL, estimatorRuntime, typeof opusTier === 'number' && opusTier >= 3, opusUsageExhausted).cost;
 };
 
-export const formatImageEditCostLabel = (cost: number, operation: ImageEditOperation, focused: boolean, opusTier?: number) => {
-  if (focused && operation === 'inpaint') {
-    const isOpus = typeof opusTier === 'number' && opusTier >= 3;
-    if (isOpus && cost === 0) return 'Opus 免费';
-    if (opusTier === undefined) return '费用以官方返回为准';
-  }
+export const formatImageEditCostLabel = (cost: number, _operation: ImageEditOperation, _focused: boolean, opusTier?: number) => {
+  if (opusTier === undefined) return '费用以官方返回为准';
+  if (opusTier >= 3 && cost === 0) return '零 Anlas';
   return `${cost} 点`;
 };
 
