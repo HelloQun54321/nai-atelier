@@ -842,7 +842,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 return;
             }
             const existing = workspaceSession.edits[mode];
-            if (existing.baseImageRef || existing.prompt || existing.parentHistoryId) {
+            // 图生图即使主动清空提示词，也继续使用独立草稿；选底图由左侧入口完成。
+            if (mode === 'image-to-image' || existing.baseImageRef || existing.prompt || existing.parentHistoryId) {
                 updateWorkspace(previous => ({ ...previous, activeMode: mode }));
                 return;
             }
@@ -2325,29 +2326,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
                     if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
 
-                    let inheritedPrompt = activeEditDraft.prompt;
-                    let inheritedNegative = activeEditDraft.negativePrompt;
-                    let inheritedParams = activeEditDraft.params;
-                    let promptSource = activeEditDraft.promptSource;
-
-                    if (meta) {
-                        if (meta.prompt !== undefined) {
-                            inheritedPrompt = meta.prompt;
-                            promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
+                    // 图生图选底图只更新图片工作区，配置由「导入图片或 JSON 配置」或引用预设主动导入。
+                    // 不回写捕获的旧提示词，避免异步保存期间覆盖后来编辑的内容。
+                    const inheritedConfig: Partial<LabImageEditDraft> = {};
+                    if (activeEditOperation !== 'image-to-image') {
+                        if (meta) {
+                            if (meta.prompt !== undefined) {
+                                inheritedConfig.prompt = meta.prompt;
+                                inheritedConfig.promptSource = (source === 'history' || source === 'inspiration') ? 'history' : 'current';
+                            }
+                            if (meta.negativePrompt !== undefined) inheritedConfig.negativePrompt = meta.negativePrompt;
+                            if (meta.params) inheritedConfig.params = { ...activeEditDraft.params, ...meta.params };
+                        } else if (source === 'generated' && latestTextToImageItem) {
+                            inheritedConfig.prompt = latestTextToImageItem.prompt ?? finalPrompt ?? activeEditDraft.prompt;
+                            inheritedConfig.negativePrompt = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
+                            if (latestTextToImageItem.params) inheritedConfig.params = { ...activeEditDraft.params, ...latestTextToImageItem.params };
+                            inheritedConfig.promptSource = 'current';
                         }
-                        if (meta.negativePrompt !== undefined) {
-                            inheritedNegative = meta.negativePrompt;
-                        }
-                        if (meta.params) {
-                            inheritedParams = { ...activeEditDraft.params, ...meta.params };
-                        }
-                    } else if (source === 'generated' && latestTextToImageItem) {
-                        inheritedPrompt = latestTextToImageItem.prompt ?? finalPrompt ?? activeEditDraft.prompt;
-                        inheritedNegative = latestTextToImageItem.negativePrompt ?? activeEditDraft.negativePrompt;
-                        if (latestTextToImageItem.params) {
-                            inheritedParams = { ...activeEditDraft.params, ...latestTextToImageItem.params };
-                        }
-                        promptSource = 'current';
                     }
 
                     const previousResultRef = activeEditDraft.resultImageRef;
@@ -2362,10 +2357,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         outpaintRatioId: '16:9',
                         focusedRect: undefined,
                         resultImageRef: undefined,
-                        prompt: inheritedPrompt,
-                        negativePrompt: inheritedNegative,
-                        params: inheritedParams,
-                        promptSource,
+                        ...inheritedConfig,
                     });
                     // 换底图作废旧结果资产
                     if (previousResultRef) {

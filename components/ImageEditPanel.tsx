@@ -713,9 +713,11 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         reader.readAsDataURL(file);
       });
       if (!isCurrent()) return;
-      let extractedMeta: ImageGenerationData | undefined = source === 'clipboard' ? await getCopiedImageData(file) : undefined;
+      const inheritGenerationData = operation !== 'image-to-image';
+      let extractedMeta: ImageGenerationData | undefined = inheritGenerationData && source === 'clipboard' ? await getCopiedImageData(file) : undefined;
       // 项目内复制优先读取与实际像素匹配的配置；外部图片和上传共用元数据解析。
-      if (!extractedMeta) {
+      // 图生图换底图保留独立配置；完整生成信息通过工作台顶栏主动读取。
+      if (inheritGenerationData && !extractedMeta) {
         try {
           const rawMeta = await extractMetadata(file);
           if (rawMeta) {

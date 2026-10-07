@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   generate: vi.fn(),
   assets: new Map<string, Blob>(),
   delayedAsset: null as Promise<Blob> | null,
+  delayedBaseSave: null as Promise<void> | null,
 }));
 vi.mock('../../services/lowConsumption', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/lowConsumption')>(),
@@ -46,6 +47,7 @@ vi.mock('../../services/labWorkspace', async importOriginal => ({
   deleteLabWorkspaceAsset: async () => {},
   saveLabWorkspaceAsset: async (blob: Blob, id: string) => { state.assets.set(id, blob); return id; },
   dataUrlToWorkspaceAsset: async (dataUrl: string, id = 'synthetic-pasted-asset') => {
+    if (state.delayedBaseSave) await state.delayedBaseSave;
     state.assets.set(id, new Blob([Uint8Array.from(atob(dataUrl.split(',')[1]), character => character.charCodeAt(0))], { type: 'image/png' }));
     return id;
   },
@@ -86,6 +88,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'upload', undefined, { prompt: '', negativePrompt: '', params: { ...props.draft.params, characters: [{ id: 'imported', prompt: 'imported character', x: 0.2, y: 0.8 }] } }); }}>上传分角色底图</button>
   <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.3, y: 0.7 }], useCoords: true } })}>修改编辑角色</button>
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,AQID', 'clipboard', undefined, { prompt: 'copied scene', negativePrompt: 'copied negative', params: { ...props.draft.params, characters: [{ id: 'copied', prompt: 'copied role', negativePrompt: 'copied role negative', x: 0.2, y: 0.8 }] } }); }}>粘贴分角色底图</button>
+  {props.latestTextToImageItem && <button onClick={() => { void props.onBaseImageChange(props.latestTextToImageItem!.imageUrl, 'generated', props.latestTextToImageItem!.id); }}>文生图最新</button>}
   <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [] } })}>清空编辑角色</button>
   <button onClick={() => { void props.onGenerate({ operation: props.operation, image: 'data:image/png;base64,AQID', canvasWidth: 832, canvasHeight: 1216, strength: 1, noise: 0, prompt: props.draft.prompt, negativePrompt: props.draft.negativePrompt, promptSource: props.draft.promptSource }); }}>生成合成编辑</button>
 </section> }));
@@ -113,6 +116,7 @@ beforeEach(() => {
   state.low.enabled = false;
   state.assets.clear();
   state.delayedAsset = null;
+  state.delayedBaseSave = null;
   state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
   state.confirm.mockClear(); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
   state.addHistory.mockImplementation(async (_blob, prompt, params, negativePrompt, source) => ({
@@ -353,6 +357,96 @@ describe('自由实验室图片只保留本次打开', () => {
 });
 
 describe('统一工作台真实状态链路', () => {
+  it.each(['上传分角色底图', '粘贴分角色底图', '文生图最新'])('图生图%s 只换底图，提示词、负面词与角色参数保持独立', async action => {
+    const character = { id: 'current-role', prompt: 'current role', negativePrompt: 'current role negative', x: 0.4, y: 0.6 };
+    const session = fallback();
+    session.activeMode = 'image-to-image';
+    session.edits['image-to-image'] = { ...session.edits['image-to-image'], prompt: 'my edit prompt', negativePrompt: 'my edit negative', promptSource: 'custom',
+      params: { ...chain.params, model: 'nai-diffusion-5-full', steps: 23, seed: 123, characters: [character] } };
+    saveLabWorkspaceSession(chain.id, session);
+    state.history.mockResolvedValue([{ id: 'latest', imageUrl: 'data:image/png;base64,AQID', prompt: 'latest prompt', negativePrompt: 'latest negative', params: chain.params, createdAt: 1 }]);
+    setup({ ...chain, previewImage: 'data:image/png;base64,AQID' });
+    await waitFor(() => expect(screen.getByLabelText('编辑提示词')).toHaveProperty('value', 'my edit prompt'));
+    const beforeImport = loadLabWorkspaceSession(chain.id, fallback());
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: action })));
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.edits['image-to-image']).toMatchObject({ prompt: 'my edit prompt', negativePrompt: 'my edit negative', promptSource: 'custom', params: session.edits['image-to-image'].params });
+    expect(saved.textToImage).toEqual(beforeImport.textToImage);
+    expect(saved.edits.inpaint).toEqual(beforeImport.edits.inpaint);
+    expect(saved.edits.outpaint).toEqual(beforeImport.edits.outpaint);
+  });
+
+  it('图生图保存底图期间后改的提示词和角色不被旧快照覆盖', async () => {
+    setup();
+    await switchTo('图生图');
+    let release!: () => void;
+    state.delayedBaseSave = new Promise(resolve => { release = resolve; });
+    fireEvent.click(screen.getByRole('button', { name: '粘贴分角色底图' }));
+    fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: 'later prompt' } });
+    fireEvent.change(screen.getByLabelText('编辑负面词'), { target: { value: 'later negative' } });
+    fireEvent.click(screen.getByRole('button', { name: '修改编辑角色' }));
+    await act(async () => release());
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits['image-to-image']).toMatchObject({ prompt: 'later prompt', negativePrompt: 'later negative',
+      params: { characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative' }] } });
+  });
+
+  it('图生图主动清空全局和角色后换底图，实际请求仍发送空提示词', async () => {
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    state.generate.mockRejectedValue(new Error('合成测试主动终止'));
+    setup();
+    await switchTo('图生图');
+    fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('编辑负面词'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '清空编辑角色' }));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴分角色底图' })));
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    await waitFor(() => expect(state.generate).toHaveBeenCalledOnce());
+    expect(state.generate.mock.calls[0].slice(1, 3)).toEqual(['', '']);
+    expect(state.generate.mock.calls[0][3].characters).toEqual([]);
+  });
+
+  it('图生图主动导入 JSON 配置仍恢复提示词、角色和参数，保留已选底图', async () => {
+    setup();
+    await switchTo('图生图');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴分角色底图' })));
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    const beforeImport = loadLabWorkspaceSession(chain.id, fallback());
+    const raw = JSON.stringify({ prompt: 'explicit prompt', uc: 'explicit negative', model: 'nai-diffusion-5-full', steps: 23, seed: 456,
+      v4_prompt: { caption: { base_caption: 'explicit prompt', char_captions: [{ char_caption: 'explicit character', centers: [{ x: 0.3, y: 0.7 }] }] }, use_coords: true },
+      v4_negative_prompt: { caption: { base_caption: 'explicit negative', char_captions: [{ char_caption: 'explicit character negative' }] } } });
+    const file = new File([raw], 'config.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', { value: async () => raw });
+    await act(async () => fireEvent.change(screen.getByLabelText('导入 PNG 或 JSON 创作配置'), { target: { files: [file] } }));
+    await waitFor(() => expect(screen.getByLabelText('编辑提示词')).toHaveProperty('value', 'explicit prompt'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.edits['image-to-image']).toMatchObject({ prompt: 'explicit prompt', negativePrompt: 'explicit negative', promptSource: 'custom',
+      baseImageRef: beforeImport.edits['image-to-image'].baseImageRef,
+      params: { model: 'nai-diffusion-5-full', steps: 23, seed: 456, useCoords: true,
+        characters: [expect.objectContaining({ prompt: 'explicit character', negativePrompt: 'explicit character negative', x: 0.3, y: 0.7 })] } });
+    expect(saved.textToImage).toEqual(beforeImport.textToImage);
+    expect(saved.edits.inpaint).toEqual(beforeImport.edits.inpaint);
+    expect(saved.edits.outpaint).toEqual(beforeImport.edits.outpaint);
+  });
+
+  it('图生图空草稿切走再回来不补入文生图提示词或自动选底图', async () => {
+    const session = fallback();
+    session.edits['image-to-image'] = { ...session.edits['image-to-image'], prompt: '', negativePrompt: '', promptSource: 'custom' };
+    saveLabWorkspaceSession(chain.id, session);
+    setup({ ...chain, previewImage: 'data:image/png;base64,AQID' });
+    await switchTo('图生图');
+    await switchTo('文生图');
+    await switchTo('图生图');
+    expect(screen.getByLabelText('编辑提示词')).toHaveProperty('value', '');
+    expect(screen.getByLabelText('编辑负面词')).toHaveProperty('value', '');
+    expect(screen.getByLabelText('编辑底图').textContent).toBe('');
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits['image-to-image'].promptSource).toBe('custom');
+  });
+
   it('历史复制配置进入扩图；删除全局及角色后生成入口收到空内容，不补回文生图旧词', async () => {
     sessionStorage.setItem('nai_api_key', 'synthetic-key');
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
@@ -389,8 +483,14 @@ describe('统一工作台真实状态链路', () => {
     await switchTo(label);
     expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters).toEqual([character]);
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '上传分角色底图' })));
-    await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe(''));
-    expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters?.[0].prompt).toBe('imported character');
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    if (operation === 'image-to-image') {
+      expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toContain('saved style');
+      expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters).toEqual([character]);
+    } else {
+      expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('');
+      expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters?.[0].prompt).toBe('imported character');
+    }
     fireEvent.click(screen.getByRole('button', { name: '修改编辑角色' }));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
     await waitFor(() => expect(state.generate).toHaveBeenCalled());

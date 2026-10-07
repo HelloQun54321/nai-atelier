@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.10-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.11-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -181,7 +181,8 @@ flowchart LR
 - **免费边界自动适配**：默认将分辨率与步数锁定在官方免费门槛内（V5 默认推荐 23 步，V4/V4.5 锁定 28 步），避免意外消耗 Anlas。
 
 #### 2. 图生图（Image to Image）：底图继承与变化
-- **剪贴板极速流转**：在历史记录或灵感库看到好图，点击「复制」，切换到图生图直接按 `Ctrl+V` 或点击「粘贴」，不仅带入底图，还能完整带入原图的全部生成参数与角色配置；
+- **底图与提示词独立**：上传、拖入图片、点击「文生图最新」或通过 `Ctrl+V`／「粘贴」换底图，保留图生图当前的提示词、负面词、角色配置与参数；
+- **主动复用原图配置**：需要原图提示词与参数时，使用顶栏「导入图片或 JSON 配置」，或在历史详情通过「导入到实验室」完整载入；
 - **SSE 流式过程图即时预览**：接入流式生图端点，生图过程中实时查看画面演变走向，提前预判效果。
 
 #### 3. 局部重绘（Inpainting & Focused）：涂抹修补与聚焦放大

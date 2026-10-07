@@ -13,6 +13,7 @@ vi.mock('../../components/ImageEditControls', () => ({
     React.createElement('button', { onClick: props.onPasteImage, disabled: props.isBusy }, '粘贴'),
     props.latestTextToImageItem && React.createElement('button', { onClick: () => props.onSelectImageSource(props.latestTextToImageItem!, 'generated'), disabled: props.isBusy }, '文生图最新'),
     React.createElement('textarea', { 'aria-label': '提示词' }),
+    React.createElement('input', { type: 'file', ref: props.fileInputRef, onChange: props.onFileChange }),
   ),
 }));
 
@@ -31,7 +32,11 @@ const params = {
   sampler: 'k_euler_ancestral',
 };
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+afterEach(() => {
+  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks();
+  vi.mocked(extractMetadata).mockReset().mockResolvedValue(null);
+  vi.mocked(getCopiedImageData).mockReset().mockResolvedValue(undefined);
+});
 
 const panelProps = (operation: 'image-to-image' | 'inpaint' | 'outpaint' = 'inpaint') => ({
   baseImage: null, previewImage: null, operation, layout: DEFAULT_LAB_PAGE_LAYOUTS[operation],
@@ -47,6 +52,26 @@ const mockClipboard = (read: () => Promise<unknown[]>) => {
 };
 
 describe('ImageEditPanel 图片粘贴', () => {
+  it.each(['upload', 'button', 'keyboard'])('图生图%s 导入含生成信息的底图时不解析或继承配置', async entry => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    vi.mocked(extractMetadata).mockResolvedValue(JSON.stringify({ prompt: 'image prompt', uc: 'image negative' }));
+    vi.mocked(getCopiedImageData).mockResolvedValue({ prompt: 'copied prompt', negativePrompt: 'copied negative', params });
+    const file = new File(['synthetic'], 'copy.png', { type: 'image/png' });
+    mockClipboard(async () => [{ types: ['image/png'], getType: async () => file }]);
+    const props = panelProps('image-to-image');
+    const { container } = render(React.createElement(ImageEditPanel, props));
+    const zone = container.querySelector('[data-image-edit-drop-zone]')!;
+    if (entry === 'button') fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
+    else if (entry === 'keyboard') fireEvent.paste(zone, { clipboardData: { files: [file] } });
+    else fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.any(String), entry === 'upload' ? 'upload' : 'clipboard'));
+    expect(extractMetadata).not.toHaveBeenCalled();
+    expect(getCopiedImageData).not.toHaveBeenCalled();
+    expect(props.onPromptChange).not.toHaveBeenCalled();
+    expect(props.onDraftChange).not.toHaveBeenCalled();
+    expect(props.notify).not.toHaveBeenCalledWith('已自动解析并带入底图提示词与参数', 'success');
+  });
+
   it('上传全局为空的原图仍导入角色提示词，不丢掉有效生成信息', async () => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '',
@@ -82,13 +107,13 @@ describe('ImageEditPanel 图片粘贴', () => {
     render(React.createElement(ImageEditPanel, props));
     fireEvent.click(screen.getByRole('button', { name: '粘贴' }));
     await waitFor(() => expect(props.onBaseImageChange).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/^data:image\/png;base64,/), 'clipboard'));
-    expect(extractMetadata).toHaveBeenCalledTimes(1);
+    expect(extractMetadata).toHaveBeenCalledTimes(operation === 'image-to-image' ? 0 : 1);
     expect(props.onPromptChange).not.toHaveBeenCalled();
     expect(props.onDraftChange).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 粘贴图片带入完整角色正负词与坐标，包括空全局文本', async operation => {
+  it.each(['inpaint', 'outpaint'] as const)('%s 粘贴图片带入完整角色正负词与坐标，包括空全局文本', async operation => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '', uc: '',
       v4_prompt: { caption: { base_caption: '', char_captions: [{ char_caption: 'girl, blue hair', centers: [{ x: 0.3, y: 0.7 }] }] }, use_coords: true },
