@@ -2982,7 +2982,16 @@ const serveDistFile = async (req, res, url) => {
     return historyIndexPromise;
   };
 
-  const server = createServer(async (req, res) => {
+  let updating = false;
+  const activeWrites = new Set();
+  const activeHandlers = new Set();
+  const handleRequest = async (req, res) => {
+    if (updating) return sendJson(res, 503, { error: '工坊正在安装更新，请稍后重新连接' });
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      activeWrites.add(req);
+      const finished = () => activeWrites.delete(req);
+      res.once('finish', finished); res.once('close', finished);
+    }
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
@@ -3677,6 +3686,10 @@ const serveDistFile = async (req, res, url) => {
     } catch (error) {
       sendJson(res, Number(error.status) || 502, { error: error.message || 'Image processing failed' });
     }
+  };
+  const server = createServer((req, res) => {
+    activeHandlers.add(req);
+    void handleRequest(req, res).catch(error => sendJson(res, 500, { error: error.message || '请求失败' })).finally(() => activeHandlers.delete(req));
   });
   server.on('close', () => {
     void imageTagger.pauseDownload();
@@ -3692,6 +3705,7 @@ const serveDistFile = async (req, res, url) => {
   server.once('close', () => process.off('exit', exitCollector));
 
   server.on('upgrade', (req, socket, head) => {
+    if (updating) return socket.destroy();
     const upstream = connectSocket(workerPort, '127.0.0.1', () => {
       upstream.write(`${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`);
       for (let i = 0; i < req.rawHeaders.length; i += 2) upstream.write(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`);
@@ -3701,6 +3715,15 @@ const serveDistFile = async (req, res, url) => {
     });
     upstream.on('error', () => socket.destroy());
   });
+
+  server.prepareUpdate = () => {
+    if (activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
+      throw new Error('生成、Agent、收集、备份或数据写入仍在进行，请完成并关闭收集模式后再安装');
+    }
+    updating = true;
+  };
+  server.cancelUpdate = () => { updating = false; };
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);

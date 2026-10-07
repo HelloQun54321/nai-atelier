@@ -17,7 +17,7 @@ export const RUNTIME_FILES = [
   ...['index.js', 'style.css', 'manifest.json', 'README.md'].map(name => `sillytavern-extension/npm-bridge/${name}`),
   ...PUBLIC_ICONS.map(name => `public/${name}`),
 ];
-export const DESKTOP_FILES = ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js'];
+export const DESKTOP_FILES = ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js', 'app-updater.mjs'];
 // 前端依赖已经编译到 dist；只为实际运行的 Node 脚本安装这些直接依赖。
 export const RUNTIME_DEPENDENCIES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', 'fast-png', 'onnxruntime-node', 'sharp', 'undici'];
 export function createRuntimePackage(pkg, overrides) {
@@ -120,6 +120,26 @@ export async function pruneRuntimeMetadata(nodeModules) {
   return { removedFiles, removedBytes };
 }
 
+/** 桌面壳只捆绑更新器及其实际依赖，仍不复制开发 node_modules。 */
+export async function bundleDesktopUpdater(destination) {
+  const { build } = await import('esbuild');
+  const result = await build({ absWorkingDir: root, entryPoints: [join(root, 'node_modules/electron-updater/out/main.js')], bundle: true, platform: 'node', format: 'cjs',
+    external: ['electron'], outfile: join(destination, 'desktop/updater.cjs'), metafile: true, legalComments: 'eof' });
+  const packages = new Set();
+  for (const input of Object.keys(result.metafile.inputs)) {
+    const match = input.replaceAll('\\', '/').match(/^(.*\/)?node_modules\/((?:@[^/]+\/)?[^/]+)\//);
+    if (match) packages.add(resolve(root, (match[1] || '') + 'node_modules/' + match[2]));
+  }
+  for (const directory of packages) {
+    const pkg = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
+    for (const file of (await readdir(directory)).filter(name => /^(?:licen[sc]e|notice|copyright)(?:\.|$)/i.test(name))) {
+      const target = join(destination, 'desktop/updater-licenses', pkg.name.replaceAll('/', '_'), file);
+      await mkdir(dirname(target), { recursive: true }); await copyFile(join(directory, file), target);
+    }
+  }
+  return [...packages];
+}
+
 export async function buildDesktop({ unpacked = false, skipInstall = false } = {}) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('当前发布脚本需要 Windows x64 构建环境');
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -148,6 +168,7 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   lock.packages[''].version = pkg.version;
   if (skipInstall) {
     const previous = JSON.parse(await readFile(join(runtime, 'package-lock.json'), 'utf8'));
+    previous.packages[''].version = pkg.version;
     if (JSON.stringify(previous.packages) !== JSON.stringify(lock.packages)) throw new Error('分发依赖已变化，不能复用旧依赖');
   }
   await writeFile(join(runtime, 'package.json'), JSON.stringify(runtimePkg, null, 2) + '\n');
@@ -175,6 +196,9 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   for (const file of DESKTOP_FILES) await copyFile(join(root, 'desktop', file), join(appRoot, 'desktop', file));
   await mkdir(join(appRoot, 'scripts'), { recursive: true });
   await copyFile(join(root, 'scripts', 'desktop-runtime.mjs'), join(appRoot, 'scripts', 'desktop-runtime.mjs'));
+  await mkdir(join(appRoot, 'services'), { recursive: true });
+  await copyFile(join(root, 'services/appReleases.mjs'), join(appRoot, 'services/appReleases.mjs'));
+  await bundleDesktopUpdater(appRoot);
   await writeFile(join(appRoot, 'package.json'), JSON.stringify({ name: 'nai-atelier-desktop', productName: 'NAI Atelier', version: pkg.version, description: 'NovelAI 个人本地创作工坊', author: 'NAI Atelier contributors', license: 'MIT', main: 'desktop/main.mjs', type: 'module', private: true }, null, 2) + '\n');
   const files = await inventory(runtime);
   const ownFiles = files.filter(file => !file.startsWith('node_modules/'));
@@ -188,7 +212,7 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   delete process.env.WIN_CSC_LINK;
   const { build, Platform } = await import('electron-builder');
   const config = (await import('../desktop/builder.config.mjs')).default;
-  const artifacts = await build({ projectDir: appRoot, config: { ...config, directories: { app: '.', output: join(root, 'release'), buildResources: join(root, 'desktop') }, extraResources: config.extraResources.map(entry => ({ ...entry, from: join(root, entry.from) })), win: { ...config.win, icon: join(root, 'public/nai-atelier.ico') }, nsis: { ...config.nsis, license: join(root, 'LICENSE'), include: join(root, 'desktop/installer.nsh') }, afterPack: async context => {
+  const artifacts = await build({ projectDir: appRoot, publish: 'never', config: { ...config, directories: { app: '.', output: join(root, 'release'), buildResources: join(root, 'desktop') }, extraResources: config.extraResources.map(entry => ({ ...entry, from: join(root, entry.from) })), win: { ...config.win, icon: join(root, 'public/nai-atelier.ico') }, nsis: { ...config.nsis, license: join(root, 'LICENSE'), include: join(root, 'desktop/installer.nsh') }, afterPack: async context => {
     const shipped = join(context.appOutDir, 'resources', 'runtime');
     const resources = await readdir(join(context.appOutDir, 'resources'));
     for (const retired of ['install-prerequisites.ps1', 'uninstall-integration.ps1']) {

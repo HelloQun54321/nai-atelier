@@ -159,6 +159,7 @@ function writeJson(response, status, body, origin) {
 }
 
 export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT } = {}) {
+  let appUpdating = false;
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin || '';
     const allowedOrigin = ALLOWED_ORIGINS.has(origin) ? origin : '';
@@ -186,6 +187,7 @@ export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT
     if (request.method === 'POST') {
       // 消费并丢弃请求体：keep-alive 客户端下未读的 body 会污染同连接的下一个请求
       request.resume();
+      if (appUpdating) return writeJson(response, 503, { error: '工坊正在安装更新，请稍后重试' }, allowedOrigin);
       if (!updateState.running) void runTagUpdate(updateScript);
       return writeJson(response, updateState.running ? 202 : 200, {
         available: true,
@@ -201,6 +203,11 @@ export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT
     console.error(`\x1b[33mTag 更新服务未启动（端口 ${PORT}）：${error.message}\x1b[0m`);
   });
   server.stopUpdates = stopTagUpdates;
+  server.prepareUpdate = () => {
+    if (updateState.running) throw new Error('Tag 词库正在更新，请完成后再安装');
+    appUpdating = true;
+  };
+  server.cancelUpdate = () => { appUpdating = false; };
   server.listen(port, HOST, () => {
     console.log(`\x1b[90mTag 更新服务: http://${HOST}:${server.address().port}\x1b[0m`);
   });

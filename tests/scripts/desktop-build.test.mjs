@@ -13,7 +13,7 @@ test('分发边界识别数据、缓存、词库、环境变量与测试资料�
     assert.equal(isPrivateDistributionPath(name), false, name);
     await readFile(new URL('../../' + name, import.meta.url));
   }
-  assert.deepEqual(DESKTOP_FILES, ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js']);
+  assert.deepEqual(DESKTOP_FILES, ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js', 'app-updater.mjs']);
 });
 
 test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟随根包', async () => {
@@ -62,7 +62,7 @@ test('安装向导允许选择目录、保留用户数据，原生检查在解�
   assert.equal(builder.nsis.allowToChangeInstallationDirectory, true);
   assert.equal(builder.nsis.deleteAppDataOnUninstall, false);
   assert.deepEqual(builder.win.target, [{ target: 'nsis', arch: ['x64'] }]);
-  assert.equal(builder.publish, null);
+  assert.deepEqual(builder.publish, { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'prerelease' });
   const installer = await readFile(new URL('../../desktop/installer.nsh', import.meta.url), 'utf8');
   for (const name of ['install-prerequisites.ps1', 'uninstall-integration.ps1']) {
     assert.equal(builder.extraResources.some(entry => entry.from === `desktop/${name}`), false);

@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { request } from 'node:http';
 import sharp from 'sharp';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import { desktopServerOptions, findDesktopPorts, prepareDesktopWorkspace, isPortFree } from '../../scripts/desktop-runtime.mjs';
@@ -65,6 +66,24 @@ test('Windows 安装资源独立启动、D1/R2 持久化、词库可写与退出
     const dictionary = await api('/api/tag-dictionary');
     assert.equal(dictionary.available, true);
     assert.equal(dictionary.manifest.count, 0);
+    // 未完成的上传同样阻止安装；不需要实际生图或真实账户。
+    const upload = request(`http://127.0.0.1:${ports.gateway}/api/local-history`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': '10000' } });
+    upload.on('error', () => {}); upload.write('{');
+    await new Promise(done => setTimeout(done, 100));
+    const rejected = once(child, 'message');
+    child.send({ type: 'atelier-prepare-update', requestId: 'synthetic-busy' });
+    assert.match((await rejected)[0].error, /仍在进行/);
+    upload.destroy();
+    await new Promise(done => setTimeout(done, 100));
+    // 真正的 IPC 更新准备冻结所有入口，防止手机在检查后启动新任务。
+    const prepared = once(child, 'message');
+    child.send({ type: 'atelier-prepare-update', requestId: 'synthetic-update' });
+    const [ready] = await prepared;
+    assert.equal(ready.type, 'atelier-update-ready'); assert.equal(ready.error, undefined);
+    assert.equal((await fetch(`http://127.0.0.1:${ports.gateway}/api/chains`, { method: 'POST', body: '{}' })).status, 503);
+    child.send({ type: 'atelier-cancel-update' });
+    await new Promise(done => setTimeout(done, 50));
+    assert.ok(Array.isArray(await api('/api/chains')));
     await stop();
     for (const port of [ports.gateway, ports.worker, ports.tagUpdate, ports.launcher]) assert.equal(await isPortFree(port), true, `未释放 ${port}`);
     await start();

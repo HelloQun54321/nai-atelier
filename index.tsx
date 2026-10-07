@@ -6,6 +6,7 @@ import { LanAccessGate } from './components/LanAccessGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { restoreRememberedNaiKey } from './services/naiKeyStorage';
 import { restoreAppearancePreferences } from './services/appearancePreferences';
+import { restoreUpdateDrafts } from './services/appUpdate';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -13,6 +14,7 @@ if (!rootElement) {
 }
 
 restoreAppearancePreferences();
+restoreUpdateDrafts();
 // 门禁和错误边界在 App 外层，系统变化时仍需更新；App 挂载后继续管理即时修改。
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', restoreAppearancePreferences);
 restoreRememberedNaiKey();

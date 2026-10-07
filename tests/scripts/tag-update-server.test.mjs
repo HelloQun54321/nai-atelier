@@ -13,8 +13,13 @@ test('停服会终止本次启动的词库子进程，不留下继续写入的�
   const server = startTagUpdateServer({ port: 0, updateScript: script });
   try {
     await once(server, 'listening');
+    server.prepareUpdate();
+    const blocked = await fetch(`http://127.0.0.1:${server.address().port}/tag-dictionary`, { method: 'POST', headers: { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' } });
+    assert.equal(blocked.status, 503);
+    server.cancelUpdate();
     const result = await fetch(`http://127.0.0.1:${server.address().port}/tag-dictionary`, { method: 'POST', headers: { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' } });
     assert.equal(result.status, 202);
+    assert.throws(() => server.prepareUpdate(), /词库正在更新/);
     let pid;
     for (let attempt = 0; attempt < 40; attempt++) {
       pid = await readFile(marker, 'utf8').then(Number).catch(() => null);

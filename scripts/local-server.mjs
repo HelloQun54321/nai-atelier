@@ -23,10 +23,20 @@ const LAN_CONFIG_FILE = 'local-data/lan-access.json';
 const BOOT_T0 = Date.now();
 let launcherGuard = null;
 let stopPackagedService = () => { process.exit(0); };
+let preparePackagedUpdate = () => { throw new Error('工坊仍在启动，请稍后重试'); };
+let cancelPackagedUpdate = () => {};
 if (PACKAGED) {
   // Electron 被卸载器结束或意外退出时，IPC 断开也会回收本应用的后端子进程。
   process.once('disconnect', () => stopPackagedService());
-  process.on('message', message => { if (message?.type === 'atelier-shutdown') stopPackagedService(); });
+  process.on('message', message => {
+    if (message?.type === 'atelier-shutdown') stopPackagedService();
+    if (message?.type === 'atelier-cancel-update') cancelPackagedUpdate();
+    if (message?.type === 'atelier-prepare-update') {
+      let error;
+      try { preparePackagedUpdate(); } catch (cause) { error = cause.message; }
+      process.send?.({ type: 'atelier-update-ready', requestId: message.requestId, error });
+    }
+  });
 }
 
 /** 启动至今的秒数，用于各阶段耗时提示。 */
@@ -471,6 +481,12 @@ async function startServer() {
       createMediaGateway({ port: GATEWAY_PORT, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('图片网关初始化超过 90 秒（可能为系统繁忙或磁盘异常），请关闭窗口后重试')), 90_000)),
     ]);
+    preparePackagedUpdate = () => {
+      tagUpdateServer.prepareUpdate();
+      try { mediaGateway.prepareUpdate(); }
+      catch (error) { tagUpdateServer.cancelUpdate(); throw error; }
+    };
+    cancelPackagedUpdate = () => { mediaGateway.cancelUpdate(); tagUpdateServer.cancelUpdate(); };
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     launcherGuard.markRunning();

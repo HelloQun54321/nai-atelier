@@ -2,7 +2,7 @@ export default {
   appId: 'com.naiatelier.desktop',
   productName: 'NAI Atelier',
   directories: { app: '.desktop-build/app', output: 'release', buildResources: 'desktop' },
-  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'package.json', '!node_modules{,/**/*}'],
+  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'services/appReleases.mjs', 'package.json', '!node_modules{,/**/*}'],
   // extraResources 的根 node_modules 会被打包器默认跳过，需要独立映射。
   extraResources: [
     { from: '.desktop-build/runtime', to: 'runtime', filter: ['**/*'] },
@@ -10,7 +10,7 @@ export default {
   ],
   asar: true,
   npmRebuild: false,
-  publish: null,
+  publish: { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'prerelease' },
   electronVersion: '44.5.1',
   electronLanguages: ['zh-CN', 'en-US'],
   win: {

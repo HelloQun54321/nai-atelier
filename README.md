@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.15-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.38.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -97,12 +97,12 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。�
 
 | 使用方式 | 适合人群 | 运行准备 | 开启入口 |
 | :--- | :--- | :--- | :--- |
-| **EXE 安装版** | 普通使用者（推荐） | Windows 10/11 x64，无需配置 Node.js/Git | [下载最新安装包](https://github.com/HelloQun54321/nai-atelier/releases/latest)，双击安装向导 |
+| **EXE 安装版** | 普通使用者（推荐） | Windows 10/11 x64，无需配置 Node.js/Git | [下载已发布安装包](https://github.com/HelloQun54321/nai-atelier/releases)，双击安装向导 |
 | **源码本地部署** | 开发者 / 自由定制者 | Node.js 22+ (推荐 24.x) 与 Git | 克隆仓库并执行本地启动命令 |
 
 ### 方式一：Windows EXE 安装版（推荐）
 
-1. 前往 **[GitHub Releases 最新发布页](https://github.com/HelloQun54321/nai-atelier/releases/latest)**，下载 `NAI-Atelier-Setup-*.exe` 安装包；
+1. 前往 **[GitHub Releases 下载页](https://github.com/HelloQun54321/nai-atelier/releases)**，下载 `NAI-Atelier-Setup-*.exe` 安装包（包含预发布版本）；
 2. 双击运行安装程序，自主选择程序安装位置（首次运行会检查微软 VC++ x64 运行库）；
 3. 安装完成后从桌面图标打开 **NAI Atelier**，按下方引导开启创作。
 
@@ -118,6 +118,12 @@ npm run dev:local
 ```
 
 安装依赖后，Windows 环境会自动在桌面生成晴空蓝调色盘图标的 `NAI Atelier` 快捷方式。等待终端显示服务就绪后，在浏览器打开 [http://localhost:3000](http://localhost:3000) 即可开始。
+
+### 更新工坊
+
+- **EXE 安装版**：在「系统设置 → 数据与维护 → 应用更新」检查并下载新版，再选择「重启并安装」。启动时会安静检查，普通退出不会自动安装。安装前完成生成、Agent、收集、备份与词库任务；个人数据保留，手机连接暂时中断。当前默认接收预发布，可关闭该选项。
+- **源码本地部署**：完成任务并关闭源码服务窗口，双击项目根目录的 `更新 NAI Atelier.bat`。入口检查已发布版本、安装锁定依赖、构建并启动；本地修改、定制分支或分叉会停止更新。macOS／Linux 可运行 `sh scripts/update-local.sh`。ZIP 源码没有 Git 更新环境，需从下载页取得新版并按备份说明保留个人数据。
+- **旧版首次升级**：没有更新入口的旧 EXE 需手动运行一次新版安装包；旧源码部署需先取得包含更新入口的新版代码。之后即可使用上述入口。主要版本或数据结构变化需要完整备份并按发行说明手动升级。
 
 ### 🎨 生成第一张图（5 步直达心流）
 
