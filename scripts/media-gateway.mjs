@@ -2733,7 +2733,9 @@ export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
   headers['x-forwarded-for'] = normalizeIp(req.socket.remoteAddress);
   headers['x-nai-client-ip'] = normalizeIp(req.socket.remoteAddress);
   const upstream = httpRequest({ hostname: '127.0.0.1', port: workerPort, path: req.url, method: req.method, headers }, upstreamRes => {
-    const responseHeaders = { ...upstreamRes.headers, ...extraHeaders };
+    const responseHeaders = { ...upstreamRes.headers };
+    // Node 将上游头名转为小写；覆盖时同样规范化，避免生成重复的 CORS 响应头。
+    for (const [name, value] of Object.entries(extraHeaders)) responseHeaders[name.toLowerCase()] = value;
     res.writeHead(upstreamRes.statusCode || 502, responseHeaders);
     upstreamRes.pipe(res);
   });

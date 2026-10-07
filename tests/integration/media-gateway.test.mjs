@@ -55,6 +55,38 @@ test('公开封面磁盘命中不消耗联网预算，跨内存会话复用仍�
   await handleDanbooruRemoteRequest({ ...req, headers: {} }, res, url, 'synthetic-secret', remote, createResponseMemoryCache(), limiter, disk);
   assert.equal(status, 404); assert.equal(network, 1);
 });
+test('代理响应头按名称覆盖，封面跨域头不因大小写重复，普通请求保持原样', async () => {
+  const worker = createServer((req, res) => {
+    const found = req.url.endsWith('/found.png');
+    res.writeHead(found ? 200 : 404, {
+      'Content-Type': 'text/plain', ETag: '"synthetic-cover"',
+      ...(found && req.headers.origin ? { 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' } : {}),
+    });
+    res.end(found ? 'synthetic cover' : 'missing cover');
+  });
+  await new Promise(resolve => worker.listen(0, '127.0.0.1', resolve));
+  const gateway = createServer((req, res) => proxyRequest(req, res, worker.address().port,
+    req.headers.origin ? { 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' } : {}));
+  await new Promise(resolve => gateway.listen(0, '127.0.0.1', resolve));
+  try {
+    for (const origin of ['http://localhost:8181', 'http://127.0.0.1:8181', '']) {
+      for (const found of [true, false]) {
+        const response = await fetch(`http://127.0.0.1:${gateway.address().port}/api/assets/covers/${found ? 'found' : 'missing'}.png`, {
+          headers: origin ? { Origin: origin } : {},
+        });
+        assert.equal(response.status, found ? 200 : 404);
+        assert.equal(response.headers.get('access-control-allow-origin'), origin || null);
+        assert.equal(response.headers.get('vary'), origin ? 'Origin' : null);
+        assert.equal(response.headers.get('etag'), '"synthetic-cover"');
+        assert.equal(await response.text(), found ? 'synthetic cover' : 'missing cover');
+      }
+    }
+  } finally {
+    gateway.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([new Promise(resolve => gateway.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+  }
+});
+
 test('封面批次消费者断开后，网关关闭对应 Worker 流连接', async () => {
   let release;
   const disconnected = new Promise(resolve => { release = resolve; });
