@@ -4,11 +4,19 @@ Release 是项目的版本下载页：一个版本标签指向一份确定的代
 
 官方操作说明见 [创建和管理 Release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)。项目下载页是 [NAI Atelier Releases](https://github.com/HelloQun54321/nai-atelier/releases)。首个 Windows 安装包已于 2026-10-05 公开为 [v1.37.1 预发布版](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.37.1)；下文同时保留后续版本发布的方法。
 
-## 当前首个 Windows 安装包
+## 当前 Windows 发布版
+
+2026-10-08 已公开 [v1.38.0 预发布版](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.38.0)，对应构建提交 `950d21a74298edbcf5580841781a6a79c2ddd532`。四份附件为 `NAI-Atelier-Setup-1.38.0-x64.exe`、同名 `.sha256`、`latest.yml` 与 `INSTALL-Windows-zh-CN.txt`；安装包 263,784,551 字节，SHA-256 为 `e1f29582c82ae031692887344b8ee0a5ccf633ffc6f57e1ae9a6df2e40c7c9d9`。
+
+远端四份附件的大小与 SHA-256 均与本地一致。发布后匿名源码更新检查和实际捆绑更新器均发现 v1.38.0，完整下载通过更新器 SHA-512 校验及本地 SHA-256 比对；验证仅下载，没有覆盖现有安装或执行真实重启升级。1.37.1 及更早安装版需先手动安装一次此版本，之后才有应用内更新入口。
+
+发布清单、说明和公开下载检查分别保存在本地 `release/PUBLISH-v1.38.0.json`、`release/RELEASE-v1.38.0.md` 与 `release/PUBLIC-CHECK-v1.38.0.json`。发布后的文档提交会按工程规则递增源码版本，安装包与 v1.38.0 标签继续绑定上述构建提交，不随文档版本改名或重定向。
+
+## 首个 Windows 安装包记录
 
 已构建并验证的安装包为 `NAI-Atelier-Setup-1.37.1-x64.exe`，构建审计版本也是 `1.37.1`，对应提交 `261a2a5f42ebe8f5ba8f75163deaf83ed56970e9`。发布标签应为 `v1.37.1`，标题可用「NAI Atelier v1.37.1 · Windows 安装版」。后续暂停 Android 或修改说明的文档提交会按工程规则递增源码版本；不应因此改名现有 EXE、把旧包挂到新版本，或让 `v1.37.1` 指向后续提交。
 
-本地 `release/` 不入 Git。首个版本准备上传三份附件：
+本地 `release/` 不入 Git。首个版本发布了三份附件：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -24,7 +32,7 @@ Release 是项目的版本下载页：一个版本标签指向一份确定的代
 
 1. 核对将要推送的提交和工作区。运行逻辑改变时按项目规则完成相应验证及构建；仅整理这份既有安装包的发布说明，不需要重复打包。
 2. 将安装包对应提交推送到项目仓库，并确认 GitHub 上可以读取该提交。其他待推送修改也需按授权范围审阅；不要向 `upstream` 或归档仓库误推。
-3. 给安装包对应的确切提交建立版本标签。本次是 `v1.37.1` 指向上述完整提交哈希，再推送该标签。以后每次以实际构建版本和提交为准，不重用旧标签。
+3. 给安装包对应的确切提交建立版本标签。首版 `v1.37.1` 与更新版 `v1.38.0` 分别绑定各自上方记录的构建提交。以后每次以实际构建版本和提交为准，不重用或移动旧标签。
 4. 在项目 **Releases → Draft a new release** 选择该标签，填写标题和发布说明。后续带应用内更新的版本上传 EXE、同名 `.sha256`、同次构建生成的 `latest.yml` 与安装说明，核对大小、哈希和版本。不要上传 `builder-debug.yml`、解包目录、构建缓存、日志、模型权重或个人工坊数据；不要继续分发有辅助脚本隔离问题的 1.37.0 包。
 5. 首次版本勾选 **This is a pre-release**，可以先 **Save draft** 留作预览。确认页面与附件齐全后，再 **Publish release**。GitHub 草稿和公开发布都是远端状态修改，按用户明确授权执行。
 6. 发布后打开 Release 页，确认附件可下载；复核下载文件与本地 `.sha256` 相符。README 的下载入口应指向 Release 页或确实存在的版本附件，不提前添加尚不存在的直接下载链接。
