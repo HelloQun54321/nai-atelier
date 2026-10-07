@@ -79,6 +79,9 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <input aria-label="编辑负面词" value={props.draft.negativePrompt} onChange={event => props.onNegativePromptChange(event.target.value)} />
   <button onClick={() => props.onDraftChange({ strength: 0.42 })}>调整强度</button>
   <output aria-label="编辑强度">{props.draft.strength}</output>
+  <output aria-label="聚焦重绘状态">{String(props.draft.focused)}</output>
+  <output aria-label="编辑费用">{props.generationCostLabel(props.operation, props.draft.focused, { width: 832, height: 1216, focusedRect: props.draft.focusedRect })}</output>
+  <button onClick={() => props.onDraftChange({ focused: false })}>使用普通重绘</button>
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
   <output aria-label="编辑结果">{props.previewImage}</output>
@@ -208,7 +211,7 @@ describe('历史明确指定实验室导入模式', () => {
     await waitFor(() => expect(loadLabWorkspaceSession(chain.id, fallback()).activeMode).toBe(operation));
     const saved = loadLabWorkspaceSession(chain.id, fallback());
     expect(saved.activeMode).toBe(operation);
-    expect(saved.edits[operation]).toMatchObject({ prompt: '', negativePrompt: '', parentHistoryId: 'synthetic-parent', baseImageSource: 'history', expansion: { top: 0, right: 0, bottom: 0, left: 0 } });
+    expect(saved.edits[operation]).toMatchObject({ prompt: '', negativePrompt: '', parentHistoryId: 'synthetic-parent', baseImageSource: 'history', expansion: { top: 0, right: 0, bottom: 0, left: 0 }, focused: operation === 'inpaint' });
     expect(saved.edits[operation].params.characters?.[0].prompt).toBe('synthetic character');
     expect(saved.edits[operation].maskRef).toBeUndefined();
     expect(saved.textToImage.basePrompt).toBe('saved style');
@@ -223,6 +226,43 @@ describe('历史明确指定实验室导入模式', () => {
     expect(state.getEditMask).toHaveBeenCalledWith('synthetic-parent');
     expect(loadLabWorkspaceSession(chain.id, fallback()).edits.inpaint.maskRef).toBeTruthy();
   });
+  it.each([undefined, false, true])('历史导入保留明确聚焦选择 %s，缺失时默认开启', async focused => {
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: 'inpaint',
+      baseImageUrl: 'data:image/png;base64,AQID', prompt: 'imported edit', negativePrompt: '', params: chain.params,
+      editMetadata: { operation: 'inpaint', focused, strength: 1, noise: 0 } }));
+    setup();
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,AQID'));
+    expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe(String(focused ?? true));
+    expect(loadLabWorkspaceSession(chain.id, fallback()).edits.inpaint.focused).toBe(focused ?? true);
+    expect(state.generate).not.toHaveBeenCalled();
+  });
+});
+
+it.each(['playground', chain.id])('%s 局部重绘重置后默认聚焦，图生图与扩图保持独立', async id => {
+  const session = fallback(); session.activeMode = 'inpaint'; session.edits.inpaint.focused = false;
+  saveLabWorkspaceSession(id, session);
+  const view = setup({ ...chain, id });
+  expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
+  await act(async () => fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })));
+  await waitFor(() => expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true'));
+  for (const label of ['图生图', '扩图']) {
+    await switchTo(label);
+    expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
+  }
+  await switchTo('局部重绘');
+  expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true');
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it('默认聚焦未框选时提示先框选，手动关闭后才显示普通重绘费用', async () => {
+  setup();
+  await switchTo('局部重绘');
+  expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true');
+  expect(screen.getByLabelText('编辑费用').textContent).toBe('先框选区域');
+  fireEvent.click(screen.getByRole('button', { name: '使用普通重绘' }));
+  expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
+  expect(screen.getByLabelText('编辑费用').textContent).toMatch(/^\d+ 点$/);
+  expect(state.generate).not.toHaveBeenCalled();
 });
 
 describe('自由实验室图片只保留本次打开', () => {

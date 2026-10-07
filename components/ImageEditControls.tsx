@@ -420,7 +420,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
             <input disabled={isBusy} type="range" min="0" max="1" step="0.01" aria-label="Noise" value={noise} onChange={event => onNoiseChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-50" />
           </div>
           {(operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing)) && <>
-            {operation === 'inpaint' && (lowConsumption.enabled ? <p className="text-xs text-indigo-600 dark:text-indigo-300">Focused 重绘 · 先框选，再涂画</p> : <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>Focused Inpainting</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>)}
+            {operation === 'inpaint' && (lowConsumption.enabled ? <p className="text-xs text-indigo-600 dark:text-indigo-300">聚焦重绘 · 先框选，再涂画</p> : <label className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>聚焦重绘</span><input disabled={isBusy || safeMode} type="checkbox" checked={focused} onChange={event => onFocusedChange(event.target.checked)} className="h-4 w-4 accent-amber-500" /></label>)}
             {focused && <div className="space-y-2">
               <div>
                 <div className="mb-1 flex items-center justify-between">

@@ -145,6 +145,30 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
+  it('新局部重绘的中文开关默认勾选，可手动关闭再开启', () => {
+    const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params);
+    const onDraftChange = vi.fn();
+    render(React.createElement(ImageEditPanel, {
+      baseImage: null, previewImage: null, operation: 'inpaint', draft,
+      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings', 'characterReference'], collapsed: {} },
+      generationCostLabel: () => '零点数', apiKey: 'test-key', notify: vi.fn(), onPromptChange: vi.fn(),
+      onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(),
+      onCanvasChange: vi.fn(), onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false,
+    }));
+    const toggle = screen.getByRole('checkbox', { name: '聚焦重绘' }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect(lowMode.focused).toBe(true);
+    expect(screen.queryByText(/Focused/)).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
+    expect(lowMode.focused).toBe(false);
+    expect(onDraftChange).toHaveBeenLastCalledWith({ focused: false, focusedRect: undefined });
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(true);
+    expect(lowMode.focused).toBe(true);
+    expect(onDraftChange).toHaveBeenLastCalledWith({ focused: true });
+  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用底图和编辑提示词', operation => {
     const { container, onPasteImage, onSelectImageSource, onPromptChange } = renderControls(operation);
     expect(container.textContent).not.toMatch(/可直接粘贴|独立保存|绘制重绘区域|生成结果在右侧/);
@@ -223,9 +247,9 @@ describe('ImageEditControls', () => {
     renderControls('inpaint');
     expect(screen.queryByTestId('character-reference-manager')).toBeNull();
     expect(screen.queryByText('角色参考')).toBeNull();
-    expect(screen.queryByRole('checkbox', { name: 'Focused Inpainting' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: '聚焦重绘' })).toBeNull();
     expect(screen.getByRole('checkbox', { name: 'AI 自动构图' })).toBeTruthy();
-    expect(screen.getByText(/Focused 重绘 · 先框选，再涂画/)).toBeTruthy();
+    expect(screen.getByText(/聚焦重绘 · 先框选，再涂画/)).toBeTruthy();
     expect(screen.getByRole('slider', { name: 'Strength' })).toBeTruthy();
     expect(screen.getByTestId('edit-canvas')).toBeTruthy();
   });
@@ -236,7 +260,7 @@ describe('ImageEditControls', () => {
     expect(onDraftChange).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith('当前模型最多支持 6 个角色提示词', 'error');
   });
-  it('低消耗临时启用 Focused 不写回草稿，关闭后恢复普通重绘', () => {
+  it('低消耗临时启用聚焦重绘不写回草稿，关闭后恢复普通重绘', () => {
     const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params, { focused: false });
     const onDraftChange = vi.fn();
     const props = { baseImage: null, previewImage: null, operation: 'inpaint' as const, draft,
@@ -252,7 +276,7 @@ describe('ImageEditControls', () => {
     lowMode.enabled = false;
     rerender(React.createElement(ImageEditPanel, { ...props, layout: { ...props.layout, order: [...props.layout.order] } }));
     expect(lowMode.focused).toBe(false);
-    expect(screen.getByText('Focused Inpainting')).toBeTruthy();
+    expect(screen.getByText('聚焦重绘')).toBeTruthy();
     expect(screen.getByTestId('character-reference-manager')).toBeTruthy();
   });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
@@ -272,7 +296,7 @@ describe('ImageEditControls', () => {
     expect(screen.queryByTestId('edit-canvas')).toBeNull();
     expect(screen.queryByText('画笔')).toBeNull();
     expect(screen.queryByText('手动调整蒙版')).toBeNull();
-    expect(screen.queryByText('Focused Inpainting')).toBeNull();
+    expect(screen.queryByText('聚焦重绘')).toBeNull();
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
   });
 
@@ -386,11 +410,11 @@ describe('ImageEditControls', () => {
     expect(screen.getByText(/^选择底图$/)).toBeTruthy();
   });
 
-  it('局部重绘显示蒙版工具和 Focused，但不显示扩图四边', () => {
+  it('局部重绘显示蒙版工具和聚焦重绘，但不显示扩图四边', () => {
     renderControls('inpaint');
 
     expect(screen.getByTestId('edit-canvas')).toBeTruthy();
-    expect(screen.getByText('Focused Inpainting')).toBeTruthy();
+    expect(screen.getByText('聚焦重绘')).toBeTruthy();
     expect(screen.getByText('画笔')).toBeTruthy();
     expect(screen.getByTitle('撤销')).toBeTruthy();
     expect(screen.queryByText('扩展画布（像素）')).toBeNull();
@@ -438,7 +462,7 @@ describe('ImageEditControls', () => {
 
     expect(screen.getByRole('status').textContent).toContain('安全模式下不可绘制蒙版');
     expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('checkbox', { name: 'Focused Inpainting' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('checkbox', { name: '聚焦重绘' }) as HTMLInputElement).disabled).toBe(true);
     cleanup();
 
     renderControls('outpaint', true, true);

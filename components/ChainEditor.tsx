@@ -783,7 +783,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             promptSource: (source === 'history' || source === 'inspiration') ? 'history' : 'current',
             strength: editMetadata?.strength ?? (operation === 'image-to-image' ? 0.7 : 1),
             noise: editMetadata?.noise ?? 0,
-            focused: operation === 'inpaint' && Boolean(editMetadata?.focused),
+            focused: operation === 'inpaint' && (editMetadata?.focused ?? true),
             minimumContextArea: editMetadata?.minimumContextArea ?? editMetadata?.contextArea ?? 64,
             // 载入的生成结果已经是完整图片，上一轮扩展量不能再套在新底图上。
             expansion: { top: 0, right: 0, bottom: 0, left: 0 },
@@ -1672,6 +1672,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
         const focusedReady = operation === 'inpaint' && focused && Boolean(context?.focusedRect && context.focusedRect.width >= 2 && context.focusedRect.height >= 2);
+        if (operation === 'inpaint' && focused && !focusedReady) return '先框选区域';
         // strength=0 是合法值（完全保留原图、几乎不重绘）；不能用 || 回退到默认 0.7
         const editStrength = activeEditDraft?.strength !== undefined ? activeEditDraft.strength : (operation === 'image-to-image' ? 0.7 : 1);
         const costParams = applyLowConsumptionParams(activeEditDraft?.params || params, lowConsumption.enabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, operation);

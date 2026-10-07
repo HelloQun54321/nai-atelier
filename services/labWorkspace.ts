@@ -71,7 +71,7 @@ export const createLabImageEditDraft = (
   strength: operation === 'image-to-image' ? 0.7 : 1,
   noise: 0,
   brushSize: 64,
-  focused: false,
+  focused: operation === 'inpaint',
   minimumContextArea: 64,
   expansion: { ...emptyExpansion },
   outpaintRatioId: operation === 'outpaint' ? '16:9' : undefined,

@@ -664,7 +664,7 @@ export const prepareImageEdit = async (edit: {
     focusedGeometry = getFocusedImageEditGeometry(originalWidth, originalHeight, edit.focusedRect, edit.minimumContextArea);
     requestImageCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
     const requestImageContext = requestImageCanvas.getContext('2d');
-    if (!requestImageContext) throw new Error('无法创建 Focused 图片画布');
+    if (!requestImageContext) throw new Error('无法创建聚焦重绘图片画布');
     requestImageContext.fillStyle = '#ffffff';
     requestImageContext.fillRect(0, 0, requestImageCanvas.width, requestImageCanvas.height);
     requestImageContext.imageSmoothingQuality = 'high';
@@ -672,7 +672,7 @@ export const prepareImageEdit = async (edit: {
 
     const focusedCropMaskCanvas = createCanvas(focusedGeometry.crop.width, focusedGeometry.crop.height);
     const focusedCropContext = focusedCropMaskCanvas.getContext('2d');
-    if (!focusedCropContext) throw new Error('无法创建 Focused 裁剪蒙版');
+    if (!focusedCropContext) throw new Error('无法创建聚焦重绘裁剪蒙版');
     if (sourceMaskCanvas && sourceMaskContext && hasMaskInRect(sourceMaskContext, focusedGeometry.inner)) {
       focusedCropContext.drawImage(sourceMaskCanvas, focusedGeometry.crop.x, focusedGeometry.crop.y, focusedGeometry.crop.width, focusedGeometry.crop.height, 0, 0, focusedGeometry.crop.width, focusedGeometry.crop.height);
       const compositeImage = focusedCropContext.getImageData(0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height);
@@ -694,7 +694,7 @@ export const prepareImageEdit = async (edit: {
 
     const focusedRequestMaskCanvas = createCanvas(focusedGeometry.requestWidth, focusedGeometry.requestHeight);
     const focusedRequestMaskContext = focusedRequestMaskCanvas.getContext('2d');
-    if (!focusedRequestMaskContext) throw new Error('无法创建 Focused 请求蒙版画布');
+    if (!focusedRequestMaskContext) throw new Error('无法创建聚焦重绘请求蒙版画布');
     focusedRequestMaskContext.imageSmoothingEnabled = false;
     focusedRequestMaskContext.drawImage(focusedCropMaskCanvas, 0, 0, focusedCropMaskCanvas.width, focusedCropMaskCanvas.height, 0, 0, focusedRequestMaskCanvas.width, focusedRequestMaskCanvas.height);
 

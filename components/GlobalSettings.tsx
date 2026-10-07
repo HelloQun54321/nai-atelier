@@ -1196,7 +1196,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <label className="mb-3 flex min-h-11 items-start justify-between gap-3">
-                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">仅零 Anlas 文生图／Focused 重绘；V5 仍消耗 Opus。</span></span>
+                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">仅零 Anlas 文生图／聚焦重绘；V5 仍消耗 Opus。</span></span>
                 <input type="checkbox" aria-label="低消耗模式" checked={lowConsumption.enabled} disabled={savingLowConsumption || !apiKey.trim()} onChange={async event => {
                   const enabled = event.currentTarget.checked;
                   setSavingLowConsumption(true);

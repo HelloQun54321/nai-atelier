@@ -7,6 +7,19 @@ import { ImageEditCanvas } from '../../components/ImageEditCanvas';
 afterEach(cleanup);
 
 describe('ImageEditCanvas', () => {
+  it('聚焦选区的移动与缩放操作统一中文名称', () => {
+    const onFocusedInteractionStart = vi.fn();
+    render(React.createElement(ImageEditCanvas, {
+      imageCanvasRef: React.createRef<HTMLCanvasElement>(), maskCanvasRef: React.createRef<HTMLCanvasElement>(), overlayCanvasRef: React.createRef<HTMLCanvasElement>(),
+      width: 832, height: 1216, focusedRect: { x: 64, y: 64, width: 256, height: 256 }, focused: true, isLoading: false,
+      onPointerDown: vi.fn(), onPointerMove: vi.fn(), onPointerUp: vi.fn(), onFocusedInteractionStart,
+    }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: '移动聚焦重绘选区' }));
+    expect(onFocusedInteractionStart).toHaveBeenLastCalledWith(expect.anything(), 'move');
+    fireEvent.pointerDown(screen.getByRole('button', { name: '调整聚焦重绘选区大小' }));
+    expect(onFocusedInteractionStart).toHaveBeenLastCalledWith(expect.anything(), 'resize');
+  });
+
   it('为安全模式标记编辑底图并保留编辑画布交互容器', () => {
     const { container } = render(React.createElement(ImageEditCanvas, {
       imageCanvasRef: React.createRef<HTMLCanvasElement>(),
@@ -48,7 +61,7 @@ describe('ImageEditCanvas', () => {
     expect(mask?.getAttribute('aria-disabled')).toBe('true');
     expect(mask?.className).toContain('pointer-events-none');
     expect(mask?.className).toContain('cursor-default');
-    expect(container.querySelector('[aria-label="移动 Focused 选区"]')).toBeNull();
+    expect(container.querySelector('[aria-label="移动聚焦重绘选区"]')).toBeNull();
   });
 
   it('支持放大、缩小、重置与展开全屏大画板精修模式', () => {

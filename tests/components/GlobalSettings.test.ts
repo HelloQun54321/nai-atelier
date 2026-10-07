@@ -201,7 +201,7 @@ describe('GlobalSettings', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(lowMode.save).toHaveBeenCalledWith(true, 'settings-test-key'));
     await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByText('仅零 Anlas 文生图／Focused 重绘；V5 仍消耗 Opus。')).toBeTruthy();
+    expect(screen.getByText('仅零 Anlas 文生图／聚焦重绘；V5 仍消耗 Opus。')).toBeTruthy();
     expect(screen.queryByText(/低消耗可用 1500 点/)).toBeNull();
   });
   it('尚未配置 Key 时开关禁用', async () => {

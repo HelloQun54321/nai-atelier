@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, openLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
+import { createLabImageEditDraft, createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, openLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -13,6 +13,31 @@ const params = {
 
 describe('lab workspace session', () => {
   beforeEach(() => sessionStorage.clear());
+
+  it('新建与重置共用的草稿仅为局部重绘默认开启聚焦', () => {
+    const session = createLabWorkspaceSession('', '', '', params, {});
+    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      expect(createLabImageEditDraft(operation, '', '', params).focused).toBe(operation === 'inpaint');
+      expect(session.edits[operation].focused).toBe(operation === 'inpaint');
+    }
+    expect(createLabImageEditDraft('inpaint', '', '', params, { focused: false }).focused).toBe(false);
+  });
+
+  it.each([false, true])('复开草稿保留明确保存的聚焦选择 %s', focused => {
+    const session = createLabWorkspaceSession('', '', '', params, {});
+    session.edits.inpaint.focused = focused;
+    for (const key of ['playground', 'style-chain', 'character-chain']) {
+      saveLabWorkspaceSession(key, session);
+      expect(openLabWorkspaceSession(key, createLabWorkspaceSession('', '', '', params, {})).edits.inpaint.focused).toBe(focused);
+    }
+  });
+
+  it('旧草稿缺少聚焦字段时采用局部重绘的新默认值', () => {
+    const session = createLabWorkspaceSession('', '', '', params, {});
+    const { focused: _focused, ...legacyDraft } = session.edits.inpaint;
+    sessionStorage.setItem('nai-lab-workspace-v1:legacy', JSON.stringify({ ...session, edits: { ...session.edits, inpaint: legacyDraft } }));
+    expect(loadLabWorkspaceSession('legacy', session).edits.inpaint.focused).toBe(true);
+  });
 
   it('自由实验室复开隔离全部旧图片及关联坐标，保留各模式文字参数且不改原草稿', () => {
     const session = createLabWorkspaceSession('base', 'subject', 'negative', params, { light: true });

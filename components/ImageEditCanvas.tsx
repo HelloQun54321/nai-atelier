@@ -329,7 +329,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <div
               role="button"
               tabIndex={0}
-              aria-label="移动 Focused 选区"
+              aria-label="移动聚焦重绘选区"
               className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-move rounded bg-amber-300/90 px-1.5 py-0.5 text-mini font-bold text-amber-950 shadow"
               onPointerDown={event => onFocusedInteractionStart?.(event, 'move')}
               onPointerMove={onFocusedInteractionMove}
@@ -339,7 +339,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <div
               role="button"
               tabIndex={0}
-              aria-label="调整 Focused 选区大小"
+              aria-label="调整聚焦重绘选区大小"
               className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-se-resize rounded-full border-2 border-amber-950 bg-amber-300 shadow"
               onPointerDown={event => onFocusedInteractionStart?.(event, 'resize')}
               onPointerMove={onFocusedInteractionMove}

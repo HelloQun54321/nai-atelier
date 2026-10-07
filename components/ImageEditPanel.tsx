@@ -175,7 +175,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [brushSize, setBrushSize] = useState(draft.brushSize);
   const [storedFocused, setFocused] = useState(draft.focused);
   const lowConsumption = useLowConsumption();
-  // 强制本次 Focused，保留原草稿中的普通／Focused 选择，关闭低消耗后恢复。
+  // 强制本次聚焦重绘，保留原草稿中的普通／聚焦选择，关闭低消耗后恢复。
   const focused = operation === 'inpaint' && lowConsumption.enabled ? true : storedFocused;
   const [minimumContextArea, setMinimumContextArea] = useState(normalizeMinimumContextArea(draft.minimumContextArea));
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
@@ -953,7 +953,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       return stop(`请先处理底图尺寸：${dimensionError}`, 'invalid_dimensions');
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
-      return stop('请先在画布上框选 Focused Inpainting 区域', 'missing_focused_region');
+      return stop('请先在画布上框选聚焦重绘区域', 'missing_focused_region');
     }
     // 蒙版为空（未画任何笔迹/未应用画布扩展）时 infill/outpaint 语义上等于不重绘，
     // 但 NovelAI 仍会按编辑请求计费——拦截并提示，避免白耗 Anlas
@@ -1000,7 +1000,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     }
     throw new Error('画布状态仍未稳定，请重新读取实际结果');
   };
-  useAgentCommand({ name: 'get_image_edit_state', label: '读取真实编辑画布', description: '读取底图实际像素尺寸、蒙版、Focused 选区和扩图状态。坐标以实际画布像素为准。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => agentScopeRef.current, execute: agentCanvasState });
+  useAgentCommand({ name: 'get_image_edit_state', label: '读取真实编辑画布', description: '读取底图实际像素尺寸、蒙版、聚焦重绘选区和扩图状态。坐标以实际画布像素为准。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => agentScopeRef.current, execute: agentCanvasState });
   useAgentCommand({ name: 'inspect_edit_canvas', label: '观察当前底图', description: '通过图片观察工具把当前底图交给当前模型；不调用其他视觉模型。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => agentScopeRef.current, execute: () => {
     const source = imageCanvasRef.current;
     if (!source || isLoading || !state.width) throw new Error('当前底图尚未准备好');
@@ -1011,7 +1011,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!data || data.length > 1_500_000) throw new Error('画布过大，无法交给当前模型');
     return { image: { data, mimeType: 'image/jpeg', width: source.width, height: source.height }, canvas: agentCanvasState() };
   } });
-  useAgentCommand({ name: 'edit_image_canvas', label: '编辑蒙版与画布', description: '使用实际像素编辑当前模式。蒙版白色为重绘区域，保留其他像素和撤销记录；Focused 模式必须先设置选区。扩图先设置四边扩展，再应用。不会生成图片或扣费。', parameters: { type: 'object', required: ['operation'], properties: { operation: { enum: ['paint_rectangle', 'paint_ellipse', 'paint_polygon', 'brush_stroke', 'erase_rectangle', 'clear_mask', 'invert_mask', 'undo', 'redo', 'set_focused_rect', 'normalize', 'set_expansion', 'apply_expansion'] }, rect: { type: 'object', required: ['x', 'y', 'width', 'height'], properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } } }, points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } } }, brushSize: { type: 'number', minimum: 1, maximum: 256 }, erase: { type: 'boolean' }, expansion: { type: 'object', properties: { top: { type: 'number' }, right: { type: 'number' }, bottom: { type: 'number' }, left: { type: 'number' } } }, mode: { enum: ['contain', 'crop', 'stretch'] } } }, scope: () => agentScopeRef.current, execute: async args => {
+  useAgentCommand({ name: 'edit_image_canvas', label: '编辑蒙版与画布', description: '使用实际像素编辑当前模式。蒙版白色为重绘区域，保留其他像素和撤销记录；聚焦重绘模式必须先设置选区。扩图先设置四边扩展，再应用。不会生成图片或扣费。', parameters: { type: 'object', required: ['operation'], properties: { operation: { enum: ['paint_rectangle', 'paint_ellipse', 'paint_polygon', 'brush_stroke', 'erase_rectangle', 'clear_mask', 'invert_mask', 'undo', 'redo', 'set_focused_rect', 'normalize', 'set_expansion', 'apply_expansion'] }, rect: { type: 'object', required: ['x', 'y', 'width', 'height'], properties: { x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, height: { type: 'number' } } }, points: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } } }, brushSize: { type: 'number', minimum: 1, maximum: 256 }, erase: { type: 'boolean' }, expansion: { type: 'object', properties: { top: { type: 'number' }, right: { type: 'number' }, bottom: { type: 'number' }, left: { type: 'number' } } }, mode: { enum: ['contain', 'crop', 'stretch'] } } }, scope: () => agentScopeRef.current, execute: async args => {
     const canvas = maskCanvasRef.current, image = imageCanvasRef.current;
     if (!image || !state.width || isLoading || isImportingImage || isGenerating || isApplyingOutpaint) throw new Error('底图未准备好或当前正在执行，请等待真实画布');
     if (safeMode) throw new Error('当前安全模式禁止编辑画布，请先由用户调整安全模式');
@@ -1047,7 +1047,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         if (!await pendingMaskRestoreRef.current) throw new Error('蒙版恢复未完成，请重新读取实际画布');
       }
       else {
-        if (focused && !focusedRectRef.current) throw new Error('Focused 重绘需要先设置实际选区');
+        if (focused && !focusedRectRef.current) throw new Error('聚焦重绘需要先设置实际选区');
         const context = canvas.getContext('2d'); if (!context) throw new Error('蒙版画布不可用');
         const original = context.getImageData(0, 0, canvas.width, canvas.height);
         const painted = paintAgentMask(original.data, canvas.width, canvas.height, args, focused ? focusedRectRef.current : null);

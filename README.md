@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.37.12-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.37.13-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -185,10 +185,10 @@ flowchart LR
 - **主动复用原图配置**：需要原图提示词与参数时，使用顶栏「导入图片或 JSON 配置」，或在历史详情通过「导入到实验室」完整载入；
 - **SSE 流式过程图即时预览**：接入流式生图端点，生图过程中实时查看画面演变走向，提前预判效果。
 
-#### 3. 局部重绘（Inpainting & Focused）：涂抹修补与聚焦放大
+#### 3. 局部重绘：涂抹修补与聚焦放大
 - **顺滑涂抹画板**：配备笔刷尺寸无级调节与多级撤销/重做栈，涂抹待修改区域；
-- **Focused Inpainting（聚焦重绘）**：围绕涂抹区域智能裁切放大、生成后羽化回贴，特别适合面部精修与手指细节修补；
-- **空蒙版防跑拦截**：画板未涂抹任何笔迹时前端直接友好拦截，防止误发起空重绘请求。
+- **默认聚焦重绘**：先框选区域，再按需涂抹蒙版，局部裁切放大生成后羽化回贴，适合面部精修与手指细节修补；符合 Opus 条件时零 Anlas，V5 仍消耗 Opus 额度。可手动关闭以使用普通重绘，已有草稿／历史保留原选择；
+- **空蒙版防跑拦截**：普通重绘未涂抹蒙版、聚焦重绘未框选区域时阻止生成；聚焦选区内没有笔迹时重绘整个有效选区。
 
 #### 4. 扩图（Outpainting）：无缝延展画面边界
 - **四向自由扩展**：自由设定上下左右扩展像素，基于原图自动重建画布；
