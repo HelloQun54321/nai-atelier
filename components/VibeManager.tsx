@@ -149,7 +149,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
         confirmLabel: `支付 ${encodingCost} Anlas 并生成`,
       });
       if (!accepted || session !== sessionRef.current || latestApiKey.current !== apiKey) return null;
-      const result = await vibeService.encode(asset.id, fixed, apiKey);
+      const result = await vibeService.encode(asset.id, fixed, apiKey, encodingCost);
       if (session !== sessionRef.current) return null;
       setAssets(items => items.map(item => item.id === asset.id ? result.item : item));
       setDetail(current => current?.id === asset.id ? result.item : current);

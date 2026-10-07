@@ -35,7 +35,7 @@ import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage'
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
-import { DEFAULT_NAI_RUNTIME, getNaiRuntimeConfig, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem, NaiRuntimeConfig } from '../services/naiRuntime';
+import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleSection } from './LabModuleSection';
@@ -101,18 +101,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     // 费用必须按付费档算，避免显示“免费/消耗额度”却实际扣点数。
     const opusSubscriptionActive = isActiveOpusSubscription(novelaiSubscription);
     // 成本估算常量（免费门槛、公式系数、受限模型清单）由网关自动同步。
-    const [naiRuntimeConfig, setNaiRuntimeConfig] = useState<NaiRuntimeConfig | null>(null);
-    const [, setRuntimeAppliedAt] = useState(0);
-    useEffect(() => {
-        let active = true;
-        void getNaiRuntimeConfig().then(config => {
-            if (!active) return;
-            applyEstimatorRuntime(config);
-            setNaiRuntimeConfig(config);
-            setRuntimeAppliedAt(Date.now());
-        });
-        return () => { active = false; };
-    }, []);
+    const naiRuntimeConfig = useNaiRuntime();
+    applyEstimatorRuntime(naiRuntimeConfig);
     // 同步失效时“免费/扣费”判断可能基于过期规则，生成前必须向用户示警。
     const runtimeSyncUnhealthy = isNaiRuntimeSyncUnhealthy(naiRuntimeConfig);
     const runtimeSyncWarning = naiRuntimeConfig
@@ -124,16 +114,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const generationCostLabel = novelaiSubscriptionLoading && getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).opusUsageLimit
         ? '确认额度中…'
         : formatGenerationCostLabel(estimatedAnlasCost, params.model);
-
-    /**
-     * 拼车共享账号：其他成员随时可能把 Opus 限额耗尽或透支。受限额模型
-     * 生成前强制刷新真实额度，确保费用确认弹窗按服务端最新状态计费。
-     */
-    const usageForCostEstimate = async (model?: string): Promise<boolean> => {
-        if (!getRuntimeNaiModelInfo(model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).opusUsageLimit) return opusUsageExhausted;
-        const fresh = await refreshUsageIfStale();
-        return fresh?.usage?.isNegative === true;
-    };
 
     // --- New: Subject/Variable Prompt State ---
     const [subjectPrompt, setSubjectPrompt] = useState('');
@@ -1488,7 +1468,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
-    const handleGenerateDraft = async (override?: PromptAgentDraft) => {
+    const handleGenerateDraft = async (override?: PromptAgentDraft, approvedCost?: number) => {
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
@@ -1529,14 +1509,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         setGeneratedImage(preview.image);
                         setPreviewMode('result');
                         setGenerationProgress(preview.step ? { step: preview.step, total: activeParams.steps } : null);
-                    }, streamSupported);
+                    }, streamSupported, approvedCost);
                 } catch (streamError) {
                     setGenerationProgress(null);
                     // 4xx 是上游明确拒绝（参数/鉴权），重发必然同样失败且不计费，直接抛错展示；
                     // 网络中断/5xx 时无法区分「未达上游」与「上游已完成但 final 丢失」，
                     // 自动重发可能双扣费，必须改由用户确认。
                     const streamStatus = (streamError as { status?: unknown })?.status;
-                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
+                    if ((streamError as { code?: string })?.code?.startsWith('BILLING_') || typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
                     console.warn('生成过程预览中断：', streamError);
                     const retry = await confirmAction({
                         title: '过程预览连接中断',
@@ -1545,10 +1525,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         tone: 'danger',
                     });
                     if (!retry) throw streamError;
-                    result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+                    result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams, approvedCost);
                 }
             } else {
-                result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
+                result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams, approvedCost);
             }
 
             lastGeneratedBlobRef.current = result.blob;
@@ -1637,7 +1617,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         let lowEnabled: boolean;
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; requestParams = applyLowConsumptionParams(params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
         catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
-        const cost = estimateV45GenerationCost(requestParams, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(requestParams.model));
+        const cost = estimateV45GenerationCost(requestParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(requestParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
             catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
@@ -1650,7 +1630,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: '仍要生成',
                 tone: 'danger',
             })) return false;
-            return handleGenerateDraft();
+            return handleGenerateDraft(undefined, cost);
         }
         // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
         if (cost > 0 && anlasBudget.remaining <= 0) {
@@ -1660,14 +1640,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-            return handleGenerateDraft();
+            return handleGenerateDraft(undefined, cost);
         }
         if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) return false;
-        return handleGenerateDraft();
+        return handleGenerateDraft(undefined, cost);
     };
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
@@ -1709,7 +1689,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return stop(message, 'invalid_base_image');
         }
-        const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, opusUsageExhausted, {
+        const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
             width: sourceWidth,
             height: sourceHeight,
             focusedRect: request.focusedRect,
@@ -1719,9 +1699,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, Boolean(request.focused && request.focusedRect)); }
             catch (error) { const message = error instanceof Error ? error.message : '低消耗检查失败'; notify(message, 'error'); return stop(message, 'low_consumption_blocked'); }
         }
+        const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
         if (editCost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。`, confirmLabel: `消耗 ${editCost} 点并生成` })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if ((editCost > 0 || options?.agent || runtimeSyncUnhealthy) && !await confirmAction({ title: runtimeSyncUnhealthy && editCost === 0 ? '常量同步异常' : '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
 
         await options?.onApproved?.();
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
@@ -1751,13 +1732,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         }
                         setImageEditPreviewImage(preview.image);
                         setGenerationProgress(preview.step ? { step: preview.step, total: editParams.steps } : null);
-                    }, streamSupported);
+                    }, streamSupported, editCost);
                 } catch (streamError) {
                     setGenerationProgress(null);
                     // 与文生图同理：4xx 明确拒绝直接抛错；网络中断/5xx 时结果未知，
                     // 自动重发可能双扣费，需用户确认。
                     const streamStatus = (streamError as { status?: unknown })?.status;
-                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
+                    if ((streamError as { code?: string })?.code?.startsWith('BILLING_') || typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
                     console.warn('图片编辑过程预览中断：', streamError);
                     const retry = await confirmAction({
                         title: '过程预览连接中断',
@@ -1766,10 +1747,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         tone: 'danger',
                     });
                     if (!retry) throw streamError;
-                    result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
+                    result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request, editCost);
                 }
             } else {
-                result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
+                result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request, editCost);
             }
             lastGeneratedBlobRef.current = result.blob;
             // 先显示结果再落盘历史；离开编辑页时跳过 UI 更新直接落库。
@@ -1905,7 +1886,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
         catch (error) { throw agentOperationError(error instanceof Error ? error.message : '读取低消耗设置失败', 'preflight_failed'); }
         const costParams = applyLowConsumptionParams(draft.params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
-        const cost = estimateV45GenerationCost(costParams, isActiveOpusSubscription(freshSubscription), await usageForCostEstimate(costParams.model));
+        const cost = estimateV45GenerationCost(costParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         if (lowEnabled) {
             try { assertLowConsumptionEstimate(costParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
             catch (error) { throw agentOperationError(error instanceof Error ? error.message : '低消耗检查失败', 'low_consumption_blocked'); }
@@ -1919,7 +1900,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 tone: 'danger',
             })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
             await approve();
-            return handleGenerateDraft(draft);
+            return handleGenerateDraft(draft, cost);
         }
         // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
         if (cost > 0 && anlasBudget.remaining <= 0) {
@@ -1930,7 +1911,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 tone: 'danger',
             })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
             await approve();
-            return handleGenerateDraft(draft);
+            return handleGenerateDraft(draft, cost);
         }
         if (!await confirmAction({
             title: 'Agent 已准备好生图',
@@ -1938,7 +1919,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
         await approve();
-        return handleGenerateDraft(draft);
+        return handleGenerateDraft(draft, cost);
         };
         try {
             const success = await execute();

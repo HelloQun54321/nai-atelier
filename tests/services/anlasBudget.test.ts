@@ -139,13 +139,13 @@ describe('image edit cost estimation', () => {
     expect(estimateImageEditCost(params, 'outpaint', 1, false, 3, false, { width: 1216, height: 960 })).toBe(35);
     expect(estimateImageEditCost(params, 'inpaint', 1, false, 3, true)).toBe(30);
     const referenced = { ...params, characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
-    expect(estimateV45GenerationCost(referenced, true)).toBe(35);
+    expect(estimateV45GenerationCost(referenced, true)).toBe(5);
     try {
       applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing,
         modelMultipliers: { v5: 2 }, freeImageToImage: false, characterReferenceCost: 7 } });
       expect(estimateImageEditCost(params, 'image-to-image', 1, false, 3)).toBe(40);
       expect(estimateImageEditCost(params, 'inpaint', 1, false, 3)).toBe(40);
-      expect(estimateV45GenerationCost(referenced, true)).toBe(47);
+      expect(estimateV45GenerationCost(referenced, true)).toBe(7);
       applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, usageLimitedModels: [] });
       expect(isOpusUsageLimitedModel(params.model)).toBe(false);
       expect(estimateV45GenerationCost(params, true, true)).toBe(0);

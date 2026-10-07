@@ -263,11 +263,13 @@ const stopRuntimeDriver = () => {
 const resolveRuntimePayload = (payload: unknown): NaiRuntimeConfig | null => {
   const next = payload as NaiRuntimeConfig | null;
   if (!next || !Array.isArray(next.models) || !next.models.length || !next.health) return null;
+  if (!isNaiBillingRules(next.billing)) return {
+    ...(cachedConfig || DEFAULT_NAI_RUNTIME),
+    health: { ...next.health, ok: false, reason: 'partial', missed: [...new Set([...(next.health.missed || []), 'billing'])] },
+  };
   const resolved: NaiRuntimeConfig = {
     ...DEFAULT_NAI_RUNTIME,
     ...next,
-    billing: isNaiBillingRules(next.billing) ? next.billing : DEFAULT_NAI_BILLING,
-    ...(!isNaiBillingRules(next.billing) ? { health: { ...next.health, ok: false, reason: 'partial', missed: [...new Set([...(next.health.missed || []), 'billing'])] } } : {}),
     modelCapabilities: next.modelCapabilities && typeof next.modelCapabilities === 'object'
       ? { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...next.modelCapabilities }
       : DEFAULT_NAI_RUNTIME.modelCapabilities,
@@ -290,7 +292,9 @@ const requestNaiRuntimeConfig = async (): Promise<NaiRuntimeConfig> => {
   } catch {
     // 网关未启动或临时不可用时保留上一次结果。
   }
-  return cachedConfig || DEFAULT_NAI_RUNTIME;
+  cachedConfig = { ...(cachedConfig || DEFAULT_NAI_RUNTIME),
+    health: { ok: false, reason: 'fetch', error: '无法读取网关同步状态', attemptedAt: Date.now() } };
+  return cachedConfig;
 };
 
 const loadNaiRuntimeConfig = () => {
@@ -314,7 +318,8 @@ export const refreshNaiRuntimeConfig = () => loadNaiRuntimeConfig();
 /** 判断同步是否处于需要生成前示警的失效状态（提取全灭或超过 48 小时未更新）。 */
 export const isNaiRuntimeSyncUnhealthy = (config: NaiRuntimeConfig | null | undefined): boolean => {
   if (!config) return false;
-  if (config.health?.reason === 'pending') return false;
+  if (config.health?.reason === 'pending' && config.syncedAt && !config.health.missed?.length
+    && Date.now() - config.syncedAt <= NAI_RUNTIME_STALE_MS) return false;
   if (config.health?.ok === false) return true;
   const syncedAt = config.syncedAt ?? 0;
   return syncedAt > 0 && Date.now() - syncedAt > NAI_RUNTIME_STALE_MS;

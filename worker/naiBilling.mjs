@@ -4,7 +4,8 @@ export const DEFAULT_NAI_BILLING = {
   freeSamples: 1,
   freeImageToImage: true,
   freeInpainting: true,
-  freeWithCharacterReference: false,
+  // 官方费用调用没有传入重试判定用的 characterRef；参考另收附加费。
+  freeWithCharacterReference: true,
   modelMultipliers: { v5: 1.5 },
   smeaMultiplier: 1.2,
   smeaDynamicMultiplier: 1.4,

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_NAI_RUNTIME, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig, useNaiRuntime } from '../../services/naiRuntime';
+import { DEFAULT_NAI_RUNTIME, isNaiRuntimeSyncUnhealthy, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig, useNaiRuntime } from '../../services/naiRuntime';
 
 describe('naiRuntime refresh', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.stubGlobal('fetch', vi.fn());
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ...DEFAULT_NAI_RUNTIME, health: { ok: true, missed: [] } }) } as Response);
+    await refreshNaiRuntimeConfig();
+    vi.mocked(fetch).mockReset();
   });
 
   afterEach(() => {
@@ -75,6 +78,26 @@ describe('naiRuntime refresh', () => {
     const result = await refreshNaiRuntimeConfig();
     expect(result.health).toMatchObject({ ok: false, missed: ['billing'] });
     expect(result.billing).toEqual(DEFAULT_NAI_RUNTIME.billing);
+  });
+  it('损坏响应保留最近完整动态规则，不能把新倍率退回内置值或混入半套系数', async () => {
+    const complete = { ...DEFAULT_NAI_RUNTIME, costCoefficientArea: 0.00001,
+      billing: { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: { v5: 2 } }, health: { ok: true, missed: [] } };
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => complete } as Response);
+    await refreshNaiRuntimeConfig();
+    vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ...DEFAULT_NAI_RUNTIME, billing: {}, health: { ok: true, missed: [] } }) } as Response);
+    const result = await refreshNaiRuntimeConfig();
+    expect(result.billing).toEqual(complete.billing);
+    expect(result.costCoefficientArea).toBe(complete.costCoefficientArea);
+    expect(result.health).toMatchObject({ ok: false, missed: ['billing'] });
+  });
+  it('网关不可用保留规则并示警，缺失计费字段的 pending 不能被当成健康状态', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+    const result = await refreshNaiRuntimeConfig();
+    expect(result.billing).toEqual(DEFAULT_NAI_RUNTIME.billing);
+    expect(result.health).toMatchObject({ ok: false, reason: 'fetch' });
+    expect(isNaiRuntimeSyncUnhealthy(result)).toBe(true);
+    expect(isNaiRuntimeSyncUnhealthy({ ...result, syncedAt: Date.now(), health: { ok: false, reason: 'pending', missed: ['billing'] } })).toBe(true);
+    expect(isNaiRuntimeSyncUnhealthy({ ...result, syncedAt: Date.now(), health: { ok: false, reason: 'pending' } })).toBe(false);
   });
 });
 

@@ -9,6 +9,6 @@ export const createNaiRuntimeSnapshot = runtime => ({
 export const NAI_BILLING_BUNDLE = [
   'function C(e){return!e.characterRef&&e.width*e.height<=1048576&&e.steps<=28}',
   'let d=function(e,t,a){let v=e.n_samples;(0,c.t1)(e)&&t.subscription.tier>=3&&(0,n.ax)(t.subscription)&&!D&&!m&&(v-=1);let w=Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)*(r?1.4:n?1.2:1);(0,r.Jg)(a)===r.lh.v5&&(w*=1.5);let y=Math.max(Math.ceil(w*p),2);return y*v},p=2;function M(e){return Math.max(0,e-4)*p}',
-  'characterReferences&&l.length>0&&(!a.mask||charRefInpainting)&&(g+=5*l.length*u.n_samples)',
+  'async(t,r,i,a,n,o,s,l,c,d,h)=>{let u={...a};let g=0;g+=await priceForEncoding(s);g+=(0,q.H_0)(s.length);l&&characterReferences&&l.length>0&&(!a.mask||charRefInpainting)&&(g+=5*l.length*u.n_samples);d({price:(0,q.GIT)(u,p,f)+g,additionalPrice:g})}',
   'async getPrice(e,t,r,i){return await this.getEncoding(e,r,i)?{exists:!0,price:0}:{exists:!1,price:2}}',
 ].join(';');

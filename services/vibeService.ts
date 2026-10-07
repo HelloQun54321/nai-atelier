@@ -1,5 +1,5 @@
 import { VibeAsset, VibeGroup, VibeSelection } from '../types';
-import { api, parseErrorResponse } from './api';
+import { api, parseErrorResponse, reportNaiAccountingError } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey } from './anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 
@@ -47,10 +47,11 @@ export const vibeService = {
     return api.post('/vibes/import', { fileText: await fileToText(file) });
   },
 
-  encode: async (vibeId: string, informationExtracted: number, apiKey: string): Promise<{item: VibeAsset; duplicate?: boolean}> => {
+  encode: async (vibeId: string, informationExtracted: number, apiKey: string, approvedCost?: number): Promise<{item: VibeAsset; duplicate?: boolean; anlasAccountingFailed?: boolean}> => {
     const response = await fetch(`/api/vibes/${encodeURIComponent(vibeId)}/encodings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`,
+        ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}) },
       body: JSON.stringify({ informationExtracted }),
     });
     if (!response.ok) throw await responseError(response);
@@ -60,6 +61,7 @@ export const vibeService = {
       const keyHash = await hashNaiApiKey(apiKey.trim());
       window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: { ...result.anlasBudget, keyHash } }));
     }
+    if (result.anlasAccountingFailed) reportNaiAccountingError(await hashNaiApiKey(apiKey.trim()));
     // 新编码成功后立即查询官方余额，不等待查询返回再交付资产；重复复用没有新消费。
     // 期间切 Key 时不因旧账号编码完成而刷新当前另一个账号。
     if (result.duplicate !== true && typeof window !== 'undefined') {

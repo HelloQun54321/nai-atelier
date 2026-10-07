@@ -608,7 +608,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 approved = true;
                 if (patch.action === 'encode_vibe') {
                   if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
-                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
+                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey, Number.isFinite(encodingCost) ? encodingCost : undefined);
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action, resourceId: patch.resourceId } });
                 } else if (patch.action === 'clear_mobile_cache') {
                   await clearMobileThumbnailCache();

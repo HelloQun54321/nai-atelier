@@ -1,7 +1,10 @@
 import { reportCloudQueueCleanupError } from './cloudQueue';
+import { NAI_RUNTIME_REFRESH_EVENT } from './naiRuntime';
+import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 
 // Base API URL
 const API_BASE = '/api';
+export const NAI_ACCOUNTING_ERROR_EVENT = 'nai-generation-accounting-error';
 
 const getHeaders = (extraHeaders?: Record<string, string>) => {
   const headers: Record<string, string> = {
@@ -51,6 +54,10 @@ export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
     try {
       message = truncated((await res.clone().text()).trim() || message);
     } catch { /* 响应体不可读时保留默认文案。 */ }
+  }
+  if (code === 'BILLING_COST_CHANGED' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(NAI_RUNTIME_REFRESH_EVENT));
+    window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
   }
   return Object.assign(new ApiError(message, res.status, code), retryAfter ? { retryAfter } : {});
 };
@@ -137,7 +144,7 @@ export const createSseParser = (onEvent: (event: ParsedSseEvent) => void) => {
 };
 
 const emitBudgetChanged = (remaining: number, budgetKeyHash = '') => {
-  if (!Number.isFinite(remaining) || typeof window === 'undefined') return;
+  if (!Number.isFinite(remaining) || remaining < 0 || typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
     detail: { remaining, updatedAt: Date.now(), keyHash: budgetKeyHash, refreshPersonal: true },
   }));
@@ -147,6 +154,13 @@ const requestPersonalUsageRefresh = (budgetKeyHash = '') => {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('nai-anlas-budget-changed', {
     detail: { keyHash: budgetKeyHash, refreshPersonal: true },
+  }));
+};
+
+export const reportNaiAccountingError = (budgetKeyHash = '') => {
+  requestPersonalUsageRefresh(budgetKeyHash);
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, {
+    detail: { message: '任务已完成，但本地用量记账失败；请核对官方余额与本地预算，勿重复提交' },
   }));
 };
 
@@ -213,11 +227,12 @@ export const api = {
     notifyLanAccessRequired(res);
     notifyQueueCleanupFailed(res, headers);
     if (!res.ok) throw await parseErrorResponse(res);
+    if (res.headers.get('x-nai-anlas-accounting-failed') === '1') reportNaiAccountingError(options.budgetKeyHash);
     const remaining = res.headers.get('x-nai-anlas-remaining');
     if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
     const spent = res.headers.get('x-nai-anlas-estimated-spent') ?? res.headers.get('x-nai-anlas-spent');
-    const parsedCost = spent === null ? NaN : Number(spent);
-    return { blob: await res.blob(), estimatedCost: Number.isFinite(parsedCost) ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
+    const parsedCost = spent === null || spent.trim() === '' ? NaN : Number(spent);
+    return { blob: await res.blob(), estimatedCost: Number.isFinite(parsedCost) && parsedCost >= 0 ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
   },
 
   postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {
@@ -249,14 +264,14 @@ export const api = {
     const parser = createSseParser(event => {
       if (event.event === 'nai_usage' && event.data && typeof event.data === 'object') {
         const usageData = event.data as { remaining?: unknown; estimatedSpent?: unknown };
-        const remaining = Number(usageData.remaining);
-        if (Number.isFinite(remaining)) emitBudgetChanged(remaining, options.budgetKeyHash);
+        const remaining = typeof usageData.remaining === 'number' ? usageData.remaining : NaN;
+        if (Number.isFinite(remaining) && remaining >= 0) emitBudgetChanged(remaining, options.budgetKeyHash);
         else requestPersonalUsageRefresh(options.budgetKeyHash);
-        const spent = Number(usageData.estimatedSpent);
-        if (Number.isFinite(spent)) estimatedCost = spent;
+        const spent = typeof usageData.estimatedSpent === 'number' ? usageData.estimatedSpent : NaN;
+        if (Number.isFinite(spent) && spent >= 0) estimatedCost = spent;
       }
       if (event.event === 'nai_usage_error') {
-        requestPersonalUsageRefresh(options.budgetKeyHash);
+        reportNaiAccountingError(options.budgetKeyHash);
       }
       if (event.event === 'nai_queue_cleanup_error') {
         reportCloudQueueCleanupError(res.headers.get('x-nai-queue-task-id') || '', (headers.Authorization || '').replace(/^Bearer /, ''));

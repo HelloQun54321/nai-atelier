@@ -29,6 +29,20 @@ const params: NAIParams = {
   scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 0,
 };
 
+it.each([0, 35])('四个生图传输入口都传递已确认费用上限 %s，元数据不进入官方生成参数', async approvedCost => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
+  const edit = { operation: 'inpaint' as const, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
+  await generateImage('test-key', '', '', params, approvedCost);
+  await generateImageEdit('test-key', '', '', params, edit, approvedCost);
+  await generateImageStream('test-key', '', '', params, undefined, false, approvedCost);
+  await generateImageEditStream('test-key', '', '', params, edit, undefined, false, approvedCost);
+  const calls = [vi.mocked(api.postBinary).mock.calls.at(-1)!, vi.mocked(api.postBinaryDetailed).mock.calls.at(-1)!, ...vi.mocked(api.postSse).mock.calls.slice(-2)];
+  for (const call of calls) {
+    expect(call[2]).toMatchObject({ 'X-Nai-Anlas-Max-Cost': String(approvedCost) });
+    expect((call[1] as { parameters: object }).parameters).not.toHaveProperty('approvedCost');
+  }
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();

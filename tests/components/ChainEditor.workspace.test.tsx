@@ -7,6 +7,8 @@ import type { LocalGenItem, PromptChain } from '../../types';
 import { cloneDefaultLabPageLayouts } from '../../services/appearancePreferences';
 import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 import { ChainEditor } from '../../components/ChainEditor';
+import { DEFAULT_NAI_RUNTIME, type NaiRuntimeConfig } from '../../services/naiRuntime';
+import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
 
 const state = vi.hoisted(() => ({
@@ -21,6 +23,9 @@ const state = vi.hoisted(() => ({
   assets: new Map<string, Blob>(),
   delayedAsset: null as Promise<Blob> | null,
   delayedBaseSave: null as Promise<void> | null,
+  runtime: null as NaiRuntimeConfig | null,
+  subscription: null as NovelaiSubscriptionInfo | null,
+  refreshedSubscription: null as NovelaiSubscriptionInfo | null,
 }));
 vi.mock('../../services/lowConsumption', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/lowConsumption')>(),
@@ -29,11 +34,12 @@ vi.mock('../../services/lowConsumption', async importOriginal => ({
 }));
 vi.mock('../../services/naiRuntime', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
-  return { ...actual, getNaiRuntimeConfig: async () => actual.DEFAULT_NAI_RUNTIME };
+  return { ...actual, getNaiRuntimeConfig: async () => actual.DEFAULT_NAI_RUNTIME,
+    useNaiRuntime: () => state.runtime || actual.DEFAULT_NAI_RUNTIME };
 });
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: null, usage: null, loading: false, error: null, fetchedAt: 0, refresh: async () => null, refreshIfStale: async () => null }),
+  useNovelaiUsage: () => ({ info: state.subscription, usage: state.subscription?.usage, loading: false, error: null, fetchedAt: 0, refresh: async () => state.refreshedSubscription, refreshIfStale: async () => state.refreshedSubscription }),
 }));
 vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
@@ -120,8 +126,10 @@ beforeEach(() => {
   state.assets.clear();
   state.delayedAsset = null;
   state.delayedBaseSave = null;
+  state.runtime = { ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } };
+  state.subscription = null; state.refreshedSubscription = null;
   state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
-  state.confirm.mockClear(); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
+  state.confirm.mockReset(); state.confirm.mockResolvedValue(true); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
   state.addHistory.mockImplementation(async (_blob, prompt, params, negativePrompt, source) => ({
     ...source, id: `new-${state.addHistory.mock.calls.length}`, imageUrl: `/synthetic/new-${state.addHistory.mock.calls.length}.png`,
     prompt, params, negativePrompt, createdAt: 100 + state.addHistory.mock.calls.length,
@@ -132,6 +140,43 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it.each(['图生图', '局部重绘', '扩图'])('%s 确认使用刚刷新的透支状态，不沿用界面上的免费快照', async label => {
+  sessionStorage.setItem('nai_api_key', 'billing-preflight-fixture');
+  state.subscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 0 } };
+  state.refreshedSubscription = { ...state.subscription, usage: { percent: 0, isNegative: true, timeUntilNextPercent: 0 } };
+  state.confirm.mockResolvedValueOnce(false);
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  setup({ ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full' } });
+  await switchTo(label);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+  expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('30 Anlas') }));
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失效时也须确认，并可取消', async label => {
+  sessionStorage.setItem('nai_api_key', 'billing-sync-fixture');
+  state.subscription = state.refreshedSubscription = { active: true, tier: 3 };
+  state.runtime = { ...DEFAULT_NAI_RUNTIME, health: { ok: false, reason: 'partial', missed: ['billing'] } };
+  state.confirm.mockResolvedValueOnce(false);
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  setup(); await switchTo(label);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+  expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: '常量同步异常', message: expect.stringContaining('可能意外消耗共享 Anlas') }));
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it('保持打开的实验室继续接收运行时更新，按钮费用不冻结在首次加载值', async () => {
+  const entry = { ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full', steps: 29 } };
+  const { rerender, props } = setup(entry);
+  expect(screen.getByRole('button', { name: /^生成 · 30 点/ })).toBeTruthy();
+  state.runtime = { ...state.runtime!, billing: { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: { v5: 2 } } };
+  rerender(<ChainEditor {...props} />);
+  expect(screen.getByRole('button', { name: /^生成 · 40 点/ })).toBeTruthy();
+  expect(state.generate).not.toHaveBeenCalled();
+});
 
 it('四模式共用手机资源入口，切 Key 时继续使用当前工作台状态，不触发生成', async () => {
   vi.stubGlobal('innerWidth', 390);

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey, useAnlasBudget } from '../../services/anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT, useNovelaiUsage } from '../../services/naiUsage';
 import { vibeService } from '../../services/vibeService';
+import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 
 const responseFor = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status, headers: { 'Content-Type': 'application/json' },
@@ -30,7 +31,8 @@ describe('Vibe 编码后的余额更新', () => {
     vi.stubGlobal('fetch', fetchMock);
     const events = vi.spyOn(window, 'dispatchEvent');
 
-    expect(await vibeService.encode(item.id, 1, apiKey)).toEqual({ item, anlasBudget: budget });
+    expect(await vibeService.encode(item.id, 1, apiKey, 2)).toEqual({ item, anlasBudget: budget });
+    expect(fetchMock.mock.calls[0][1].headers['X-Nai-Anlas-Max-Cost']).toBe('2');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(events.mock.calls.map(([event]) => event.type)).toEqual([
       ANLAS_BUDGET_CHANGED_EVENT, NOVELAI_USAGE_REFRESH_EVENT,
@@ -45,6 +47,14 @@ describe('Vibe 编码后的余额更新', () => {
     const events = vi.spyOn(window, 'dispatchEvent');
     await vibeService.encode(item.id, 1, apiKey);
     expect(events.mock.calls.map(([event]) => event.type)).toEqual([NOVELAI_USAGE_REFRESH_EVENT]);
+  });
+  it('新编码已保存但本地记账失败时保留资产并提示核对，不再编码', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(responseFor({ item, anlasAccountingFailed: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const events = vi.spyOn(window, 'dispatchEvent');
+    expect((await vibeService.encode(item.id, 1, apiKey, 2)).item).toEqual(item);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(events.mock.calls.some(([event]) => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
   });
 
   it('重复编码复用没有新消费，不额外刷新或再次请求编码', async () => {

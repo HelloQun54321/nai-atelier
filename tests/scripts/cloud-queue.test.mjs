@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createServer, request } from 'node:http';
 import { Readable, Writable } from 'node:stream';
 import { once } from 'node:events';
-import { CloudQueueCoordinator, handleGenerateRequest, handleGenerateStreamRequest } from '../../scripts/media-gateway.mjs';
+import { DEFAULT_NAI_RUNTIME, CloudQueueCoordinator, handleGenerateRequest, handleGenerateStreamRequest } from '../../scripts/media-gateway.mjs';
 import { normalizeCloudQueueCount } from '../../worker/cloudQueueNumbers.mjs';
 
 // 只使用模拟外部请求和注入的结算函数，不启动真实网关、不读取或改写私人数据。
@@ -31,7 +31,7 @@ class TestResponse extends Writable {
   body() { return Buffer.concat(this.chunks).toString(); }
 }
 const setup = (remote, options = {}) => new CloudQueueCoordinator(remote, preferences.serviceUrl, { pollIntervalMs: 5, waitTimeoutMs: 2000, ...options });
-const generationOptions = { settleGeneration: async () => ({ estimatedCost: 0, anlasBudget: null }), checkLowConsumption: async () => {} };
+const generationOptions = { prepareBilling: async () => ({ runtime: DEFAULT_NAI_RUNTIME }), settleGeneration: async () => ({ estimatedCost: 0, anlasBudget: null }), checkLowConsumption: async () => {} };
 const finalFrame = 'event: final\ndata: {"image":"test"}\n\n';
 const run = (handler, q, remote, taskId, res = new TestResponse(), options = {}, action = 'generate') => ({
   res,

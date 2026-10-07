@@ -5,6 +5,7 @@ import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
+import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import {
@@ -87,8 +88,10 @@ const App = () => {
 
   // 连续 notify 时旧计时器会把新 toast 提前清掉，先清旧再挂新
   const toastTimerRef = useRef<number | null>(null);
+  const accountingWarningUntilRef = useRef(0);
   // useCallback 保持稳定引用：notify 被多处 effect 依赖，每次渲染新建会导致监听反复重挂。
   const notify = React.useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    if (type === 'success' && Date.now() < accountingWarningUntilRef.current) return;
     setToast({ message, type });
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => {
@@ -96,6 +99,15 @@ const App = () => {
       toastTimerRef.current = null;
     }, 3000);
   }, []);
+
+  useEffect(() => {
+    const onAccountingError = (event: Event) => {
+      accountingWarningUntilRef.current = Date.now() + 3000;
+      notify((event as CustomEvent<{ message: string }>).detail.message, 'error');
+    };
+    window.addEventListener(NAI_ACCOUNTING_ERROR_EVENT, onAccountingError);
+    return () => window.removeEventListener(NAI_ACCOUNTING_ERROR_EVENT, onAccountingError);
+  }, [notify]);
 
   // Personal mode enters directly without a login session.
   useEffect(() => {

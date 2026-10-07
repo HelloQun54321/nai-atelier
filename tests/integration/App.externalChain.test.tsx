@@ -3,6 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
+import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
@@ -73,6 +74,15 @@ it('写入失败保持来源页，只显示失败，不伪报已保存', async (
   expect(screen.getByRole('status').getAttribute('data-type')).toBe('error');
   expect(screen.getByTestId('view').textContent).toBe('aitag');
   expect(screen.queryByTestId('editor')).toBeNull();
+});
+
+it('生成后记账错误明确提示，随后的成功通知不能立即覆盖费用异常', async () => {
+  await setup();
+  act(() => window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, { detail: { message: '图片已生成，但本地用量记账失败；勿重复生成' } })));
+  fireEvent.click(screen.getByRole('button', { name: '保存合成作品' }));
+  await screen.findByTestId('editor');
+  expect(screen.getByRole('status').textContent).toContain('本地用量记账失败');
+  expect(screen.getByRole('status').getAttribute('data-type')).toBe('error');
 });
 
 it('旧的整库刷新迟到不会移除刚保存的条目或破坏已打开的工作台', async () => {

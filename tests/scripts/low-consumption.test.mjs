@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { Readable, Writable } from 'node:stream';
-import { DEFAULT_NAI_RUNTIME, enforceLowConsumptionRequest, handleGenerateRequest, handleGenerateStreamRequest, CloudQueueCoordinator } from '../../scripts/media-gateway.mjs';
+import { DEFAULT_NAI_RUNTIME, applyNaiRuntimeOverride, enforceLowConsumptionRequest, handleGenerateRequest, handleGenerateStreamRequest, handleVibeEncodeRequest, CloudQueueCoordinator } from '../../scripts/media-gateway.mjs';
 import { lowConsumptionViolation } from '../../worker/lowConsumptionPolicy.mjs';
 
 // 全部请求、额度和预算都注入模拟值，不访问真实 NovelAI、公共队列或私人数据库。
@@ -74,17 +74,139 @@ class Output extends Writable {
   _write(chunk, _encoding, callback) { this.chunks.push(Buffer.from(chunk)); callback(); }
   body() { return Buffer.concat(this.chunks).toString(); }
 }
-const request = (key = 'handler-key', body = payload()) => {
+const request = (key = 'handler-key', body = payload(), maximum) => {
   const req = Readable.from([Buffer.from(JSON.stringify(body))]);
-  req.method = 'POST'; req.headers = { authorization: `Bearer ${key}` };
+  req.method = 'POST'; req.headers = { authorization: `Bearer ${key}`, ...(maximum !== undefined ? { 'x-nai-anlas-max-cost': String(maximum) } : {}) };
   req.socket = { remoteAddress: '127.0.0.1' }; req.setTimeout = () => {};
   return req;
 };
 const idleQueue = () => new CloudQueueCoordinator(() => assert.fail('不能调用公共队列'), 'https://queue.invalid');
+test('Vibe 编码费用上限、重复复用与生成前单价一致，记账失败仍保存编码', async () => {
+  let scenario, encoded = 0, saved = 0;
+  const spends = [];
+  const worker = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
+    if (req.url.endsWith('/encoding-result')) { saved++; return res.end(JSON.stringify({ item: { id: 'fixture' } })); }
+    if (req.url === '/api/anlas-budget') {
+      spends.push(JSON.parse(Buffer.concat(chunks).toString()));
+      if (scenario === 'accounting-error') { res.statusCode = 500; return res.end('{"error":"synthetic"}'); }
+      return res.end('{"remaining":1664}');
+    }
+    return res.end(JSON.stringify({ item: { id: 'fixture', encodings: scenario === 'cached' ? [{ informationExtracted: 1, model: 'nai-diffusion-4-5-full' }] : [] } }));
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    for (scenario of ['changed', 'normal', 'accounting-error', 'cached']) {
+      applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing });
+      const res = new Output();
+      await handleVibeEncodeRequest(request(`encode-${scenario}`, { informationExtracted: 1 }, scenario === 'changed' ? 1 : 2), res, '', worker.address().port, 'fixture', async () => {
+        encoded++;
+        applyNaiRuntimeOverride({ billing: { ...DEFAULT_NAI_RUNTIME.billing, vibeEncodingCost: 6 } });
+        return new Response(Buffer.alloc(128, 2));
+      });
+      const result = JSON.parse(res.body());
+      assert.equal(res.statusCode, scenario === 'changed' ? 409 : 200);
+      if (scenario === 'changed') assert.equal(result.code, 'BILLING_COST_CHANGED');
+      if (scenario === 'accounting-error') assert.equal(result.anlasAccountingFailed, true);
+      if (scenario === 'cached') assert.equal(result.duplicate, true);
+    }
+    assert.equal(encoded, 2); assert.equal(saved, 2);
+    assert.deepEqual(spends.map(item => item.amount), [2, 2]);
+  } finally { applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing }); await new Promise(resolve => worker.close(resolve)); }
+});
 for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   const label = handler === handleGenerateRequest ? 'ZIP' : 'SSE';
   const success = () => new Response(handler === handleGenerateRequest ? 'zip' : 'event: final\ndata: {"image":"fake"}\n\n');
   const settleGeneration = async () => ({ estimatedCost: 0, anlasBudget: null });
+  const prepareBilling = async () => ({ runtime: DEFAULT_NAI_RUNTIME });
+  test(`${label}：上游成功后本地记账失败仍交付成品，并单独提示费用异常，不重试`, async () => {
+    let generations = 0;
+    const res = new Output();
+    await handler(request(`accounting-${label}`), res, '', 0, idleQueue(), { enabled: false }, async () => { generations++; return success(); },
+      { prepareBilling, checkLowConsumption: async () => false, settleGeneration: async () => { throw new Error('synthetic accounting failure'); } });
+    assert.equal(res.statusCode, 200); assert.equal(generations, 1);
+    if (handler === handleGenerateRequest) {
+      assert.equal(res.body(), 'zip');
+      assert.equal(res.headers['X-Nai-Anlas-Accounting-Failed'], '1');
+      assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], undefined);
+    } else {
+      assert.match(res.body(), /event: final/); assert.match(res.body(), /event: nai_usage_error/);
+      assert.doesNotMatch(res.body(), /event: error/);
+    }
+  });
+  test(`${label}：排队后费用超过确认值即停止提交，释放队列，不能静默从免费转付费`, async () => {
+    let released = 0, queried = 0;
+    const q = new CloudQueueCoordinator(async url => {
+      if (url.endsWith('/join-queue')) return json({ position: 0, lock_token: 'permit' });
+      if (url.endsWith('/complete')) released++;
+      return json({ status: 'ok' });
+    }, 'https://queue.invalid');
+    const res = new Output();
+    await handler(request(`changed-${label}`, payload(), 0), res, '', 0, q, { enabled: true, serviceUrl: 'https://queue.invalid' }, async url => {
+      assert.ok(url.endsWith('/user/subscription'), '未重新确认不得生图'); queried++;
+      return json({ ...subscription, usage: { percent: 0, isNegative: true } });
+    }, { checkLowConsumption: async () => false, settleGeneration: async () => assert.fail('未生成不得结算') });
+    assert.equal(res.statusCode, 409);
+    assert.match(res.body(), /BILLING_COST_CHANGED/);
+    assert.equal(queried, 1); assert.equal(released, 1);
+  });
+  test(`${label}：零点数且不计 Opus 的 V4.5 成功请求仍返回准确费用，不依赖预算扣减`, async () => {
+    const res = new Output();
+    await handler(request(`zero-${label}`, payload({}, { model: 'nai-diffusion-4-5-full' }), 0), res, '', 0, idleQueue(), { enabled: false },
+      async url => url.endsWith('/user/subscription') ? json(subscription) : success(), { checkLowConsumption: async () => false });
+    assert.equal(res.statusCode, 200);
+    if (handler === handleGenerateRequest) assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], '0');
+    else assert.match(res.body(), /"estimatedSpent":0/);
+  });
+  test(`${label}：生成前捕获额度和规则，最后一张免费图不被生成后的透支或新倍率改写`, async () => {
+    const spends = [], calls = [];
+    const worker = createServer(async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      spends.push(JSON.parse(Buffer.concat(chunks).toString()));
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ remaining: 1666 }));
+    });
+    worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+    try {
+      for (const exhausted of [false, true]) {
+        let generated = false;
+        const res = new Output(), key = `boundary-${label}-${exhausted}`;
+        await handler(request(key), res, '', worker.address().port, idleQueue(), { enabled: false }, async url => {
+          calls.push(url);
+          if (url.endsWith('/user/subscription')) {
+            assert.equal(generated, false, '订阅必须在生成前读取');
+            return json({ ...subscription, usage: { percent: exhausted ? 0 : 0.01, isNegative: exhausted } });
+          }
+          generated = true;
+          applyNaiRuntimeOverride({ billing: { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: { v5: 3 } } });
+          return success();
+        }, { checkLowConsumption: async () => false });
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(spends.at(-1), { amount: exhausted ? 26 : 0, reason: 'generation',
+          keyHash: createHash('sha256').update(key).digest('hex'), anlasDelta: exhausted ? 26 : 0, opusImagesDelta: exhausted ? 0 : 1 });
+        applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing });
+      }
+      assert.equal(calls.filter(url => url.endsWith('/user/subscription')).length, 2);
+    } finally {
+      applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing });
+      await new Promise(resolve => worker.close(resolve));
+    }
+  });
+  test(`${label}：普通模式费用状态未知时拒绝提交，不用旧值或生成后的额度猜测`, async () => {
+    for (const value of [null, {}, { active: true, tier: 3 }, { active: true, tier: 3, usage: { percent: 50 } }]) {
+      const res = new Output();
+      await handler(request(`unknown-${label}`), res, '', 0, idleQueue(), { enabled: false }, async url => {
+        assert.ok(url.endsWith('/user/subscription'), '未知状态不能提交付费生图');
+        return json(value);
+      }, { checkLowConsumption: async () => false });
+      assert.equal(res.statusCode, 503);
+      assert.match(res.body(), /本次未提交生图/);
+    }
+  });
   test(`${label}：免费图生图与普通重绘不扣本地 Anlas，成功才按当前 Key 记录 Opus`, async () => {
     const spends = [];
     const worker = createServer(async (req, res) => {
@@ -147,16 +269,16 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   test(`${label}：校验失败不入队、不生图、不重试，错误后能再次生成`, async () => {
     const res = new Output();
     await handler(request(`failure-${label}`), res, '', 0, idleQueue(), { enabled: true, serviceUrl: 'https://queue.invalid' }, () => assert.fail('不能生图'), {
-      settleGeneration, checkLowConsumption: async ({ onEnabled }) => { onEnabled(); throw Object.assign(new Error('限额'), { status: 400 }); },
+      prepareBilling, settleGeneration, checkLowConsumption: async ({ onEnabled }) => { onEnabled(); throw Object.assign(new Error('限额'), { status: 400 }); },
     });
     assert.equal(res.statusCode, 400);
     const next = new Output();
-    await handler(request(`failure-${label}`), next, '', 0, idleQueue(), { enabled: false }, success, { settleGeneration, checkLowConsumption: async ({ onEnabled }) => { onEnabled(); return true; } });
+    await handler(request(`failure-${label}`), next, '', 0, idleQueue(), { enabled: false }, success, { prepareBilling, settleGeneration, checkLowConsumption: async ({ onEnabled }) => { onEnabled(); return true; } });
     assert.equal(next.statusCode, 200);
   });
   test(`${label}：同 Key 并发在额度查询前阻止，不同 Key 正常生成，结算完成才解锁`, async () => {
     let complete, started = false;
-    const options = { settleGeneration: async () => { started = true; await new Promise(resolve => { complete = resolve; }); return { estimatedCost: 0 }; },
+    const options = { prepareBilling, settleGeneration: async () => { started = true; await new Promise(resolve => { complete = resolve; }); return { estimatedCost: 0 }; },
       checkLowConsumption: async ({ onEnabled }) => { onEnabled(); return true; } };
     const first = handler(request(`concurrent-${label}`), new Output(), '', 0, idleQueue(), { enabled: false }, success, options);
     while (!started) await new Promise(resolve => setTimeout(resolve, 1));

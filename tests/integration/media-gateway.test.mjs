@@ -971,7 +971,7 @@ test('NovelAI V4.5 costs follow Opus free limits and current web formula', () =>
   assert.equal(estimateNovelAiGenerationCost({ ...payload, parameters: {
     ...payload.parameters,
     director_reference_images_cached: [{ cache_secret_key: 'character' }],
-  } }, false, true), 22);
+  } }, false, true), 5);
 });
 
 test('过期订阅保留 Paid Anlas，隐藏残留免费额度并只透传余额字段', () => {
@@ -1164,7 +1164,11 @@ test('官方计费提取覆盖免费资格、模型倍率与附加费，结构�
     freeVibeCount: 3, extraVibeCost: 4, characterReferenceCost: 7, vibeEncodingCost: 6 });
   for (const broken of [NAI_BILLING_BUNDLE.replace('w*=1.5', 'w*=getPrice(a)'),
     NAI_BILLING_BUNDLE.replace('w*=1.5', 'w+=2'),
+    NAI_BILLING_BUNDLE.replace('w*=1.5', 'w*=1.5;w+=2'),
+    NAI_BILLING_BUNDLE.replace('let g=0;', 'let g=0;g+=newFee();'),
     NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.newRestriction&&'),
+    NAI_BILLING_BUNDLE.replace('let u={...a};', 'let u={...a};u.characterRef=l.length>0;'),
+    NAI_BILLING_BUNDLE.replace('price:(0,q.GIT)(u,p,f)+g', 'price:newPrice(u)+g'),
     NAI_BILLING_BUNDLE.replace('Math.max(0,e-4)*p', 'newFee(e)')]) {
     assert.equal(extractNaiBillingRules(broken), null);
     assert.ok(computeNaiRuntimeSync(broken).health.missed.includes('billing'));
@@ -1177,7 +1181,7 @@ test('共享计费覆盖多张、参考资格、Strength 舍入及同步规则�
   const base = { model: 'nai-diffusion-5-full', parameters };
   assert.equal(estimateNovelAiGenerationCost(base, false, true), 30);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, reference_image_multiple_cached: Array(5).fill({}) } }, false, true), 32);
-  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, director_reference_images_cached: [{}] } }, false, true), 70);
+  assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, director_reference_images_cached: [{}] } }, false, true), 40);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0.7 } }, true, true), 42);
   assert.equal(estimateNovelAiGenerationCost({ ...base, parameters: { ...parameters, image: 'fake', strength: 0 } }, true, true), 4);
   assert.deepEqual(computeGenerationPersonalUsage(base, 30, false, DEFAULT_NAI_RUNTIME, true, true), { anlasDelta: 30, opusImagesDelta: 1 });
@@ -1253,6 +1257,21 @@ test('启动读取到旧版本写入的历史失败记录时降级为 pending', 
   } finally {
     await writeFile(path, backup);
   }
+});
+
+test('旧快照错误的参考免费资格不能继续作为已同步规则，启动后等待重新提取', async () => {
+  const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
+  const backup = await readFile(path, 'utf8');
+  try {
+    const saved = JSON.parse(backup);
+    saved.runtime.billing.freeWithCharacterReference = false;
+    saved.health = { ok: true, extracted: ['billing'], missed: [] };
+    await writeFile(path, JSON.stringify(saved));
+    const fresh = await import('../../scripts/media-gateway.mjs?price-calculator-audit');
+    await fresh.initNaiRuntimeSync(async () => { throw new Error('simulated'); });
+    assert.deepEqual(fresh.getNaiRuntime().health, { ok: false, reason: 'pending', missed: ['billing'] });
+    assert.equal(fresh.getNaiRuntime().billing.freeWithCharacterReference, true);
+  } finally { await writeFile(path, backup); }
 });
 
 test('Precise Reference uses official V4.5 director fields without local IDs', () => {

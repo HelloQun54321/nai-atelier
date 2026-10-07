@@ -1,7 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, createSseParser, isQueueCancelledError, parseErrorResponse } from '../../services/api';
+import { ApiError, api, createSseParser, isQueueCancelledError, parseErrorResponse, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import { NAI_RUNTIME_REFRESH_EVENT } from '../../services/naiRuntime';
+import { NOVELAI_USAGE_REFRESH_EVENT } from '../../services/naiUsage';
 
 describe('SSE parser', () => {
+  it.each([null, '', false, -1])('费用字段 %s 不能伪装成零点数，记账失败仍交付成品并派发提示', async value => {
+    const events: Event[] = [];
+    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(`event: final\ndata: {"image":"fake"}\n\nevent: nai_usage\ndata: ${JSON.stringify({ estimatedSpent: value, remaining: value })}\n\nevent: nai_usage_error\ndata: {}\n\n`)));
+    const received: string[] = [];
+    expect(await api.postSse('/generate-stream', {}, {}, event => received.push(event.event))).toEqual({});
+    expect(received).toContain('final');
+    expect(events.some(event => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
+    vi.unstubAllGlobals();
+  });
+  it('ZIP 成品的记账错误单独提示，不抛生图失败或伪造零费用', async () => {
+    const events: Event[] = [];
+    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('zip', { headers: { 'X-Nai-Anlas-Accounting-Failed': '1' } })));
+    const result = await api.postBinaryDetailed('/generate', {});
+    expect(await result.blob.text()).toBe('zip');
+    expect(result.estimatedCost).toBeUndefined();
+    expect(events.some(event => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
+    vi.unstubAllGlobals();
+  });
   it('POST 流透传取消信号，保留已有逐帧解析', async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn().mockResolvedValue(new Response('event: result\ndata: {"index":0}\n\n'));
@@ -35,6 +57,14 @@ describe('SSE parser', () => {
 });
 
 describe('parseErrorResponse', () => {
+  it('费用变化的拒绝响应刷新规则和额度供下一次重新确认，不提交重试', async () => {
+    const events: Event[] = [];
+    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
+    const response = new Response('{"error":"费用已变化","code":"BILLING_COST_CHANGED"}', { status: 409 });
+    expect(await parseErrorResponse(response)).toMatchObject({ status: 409, code: 'BILLING_COST_CHANGED' });
+    expect(events.map(event => event.type)).toEqual([NAI_RUNTIME_REFRESH_EVENT, NOVELAI_USAGE_REFRESH_EVENT]);
+    vi.unstubAllGlobals();
+  });
   const jsonResponse = (status: number, body: unknown): Response =>
     new Response(JSON.stringify(body), { status });
 
