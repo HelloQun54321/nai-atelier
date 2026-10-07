@@ -145,15 +145,24 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用完整配置和编辑提示词', operation => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用底图和编辑提示词', operation => {
     const { container, onPasteImage, onSelectImageSource, onPromptChange } = renderControls(operation);
     expect(container.textContent).not.toMatch(/可直接粘贴|独立保存|绘制重绘区域|生成结果在右侧/);
     expect(screen.getByRole('button', { name: '上传图片' })).toBeTruthy();
     const paste = screen.getByRole('button', { name: '粘贴' });
     expect(paste.title).toContain('Ctrl+V');
+    const latest = screen.getByRole('button', { name: '文生图最新' });
+    if (operation === 'image-to-image') {
+      expect(paste.title).toContain('保留当前配置');
+      expect(paste.title).not.toContain('带入图片配置');
+      expect(latest.title).toBe('取用最新结果作为底图 · 保留当前配置');
+    } else {
+      expect(paste.title).toContain('带入图片配置');
+      expect(latest.title).toBe('取用最新结果及配置');
+    }
     fireEvent.click(paste);
     expect(onPasteImage).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: '文生图最新' }));
+    fireEvent.click(latest);
     expect(onSelectImageSource).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'history prompt', params: expect.objectContaining({ width: 832, height: 1216 }),
     }), 'generated');
