@@ -6,11 +6,12 @@ import { PixivGallery } from '../../components/PixivGallery';
 import { pixivService, importPixivImageAsFile, type PixivIllust } from '../../services/pixivService';
 import { db } from '../../services/dbService';
 import { api } from '../../services/api';
+import { galleryHistoryService } from '../../services/galleryHistoryService';
 import type { User } from '../../types';
 vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
 vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
-vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: () => [] } }));
+vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
 const illust: PixivIllust = { id: '100', title: 'synthetic artwork', type: 'illust', caption: '', restrict: 0, xRestrict: 0, tags: ['原站标签'], pageCount: 2, width: 800, height: 1200, totalBookmarks: 10, totalViews: 20, createDate: '', user: { id: '10', name: 'artist', account: '' }, urls: { thumb: '', medium: '', large: '', original: 'https://i.pximg.net/p0.png' }, metaPages: ['https://i.pximg.net/p0.png', 'https://i.pximg.net/p1.png'] };
 beforeEach(() => {
@@ -21,11 +22,38 @@ beforeEach(() => {
   vi.mocked(pixivService.status).mockResolvedValue({ connected: true });
   vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: mode === 'related' ? [] : [illust], nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue([]);
   vi.mocked(importPixivImageAsFile).mockResolvedValue(new File(['synthetic'], 'image.png', { type: 'image/png' }));
   vi.mocked(api.uploadFile).mockResolvedValue({ url: '/api/assets/uploaded' });
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
+  const works = [illust, { ...illust, id: '101', title: 'second artwork' }];
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
+  vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: works, nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue(works.map(work => ({
+    id: `pixiv:${work.id}`, source: 'pixiv', sourceId: work.id, title: work.title,
+    artistName: work.user.name, previewUrl: '', sampleUrl: '', tags: [], viewedAt: 1,
+  })));
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  if (layout === 'history') fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
+  const first = screen.getByRole('button', { name: /synthetic artwork.*artist/ });
+  const second = screen.getByRole('button', { name: /second artwork.*artist/ });
+  const cards = [first.closest('article')!, second.closest('article')!];
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  fireEvent.click(first);
+  expect(cards[0].className).toContain('ring-2');
+  expect(cards[0].className).not.toContain('brightness-');
+  expect(cards[1].className).toContain('brightness-[.7]');
+  fireEvent.click(second);
+  expect(cards[0].className).toContain('brightness-[.7]');
+  expect(cards[1].className).not.toContain('brightness-');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+});
+
 it('Pixiv 当前页保存原图与原站标签，不把原站标签假装成生图提示词，主操作直接反推', async () => {
   render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));

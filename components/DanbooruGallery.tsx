@@ -350,7 +350,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       <article
         key={post.id}
         data-safe-mode-work="true"
-        className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-colors dark:bg-gray-800 ${
+        className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
         }`}
       >
@@ -528,7 +528,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <article key={item.id} className="mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border border-gray-200 bg-white transition-colors dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500">
+                  <article key={item.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
                     <button
                       type="button"
                       onClick={() => {

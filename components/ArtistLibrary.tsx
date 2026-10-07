@@ -54,7 +54,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     aria-label={`选择画师：${artist.name}`}
                                     aria-pressed={isSelected}
                                     tabIndex={0}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-colors cursor-pointer ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                     onKeyDown={event => {
                                         if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;

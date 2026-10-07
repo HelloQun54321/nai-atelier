@@ -99,6 +99,45 @@ afterEach(() => {
 });
 
 describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', kind => {
+  it.each([1280, 390])('宽度 %s 多选保留已选亮度，其余沿用 AITag 暗度；取消、清空和导入后恢复', async width => {
+    localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: width === 390 ? 'portrait' : 'masonry' }));
+    const { container } = renderLibrary(kind, width, kind === 'character' ? [custom] : []);
+    if (width === 390) container.classList.add('dark', 'safe-mode');
+    const entries = entriesFor(kind);
+    const first = (await screen.findByTestId(`cover-${entries[0].name}`)).closest<HTMLElement>('[aria-pressed]')!;
+    const second = screen.getByTestId(`cover-${entries[1].name}`).closest<HTMLElement>('[aria-pressed]')!;
+    const cards = screen.getAllByRole('button', { name: /^选择(?:画师|角色)：/ });
+    const expectNormal = () => cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+    expectNormal();
+    fireEvent.click(first);
+    expect(first.getAttribute('aria-pressed')).toBe('true');
+    expect(first.className).not.toContain('brightness-');
+    cards.filter(card => card !== first).forEach(card => expect(card.className).toContain('brightness-[.7]'));
+    fireEvent.click(second);
+    expect(second.getAttribute('aria-pressed')).toBe('true');
+    expect(first.className).not.toContain('brightness-');
+    expect(second.className).not.toContain('brightness-');
+    fireEvent.click(first);
+    expect(first.className).toContain('brightness-[.7]');
+    fireEvent.keyDown(second, { key: ' ' });
+    expectNormal();
+    if (kind === 'character') {
+      const customCard = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+      fireEvent.click(customCard);
+      expect(customCard.className).not.toContain('brightness-');
+      expect(first.className).toContain('brightness-[.7]');
+      fireEvent.click(customCard);
+      expectNormal();
+    }
+    fireEvent.keyDown(first, { key: 'Enter' });
+    expect(second.className).toContain('brightness-[.7]');
+    fireEvent.click(screen.getByRole('button', { name: '清空' }));
+    expectNormal();
+    fireEvent.click(first);
+    fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+    expectNormal();
+  });
+
   it.each([1280, 390])('Agent 在宽度 %s 选择卡片并读取真实状态，重复 check 不取消选择', async width => {
     const { container } = renderLibrary(kind, width); container.dataset.agentView = kind === 'artist' ? 'library' : 'characters';
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);

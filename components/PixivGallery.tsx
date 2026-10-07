@@ -561,7 +561,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className="mobile-gallery-item group relative flex-col">
+    return <MediaCardShell key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
@@ -997,7 +997,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <MediaCardShell key={item.id} selected={selectedId === String(item.sourceId)} className="mobile-gallery-item group relative flex-col">
+                  <MediaCardShell key={item.id} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
                     <button
                       type="button"
                       onClick={() => {

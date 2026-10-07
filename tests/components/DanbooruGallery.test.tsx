@@ -9,6 +9,7 @@ import { db } from '../../services/dbService';
 import { api } from '../../services/api';
 import { importDanbooruCoverAsDataUrl } from '../../services/danbooruCoverImport';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
+import { galleryHistoryService } from '../../services/galleryHistoryService';
 
 vi.mock('../../services/danbooruService', async original => ({
   ...await original<typeof import('../../services/danbooruService')>(),
@@ -18,7 +19,7 @@ vi.mock('../../components/ShortestColumnMasonry', () => ({
   useMasonryColumnCount: () => 3,
   ShortestColumnMasonry: ({ items, renderItem }: { items: DanbooruPost[]; renderItem: (post: DanbooruPost) => React.ReactNode }) => <div>{items.map(renderItem)}</div>,
 }));
-vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: () => [] } }));
+vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
 vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(async () => []), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { post: vi.fn() } }));
 vi.mock('../../services/danbooruCoverImport', () => ({ importDanbooruCoverAsDataUrl: vi.fn() }));
@@ -33,6 +34,7 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = n
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue([]);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   vi.stubGlobal('IntersectionObserver', class {
@@ -52,6 +54,32 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
+  const posts = [post, { ...post, id: 2, tags: { ...post.tags, artist: ['second_artist'] } }]
+    .map(item => ({ ...item, sampleUrl: 'data:image/png;base64,c3ludGhldGlj' }));
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
+  search.mockImplementation(async options => result(options?.query, posts));
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue(posts.map(item => ({
+    id: `danbooru:${item.id}`, source: 'danbooru', sourceId: item.id, title: item.tags.artist[0],
+    previewUrl: '', sampleUrl: item.sampleUrl, tags: [], viewedAt: 1,
+  })));
+  await setup();
+  if (layout === 'history') fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
+  const first = screen.getByRole('button', { name: /synthetic[ _]artist/ });
+  const second = screen.getByRole('button', { name: /second[ _]artist/ });
+  const cards = [first.closest('article')!, second.closest('article')!];
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  fireEvent.click(first);
+  expect(cards[0].className).toContain('ring-2');
+  expect(cards[0].className).not.toContain('brightness-');
+  expect(cards[1].className).toContain('brightness-[.7]');
+  fireEvent.click(second);
+  expect(cards[0].className).toContain('brightness-[.7]');
+  expect(cards[1].className).not.toContain('brightness-');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+});
+
 it('详情主操作是图片反推，原站复制／使用独立，保存实际图片及原站标注', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
   vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
