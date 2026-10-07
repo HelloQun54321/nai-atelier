@@ -95,7 +95,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     ? modelInfo.supportsCharacterReferences
     : modelInfo.supportsCharacterReferenceInpainting;
 
-  /** 蒙版画笔与操作工具栏：移动端挂在画板正下方，桌面端挂在编辑参数模块内 */
+  /** 蒙版画笔与操作工具栏：桌面与移动端共用画板下方的控件。 */
   const renderMaskToolbox = () => {
     if (!(operation === 'inpaint' || (operation === 'outpaint' && manualMaskEditing))) return null;
     return (
@@ -107,25 +107,23 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{focused ? '蒙版' : '笔刷大小'}</label>
-            {!focused && (
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min="8"
-                  max="512"
-                  step="4"
-                  aria-label="笔刷大小数值"
-                  disabled={isBusy || safeMode}
-                  value={brushSize}
-                  onChange={event => onBrushSizeChange(Math.max(8, Math.min(512, parseInt(event.target.value, 10) || 8)))}
-                  className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
-                />
-                <span className="font-mono text-xs text-gray-400">px</span>
-              </div>
-            )}
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">笔刷大小</label>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min="8"
+                max="512"
+                step="4"
+                aria-label="笔刷大小数值"
+                disabled={isBusy || safeMode}
+                value={brushSize}
+                onChange={event => onBrushSizeChange(Math.max(8, Math.min(512, parseInt(event.target.value, 10) || 8)))}
+                className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
+              />
+              <span className="font-mono text-xs text-gray-400">px</span>
+            </div>
           </div>
-          {!focused && <input disabled={isBusy || safeMode} type="range" min="8" max="512" step="4" aria-label="笔刷大小" value={brushSize} onChange={event => onBrushSizeChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-45" />}
+          <input disabled={isBusy || safeMode} type="range" min="8" max="512" step="4" aria-label="笔刷大小" value={brushSize} onChange={event => onBrushSizeChange(Number(event.target.value))} className="w-full cursor-pointer accent-indigo-500 disabled:cursor-not-allowed disabled:opacity-45" />
         </div>
         {focused && (
           <button disabled={isBusy || safeMode} type="button" onClick={onResetFocusedRect} className="h-8 w-full rounded-lg bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-amber-950/30 dark:text-amber-300">重新框选区域</button>

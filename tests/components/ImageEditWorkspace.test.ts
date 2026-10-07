@@ -75,14 +75,15 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas', positionSource?: { image: string; width: number; height: number }) => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas', positionSource?: { image: string; width: number; height: number }, focused = operation === 'inpaint') => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', { ...params, ...paramsPatch },
-    operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {});
+    { focused, ...(operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {}) });
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
   const onSelectImageSource = vi.fn();
   const onPasteImage = vi.fn();
   const onDraftChange = vi.fn();
+  const onBrushSizeChange = vi.fn();
   const notify = vi.fn();
   const historyItem = { id: 'history-1', imageUrl: 'data:image/png;base64,fixture', prompt: 'history prompt', negativePrompt: '', params, createdAt: 1 };
   return { ...render(React.createElement(ImageEditControls, {
@@ -128,7 +129,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onSelectImageSource,
     onStrengthChange: vi.fn(),
     onNoiseChange: vi.fn(),
-    onBrushSizeChange: vi.fn(),
+    onBrushSizeChange,
     onFocusedChange: vi.fn(),
     onMinimumContextAreaChange: vi.fn(),
     onToolChange: vi.fn(),
@@ -139,7 +140,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, notify };
+  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, notify };
 };
 
 afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
@@ -167,6 +168,32 @@ describe('ImageEditControls', () => {
     expect(toggle.checked).toBe(true);
     expect(lowMode.focused).toBe(true);
     expect(onDraftChange).toHaveBeenLastCalledWith({ focused: true });
+    fireEvent.change(screen.getByRole('slider', { name: '笔刷大小' }), { target: { value: '96' } });
+    expect(screen.getByRole('spinbutton', { name: '笔刷大小数值' })).toHaveProperty('value', '96');
+    expect(onDraftChange).toHaveBeenLastCalledWith({ brushSize: 96 });
+  });
+
+  it.each([
+    ['inpaint', true, false], ['inpaint', false, false], ['inpaint', true, true], ['outpaint', false, false],
+  ] as const)('%s 聚焦=%s 低消耗=%s 均可调节笔刷大小', (operation, focused, low) => {
+    lowMode.enabled = low;
+    const { container, onBrushSizeChange } = renderControls(operation, operation === 'outpaint', false, false, {}, 'canvas', undefined, focused);
+    const slider = screen.getByRole('slider', { name: '笔刷大小' }) as HTMLInputElement;
+    const numeric = screen.getByRole('spinbutton', { name: '笔刷大小数值' }) as HTMLInputElement;
+    expect(slider.value).toBe('64');
+    expect(numeric.value).toBe('64');
+    expect([slider.min, slider.max, slider.step]).toEqual(['8', '512', '4']);
+    fireEvent.change(slider, { target: { value: '128' } });
+    expect(onBrushSizeChange).toHaveBeenLastCalledWith(128);
+    fireEvent.change(numeric, { target: { value: '1024' } });
+    expect(onBrushSizeChange).toHaveBeenLastCalledWith(512);
+    fireEvent.click(screen.getByRole('button', { name: '橡皮擦' }));
+    fireEvent.change(numeric, { target: { value: '32' } });
+    expect(onBrushSizeChange).toHaveBeenLastCalledWith(32);
+    const baseImageSection = container.querySelector('[data-lab-module="baseImage"]');
+    expect(baseImageSection?.contains(slider)).toBe(true);
+    expect(baseImageSection?.className).toContain('block');
+    expect(baseImageSection?.className).not.toContain('hidden lg:block');
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用底图和编辑提示词', operation => {
@@ -463,11 +490,15 @@ describe('ImageEditControls', () => {
     expect(screen.getByRole('status').textContent).toContain('安全模式下不可绘制蒙版');
     expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('checkbox', { name: '聚焦重绘' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('slider', { name: '笔刷大小' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('spinbutton', { name: '笔刷大小数值' }) as HTMLInputElement).disabled).toBe(true);
     cleanup();
 
     renderControls('outpaint', true, true);
     expect((screen.getByRole('switch', { name: /手动调整蒙版/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '画笔' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('slider', { name: '笔刷大小' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('spinbutton', { name: '笔刷大小数值' }) as HTMLInputElement).disabled).toBe(true);
   });
 
   it('显示底图尺寸规范化提示并支持点击裁剪、填充与缩放', () => {
