@@ -60,7 +60,7 @@ describe('低消耗 Vibe 复用入口', () => {
     expect(setParams).not.toHaveBeenCalled();
     fireEvent.click(add);
     await waitFor(() => expect(fixtures.encode).toHaveBeenCalledTimes(1));
-    expect(fixtures.encode).toHaveBeenCalledWith('new', 1, 'test-key', 2);
+    expect(fixtures.encode).toHaveBeenCalledWith('new', 1, 'test-key');
     await waitFor(() => expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: [expect.objectContaining({ encodingId: 'paid-encoded' })] }) })));
     expect(notify).not.toHaveBeenCalledWith(expect.stringContaining('密钥已失效'), 'error');
   });

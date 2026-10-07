@@ -31,8 +31,8 @@ describe('Vibe 编码后的余额更新', () => {
     vi.stubGlobal('fetch', fetchMock);
     const events = vi.spyOn(window, 'dispatchEvent');
 
-    expect(await vibeService.encode(item.id, 1, apiKey, 2)).toEqual({ item, anlasBudget: budget });
-    expect(fetchMock.mock.calls[0][1].headers['X-Nai-Anlas-Max-Cost']).toBe('2');
+    expect(await vibeService.encode(item.id, 1, apiKey)).toEqual({ item, anlasBudget: budget });
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('X-Nai-Anlas-Max-Cost');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(events.mock.calls.map(([event]) => event.type)).toEqual([
       ANLAS_BUDGET_CHANGED_EVENT, NOVELAI_USAGE_REFRESH_EVENT,
@@ -52,7 +52,7 @@ describe('Vibe 编码后的余额更新', () => {
     const fetchMock = vi.fn().mockResolvedValue(responseFor({ item, anlasAccountingFailed: true }));
     vi.stubGlobal('fetch', fetchMock);
     const events = vi.spyOn(window, 'dispatchEvent');
-    expect((await vibeService.encode(item.id, 1, apiKey, 2)).item).toEqual(item);
+    expect((await vibeService.encode(item.id, 1, apiKey)).item).toEqual(item);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(events.mock.calls.some(([event]) => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
   });

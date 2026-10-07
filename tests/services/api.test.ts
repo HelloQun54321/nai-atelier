@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, createSseParser, isQueueCancelledError, parseErrorResponse, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
-import { NAI_RUNTIME_REFRESH_EVENT } from '../../services/naiRuntime';
-import { NOVELAI_USAGE_REFRESH_EVENT } from '../../services/naiUsage';
 
 describe('SSE parser', () => {
   it.each([null, '', false, -1])('费用字段 %s 不能伪装成零点数，记账失败仍交付成品并派发提示', async value => {
@@ -57,14 +55,6 @@ describe('SSE parser', () => {
 });
 
 describe('parseErrorResponse', () => {
-  it('费用变化的拒绝响应刷新规则和额度供下一次重新确认，不提交重试', async () => {
-    const events: Event[] = [];
-    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
-    const response = new Response('{"error":"费用已变化","code":"BILLING_COST_CHANGED"}', { status: 409 });
-    expect(await parseErrorResponse(response)).toMatchObject({ status: 409, code: 'BILLING_COST_CHANGED' });
-    expect(events.map(event => event.type)).toEqual([NAI_RUNTIME_REFRESH_EVENT, NOVELAI_USAGE_REFRESH_EVENT]);
-    vi.unstubAllGlobals();
-  });
   const jsonResponse = (status: number, body: unknown): Response =>
     new Response(JSON.stringify(body), { status });
 

@@ -922,23 +922,13 @@ export const sanitizeNovelAiSubscription = payload => {
   };
 };
 
-// 每次请求在排队／资产准备后捕获计费依据；不能用生成后的额度回算最后一张免费图。
-const prepareNovelAiBilling = async ({ payload, authorization, signal, requestRemote, runtime = getNaiRuntime() }) => {
-  try {
-    const response = await fetchNovelAiSubscription(authorization,
-      AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]), requestRemote);
-    if (!response.ok) throw new Error('订阅查询失败');
-    const raw = await response.json();
-    if (typeof raw?.active !== 'boolean' || !Number.isFinite(raw.tier)) throw new Error('订阅字段缺失');
-    const subscription = sanitizeNovelAiSubscription(raw);
-    const opusSubscriber = subscription.active && subscription.tier >= 3;
-    if (opusSubscriber && isNaiUsageLimitedModel(payload.model, runtime)
-      && (!subscription.usage || typeof raw.usage?.isNegative !== 'boolean')) throw new Error('额度字段缺失');
-    return { runtime, subscription, opusSubscriber, exhausted: subscription.usage?.isNegative === true };
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw Object.assign(new Error('无法确认当前 Key 的订阅与计费状态，请刷新后再生成；本次未提交生图'), { status: 503, code: 'BILLING_STATUS_UNKNOWN' });
-  }
+// 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
+const novelAiSubscriptions = new Map();
+export const cacheNovelAiSubscription = (authorization, subscription) => novelAiSubscriptions.set(authorization, subscription);
+const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => {
+  const subscription = novelAiSubscriptions.get(authorization);
+  return { runtime, subscription, opusSubscriber: subscription?.active === true && subscription.tier >= 3,
+    exhausted: subscription?.usage?.isNegative === true };
 };
 
 const readLowConsumption = (req, workerPort) => requestWorkerJson('/api/low-consumption', req, workerPort, { headers: { authorization: req.headers.authorization || '' } });
@@ -961,7 +951,16 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
   const operation = parameters._local_edit_operation || (payload.action === 'img2img' ? 'image-to-image' : payload.action === 'infill' ? 'inpaint' : 'text-to-image');
   const operationViolation = lowConsumptionOperationViolation(operation);
   if (operationViolation) throw Object.assign(new Error(operationViolation), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  const billing = await prepareNovelAiBilling({ payload, authorization, signal, requestRemote, runtime });
+  let subscriptionSnapshot;
+  try {
+    const response = await fetchNovelAiSubscription(authorization,
+      AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]), requestRemote);
+    if (response.ok) subscriptionSnapshot = sanitizeNovelAiSubscription(await response.json());
+  } catch { /* 用户显式开启的低消耗策略由下方判断未知状态。 */ }
+  if (subscriptionSnapshot) cacheNovelAiSubscription(authorization, subscriptionSnapshot);
+  const billing = { runtime, subscription: subscriptionSnapshot,
+    opusSubscriber: subscriptionSnapshot?.active === true && subscriptionSnapshot.tier >= 3,
+    exhausted: subscriptionSnapshot?.usage?.isNegative === true };
   const { subscription, opusSubscriber } = billing;
   const usageLimited = isNaiUsageLimitedModel(payload.model, runtime);
   if (subscription?.active === false) throw Object.assign(new Error('低消耗模式：订阅已过期，无法使用 Opus 免费权益；请关闭低消耗模式后确认使用 Paid Anlas'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
@@ -984,6 +983,8 @@ export const enforceLowConsumptionRequest = async ({ payload, authorization, key
 
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, workerPort, billing }) => {
+  // 未取得订阅时不猜测本地扣费，官方仍直接处理生成和实际扣费。
+  if (!billing.subscription) return { anlasBudget: null };
   const { runtime, exhausted, opusSubscriber } = billing;
   const estimatedCost = billingForPayload(payload, runtime, opusSubscriber, exhausted).cost;
   const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber);
@@ -991,17 +992,6 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, worker
     ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
     : null;
   return { estimatedCost, personalUsage, anlasBudget };
-};
-
-const enforceApprovedAnlasCost = (req, current) => {
-  const approved = req.headers['x-nai-anlas-max-cost'];
-  if (approved === undefined) return;
-  const maximum = Number(approved);
-  if (String(approved).trim() === '' || !Number.isFinite(maximum) || maximum < 0) {
-    throw Object.assign(new Error('生成费用确认无效，请重新确认'), { status: 400 });
-  }
-  if (current > maximum) throw Object.assign(new Error(`当前费用估算已变为 ${current} Anlas，超过刚确认的 ${maximum} 点；本次未提交，请刷新并重新确认`),
-    { status: 409, code: 'BILLING_COST_CHANGED' });
 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
@@ -1839,7 +1829,6 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       onBilling: value => { billing = value; },
     }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     billing ||= await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
-    enforceApprovedAnlasCost(req, billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost);
     // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const response = resolvedVibeEncodings
@@ -1998,7 +1987,6 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       onBilling: value => { billing = value; },
     }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     billing ||= await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
-    enforceApprovedAnlasCost(req, billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost);
 
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
@@ -2114,7 +2102,6 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           throw error;
         }
         const cost = getNaiRuntime().billing.vibeEncodingCost;
-        enforceApprovedAnlasCost(req, cost);
         const response = await requestRemote(NAI_ENCODE_VIBE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
@@ -3543,6 +3530,7 @@ const serveDistFile = async (req, res, url) => {
         }
         const payload = await upstream.json();
         const sanitized = sanitizeNovelAiSubscription(payload);
+        cacheNovelAiSubscription(authorization, sanitized);
         return sendJson(res, 200, sanitized);
       } catch (error) {
         return sendJson(res, 502, { error: error.message || 'NovelAI 订阅信息获取失败' });

@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   runtime: null as NaiRuntimeConfig | null,
   subscription: null as NovelaiSubscriptionInfo | null,
   refreshedSubscription: null as NovelaiSubscriptionInfo | null,
+  delayedSubscription: null as Promise<NovelaiSubscriptionInfo | null> | null,
 }));
 vi.mock('../../services/lowConsumption', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/lowConsumption')>(),
@@ -39,7 +40,7 @@ vi.mock('../../services/naiRuntime', async importOriginal => {
 });
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: state.subscription, usage: state.subscription?.usage, loading: false, error: null, fetchedAt: 0, refresh: async () => state.refreshedSubscription, refreshIfStale: async () => state.refreshedSubscription }),
+  useNovelaiUsage: () => ({ info: state.subscription, usage: state.subscription?.usage, loading: false, error: null, fetchedAt: 0, refresh: async () => state.refreshedSubscription, refreshIfStale: async () => state.delayedSubscription || state.refreshedSubscription }),
 }));
 vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
@@ -128,6 +129,7 @@ beforeEach(() => {
   state.delayedBaseSave = null;
   state.runtime = { ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } };
   state.subscription = null; state.refreshedSubscription = null;
+  state.delayedSubscription = null;
   state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
   state.confirm.mockReset(); state.confirm.mockResolvedValue(true); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
   state.addHistory.mockImplementation(async (_blob, prompt, params, negativePrompt, source) => ({
@@ -141,21 +143,32 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it.each(['图生图', '局部重绘', '扩图'])('%s 确认使用刚刷新的透支状态，不沿用界面上的免费快照', async label => {
+it.each(['图生图', '局部重绘', '扩图'])('%s 普通生成复用已有免费快照，后台刷新不增加等待', async label => {
   sessionStorage.setItem('nai_api_key', 'billing-preflight-fixture');
   state.subscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 0 } };
   state.refreshedSubscription = { ...state.subscription, usage: { percent: 0, isNegative: true, timeUntilNextPercent: 0 } };
+  state.delayedSubscription = new Promise(() => {});
   state.confirm.mockResolvedValueOnce(false);
   vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   setup({ ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full' } });
   await switchTo(label);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
-  expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('30 Anlas') }));
-  expect(state.generate).not.toHaveBeenCalled();
+  expect(state.confirm).not.toHaveBeenCalled();
+  expect(state.generate).toHaveBeenCalledTimes(1);
 });
 
-it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失效时也须确认，并可取消', async label => {
+it('普通文生图在订阅刷新未返回时立即提交，不等待后台请求', async () => {
+  sessionStorage.setItem('nai_api_key', 'fast-text-fixture');
+  state.subscription = { active: true, tier: 3 };
+  state.delayedSubscription = new Promise(() => {});
+  setup();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /^生成 ·/ })));
+  expect(state.confirm).not.toHaveBeenCalled();
+  expect(state.generate).toHaveBeenCalledTimes(1);
+});
+
+it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失效时直接生成，不新增确认', async label => {
   sessionStorage.setItem('nai_api_key', 'billing-sync-fixture');
   state.subscription = state.refreshedSubscription = { active: true, tier: 3 };
   state.runtime = { ...DEFAULT_NAI_RUNTIME, health: { ok: false, reason: 'partial', missed: ['billing'] } };
@@ -164,8 +177,8 @@ it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   setup(); await switchTo(label);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
-  expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: '常量同步异常', message: expect.stringContaining('可能意外消耗共享 Anlas') }));
-  expect(state.generate).not.toHaveBeenCalled();
+  expect(state.confirm).not.toHaveBeenCalled();
+  expect(state.generate).toHaveBeenCalledTimes(1);
 });
 
 it('保持打开的实验室继续接收运行时更新，按钮费用不冻结在首次加载值', async () => {

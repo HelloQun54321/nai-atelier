@@ -47,11 +47,10 @@ export const vibeService = {
     return api.post('/vibes/import', { fileText: await fileToText(file) });
   },
 
-  encode: async (vibeId: string, informationExtracted: number, apiKey: string, approvedCost?: number): Promise<{item: VibeAsset; duplicate?: boolean; anlasAccountingFailed?: boolean}> => {
+  encode: async (vibeId: string, informationExtracted: number, apiKey: string): Promise<{item: VibeAsset; duplicate?: boolean; anlasAccountingFailed?: boolean}> => {
     const response = await fetch(`/api/vibes/${encodeURIComponent(vibeId)}/encodings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`,
-        ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}) },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ informationExtracted }),
     });
     if (!response.ok) throw await responseError(response);

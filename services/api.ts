@@ -1,6 +1,4 @@
 import { reportCloudQueueCleanupError } from './cloudQueue';
-import { NAI_RUNTIME_REFRESH_EVENT } from './naiRuntime';
-import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 
 // Base API URL
 const API_BASE = '/api';
@@ -54,10 +52,6 @@ export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
     try {
       message = truncated((await res.clone().text()).trim() || message);
     } catch { /* 响应体不可读时保留默认文案。 */ }
-  }
-  if (code === 'BILLING_COST_CHANGED' && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(NAI_RUNTIME_REFRESH_EVENT));
-    window.dispatchEvent(new CustomEvent(NOVELAI_USAGE_REFRESH_EVENT));
   }
   return Object.assign(new ApiError(message, res.status, code), retryAfter ? { retryAfter } : {});
 };

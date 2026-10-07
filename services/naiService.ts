@@ -80,7 +80,7 @@ const blobFromDataUri = (uri: string): Blob => {
   return new Blob([bytes], { type: mime });
 };
 
-export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams, approvedCost?: number) => {
+export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
@@ -112,7 +112,6 @@ export const generateImage = async (apiKey: string, prompt: string, negative: st
     const budgetKeyHash = await hashNaiApiKey(apiKey);
     blob = await api.postBinary('/generate', payload, {
       'Authorization': `Bearer ${apiKey}`,
-      ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}),
       ...(queue.enabled ? {
         'X-Nai-Queue-Task-Id': queueTaskId,
       } : {}),
@@ -203,7 +202,6 @@ export const generateImageEdit = async (
     minimumContextArea?: number;
     expansion?: ImageEditCanvasExpansion;
   },
-  approvedCost?: number,
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
@@ -235,7 +233,6 @@ export const generateImageEdit = async (
     const budgetKeyHash = await hashNaiApiKey(apiKey);
     const binaryResult = await api.postBinaryDetailed('/generate', payload, {
       Authorization: `Bearer ${apiKey}`,
-      ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}),
       ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
     }, { budgetKeyHash });
     const blob = binaryResult.blob;
@@ -280,7 +277,6 @@ export const generateImageStream = async (
   params: NAIParams,
   onPreview?: (preview: NaiStreamPreview) => void,
   runtimeStreamSupported = false,
-  approvedCost?: number,
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime);
@@ -308,7 +304,6 @@ export const generateImageStream = async (
     try {
       const sseResult = await api.postSse('/generate-stream', payload, {
         Authorization: `Bearer ${apiKey}`,
-        ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}),
         ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
       }, ({ event, data }) => {
         if (!data || typeof data !== 'object') return;
@@ -369,7 +364,6 @@ export const generateImageEditStream = async (
   },
   onPreview?: (preview: NaiStreamPreview) => void,
   runtimeStreamSupported = false,
-  approvedCost?: number,
 ) => {
   const runtime = await getNaiRuntimeConfig();
   params = applyLowConsumptionParams(params, (await getLowConsumption(apiKey)).enabled, runtime, edit.operation);
@@ -411,7 +405,6 @@ export const generateImageEditStream = async (
     try {
       const sseResult = await api.postSse('/generate-stream', payload, {
         Authorization: `Bearer ${apiKey}`,
-        ...(approvedCost !== undefined ? { 'X-Nai-Anlas-Max-Cost': String(approvedCost) } : {}),
         ...(queue.enabled ? { 'X-Nai-Queue-Task-Id': taskId } : {}),
       }, ({ event, data }) => {
         if (!data || typeof data !== 'object') return;
