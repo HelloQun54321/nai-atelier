@@ -1635,7 +1635,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return stop(message, 'missing_key');
         }
-        const editParamsSource = options?.params || activeEditDraft?.params || params;
+        const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
         const freshSubscription = novelaiSubscription;
         void refreshUsageIfStale();
         let sourceWidth = request.canvasWidth;

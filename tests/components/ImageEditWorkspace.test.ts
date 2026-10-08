@@ -145,6 +145,20 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
+  it.each(['canvas', 'params'] as const)('图生图输出尺寸随 %s Tab 正确显隐，选择不影响其他编辑模式', mobileTab => {
+    const { onDraftChange } = renderControls('image-to-image', false, false, false, {}, mobileTab);
+    const select = screen.getByRole('combobox', { name: '图生图输出尺寸' });
+    const section = select.closest('[data-lab-module="params"]');
+    expect(section?.className).toContain(mobileTab === 'params' ? 'block' : 'hidden lg:block');
+    fireEvent.change(select, { target: { value: 'free' } });
+    expect(onDraftChange).toHaveBeenCalledWith({ imageToImageSizeMode: 'free' });
+    cleanup();
+    renderControls('inpaint', false, false, false, {}, mobileTab);
+    expect(screen.queryByRole('combobox', { name: '图生图输出尺寸' })).toBeNull();
+    cleanup();
+    renderControls('outpaint', false, false, false, {}, mobileTab);
+    expect(screen.queryByRole('combobox', { name: '图生图输出尺寸' })).toBeNull();
+  });
   it('新局部重绘的中文开关默认勾选，可手动关闭再开启', () => {
     const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params);
     const onDraftChange = vi.fn();
@@ -278,7 +292,7 @@ describe('ImageEditControls', () => {
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
     const { onPromptChange } = renderControls(operation, false, false, true);
 
-    const assistedInputs = screen.getAllByRole('combobox');
+    const assistedInputs = screen.getAllByRole('combobox').filter(element => element.tagName === 'TEXTAREA');
     expect(assistedInputs).toHaveLength(2);
     fireEvent.change(assistedInputs[0], { target: { value: 'blue bottle, 1girl' } });
     expect(onPromptChange).toHaveBeenCalledWith('blue bottle, 1girl');

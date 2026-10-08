@@ -14,6 +14,18 @@ const params = {
 describe('lab workspace session', () => {
   beforeEach(() => sessionStorage.clear());
 
+  it('图生图输出尺寸选择随草稿恢复，旧草稿保持原尺寸，其他模式互不干扰', () => {
+    const session = createLabWorkspaceSession('', '', '', params, {});
+    session.edits['image-to-image'].imageToImageSizeMode = 'custom';
+    session.edits['image-to-image'].params = { ...params, width: 1024, height: 1024 };
+    saveLabWorkspaceSession('sizes', session);
+    expect(openLabWorkspaceSession('sizes', session).edits['image-to-image']).toMatchObject({ imageToImageSizeMode: 'custom', params: { width: 1024, height: 1024 } });
+    expect(openLabWorkspaceSession('sizes', session).edits.inpaint.params.width).toBe(832);
+    delete session.edits['image-to-image'].imageToImageSizeMode;
+    saveLabWorkspaceSession('sizes', session);
+    expect(loadLabWorkspaceSession('sizes', session).edits['image-to-image'].imageToImageSizeMode).toBe('original');
+  });
+
   it('新建与重置共用的草稿仅为局部重绘默认开启聚焦', () => {
     const session = createLabWorkspaceSession('', '', '', params, {});
     for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {

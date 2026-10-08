@@ -1,10 +1,10 @@
 import React from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
-import { ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
+import { ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
-import { ImageEditNormalizationMode, isSameOutpaintExpansion } from '../services/imageEdit';
+import { getImageToImageOutputDimensions, IMAGE_EDIT_MAX_DIMENSION, IMAGE_EDIT_MIN_DIMENSION, ImageEditNormalizationMode, isSameOutpaintExpansion, validateImageEditDimensions } from '../services/imageEdit';
 import { ChainEditorParams } from './ChainEditorParams';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
@@ -87,6 +87,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   };
 
   const runtime = useNaiRuntime();
+  const sizeMode = draft.imageToImageSizeMode || 'original';
+  const outputSize = getImageToImageOutputDimensions(canvasProps.width, canvasProps.height, sizeMode, selectableParams, runtime.freeMaxArea);
   const modelInfo = getRuntimeNaiModelInfo(selectableParams.model, runtime);
   const supportsVibe = operation === 'image-to-image' && modelInfo.supportsVibes;
   const supportsCharacterReference = operation === 'image-to-image'
@@ -365,11 +367,30 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               )}
             </div>
           )}
-          {normalization && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">底图尺寸需要规范化</div><div className="mt-1 leading-5">当前 {normalization.sourceWidth} × {normalization.sourceHeight}，需调整为 {normalization.targetWidth} × {normalization.targetHeight}</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">居中裁剪（推荐）</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">完整保留并填充</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">直接缩放</button></div></div>}
+          {normalization && (operation !== 'image-to-image' || sizeMode === 'original') && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">底图尺寸需要规范化</div><div className="mt-1 leading-5">当前 {normalization.sourceWidth} × {normalization.sourceHeight}，需调整为 {normalization.targetWidth} × {normalization.targetHeight}</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">居中裁剪（推荐）</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">完整保留并填充</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">直接缩放</button></div></div>}
         </section>
       </LabModuleSection>
 
       <LabModuleSection moduleId="params" label="参数设置" order={getModuleOrder(layout, 'params')} defaultCollapsed={isModuleCollapsed(layout, 'params')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>
+        {operation === 'image-to-image' && <div className="mb-4 space-y-2 text-xs">
+          <label className="flex items-center justify-between gap-2 font-semibold text-gray-600 dark:text-gray-300">
+            输出尺寸
+            <select aria-label="图生图输出尺寸" disabled={isBusy} value={sizeMode} onChange={event => onDraftChange({ imageToImageSizeMode: event.target.value as ImageToImageSizeMode })} className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800">
+              <option value="original">保留底图尺寸</option>
+              <option value="free">等比缩至免费像素范围</option>
+              <option value="custom">自定义尺寸</option>
+            </select>
+          </label>
+          {sizeMode === 'custom' && <div className="grid grid-cols-2 gap-2">
+            {(['width', 'height'] as const).map(dimension => <label key={dimension} className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+              {dimension === 'width' ? '宽度' : '高度'}
+              <input type="number" aria-label={`图生图输出${dimension === 'width' ? '宽度' : '高度'}`} min={IMAGE_EDIT_MIN_DIMENSION} max={IMAGE_EDIT_MAX_DIMENSION} step={IMAGE_EDIT_MIN_DIMENSION} disabled={isBusy} value={selectableParams[dimension]} onChange={event => onDraftChange({ params: { ...selectableParams, [dimension]: Number(event.target.value) } })} className="w-full min-w-0 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 font-mono outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800" />
+            </label>)}
+          </div>}
+          {canvasProps.width > 0 && <div className="text-gray-500 dark:text-gray-400">底图 {canvasProps.width} × {canvasProps.height} → 输出 {outputSize.width} × {outputSize.height}</div>}
+          {sizeMode === 'custom' && validateImageEditDimensions(outputSize.width, outputSize.height) && <div role="status" className="text-amber-700 dark:text-amber-300">{validateImageEditDimensions(outputSize.width, outputSize.height)}</div>}
+          {sizeMode !== 'original' && <div className="text-gray-500 dark:text-gray-400">等比保留底图，比例不同处填白。{sizeMode === 'free' && '仅调整像素范围，实际费用见生成按钮。'}</div>}
+        </div>}
         <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>
 

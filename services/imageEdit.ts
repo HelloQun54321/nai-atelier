@@ -1,4 +1,4 @@
-import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation } from '../types';
+import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode } from '../types';
 
 export const IMAGE_EDIT_MODEL_SUFFIX = '-inpainting';
 export const IMAGE_EDIT_MIN_DIMENSION = 64;
@@ -230,28 +230,37 @@ export interface ImageEditNormalizationTarget {
  * 返回编辑接口可接受的最近画布尺寸。
  * 不会无故放大合法图片；超出单边或总面积上限时先按比例缩小，再向下对齐到 64。
  */
-export const getImageEditNormalizationTarget = (width: number, height: number): ImageEditNormalizationTarget => {
+export const getImageEditNormalizationTarget = (width: number, height: number, maxArea = IMAGE_EDIT_MAX_AREA): ImageEditNormalizationTarget => {
   const sourceWidth = Math.max(1, Math.floor(Number(width) || 1));
   const sourceHeight = Math.max(1, Math.floor(Number(height) || 1));
-  if (!validateImageEditDimensions(sourceWidth, sourceHeight)) return { width: sourceWidth, height: sourceHeight };
+  const areaLimit = Math.max(IMAGE_EDIT_MIN_DIMENSION ** 2, Math.min(IMAGE_EDIT_MAX_AREA, maxArea));
+  if (!validateImageEditDimensions(sourceWidth, sourceHeight) && sourceWidth * sourceHeight <= areaLimit) return { width: sourceWidth, height: sourceHeight };
 
   const scale = Math.min(
     1,
     IMAGE_EDIT_MAX_DIMENSION / sourceWidth,
     IMAGE_EDIT_MAX_DIMENSION / sourceHeight,
-    Math.sqrt(IMAGE_EDIT_MAX_AREA / (sourceWidth * sourceHeight)),
+    Math.sqrt(areaLimit / (sourceWidth * sourceHeight)),
   );
   let targetWidth = Math.max(IMAGE_EDIT_MIN_DIMENSION, Math.floor(sourceWidth * scale / IMAGE_EDIT_MIN_DIMENSION) * IMAGE_EDIT_MIN_DIMENSION);
   let targetHeight = Math.max(IMAGE_EDIT_MIN_DIMENSION, Math.floor(sourceHeight * scale / IMAGE_EDIT_MIN_DIMENSION) * IMAGE_EDIT_MIN_DIMENSION);
   targetWidth = Math.min(IMAGE_EDIT_MAX_DIMENSION, targetWidth);
   targetHeight = Math.min(IMAGE_EDIT_MAX_DIMENSION, targetHeight);
-  while (targetWidth * targetHeight > IMAGE_EDIT_MAX_AREA) {
+  while (targetWidth * targetHeight > areaLimit) {
     if (targetWidth >= targetHeight && targetWidth > IMAGE_EDIT_MIN_DIMENSION) targetWidth -= IMAGE_EDIT_MIN_DIMENSION;
     else if (targetHeight > IMAGE_EDIT_MIN_DIMENSION) targetHeight -= IMAGE_EDIT_MIN_DIMENSION;
     else break;
   }
   return { width: targetWidth, height: targetHeight };
 };
+
+/** 输出尺寸独立于底图；免费档读取官方运行时，自定义值交由提交校验。 */
+export const getImageToImageOutputDimensions = (
+  width: number, height: number, mode: ImageToImageSizeMode | undefined,
+  custom: { width: number; height: number }, freeMaxArea: number,
+): ImageEditNormalizationTarget => mode === 'free'
+  ? getImageEditNormalizationTarget(width, height, freeMaxArea)
+  : mode === 'custom' ? { width: custom.width, height: custom.height } : { width, height };
 
 /** 保持比例居中裁剪时，源图中真正会被使用的矩形。 */
 export const getCenteredImageEditCrop = (sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number): ImageEditRect => {

@@ -3,7 +3,8 @@ import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
 import { LabPageLayout } from '../services/appearancePreferences';
-import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
+import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, getImageToImageOutputDimensions, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
+import { useNaiRuntime } from '../services/naiRuntime';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import { getCopiedImageData, type ImageGenerationData } from '../services/imageClipboardContext';
@@ -17,6 +18,7 @@ export interface ImageEditRequest {
   image: string;
   canvasWidth: number;
   canvasHeight: number;
+  params?: NAIParams;
   parentHistoryId?: string;
   baseImageSource?: ImageEditBaseImageSource;
   mask?: string;
@@ -189,6 +191,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
   const [mobileTab, setMobileTab] = useState<'canvas' | 'prompt' | 'params'>('canvas');
+  const runtime = useNaiRuntime();
+  const outputSize = operation === 'image-to-image'
+    ? getImageToImageOutputDimensions(state.width, state.height, draft.imageToImageSizeMode, draft.params, runtime.freeMaxArea)
+    : { width: state.width, height: state.height };
+  const outputDimensionError = operation === 'image-to-image' && state.width > 0
+    ? validateImageEditDimensions(outputSize.width, outputSize.height) : null;
   useEffect(() => {
     setMobileTab('canvas');
   }, [operation]);
@@ -208,7 +216,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     : !baseImage || !state.width || !state.height ? '请先选择底图'
     : pendingOutpaint ? '请先应用画布扩展'
     : !imageCanvasRef.current || (operation !== 'image-to-image' && !maskCanvasRef.current) ? '画布加载中…'
-    : normalization ? '请先处理底图尺寸'
+    : normalization && (operation !== 'image-to-image' || (draft.imageToImageSizeMode || 'original') === 'original') ? '请先处理底图尺寸'
+    : outputDimensionError ? '请调整输出尺寸'
     : operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2) ? '请先框选区域'
     : operation !== 'image-to-image' && !hasMask ? '请先涂画重绘区域'
     : undefined;
@@ -220,7 +229,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!onGenerateBarChange) return;
     onGenerateBarChange({
       generate: () => { void submit(); },
-      costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
+      costLabel: generationCostLabel(operation, focused, { ...outputSize, focusedRect: state.focusedRect, minimumContextArea }),
       canGenerate,
       unavailableLabel,
     });
@@ -958,9 +967,13 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!imageCanvas.width || !imageCanvas.height) {
       return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     }
-    const dimensionError = validateImageEditDimensions(imageCanvas.width, imageCanvas.height);
+    const requestParams = override?.params || draft.params;
+    const requestSize = operation === 'image-to-image'
+      ? getImageToImageOutputDimensions(imageCanvas.width, imageCanvas.height, draft.imageToImageSizeMode, requestParams, runtime.freeMaxArea)
+      : { width: imageCanvas.width, height: imageCanvas.height };
+    const dimensionError = validateImageEditDimensions(requestSize.width, requestSize.height);
     if (dimensionError) {
-      return stop(`请先处理底图尺寸：${dimensionError}`, 'invalid_dimensions');
+      return stop(`请先调整${operation === 'image-to-image' ? '输出' : '底图'}尺寸：${dimensionError}`, 'invalid_dimensions');
     }
     if (operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2)) {
       return stop('请先在画布上框选聚焦重绘区域', 'missing_focused_region');
@@ -973,11 +986,34 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     setError(null);
     inFlightRef.current = true;
     try {
+      let requestCanvas = imageCanvas;
+      let outputParams = requestParams;
+      if (operation === 'image-to-image') {
+        outputParams = { ...requestParams, ...requestSize };
+        if (requestSize.width !== imageCanvas.width || requestSize.height !== imageCanvas.height) {
+          // 只缩放提交副本，底图与草稿中的角色坐标继续对应原始画布。
+          requestCanvas = document.createElement('canvas');
+          requestCanvas.width = requestSize.width;
+          requestCanvas.height = requestSize.height;
+          const context = requestCanvas.getContext('2d');
+          if (!context) return stop('无法创建输出图片画布', 'canvas_not_ready');
+          const fit = getContainedImageEditRect(imageCanvas.width, imageCanvas.height, requestSize.width, requestSize.height);
+          context.fillStyle = '#ffffff';
+          context.fillRect(0, 0, requestSize.width, requestSize.height);
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = 'high';
+          context.drawImage(imageCanvas, fit.x, fit.y, fit.width, fit.height);
+          outputParams.characters = transformCharacterCoordinatesForImageRect(requestParams.characters,
+            imageCanvas.width, imageCanvas.height, { x: 0, y: 0, width: imageCanvas.width, height: imageCanvas.height },
+            fit, requestSize.width, requestSize.height);
+        }
+      }
       const result = await onGenerate({
       operation,
-      image: canvasToDataUrl(imageCanvas),
-      canvasWidth: imageCanvas.width,
-      canvasHeight: imageCanvas.height,
+      image: canvasToDataUrl(requestCanvas),
+      canvasWidth: requestSize.width,
+      canvasHeight: requestSize.height,
+      params: operation === 'image-to-image' ? outputParams : undefined,
       parentHistoryId: draft.baseImageSource === 'upload' || draft.baseImageSource === 'inspiration' || draft.baseImageSource === 'clipboard' ? undefined : draft.parentHistoryId,
       baseImageSource: draft.baseImageSource,
       mask: operation === 'image-to-image' ? undefined : canvasToDataUrl(maskCanvas!),
@@ -990,14 +1026,14 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       prompt: override ? [override.basePrompt, override.subjectPrompt, ...override.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', ') : draft.prompt,
       negativePrompt: override?.negativePrompt ?? draft.negativePrompt,
       promptSource: override ? 'custom' : draft.promptSource,
-      }, override ? { params: override.params, onApproved, agent: true } : undefined);
+      }, override ? { params: outputParams, onApproved, agent: true } : undefined);
       return result === true;
     } finally {
       inFlightRef.current = false;
     }
   };
 
-  const agentCanvasState = () => ({ operation, width: imageCanvasRef.current?.width || 0, height: imageCanvasRef.current?.height || 0, sourceSize, focused, focusedRect: focusedRectRef.current, strength, noise, expansion, appliedExpansion: draft.appliedExpansion, hasMask: Boolean(maskCanvasRef.current && maskHasInk(maskCanvasRef.current)), canGenerate, busy: isLoading || isImportingImage || isApplyingOutpaint, error });
+  const agentCanvasState = () => ({ operation, width: imageCanvasRef.current?.width || 0, height: imageCanvasRef.current?.height || 0, outputSize, imageToImageSizeMode: draft.imageToImageSizeMode || 'original', sourceSize, focused, focusedRect: focusedRectRef.current, strength, noise, expansion, appliedExpansion: draft.appliedExpansion, hasMask: Boolean(maskCanvasRef.current && maskHasInk(maskCanvasRef.current)), canGenerate, busy: isLoading || isImportingImage || isApplyingOutpaint, error });
   const latestAgentCanvasState = useRef(agentCanvasState); latestAgentCanvasState.current = agentCanvasState;
   const readCommittedCanvasState = async () => {
     let previous = '', stableSince = Date.now(); const deadline = Date.now() + 5000;
@@ -1075,7 +1111,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     : ([['canvas', '画布'], ['prompt', '提示'], ['params', '参数']] as const);
 
   return (
-    <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">
+    <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, outputSize, imageToImageSizeMode: draft.imageToImageSizeMode || 'original', focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">
       <nav className="grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
         {mobileTabs.map(([value, label]) => (
           <button
@@ -1197,7 +1233,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           operation={operation}
           image={previewImage}
           error={error}
-          generationCostLabel={generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea })}
+          generationCostLabel={generationCostLabel(operation, focused, { ...outputSize, focusedRect: state.focusedRect, minimumContextArea })}
           onGenerate={() => { void submit(); }}
           isLoading={isLoading || isImportingImage}
           isGenerating={isGenerating}

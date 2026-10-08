@@ -134,6 +134,7 @@ export interface NAIParams {
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
+export type ImageToImageSizeMode = 'original' | 'free' | 'custom';
 export type GenerationMode = 'text-to-image' | ImageEditOperation;
 /** 历史／灵感来源保留旧草稿与历史记录兼容；新底图入口使用上传、最新结果与剪贴板。 */
 export type ImageEditBaseImageSource = 'generated' | 'history' | 'upload' | 'inspiration' | 'clipboard';
@@ -175,6 +176,7 @@ export interface LabImageEditDraft {
   prompt: string;
   negativePrompt: string;
   params: NAIParams;
+  imageToImageSizeMode?: ImageToImageSizeMode;
   baseImageRef?: string;
   baseImageSource?: ImageEditBaseImageSource;
   parentHistoryId?: string;

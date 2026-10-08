@@ -99,6 +99,9 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   {props.latestTextToImageItem && <button onClick={() => { void props.onBaseImageChange(props.latestTextToImageItem!.imageUrl, 'generated', props.latestTextToImageItem!.id); }}>文生图最新</button>}
   <button onClick={() => props.onDraftChange({ params: { ...props.draft.params, characters: [] } })}>清空编辑角色</button>
   <button onClick={() => { void props.onGenerate({ operation: props.operation, image: 'data:image/png;base64,AQID', canvasWidth: 832, canvasHeight: 1216, strength: 1, noise: 0, prompt: props.draft.prompt, negativePrompt: props.draft.negativePrompt, promptSource: props.draft.promptSource }); }}>生成合成编辑</button>
+  <button onClick={() => { void props.onGenerate({ operation: 'image-to-image', image: 'data:image/png;base64,AQID', canvasWidth: 1024, canvasHeight: 1024,
+    params: { ...props.draft.params, width: 1024, height: 1024, characters: [{ id: 'edited', prompt: 'edited character', negativePrompt: 'edited negative', x: 0.4, y: 0.7 }] },
+    strength: 0.7, noise: 0, prompt: props.draft.prompt, negativePrompt: props.draft.negativePrompt, promptSource: props.draft.promptSource }); }}>生成尺寸副本</button>
 </section> }));
 
 const chain: PromptChain = {
@@ -140,6 +143,24 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('图生图使用缩放副本的实际像素估费、发送转换后参数并保存历史，当前草稿保持原坐标', async () => {
+  sessionStorage.setItem('nai_api_key', 'image-size-fixture');
+  state.subscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 0 } };
+  state.generate.mockImplementation(async (_key, _prompt, _negative, generatedParams) => ({ image: 'data:image/png;base64,AQID', blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), params: generatedParams, seed: 123 }));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1024, height: 1024, close: vi.fn() })));
+  setup({ ...chain, previewImage: '/synthetic/cover.png', params: { ...chain.params, model: 'nai-diffusion-5-full', width: 1664, height: 2432 } });
+  await switchTo('图生图');
+  fireEvent.click(screen.getByRole('button', { name: '修改编辑角色' }));
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成尺寸副本' })));
+  expect(state.confirm).not.toHaveBeenCalled();
+  expect(state.generate).toHaveBeenCalledTimes(1);
+  expect(state.generate.mock.calls[0][3]).toMatchObject({ width: 1024, height: 1024, characters: [{ id: 'edited', x: 0.4, y: 0.7 }] });
+  await waitFor(() => expect(state.addHistory).toHaveBeenCalledTimes(1));
+  expect(state.addHistory.mock.calls[0][2]).toMatchObject({ width: 1024, height: 1024, characters: [{ id: 'edited', x: 0.4, y: 0.7 }] });
+  expect(loadLabWorkspaceSession(chain.id, fallback()).edits['image-to-image'].params).toMatchObject({ width: 1664, height: 2432, characters: [{ id: 'edited', x: 0.3, y: 0.7 }] });
+});
 
 it.each(['图生图', '局部重绘', '扩图'])('%s 普通生成复用已有免费快照，后台刷新不增加等待', async label => {
   sessionStorage.setItem('nai_api_key', 'billing-preflight-fixture');

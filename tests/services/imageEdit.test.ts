@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from '../../services/imageEdit';
+import { blurImageEditMaskAlpha, buildImageEditCompositeMaskAlpha, buildImageEditParameters, buildOpaqueImageEditMaskRgba, calculateOutpaintTargetExpansion, dilateImageEditMaskAlpha, getCenteredImageEditCrop, getContainedImageEditRect, getFocusedImageEditGeometry, getImageEditNormalizationTarget, getImageToImageOutputDimensions, getOutpaintPreservedRect, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, resizeImageEditMaskAlpha, resolveImageEditModel, transformCharacterCoordinatesForFocused, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions, validateImageEditSampler } from '../../services/imageEdit';
 
 describe('image edit helpers', () => {
+  it('图生图按当前免费面积缩小，对齐 64，保留原尺寸／自定义的明确选择', () => {
+    const custom = { width: 1024, height: 1024 };
+    expect(getImageToImageOutputDimensions(1664, 2432, undefined, custom, 1048576)).toEqual({ width: 1664, height: 2432 });
+    expect(getImageToImageOutputDimensions(1664, 2432, 'free', custom, 1048576)).toEqual({ width: 832, height: 1216 });
+    expect(getImageToImageOutputDimensions(1664, 2432, 'free', custom, 262144)).toEqual({ width: 384, height: 576 });
+    expect(getImageToImageOutputDimensions(512, 768, 'free', custom, 1048576)).toEqual({ width: 512, height: 768 });
+    expect(getImageToImageOutputDimensions(1664, 2432, 'custom', custom, 262144)).toEqual(custom);
+    expect(getImageToImageOutputDimensions(1664, 2432, 'custom', { width: 833, height: 1216 }, 1048576)).toEqual({ width: 833, height: 1216 });
+    for (const [width, height] of [[12000, 8000], [8000, 64], [33, 20], [833, 1216]]) {
+      const target = getImageToImageOutputDimensions(width, height, 'free', custom, 262144);
+      expect(validateImageEditDimensions(target.width, target.height)).toBeNull();
+      expect(target.width * target.height).toBeLessThanOrEqual(262144);
+    }
+  });
   it('只在扩展侧保留 32px 接缝重绘，不扩展时不动原图蒙版', () => {
     expect(getOutpaintPreservedRect(1344, 768, { top: 0, bottom: 0, left: 192, right: 256 }))
       .toEqual({ x: 224, y: 0, width: 1280, height: 768 });

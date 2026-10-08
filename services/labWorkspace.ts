@@ -68,6 +68,7 @@ export const createLabImageEditDraft = (
   prompt,
   negativePrompt,
   params: cloneParams(params),
+  imageToImageSizeMode: 'original',
   strength: operation === 'image-to-image' ? 0.7 : 1,
   noise: 0,
   brushSize: 64,
@@ -125,6 +126,7 @@ const normalizeSession = (value: unknown, fallback: LabWorkspaceSession): LabWor
         operation,
         isEditDraft(source.edits?.[operation])
         ? { ...fallback.edits[operation], ...source.edits[operation], minimumContextArea: normalizeMinimumContextArea(source.edits[operation]!.minimumContextArea), params: cloneParams(source.edits[operation]!.params),
+            imageToImageSizeMode: ['original', 'free', 'custom'].includes(source.edits[operation]!.imageToImageSizeMode || '') ? source.edits[operation]!.imageToImageSizeMode : 'original',
             // 旧草稿把补白后的画布存成底图，无法可靠反推原图；保留其底图／蒙版，清空过期扩展计划。
             expansion: operation === 'outpaint' && source.edits[operation]!.baseImageRef && !source.edits[operation]!.appliedExpansion
               ? { ...emptyExpansion } : { ...emptyExpansion, ...(source.edits[operation]!.expansion || {}) },

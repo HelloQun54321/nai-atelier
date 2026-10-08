@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.40.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.40.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -189,6 +189,7 @@ flowchart LR
 
 #### 2. 图生图（Image to Image）：底图继承与变化
 - **底图与提示词独立**：上传、拖入图片、点击「文生图最新」或通过 `Ctrl+V`／「粘贴」换底图，保留图生图当前的提示词、负面词、角色配置与参数；
+- **输出尺寸自主选择**：在「参数设置 → 输出尺寸」选择保留底图尺寸、等比缩至当前官方免费像素范围或自定义宽高；手机在「参数」页签。默认保留原尺寸，选择随草稿恢复，宽高按接口要求为 64 的倍数。提交时只缩放副本，完整保留画面、比例不同处填白，角色定位同步转换，原图及当前草稿不变；费用提示与历史均使用实际输出尺寸。免费像素范围不代表必然零 Anlas，仍取决于步数、订阅／Opus 额度和参考配置；
 - **主动复用原图配置**：需要原图提示词与参数时，使用顶栏「导入图片或 JSON 配置」，或在历史详情通过「导入到实验室」完整载入；
 - **SSE 流式过程图即时预览**：接入流式生图端点，生图过程中实时查看画面演变走向，提前预判效果。
 
