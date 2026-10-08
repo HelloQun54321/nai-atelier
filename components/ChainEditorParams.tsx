@@ -3,8 +3,6 @@ import { InfoPopover } from './InfoPopover';
 import { ImageEditOperation, NAIParams } from '../types';
 import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
-import { applyLowConsumptionParams, useLowConsumption } from '../services/lowConsumption';
-import { lowConsumptionStepLimit } from '../worker/lowConsumptionPolicy.mjs';
 import { getActiveCharacters } from '../services/characterPrompts';
 import { normalizeTransparentWeight, resolveTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX, TRANSPARENT_WEIGHT_STEP } from '../services/transparentBackground.mjs';
 import {
@@ -45,10 +43,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 }) => {
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
-    const lowConsumption = useLowConsumption();
-    const effectiveParams = applyLowConsumptionParams(params, lowConsumption.enabled, runtime, mode);
     // NovelAI 采样步数硬上限 50；免费上限取官方运行时同步值（默认 28），随官方调整自动更新。
-    const maxSteps = lowConsumption.enabled ? lowConsumptionStepLimit(params.model, runtime.freeMaxSteps) : enforceFreeStepLimit ? Math.max(1, Math.floor(runtime.freeMaxSteps) || 28) : 50;
+    const maxSteps = enforceFreeStepLimit ? Math.max(1, Math.floor(runtime.freeMaxSteps) || 28) : 50;
     const freeMaxArea = runtime.freeMaxArea || OPUS_FREE_PIXEL_LIMIT;
     const selectableModels = getSelectableNaiModels(runtime);
 
@@ -72,7 +68,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
         const builtin = BUILTIN_ASPECT_RATIOS.find(item => item.id === value);
         if (builtin) {
             const maxInfo = getMaxDimensionsForRatio(builtin);
-            const clampedScale = lowConsumption.enabled ? 1 : Math.min(maxInfo.maxScale, Math.max(1.0, scaleMultiplier));
+            const clampedScale = Math.min(maxInfo.maxScale, Math.max(1.0, scaleMultiplier));
             setScaleMultiplier(clampedScale);
             const nextDims = calculateDimensionsForRatio(builtin, clampedScale);
             setParams({ ...params, width: nextDims.width, height: nextDims.height });
@@ -118,8 +114,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
         markChange();
     };
 
-    const currentWidth = Number(effectiveParams.width) || 832;
-    const currentHeight = Number(effectiveParams.height) || 1216;
+    const currentWidth = Number(params.width) || 832;
+    const currentHeight = Number(params.height) || 1216;
     const totalPixels = currentWidth * currentHeight;
     const isOpusFree = totalPixels <= freeMaxArea;
 
@@ -227,7 +223,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             </div>
 
             {/* Resolution control panel: Aspect ratio scale slider */}
-            {!hideResolution && !lowConsumption.enabled && (
+            {!hideResolution && (
                 <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
                     <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
@@ -316,12 +312,12 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
                         <span className="flex items-center justify-between">
                             生成步数
-                            {!enforceFreeStepLimit && !lowConsumption.enabled && <InfoPopover label="步数上限说明" content="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。" className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">已解除上限</InfoPopover>}
+                            {!enforceFreeStepLimit && <InfoPopover label="步数上限说明" content="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。" className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">已解除上限</InfoPopover>}
                         </span>
                     </label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit}
-                        value={lowConsumption.enabled ? effectiveParams.steps : params.steps ?? Math.min(maxSteps, 28)}
+                        value={params.steps ?? Math.min(maxSteps, 28)}
                         max={maxSteps}
                         onChange={(e) => {
                             const val = Math.min(maxSteps, Math.max(1, parseInt(e.target.value) || 0));

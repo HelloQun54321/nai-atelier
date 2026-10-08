@@ -18,7 +18,6 @@ import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListCh
 import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
-import { resolveLowConsumptionMode, useLowConsumption } from '../services/lowConsumption';
 import { getLabModeLabel } from '../services/labWorkspace';
 import { ImageShareActions } from './ImageShareActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -176,7 +175,6 @@ const HistoryCard = React.memo(function HistoryCard({
 });
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
-    const lowConsumption = useLowConsumption();
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
     const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -247,7 +245,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const [isPreparingImport, setIsPreparingImport] = useState(false);
     const [importMode, setImportMode] = useState<GenerationMode>('text-to-image');
     const [reuseEditMask, setReuseEditMask] = useState(false);
-    const targetImportMode = resolveLowConsumptionMode(importMode, lowConsumption.enabled);
+    const targetImportMode = importMode;
     const canReuseEditMask = targetImportMode !== 'text-to-image' && targetImportMode !== 'image-to-image'
         && lightbox?.edit?.operation === targetImportMode && lightbox.edit.maskAvailable;
     useEffect(() => {
@@ -1231,9 +1229,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     <span className="shrink-0 text-sm font-semibold">导入模式</span>
                                     <ToolbarSelect label="实验室导入模式" containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport || isPublishing} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
                                         <option value="text-to-image">文生图</option>
-                                        {!lowConsumption.enabled && <option value="image-to-image">图生图</option>}
+                                        <option value="image-to-image">图生图</option>
                                         <option value="inpaint">局部重绘</option>
-                                        {!lowConsumption.enabled && <option value="outpaint">扩图</option>}
+                                        <option value="outpaint">扩图</option>
                                     </ToolbarSelect>
                                 </div>
                                 {canReuseEditMask && <label className="flex items-center gap-2 text-sm">

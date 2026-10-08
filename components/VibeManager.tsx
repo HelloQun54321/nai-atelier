@@ -3,7 +3,6 @@ import { ImageEditOperation, NAIParams, VibeAsset, VibeGroup, VibeSelection } fr
 import { vibeService } from '../services/vibeService';
 import { VIBE_MAX_SLOTS, normalizeVibeSelections } from '../services/vibeUtils';
 import { useAnlasBudget } from '../services/anlasBudget';
-import { useLowConsumption } from '../services/lowConsumption';
 import { useNovelaiUsage } from '../services/naiUsage';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -31,7 +30,6 @@ const emptyVibes = (): NonNullable<NAIParams['vibes']> => ({
 });
 
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify, operation }) => {
-  const lowConsumption = useLowConsumption();
   const confirmAction = useConfirmDialog();
   const runtime = useNaiRuntime();
   const encodingCost = runtime.billing.vibeEncodingCost;
@@ -54,7 +52,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const latestApiKey = useRef(apiKey);
   useEffect(() => { latestApiKey.current = apiKey; }, [apiKey]);
   const selectionRevision = useRef(0);
-  useEffect(() => { latestParams.current = params; selectionRevision.current++; }, [params, apiKey, lowConsumption.enabled]);
+  useEffect(() => { latestParams.current = params; selectionRevision.current++; }, [params, apiKey]);
   const [information, setInformation] = useState(1);
   const [groupName, setGroupName] = useState('');
   const [selectionTab, setSelectionTab] = useState<'current' | 'groups'>('current');
@@ -62,7 +60,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const [editingGroupId, setEditingGroupId] = useState('');
   const [editingGroupName, setEditingGroupName] = useState('');
   const vibes = params.vibes || emptyVibes();
-  const maxSlots = lowConsumption.enabled ? 4 : VIBE_MAX_SLOTS;
+  const maxSlots = VIBE_MAX_SLOTS;
   const normalized = useMemo(
     () => normalizeVibeSelections(vibes.slots, vibes.normalizeStrengths),
     [vibes.normalizeStrengths, vibes.slots],
@@ -258,7 +256,6 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   };
 
   const loadGroup = (group: VibeGroup) => {
-    if (lowConsumption.enabled && group.slots.length > maxSlots) { notify(`低消耗模式最多使用 ${maxSlots} 个 Vibe，请先调整组合`, 'error'); return; }
     updateVibes({ enabled: group.slots.length > 0, sourceGroupId: group.id, sourceGroupName: group.name, normalizeStrengths: group.normalizeStrengths, slots: group.slots.map(slot => ({ ...slot })) });
     notify(`已载入组合“${group.name}”`);
   };
@@ -294,7 +291,6 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   return (
     <>
       <div>
-        {lowConsumption.enabled && <p className="mb-2 text-xs leading-5 text-indigo-600 dark:text-indigo-300">低消耗 · 最多 4 个已有编码</p>}
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{vibes.slots.length} / {maxSlots}</span>}</div>

@@ -32,7 +32,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     const balanceLabel = paid === undefined ? 'Paid Anlas 余额未知' : `Paid Anlas：${paid.toLocaleString()} 点`;
     const runtimeWarning = isNaiRuntimeSyncUnhealthy(runtime) ? describeNaiRuntimeSyncProblem(runtime) : '';
     return <button type="button" role="status" aria-label={`订阅已过期 · ${balanceLabel}`} aria-busy={loading}
-      onClick={refreshAll} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。关闭低消耗模式后可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
+      onClick={refreshAll} title={`订阅已过期，Opus 免费权益不可用。${balanceLabel}。可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。${error ? `状态刷新失败：${error}` : ''}${runtimeWarning ? `官方计费规则同步异常：${runtimeWarning}` : ''}`}
       className={`min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}>
       {showDetails && !collapsed ? <>
         <span className="flex items-center justify-between gap-2 text-xs font-medium"><span>订阅已过期</span><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></span>

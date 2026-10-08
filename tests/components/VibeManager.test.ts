@@ -4,8 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VibeManager } from '../../components/VibeManager';
 import type { NAIParams } from '../../types';
-const fixtures = vi.hoisted(() => ({ encodingCost: 2, enabled: true, needsEncoding: false, encode: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: fixtures.enabled }) }));
+const fixtures = vi.hoisted(() => ({ encodingCost: 2, needsEncoding: false, encode: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
+
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: fixtures.encodingCost } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true }) }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 1666 }) }));
@@ -16,11 +16,11 @@ vi.mock('../../services/vibeService', () => ({ vibeService: {
   listGroups: async () => [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
   encode: fixtures.encode,
 } }));
-afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.enabled = true; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
+afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
 const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
-describe('低消耗 Vibe 复用入口', () => {
+describe('Vibe 复用与编码入口', () => {
   it('新编码确认与预算预测跟随官方动态单价', async () => {
     fixtures.encodingCost = 6; fixtures.needsEncoding = true; fixtures.confirm.mockResolvedValueOnce(false);
     render(React.createElement(VibeManager, { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
@@ -64,24 +64,16 @@ describe('低消耗 Vibe 复用入口', () => {
     await waitFor(() => expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: [expect.objectContaining({ encodingId: 'paid-encoded' })] }) })));
     expect(notify).not.toHaveBeenCalledWith(expect.stringContaining('密钥已失效'), 'error');
   });
-  it('界面最多选四个，五图组合不会覆盖原选择，也不触发新编码；关闭恢复十六个', async () => {
+  it('保留十六个选择上限，五图组合可直接复用已有编码', async () => {
     const setParams = vi.fn(), notify = vi.fn();
-    const props = { params, setParams, notify, markChange: vi.fn(), apiKey: 'test-key' };
-    const { rerender } = render(React.createElement(VibeManager, props));
-    expect(screen.getByText('4 / 4')).toBeTruthy();
+    render(React.createElement(VibeManager, { params, setParams, notify, markChange: vi.fn(), apiKey: 'test-key' }));
+    expect(screen.getByText('4 / 16')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    const add = await screen.findByRole('button', { name: /新 Vibe/ });
-    fireEvent.click(add);
-    await waitFor(() => expect(notify).toHaveBeenCalledWith('一次最多启用 4 个 Vibe', 'error'));
+    await screen.findByRole('button', { name: /新 Vibe/ });
     fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
     fireEvent.click(screen.getByRole('button', { name: /五图组合 5 个 Vibe/ }));
-    expect(setParams).not.toHaveBeenCalled();
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: expect.arrayContaining([expect.objectContaining({ vibeId: 'v-4' })]) }) }));
     expect(fixtures.encode).not.toHaveBeenCalled();
     expect(params.vibes?.slots).toBe(slots);
-    fixtures.enabled = false;
-    rerender(React.createElement(VibeManager, props));
-    expect(screen.getByText('4 / 16')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /五图组合 5 个 Vibe/ }));
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: expect.arrayContaining([expect.objectContaining({ vibeId: 'v-4' })]) }) }));
   });
 });

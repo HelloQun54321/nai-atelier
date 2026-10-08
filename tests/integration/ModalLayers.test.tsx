@@ -13,8 +13,8 @@ import { ChainEditorPresetModal, type ChainEditorPresetModalProps } from '../../
 
 // 只读合成资料，不接触本地图片、编码或生成接口。
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
-vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
+
+vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: 2, characterReferenceCost: 5 } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true, supportsCharacterReferences: true }) }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 0 }) }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: vi.fn() }), isNovelaiSubscriptionInactive: () => false }));

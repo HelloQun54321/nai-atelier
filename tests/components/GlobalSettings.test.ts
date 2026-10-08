@@ -8,13 +8,11 @@ import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
-const lowMode = vi.hoisted(() => ({ enabled: false, save: vi.fn() }));
 const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
   useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
 }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }), setLowConsumption: lowMode.save }));
 
 vi.mock('../../services/mobileImageCache', () => ({
   clearMobileThumbnailCache: vi.fn(),
@@ -105,8 +103,7 @@ describe('GlobalSettings', () => {
     subscriptionFixture.balance = undefined;
     subscriptionFixture.usage = undefined;
     subscriptionFixture.refresh.mockClear();
-    lowMode.enabled = false;
-    lowMode.save.mockReset().mockImplementation(async (enabled: boolean) => { lowMode.enabled = enabled; return { enabled }; });
+
     sessionStorage.clear(); localStorage.clear();
     vi.stubGlobal('__APP_VERSION__', '1.0.0');
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
@@ -193,35 +190,11 @@ describe('GlobalSettings', () => {
     expect(subscriptionFixture.refresh).toHaveBeenCalledTimes(1);
     expect((screen.getByRole('spinbutton', { name: '可支配 Anlas 点数' }) as HTMLInputElement).value).toBe('1666');
   });
-  it('低消耗开关按当前 Key 保存，保留零 Anlas 与 Opus 后果', async () => {
-    sessionStorage.setItem('nai_api_key', 'settings-test-key');
+
+  it('NovelAI 设置不再展示低消耗开关', async () => {
     render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    const toggle = await screen.findByRole('checkbox', { name: '低消耗模式' });
-    expect((toggle as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(toggle);
-    await waitFor(() => expect(lowMode.save).toHaveBeenCalledWith(true, 'settings-test-key'));
-    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByText('仅零 Anlas 文生图／聚焦重绘；V5 仍消耗 Opus。')).toBeTruthy();
-    expect(screen.queryByText(/低消耗可用 1500 点/)).toBeNull();
-  });
-  it('尚未配置 Key 时开关禁用', async () => {
-    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
-    expect((await screen.findByRole('checkbox', { name: '低消耗模式' }) as HTMLInputElement).disabled).toBe(true);
-    expect(lowMode.save).not.toHaveBeenCalled();
-  });
-  it('低消耗设置只展示两模式布局，隐藏角色参考和解除步数限制，关闭恢复全部控件', async () => {
-    lowMode.enabled = true;
-    const { container, rerender } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
-    expect(container.querySelectorAll('details')).toHaveLength(2);
-    expect(screen.queryByText('生成步数锁定在免费额度内')).toBeNull();
-    expect(screen.queryByText(/^\d+\. 角色参考$/)).toBeNull();
-    expect(screen.queryByText('图生图')).toBeNull();
-    expect(screen.queryByText('扩图')).toBeNull();
-    lowMode.enabled = false;
-    rerender(React.createElement(SettingsHarness, { initialSection: 'generation' }));
-    expect(container.querySelectorAll('details')).toHaveLength(4);
-    expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getAllByText(/^\d+\. 角色参考$/).length).toBeGreaterThan(0);
+    await screen.findByText('Anlas 点数预算');
+    expect(screen.queryByRole('checkbox', { name: '低消耗模式' })).toBeNull();
   });
 
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
@@ -230,6 +203,8 @@ describe('GlobalSettings', () => {
     expect(await screen.findByText('实验室模块布局')).toBeTruthy();
     const details = container.querySelectorAll('details');
     expect(details).toHaveLength(4);
+    expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
+    expect(screen.getAllByText(/^\d+\. 角色参考$/).length).toBeGreaterThan(0);
 
     // 验证文生图与其他三项一致，默认均处于收起状态
     details.forEach(d => expect(d.open).toBe(false));

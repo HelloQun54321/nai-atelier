@@ -14,7 +14,6 @@ import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
-import { lowConsumptionOperationViolation, lowConsumptionRuntimeHealthy, lowConsumptionViolation } from '../worker/lowConsumptionPolicy.mjs';
 import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '../worker/naiBilling.mjs';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
@@ -932,56 +931,6 @@ const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => 
     exhausted: subscription?.usage?.isNegative === true };
 };
 
-const readLowConsumption = (req, workerPort) => requestWorkerJson('/api/low-consumption', req, workerPort, { headers: { authorization: req.headers.authorization || '' } });
-const lowConsumptionActiveKeys = new Set();
-const acquireLowConsumptionGeneration = keyHash => {
-  if (lowConsumptionActiveKeys.has(keyHash)) throw Object.assign(new Error('低消耗模式：当前 Key 仍有生成任务，请等待结束后再生成'), { status: 409, code: 'LOW_CONSUMPTION_BUSY' });
-  lowConsumptionActiveKeys.add(keyHash);
-  return () => lowConsumptionActiveKeys.delete(keyHash);
-};
-
-// ZIP／SSE 共用生成前校验；拒绝时不进入公共队列，不调用生图，也不沿用旧免费快照。
-export const enforceLowConsumptionRequest = async ({ payload, authorization, keyHash, req, workerPort, requestRemote,
-  signal, loadPreferences = readLowConsumption,
-  runtime = getNaiRuntime(), forceEnabled = false, onEnabled = () => {}, onBilling = () => {} }) => {
-  const preferences = await loadPreferences(req, workerPort);
-  if (typeof preferences?.enabled !== 'boolean') throw Object.assign(new Error('无法确认低消耗设置，请刷新后再生成'), { status: 503 });
-  if (!preferences.enabled && !forceEnabled) return false;
-  onEnabled();
-  const parameters = payload?.parameters || {};
-  const operation = parameters._local_edit_operation || (payload.action === 'img2img' ? 'image-to-image' : payload.action === 'infill' ? 'inpaint' : 'text-to-image');
-  const operationViolation = lowConsumptionOperationViolation(operation);
-  if (operationViolation) throw Object.assign(new Error(operationViolation), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  let subscriptionSnapshot;
-  try {
-    const response = await fetchNovelAiSubscription(authorization,
-      AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]), requestRemote);
-    if (response.ok) subscriptionSnapshot = sanitizeNovelAiSubscription(await response.json());
-  } catch { /* 用户显式开启的低消耗策略由下方判断未知状态。 */ }
-  if (subscriptionSnapshot) cacheNovelAiSubscription(authorization, subscriptionSnapshot);
-  const billing = { runtime, subscription: subscriptionSnapshot,
-    opusSubscriber: subscriptionSnapshot?.active === true && subscriptionSnapshot.tier >= 3,
-    exhausted: subscriptionSnapshot?.usage?.isNegative === true };
-  const { subscription, opusSubscriber } = billing;
-  const usageLimited = isNaiUsageLimitedModel(payload.model, runtime);
-  if (subscription?.active === false) throw Object.assign(new Error('低消耗模式：订阅已过期，无法使用 Opus 免费权益；请关闭低消耗模式后确认使用 Paid Anlas'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  const subscriptionKnown = subscription?.active === true && (!usageLimited || subscription?.usage !== undefined);
-  const usageExhausted = subscription?.usage?.isNegative === true || (subscription?.usage?.percent !== undefined && subscription.usage.percent <= 0);
-  const estimatedCost = billingForPayload(payload, runtime, opusSubscriber, usageExhausted).cost;
-  if (subscriptionKnown && !opusSubscriber && operation === 'text-to-image') throw Object.assign(new Error('低消耗模式：文生图零点数路径需要有效的 Opus 订阅'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  const referenceCount = parameters._local_character_references?.enabled ? parameters._local_character_references.slots?.length || 0
-    : parameters.director_reference_images?.length || parameters.director_reference_images_cached?.length || 0;
-  const vibeCount = parameters._local_vibes?.enabled ? parameters._local_vibes.slots?.length || 0
-    : parameters.reference_image_multiple?.length || parameters.reference_image_multiple_cached?.length || 0;
-  const violation = lowConsumptionViolation({ operation, model: payload.model, steps: Number(parameters.steps),
-    freeMaxSteps: runtime.freeMaxSteps, width: Number(parameters.width), height: Number(parameters.height), freeMaxArea: runtime.freeMaxArea,
-    referenceCount, vibeCount, focused: parameters._local_focused_inpainting === true, estimatedCost,
-    runtimeHealthy: lowConsumptionRuntimeHealthy(runtime), subscriptionKnown, usageLimited, usageExhausted });
-  if (violation || Number(parameters.n_samples || 1) !== 1) throw Object.assign(new Error(violation || '低消耗模式：每次只生成一张图片'), { status: 400, code: 'LOW_CONSUMPTION_LIMIT' });
-  onBilling(billing);
-  return true;
-};
-
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, workerPort, billing }) => {
   // 未取得订阅时不猜测本地扣费，官方仍直接处理生成和实际扣费。
@@ -1665,7 +1614,7 @@ const recoverPendingVibeEncodings = async workerPort => {
 };
 
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
-  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration, checkLowConsumption = enforceLowConsumptionRequest,
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
   prepareBilling = prepareNovelAiBilling,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1681,7 +1630,6 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   const showQueueGreeting = queuePreferences.showGreeting !== false;
   const requestController = new AbortController();
   let queueLock = null;
-  let releaseLowConsumption = null;
   let requestAborted = false;
   let responseCompleted = false;
   const abortRequest = () => {
@@ -1706,9 +1654,6 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
-    if (await checkLowConsumption({ payload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal,
-      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
-    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     const localVibes = payload?.parameters?._local_vibes;
     const localCharacterReferences = payload?.parameters?._local_character_references;
     const runtime = getNaiRuntime();
@@ -1823,13 +1768,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
-    // 资产准备／排队期间额度或设置可能变化，调用生图前再检查，失败由 finally 释放许可。
-    let billing;
-    if (await checkLowConsumption({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal, forceEnabled: Boolean(releaseLowConsumption),
-      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
-      onBilling: value => { billing = value; },
-    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
-    billing ||= await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
+    const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
     // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const response = resolvedVibeEncodings
@@ -1897,14 +1836,13 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     });
   } finally {
     await releaseQueue();
-    releaseLowConsumption?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }
 };
 
 export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
-  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration, checkLowConsumption = enforceLowConsumptionRequest,
+  generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
   prepareBilling = prepareNovelAiBilling,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -1918,7 +1856,6 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
   const requestController = new AbortController();
   let queueLock = null;
-  let releaseLowConsumption = null;
   let requestAborted = false;
   let responseCompleted = false;
   const abortRequest = () => {
@@ -1947,9 +1884,6 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
-    if (await checkLowConsumption({ payload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal,
-      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
-    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
     const runtime = getNaiRuntime();
     if (!runtime.streamedModels.includes(payload?.model)) {
       return sendJson(res, 400, { error: '当前模型不支持生成过程预览，请关闭该设置后重试' });
@@ -1982,12 +1916,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
-    let billing;
-    if (await checkLowConsumption({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, signal: requestController.signal, forceEnabled: Boolean(releaseLowConsumption),
-      onEnabled: () => { if (!releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash); },
-      onBilling: value => { billing = value; },
-    }) && !releaseLowConsumption) releaseLowConsumption = acquireLowConsumptionGeneration(keyHash);
-    billing ||= await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
+    const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
 
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
@@ -2066,7 +1995,6 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     return sendJson(res, Number(error.status) || (error?.name === 'TimeoutError' ? 504 : 502), { error: message, code: error.code });
   } finally {
     if (queueLock) await releaseQueue();
-    releaseLowConsumption?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }

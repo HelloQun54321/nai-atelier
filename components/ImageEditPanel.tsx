@@ -9,7 +9,6 @@ import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../se
 import { getCopiedImageData, type ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
-import { useLowConsumption } from '../services/lowConsumption';
 import { useAgentCommand } from '../services/agentCommands';
 import { agentRect, paintAgentMask } from '../services/agentCanvas';
 
@@ -173,10 +172,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [strength, setStrength] = useState(draft.strength);
   const [noise, setNoise] = useState(draft.noise);
   const [brushSize, setBrushSize] = useState(draft.brushSize);
-  const [storedFocused, setFocused] = useState(draft.focused);
-  const lowConsumption = useLowConsumption();
-  // 强制本次聚焦重绘，保留原草稿中的普通／聚焦选择，关闭低消耗后恢复。
-  const focused = operation === 'inpaint' && lowConsumption.enabled ? true : storedFocused;
+  const [focused, setFocused] = useState(draft.focused);
   const [minimumContextArea, setMinimumContextArea] = useState(normalizeMinimumContextArea(draft.minimumContextArea));
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [manualMaskEditing, setManualMaskEditing] = useState(false);
@@ -203,8 +199,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
   const pendingOutpaint = operation === 'outpaint' && !isSameOutpaintExpansion(expansion, draft.appliedExpansion || emptyExpansion);
-  const canGenerate = !isLoading && !isImportingImage && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current))
-    && (!lowConsumption.enabled || operation === 'inpaint');
+  const canGenerate = !isLoading && !isImportingImage && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current));
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
   // 通过回调上报而非可变 ref，父组件才能在自己渲染时拿到最新状态。
@@ -938,7 +933,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return stop('底图或画布正在加载，请等待完成后再生成', 'canvas_busy');
     if (pendingOutpaint) return stop('画布扩展已调整，请先应用后再生成', 'outpaint_pending');
     if (inFlightRef.current || isGenerating) return stop('已有图片正在生成，请等待完成', 'generation_busy');
-    if (lowConsumption.enabled && operation !== 'inpaint') return stop('低消耗模式不允许本次图片编辑，请先关闭低消耗模式', 'low_consumption_blocked');
     if (!baseImage || !state.width || !state.height) return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;

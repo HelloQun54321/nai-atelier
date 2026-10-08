@@ -10,9 +10,9 @@ import type { LocalGenItem } from '../../types';
 import { db } from '../../services/dbService';
 import { buildBrowserHistoryOrder } from '../../services/historyBrowse';
 
-const { confirmAction, listeners, low } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>(), low: { enabled: false } }));
+const { confirmAction, listeners } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
-vi.mock('../../services/lowConsumption', async importOriginal => ({ ...await importOriginal<typeof import('../../services/lowConsumption')>(), useLowConsumption: () => low }));
+
 vi.mock('../../services/localHistory', () => ({ localHistory: {
     prepare: vi.fn(async () => 0), subscribe: (listener: (event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
     getPage: vi.fn(), getBrowseOrder: vi.fn(), setFavorite: vi.fn(async () => 1), delete: vi.fn(),
@@ -35,7 +35,6 @@ let loadMore: (() => void) | undefined;
 
 beforeEach(() => {
     localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
-    low.enabled = false;
     loadMore = undefined; confirmAction.mockResolvedValue(false);
     vi.mocked(localHistory.getPage).mockResolvedValue({ items, count: items.length });
     vi.mocked(localHistory.getBrowseOrder).mockResolvedValue({ ids: items.map(item => item.id), models: [], sources: [] });
@@ -232,21 +231,7 @@ describe('历史详情导入实验室', () => {
         await waitFor(() => expect(screen.getByText('2 / 2')).toBeTruthy());
         expect((screen.getByRole('combobox', { name: '实验室导入模式' }) as HTMLSelectElement).value).toBe('text-to-image');
     });
-    it('低消耗只提供文生图与局部重绘，导入不携带其他编辑元数据', async () => {
-        low.enabled = true;
-        vi.mocked(localHistory.getPage).mockResolvedValue({ items: [{ ...items[0], edit: { operation: 'outpaint', maskAvailable: true, strength: 0.6, noise: 0.2 } }, items[1]], count: 2 });
-        const { navigate } = await openDetails();
-        const select = screen.getByRole('combobox', { name: '实验室导入模式' });
-        expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['文生图', '局部重绘']);
-        fireEvent.change(select, { target: { value: 'inpaint' } });
-        expect(screen.queryByRole('checkbox', { name: '复用原蒙版' })).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: '导入到实验室' }));
-        await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
-        const data = JSON.parse(sessionStorage.getItem('nai_pending_import')!);
-        expect(data.imageEditOperation).toBe('inpaint');
-        expect(data.editMetadata).toBeUndefined();
-        expect(data.reuseEditMask).toBe(false);
-    });
+
 });
 
 const browseFixture = (count = 65, favorite = false) => {

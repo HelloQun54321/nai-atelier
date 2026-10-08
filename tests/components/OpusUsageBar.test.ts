@@ -171,7 +171,7 @@ describe('OpusUsageBar', () => {
     expect(screen.queryByText('Paid Anlas 余额未知')).toBeNull();
     view.rerender(React.createElement(OpusUsageBar, { collapsed: true }));
     const button = screen.getByRole('status', { name: /Paid Anlas：0 点/ });
-    expect(button.title).toContain('关闭低消耗模式');
+    expect(button.title).toContain('可确认付费生成');
     const attempts = fetchMock.mock.calls.length;
     fireEvent.click(button);
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(attempts));

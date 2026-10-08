@@ -8,7 +8,6 @@ import { createOutpaintCanvas } from '../../services/imageEdit';
 import { ImageEditPanel, ImageEditRequest } from '../../components/ImageEditPanel';
 import type { ImageEditCanvasExpansion } from '../../types';
 
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
 vi.mock('../../services/imageEdit', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/imageEdit')>(),
   dataUrlToBlob: async (data: string) => new Blob([data]),

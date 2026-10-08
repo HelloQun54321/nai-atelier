@@ -5,10 +5,6 @@ import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorParams } from '../../components/ChainEditorParams';
 import type { NAIParams } from '../../types';
-const lowMode = vi.hoisted(() => ({ enabled: false }));
-vi.mock('../../services/lowConsumption', async importOriginal => ({
-  ...await importOriginal<typeof import('../../services/lowConsumption')>(), useLowConsumption: () => lowMode,
-}));
 
 vi.mock('../../services/naiRuntime', () => ({
   useNaiRuntime: () => ({ freeMaxArea: 1048576, freeMaxSteps: 28 }),
@@ -62,7 +58,7 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
   ...props,
 }));
 
-afterEach(() => { cleanup(); lowMode.enabled = false; });
+afterEach(() => { cleanup(); });
 
 describe('ChainEditorParams', () => {
   it('重要提示可点按读取，保留完整预设来源、原种子及收费含义，不改写参数', () => {
@@ -155,41 +151,7 @@ describe('ChainEditorParams', () => {
     rerender(React.createElement(ChainEditorParams, { params: { ...params, characters: characters.map((character, index) => index === 6 ? { ...character, prompt: '  ' } : character) }, setParams: vi.fn(), canEdit: true, markChange: vi.fn() }));
     expect(screen.queryByText(/当前启用了/)).toBeNull();
   });
-  it.each(['text-to-image', 'inpaint'] as const)('%s 低消耗压住已解除的步数上限，关闭恢复原参数', mode => {
-    lowMode.enabled = true;
-    const setParams = vi.fn();
-    const original = { ...params, model: 'nai-diffusion-5-full', steps: 40 };
-    const { container, rerender } = renderParams({ params: original, mode, enforceFreeStepLimit: false, setParams });
-    expect(container.querySelector<HTMLInputElement>('input[max="23"]')?.value).toBe('23');
-    expect(screen.queryByText('已解除上限')).toBeNull();
-    expect(screen.queryByText(/低消耗 · 本次/)).toBeNull();
-    expect(setParams).not.toHaveBeenCalled();
-    lowMode.enabled = false;
-    rerender(React.createElement(ChainEditorParams, { params: original, mode, enforceFreeStepLimit: false, canEdit: true, setParams, markChange: vi.fn() }));
-    expect(container.querySelector<HTMLInputElement>('input[max="50"]')?.value).toBe('40');
-  });
-  it('低消耗 V4.5 保持实际 28 步与免费尺寸，无重复说明', () => {
-    lowMode.enabled = true;
-    const { container } = renderParams({ params: { ...params, steps: 40, width: 1536, height: 1536 } });
-    expect(container.querySelector<HTMLInputElement>('input[max="28"]')?.value).toBe('28');
-    const ratio = screen.getByRole('combobox', { name: '图片画幅比例' }) as HTMLSelectElement;
-    expect(ratio.value).toBe('1:1');
-    expect(ratio.selectedOptions[0].textContent).toContain('1024x1024');
-    expect(screen.queryByText(/低消耗 · 本次/)).toBeNull();
-  });
-  it('低消耗隐藏尺寸放大，画幅切换不继承隐藏的高倍缩放，关闭恢复放大工具', () => {
-    lowMode.enabled = true;
-    const setParams = vi.fn();
-    const original = { ...params, width: 1536, height: 1536 };
-    const { rerender } = renderParams({ params: original, setParams });
-    expect(screen.queryByRole('slider', { name: '尺寸缩放滑块' })).toBeNull();
-    expect(screen.queryByRole('spinbutton', { name: '尺寸清晰度倍率数值' })).toBeNull();
-    fireEvent.change(screen.getByRole('combobox', { name: '图片画幅比例' }), { target: { value: '2:3' } });
-    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 832, height: 1216 }));
-    lowMode.enabled = false;
-    rerender(React.createElement(ChainEditorParams, { params: original, setParams, canEdit: true, markChange: vi.fn() }));
-    expect(screen.getByRole('slider', { name: '尺寸缩放滑块' })).toBeTruthy();
-  });
+
   it('未保存模型的旧数据按界面默认 V4.5 读取完整预设', () => {
     renderParams({ params: { ...params, model: undefined } });
     expect(screen.getByRole('combobox', { name: '质量预设' }).querySelectorAll('option')).toHaveLength(2);

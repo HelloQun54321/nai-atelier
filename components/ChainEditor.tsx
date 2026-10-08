@@ -9,8 +9,6 @@ import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
-import { applyLowConsumptionParams, assertLowConsumptionEstimate, getLowConsumption, resolveLowConsumptionMode, useLowConsumption } from '../services/lowConsumption';
-import { isLowConsumptionModeAllowed } from '../worker/lowConsumptionPolicy.mjs';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
@@ -95,7 +93,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const { info: novelaiSubscription, usage: novelaiUsage, loading: novelaiSubscriptionLoading, refreshIfStale: refreshUsageIfStale } = novelaiStatus;
     // 本地 Anlas 预算（账号整体，手动校准）：用尽后扣费生成需要红色警告。
     const anlasBudget = useAnlasBudget();
-    const lowConsumption = useLowConsumption();
     const opusUsageExhausted = novelaiUsage?.isNegative === true;
     // Opus 免费档资格来自「活跃 Opus 订阅」：订阅过期或非 Opus 时没有免费额度，
     // 费用必须按付费档算，避免显示“免费/消耗额度”却实际扣点数。
@@ -109,8 +106,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
         : '';
     const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
-    const effectiveParams = applyLowConsumptionParams(params, lowConsumption.enabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
-    const estimatedAnlasCost = estimateV45GenerationCost(effectiveParams, opusSubscriptionActive, opusUsageExhausted);
+    const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
     const generationCostLabel = novelaiSubscriptionLoading && getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).opusUsageLimit
         ? '确认额度中…'
         : formatGenerationCostLabel(estimatedAnlasCost, params.model);
@@ -279,7 +275,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
-    const activeGenerationMode = resolveLowConsumptionMode(workspaceSession.activeMode, lowConsumption.enabled);
+    const activeGenerationMode = workspaceSession.activeMode;
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
@@ -577,7 +573,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [lightboxImg]);
 
-
     // --- Logic: Compilation ---
     useEffect(() => {
         const tempChain = {
@@ -720,7 +715,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     useEffect(() => {
-        // 入口、切模式和低消耗开关共用恢复流程；隐藏模式保留原资产，重新可见时恢复。
+        // 入口和切模式共用恢复流程，保留各自草稿与资产。
         const draft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
         void resolveEditBaseImage(draft).catch(error => notify(error instanceof Error ? error.message : '恢复编辑底图失败', 'error'));
         setShowForkModal(false);
@@ -748,15 +743,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const createEditDraftFromSource = async (operation: ImageEditOperation, sourceImage: string | undefined, source: 'generated' | 'history' | 'upload' | 'inspiration', parentHistoryId?: string, sourcePrompt = finalPrompt, sourceNegativePrompt = negativePrompt, sourceParams = params, editMetadata?: ImageEditMetadata, reuseEditMask = false) => {
-        // 历史／灵感的通用编辑入口在低消耗下进入局部重绘，不覆盖隐藏模式的草稿或蒙版。
-        let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return; }
-        if (lowEnabled && !isLowConsumptionModeAllowed(operation)) {
-            operation = 'inpaint';
-            editMetadata = undefined;
-            reuseEditMask = false;
-        }
         const draft = createLabImageEditDraft(operation, sourcePrompt, sourceNegativePrompt, sourceParams, {
             baseImageSource: source,
             parentHistoryId,
@@ -802,7 +788,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const selectGenerationMode = async (mode: GenerationMode) => {
         // 生成进行中不允许切换模式：视觉层（模式导航禁用）+ 逻辑层（此处拦截）双保险
         if (isGenerating || modeTransitionRef.current || mode === activeGenerationMode) return;
-        if (lowConsumption.enabled && !isLowConsumptionModeAllowed(mode)) return;
         modeTransitionRef.current = true;
         setIsSwitchingMode(true);
         try {
@@ -1253,7 +1238,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
-
     const prepareCurrentPreviewCover = async (forceUpload = false): Promise<{ previewImage?: string; changed: boolean }> => {
         const decision = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage, forceUpload);
         if (!decision.source || !decision.needsUpload) {
@@ -1274,7 +1258,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const upload = await api.uploadFile(file, 'covers');
         return { previewImage: upload.url, changed: true };
     };
-
 
     /** 离开编辑页前，若风格串尚未设置封面且当前有可见图片，自动将该图设为封面。
      *  已有封面或非风格串时不改动；失败静默，不阻塞返回。
@@ -1308,9 +1291,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (consumeEditorSessionDiscarded(chain.id)) return;
         void autoSaveCoverOnExitRef.current();
     }, []);
-
-
-
 
     const handleSaveAll = async () => {
         if (!isOwner || isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return;
@@ -1492,14 +1472,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setGenerationProgress(null);
         setErrorMsg(null);
         try {
-            const activeParams: NAIParams = applyLowConsumptionParams({
+            const activeParams: NAIParams = {
                 ...generationParams,
                 ...(forceEmptySeed ? { seed: undefined } : {}),
                 vibes: generationParams.vibes ? {
                     ...generationParams.vibes,
                     slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
                 } : undefined,
-            }, (await getLowConsumption(apiKey)).enabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
+            };
             const streamSupported = getRuntimeNaiModelInfo(activeParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
             let result;
             if (generationStreamPreview && streamSupported) {
@@ -1612,17 +1592,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
     const handleGenerate = async () => {
-        let requestParams: NAIParams;
-        let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; requestParams = applyLowConsumptionParams(params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME); }
-        catch (error) { notify(error instanceof Error ? error.message : '读取低消耗设置失败', 'error'); return false; }
-        const freshSubscription = lowEnabled ? await refreshUsageIfStale() : novelaiSubscription;
-        if (!lowEnabled) void refreshUsageIfStale();
+        const requestParams = params;
+        const freshSubscription = novelaiSubscription;
+        void refreshUsageIfStale();
         const cost = estimateV45GenerationCost(requestParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
-        if (lowEnabled) {
-            try { assertLowConsumptionEstimate(requestParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
-            catch (error) { notify(error instanceof Error ? error.message : '低消耗检查失败', 'error'); return false; }
-        }
         // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
         if (cost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({
@@ -1646,7 +1619,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (operation === 'inpaint' && focused && !focusedReady) return '先框选区域';
         // strength=0 是合法值（完全保留原图、几乎不重绘）；不能用 || 回退到默认 0.7
         const editStrength = activeEditDraft?.strength !== undefined ? activeEditDraft.strength : (operation === 'image-to-image' ? 0.7 : 1);
-        const costParams = applyLowConsumptionParams(activeEditDraft?.params || params, lowConsumption.enabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, operation);
+        const costParams = activeEditDraft?.params || params;
         const cost = estimateImageEditCost(costParams, operation, editStrength, focusedReady, opusSubscriptionActive ? novelaiSubscription?.tier : 0, opusUsageExhausted, context);
         return formatImageEditCostLabel(cost, operation, focusedReady, opusSubscriptionActive ? novelaiSubscription?.tier : 0);
     };
@@ -1662,12 +1635,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return stop(message, 'missing_key');
         }
-        let editParamsSource: NAIParams;
-        let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; editParamsSource = applyLowConsumptionParams(options?.params || activeEditDraft?.params || params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, request.operation); }
-        catch (error) { const message = error instanceof Error ? error.message : '读取低消耗设置失败'; notify(message, 'error'); return stop(message, 'preflight_failed'); }
-        const freshSubscription = lowEnabled ? await refreshUsageIfStale() : novelaiSubscription;
-        if (!lowEnabled) void refreshUsageIfStale();
+        const editParamsSource = options?.params || activeEditDraft?.params || params;
+        const freshSubscription = novelaiSubscription;
+        void refreshUsageIfStale();
         let sourceWidth = request.canvasWidth;
         let sourceHeight = request.canvasHeight;
         try {
@@ -1687,10 +1657,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             focusedRect: request.focusedRect,
             minimumContextArea: request.minimumContextArea,
         });
-        if (lowEnabled) {
-            try { assertLowConsumptionEstimate(editParamsSource, request.operation, naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, editCost, Boolean(request.focused && request.focusedRect)); }
-            catch (error) { const message = error instanceof Error ? error.message : '低消耗检查失败'; notify(message, 'error'); return stop(message, 'low_consumption_blocked'); }
-        }
         const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
         if (editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
@@ -1873,17 +1839,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (!agentEditGenerateRef.current) throw agentOperationError('编辑画布尚未准备好', 'canvas_not_ready');
             return agentEditGenerateRef.current(draft, approve);
         }
-        let lowEnabled: boolean;
-        try { lowEnabled = (await getLowConsumption(apiKey)).enabled; }
-        catch (error) { throw agentOperationError(error instanceof Error ? error.message : '读取低消耗设置失败', 'preflight_failed'); }
-        const freshSubscription = lowEnabled ? await refreshUsageIfStale() : novelaiSubscription;
-        if (!lowEnabled) void refreshUsageIfStale();
-        const costParams = applyLowConsumptionParams(draft.params, lowEnabled, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
+        const freshSubscription = novelaiSubscription;
+        void refreshUsageIfStale();
+        const costParams = draft.params;
         const cost = estimateV45GenerationCost(costParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
-        if (lowEnabled) {
-            try { assertLowConsumptionEstimate(costParams, 'text-to-image', naiRuntimeConfig || DEFAULT_NAI_RUNTIME, freshSubscription, cost); }
-            catch (error) { throw agentOperationError(error instanceof Error ? error.message : '低消耗检查失败', 'low_consumption_blocked'); }
-        }
         const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
         // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
         if (cost > 0 && anlasBudget.remaining <= 0) {
@@ -2102,7 +2061,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             mobileEditorTab={mobileEditorTab}
                         />
 
-
                         {/* Character Management (New V4.5) */}
                         <ChainEditorCharacters
                             scopeKey={`${chain.id}:text-to-image`}
@@ -2122,8 +2080,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             mobileEditorTab={mobileEditorTab}
                         />
 
-
-                        {activeModelInfo.supportsCharacterReferences && !lowConsumption.enabled && <LabModuleSection
+                        {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
                             label="角色参考"
                             order={activeLabLayout.order.indexOf('characterReference')}

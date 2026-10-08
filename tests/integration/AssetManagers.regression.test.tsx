@@ -8,8 +8,8 @@ import { CharacterReferenceManager } from '../../components/CharacterReferenceMa
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 
 const fixtures = vi.hoisted(() => ({ vibeList: vi.fn(), refList: vi.fn(), encode: vi.fn(), create: vi.fn(), rename: vi.fn(), archive: vi.fn() }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: false }) }));
-vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
+
+vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: 2, characterReferenceCost: 5 } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true, supportsCharacterReferences: true }) }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 10 }) }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: async () => null }) }));

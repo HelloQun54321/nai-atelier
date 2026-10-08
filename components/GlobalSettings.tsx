@@ -26,8 +26,6 @@ import { OpusUsageBar } from './OpusUsageBar';
 import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueuePreferences } from '../services/cloudQueue';
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
-import { setLowConsumption, useLowConsumption } from '../services/lowConsumption';
-import { isLowConsumptionModeAllowed } from '../worker/lowConsumptionPolicy.mjs';
 import { PromptAgentSettings } from './PromptAgentSettings';
 import {
   AppearancePreferences,
@@ -168,8 +166,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
   const anlasBudget = useAnlasBudget();
-  const lowConsumption = useLowConsumption();
-  const [savingLowConsumption, setSavingLowConsumption] = useState(false);
   // 当前使用密钥的订阅健康状态：每分钟轮询 + 切 Key 自动刷新，零额外探测请求。
   // 保管箱据此只对「当前使用」的 key 标失效，非当前 key 不做探测。
   const novelaiSubscription = useNovelaiUsage();
@@ -412,8 +408,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const getLabPageLayout = (pageId: LabPageId): LabPageLayout => appearancePreferences.labPageLayouts[pageId] || DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-  const visibleLabPages = LAB_PAGE_IDS.filter(pageId => !lowConsumption.enabled || isLowConsumptionModeAllowed(pageId));
-  const visibleLabModules = (layout: LabPageLayout) => layout.order.filter(moduleId => !lowConsumption.enabled || moduleId !== 'characterReference');
 
   const updateLabPageLayout = (pageId: LabPageId, update: (layout: LabPageLayout) => LabPageLayout) => {
     updateAppearance({
@@ -427,9 +421,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const moveLabModule = (pageId: LabPageId, moduleId: LabPageModuleId, offset: -1 | 1) => {
     const layout = getLabPageLayout(pageId);
     const currentIndex = layout.order.indexOf(moduleId);
-    const visibleOrder = visibleLabModules(layout);
-    const targetModule = visibleOrder[visibleOrder.indexOf(moduleId) + offset];
-    const targetIndex = layout.order.indexOf(targetModule);
+    const targetIndex = currentIndex + offset;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= layout.order.length) return;
     const next = [...layout.order];
     [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
@@ -461,18 +453,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   const recommendedLabLayout = (pageId: LabPageId): LabPageLayout => {
     const defaults = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-    if (!lowConsumption.enabled) return { order: [...defaults.order], collapsed: { ...defaults.collapsed } };
-    const current = getLabPageLayout(pageId);
-    const recommended = visibleLabModules(defaults);
-    let index = 0;
-    return { order: current.order.map(moduleId => moduleId === 'characterReference' ? moduleId : recommended[index++]),
-      collapsed: { ...defaults.collapsed, characterReference: current.collapsed.characterReference } };
+    return { order: [...defaults.order], collapsed: { ...defaults.collapsed } };
   };
   const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => recommendedLabLayout(pageId));
 
-  const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: lowConsumption.enabled
-    ? { ...appearancePreferences.labPageLayouts, ...Object.fromEntries(visibleLabPages.map(pageId => [pageId, recommendedLabLayout(pageId)])) }
-    : cloneDefaultLabPageLayouts() });
+  const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
 
   const resetThemeCustomization = () => {
     setAppearancePreferences({
@@ -986,7 +971,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              {!lowConsumption.enabled && <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">生成步数锁定在免费额度内</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
@@ -996,7 +981,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.enforceFreeStepLimit ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                   <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.enforceFreeStepLimit ? 'translate-x-5' : 'translate-x-0'}`} />
                 </span>
-              </button>}
+              </button>
 
               <div className={`rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
                 <div className="mb-3 flex items-start justify-between gap-3">
@@ -1022,10 +1007,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </div>
 
                 <div className={`space-y-2 ${isLabMobile ? 'pointer-events-none select-none opacity-50' : ''}`}>
-                  {visibleLabPages.map(pageId => {
+                  {LAB_PAGE_IDS.map(pageId => {
                     const pageMeta = LAB_PAGE_META[pageId];
                     const layout = getLabPageLayout(pageId);
-                    const visibleOrder = visibleLabModules(layout);
+                    const visibleOrder = layout.order;
                     const defaultLayout = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
                     const isCustom = JSON.stringify(layout) !== JSON.stringify(defaultLayout);
                     return <details key={pageId} open={expandedLabPages[pageId]} onToggle={event => {
@@ -1197,16 +1182,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-              <label className="mb-3 flex min-h-11 items-start justify-between gap-3">
-                <span><span className="block font-semibold text-gray-900 dark:text-white">低消耗模式</span><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">仅零 Anlas 文生图／聚焦重绘；V5 仍消耗 Opus。</span></span>
-                <input type="checkbox" aria-label="低消耗模式" checked={lowConsumption.enabled} disabled={savingLowConsumption || !apiKey.trim()} onChange={async event => {
-                  const enabled = event.currentTarget.checked;
-                  setSavingLowConsumption(true);
-                  try { await setLowConsumption(enabled, apiKey); notify(enabled ? '低消耗模式已开启' : '低消耗模式已关闭'); }
-                  catch (error) { notify(error instanceof Error ? error.message : '保存低消耗设置失败', 'error'); }
-                  finally { setSavingLowConsumption(false); }
-                }} className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600 disabled:opacity-50" />
-              </label>
               <h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4>
               <div className="mt-3 space-y-3">
                 <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />

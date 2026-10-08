@@ -13,7 +13,6 @@ type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/
 
 const state = vi.hoisted(() => ({
   agent: null as React.ComponentProps<typeof import('../../components/chain/PresetSourceBadges').PromptAgentOverlayController> | null,
-  low: { enabled: false },
   history: vi.fn(async (): Promise<LocalGenItem[]> => []),
   addHistory: vi.fn(),
   unlinkHistory: vi.fn(async () => {}),
@@ -28,11 +27,7 @@ const state = vi.hoisted(() => ({
   refreshedSubscription: null as NovelaiSubscriptionInfo | null,
   delayedSubscription: null as Promise<NovelaiSubscriptionInfo | null> | null,
 }));
-vi.mock('../../services/lowConsumption', async importOriginal => ({
-  ...await importOriginal<typeof import('../../services/lowConsumption')>(),
-  useLowConsumption: () => state.low,
-  getLowConsumption: async () => state.low,
-}));
+
 vi.mock('../../services/naiRuntime', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
   return { ...actual, getNaiRuntimeConfig: async () => actual.DEFAULT_NAI_RUNTIME,
@@ -123,7 +118,6 @@ const switchTo = async (label: string) => {
 };
 
 beforeEach(() => {
-  state.low.enabled = false;
   state.assets.clear();
   state.delayedAsset = null;
   state.delayedBaseSave = null;
@@ -711,25 +705,6 @@ describe('统一工作台真实状态链路', () => {
     expect(loadLabWorkspaceSession('playground', fallback()).textToImage.basePrompt).toBe('private playground draft');
     expect(view.props.onUpdateChain).not.toHaveBeenCalled();
     expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('合成风格串') }));
-  });
-
-  it('低消耗隐藏两种付费编辑模式，关闭后恢复原草稿与模式', async () => {
-    const session = { ...fallback(), activeMode: 'outpaint' as const, edits: { ...fallback().edits, outpaint: { ...fallback().edits.outpaint, prompt: 'hidden draft', baseImageRef: 'synthetic-base', maskRef: 'synthetic-mask' } } };
-    state.assets.set('synthetic-base', new Blob(['synthetic base'], { type: 'image/png' }));
-    state.assets.set('synthetic-mask', new Blob(['synthetic mask'], { type: 'image/png' }));
-    saveLabWorkspaceSession(chain.id, session);
-    state.low.enabled = true;
-    const view = setup();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
-    expect(screen.queryByRole('button', { name: '图生图' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '扩图' })).toBeNull();
-    expect(loadLabWorkspaceSession(chain.id, fallback()).edits.outpaint.prompt).toBe('hidden draft');
-    state.low.enabled = false;
-    view.rerender(<ChainEditor {...view.props} />);
-    expect(screen.getByRole('button', { name: '扩图' }).getAttribute('aria-current')).toBe('page');
-    expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('hidden draft');
-    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toBe('data:image/png;base64,c3ludGhldGljIGJhc2U='));
-    await waitFor(() => expect(screen.getByLabelText('编辑蒙版').textContent).toBe('data:image/png;base64,c3ludGhldGljIG1hc2s='));
   });
 
   it('切换后迟到的底图读取不能污染另一个模式', async () => {

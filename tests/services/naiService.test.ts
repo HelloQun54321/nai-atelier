@@ -195,7 +195,6 @@ describe('成图交付与辅助排队轮询', () => {
   ] as const)('%s（stream=%s）不等待在途轮询，迟到响应也不能覆盖下一张任务', async (operation, stream) => {
     let respond!: (response: Response) => void;
     const fetchMock = vi.fn((url: string | URL | Request) => {
-      if (String(url).includes('/low-consumption')) return Promise.resolve(new Response(JSON.stringify({ enabled: false })));
       if (String(url).includes('/preferences')) return Promise.resolve(new Response(JSON.stringify({ enabled: true, serviceUrl: 'https://queue.test' })));
       return new Promise<Response>(resolve => { respond = resolve; });
     });
@@ -214,54 +213,38 @@ describe('成图交付与辅助排队轮询', () => {
     // 等待辅助响应解析结束，确认它没有让旧任务重新出现。
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(getCurrentCloudQueueStatus()?.taskId).toBe('next-task');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(vi.mocked(api.postBinary).mock.calls.length + vi.mocked(api.postBinaryDetailed).mock.calls.length + vi.mocked(api.postSse).mock.calls.length).toBe(1);
   });
 });
 
-describe('四模式普通／流式请求共用低消耗实际参数', () => {
+describe('四模式普通／流式请求保留创作者参数', () => {
   it.each([
-    ['text-to-image', false], ['text-to-image', true], ['inpaint', false], ['inpaint', true],
-  ] as const)('%s（stream=%s）限制步数且不破坏草稿与编辑强度，返回历史实际参数', async (operation, stream) => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/low-consumption') ? { enabled: true } : { enabled: false }))));
-    for (const [model, steps] of [['nai-diffusion-5-full', 23], ['nai-diffusion-4-5-full', 28]] as const) {
-      vi.mocked(api.postBinary).mockClear(); vi.mocked(api.postBinaryDetailed).mockClear(); vi.mocked(api.postSse).mockClear();
-      const original: NAIParams = { ...params, model, steps: 40, width: 1536, height: 1536, seed: 123,
-        characterReferences: { enabled: true, slots: [{ assetId: 'saved-ref', type: 'character', strength: 0.8, fidelity: 1 }] } };
-      const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.35, noise: 0.1 };
-      const result = operation === 'text-to-image'
-        ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', '', original)
-        : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', '', original, edit);
-      const sent = (vi.mocked(api.postSse).mock.calls[0] || vi.mocked(api.postBinaryDetailed).mock.calls[0] || vi.mocked(api.postBinary).mock.calls[0])[1] as {
-        parameters: { steps: number; width: number; height: number; _local_character_references?: unknown; strength?: number; inpaintImg2ImgStrength?: number };
-      };
-      expect(sent.parameters.steps).toBe(steps);
-      expect(sent.parameters._local_character_references).toBeUndefined();
-      expect(result.params.steps).toBe(steps);
-      expect(result.params.width).toBe(sent.parameters.width);
-      expect(result.params.height).toBe(sent.parameters.height);
-      if (operation === 'text-to-image') expect(sent.parameters.width * sent.parameters.height).toBeLessThanOrEqual(1048576);
-      else {
-        expect([sent.parameters.width, sent.parameters.height]).toEqual([832, 1216]);
-        expect(sent.parameters.inpaintImg2ImgStrength).toBe(0.35);
-      }
-      expect(original.steps).toBe(40);
-      expect(original.width).toBe(1536);
-      expect(original.characterReferences?.enabled).toBe(true);
+    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
+    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
+  ] as const)('%s（stream=%s）不压步数、不隐藏参考、不额外读取模式设置', async (operation, stream) => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request) => new Response(JSON.stringify({ enabled: false })));
+    vi.stubGlobal('fetch', fetchMock);
+    const original: NAIParams = { ...params, steps: 40, width: 1536, height: 1536, seed: 123,
+      characterReferences: { enabled: true, slots: [{ assetId: 'saved-ref', type: 'character', strength: 0.8, fidelity: 1 }] } };
+    const snapshot = structuredClone(original);
+    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.35, noise: 0.1 };
+    const result = operation === 'text-to-image'
+      ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', '', original)
+      : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', '', original, edit);
+    const sent = lastCharacterPayload(stream).parameters as CharacterPayload['parameters'] & {
+      steps: number; width: number; height: number; _local_character_references: unknown; strength?: number; inpaintImg2ImgStrength?: number;
+    };
+    expect(sent.steps).toBe(40);
+    expect(sent._local_character_references).toEqual(original.characterReferences);
+    expect(result.params.steps).toBe(40);
+    if (operation === 'text-to-image') expect([sent.width, sent.height]).toEqual([1536, 1536]);
+    else {
+      expect([sent.width, sent.height]).toEqual([832, 1216]);
+      expect(operation === 'image-to-image' ? sent.strength : sent.inpaintImg2ImgStrength).toBe(0.35);
     }
-  });
-  it.each(['image-to-image', 'outpaint'] as const)('%s 开关开启时拒绝普通／流式请求，关闭后不再有原 10／20 点或步数限制', async operation => {
-    let enabled = true;
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/low-consumption') ? { enabled } : { enabled: false }))));
-    const original = { ...params, steps: 40 };
-    const edit = { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0.1 };
-    for (const generate of [generateImageEdit, generateImageEditStream]) await expect(generate('test-key', '1girl', '', original, edit)).rejects.toThrow('已关闭图生图和扩图');
-    expect(api.postBinaryDetailed).not.toHaveBeenCalled();
-    expect(api.postSse).not.toHaveBeenCalled();
-    enabled = false;
-    for (const generate of [generateImageEdit, generateImageEditStream]) {
-      const result = await generate('test-key', '1girl', '', original, edit);
-      expect(result.params.steps).toBe(40);
-    }
+    expect(original).toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/preferences');
   });
 });

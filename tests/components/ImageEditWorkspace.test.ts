@@ -8,8 +8,7 @@ import { ImageEditPanel } from '../../components/ImageEditPanel';
 import { ImageEditPreview } from '../../components/ImageEditPreview';
 import type { NAIParams } from '../../types';
 import { imageTaggerService } from '../../services/imageTaggerService';
-const lowMode = vi.hoisted(() => ({ enabled: false, focused: false }));
-vi.mock('../../services/lowConsumption', () => ({ useLowConsumption: () => ({ enabled: lowMode.enabled }) }));
+const canvasState = vi.hoisted(() => ({ focused: false }));
 
 vi.mock('../../components/ChainEditorParams', () => ({
   ChainEditorParams: () => React.createElement('div', { 'data-testid': 'common-params' }, '公共参数'),
@@ -24,7 +23,7 @@ vi.mock('../../components/CharacterReferenceManager', () => ({
 }));
 
 vi.mock('../../components/ImageEditCanvas', () => ({
-  ImageEditCanvas: ({ focused }: { focused: boolean }) => { lowMode.focused = focused; return React.createElement('div', { 'data-testid': 'edit-canvas' }, '画布'); },
+  ImageEditCanvas: ({ focused }: { focused: boolean }) => { canvasState.focused = focused; return React.createElement('div', { 'data-testid': 'edit-canvas' }, '画布'); },
 }));
 
 vi.mock('../../components/CloudQueueStatus', () => ({
@@ -143,7 +142,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, notify };
 };
 
-afterEach(() => { cleanup(); lowMode.enabled = false; vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe('ImageEditControls', () => {
   it('新局部重绘的中文开关默认勾选，可手动关闭再开启', () => {
@@ -158,15 +157,15 @@ describe('ImageEditControls', () => {
     }));
     const toggle = screen.getByRole('checkbox', { name: '聚焦重绘' }) as HTMLInputElement;
     expect(toggle.checked).toBe(true);
-    expect(lowMode.focused).toBe(true);
+    expect(canvasState.focused).toBe(true);
     expect(screen.queryByText(/Focused/)).toBeNull();
     fireEvent.click(toggle);
     expect(toggle.checked).toBe(false);
-    expect(lowMode.focused).toBe(false);
+    expect(canvasState.focused).toBe(false);
     expect(onDraftChange).toHaveBeenLastCalledWith({ focused: false, focusedRect: undefined });
     fireEvent.click(toggle);
     expect(toggle.checked).toBe(true);
-    expect(lowMode.focused).toBe(true);
+    expect(canvasState.focused).toBe(true);
     expect(onDraftChange).toHaveBeenLastCalledWith({ focused: true });
     fireEvent.change(screen.getByRole('slider', { name: '笔刷大小' }), { target: { value: '96' } });
     expect(screen.getByRole('spinbutton', { name: '笔刷大小数值' })).toHaveProperty('value', '96');
@@ -174,9 +173,8 @@ describe('ImageEditControls', () => {
   });
 
   it.each([
-    ['inpaint', true, false], ['inpaint', false, false], ['inpaint', true, true], ['outpaint', false, false],
-  ] as const)('%s 聚焦=%s 低消耗=%s 均可调节笔刷大小', (operation, focused, low) => {
-    lowMode.enabled = low;
+    ['inpaint', true], ['inpaint', false], ['outpaint', false],
+  ] as const)('%s 聚焦=%s 均可调节笔刷大小', (operation, focused) => {
     const { container, onBrushSizeChange } = renderControls(operation, operation === 'outpaint', false, false, {}, 'canvas', undefined, focused);
     const slider = screen.getByRole('slider', { name: '笔刷大小' }) as HTMLInputElement;
     const numeric = screen.getByRole('spinbutton', { name: '笔刷大小数值' }) as HTMLInputElement;
@@ -269,17 +267,6 @@ describe('ImageEditControls', () => {
     expect(character.prompt).toBe('girl, blue hair');
   });
 
-  it('低消耗隐藏角色参考模块和普通重绘切换，保留蒙版与免费编辑参数', () => {
-    lowMode.enabled = true;
-    renderControls('inpaint');
-    expect(screen.queryByTestId('character-reference-manager')).toBeNull();
-    expect(screen.queryByText('角色参考')).toBeNull();
-    expect(screen.queryByRole('checkbox', { name: '聚焦重绘' })).toBeNull();
-    expect(screen.getByRole('checkbox', { name: 'AI 自动构图' })).toBeTruthy();
-    expect(screen.getByText(/聚焦重绘 · 先框选，再涂画/)).toBeTruthy();
-    expect(screen.getByRole('slider', { name: 'Strength' })).toBeTruthy();
-    expect(screen.getByTestId('edit-canvas')).toBeTruthy();
-  });
   it('编辑模式遵守当前模型的角色数量限制', () => {
     const characters = Array.from({ length: 6 }, (_, index) => ({ id: String(index), prompt: 'girl', x: 0.5, y: 0.5 }));
     const { onDraftChange, notify } = renderControls('inpaint', false, false, false, { model: 'nai-diffusion-4-5-full', characters });
@@ -287,25 +274,7 @@ describe('ImageEditControls', () => {
     expect(onDraftChange).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith('当前模型最多支持 6 个角色提示词', 'error');
   });
-  it('低消耗临时启用聚焦重绘不写回草稿，关闭后恢复普通重绘', () => {
-    const draft = createLabImageEditDraft('inpaint', 'test prompt', '', params, { focused: false });
-    const onDraftChange = vi.fn();
-    const props = { baseImage: null, previewImage: null, operation: 'inpaint' as const, draft,
-      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings', 'characterReference'] as const, collapsed: {} },
-      generationCostLabel: vi.fn(() => '零点数'), apiKey: 'test-key', notify: vi.fn(), onPromptChange: vi.fn(),
-      onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(),
-      onCanvasChange: vi.fn(), onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false };
-    lowMode.enabled = true;
-    const { rerender } = render(React.createElement(ImageEditPanel, { ...props, layout: { ...props.layout, order: [...props.layout.order] } }));
-    expect(lowMode.focused).toBe(true);
-    expect(onDraftChange).not.toHaveBeenCalled();
-    expect(draft.focused).toBe(false);
-    lowMode.enabled = false;
-    rerender(React.createElement(ImageEditPanel, { ...props, layout: { ...props.layout, order: [...props.layout.order] } }));
-    expect(lowMode.focused).toBe(false);
-    expect(screen.getByText('聚焦重绘')).toBeTruthy();
-    expect(screen.getByTestId('character-reference-manager')).toBeTruthy();
-  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
     const { onPromptChange } = renderControls(operation, false, false, true);
 
@@ -571,7 +540,7 @@ describe('ImageEditControls', () => {
 });
 
 it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('Agent 的 %s 缺少画布时回传拦截原因，不被当作主动取消', async operation => {
-  lowMode.enabled = false;
+
   const draft = createLabImageEditDraft(operation, 'synthetic', '', params);
   const generate = vi.fn();
   let request!: (draft: import('../../types').PromptAgentDraft) => Promise<boolean>;

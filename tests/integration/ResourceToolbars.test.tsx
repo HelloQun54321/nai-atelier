@@ -14,9 +14,7 @@ const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 
 
 // 目录与生成服务隔离，验证精简后的入口及真实筛选行为。
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
-vi.mock('../../services/lowConsumption', async importOriginal => ({
-  ...await importOriginal<typeof import('../../services/lowConsumption')>(), useLowConsumption: () => ({ enabled: false }),
-}));
+
 vi.mock('../../services/localHistory', () => ({ localHistory: {
   prepare: vi.fn(async () => 0), subscribe: () => () => {},
   getBrowseOrder: vi.fn(async () => ({ ids: [], models: [], sources: [] })),
