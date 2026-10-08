@@ -80,7 +80,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
 
   const selectModel = async (model: PromptAgentModel) => {
     setBusy(true);
-    try { const next = await promptAgentService.selectModel(model.provider, model.id); setConfig(next); await reload(); notify(`Agent 模型已切换为 ${model.name}`); closeView(); }
+    try { const next = await promptAgentService.selectModel(model.provider, model.id); setConfig(next); await reload(); notify(`助手模型已切换为 ${model.name}`); closeView(); }
     catch (error) { notify(error instanceof Error ? error.message : '切换模型失败', 'error'); }
     finally { setBusy(false); }
   };
@@ -122,7 +122,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   };
 
   const deleteCustom = async (provider: PromptAgentCustomProvider) => {
-    if (!provider.id || !await confirmAction({ title: `删除 ${provider.name}？`, message: '将删除这套接口配置和电脑中加密保存的密钥，不影响已有 Agent 对话。', confirmLabel: '删除接口', tone: 'danger' })) return;
+    if (!provider.id || !await confirmAction({ title: `删除 ${provider.name}？`, message: '将删除这套接口配置和电脑中加密保存的密钥，不影响已有助手对话。', confirmLabel: '删除接口', tone: 'danger' })) return;
     setBusy(true);
     try { await promptAgentService.deleteCustomProvider(provider.id); await reload(); notify('自定义接口已删除'); }
     catch (error) { notify(error instanceof Error ? error.message : '删除失败', 'error'); }
@@ -137,7 +137,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
       <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前 Agent 模型")}</div>
+          <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -206,13 +206,13 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         ref={subViewRef}
         role="dialog"
         aria-modal="true"
-        aria-label={view === 'model' ? t("选择 Agent 模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}
+        aria-label={view === 'model' ? t("选择助手模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}
         data-agent-surface
         className="agent-theme appearance-surface agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
-        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'model' ? t("选择 Agent 模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}</h2></div>
+        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'model' ? t("选择助手模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}</h2></div>
         {view === 'model' && <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl px-3 text-sm text-indigo-600 dark:text-indigo-300">{t("连接 API")}</button>}
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">

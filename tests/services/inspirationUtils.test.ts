@@ -29,7 +29,7 @@ describe('sourceLabel', () => {
     expect(sourceLabel('aitag')).toBe('AITag');
     expect(sourceLabel('danbooru')).toBe('Danbooru');
     expect(sourceLabel('upload')).toBe('手动上传');
-    expect(sourceLabel('agent')).toBe('项目 Agent');
+    expect(sourceLabel('agent')).toBe('创作助手');
     expect(sourceLabel('other')).toBe('其他来源');
   });
 

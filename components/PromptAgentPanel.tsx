@@ -377,7 +377,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       refreshSessions(),
       promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
       promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
-    ]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行'));
+    ]).catch(() => setSessionInitError('无法连接助手服务，请确认本地服务正在运行'));
   }, [props.open]);
 
   useEffect(() => {
@@ -760,7 +760,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));
       } else {
-        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : 'Agent 执行失败' }]);
+        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '助手执行失败' }]);
       }
     } finally {
       setRunning(false);
@@ -770,7 +770,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const reset = async () => {
     if (running || !activeSessionId || !activeSession) return;
-    if (!await confirmAction({ title: '清空当前 Agent 对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
+    if (!await confirmAction({ title: '清空当前助手对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
     try { await promptAgentService.resetSession(activeSessionId); setMessages([]); } catch (error) { reportControlError(error); }
   };
 
@@ -795,7 +795,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const deleteSession = async (session: PromptAgentSession) => {
     if (running || sessions.length <= 1) return;
-    const accepted = await confirmAction({ title: '删除这条 Agent 对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
+    const accepted = await confirmAction({ title: '删除这条助手对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
     if (!accepted) return;
     await promptAgentService.deleteSession(session.id);
     const remaining = sessions.filter(item => item.id !== session.id);
@@ -870,17 +870,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       ref={panelRef}
       role="dialog"
       aria-modal="true"
-      aria-label={t("Agent 控制面板")}
+      aria-label={t("助手控制面板")}
       data-agent-surface
       className="agent-theme appearance-panel agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950"
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
-    <button type="button" aria-label={t("调整 Agent 宽度")} onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
-    <button type="button" aria-label={t("调整 Agent 高度")} onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>
+    <button type="button" aria-label={t("调整助手宽度")} onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
+    <button type="button" aria-label={t("调整助手高度")} onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>
     {showSessions && <button type="button" aria-label={t("关闭会话列表")} onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="absolute inset-0 z-10 bg-black/35" />}
-    <aside aria-label={t("Agent 会话历史")} className={`appearance-panel ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
+    <aside aria-label={t("助手会话历史")} className={`appearance-panel ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
-        <b className="min-w-0 flex-1 truncate text-sm dark:text-white">{t("Agent 对话")}</b>
+        <b className="min-w-0 flex-1 truncate text-sm dark:text-white">{t("助手对话")}</b>
         <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label={t("新建对话")} title={t("新建对话")}><Plus className="h-5 w-5" /></button>
         <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("关闭会话列表")} title={t("关闭")}><X className="h-5 w-5" /></button>
       </div>
@@ -929,7 +929,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 title={t(executionStatus)}
               />
               <h2 className="truncate text-sm font-black text-gray-900 dark:text-white">
-                {activeSession?.title || t("项目 Agent")}
+                {activeSession?.title || t("创作助手")}
               </h2>
             </div>
             {running && <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500"><span className="truncate font-bold text-indigo-600 dark:text-indigo-400">{t(executionStatus)}</span></div>}
@@ -957,7 +957,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   }}
                   disabled={exportingLog || !activeSessionId}
                   className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
-                  aria-label={t("导出本会话 Agent 日志")}
+                  aria-label={t("导出本会话助手日志")}
                 >
                   <Download className="h-4 w-4 text-gray-400" />
                   <span>{exportingLog ? t("正在导出…") : t("导出会话日志")}</span>
@@ -987,7 +987,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
-          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">{t("告诉我你想在项目里做什么")}</h3>{!sessionReady && <p className="mt-1 text-sm text-gray-500">{sessionInitError || (modelsLoaded && !activeModel ? t("请接入模型") : t("正在加载对话…"))}</p>}{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">{t("重试")}</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">{t("告诉我你想在项目里做什么")}</h3>{!sessionReady && <p className="mt-1 text-sm text-gray-500">{sessionInitError || (modelsLoaded && !activeModel ? t("请接入模型") : t("正在加载对话…"))}</p>}{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接助手服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">{t("重试")}</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}

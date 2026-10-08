@@ -489,7 +489,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <InfoPopover label={t("Tag 权重说明")} preserveSelection content={t("先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前 Agent 模型，可能产生模型调用费用。")} />
+            <InfoPopover label={t("Tag 权重说明")} preserveSelection content={t("先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前助手模型，可能产生模型调用费用。")} />
             <InfoPopover label={t("Tag 完整对照")} preserveSelection content={translations.map(item => `${item.displayTag}\n${item.chinese || '词库暂无翻译'}`).join('\n\n')} className="mobile-touch whitespace-nowrap rounded-md px-1 text-micro text-gray-500 underline decoration-dotted underline-offset-2 dark:text-gray-400">{t("完整对照")}</InfoPopover>
             <div className="flex shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md border border-gray-300 dark:border-gray-600 [&>button]:shrink-0">
               <button
@@ -565,7 +565,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 onClick={() => void translateMissing()}
                 disabled={translationLoading}
                 className="ml-auto inline-flex min-h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
-                title={t("使用当前 Agent 模型翻译 {0} 个词库缺失项", [missingTags.length])}
+                title={t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length])}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
                 {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}

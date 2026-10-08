@@ -361,7 +361,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         </nav>
 
         <div className={`flex flex-none flex-col gap-2 border-t border-gray-200 py-2 dark:border-gray-800 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-          <button type="button" onClick={onOpenAgent} title={sidebarCollapsed ? t("项目 Agent") : undefined} aria-label={t("项目 Agent")} className={`flex h-11 w-full items-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/15 outline-none transition hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Sparkles className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 truncate text-sm font-bold">{t("项目 Agent")}</span>}</button>
+          <button type="button" onClick={onOpenAgent} title={sidebarCollapsed ? t("创作助手") : undefined} aria-label={t("创作助手")} className={`flex h-11 w-full items-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/15 outline-none transition hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Sparkles className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 truncate text-sm font-bold">{t("创作助手")}</span>}</button>
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/70 dark:border-gray-800/80 dark:bg-gray-900/80">
             <AnlasBalanceBar collapsed={sidebarCollapsed} budget={anlasBudget} subscription={novelaiSubscription} />
             <OpusUsageBar collapsed={sidebarCollapsed} />
@@ -379,8 +379,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         type="button"
         onPointerDown={startMobileAgentDrag}
         onClick={event => { if (event.detail === 0) onOpenAgent(); }}
-        aria-label={t("打开项目 Agent")}
-        title={t("项目 Agent（可拖动）")}
+        aria-label={t("打开创作助手")}
+        title={t("创作助手（可拖动）")}
         style={mobileAgentDrag
           ? { left: mobileAgentDrag.left, right: 'auto', top: `${clampMobileAgentY(mobileAgentDrag.y, Boolean(hideNav)) * 100}dvh` }
           : { left: mobileAgentDock.side === 'left' ? 0 : 'auto', right: mobileAgentDock.side === 'right' ? 0 : 'auto', top: `${clampMobileAgentY(mobileAgentDock.y, Boolean(hideNav)) * 100}dvh` }}

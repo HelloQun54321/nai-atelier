@@ -63,7 +63,7 @@ it('损坏的显示偏好退回折叠，保持开关可用', () => {
 it('权限读取后切档并保存，保存失败保留旧档位，任务期间禁用选择', async () => {
   vi.spyOn(promptAgentService, 'getConfig').mockResolvedValue({ permissionMode: 'standard' } as Awaited<ReturnType<typeof promptAgentService.getConfig>>);
   const save = vi.spyOn(promptAgentService, 'setPermissionMode').mockRejectedValue(new Error('合成保存失败'));
-  const view = render(<AgentPermissionSelect />); const trigger = screen.getByRole('button', { name: 'Agent 权限' }) as HTMLButtonElement;
+  const view = render(<AgentPermissionSelect />); const trigger = screen.getByRole('button', { name: '助手权限' }) as HTMLButtonElement;
   await waitFor(() => expect(trigger.disabled).toBe(false));
   fireEvent.click(trigger);
   expect(screen.getByRole('menuitemradio', { name: /^标准/ }).getAttribute('aria-checked')).toBe('true');
@@ -78,7 +78,7 @@ it('权限读取后切档并保存，保存失败保留旧档位，任务期间�
 it('权限菜单支持键盘与外部关闭，选择当前档位不重复写入', async () => {
   vi.spyOn(promptAgentService, 'getConfig').mockResolvedValue({ permissionMode: 'standard' } as Awaited<ReturnType<typeof promptAgentService.getConfig>>);
   const save = vi.spyOn(promptAgentService, 'setPermissionMode'); render(<AgentPermissionSelect />);
-  const trigger = screen.getByRole('button', { name: 'Agent 权限' }) as HTMLButtonElement;
+  const trigger = screen.getByRole('button', { name: '助手权限' }) as HTMLButtonElement;
   await waitFor(() => expect(trigger.disabled).toBe(false));
   fireEvent.keyDown(trigger, { key: 'ArrowDown' }); const menu = screen.getByRole('menu');
   expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: /^标准/ }));
@@ -91,7 +91,7 @@ it('权限菜单支持键盘与外部关闭，选择当前档位不重复写入'
 });
 it('旧后端不冒充标准档，重新聚焦后读取新服务恢复选择', async () => {
   const load = vi.spyOn(promptAgentService, 'getConfig').mockResolvedValue({} as Awaited<ReturnType<typeof promptAgentService.getConfig>>);
-  render(<AgentPermissionSelect />); const trigger = screen.getByRole('button', { name: 'Agent 权限' }) as HTMLButtonElement;
+  render(<AgentPermissionSelect />); const trigger = screen.getByRole('button', { name: '助手权限' }) as HTMLButtonElement;
   expect((await screen.findByRole('alert')).textContent).toContain('重启'); expect(trigger.disabled).toBe(true); expect(trigger.textContent).toBe('权限未就绪');
   load.mockResolvedValue({ permissionMode: 'full' } as Awaited<ReturnType<typeof promptAgentService.getConfig>>);
   fireEvent(window, new Event('focus')); await waitFor(() => expect(trigger.disabled).toBe(false)); expect(trigger.textContent).toBe('完全访问');

@@ -860,7 +860,7 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   fireEvent.change(textPrompt(), { target: { value: 'manual edit' } });
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent edit' }));
   expect(textPrompt().value).toBe('manual edit');
-  const dialog = screen.getByRole('dialog', { name: '查看 Agent 草稿差异' });
+  const dialog = screen.getByRole('dialog', { name: '查看助手草稿差异' });
   expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');

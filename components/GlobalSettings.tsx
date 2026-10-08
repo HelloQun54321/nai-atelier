@@ -74,7 +74,7 @@ const settingsSections: Array<{ id: SettingsSection; label: string; icon: React.
   { id: 'appearance', label: '外观与画廊', icon: Palette },
   { id: 'generation', label: '生图偏好与实验室', icon: Sparkles },
   { id: 'novelai', label: 'NovelAI 与 Anlas', icon: KeyRound },
-  { id: 'agent', label: '项目 Agent', icon: Bot },
+  { id: 'agent', label: '创作助手', icon: Bot },
   { id: 'privacy', label: '隐私与分享', icon: ShieldCheck },
   { id: 'maintenance', label: '数据与维护', icon: Database },
 ];

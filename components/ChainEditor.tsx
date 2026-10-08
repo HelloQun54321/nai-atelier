@@ -1870,7 +1870,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return handleGenerateDraft(draft);
         }
         if (!await confirmAction({
-            title: 'Agent 已准备好生图',
+            title: '助手已准备好生图',
             message: `${reason ? `${reason}\n\n` : ''}预计本次${draftGenerationCostLabel}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
             confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
         })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
@@ -2030,7 +2030,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 }}
                 onRequestGeneration={(draft, reason, onApproved) => requestAgentGeneration(draft, reason, onApproved)}
                 canUndo={Boolean(agentUndoSnapshot)}
-                onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次 Agent 修改'); } }}
+                onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
             />

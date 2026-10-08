@@ -521,7 +521,7 @@ test('prompt agent preserves abort and rejects retired steering and task queues'
       abort: () => calls.push(['abort']),
     },
   });
-  for (const action of ['steer', 'followUp', 'clear']) assert.throws(() => service.controlSession('session', action, 'next task'), /未知的 Agent 控制操作/);
+  for (const action of ['steer', 'followUp', 'clear']) assert.throws(() => service.controlSession('session', action, 'next task'), /未知的助手控制操作/);
   service.controlSession('session', 'abort');
   assert.deepEqual(calls, [['abort']]);
   assert.deepEqual(events, []);

@@ -66,7 +66,7 @@ Wait for the service to report that it is ready, then open [http://localhost:300
 
 Choose **Global settings → Appearance and gallery → Language** to switch between Simplified Chinese, Traditional Chinese, English, Japanese and Korean. The interface changes immediately and remembers your choice for that browser or device. Windows titles, startup screens, menus, the tray and the collector window follow it too; the installer offers the same five languages.
 
-The **Project Agent** follows the selected language from its next request, including progress and replies. Existing conversations, prompts, tags, custom asset names and source-site content keep their original text. An explicitly requested language for a creative output takes precedence over the conversation language.
+The **Creative Assistant** follows the selected language from its next request, including progress and replies. Existing conversations, prompts, tags, custom asset names and source-site content keep their original text. An explicitly requested language for a creative output takes precedence over the conversation language.
 
 UI translations ship with the app and require no online translation service. The Tag completion dictionary remains Chinese–English; changing the UI language does not translate the dictionary.
 
@@ -82,7 +82,7 @@ Touch controls support long-press to reveal image actions, full-image viewing, p
 
 ### Standalone Android
 
-The APK runs its own workspace on the phone, including all four generation modes, libraries, the Agent and optional local tagging. It uses the phone's network, storage and credentials. It does not automatically merge or synchronize with the computer workspace.
+The APK runs its own workspace on the phone, including all four generation modes, libraries, the assistant and optional local tagging. It uses the phone's network, storage and credentials. It does not automatically merge or synchronize with the computer workspace.
 
 Desktop clipboard monitoring, unrestricted computer folders, the local SillyTavern bridge and EXE updates are desktop features. Android exports through the system file picker. **Uninstalling Android deletes its private app data**, so export an encrypted backup first. Same-signature APKs with a higher build number can update in place; see the [Android guide](./docs/ANDROID_STANDALONE.md).
 
@@ -118,9 +118,9 @@ The lab offers recommended steps and an optional free-step lock. You retain cont
 - Tag completion supports Chinese/English lookup, weighted prompt groups and `Shift`-click fine adjustments. Dictionary and directory sizes depend on the installed dataset. Optional AI translation of missing tags uses your configured LLM service and its billing rules.
 - WD ViT V3, WD SwinV2 V3 and WD EVA02-Large V3 run local CPU tagging after an explicit model download. Manage them in **Global settings → Generation preferences and lab**. Tagging does not consume Anlas or require a cloud inference upload; speed and memory usage depend on the model and device.
 
-### Project Agent
+### Creative Assistant
 
-Open the Agent from the sidebar or floating button. It can inspect the current page, edit lab drafts, work with assets and use canvas tools for masks and selections. On the desktop it can access authorized local image folders and export files; Android file tools stay within the app's creative documents directory.
+Open the assistant from the sidebar or floating button. It can inspect the current page, edit lab drafts, work with assets and use canvas tools for masks and selections. On the desktop it can access authorized local image folders and export files; Android file tools stay within the app's creative documents directory.
 
 Permissions are **Read only**, **Standard** and **Full access**. Generation, deletion and clearing still require creator confirmation. Existing assets and later manual edits are respected. The model provider and credentials are configured separately from NovelAI, and provider usage can incur its own charges.
 
@@ -148,11 +148,11 @@ For desktop backup, use **Global settings → Data and maintenance → Important
 
 Do not change the D1 database name/ID, R2 bucket name or bindings in `wrangler.toml`: these identify the existing local store, and changing them can make the app load a new, empty database. Original assets and credentials belong to `local-data`; thumbnails and tagging models belong to regenerable caches. Copy the complete store when backing up manually.
 
-On Android, export an encrypted `.naiatelier` backup with a password of at least eight characters before uninstalling, resetting or changing devices. It includes originals, database, settings, keys and Agent/Pixiv credentials; caches, dictionary and models can be downloaded again. A lost backup password cannot be recovered. See the [Android guide](./docs/ANDROID_STANDALONE.md) for restore behavior and storage requirements.
+On Android, export an encrypted `.naiatelier` backup with a password of at least eight characters before uninstalling, resetting or changing devices. It includes originals, database, settings, keys and assistant/Pixiv credentials; caches, dictionary and models can be downloaded again. A lost backup password cannot be recovered. See the [Android guide](./docs/ANDROID_STANDALONE.md) for restore behavior and storage requirements.
 
 ## Updates
 
-- **Windows:** open **Global settings → Data and maintenance → App updates**, check and download, then select **Restart and install**. Only published releases appear. Startup checks quietly; ordinary exit does not install an update. Pre-release acceptance is enabled by default and can be disabled. Finish active generation, Agent, collection, backup and dictionary tasks before installation; keep a full backup for major changes.
+- **Windows:** open **Global settings → Data and maintenance → App updates**, check and download, then select **Restart and install**. Only published releases appear. Startup checks quietly; ordinary exit does not install an update. Pre-release acceptance is enabled by default and can be disabled. Finish active generation, assistant, collection, backup and dictionary tasks before installation; keep a full backup for major changes.
 - **Source:** finish tasks and stop the source service, then run the repository's `更新 NAI Atelier.bat` on Windows or `sh scripts/update-local.sh` on macOS/Linux. The updater follows published releases and stops for custom branches, forks or local modifications. ZIP downloads do not provide the Git update environment.
 - **Android:** install a compatible same-signature APK with a higher build number. Android build numbers progress separately from the desktop/source display version; a desktop release does not automatically rebuild or publish the APK.
 

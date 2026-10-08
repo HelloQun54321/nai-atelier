@@ -533,11 +533,11 @@
     "キャッシュヒット率：",
     "캐시 적중률:"
   ],
-  "查看 Agent 草稿差异": [
-    "查看 Agent 草稿差異",
-    "Review Agent draft changes",
-    "Agent の下書き差分を確認",
-    "Agent 초안 변경 사항 검토"
+  "查看助手草稿差异": [
+    "查看助手草稿差異",
+    "Review assistant draft changes",
+    "アシスタントの下書き差分を確認",
+    "도우미 초안 변경 사항 검토"
   ],
   "保留你的修改，选择需要应用的内容": [
     "保留你的修改，選擇需要應用的內容",
@@ -551,11 +551,11 @@
     "選択した項目を置き換え、未選択の項目は保持します。",
     "선택한 필드는 대체하고 선택하지 않은 필드는 유지합니다."
   ],
-  "Agent 建议": [
-    "Agent 建議",
-    "Agent suggestion",
-    "Agent の提案",
-    "Agent 제안"
+  "助手建议": [
+    "助手建議",
+    "Assistant suggestion",
+    "アシスタントの提案",
+    "도우미 제안"
   ],
   "当前内容": [
     "當前內容",
@@ -665,11 +665,11 @@
     "モデルサービスを設定 →",
     "모델 서비스 설정 →"
   ],
-  "Agent 权限": [
-    "Agent 權限",
-    "Agent permissions",
-    "Agent の権限",
-    "Agent 권한"
+  "助手权限": [
+    "助手權限",
+    "Assistant permissions",
+    "アシスタントの権限",
+    "도우미 권한"
   ],
   "任务执行期间不能切换权限": [
     "任務執行期間不能切換權限",
@@ -689,11 +689,11 @@
     "権限の準備未完了",
     "권한 준비 안 됨"
   ],
-  "选择 Agent 权限": [
-    "選擇 Agent 權限",
-    "Select Agent permissions",
-    "Agent の権限を選択",
-    "Agent 권한 선택"
+  "选择助手权限": [
+    "選擇助手權限",
+    "Select assistant permissions",
+    "アシスタントの権限を選択",
+    "도우미 권한 선택"
   ],
   "已选择": [
     "已選擇",
@@ -1163,11 +1163,11 @@
     "バックアップを選択",
     "백업 선택"
   ],
-  "备份包含原图、资料、设置、Key 与 Agent 会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。": [
-    "備份包含原圖、資料、設定、Key 與 Agent 會話，使用密碼加密；不包含可重新下載的詞庫、縮略圖和反推模型。",
-    "The password-encrypted backup includes originals, data, settings, keys and Agent sessions. Downloadable dictionaries, thumbnails and tagging models are excluded.",
-    "パスワードで暗号化したバックアップに原画像・資料・設定・Key・Agent セッションを含みます。再ダウンロード可能な辞書・サムネイル・タグ解析モデルは含みません。",
-    "백업은 비밀번호로 암호화되며 원본·자료·설정·Key·Agent 대화를 포함합니다. 다시 다운로드할 수 있는 사전·썸네일·태그 분석 모델은 제외됩니다."
+  "备份包含原图、资料、设置、Key 与助手会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。": [
+    "備份包含原圖、資料、設定、Key 與助手會話，使用密碼加密；不包含可重新下載的詞庫、縮略圖和反推模型。",
+    "The password-encrypted backup includes originals, data, settings, keys and assistant sessions. Downloadable dictionaries, thumbnails and tagging models are excluded.",
+    "パスワードで暗号化したバックアップに原画像・資料・設定・Key・アシスタントセッションを含みます。再ダウンロード可能な辞書・サムネイル・タグ解析モデルは含みません。",
+    "백업은 비밀번호로 암호화되며 원본·자료·설정·Key·도우미 대화를 포함합니다. 다시 다운로드할 수 있는 사전·썸네일·태그 분석 모델은 제외됩니다."
   ],
   "（无提示词）": [
     "（無提示詞）",
@@ -1859,17 +1859,17 @@
     "ドラッグで幅調整。ダブルクリックで初期値",
     "드래그하여 너비 조정. 더블 클릭하여 초기화"
   ],
-  "打开项目 Agent": [
-    "開啟項目 Agent",
-    "Open project Agent",
-    "プロジェクト Agent を開く",
-    "프로젝트 Agent 열기"
+  "打开创作助手": [
+    "開啟創作助手",
+    "Open Creative Assistant",
+    "創作アシスタントを開く",
+    "창작 도우미 열기"
   ],
-  "项目 Agent（可拖动）": [
-    "項目 Agent（可拖動）",
-    "Project Agent (draggable)",
-    "プロジェクト Agent（ドラッグ可能）",
-    "프로젝트 Agent(드래그 가능)"
+  "创作助手（可拖动）": [
+    "創作助手（可拖動）",
+    "Creative Assistant (draggable)",
+    "創作アシスタント（ドラッグ可能）",
+    "창작 도우미(드래그 가능)"
   ],
   "资源库菜单": [
     "資源庫菜單",
@@ -2951,23 +2951,23 @@
     "再回答。完了済みの資料変更は保持",
     "다시 답변. 완료된 자료 변경은 유지"
   ],
-  "Agent 控制面板": [
-    "Agent 控制面板",
-    "Agent control panel",
-    "Agent コントロールパネル",
-    "Agent 제어 패널"
+  "助手控制面板": [
+    "助手控制面板",
+    "Assistant control panel",
+    "アシスタントコントロールパネル",
+    "도우미 제어 패널"
   ],
-  "调整 Agent 宽度": [
-    "調整 Agent 寬度",
-    "Resize Agent width",
-    "Agent の幅を調整",
-    "Agent 너비 조정"
+  "调整助手宽度": [
+    "調整助手寬度",
+    "Resize assistant width",
+    "アシスタントの幅を調整",
+    "도우미 너비 조정"
   ],
-  "调整 Agent 高度": [
-    "調整 Agent 高度",
-    "Resize Agent height",
-    "Agent の高さを調整",
-    "Agent 높이 조정"
+  "调整助手高度": [
+    "調整助手高度",
+    "Resize assistant height",
+    "アシスタントの高さを調整",
+    "도우미 높이 조정"
   ],
   "关闭会话列表": [
     "關閉會話列表",
@@ -2975,17 +2975,17 @@
     "セッション一覧を閉じる",
     "대화 목록 닫기"
   ],
-  "Agent 会话历史": [
-    "Agent 會話歷史",
-    "Agent session history",
-    "Agent の会話履歴",
-    "Agent 대화 기록"
+  "助手会话历史": [
+    "助手會話歷史",
+    "Assistant session history",
+    "アシスタントの会話履歴",
+    "도우미 대화 기록"
   ],
-  "Agent 对话": [
-    "Agent 對話",
-    "Agent chat",
-    "Agent の会話",
-    "Agent 대화"
+  "助手对话": [
+    "助手對話",
+    "Assistant chat",
+    "アシスタントの会話",
+    "도우미 대화"
   ],
   "新建对话": [
     "新建對話",
@@ -3089,11 +3089,11 @@
     "パネルの幅",
     "패널 너비"
   ],
-  "导出本会话 Agent 日志": [
-    "導出本會話 Agent 日誌",
-    "Export Agent log for this session",
-    "この会話の Agent ログをエクスポート",
-    "이 대화의 Agent 로그 내보내기"
+  "导出本会话助手日志": [
+    "導出本會話助手日誌",
+    "Export assistant log for this session",
+    "この会話のアシスタントログをエクスポート",
+    "이 대화의 도우미 로그 내보내기"
   ],
   "正在导出…": [
     "正在導出…",
@@ -3311,11 +3311,11 @@
     "広い",
     "넓게"
   ],
-  "当前 Agent 模型": [
-    "當前 Agent 模型",
-    "Current Agent model",
-    "現在の Agent モデル",
-    "현재 Agent 모델"
+  "当前助手模型": [
+    "當前助手模型",
+    "Current assistant model",
+    "現在のアシスタントモデル",
+    "현재 도우미 모델"
   ],
   "更换模型": [
     "更換模型",
@@ -3365,11 +3365,11 @@
     "画像生成の連携",
     "이미지 생성 협업"
   ],
-  "选择 Agent 模型": [
-    "選擇 Agent 模型",
-    "Select Agent model",
-    "Agent のモデルを選択",
-    "Agent 모델 선택"
+  "选择助手模型": [
+    "選擇助手模型",
+    "Select assistant model",
+    "アシスタントのモデルを選択",
+    "도우미 모델 선택"
   ],
   "编辑 API 连接": [
     "編輯 API 連接",
@@ -3593,11 +3593,11 @@
     "Tag の重みについて",
     "Tag 가중치 안내"
   ],
-  "先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前 Agent 模型，可能产生模型调用费用。": [
-    "先點選 Tag 或整組，再調整權重。\n{ }：花括號增強；[ ]：方括號減弱；數值：1.1::tag::。\n“添加權重”將所選項轉換成當前類型；“移除權重”保留 Tag 並去掉權重。\n數值權重時 ? / + 每次調整 0.1，Shift + 點擊調整 0.01；括號權重調整括號層級。手機可直接輸入數值權重，回車或離開輸入框後應用於所選整組。\n“翻譯缺失項”使用當前 Agent 模型，可能產生模型調用費用。",
-    "Select a tag or group before adjusting its weight.\n{ }: curly braces strengthen; [ ]: square brackets weaken; numeric: 1.1::tag::.\n“Add weight” converts the selection to the current type. “Remove weight” keeps the tags and removes weights.\nFor numeric weights, − / + changes by 0.1, or 0.01 with Shift+click. Bracket weights change nesting depth. On mobile, enter a numeric weight and press Enter or leave the field to apply it to the whole selected group.\n“Translate missing entries” uses the current Agent model and may incur model fees.",
-    "まず Tag またはグループを選択してから重みを調整します。\n{ }：波括弧で強化、[ ]：角括弧で弱化、数値：1.1::tag::。\n「重みを追加」は選択項目を現在の形式に変換し、「重みを除去」は Tag を保持して重みだけを削除します。\n数値の − / + は0.1刻み、Shift＋クリックは0.01刻み。括弧は階層を調整します。モバイルでは数値を入力し、Enter またはフォーカスを外すと選択グループ全体に適用します。\n「未翻訳項目を翻訳」は現在の Agent モデルを使用し、料金が発生する場合があります。",
-    "먼저 Tag 또는 그룹을 선택한 뒤 가중치를 조정하세요.\n{ }: 중괄호로 강화, [ ]: 대괄호로 약화, 숫자: 1.1::tag::.\n“가중치 추가”는 선택 항목을 현재 유형으로 변환하며 “가중치 제거”는 Tag를 유지하고 가중치만 제거합니다.\n숫자 가중치의 − / +는 0.1씩, Shift+클릭은 0.01씩 조정합니다. 괄호는 중첩 수준을 조정합니다. 모바일에서는 숫자를 입력하고 Enter를 누르거나 입력란을 벗어나면 선택한 그룹 전체에 적용됩니다.\n“누락 항목 번역”은 현재 Agent 모델을 사용하며 모델 호출 비용이 발생할 수 있습니다."
+  "先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前助手模型，可能产生模型调用费用。": [
+    "先點選 Tag 或整組，再調整權重。\n{ }：花括號增強；[ ]：方括號減弱；數值：1.1::tag::。\n“添加權重”將所選項轉換成當前類型；“移除權重”保留 Tag 並去掉權重。\n數值權重時 ? / + 每次調整 0.1，Shift + 點擊調整 0.01；括號權重調整括號層級。手機可直接輸入數值權重，回車或離開輸入框後應用於所選整組。\n“翻譯缺失項”使用當前助手模型，可能產生模型調用費用。",
+    "Select a tag or group before adjusting its weight.\n{ }: curly braces strengthen; [ ]: square brackets weaken; numeric: 1.1::tag::.\n“Add weight” converts the selection to the current type. “Remove weight” keeps the tags and removes weights.\nFor numeric weights, − / + changes by 0.1, or 0.01 with Shift+click. Bracket weights change nesting depth. On mobile, enter a numeric weight and press Enter or leave the field to apply it to the whole selected group.\n“Translate missing entries” uses the current assistant model and may incur model fees.",
+    "まず Tag またはグループを選択してから重みを調整します。\n{ }：波括弧で強化、[ ]：角括弧で弱化、数値：1.1::tag::。\n「重みを追加」は選択項目を現在の形式に変換し、「重みを除去」は Tag を保持して重みだけを削除します。\n数値の − / + は0.1刻み、Shift＋クリックは0.01刻み。括弧は階層を調整します。モバイルでは数値を入力し、Enter またはフォーカスを外すと選択グループ全体に適用します。\n「未翻訳項目を翻訳」は現在のアシスタントモデルを使用し、料金が発生する場合があります。",
+    "먼저 Tag 또는 그룹을 선택한 뒤 가중치를 조정하세요.\n{ }: 중괄호로 강화, [ ]: 대괄호로 약화, 숫자: 1.1::tag::.\n“가중치 추가”는 선택 항목을 현재 유형으로 변환하며 “가중치 제거”는 Tag를 유지하고 가중치만 제거합니다.\n숫자 가중치의 − / +는 0.1씩, Shift+클릭은 0.01씩 조정합니다. 괄호는 중첩 수준을 조정합니다. 모바일에서는 숫자를 입력하고 Enter를 누르거나 입력란을 벗어나면 선택한 그룹 전체에 적용됩니다.\n“누락 항목 번역”은 현재 도우미 모델을 사용하며 모델 호출 비용이 발생할 수 있습니다."
   ],
   "Tag 完整对照": [
     "Tag 完整對照",
@@ -3683,11 +3683,11 @@
     "翻訳失敗の詳細",
     "번역 실패 상세"
   ],
-  "使用当前 Agent 模型翻译 {0} 个词库缺失项": [
-    "使用當前 Agent 模型翻譯 {0} 個詞庫缺失項",
-    "Translate {0} missing dictionary entries with the current Agent model",
-    "現在の Agent モデルで辞書にない {0} 項目を翻訳",
-    "현재 Agent 모델로 사전의 누락 항목 {0}개 번역"
+  "使用当前助手模型翻译 {0} 个词库缺失项": [
+    "使用當前助手模型翻譯 {0} 個詞庫缺失項",
+    "Translate {0} missing dictionary entries with the current assistant model",
+    "現在のアシスタントモデルで辞書にない {0} 項目を翻訳",
+    "현재 도우미 모델로 사전의 누락 항목 {0}개 번역"
   ],
   "翻译中": [
     "翻譯中",
@@ -8765,11 +8765,11 @@
     "NovelAI と Anlas",
     "NovelAI 및 Anlas"
   ],
-  "项目 Agent": [
-    "項目 Agent",
-    "Project Agent",
-    "プロジェクト Agent",
-    "프로젝트 Agent"
+  "创作助手": [
+    "創作助手",
+    "Creative Assistant",
+    "創作アシスタント",
+    "창작 도우미"
   ],
   "数据与维护": [
     "資料與維護",
@@ -12341,11 +12341,11 @@
     "{0}ローカル予算は 0 です。今回の生成は共有アカウントの {1} Anlas を消費し、手動で設定した予算を超えます。",
     "{0}로컬 예산이 0입니다. 이번 생성에는 공유 계정의 {1} Anlas가 필요하며 직접 설정한 예산을 초과합니다."
   ],
-  "Agent 已准备好生图": [
-    "Agent 已準備好生圖",
-    "Agent is ready to generate",
-    "Agent の生成準備ができました",
-    "Agent가 생성할 준비가 되었습니다"
+  "助手已准备好生图": [
+    "助手已準備好生圖",
+    "Assistant is ready to generate",
+    "アシスタントの生成準備ができました",
+    "도우미가 생성할 준비가 되었습니다"
   ],
   "{0}预计本次{1}。确认后才会提交给 NovelAI。{2}{3}": [
     "{0}預計本次{1}。確認後才會提交給 NovelAI。{2}{3}",
@@ -12407,11 +12407,11 @@
     "別の作品またはモードの下書きです。元の対象に戻って復元してください",
     "초안이 다른 작품 또는 모드에 속합니다. 원래 대상으로 돌아가 복원하세요"
   ],
-  "已撤销本次 Agent 修改": [
-    "已撤銷本次 Agent 修改",
-    "Undid this Agent change",
-    "今回の Agent の変更を取り消しました",
-    "이번 Agent 변경 사항을 되돌렸습니다"
+  "已撤销本次助手修改": [
+    "已撤銷本次助手修改",
+    "Undid this assistant change",
+    "今回のアシスタントの変更を取り消しました",
+    "이번 도우미 변경 사항을 되돌렸습니다"
   ],
   "已追加 {0} 个识别 Tag": [
     "已追加 {0} 個識別 Tag",
@@ -14897,11 +14897,11 @@
     " · 処理中",
     " · 처리 중"
   ],
-  "无法连接 Agent 服务，请确认本地服务正在运行": [
-    "無法連接 Agent 服務，請確認本地服務正在運行",
-    "Cannot connect to Agent. Confirm the local service is running.",
-    "Agent に接続できません。ローカルサービスが起動しているか確認してください",
-    "Agent에 연결할 수 없습니다. 로컬 서비스가 실행 중인지 확인하세요"
+  "无法连接助手服务，请确认本地服务正在运行": [
+    "無法連接助手服務，請確認本地服務正在運行",
+    "Cannot connect to assistant. Confirm the local service is running.",
+    "アシスタントに接続できません。ローカルサービスが起動しているか確認してください",
+    "도우미에 연결할 수 없습니다. 로컬 서비스가 실행 중인지 확인하세요"
   ],
   "\n▸ 开始：{0}": [
     "\n? 開始：{0}",
@@ -15179,17 +15179,17 @@
     "停止しました。",
     "중지되었습니다."
   ],
-  "Agent 执行失败": [
-    "Agent 執行失敗",
-    "Agent execution failed",
-    "Agent の実行に失敗",
-    "Agent 실행에 실패했습니다"
+  "助手执行失败": [
+    "助手執行失敗",
+    "Assistant execution failed",
+    "アシスタントの実行に失敗",
+    "도우미 실행에 실패했습니다"
   ],
-  "清空当前 Agent 对话？": [
-    "清空當前 Agent 對話？",
-    "Clear the current Agent conversation?",
-    "現在の Agent の会話を消去しますか？",
-    "현재 Agent 대화를 비울까요?"
+  "清空当前助手对话？": [
+    "清空當前助手對話？",
+    "Clear the current assistant conversation?",
+    "現在のアシスタントの会話を消去しますか？",
+    "현재 도우미 대화를 비울까요?"
   ],
   "只会删除这条对话的聊天记录，不影响项目资料、图片或设置。": [
     "只會刪除這條對話的聊天記錄，不影響項目資料、圖片或設定。",
@@ -15197,11 +15197,11 @@
     "この会話の履歴だけを削除します。プロジェクト資料・画像・設定には影響しません。",
     "이 대화의 채팅 기록만 삭제합니다. 프로젝트 자료, 이미지와 설정에는 영향이 없습니다."
   ],
-  "删除这条 Agent 对话？": [
-    "刪除這條 Agent 對話？",
-    "Delete this Agent conversation?",
-    "この Agent の会話を削除しますか？",
-    "이 Agent 대화를 삭제할까요?"
+  "删除这条助手对话？": [
+    "刪除這條助手對話？",
+    "Delete this assistant conversation?",
+    "このアシスタントの会話を削除しますか？",
+    "이 도우미 대화를 삭제할까요?"
   ],
   "“{0}”的消息记录会从电脑删除，项目资料不会受到影响。": [
     "“{0}”的消息記錄會從電腦刪除，項目資料不會受到影響。",
@@ -15269,11 +15269,11 @@
     "AI モデルサービスの読み取りに失敗",
     "AI 모델 서비스를 읽지 못했습니다"
   ],
-  "Agent 模型已切换为 {0}": [
-    "Agent 模型已切換為 {0}",
-    "Agent model changed to {0}",
-    "Agent モデルを {0} に切り替えました",
-    "Agent 모델을 {0}으로 전환했습니다"
+  "助手模型已切换为 {0}": [
+    "助手模型已切換為 {0}",
+    "Assistant model changed to {0}",
+    "アシスタントモデルを {0} に切り替えました",
+    "도우미 모델을 {0}으로 전환했습니다"
   ],
   "切换模型失败": [
     "切換模型失敗",
@@ -15329,11 +15329,11 @@
     "モデルの取得に失敗",
     "모델을 가져오지 못했습니다"
   ],
-  "将删除这套接口配置和电脑中加密保存的密钥，不影响已有 Agent 对话。": [
-    "將刪除這套接口配置和電腦中加密保存的金鑰，不影響已有 Agent 對話。",
-    "Delete this API configuration and its encrypted key on the computer. Existing Agent conversations are unaffected.",
-    "この API 設定と PC に暗号化保存した Key を削除します。既存の Agent の会話には影響しません。",
-    "이 API 설정과 PC에 암호화하여 저장한 Key를 삭제합니다. 기존 Agent 대화에는 영향이 없습니다."
+  "将删除这套接口配置和电脑中加密保存的密钥，不影响已有助手对话。": [
+    "將刪除這套接口配置和電腦中加密保存的金鑰，不影響已有助手對話。",
+    "Delete this API configuration and its encrypted key on the computer. Existing assistant conversations are unaffected.",
+    "この API 設定と PC に暗号化保存した Key を削除します。既存のアシスタントの会話には影響しません。",
+    "이 API 설정과 PC에 암호화하여 저장한 Key를 삭제합니다. 기존 도우미 대화에는 영향이 없습니다."
   ],
   "自定义接口已删除": [
     "自定義接口已刪除",
@@ -17321,23 +17321,23 @@
     "PNG のピクセルデータが宣言サイズを超えています",
     "PNG 픽셀 데이터가 선언된 크기를 초과합니다"
   ],
-  "电脑上仍运行旧版 Agent 服务。再次打开启动器会复用旧进程；请关闭原服务窗口，再启动工坊。": [
-    "電腦上仍運行舊版 Agent 服務。再次開啟啟動器會復用舊進程；請關閉原服務窗口，再啟動工坊。",
-    "An older Agent service is still running. Reopening the launcher reuses it. Close the old service window, then start the atelier.",
-    "古い Agent サービスが起動しています。ランチャーを再度開くと旧プロセスを再利用します。元のサービスウィンドウを閉じてから工房を起動してください。",
-    "이전 Agent 서비스가 계속 실행 중입니다. 실행기를 다시 열면 기존 프로세스를 재사용합니다. 이전 서비스 창을 닫은 후 공방을 시작하세요."
+  "电脑上仍运行旧版助手服务。再次打开启动器会复用旧进程；请关闭原服务窗口，再启动工坊。": [
+    "電腦上仍運行舊版助手服務。再次開啟啟動器會復用舊進程；請關閉原服務窗口，再啟動工坊。",
+    "An older assistant service is still running. Reopening the launcher reuses it. Close the old service window, then start the atelier.",
+    "古いアシスタントサービスが起動しています。ランチャーを再度開くと旧プロセスを再利用します。元のサービスウィンドウを閉じてから工房を起動してください。",
+    "이전 도우미 서비스가 계속 실행 중입니다. 실행기를 다시 열면 기존 프로세스를 재사용합니다. 이전 서비스 창을 닫은 후 공방을 시작하세요."
   ],
-  "Agent 服务 {0} 尚未加载最新代码。请关闭原服务窗口，再启动工坊；只刷新页面不会更新后端。": [
-    "Agent 服務 {0} 尚未載入最新代碼。請關閉原服務窗口，再啟動工坊；只重新整理頁面不會更新後端。",
-    "Agent service {0} has not loaded the latest code. Close its window and start the atelier; refreshing the page does not update the backend.",
-    "Agent サービス {0} が最新コードを読み込んでいません。元のサービスウィンドウを閉じて工房を起動してください。画面更新だけではバックエンドは更新されません。",
-    "Agent 서비스 {0}에 최신 코드가 적용되지 않았습니다. 이전 서비스 창을 닫고 공방을 시작하세요. 페이지 새로고침만으로 백엔드가 업데이트되지는 않습니다."
+  "助手服务 {0} 尚未加载最新代码。请关闭原服务窗口，再启动工坊；只刷新页面不会更新后端。": [
+    "助手服務 {0} 尚未載入最新代碼。請關閉原服務窗口，再啟動工坊；只重新整理頁面不會更新後端。",
+    "Assistant service {0} has not loaded the latest code. Close its window and start the atelier; refreshing the page does not update the backend.",
+    "アシスタントサービス {0} が最新コードを読み込んでいません。元のサービスウィンドウを閉じて工房を起動してください。画面更新だけではバックエンドは更新されません。",
+    "도우미 서비스 {0}에 최신 코드가 적용되지 않았습니다. 이전 서비스 창을 닫고 공방을 시작하세요. 페이지 새로고침만으로 백엔드가 업데이트되지는 않습니다."
   ],
-  "当前界面 {0} 与 Agent 服务 {1} 未同步，请刷新页面以加载最新界面。": [
-    "當前介面 {0} 與 Agent 服務 {1} 未同步，請重新整理頁面以載入最新介面。",
-    "UI {0} and Agent service {1} are out of sync. Refresh to load the latest UI.",
-    "画面 {0} と Agent サービス {1} が不一致です。更新して最新の画面を読み込んでください。",
-    "화면 {0}과 Agent 서비스 {1}이 일치하지 않습니다. 새로고침하여 최신 화면을 불러오세요."
+  "当前界面 {0} 与助手服务 {1} 未同步，请刷新页面以加载最新界面。": [
+    "當前介面 {0} 與助手服務 {1} 未同步，請重新整理頁面以載入最新介面。",
+    "UI {0} and assistant service {1} are out of sync. Refresh to load the latest UI.",
+    "画面 {0} とアシスタントサービス {1} が不一致です。更新して最新の画面を読み込んでください。",
+    "화면 {0}과 도우미 서비스 {1}이 일치하지 않습니다. 새로고침하여 최신 화면을 불러오세요."
   ],
   "本地图片引用无效": [
     "本地圖片引用無效",
@@ -17357,11 +17357,11 @@
     "設定の保存がタイムアウトしました。ローカルサービスの応答を確認して再試行してください",
     "설정 저장 시간이 초과되었습니다. 로컬 서비스가 응답하는지 확인한 후 다시 시도하세요"
   ],
-  "浏览器不支持 Agent 流式响应": [
-    "瀏覽器不支持 Agent 流式響應",
-    "Browser does not support Agent streaming",
-    "ブラウザーが Agent のストリーミング非対応です",
-    "브라우저에서 Agent 스트리밍 응답을 지원하지 않습니다"
+  "浏览器不支持助手流式响应": [
+    "瀏覽器不支持助手流式響應",
+    "Browser does not support assistant streaming",
+    "ブラウザーがアシスタントのストリーミング非対応です",
+    "브라우저에서 도우미 스트리밍 응답을 지원하지 않습니다"
   ],
   "[promptAgent] 跳过无法解析的事件行": [
     "[promptAgent] 跳過無法解析的事件行",
@@ -17369,11 +17369,11 @@
     "[promptAgent] 解析できないイベント行をスキップ",
     "[promptAgent] 읽을 수 없는 이벤트 줄 건너뜀"
   ],
-  "Agent 连接中断，尚未收到完成回执；可重新打开对话查看任务状态": [
-    "Agent 連接中斷，尚未收到完成回執；可重新開啟對話查看任務狀態",
-    "Agent disconnected before a completion receipt. Reopen the conversation to check task status.",
-    "完了の確認を受け取る前に Agent の接続が切れました。会話を開き直してタスク状態を確認できます",
-    "완료 결과를 받기 전에 Agent 연결이 끊겼습니다. 대화를 다시 열어 작업 상태를 확인할 수 있습니다"
+  "助手连接中断，尚未收到完成回执；可重新打开对话查看任务状态": [
+    "助手連接中斷，尚未收到完成回執；可重新開啟對話查看任務狀態",
+    "Assistant disconnected before a completion receipt. Reopen the conversation to check task status.",
+    "完了の確認を受け取る前にアシスタントの接続が切れました。会話を開き直してタスク状態を確認できます",
+    "완료 결과를 받기 전에 도우미 연결이 끊겼습니다. 대화를 다시 열어 작업 상태를 확인할 수 있습니다"
   ],
   "页面请求未取得执行回执": [
     "頁面請求未取得執行回執",

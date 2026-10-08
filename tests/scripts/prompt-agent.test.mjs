@@ -64,6 +64,7 @@ test('独立 Agent 规则文件实际进入固定系统前缀，包含交流语�
     const instructions = (await readFile(new URL('../../PROJECT_AGENT.md', import.meta.url), 'utf8')).trim();
     assert.ok(requests[0].messages[0].content.includes(instructions));
     assert.match(requests[0].messages[0].content, /所有面向用户的交流、思考／推理、进度、工具说明与最终回答使用简体中文/);
+    assert.match(requests[0].messages[0].content, /你是 NAI Atelier 的创作助手/);
     assert.match(requests[0].messages[0].content, /文件路径.*保留准确原文/);
     assert.match(requests[0].messages[0].content, /只有用户明确拒绝确认或主动停止才描述为用户取消/);
   } finally { globalThis.fetch = previous; }

@@ -258,7 +258,7 @@ describe('GlobalSettings', () => {
     expect(screen.getByRole('button', { name: /外观与画廊/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /生图偏好与实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /NovelAI 与 Anlas/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /项目 Agent/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /创作助手/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /隐私与分享/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /数据与维护/ })).toBeTruthy();
 

@@ -29,9 +29,9 @@ export interface PromptAgentConfig {
 }
 
 export const agentRuntimeWarning = (config: PromptAgentConfig, frontendVersion = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : ''): string => {
-  if (!config.backendVersion) return '电脑上仍运行旧版 Agent 服务。再次打开启动器会复用旧进程；请关闭原服务窗口，再启动工坊。';
-  if (config.restartRequired || config.sourceVersion && config.backendVersion !== config.sourceVersion) return `Agent 服务 ${config.backendVersion} 尚未加载最新代码。请关闭原服务窗口，再启动工坊；只刷新页面不会更新后端。`;
-  if (frontendVersion && config.backendVersion !== frontendVersion) return `当前界面 ${frontendVersion} 与 Agent 服务 ${config.backendVersion} 未同步，请刷新页面以加载最新界面。`;
+  if (!config.backendVersion) return '电脑上仍运行旧版助手服务。再次打开启动器会复用旧进程；请关闭原服务窗口，再启动工坊。';
+  if (config.restartRequired || config.sourceVersion && config.backendVersion !== config.sourceVersion) return `助手服务 ${config.backendVersion} 尚未加载最新代码。请关闭原服务窗口，再启动工坊；只刷新页面不会更新后端。`;
+  if (frontendVersion && config.backendVersion !== frontendVersion) return `当前界面 ${frontendVersion} 与助手服务 ${config.backendVersion} 未同步，请刷新页面以加载最新界面。`;
   return '';
 };
 
@@ -403,7 +403,7 @@ export const promptAgentService = {
       signal,
     });
     if (!response.ok) return readError(response);
-    if (!response.body) throw new Error('浏览器不支持 Agent 流式响应');
+    if (!response.body) throw new Error('浏览器不支持助手流式响应');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -414,7 +414,7 @@ export const promptAgentService = {
       try { event = JSON.parse(line); }
       catch { console.warn('[promptAgent] 跳过无法解析的事件行'); return; }
       onEvent(event);
-      if (event.type === 'error') throw new Error(event.error || 'Agent 执行失败');
+      if (event.type === 'error') throw new Error(event.error || '助手执行失败');
       if (event.type === 'done') terminal = true;
     };
     try {
@@ -429,7 +429,7 @@ export const promptAgentService = {
       if (done) break;
     }
     dispatch(buffer);
-    if (!terminal) throw new Error('Agent 连接中断，尚未收到完成回执；可重新打开对话查看任务状态');
+    if (!terminal) throw new Error('助手连接中断，尚未收到完成回执；可重新打开对话查看任务状态');
     } finally {
       await reader.cancel().catch(() => {});
       reader.releaseLock();

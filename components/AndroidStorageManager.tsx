@@ -35,7 +35,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
           setBackup(await native.backup({action:'inspect',password}) as typeof backup);
         })} className="mobile-touch flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600"><Upload className="h-4 w-4" />{t("选择备份")}</button>
       </div>
-      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("备份包含原图、资料、设置、Key 与 Agent 会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。")}</p>
+      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("备份包含原图、资料、设置、Key 与助手会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。")}</p>
       {busy&&<p role="status" className="mt-3 text-xs text-indigo-500">{busy}</p>}
       {backup&&<div className="mt-3 rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-800">
         <p>{t("{0} · {1} 个文件 · {2} MB", [new Date(backup.createdAt).toLocaleString(getLanguage()), backup.files, (backup.bytes/1048576).toFixed(1)])}</p>

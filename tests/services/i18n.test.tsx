@@ -9,11 +9,27 @@ import { TagChip } from '../../components/DetailPanel';
 import { readFileSync, readdirSync } from 'node:fs';
 import ts from 'typescript';
 import messages from '../../locales/messages.json';
+import { sourceLabel } from '../../services/inspirationUtils';
 
 beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreLanguage(); });
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it.each([
+    ['zh-CN', '创作助手', '打开创作助手', '助手权限'],
+    ['zh-TW', '創作助手', '開啟創作助手', '助手權限'],
+    ['en', 'Creative Assistant', 'Open Creative Assistant', 'Assistant permissions'],
+    ['ja', '創作アシスタント', '創作アシスタントを開く', 'アシスタントの権限'],
+    ['ko', '창작 도우미', '창작 도우미 열기', '도우미 권한'],
+  ])('%s 创作助手的入口、权限及旧 agent 来源统一命名', (language, name, open, permissions) => {
+    setLanguage(language as typeof LANGUAGES[number]['code']);
+    expect(t('创作助手')).toBe(name);
+    expect(t('打开创作助手')).toBe(open);
+    expect(t('创作助手（可拖动）')).toContain(name);
+    expect(t('助手权限')).toBe(permissions);
+    expect(t(sourceLabel('agent'))).toBe(name);
+  });
+
   it('旧用户默认简中，保存五种选择，非法存储回退且桌面初始语言可恢复', () => {
     expect(getLanguage()).toBe('zh-CN');
     for (const item of LANGUAGES) {
