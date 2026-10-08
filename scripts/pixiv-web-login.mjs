@@ -239,7 +239,9 @@ export const startPixivCallbackWatcher = ({
   }
   let child;
   try {
-    child = spawn('powershell.exe', [
+    // 安装版无需开发环境，不能依赖 PATH 恰好包含 WindowsPowerShell。
+    const powershell = process.env.SystemRoot ? resolve(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell.exe';
+    child = spawn(powershell, [
       '-NoLogo',
       '-NoProfile',
       '-NonInteractive',
@@ -342,24 +344,25 @@ export class PixivWebLoginOrchestrator {
       } catch {
         session.schemeHandler = false;
       }
+      session.automaticCallback = session.schemeHandler === true;
       try {
         session.watcher = await this.startWatcher({
           onCallback: callbackUrl => void this.complete(session.id, callbackUrl).catch(() => {}),
         });
         session.automaticCallback = true;
         session.watcher.once?.('exit', code => {
-          if (code === 0 || this.active !== session || !PIXIV_LOGIN_ACTIVE_STATES.has(session.state)) return;
+          if (code === 0 || session.schemeHandler || this.active !== session || !PIXIV_LOGIN_ACTIVE_STATES.has(session.state)) return;
           session.automaticCallback = false;
-          session.message = '自动识别暂时不可用；登录后请粘贴 Pixiv 白页地址';
+          session.message = '自动识别暂时不可用，请粘贴含 code 的官方 callback 地址';
         });
       } catch {
-        session.automaticCallback = false;
+        session.automaticCallback = session.schemeHandler === true;
       }
       await this.launchBrowser(buildPixivLoginUrl({ codeChallenge: pkce.challenge }));
       session.state = 'awaiting-user';
       session.message = session.automaticCallback
-        ? '请在默认浏览器继续使用账号，NAI Atelier 会自动识别登录结果'
-        : '登录完成后会出现 Pixiv 白页，请粘贴 callback 地址';
+        ? '请在默认浏览器完成登录，出现外部应用提示时允许打开，工坊会自动连接'
+        : '自动识别暂时不可用，请粘贴含 code 的官方 callback 地址';
       session.timer = setTimeout(() => void this.finish(session, 'timed-out', '登录超时，请重试'), Math.max(1, session.expiresAt - this.clock()));
       session.timer.unref?.();
     } catch (error) {
@@ -385,7 +388,14 @@ export class PixivWebLoginOrchestrator {
       throw pixivLoginError('登录会话不存在或已结束', 'PIXIV_LOGIN_NOT_FOUND', 404);
     }
     const parsed = parsePixivCallbackUrl(callbackUrl);
-    if (!parsed) throw pixivLoginError('请粘贴 Pixiv 登录完成后的完整地址', 'PIXIV_LOGIN_CALLBACK_INVALID', 400);
+    if (!parsed) {
+      let intermediate;
+      try { intermediate = new URL(String(callbackUrl || '').trim()); } catch { /* 无效地址沿用原错误 */ }
+      if (intermediate?.origin === 'https://accounts.pixiv.net' && !intermediate.username && !intermediate.password && intermediate.pathname === '/post-redirect') {
+        throw pixivLoginError('这个 Pixiv 中间页地址不含登录授权码，请允许浏览器打开外部应用并等待自动连接；仍未连接时请重新登录', 'PIXIV_LOGIN_CALLBACK_MISSING', 400);
+      }
+      throw pixivLoginError('请粘贴 Pixiv 登录完成后的完整地址', 'PIXIV_LOGIN_CALLBACK_INVALID', 400);
+    }
     if (session.settled) throw pixivLoginError('登录结果正在处理中', 'PIXIV_LOGIN_ACTIVE', 409);
     session.settled = true;
     this.clearTimer(session);

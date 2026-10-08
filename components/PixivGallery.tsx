@@ -709,14 +709,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             {activeLogin && (
               <div className="mt-3 space-y-2">
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-meta leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
-                  {activeLogin.automaticCallback ? (
-                    <>
-                      <div className="font-bold">请在默认浏览器点击“继续使用此账号”</div>
-                      <div className="mt-1">登录后等待自动连接</div>
-                    </>
-                  ) : (
-                    <div>{activeLogin.message || '当前无法自动识别登录结果'}</div>
-                  )}
+                  {activeLogin.message || '请在默认浏览器完成登录'}
                 </div>
                 {!activeLogin.automaticCallback && (
                   <form onSubmit={handleCompleteLogin} className="space-y-2">

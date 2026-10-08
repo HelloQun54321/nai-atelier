@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { spawn as nodeSpawn } from 'node:child_process';
+import { resolve } from 'node:path';
 import {
   buildPixivLoginUrl,
   buildTokenExchangeRequest,
@@ -14,6 +16,7 @@ import {
   startPixivCallbackWatcher,
 } from '../../scripts/pixiv-web-login.mjs';
 import { PIXIV_HASH_SECRET } from '../../scripts/pixiv-local.mjs';
+import { completePixivSchemeLogin } from '../../scripts/pixiv-scheme-handler.mjs';
 
 const CALLBACK = 'https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=test-code-123';
 const PIXIV_SCHEME_CALLBACK = 'pixiv://account/login?code=scheme-code-456&via=login';
@@ -143,6 +146,63 @@ test('无效回调不会结束会话，仍可重新粘贴正确地址', async ()
   assert.equal(completed.state, 'connected');
 });
 
+test('Pixiv 中间页不是可粘贴的回调地址，提示缺少授权码且保持会话可用', async () => {
+  const orchestrator = new PixivWebLoginOrchestrator({
+    ensureSchemeHandler: noSchemeHandler, launchBrowser: async () => {},
+    startWatcher: async () => { throw new Error('not available'); },
+    exchange: async () => ({ refreshToken: 'test-refresh-token', accessToken: 'test-access-token' }),
+  });
+  const started = await orchestrator.start();
+  try {
+    const intermediate = 'https://accounts.pixiv.net/post-redirect?return_to=' + encodeURIComponent('https://app-api.pixiv.net/web/v1/users/auth/pixiv/start?code_challenge=test-challenge&code_challenge_method=S256&client=pixiv-android');
+    assert.equal(parsePixivCallbackUrl(intermediate), null);
+    await assert.rejects(orchestrator.complete(started.id, intermediate), error => error.code === 'PIXIV_LOGIN_CALLBACK_MISSING' && /不含登录授权码/.test(error.message));
+    assert.equal(orchestrator.status(started.id).state, 'awaiting-user');
+    await assert.rejects(orchestrator.complete(started.id, 'https://evil.example/post-redirect'), error => error.code === 'PIXIV_LOGIN_CALLBACK_INVALID');
+    assert.equal((await orchestrator.complete(started.id, CALLBACK)).state, 'connected');
+  } finally { await orchestrator.shutdown(); }
+});
+
+test('协议处理器只在工坊确认已连接后打开本机完成页，地址不携带授权码', async () => {
+  const launched = [];
+  for (const [status, state] of [[200, 'connected'], [200, 'failed'], [400, 'connected']]) {
+    const completed = await completePixivSchemeLogin(PIXIV_SCHEME_CALLBACK, {
+      gatewayUrl: 'http://127.0.0.1:3010', launchBrowser: async url => { launched.push(url); },
+      fetch: async (url, options) => {
+        assert.equal(url, 'http://127.0.0.1:3010/api/pixiv/login/complete');
+        assert.equal(JSON.parse(options.body).callbackUrl, PIXIV_SCHEME_CALLBACK);
+        assert.equal(options.redirect, 'error');
+        return new Response(JSON.stringify({ state }), { status });
+      },
+    });
+    assert.equal(completed, status === 200 && state === 'connected');
+  }
+  assert.deepEqual(launched, ['http://127.0.0.1:3010/pixiv-login-complete']);
+  for (const gatewayUrl of ['https://evil.example/', 'http://user@127.0.0.1:3010/', 'http://127.0.0.1:3010/other']) {
+    assert.equal(await completePixivSchemeLogin(PIXIV_SCHEME_CALLBACK, { gatewayUrl, fetch: () => assert.fail('不应请求') }), false);
+  }
+  assert.equal(await completePixivSchemeLogin('pixiv://user@account/login?code=test', { fetch: () => assert.fail('不应请求') }), false);
+});
+
+test('协议回调已注册时，地址栏监听不可用或退出仍可自动连接', async () => {
+  for (const unavailable of [true, false]) {
+    const watcher = Object.assign(new EventEmitter(), makeWatcher());
+    const orchestrator = new PixivWebLoginOrchestrator({
+      ensureSchemeHandler: async () => true, launchBrowser: async () => {},
+      startWatcher: async () => { if (unavailable) throw new Error('not available'); return watcher; },
+      exchange: async () => ({ refreshToken: 'test-refresh-token', accessToken: 'test-access-token' }),
+    });
+    try {
+      const started = await orchestrator.start();
+      assert.equal(started.automaticCallback, true);
+      assert.match(started.message, /外部应用/);
+      watcher.emit('exit', 2);
+      assert.equal(orchestrator.status(started.id).automaticCallback, true);
+      assert.equal((await orchestrator.complete(undefined, PIXIV_SCHEME_CALLBACK)).state, 'connected');
+    } finally { await orchestrator.shutdown(); }
+  }
+});
+
 test('Windows 回调监听启动成功时公开状态标记为自动完成', async () => {
   const watcher = makeWatcher();
   const orchestrator = new PixivWebLoginOrchestrator({
@@ -204,10 +264,20 @@ test('Windows 地址栏监听只转交 Pixiv 官方 callback', async () => {
   });
   await watcherPromise;
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(calls[0].command, 'powershell.exe');
+  assert.match(calls[0].command, /(?:^|\\)powershell\.exe$/i);
   assert.ok(calls[0].args.includes('D:\\NPM\\scripts\\pixiv-edge-callback-watcher.ps1'));
   assert.equal(calls[0].options.windowsHide, true);
   assert.deepEqual(callbacks, [CALLBACK]);
+});
+
+test('安装版无开发环境的 PATH 也能启动系统 PowerShell 回调监听', { skip: process.platform !== 'win32' }, async () => {
+  const watcher = await startPixivCallbackWatcher({
+    spawn: (command, args, options) => nodeSpawn(command, [...args, '-SelfTest'], {
+      ...options, env: { ...process.env, PATH: resolve(process.env.SystemRoot, 'System32') },
+    }),
+  });
+  try { assert.ok(watcher.pid); }
+  finally { watcher.kill(); }
 });
 
 test('pixiv:// scheme 回调与 HTTPS callback 等效完成登录', async () => {

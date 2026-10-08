@@ -2861,6 +2861,7 @@ const serveDistFile = async (req, res, url) => {
   });
   // 网页登录编排器：成功令牌经 generation 防竞态写入并清 feed 缓存；gateway 退出也清理。
   const webLoginOrchestrator = pixivWebLogin || new PixivWebLoginOrchestrator({
+    fetch: pixivFetch || remoteFetch,
     getGeneration: () => pixivGallery.store.generation,
     onTokens: async (tokens, session) => {
       await pixivGallery.importWebLoginTokens(tokens, { expectedGeneration: session.expectedGeneration });
@@ -3446,6 +3447,13 @@ const serveDistFile = async (req, res, url) => {
       } catch (error) {
         return sendJson(res, Number(error.status) || 503, { error: error.message || 'Tag 词库服务不可用' });
       }
+    }
+    if (url.pathname === '/pixiv-login-complete') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: '仅支持 GET 请求' });
+      if (!isLoopbackIp(req.socket.remoteAddress) || !pixivGallery.status().connected) return sendJson(res, 404, { error: '登录完成页不可用' });
+      const page = await readFile(new URL('./pixiv-login-complete.html', import.meta.url));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" });
+      return res.end(page);
     }
     if (url.pathname.startsWith('/api/pixiv/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });

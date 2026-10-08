@@ -1,45 +1,30 @@
 #!/usr/bin/env node
-/**
- * pixiv:// URL 协议处理器（Windows 注册表协议回调）。
- *
- * Pixiv 登录成功后通过 pixiv://account/login?code=… 回调（custom scheme 流程）。
- * 本脚本由注册表命令启动（node pixiv-scheme-handler.mjs "%1"），
- * 解析 code 后立即转交本机 NAI Atelier 网关 /api/pixiv/login/complete 完成登录。
- *
- * 安全与可靠性约定：
- * - 只接受 pixiv://account/login 官方来源，只转发 code，不落盘、不打印任何内容。
- * - 任何失败都静默退出（code 极短命，重试无意义；登录页可重新发起）。
- * - 网关不可达时静默失败，用户可回退到地址栏/手动粘贴流程。
- */
-import { request } from 'node:http';
+/** 官方协议回调只转交本机工坊；确认安全保存成功后再打开完成页，不落盘或打印授权码。 */
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { launchInDefaultBrowser, parsePixivCallbackUrl } from './pixiv-web-login.mjs';
 
-const GATEWAY_BASE = process.argv[3] || process.env.NAI_GATEWAY_URL || 'http://127.0.0.1:3000';
-// 协议处理器是浏览器新启动的进程，不继承桌面工坊的端口环境。
-try {
-  const target = new URL(GATEWAY_BASE);
-  if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) process.exit(0);
-} catch { process.exit(0); }
+export async function completePixivSchemeLogin(callbackUrl, {
+  gatewayUrl = process.env.NAI_GATEWAY_URL || 'http://127.0.0.1:3000',
+  fetch: requestFetch = globalThis.fetch,
+  launchBrowser = process.env.NAI_NO_BROWSER === '1' ? async () => {} : launchInDefaultBrowser,
+} = {}) {
+  let target;
+  try { target = new URL(gatewayUrl); } catch { return false; }
+  if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) return false;
+  const raw = String(callbackUrl || '').trim();
+  if (!raw.startsWith('pixiv:') || !parsePixivCallbackUrl(raw)) return false;
+  const response = await requestFetch(`${target.origin}/api/pixiv/login/complete`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ callbackUrl: raw }),
+    signal: AbortSignal.timeout(15_000), redirect: 'error',
+  });
+  if (!response.ok || (await response.json()).state !== 'connected') return false;
+  await launchBrowser(`${target.origin}/pixiv-login-complete`);
+  return true;
+}
 
-const raw = String(process.argv[2] || '').trim();
-let url;
-try { url = new URL(raw); } catch { process.exit(0); }
-if (url.protocol !== 'pixiv:' || url.host !== 'account' || url.pathname !== '/login') process.exit(0);
-const code = String(url.searchParams.get('code') || '');
-if (!code || code.length > 1024) process.exit(0);
-
-const payload = JSON.stringify({ callbackUrl: raw });
-const req = request(`${GATEWAY_BASE}/api/pixiv/login/complete`, {
-  method: 'POST',
-  headers: {
-    'content-type': 'application/json',
-    'content-length': Buffer.byteLength(payload),
-  },
-  timeout: 15_000,
-});
-req.on('response', res => {
-  res.resume();
-  res.on('end', () => process.exit(0));
-});
-req.on('error', () => process.exit(0));
-req.on('timeout', () => req.destroy());
-req.end(payload);
+// 浏览器启动的新进程不继承桌面工坊端口，注册命令通过第三个参数传入。
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await completePixivSchemeLogin(process.argv[2], { gatewayUrl: process.argv[3] || process.env.NAI_GATEWAY_URL || 'http://127.0.0.1:3000' }).catch(() => {});
+}

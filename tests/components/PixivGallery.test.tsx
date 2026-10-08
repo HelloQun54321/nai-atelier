@@ -12,7 +12,7 @@ import { db } from '../../services/dbService';
 import { api } from '../../services/api';
 import { galleryHistoryService } from '../../services/galleryHistoryService';
 import type { User } from '../../types';
-vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
+vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), startPixivLogin: vi.fn(), getPixivLoginStatus: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
 vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
@@ -32,6 +32,17 @@ beforeEach(() => {
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it.each([false, true])('自动回调=%s：登录提示显示真实后台阶段，不覆盖为继续账号教程', async automaticCallback => {
+  vi.mocked(pixivService.status).mockResolvedValue({ connected: false });
+  const session = { id: 'test-login-session', state: 'exchanging' as const, automaticCallback, expiresAt: Date.now() + 300000, message: '正在完成连接…' };
+  vi.mocked(pixivService.startPixivLogin).mockResolvedValue(session);
+  vi.mocked(pixivService.getPixivLoginStatus).mockResolvedValue(session);
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: '在默认浏览器登录' }));
+  expect(await screen.findByText('正在完成连接…')).toBeTruthy();
+  expect(screen.queryByText(/继续使用此账号/)).toBeNull();
+  expect(Boolean(screen.queryByRole('textbox', { name: 'Pixiv 登录完成地址' }))).toBe(!automaticCallback);
+});
 it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情分享跟随当前页', async history => {
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([{ id: 'pixiv:100', source: 'pixiv', sourceId: '100', title: illust.title, artistName: illust.user.name, previewUrl: '', sampleUrl: illust.metaPages[0], tags: [], viewedAt: 1 }]);
   const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);

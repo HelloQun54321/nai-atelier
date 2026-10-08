@@ -2,6 +2,9 @@ import '../support/node-environment.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
@@ -19,6 +22,7 @@ import {
   sanitizePixivNextUrl,
 } from '../../scripts/pixiv-local.mjs';
 import { createMediaGateway } from '../../scripts/media-gateway.mjs';
+import { PixivWebLoginOrchestrator } from '../../scripts/pixiv-web-login.mjs';
 
 const jsonResponse = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
@@ -763,6 +767,54 @@ test('Pixiv request blocks disallowed targets and reports missing configuration'
 });
 
 // ---------- 网关 HTTP 表面 ----------
+
+test('安装版协议处理器转交实际端口，网页登录换令牌复用图库网络与安全保存', async t => {
+  const tokenDir = await makeTokenDir();
+  const originalStart = PixivWebLoginOrchestrator.prototype.start;
+  t.mock.method(PixivWebLoginOrchestrator.prototype, 'start', function () {
+    // 不打开真实浏览器、不写真实协议注册表，保留实际登录编排与 HTTP 回调。
+    this.ensureSchemeHandler = async () => true;
+    this.launchBrowser = async () => {};
+    this.startWatcher = async () => { throw new Error('synthetic watcher unavailable'); };
+    return originalStart.call(this);
+  });
+  const originalFetch = globalThis.fetch;
+  t.mock.method(globalThis, 'fetch', (url, options) => {
+    if (String(url) === PIXIV_OAUTH_TOKEN_URL) throw new Error('不允许绕开图库网络直连认证服务');
+    return originalFetch(url, options);
+  });
+  const exchanges = [];
+  const server = await createMediaGateway({ port: 0, workerPort: 39999, pixivTokenDir: tokenDir, pixivFetch: async (url, options) => {
+    assert.equal(String(url), PIXIV_OAUTH_TOKEN_URL);
+    exchanges.push(new URLSearchParams(options.body));
+    return jsonResponse({ access_token: 'test-web-access-token', refresh_token: 'test-web-refresh-token', expires_in: 3600 });
+  } });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    assert.equal((await fetch(`${base}/pixiv-login-complete`)).status, 404);
+    const started = await (await fetch(`${base}/api/pixiv/login/start`, { method: 'POST' })).json();
+    const callback = 'pixiv://account/login?code=test-packaged-code&via=login';
+    await promisify(execFile)(process.execPath, [fileURLToPath(new URL('../../scripts/pixiv-scheme-handler.mjs', import.meta.url)), callback, base], { windowsHide: true, timeout: 5000 });
+    const completed = await (await fetch(`${base}/api/pixiv/login/status?id=${started.id}`)).json();
+    assert.equal(completed.state, 'connected');
+    assert.equal(exchanges.length, 1);
+    assert.equal(exchanges[0].get('code'), 'test-packaged-code');
+    assert.match(exchanges[0].get('code_verifier'), /^[A-Za-z0-9_-]{43}$/);
+    assert.equal((await (await fetch(`${base}/api/pixiv/status`)).json()).connected, true);
+    const resultPage = await fetch(`${base}/pixiv-login-complete`);
+    assert.equal(resultPage.status, 200);
+    assert.match(resultPage.headers.get('content-type'), /text\/html/);
+    assert.equal(resultPage.headers.get('cache-control'), 'no-store');
+    const html = await resultPage.text();
+    assert.match(html, /Pixiv 已连接/);
+    assert.doesNotMatch(html, /test-packaged-code|test-web-refresh-token|test-web-access-token/);
+    assert.doesNotMatch(JSON.stringify(completed), /test-packaged-code|test-web-refresh-token|test-web-access-token/);
+    assert.doesNotMatch(await readFile(join(tokenDir, 'pixiv-tokens.json'), 'utf8'), /test-web-refresh-token|test-web-access-token/);
+  } finally {
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections?.(); });
+    await rm(tokenDir, { recursive: true, force: true });
+  }
+});
 
 test('media gateway Pixiv endpoints enforce allowlist, cursor and token privacy', async () => {
   const tokenDir = await makeTokenDir();
