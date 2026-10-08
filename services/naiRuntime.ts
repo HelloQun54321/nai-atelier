@@ -219,6 +219,7 @@ type RuntimeSubscriber = { poll: () => void };
 const runtimeSubscribers = new Set<RuntimeSubscriber>();
 let runtimeDriverAttached = false;
 let runtimePollTimer: number | null = null;
+let runtimePollInterval = 0;
 
 const runtimePollAll = () => {
   runtimeSubscribers.forEach(subscriber => subscriber.poll());
@@ -237,8 +238,13 @@ const onRuntimeVisibilityChange = () => {
 };
 
 const startRuntimePollTimer = () => {
-  if (runtimePollTimer !== null) return;
-  runtimePollTimer = window.setInterval(runtimePollAll, NAI_RUNTIME_REFRESH_INTERVAL);
+  const interval = cachedConfig?.health?.reason === 'pending' ? 2000 : NAI_RUNTIME_REFRESH_INTERVAL;
+  if (runtimePollTimer !== null) {
+    if (runtimePollInterval === interval) return;
+    window.clearInterval(runtimePollTimer);
+  }
+  runtimePollInterval = interval;
+  runtimePollTimer = window.setInterval(runtimePollAll, interval);
 };
 
 const startRuntimeDriver = () => {
@@ -308,6 +314,7 @@ const loadNaiRuntimeConfig = () => {
   pendingConfig = request;
   request.then(() => {
     if (pendingConfig === request) pendingConfig = null;
+    if (runtimeDriverAttached && document.visibilityState !== 'hidden') startRuntimePollTimer();
   });
   return request;
 };
@@ -369,8 +376,8 @@ export const useNaiRuntime = () => {
     };
     runtimeSubscribers.add(subscriber);
     startRuntimeDriver();
-    // 实例挂载时先取一次缓存（未取过则触发一次拉取）
-    void getNaiRuntimeConfig().then(next => {
+    // 挂载时复用进行中的请求，否则读缓存，避免新视图停在旧的同步状态。
+    void (pendingConfig || getNaiRuntimeConfig()).then(next => {
       if (active) setConfig(next);
     });
     return () => {

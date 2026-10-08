@@ -1335,6 +1335,37 @@ test('启动读取到旧版本写入的历史失败记录时降级为 pending', 
   }
 });
 
+test('启动首次／失效／过期规则立即后台同步，近期完整快照继续让页面优先加载', async t => {
+  const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
+  const backup = await readFile(path, 'utf8');
+  const timers = [];
+  t.mock.method(globalThis, 'setTimeout', (callback, delay) => { timers.push({ callback, delay }); return { unref() {} }; });
+  const valid = { runtime: DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true, missed: [] } };
+  const cases = [
+    [{}, 0],
+    [{ ...valid, runtime: { ...valid.runtime, billing: { ...valid.runtime.billing, modelStepMultipliers: undefined } } }, 0],
+    [{ ...valid, health: { ok: false, reason: 'fetch' } }, 0],
+    [{ ...valid, health: { ok: true, missed: ['costCoefficients'] } }, 0],
+    [{ ...valid, syncedAt: Date.now() - 49 * 60 * 60 * 1000 }, 0],
+    [valid, 30_000],
+  ];
+  try {
+    for (const [index, [snapshot, delay]] of cases.entries()) {
+      await writeFile(path, JSON.stringify(snapshot));
+      const fresh = await import(`../../scripts/media-gateway.mjs?startup-sync-latency-${index}`);
+      let requests = 0;
+      await fresh.initNaiRuntimeSync(async () => { requests++; return new Response('<html></html>'); });
+      assert.equal(timers.at(-1).delay, delay);
+      assert.equal(requests, 0, '启动不等待官方页面抓取');
+      if (!delay) {
+        assert.equal(fresh.getNaiRuntime().health.reason, 'pending');
+        assert.equal(fresh.getNaiRuntime().health.ok, false);
+        for (const field of snapshot.health?.missed || []) assert.ok(fresh.getNaiRuntime().health.missed.includes(field));
+      }
+    }
+  } finally { await writeFile(path, backup); }
+});
+
 test('旧快照错误的参考免费资格不能继续作为已同步规则，启动后等待重新提取', async () => {
   const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
   const backup = await readFile(path, 'utf8');

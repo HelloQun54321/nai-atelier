@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.54.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.54.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -288,7 +288,7 @@ AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其�
 
 ### 🔋 Opus 电池限额自动换算（告别心算）
 
-- **全自动静默轮询**：后台自动同步官方 `/user/subscription` 订阅状态与 Opus 电池限额；
+- **全自动静默轮询**：后台自动同步官方 `/user/subscription` 订阅状态与 Opus 电池限额；启动遇到首次、失效或过期的官方计费规则时立即后台核对，等待期间短间隔读取本地结果，完成后恢复常规轮询，避免规则已就绪但圆环仍等待下一分钟刷新；
 - **动态换算剩余可搓张数**：按当前同步的官方系数显示百分比与估算可用张数，换算随规则更新，不将固定示例当成永久额度；
 - **三色警报感知**：充裕时翡翠绿，低于 20% 琥珀黄预警，透支标红示警。
 

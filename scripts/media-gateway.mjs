@@ -1096,7 +1096,7 @@ const NAI_RUNTIME_SYNC_INTERVAL = 24 * 60 * 60 * 1000;
 const NAI_RUNTIME_RETRY_INTERVAL = 5 * 60 * 1000;
 const NAI_RUNTIME_REQUEST_RETRY_DELAYS_MS = [250, 1000];
 const NAI_RUNTIME_REQUEST_TIMEOUT_MS = 30_000;
-/** 首次同步在网关就绪后延迟触发，把启动带宽留给 D1/R2 恢复与页面加载。 */
+/** 已有近期完整快照时让启动带宽优先服务页面；待核对规则立即后台同步。 */
 const NAI_RUNTIME_SYNC_STARTUP_DELAY_MS = 30_000;
 let naiRuntimeState = { ...DEFAULT_NAI_RUNTIME, syncedAt: 0, health: { ok: false, reason: 'pending' } };
 let naiRuntimeSyncPromise = null;
@@ -1558,8 +1558,11 @@ export const initNaiRuntimeSync = async (requestRemote = fetch) => {
   } catch {
     // 无历史同步时直接使用内置默认值。
   }
-  // 启动后延迟同步，失败时改为短间隔重试，完整成功后再恢复每日同步。
-  scheduleNaiRuntimeSync(NAI_RUNTIME_SYNC_STARTUP_DELAY_MS, requestRemote);
+  const hasRecentSnapshot = naiRuntimeState.health?.ok && !naiRuntimeState.health.missed?.length
+    && naiRuntimeState.syncedAt > 0 && Date.now() - naiRuntimeState.syncedAt <= 2 * NAI_RUNTIME_SYNC_INTERVAL;
+  if (!hasRecentSnapshot) naiRuntimeState = { ...naiRuntimeState, health: { ...naiRuntimeState.health, ok: false, reason: 'pending' } };
+  // 首次／旧规则／过期快照不能额外等 30 秒；仍不阻塞网关和 Key 就绪。
+  scheduleNaiRuntimeSync(hasRecentSnapshot ? NAI_RUNTIME_SYNC_STARTUP_DELAY_MS : 0, requestRemote);
 };
 
 export const generateWithVibeCacheRetry = async (

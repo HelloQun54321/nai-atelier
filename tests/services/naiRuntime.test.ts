@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_NAI_RUNTIME, isNaiRuntimeSyncUnhealthy, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig, useNaiRuntime } from '../../services/naiRuntime';
 
@@ -120,6 +120,74 @@ describe('useNaiRuntime 共享订阅', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('启动待同步时两秒内共享回读，完成后恢复分钟轮询并保留真实健康状态', async () => {
+    const pending = { ...payload, syncedAt: 0, health: { ok: false, reason: 'pending' as const } };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue({ ok: true, json: async () => pending } as Response);
+    const completed = { ...payload, syncedAt: Date.now() };
+    vi.useFakeTimers();
+    const first = renderHook(() => useNaiRuntime());
+    const second = renderHook(() => useNaiRuntime());
+    try {
+      await act(async () => { window.dispatchEvent(new CustomEvent(NAI_RUNTIME_REFRESH_EVENT)); });
+      expect(isNaiRuntimeSyncUnhealthy(first.result.current)).toBe(true);
+      fetchMock.mockClear();
+      fetchMock.mockResolvedValue({ ok: true, json: async () => completed } as Response);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+      expect(fetchMock).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(first.result.current).toEqual(completed);
+      expect(second.result.current).toEqual(completed);
+      expect(isNaiRuntimeSyncUnhealthy(first.result.current)).toBe(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(59_999); });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally { first.unmount(); second.unmount(); vi.useRealTimers(); }
+  });
+
+  it('启动快速回读在后台暂停，回到前台立即更新，卸载不残留轮询', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ...payload, health: { ok: false, reason: 'pending' } }) } as Response);
+    await refreshNaiRuntimeConfig();
+    fetchMock.mockClear();
+    vi.useFakeTimers();
+    const hook = renderHook(() => useNaiRuntime());
+    try {
+      await act(async () => {});
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(fetchMock).not.toHaveBeenCalled();
+      fetchMock.mockResolvedValue({ ok: true, json: async () => payload } as Response);
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(hook.result.current.health?.ok).toBe(true);
+      hook.unmount();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { hook.unmount(); vi.useRealTimers(); }
+  });
+
+  it('同步期间新挂载的视图共享进行中的请求，不停留在旧快照等下一分钟', async () => {
+    const fetchMock = vi.mocked(fetch);
+    let resolve!: (response: Response) => void;
+    fetchMock.mockReturnValue(new Promise<Response>(done => { resolve = done; }));
+    const first = renderHook(() => useNaiRuntime());
+    await waitFor(() => expect(first.result.current.syncedAt).toBe(1000));
+    act(() => window.dispatchEvent(new CustomEvent(NAI_RUNTIME_REFRESH_EVENT)));
+    const second = renderHook(() => useNaiRuntime());
+    try {
+      const completed = { ...payload, syncedAt: Date.now() };
+      await act(async () => { resolve({ ok: true, json: async () => completed } as Response); });
+      expect(first.result.current).toEqual(completed);
+      expect(second.result.current).toEqual(completed);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { first.unmount(); second.unmount(); }
   });
 
   it('多个实例挂载共享缓存：首个拉取后其余实例直接读缓存', async () => {
