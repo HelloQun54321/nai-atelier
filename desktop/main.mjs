@@ -8,6 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace } from '../scripts/desktop-runtime.mjs';
 import { createDesktopUpdater } from './app-updater.mjs';
+import { LANGUAGES, normalizeLanguage, translate } from '../locales/index.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const startupFile = join(here, 'startup.html');
@@ -19,13 +20,18 @@ app.setAppUserModelId('com.naiatelier.desktop');
 // 下载由用户触发；关闭窗口仍进托盘，安装必须先结束本应用后台。
 let window, tray, backend, log, workspace, appUrl = '', quitting = false, starting = false;
 let updates;
+let language = 'zh-CN';
+let languageWrite = Promise.resolve();
+const languageFile = join(dataRoot, 'language-preferences.json');
+const t = (message, values) => translate(language, message, values);
 let status = { phase: 'starting', message: '正在打开工坊…' };
 const logFile = join(dataRoot, 'logs', 'desktop.log');
 const selfTestFile = process.env.NAI_DESKTOP_SELF_TEST;
+const localizedStatus = () => ({ ...status, message: t(status.message), language, labels: { retry: t('重新尝试'), logs: t('查看日志'), quit: t('退出') } });
 
 const setStatus = (phase, message) => {
   status = { phase, message };
-  if (window && !window.isDestroyed()) window.webContents.send('atelier-status', status);
+  if (window && !window.isDestroyed()) window.webContents.send('atelier-status', localizedStatus());
 };
 const showWindow = () => { window?.show(); window?.focus(); };
 
@@ -34,7 +40,7 @@ function createWindow() {
     width: 1400, height: 920, minWidth: 360, minHeight: 540,
     title: 'NAI Atelier', icon: join(runtimeRoot, 'public', 'nai-atelier.ico'),
     autoHideMenuBar: true,
-    webPreferences: { preload: join(here, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true },
+    webPreferences: { preload: join(here, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, additionalArguments: [`--atelier-language=${language}`] },
     show: !selfTestFile,
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -47,24 +53,32 @@ function createWindow() {
     if (isExternalWebLink(url)) void shell.openExternal(url);
   });
   window.webContents.on('did-finish-load', () => {
-    window.webContents.send('atelier-status', status);
+    window.webContents.send('atelier-status', localizedStatus());
     if (updates) window.webContents.send('atelier-update-status', updates.status());
   });
   window.on('close', event => {
-    if (!quitting && !selfTestFile) { event.preventDefault(); window.hide(); tray?.setToolTip('NAI Atelier · 后台运行'); }
+    if (!quitting && !selfTestFile) { event.preventDefault(); window.hide(); tray?.setToolTip(t('NAI Atelier · 后台运行')); }
   });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: '工坊', submenu: [{ label: '打开数据目录', click: () => void shell.openPath(workspace || dataRoot) }, { label: '查看启动日志', click: () => void shell.openPath(logFile) }, { type: 'separator' }, { label: '退出工坊', accelerator: 'Alt+F4', click: () => app.quit() }] },
-    { label: '编辑', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
-    { label: '视图', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }] },
-  ]));
   if (!selfTestFile) {
     tray = new Tray(join(runtimeRoot, 'public', 'nai-atelier.ico'));
     tray.setToolTip('NAI Atelier');
-    tray.setContextMenu(Menu.buildFromTemplate([{ label: '打开工坊', click: showWindow }, { label: '打开数据目录', click: () => void shell.openPath(workspace || dataRoot) }, { type: 'separator' }, { label: '退出工坊', click: () => app.quit() }]));
     tray.on('double-click', showWindow);
   }
+  updateMenus();
   return window.loadFile(startupFile);
+}
+
+function updateMenus() {
+  const roles = (items) => items.map(([role, label]) => ({ role, label: t(label) }));
+  const dataItem = { label: t('打开数据目录'), click: () => void shell.openPath(workspace || dataRoot) };
+  const quitItem = { label: t('退出工坊'), accelerator: 'Alt+F4', click: () => app.quit() };
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: t('工坊'), submenu: [dataItem, { label: t('查看启动日志'), click: () => void shell.openPath(logFile) }, { type: 'separator' }, quitItem] },
+    { label: t('编辑'), submenu: roles([['undo', '撤销'], ['redo', '重做'], ['cut', '剪切'], ['copy', '复制'], ['paste', '粘贴'], ['selectAll', '全选']]) },
+    { label: t('视图'), submenu: roles([['reload', '刷新'], ['resetZoom', '实际大小'], ['zoomIn', '放大'], ['zoomOut', '缩小'], ['togglefullscreen', '全屏']]) },
+  ]));
+  tray?.setContextMenu(Menu.buildFromTemplate([{ label: t('打开工坊'), click: showWindow }, dataItem, { type: 'separator' }, quitItem]));
+  tray?.setToolTip(window?.isVisible() ? 'NAI Atelier' : t('NAI Atelier · 后台运行'));
 }
 
 async function startBackend() {
@@ -105,7 +119,9 @@ async function startBackend() {
           const renderDeadline = Date.now() + 60_000;
           let rendered = false;
           while (Date.now() < renderDeadline) {
-            rendered = await window.webContents.executeJavaScript("Boolean(document.querySelector('nav button[aria-label=\"风格串\"]') && document.querySelector('button[aria-label=\"全局设置\"]'))");
+            const styleSelector = `nav button[aria-label=${JSON.stringify(t('风格串'))}]`;
+            const settingsSelector = `button[aria-label=${JSON.stringify(t('全局设置'))}]`;
+            rendered = await window.webContents.executeJavaScript(`Boolean(document.querySelector(${JSON.stringify(styleSelector)}) && document.querySelector(${JSON.stringify(settingsSelector)}))`);
             if (rendered) break;
             await new Promise(done => setTimeout(done, 250));
           }
@@ -132,11 +148,23 @@ async function startBackend() {
 
 ipcMain.handle('atelier-desktop', async (event, action) => {
   if (event.senderFrame?.url !== startupUrl) throw new Error('此操作只对启动窗口开放');
-  if (action === 'status') return status;
+  if (action === 'status') return localizedStatus();
   if (action === 'retry') return startBackend();
   if (action === 'logs') return shell.openPath(logFile);
   if (action === 'quit') return app.quit();
   throw new Error('未知操作');
+});
+
+ipcMain.handle('atelier-language', async (event, value) => {
+  if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || !isDesktopNavigation(event.senderFrame.url, appUrl)) throw new Error('语言设置只允许本应用主窗口操作');
+  if (!LANGUAGES.some(item => item.code === value)) throw new Error('不支持的语言');
+  const operation = languageWrite.then(async () => {
+    await writeFile(languageFile, JSON.stringify({ language: value }) + '\n');
+    language = value;
+    updateMenus();
+  });
+  languageWrite = operation.catch(() => {});
+  return operation;
 });
 
 ipcMain.handle('atelier-update', async (event, action, value) => {
@@ -207,9 +235,10 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
   await mkdir(dirname(logFile), { recursive: true });
   log = createWriteStream(logFile, { flags: 'a' });
+  language = normalizeLanguage(await readFile(languageFile, 'utf8').then(JSON.parse).then(value => value.language).catch(() => 'zh-CN'));
   await createWindow();
   await startUpdates();
   await startBackend();
   // 启动检查安静进行；合成发布验收不连接真实更新服务器。
   if (!selfTestFile) void updates?.action('check').catch(() => {});
-}).catch(error => { if (!selfTestFile) dialog.showErrorBox('NAI Atelier 无法启动', error.message); app.exit(1); });
+}).catch(error => { if (!selfTestFile) dialog.showErrorBox(t('NAI Atelier 无法启动'), t(error.message)); app.exit(1); });

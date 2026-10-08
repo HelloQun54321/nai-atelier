@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 
 import React from 'react';
@@ -74,6 +75,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     generationDisabled = false,
     notify,
 }) => {
+  useLanguage();
     const queueStatus = useCloudQueueStatus();
 
     return (
@@ -95,8 +97,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     onPreviousHistory?.();
                                 }}
                                 className="hover-reveal-lg absolute left-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-                                title="上一张"
-                                aria-label="上一张历史图"
+                                title={t("上一张")}
+                                aria-label={t("上一张历史图")}
                             >
                                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -108,8 +110,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     onNextHistory?.();
                                 }}
                                 className="hover-reveal-lg absolute right-3 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-black/45 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-                                title="下一张"
-                                aria-label="下一张历史图"
+                                title={t("下一张")}
+                                aria-label={t("下一张历史图")}
                             >
                                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -131,9 +133,9 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     ) : (
                         previewImage ? (
                             <>
-                                <OriginalImage src={previewImage} alt="封面" className="max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500" />
+                                <OriginalImage src={previewImage} alt={t("封面")} className="max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500" />
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">当前封面</span>
+                                    <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">{t("当前封面")}</span>
                                 </div>
 
                             </>
@@ -141,9 +143,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     )}
 
                     {isGenerating && generationProgress && (
-                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-meta font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">
-                            采样 {generationProgress.step} / {generationProgress.total}
-                        </div>
+                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-meta font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">{t("采样 {0} / {1}", [generationProgress.step, generationProgress.total])}</div>
                     )}
 
 
@@ -170,7 +170,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
-                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : unavailableLabel || '生成'}</span>
+                        <span>{isGenerating ? generationProgress ? t("生成中 {0}/{1}", [generationProgress.step, generationProgress.total]) : t("生成中…") : unavailableLabel || t("生成")}</span>
                         {!isGenerating && !unavailableLabel && generationCostLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                 </div>

@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './AgentSurface.css';
 import { AgentGenerationOptions } from './AgentChatPreferences';
@@ -35,6 +36,7 @@ const formatContext = (value: number) => value >= 1_000_000 ? `${(value / 1_000_
 export const CustomProviderForm = AgentConnectionForm;
 
 export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify }) => {
+  useLanguage();
   const confirmAction = useConfirmDialog();
   const [config, setConfig] = useState<PromptAgentConfig | null>(null);
   const [customProviders, setCustomProviders] = useState<PromptAgentCustomProvider[]>([]);
@@ -135,7 +137,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
       <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">当前 Agent 模型</div>
+          <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前 Agent 模型")}</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -143,12 +145,11 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               onClick={() => openView('model')}
               className="mobile-touch rounded-lg border border-indigo-200 bg-indigo-50/60 px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:bg-indigo-950/60"
             >
-              更换模型
-            </button>
+              {t("更换模型")}</button>
           </div>
         </div>
-        <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : '尚未配置模型服务'}</div>
-        {config?.configured && <div className="mt-1 text-xs text-gray-500">{(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider} · {config.configuredProviders.length} 个服务已配置</div>}
+        <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : t("尚未配置模型服务")}</div>
+        {config?.configured && <div className="mt-1 text-xs text-gray-500">{t("{0} · {1} 个服务已配置", [(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider, config.configuredProviders.length])}</div>}
       </div>
       {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
@@ -157,9 +158,9 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <b className="block text-sm text-gray-900 dark:text-white">API 连接</b>
+            <b className="block text-sm text-gray-900 dark:text-white">{t("API 连接")}</b>
           </div>
-          <button type="button" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-3.5 w-3.5" />连接 API</button>
+          <button type="button" onClick={() => openCustom()} className="mobile-touch inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"><Plus className="h-3.5 w-3.5" />{t("连接 API")}</button>
         </div>
         <div className="mt-3 space-y-2">
           {customProviders.map(provider => (
@@ -170,36 +171,31 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
               <div className="min-w-0 flex-1">
                 <b className="block truncate text-sm text-gray-800 dark:text-gray-100">{provider.name}</b>
-                <span className="block truncate text-micro text-gray-400">
-                  {provider.baseUrl} · {provider.models.length} 个模型
-                </span>
+                <span className="block truncate text-micro text-gray-400">{t("{0} · {1} 个模型", [provider.baseUrl, provider.models.length])}</span>
               </div>
               <button
                 type="button"
                 onClick={() => openCustom(provider)}
                 className="mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               >
-                编辑
-              </button>
+                {t("编辑")}</button>
               <button
                 type="button"
                 onClick={() => void deleteCustom(provider)}
                 className="mobile-touch rounded-lg border border-transparent px-2.5 py-1 text-xs font-bold text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:hover:border-red-900/40 dark:hover:bg-red-950/30 dark:hover:text-red-400"
               >
-                删除
-              </button>
+                {t("删除")}</button>
             </div>
           ))}
 
           {customProviders.length === 0 && (
             <div className="rounded-xl border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400 dark:border-gray-800">
-              尚未连接 API
-            </div>
+              {t("尚未连接 API")}</div>
           )}
         </div>
       </div>
-      <section aria-label="生图协作" className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">生图协作</h3>
+      <section aria-label={t("生图协作")} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("生图协作")}</h3>
         <AgentGenerationOptions />
       </section>
     </div>
@@ -210,21 +206,21 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         ref={subViewRef}
         role="dialog"
         aria-modal="true"
-        aria-label={view === 'model' ? '选择 Agent 模型' : (customDraft.id ? '编辑 API 连接' : '连接 API')}
+        aria-label={view === 'model' ? t("选择 Agent 模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}
         data-agent-surface
         className="agent-theme appearance-surface agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
-        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="返回"><ArrowLeft className="h-5 w-5" /></button>
-        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'model' ? '选择 Agent 模型' : (customDraft.id ? '编辑 API 连接' : '连接 API')}</h2></div>
-        {view === 'model' && <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl px-3 text-sm text-indigo-600 dark:text-indigo-300">连接 API</button>}
+        <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
+        <div className="min-w-0 flex-1"><h2 className="font-black text-gray-900 dark:text-white">{view === 'model' ? t("选择 Agent 模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}</h2></div>
+        {view === 'model' && <button type="button" onClick={() => openCustom()} className="mobile-touch rounded-xl px-3 text-sm text-indigo-600 dark:text-indigo-300">{t("连接 API")}</button>}
       </header>
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
-        {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索模型名称、ID或连接…" className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
+        {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索模型名称、ID或连接…")} className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
         {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={next => { if (next.baseUrl !== customDraft.baseUrl || next.apiKey !== customDraft.apiKey || next.api !== customDraft.api) setDiscoveredModels([]); setCustomDraft(next); setCustomResult(null); }} result={customResult} discovered={discoveredModels} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} /> :
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-            {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">上下文 {formatContext(model.contextWindow)}<br />{model.reasoning ? '推理' : model.capabilityDetection?.reasoning === 'unknown' ? '推理未知' : '普通'}{model.imageInput ? ' · 图片' : model.capabilityDetection?.imageInput === 'unknown' ? ' · 图片未知' : ''}</span></button>)}
-            {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">{query ? '没有匹配结果' : '还没有模型，请先连接 API'}</div>}
+            {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
+            {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">{query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}</div>}
           </div>}
       </main>
     </div>)}

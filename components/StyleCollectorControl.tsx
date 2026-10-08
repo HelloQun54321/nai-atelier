@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { ClipboardList } from 'lucide-react';
 import { ToolbarButton } from './DesignSystem';
@@ -10,6 +11,7 @@ export interface CollectorState {
 }
 
 export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void; notify: (message: string, type?: 'success' | 'error') => void }) {
+  useLanguage();
   const [state, setState] = useState<CollectorState | null>(null);
   const [busy, setBusy] = useState(false);
   const callbacks = useRef({ onSaved, notify });
@@ -46,8 +48,8 @@ export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void
   };
   if (!state?.available) return null;
   const label = state.enabled ? (state.paused ? '收集已暂停' : '收集中') : '收集模式';
-  const detail = [state.error, state.detail].filter(Boolean).join(' · ');
-  return <ToolbarButton role="switch" aria-label={label} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || '开启后自动收集新复制的图片直链，进度在桌面置顶窗显示'} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-600 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
-    <ClipboardList className="h-4 w-4" /><span className="hidden xl:inline">{label}</span>
+  const detail = [t(state.error), t(state.detail)].filter(Boolean).join(' · ');
+  return <ToolbarButton role="switch" aria-label={t(label)} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || t("开启后自动收集新复制的图片直链，进度在桌面置顶窗显示")} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-600 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
+    <ClipboardList className="h-4 w-4" /><span className="hidden xl:inline">{t(label)}</span>
   </ToolbarButton>;
 }

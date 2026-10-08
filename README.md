@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.50.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.51.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -219,6 +219,8 @@ flowchart LR
 ---
 
 ### ✦ 项目 Agent：业务联动 AI 助手
+
+在「全局设置 → 外观与画廊 → 语言」选择简体中文、繁體中文、English、日本語或 한국어，即时切换界面并记住选择。安装版的启动页、菜单、托盘与收集悬浮窗也跟随；各设备可独立选择。项目 Agent 从下一次请求起使用所选语言交流，已有聊天、创作 Prompt／Tag 和自定义资料名称保留原文，用户明确要求的创作产物语言优先。
 
 点击界面侧栏或浮钮可一键唤醒基于轻量核心的项目 Agent。它不是简单的聊天框，而是真正连接工坊内部工具的创作助手：
 

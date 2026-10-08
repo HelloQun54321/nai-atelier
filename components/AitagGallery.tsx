@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ViewableImage } from './ImageLightbox';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -148,7 +149,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   // 卡片整体是 role="button"（点击/Enter 打开详情）：占位内的重试钮与原页链接都要拦掉
   // 键盘/点击冒泡，避免误开详情。原页链接 href 本身可 Tab 聚焦、Enter 在新标签打开。
   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 px-3 dark:bg-gray-800">
-    <span className="text-meta text-gray-400">图片加载失败</span>
+    <span className="text-meta text-gray-400">{t("图片加载失败")}</span>
     <div className="flex items-center gap-2">
       <button
         type="button"
@@ -156,8 +157,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
         onKeyDown={event => { event.stopPropagation(); }}
         className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
       >
-        重试
-      </button>
+        {t("重试")}</button>
       <a
         href={getAitagUrl(work)}
         target="_blank"
@@ -166,13 +166,13 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
         onKeyDown={event => { event.stopPropagation(); }}
         className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-indigo-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-400"
       >
-        打开原页
-      </a>
+        {t("打开原页")}</a>
     </div>
   </div>
 );
 
 const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; notify: AitagGalleryProps['notify'] }> = ({ work, detail, onImageLoad, notify }) => {
+  useLanguage();
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
   const detailImage = detail?.images?.[0];
@@ -281,6 +281,7 @@ const defaultParams: NAIParams = {
 };
 
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
+  useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
@@ -397,7 +398,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         data-gallery-work-id={work.id}
         role="button"
         aria-pressed={isSelected}
-        aria-label={`查看作品 ${work.title || `#${work.id}`}`}
+        aria-label={t("查看作品 {0}", [work.title || `#${work.id}`])}
         tabIndex={0}
         onClick={() => loadDetail(work)}
         onKeyDown={e => {
@@ -451,8 +452,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
             <span className="truncate">#{work.id}</span>
-            <span className="whitespace-nowrap">阅 {formatCount(work.total_view)}</span>
-            <span className="whitespace-nowrap">藏 {formatCount(work.total_bookmarks)}</span>
+            <span className="whitespace-nowrap">{t("阅 {0}", [formatCount(work.total_view)])}</span>
+            <span className="whitespace-nowrap">{t("藏 {0}", [formatCount(work.total_bookmarks)])}</span>
           </div>
         </div>
         <div className={`h-1 ${cardTone.marker}`} />
@@ -1235,41 +1236,41 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
         <div className="flex w-full min-w-0 items-center gap-2 md:hidden">
-          <span title={isAitagConnected ? '连接正常' : '当前使用本地缓存'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder="搜索 AITag 作品" />
-          <MobileIconButton label={activeFilterCount > 0 ? "AITag 筛选 " + activeFilterCount : "AITag 筛选"} onClick={() => setShowMobileFilters(true)} className={activeFilterCount > 0 ? 'border border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}><Filter className="h-5 w-5" /></MobileIconButton>
+          <span title={isAitagConnected ? t("连接正常") : t("当前使用本地缓存")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder={t("搜索 AITag 作品")} />
+          <MobileIconButton label={activeFilterCount > 0 ? t("AITag 筛选 ") + activeFilterCount : t("AITag 筛选")} onClick={() => setShowMobileFilters(true)} className={activeFilterCount > 0 ? 'border border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}><Filter className="h-5 w-5" /></MobileIconButton>
         </div>
         <div className="hidden min-w-0 flex-1 items-center gap-2 md:flex">
-          <span title={isAitagConnected ? 'aitag.win 连接正常' : 'aitag.win 暂时不可用'} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
-          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder="作品、作者、标题或标签，回车检索" containerClassName="min-w-[14rem] flex-1 md:max-w-none!" />
+          <span title={isAitagConnected ? t("aitag.win 连接正常") : t("aitag.win 暂时不可用")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]' : 'bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.14)]'}`} />
+          <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder={t("作品、作者、标题或标签，回车检索")} containerClassName="min-w-[14rem] flex-1 md:max-w-none!" />
           <div ref={filterAnchorRef} className="relative flex-none">
-            <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={activeFilterCount > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40 dark:!text-indigo-400' : ''} aria-label={activeFilterCount > 0 ? "筛选 " + activeFilterCount : "筛选"} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />筛选{activeFilterCount > 0 ? " " + activeFilterCount : ""}</ToolbarButton>
-            {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title="AITag 筛选" width={544} onClose={() => setShowDesktopFilters(false)}>
+            <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={activeFilterCount > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40 dark:!text-indigo-400' : ''} aria-label={activeFilterCount > 0 ? t("筛选 ") + activeFilterCount : t("筛选")} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />{t("筛选")}{activeFilterCount > 0 ? " " + activeFilterCount : ""}</ToolbarButton>
+            {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title={t("AITag 筛选")} width={544} onClose={() => setShowDesktopFilters(false)}>
 
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">AITag 筛选</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
-            <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">提示词搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder="搜索 NovelAI 元数据提示词" className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">{t("AITag 筛选")}</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
+            <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder={t("搜索 NovelAI 元数据提示词")} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
             <div className="grid grid-cols-3 gap-3">
-              <label className="text-xs text-gray-500 dark:text-gray-400">缓存<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
-              <label className="text-xs text-gray-500 dark:text-gray-400">排序<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
-              <label className="text-xs text-gray-500 dark:text-gray-400">月份<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">无需月份</option><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+              <label className="text-xs text-gray-500 dark:text-gray-400">{t("缓存")}<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
+              <label className="text-xs text-gray-500 dark:text-gray-400">{t("排序")}<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
+              <label className="text-xs text-gray-500 dark:text-gray-400">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">{t("无需月份")}</option><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
             </div>
-            <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">模型版本（已加载条目）<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-            <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">应用筛选</button>
+            <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
+            <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">{t("应用筛选")}</button>
             </AnchoredToolbarPopover>}
           </div>
-          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>已加载 {formatCount(visibleItems.length)} 条</span><span>共 {formatCount(total)} 条</span></div>
+          <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{t("已加载 {0} 条", [formatCount(visibleItems.length)])}</span><span>{t("共 {0} 条", [formatCount(total)])}</span></div>
         </div>
       </WorkspaceToolbar>
-      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title="AITag 筛选" onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">应用筛选</button>}>
+      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">{t("应用筛选")}</button>}>
         <div className="space-y-4">
-          <label className="block text-sm font-bold dark:text-white">提示词搜索<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder="搜索 NovelAI 元数据提示词" className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>
+          <label className="block text-sm font-bold dark:text-white">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t("搜索 NovelAI 元数据提示词")} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-bold dark:text-white">缓存<select value={cacheFilter} onChange={event => handleCacheFilterChange(event.target.value as AitagCacheFilter)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="all">全部</option><option value="favorite">收藏</option><option value="full">已缓存全部</option><option value="first-image">已缓存首图</option></select></label>
-            <label className="text-sm font-bold dark:text-white">排序<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="new">最新</option><option value="monthly">月榜</option></select></label>
-            <label className="text-sm font-bold dark:text-white">月份<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="current">当前月份</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">更早</option></select></label>
+            <label className="text-sm font-bold dark:text-white">{t("缓存")}<select value={cacheFilter} onChange={event => handleCacheFilterChange(event.target.value as AitagCacheFilter)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
+            <label className="text-sm font-bold dark:text-white">{t("排序")}<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
+            <label className="text-sm font-bold dark:text-white">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
           </div>
-            <label className="text-sm font-bold dark:text-white">模型版本（已加载条目）<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="">全部</option>{modelOptions.map(label => <option key={label} value={label}>{label}</option>)}</select></label>
-          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">已加载 {formatCount(visibleItems.length)} 条 · 共 {formatCount(total)} 条</div>
+            <label className="text-sm font-bold dark:text-white">{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
+          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t("已加载 {0} 条 · 共 {1} 条", [formatCount(visibleItems.length), formatCount(total)])}</div>
         </div>
       </MobileBottomSheet></ImagePreviewPortal>
 
@@ -1286,18 +1287,18 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 ? 'border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300'
                 : 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'
             }`}>
-              {error}
+              {t(error)}
             </div>
           )}
 
           <div ref={galleryContentRef} className={isLoading || visibleItems.length === 0 ? 'h-full' : undefined}>
           {isLoading ? (
             <div className="h-full flex items-center justify-center text-gray-400">
-              <div className="text-sm">加载 aitag 数据中...</div>
+              <div className="text-sm">{t("加载 aitag 数据中...")}</div>
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <div className="text-sm">{cacheNeedsMoreData ? '本地没有这一页，且当前无法联网获取' : '没有匹配结果'}</div>
+              <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : t("没有匹配结果")}</div>
             </div>
           ) : (
             imageDisplay.layout === 'masonry' ? (
@@ -1320,12 +1321,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <div className="flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
             {visibleItems.length >= AITAG_APPEND_LIMIT && hasNextPage && (
-              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="mobile-touch px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">
-                已加载 {AITAG_APPEND_LIMIT} 条 · 继续加载更多
-              </button>
+              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="mobile-touch px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">{t("已加载 {0} 条 · 继续加载更多", [AITAG_APPEND_LIMIT])}</button>
             )}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
-              <span>已加载 {formatCount(visibleItems.length)} 条 / 共 {formatCount(total)} 条 · 滚动浏览，可跳转</span>
+              <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
               {isPageInputOpen ? (
                 <input
                   type="number"
@@ -1348,7 +1347,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                     }
                   }}
                   disabled={isLoading}
-                  aria-label="输入页码跳转"
+                  aria-label={t("输入页码跳转")}
                   className="w-20 px-2 py-2 rounded border border-indigo-400 dark:border-indigo-500 bg-white dark:bg-gray-900 text-center text-sm text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                 />
               ) : (
@@ -1360,26 +1359,24 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                     setIsPageInputOpen(true);
                   }}
                   disabled={isLoading}
-                  title="点击输入页码跳转"
+                  title={t("点击输入页码跳转")}
                   className="mobile-touch min-w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
-                >
-                  跳到第 {page} 页
-                </button>
+                >{t("跳到第 {0} 页", [page])}</button>
               )}
             </div>
           </div>
           <div className="flex justify-center pb-6 -mt-3">
             <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
-              <span title="当前筛选下已经成功保存到本地的第一张图数量">首图保存 {formatCount(cacheStatus?.firstImagesCount ?? cacheStatus?.coversCount ?? 0)}</span>
-              <span title="已经点开并完整保存详情 JSON 的作品数">完整保存 {formatCount(cacheStatus?.detailsCount || 0)}</span>
-              {isOfflineCache && <span className="text-amber-600 dark:text-amber-300">本地缓存模式</span>}
+              <span title={t("当前筛选下已经成功保存到本地的第一张图数量")}>{t("首图保存 {0}", [formatCount(cacheStatus?.firstImagesCount ?? cacheStatus?.coversCount ?? 0)])}</span>
+              <span title={t("已经点开并完整保存详情 JSON 的作品数")}>{t("完整保存 {0}", [formatCount(cacheStatus?.detailsCount || 0)])}</span>
+              {isOfflineCache && <span className="text-amber-600 dark:text-amber-300">{t("本地缓存模式")}</span>}
             </div>
           </div>
         </main>
 
         <DetailSidePanel
           open={Boolean(selectedWork)}
-          title={selectedWork?.title || '作品详情'}
+          title={selectedWork?.title || t("作品详情")}
           sensitiveTitle
           subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
           onBack={closeMobileDetail}
@@ -1389,15 +1386,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         >
           {!selectedWork ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-400 text-center px-6">
-              选择作品
-            </div>
+              {t("选择作品")}</div>
           ) : isDetailLoading && !selectedDetail ? (
-            <div className="h-full flex items-center justify-center text-sm text-gray-400">加载详情中...</div>
+            <div className="h-full flex items-center justify-center text-sm text-gray-400">{t("加载详情中...")}</div>
           ) : selectedDetail ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />aitag 原页</ToolbarLink>
-                <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />Pixiv 原页</ToolbarLink>
+                <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("aitag 原页")}</ToolbarLink>
+                <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("Pixiv 原页")}</ToolbarLink>
               </div>
               {selectedDetail.images
                 .slice()
@@ -1410,7 +1406,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
                         <PressRevealSurface className="group relative">
-                          <ViewableImage src={buildAitagImageUrl(image)} alt="AITAG 作品图片" filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                          <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} />
                         </PressRevealSurface>
                         <div className="p-3 space-y-3">
@@ -1420,7 +1416,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                                 <div className="flex flex-wrap gap-1">
                                   {generationLabels.map(label => (
                                     <span key={label} className="rounded bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-meta font-medium text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
-                                      {label}
+                                      {t(label)}
                                     </span>
                                   ))}
                                 </div>
@@ -1430,19 +1426,19 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               </div>
                             </div>
                             <div className="flex flex-none gap-2">
-                              <IconButton label="保存到风格串" disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
-                              <IconButton label="加入灵感库" tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
-                              <IconButton label="导入实验室" tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
+                              <IconButton label={t("保存到风格串")} disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
+                              <IconButton label={t("加入灵感库")} tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
+                              <IconButton label={t("导入实验室")} tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}
                                 imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}
-                                actionLabel="复制 {count} 个 Tag"
+                                actionLabel={t("复制 {count} 个 Tag")}
                                 className="!w-10 !h-10"
                               />}
                             </div>
                           </div>
                           <div className="text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
-                            {promptText || <span className="text-gray-400">暂无提示词</span>}
+                            {promptText || <span className="text-gray-400">{t("暂无提示词")}</span>}
                           </div>
                         </div>
                       </div>
@@ -1450,12 +1446,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                   })}
               {selectedDetail.isPreviewOnly && (
                 <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2 text-xs text-sky-700 dark:text-sky-200">
-                  已显示本地首图，正在加载完整作品组...
-                </div>
+                  {t("已显示本地首图，正在加载完整作品组...")}</div>
               )}
             </div>
           ) : (
-            <div className="text-sm text-gray-400">详情加载失败</div>
+            <div className="text-sm text-gray-400">{t("详情加载失败")}</div>
           )}
         </DetailSidePanel>
       </div>

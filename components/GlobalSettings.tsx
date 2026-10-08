@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage, setLanguage, LANGUAGES, type Language } from '../services/i18n';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
@@ -132,7 +133,7 @@ const AppearanceOptionGroup: React.FC<{
         onClick={() => onChange(option.value)}
         className={`mobile-touch min-w-0 rounded-xl border px-2 py-2 text-center transition md:min-h-10 ${value === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'}`}
       >
-        <span className="block truncate text-xs font-bold">{option.label}</span>
+        <span className="block truncate text-xs font-bold">{t(option.label)}</span>
       </button>
     ))}
   </div>
@@ -156,6 +157,7 @@ const maskNaiKeyForDisplay = (key: string) => {
 };
 
 export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, initialSection = 'home', notify, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeStartup, safeModeHideTitles, setSafeModeStartup, setSafeModeHideTitles, toggleSafeMode }) => {
+  useLanguage();
   const confirmAction = useConfirmDialog();
   const cleanSharedImages = useCleanSharedImages();
   const [apiKey, setApiKey] = useState(readApiKey);
@@ -528,7 +530,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     if (preset.isBuiltin) return;
     const confirmed = await confirmAction({
       title: '删除外观预设',
-      message: `确定要删除外观预设「${preset.name}」吗？此操作无法撤销。`,
+      message: `确定要删除外观预设「${preset.isBuiltin ? t(preset.name) : preset.name}」吗？此操作无法撤销。`,
       confirmLabel: '删除预设',
       tone: 'danger',
     });
@@ -622,20 +624,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="全局设置"
-        data-agent-page-title={activeSectionMeta?.label || '全局设置'}
+        aria-label={t("全局设置")}
+        data-agent-page-title={t(activeSectionMeta?.label) || t("全局设置")}
         className="settings-dialog ui-modal-enter operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onMouseDown={event => event.stopPropagation()}
       >
         <div className="workspace-command-bar flex items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800 md:px-5">
           <div className="flex min-w-0 items-center gap-2">
-            {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label="返回设置分类" title="返回设置分类"><ArrowLeft className="h-[18px] w-[18px]" /></button>}
+            {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label={t("返回设置分类")} title={t("返回设置分类")}><ArrowLeft className="h-[18px] w-[18px]" /></button>}
             <div className="min-w-0">
-              <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">{activeSectionMeta?.label || '全局设置'}</h2>
+              <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">{t(activeSectionMeta?.label) || t("全局设置")}</h2>
 
             </div>
           </div>
-          <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭全局设置">
+          <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("关闭全局设置")}>
             <X className="h-[18px] w-[18px]" />
           </button>
         </div>
@@ -647,19 +649,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               const active = activeSection === item.id;
               return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
                 <SectionIcon className="h-4.5 w-4.5 flex-none" />
-                <span className="min-w-0"><b className="block text-sm">{item.label}</b></span>
+                <span className="min-w-0"><b className="block text-sm">{t(item.label)}</b></span>
               </button>;
             })}
           </nav>
         <div className="min-w-0 flex-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
           {activeSection === 'home' && <section className="mx-auto max-w-3xl md:hidden">
-            <div className="mb-5"><h3 className="text-base font-bold text-gray-900 dark:text-white">选择设置分类</h3></div>
+            <div className="mb-5"><h3 className="text-base font-bold text-gray-900 dark:text-white">{t("选择设置分类")}</h3></div>
             <div className="grid gap-3 sm:grid-cols-2">
               {settingsSections.map(item => {
                 const SectionIcon = item.icon;
                 return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className="flex min-h-24 items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
                   <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><SectionIcon className="h-5 w-5" /></span>
-                  <span className="min-w-0 flex-1"><b className="block text-sm text-gray-900 dark:text-white">{item.label}</b></span>
+                  <span className="min-w-0 flex-1"><b className="block text-sm text-gray-900 dark:text-white">{t(item.label)}</b></span>
                   <ChevronRight className="h-4 w-4 flex-none text-gray-400" />
                 </button>;
               })}
@@ -669,31 +671,37 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id={`settings-appearance`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'appearance' ? 'hidden' : ''}`}>
             {activeSection === 'appearance' && <div className="space-y-3">
               <div>
-                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">明暗模式</div>
+                <label className="mb-2 block text-xs font-bold text-gray-700 dark:text-gray-200" htmlFor="interface-language">{t("语言")}</label>
+                <select id="interface-language" value={getLanguage()} onChange={event => setLanguage(event.target.value as Language)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900">
+                  {LANGUAGES.map(item => <option key={item.code} value={item.code} lang={item.code}>{item.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">{t("明暗模式")}</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{option.label}</span></button>; })}
+                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{t(option.label)}</span></button>; })}
                 </div>
               </div>
 
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">图片列表布局</div>
+                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">{t("图片列表布局")}</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
+                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{t(label)}</button>)}
                 </div>
                 <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">移动端列数</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? '自适应' : `${imageDisplay.columns} 列`}</span>
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("移动端列数")}</span>
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.columns])}</span>
                   </div>
-                  <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="移动端列数" />
+                  <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("移动端列数")} />
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">桌面端列数</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? '自适应' : `${imageDisplay.desktopColumns} 列`}</span>
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("桌面端列数")}</span>
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.desktopColumns])}</span>
                   </div>
-                  <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label="桌面端列数" />
+                  <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
                 </div>
                 </div>
               </div>
@@ -702,7 +710,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <input
                   type="file"
-                  ref={importFileRef} aria-label="导入外观预设 JSON"
+                  ref={importFileRef} aria-label={t("导入外观预设 JSON")}
                   accept=".json,application/json"
                   onChange={handleImportPresets}
                   className="hidden"
@@ -710,8 +718,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <div className="text-xs font-bold text-gray-700 dark:text-gray-200">设计主题</div>
-                      <span className="flex-none text-micro font-medium text-gray-400">{allPresets.length} 个可用主题</span>
+                      <div className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("设计主题")}</div>
+                      <span className="flex-none text-micro font-medium text-gray-400">{t("{0} 个可用主题", [allPresets.length])}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -719,35 +727,31 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       type="button"
                       onClick={() => importFileRef.current?.click()}
                       className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                      title="从 JSON 文件导入主题预设"
+                      title={t("从 JSON 文件导入主题预设")}
                     >
-                      <FolderInput className="h-3 w-3" />导入
-                    </button>
+                      <FolderInput className="h-3 w-3" />{t("导入")}</button>
                     {customPresets.length > 0 && (
                       <button
                         type="button"
                         onClick={handleExportAllPresets}
                         className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
-                        title="导出全部自定义主题为 JSON 文件"
+                        title={t("导出全部自定义主题为 JSON 文件")}
                       >
-                        <FolderOutput className="h-3 w-3" />导出全部
-                      </button>
+                        <FolderOutput className="h-3 w-3" />{t("导出全部")}</button>
                     )}
                     <button
                       type="button"
                       onClick={() => setIsCreatingPreset(true)}
                       className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-meta font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
                     >
-                      <Plus className="h-3 w-3" />另存当前主题
-                    </button>
+                      <Plus className="h-3 w-3" />{t("另存当前主题")}</button>
                   </div>
                 </div>
 
                 {isCreatingPreset && (
                   <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/30">
                     <div className="text-meta font-bold text-indigo-900 dark:text-indigo-200 mb-1.5">
-                      保存当前外观配置为新主题
-                    </div>
+                      {t("保存当前外观配置为新主题")}</div>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
@@ -757,7 +761,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                           if (e.key === 'Enter') handleSaveCurrentPreset();
                           if (e.key === 'Escape') setIsCreatingPreset(false);
                         }}
-                        placeholder={`例如：晴空午夜、舒适大字（默认：自定义主题 ${customPresets.length + 1}）`}
+                        placeholder={t("例如：晴空午夜、舒适大字（默认：自定义主题 {0}）", [customPresets.length + 1])}
                         maxLength={30}
                         autoFocus
                         className="h-8 flex-1 rounded-lg border border-indigo-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-indigo-700 dark:bg-gray-900 dark:text-gray-100"
@@ -767,8 +771,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         onClick={handleSaveCurrentPreset}
                         className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-500"
                       >
-                        保存
-                      </button>
+                        {t("保存")}</button>
                       <button
                         type="button"
                         onClick={() => {
@@ -777,8 +780,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         }}
                         className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                       >
-                        取消
-                      </button>
+                        {t("取消")}</button>
                     </div>
                   </div>
                 )}
@@ -791,7 +793,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     return (
                       <div
                         key={preset.id}
-                        role="button" aria-label={`应用外观预设：${preset.name}`} aria-pressed={isSelected} tabIndex={0}
+                        role="button" aria-label={t("应用外观预设：{0}", [preset.isBuiltin ? t(preset.name) : preset.name])} aria-pressed={isSelected} tabIndex={0}
                         onClick={() => !isEditing && applyPreset(preset)}
                         onKeyDown={event => { if (event.target === event.currentTarget && !isEditing && ['Enter', ' '].includes(event.key)) { event.preventDefault(); applyPreset(preset); } }}
                         className={`atelier-theme-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition cursor-pointer ${
@@ -847,31 +849,28 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                   onClick={() => handleRenamePreset(preset.id)}
                                   className="rounded bg-indigo-600 px-2 py-1 text-micro font-bold text-white hover:bg-indigo-500"
                                 >
-                                  确定
-                                </button>
+                                  {t("确定")}</button>
                                 <button
                                   type="button"
                                   onClick={() => setEditingPresetId(null)}
                                   className="rounded px-1.5 py-1 text-micro font-bold text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                                 >
-                                  取消
-                                </button>
+                                  {t("取消")}</button>
                               </div>
                             ) : (
                               <>
                                 <div className="flex items-center gap-1.5">
-                                  <b className="truncate text-sm text-gray-900 dark:text-white">{preset.name}</b>
+                                  <b className="truncate text-sm text-gray-900 dark:text-white">{preset.isBuiltin ? t(preset.name) : preset.name}</b>
                                   {preset.isBuiltin && (
-                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-mini font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title="出厂默认主题（锁定保护不可删除）">
-                                      <Lock className="h-2.5 w-2.5" />默认锁定
-                                    </span>
+                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-mini font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={t("出厂默认主题（锁定保护不可删除）")}>
+                                      <Lock className="h-2.5 w-2.5" />{t("默认锁定")}</span>
                                   )}
                                 </div>
                                 <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                  {preset.isBuiltin ? '默认出厂外观配置（石墨炭黑 / 晴空蓝）。' : `${preset.themeMode === 'dark' ? '深色' : preset.themeMode === 'light' ? '浅色' : '跟随系统'} · ${preset.density === 'compact' ? '紧凑' : preset.density === 'comfortable' ? '舒展' : '标准'}密度 · ${preset.corners === 'sharp' ? '锐利' : preset.corners === 'soft' ? '柔和' : '标准'}圆角`}
+                                  {preset.isBuiltin ? t("默认出厂外观配置（石墨炭黑 / 晴空蓝）。") : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
                                 </span>
                                 <span className="mt-1 block text-micro font-semibold text-indigo-600 dark:text-indigo-300">
-                                  {isSelected ? `当前使用（${isDark ? '深色版本' : '浅色版本'}）` : `强调色：${presetAccent}`}
+                                  {isSelected ? t("当前使用（{0}）", [isDark ? t('深色版本') : t('浅色版本')]) : t("强调色：{0}", [presetAccent])}
                                 </span>
                               </>
                             )}
@@ -888,8 +887,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                             <button
                               type="button"
                               onClick={() => handleExportSinglePreset(preset)}
-                              aria-label={`导出「${preset.name}」`}
-                              title="导出此主题为 JSON 文件"
+                              aria-label={t("导出「{0}」", [preset.name])}
+                              title={t("导出此主题为 JSON 文件")}
                               className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                             >
                               <FolderOutput className="h-3.5 w-3.5" />
@@ -902,8 +901,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                     setEditingPresetId(preset.id);
                                     setEditingPresetName(preset.name);
                                   }}
-                                  aria-label={`重命名「${preset.name}」`}
-                                  title="重命名"
+                                  aria-label={t("重命名「{0}」", [preset.name])}
+                                  title={t("重命名")}
                                   className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                                 >
                                   <Edit2 className="h-3.5 w-3.5" />
@@ -911,8 +910,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 <button
                                   type="button"
                                   onClick={() => handleDeletePreset(preset)}
-                                  aria-label={`删除「${preset.name}」`}
-                                  title="删除"
+                                  aria-label={t("删除「{0}」", [preset.name])}
+                                  title={t("删除")}
                                   className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -928,41 +927,40 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               <div className="appearance-control-panel rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
-                <div className="mb-3 flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-indigo-500" /><div><h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">个性化</h4></div></div>
+                <div className="mb-3 flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-indigo-500" /><div><h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("个性化")}</h4></div></div>
 
                 <div>
-                  <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">强调色</span><span className="font-mono text-micro uppercase text-gray-400">{appearancePreferences.accentColor}</span></div>
+                  <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{appearancePreferences.accentColor}</span></div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={`强调色：${preset.label}`} title={preset.label} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
-                    <label className="relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />自定义<input type="color" value={appearancePreferences.accentColor} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="自定义强调色" /></label>
+                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
+                    <label className="relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={appearancePreferences.accentColor} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
                   </div>
                 </div>
 
                 <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">界面密度</div><AppearanceOptionGroup value={appearancePreferences.density} onChange={value => updateAppearance({ density: value as InterfaceDensity })} options={[{ value: 'comfortable', label: '舒展' }, { value: 'standard', label: '标准' }, { value: 'compact', label: '紧凑' }]} /></div>
-                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">圆角语言</div><AppearanceOptionGroup value={appearancePreferences.corners} onChange={value => updateAppearance({ corners: value as CornerStyle })} options={[{ value: 'soft', label: '柔和' }, { value: 'standard', label: '标准' }, { value: 'sharp', label: '锐利' }]} /></div>
-                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">表面材质</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: '实色' }, { value: 'translucent', label: '透光' }]} /></div>
-                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">字号</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: '偏小' }, { value: 'standard', label: '标准' }, { value: 'large', label: '偏大' }]} /></div>
-                  <div className="lg:col-span-2"><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">动效</div><AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: '完整' }, { value: 'reduced', label: '减少' }, { value: 'off', label: '关闭' }]} /></div>
+                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("界面密度")}</div><AppearanceOptionGroup value={appearancePreferences.density} onChange={value => updateAppearance({ density: value as InterfaceDensity })} options={[{ value: 'comfortable', label: t("舒展") }, { value: 'standard', label: t("标准") }, { value: 'compact', label: t("紧凑") }]} /></div>
+                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("圆角语言")}</div><AppearanceOptionGroup value={appearancePreferences.corners} onChange={value => updateAppearance({ corners: value as CornerStyle })} options={[{ value: 'soft', label: t("柔和") }, { value: 'standard', label: t("标准") }, { value: 'sharp', label: t("锐利") }]} /></div>
+                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("表面材质")}</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} /></div>
+                  <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("字号")}</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: t("偏小") }, { value: 'standard', label: t("标准") }, { value: 'large', label: t("偏大") }]} /></div>
+                  <div className="lg:col-span-2"><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("动效")}</div><AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} /></div>
                 </div>
 
-                <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />恢复 NAI Atelier 默认外观</button>
+                <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>
               </div>
             </div>}
           </section>
           <section id={`settings-generation`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'generation' ? 'hidden' : ''}`}>
             {activeSection === 'generation' && <div className="space-y-3">
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
-                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">生成过程预览</b></span>
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成过程预览")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
 
               <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
-                  <b className="block text-xs text-gray-800 dark:text-gray-100">强制清空随机种子（始终随机）</b>
+                  <b className="block text-xs text-gray-800 dark:text-gray-100">{t("强制清空随机种子（始终随机）")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
-                    不改写预设种子；关闭后恢复。
-                  </span>
+                    {t("不改写预设种子；关闭后恢复。")}</span>
                 </span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.forceEmptySeed ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                   <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.forceEmptySeed ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -971,10 +969,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
               <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
-                  <b className="block text-xs text-gray-800 dark:text-gray-100">生成步数锁定在免费额度内</b>
+                  <b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成步数锁定在免费额度内")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
-                    关闭后，超出免费步数将消耗 Anlas。
-                  </span>
+                    {t("关闭后，超出免费步数将消耗 Anlas。")}</span>
                 </span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.enforceFreeStepLimit ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                   <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.enforceFreeStepLimit ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -985,11 +982,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">实验室模块布局</h4>
+                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("实验室模块布局")}</h4>
                       {isLabMobile && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-micro font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                          <Lock className="h-3 w-3" />手机端固定
-                        </span>
+                          <Lock className="h-3 w-3" />{t("手机端固定")}</span>
                       )}
                     </div>
 
@@ -1000,8 +996,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     onClick={resetAllLabPageLayouts}
                     className="mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
                   >
-                    <RotateCcw className="h-3 w-3" />全部推荐
-                  </button>
+                    <RotateCcw className="h-3 w-3" />{t("全部推荐")}</button>
                 </div>
 
                 <div className={`space-y-2 ${isLabMobile ? 'pointer-events-none select-none opacity-50' : ''}`}>
@@ -1017,11 +1012,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       setExpandedLabPages(current => current[pageId] === expanded ? current : { ...current, [pageId]: expanded });
                     }} className="group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
-                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{pageMeta.label}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">已自定义</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{visibleOrder.length} 个模块</span></span>
+                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [visibleOrder.length])}</span></span>
                         <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
                       </summary>
                       <div className="border-t border-gray-100 p-2.5 dark:border-gray-800">
-                        <div className="mb-2 flex items-center justify-between gap-2"><span className="text-micro text-gray-400">拖动排序</span><button type="button" onClick={() => resetLabPageLayout(pageId)} className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><RotateCcw className="h-3 w-3" />推荐顺序</button></div>
+                        <div className="mb-2 flex items-center justify-between gap-2"><span className="text-micro text-gray-400">{t("拖动排序")}</span><button type="button" onClick={() => resetLabPageLayout(pageId)} className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><RotateCcw className="h-3 w-3" />{t("推荐顺序")}</button></div>
                         <div className="space-y-2">
                           {visibleOrder.map((moduleId, index) => {
                             const meta = LAB_MODULE_META[moduleId];
@@ -1047,8 +1042,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                               className={`flex items-center gap-2 rounded-xl border bg-gray-50/60 p-2 transition dark:bg-gray-800/50 ${dragging ? 'border-indigo-400 opacity-55 dark:border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
                             >
                               <GripVertical className="h-4 w-4 flex-none cursor-grab text-gray-300 active:cursor-grabbing dark:text-gray-600" aria-hidden="true" />
-                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {meta.label}</div></div>
-                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={`上移${meta.label}`} title="上移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={`下移${meta.label}`} title="下移" className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? '默认收起' : '默认展开'}</button></div>
+                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {t(meta.label)}</div></div>
+                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={t("上移{0}", [t(meta.label)])} title={t("上移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={t("下移{0}", [meta.label])} title={t("下移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
                             </div>;
                           })}
                         </div>
@@ -1065,7 +1060,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {/* 密钥保管箱：多把密钥 + 命名备注，点击使用即切换 */}
             <div data-agent-private="true" className="space-y-2">
               {keyVault.length === 0 && (
-                <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">还没有保存的密钥，在下方添加第一把。</p>
+                <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">{t("还没有保存的密钥，在下方添加第一把。")}</p>
               )}
               {keyVault.map(entry => {
                 const active = entry.key === apiKey;
@@ -1097,39 +1092,39 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         onBlur={() => void commitRename(entry)}
                         maxLength={30}
                         className="min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-sm outline-none dark:border-indigo-500/50 dark:bg-gray-900"
-                        aria-label="密钥备注名"
+                        aria-label={t("密钥备注名")}
                       />
                     ) : (
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="truncate text-sm font-bold text-gray-800 dark:text-gray-100" title={entry.name}>{entry.name}</span>
-                          {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="NovelAI Key 应以 pst- 开头">格式可疑</span>}
-                          {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="免费权益已过期；Paid Anlas 可付费生成。">订阅过期</span>}
-                          {keyNonOpus && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title="当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成">非 Opus</span>}
+                          {!entry.key.startsWith('pst-') && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("NovelAI Key 应以 pst- 开头")}>{t("格式可疑")}</span>}
+                          {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("免费权益已过期；Paid Anlas 可付费生成。")}>{t("订阅过期")}</span>}
+                          {keyNonOpus && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成")}>{t("非 Opus")}</span>}
                         </div>
                         <p className="mt-0.5 truncate font-mono text-meta text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
                       </div>
                     )}
                     <div className="flex flex-none items-center gap-1">
-                      <button type="button" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title="修改备注名">备注</button>
-                      {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} onClick={() => activateKeyEntry(entry)} className={`rounded-lg px-2.5 py-1 text-xs font-bold text-white ${active ? 'cursor-default bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>{active ? '使用中' : '使用'}</button>}
-                      {renamingKeyId !== entry.id && <button type="button" onClick={() => void removeKeyEntry(entry)} className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40" title="删除">删除</button>}
+                      <button type="button" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title={t("修改备注名")}>{t("备注")}</button>
+                      {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} onClick={() => activateKeyEntry(entry)} className={`rounded-lg px-2.5 py-1 text-xs font-bold text-white ${active ? 'cursor-default bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>{active ? t("使用中") : t("使用")}</button>}
+                      {renamingKeyId !== entry.id && <button type="button" onClick={() => void removeKeyEntry(entry)} className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40" title={t("删除")}>{t("删除")}</button>}
                     </div>
                   </div>
                 );
               })}
             </div>
             <div data-agent-private="true" className="mt-3 space-y-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-              <div className="text-xs font-bold text-gray-500 dark:text-gray-400">添加密钥</div>
+              <div className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("添加密钥")}</div>
               <input
                 value={newKeyName}
                 onChange={event => setNewKeyName(event.target.value)}
                 maxLength={30}
-                placeholder="备注名（例如：车队 A / 备用号）"
+                placeholder={t("备注名（例如：车队 A / 备用号）")}
                 autoComplete="off"
                 name="nai-vault-key-label"
                 className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                aria-label="密钥备注名"
+                aria-label={t("密钥备注名")}
               />
               <div className="flex gap-2">
                 <input
@@ -1144,55 +1139,55 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   aria-label="NovelAI API Key"
                 />
                 <button type="button" onClick={() => setShowNewKeyValue(value => !value)} className="rounded-lg border border-gray-300 px-3 text-sm text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
-                  {showNewKeyValue ? '隐藏' : '显示'}
+                  {showNewKeyValue ? t("隐藏") : t("显示")}
                 </button>
-                <button type="button" onClick={() => void addKeyEntry()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">添加</button>
+                <button type="button" onClick={() => void addKeyEntry()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">{t("添加")}</button>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs leading-5">
                 <label className="flex min-w-0 cursor-pointer items-center gap-2 text-gray-600 dark:text-gray-300">
-                  <input type="checkbox" checked={rememberApiKey} title="关闭后仅当前标签页使用" onChange={event => updateRememberApiKey(event.target.checked)} className="shrink-0 rounded border-gray-300 text-indigo-600" />
-                  <span>在本机记住当前使用的 API Key</span>
+                  <input type="checkbox" checked={rememberApiKey} title={t("关闭后仅当前标签页使用")} onChange={event => updateRememberApiKey(event.target.checked)} className="shrink-0 rounded border-gray-300 text-indigo-600" />
+                  <span>{t("在本机记住当前使用的 API Key")}</span>
                 </label>
-                <p className="text-amber-600 dark:text-amber-400">Key 明文保存在本机，局域网访问需密码。</p>
+                <p className="text-amber-600 dark:text-amber-400">{t("Key 明文保存在本机，局域网访问需密码。")}</p>
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <label className="mobile-touch flex cursor-pointer items-center gap-2">
                   <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" />
-                  <b className="text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b>
+                  <b className="text-sm text-gray-800 dark:text-gray-100">{t("多人拼车公共队列")}</b>
                 </label>
-                <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? '按 Key 保存，由中转服务排队。' : '按 Key 保存，同 Key 依次生图。'}</span>
-                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? '启用中转会发送 Key、提示词及本次参考图；停止等待不保证服务端取消。' : '不上传 Key、提示词或图片。'}</p>
+                <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("按 Key 保存，由中转服务排队。") : t("按 Key 保存，同 Key 依次生图。")}</span>
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("启用中转会发送 Key、提示词及本次参考图；停止等待不保证服务端取消。") : t("不上传 Key、提示词或图片。")}</p>
               </div>
               <div className="mt-2 flex flex-wrap gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
                 <label className="min-w-0 flex-[3_1_20rem]">
-                  <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">公共队列服务地址</span>
-                  <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder="排队服务或完整的 /ai/generate-image 地址" className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
+                  <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("公共队列服务地址")}</span>
+                  <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder={t("排队服务或完整的 /ai/generate-image 地址")} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
                 </label>
                 {cloudQueue.enabled && !getCloudQueueGenerationUrl(cloudQueue.serviceUrl) && <div className="min-w-0 flex-[2_1_16rem]">
                   <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                    <label htmlFor="settings-cloud-queue-greeting" className="text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label>
-                    <label className="mobile-touch flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title="显示当前使用者的个性语"><input type="checkbox" aria-label="显示当前使用者的个性语" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" /><span>显示个性语</span></label>
+                    <label htmlFor="settings-cloud-queue-greeting" className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("排队个性语（最多15字）")}</label>
+                    <label className="mobile-touch flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title={t("显示当前使用者的个性语")}><input type="checkbox" aria-label={t("显示当前使用者的个性语")} checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" /><span>{t("显示个性语")}</span></label>
                   </div>
                   <input id="settings-cloud-queue-greeting" value={cloudQueue.greeting} maxLength={15} onChange={event => { const greeting = event.currentTarget.value.slice(0, 15); setCloudQueue(value => ({ ...value, greeting })); }} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
                 </div>}
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-              <h4 className="font-semibold text-gray-900 dark:text-white">Anlas 点数预算</h4>
+              <h4 className="font-semibold text-gray-900 dark:text-white">{t("Anlas 点数预算")}</h4>
               <div className="mt-3 space-y-3">
                 <AnlasBalanceBar variant="details" budget={anlasBudget} subscription={novelaiSubscription} />
                 <OpusUsageBar collapsed={false} showDetails />
               </div>
               <div className="mt-3 flex gap-2">
-                <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label="可支配 Anlas 点数" />
-                <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">保存</button>
+                <input type="number" min="0" step="1" value={anlasInput} onChange={event => setAnlasInput(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-lg font-black tabular-nums outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900" aria-label={t("可支配 Anlas 点数")} />
+                <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">{t("保存")}</button>
               </div>
-              <div className="mt-2 flex items-start justify-between gap-3 text-meta leading-5 text-gray-500 dark:text-gray-400"><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">恢复 1666</button></div>
+              <div className="mt-2 flex items-start justify-between gap-3 text-meta leading-5 text-gray-500 dark:text-gray-400"><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">{t("恢复 1666")}</button></div>
               <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400" title="仅统计本机操作，按 Key 累计">个人使用统计（当前密钥）</span>
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400" title={t("仅统计本机操作，按 Key 累计")}>{t("个人使用统计（当前密钥）")}</span>
                   {anlasBudget.personal && (anlasBudget.personal.anlasSpent > 0 || anlasBudget.personal.opusImages > 0) && (
                     <button type="button" onClick={async () => {
                       if (!await confirmAction({ title: '重置个人使用统计？', message: '清零当前 Key 的 Anlas／Opus 统计，本地预算保留。', confirmLabel: '重置', tone: 'danger' })) return;
@@ -1205,30 +1200,30 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       } catch {
                         notify('重置失败', 'error');
                       }
-                    }} className="text-meta font-bold text-indigo-600 dark:text-indigo-300">重置</button>
+                    }} className="text-meta font-bold text-indigo-600 dark:text-indigo-300">{t("重置")}</button>
                   )}
                 </div>
                 {(() => {
                   const personal = anlasBudget.personal || (apiKey ? { anlasSpent: 0, opusImages: 0 } : null);
                   if (!personal) {
-                    return <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">尚未配置 Key</p>;
+                    return <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("尚未配置 Key")}</p>;
                   }
                   const hasRecords = anlasBudget.personal != null;
                   return (
                     <>
                       <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                         <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
-                          <div className="text-meta text-gray-500 dark:text-gray-400">个人估算消耗 Anlas</div>
+                          <div className="text-meta text-gray-500 dark:text-gray-400">{t("个人估算消耗 Anlas")}</div>
                           <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{personal.anlasSpent}</div>
                         </div>
                         <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
-                          <div className="text-meta text-gray-500 dark:text-gray-400" title="受限模型的免费生成；不含不限额免费图">个人 Opus 免费图</div>
-                          <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{personal.opusImages} 张</div>
-                          <div className="text-micro text-gray-400">≈ {(personal.opusImages / naiRuntimeCoefficient).toFixed(2)}% 额度</div>
+                          <div className="text-meta text-gray-500 dark:text-gray-400" title={t("受限模型的免费生成；不含不限额免费图")}>{t("个人 Opus 免费图")}</div>
+                          <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{t("{0} 张", [personal.opusImages])}</div>
+                          <div className="text-micro text-gray-400">{t("≈ {0}% 额度", [(personal.opusImages / naiRuntimeCoefficient).toFixed(2)])}</div>
                         </div>
                       </div>
                       {!hasRecords && (
-                        <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">暂无本机使用记录</p>
+                        <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("暂无本机使用记录")}</p>
                       )}
                     </>
                   );
@@ -1242,22 +1237,22 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           </section>
 
           <section id="settings-privacy" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'privacy' ? 'hidden' : ''}`}>
-            <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">隐私与分享</h3>
+            <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("隐私与分享")}</h3>
             {activeSection === 'privacy' && <div className="mb-4">
-              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式（防社死）</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
-              <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">点击图片临时显示</p>
+              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
+              <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("点击图片临时显示")}</p>
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">点击名称临时显示</span></span>
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("同时隐藏作品名称")}</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">{t("点击名称临时显示")}</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
               <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b></span>
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("启动时自动开启安全模式")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
             </div>}
             <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">分享图片时移除生成信息</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">复制／下载时移除生成信息；原图与历史保留。</span></span>
-              <input type="checkbox" aria-label="分享图片时移除生成信息" checked={cleanSharedImages} onChange={event => {
+              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">{t("分享图片时移除生成信息")}</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("复制／下载时移除生成信息；原图与历史保留。")}</span></span>
+              <input type="checkbox" aria-label={t("分享图片时移除生成信息")} checked={cleanSharedImages} onChange={event => {
                 try { setCleanSharedImages(event.target.checked); }
                 catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
               }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600" />
@@ -1284,14 +1279,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               {/* 局域网访问 */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-5 dark:border-gray-700">
                 <div className="min-w-0 flex-1 basis-64">
-                  <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><Lock className="h-4 w-4 flex-none text-indigo-500" />局域网访问</h4>
+                  <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><Lock className="h-4 w-4 flex-none text-indigo-500" />{t("局域网访问")}</h4>
                   {maintenanceStatus?.lanUrls ? maintenanceStatus.lanUrls.length > 0 ? maintenanceStatus.lanUrls.map(url => (
                     <div key={url} className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                      <span className="flex-none">手机访问</span>
+                      <span className="flex-none">{t("手机访问")}</span>
                       <span className="min-w-0 break-all font-mono select-all">{url}</span>
-                      <button type="button" onClick={() => void copyTagText(url).then(() => notify('手机访问地址已复制'), () => notify('复制失败，请手动选择地址复制', 'error'))} aria-label={`复制手机访问地址 ${url}`} title="复制手机访问地址" className="mobile-touch flex flex-none items-center justify-center rounded-lg px-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><Copy className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => void copyTagText(url).then(() => notify('手机访问地址已复制'), () => notify('复制失败，请手动选择地址复制', 'error'))} aria-label={t("复制手机访问地址 {0}", [url])} title={t("复制手机访问地址")} className="mobile-touch flex flex-none items-center justify-center rounded-lg px-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><Copy className="h-3.5 w-3.5" /></button>
                     </div>
-                  )) : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">未检测到可用的局域网地址。</p> : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{maintenanceStatusError ? '手机访问地址读取失败' : maintenanceStatus ? '重启工坊后显示手机访问地址' : '正在读取手机访问地址…'}</p>}
+                  )) : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("未检测到可用的局域网地址。")}</p> : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{maintenanceStatusError ? t("手机访问地址读取失败") : maintenanceStatus ? t("重启工坊后显示手机访问地址") : t("正在读取手机访问地址…")}</p>}
                 </div>
                 <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-none">
                   <input
@@ -1303,9 +1298,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     maxLength={4}
                     value={lanPin}
                     onChange={event => setLanPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 4))}
-                    aria-label="新局域网访问密码"
-                    placeholder="新的 4 位数字密码"
-                    title="四位数字，保存后立即生效"
+                    aria-label={t("新局域网访问密码")}
+                    placeholder={t("新的 4 位数字密码")}
+                    title={t("四位数字，保存后立即生效")}
                     className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:w-40 sm:flex-none"
                   />
                   <button
@@ -1313,25 +1308,25 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     onClick={() => void saveLanPin()}
                     disabled={lanPinSaving || lanPin.length !== 4}
                     className="mobile-touch flex-none rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-indigo-500 disabled:opacity-50"
-                  >{lanPinSaving ? '保存中…' : '更新密码'}</button>
+                  >{lanPinSaving ? t("保存中…") : t("更新密码")}</button>
                 </div>
               </div>
 
               {/* 手机图片缓存 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">手机图片缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">仅缩略图，不影响原图。</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? '关闭' : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">已缓存 {mobileCacheStats.count} 张 · {(mobileCacheStats.bytes / 1024 / 1024).toFixed(1)} MB / {mobileCacheStats.limitMb} MB</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">清空缓存</button></div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">{t("清空缓存")}</button></div></div>
 
               {/* 电脑缩略图缓存 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">电脑缩略图缓存</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">自动管理缩略图，不影响原图。</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>已缓存 {maintenanceStatus.thumbnailCache.count} 张 · {(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />固定封面 {maintenanceStatus.thumbnailCache.pinnedCount} 张 · {(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : '等待读取本地缓存状态…'}</div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("电脑缩略图缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("自动管理缩略图，不影响原图。")}</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>{t("已缓存 ")}{maintenanceStatus.thumbnailCache.count} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />{t("固定封面 ")}{maintenanceStatus.thumbnailCache.pinnedCount} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : t("等待读取本地缓存状态…")}</div></div>
 
               {/* Tag 补全词库 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900 dark:text-white">Tag 补全词库</h4></div><div className="flex flex-none sm:justify-end"><TagDictionaryUpdater notify={notify} /></div></div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><h4 className="font-semibold text-gray-900 dark:text-white">{t("Tag 补全词库")}</h4></div><div className="flex flex-none sm:justify-end"><TagDictionaryUpdater notify={notify} /></div></div></div>
 
               {/* 本地服务状态 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">本地服务状态</h4></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>媒体网关：{maintenanceStatus?.gatewayReady ? '可用' : '正在检查'}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>核心页面服务：{maintenanceStatus?.workerReady ? '可用' : maintenanceStatus ? '未就绪' : '正在检查'}</div></div>}</div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("本地服务状态")}</h4></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("媒体网关：{0}", [maintenanceStatus?.gatewayReady ? t("可用") : t("正在检查")])}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("核心页面服务：{0}", [maintenanceStatus?.workerReady ? t("可用") : maintenanceStatus ? t("未就绪") : t("正在检查")])}</div></div>}</div>
 
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><AppUpdateManager /></div>
               {/* 关于 NAI Atelier */}
-              <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">关于 NAI Atelier</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人维护版本 · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-500"><ExternalLink className="h-3.5 w-3.5" />打开 GitHub</a></div>
+              <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("关于 NAI Atelier")}</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("个人维护版本 · v{0}", [__APP_VERSION__])}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-500"><ExternalLink className="h-3.5 w-3.5" />{t("打开 GitHub")}</a></div>
             </div>)}
           </section>
           </div>

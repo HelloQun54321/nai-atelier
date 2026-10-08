@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   BackupRecord,
@@ -34,6 +35,7 @@ interface DataBackupManagerProps {
 }
 
 export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) => {
+  useLanguage();
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [error, setError] = useState('');
   const [backupLabel, setBackupLabel] = useState('');
@@ -154,33 +156,31 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-gray-900 dark:text-white">重要数据备份</h4>
+            <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
             {isRunning && (
               <span className="flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-bold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                正在备份
-              </span>
+                {t("正在备份")}</span>
             )}
           </div>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">含密钥，请妥善保管备份。</p>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("含密钥，请妥善保管备份。")}</p>
         </div>
         <div className="flex flex-none items-center gap-2">
           <button
             type="button"
             onClick={() => void handleOpenFolder(status?.targetDir)}
             className="mobile-touch flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-            title="在系统文件管理器中打开备份总目录"
+            title={t("在系统文件管理器中打开备份总目录")}
           >
             <FolderOpen className="h-3.5 w-3.5 text-indigo-500" />
-            打开备份文件夹
-          </button>
+            {t("打开备份文件夹")}</button>
         </div>
       </div>
 
       {error && (
         <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
           <AlertCircle className="h-4 w-4 flex-none" />
-          <span>{error}</span>
+          <span>{t(error)}</span>
         </div>
       )}
 
@@ -191,16 +191,13 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <HardDrive className="h-3.5 w-3.5 text-indigo-500" />
-              当前本地源数据 (local-data)
-            </span>
+              {t("当前本地源数据 (local-data)")}</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">
               {formatBytes(sourceStats.totalBytes)}
             </span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              · {sourceStats.fileCount.toLocaleString('zh-CN')} 个文件
-            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{t("· {0} 个文件", [sourceStats.fileCount.toLocaleString(getLanguage())])}</span>
           </div>
           <p className="mt-1 truncate font-mono text-micro text-gray-400 dark:text-gray-500" title={status?.sourceDir}>
             {status?.sourceDir || 'local-data'}
@@ -212,16 +209,14 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <Archive className="h-3.5 w-3.5 text-indigo-500" />
-              备份目标目录
-            </span>
+              {t("备份目标目录")}</span>
             {!isEditingTargetDir && (
               <button
                 type="button"
                 onClick={() => setIsEditingTargetDir(true)}
                 className="text-meta font-bold text-indigo-600 hover:underline dark:text-indigo-400"
               >
-                修改路径
-              </button>
+                {t("修改路径")}</button>
             )}
           </div>
 
@@ -239,8 +234,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 onClick={handleSaveTargetDir}
                 className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-500"
               >
-                保存
-              </button>
+                {t("保存")}</button>
               <button
                 type="button"
                 onClick={() => {
@@ -249,8 +243,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 }}
                 className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400"
               >
-                取消
-              </button>
+                {t("取消")}</button>
             </div>
           ) : (
             <>
@@ -263,10 +256,9 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 {status?.targetDirExists ? (
                   <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-3 w-3" />
-                    目录已就绪（含 {backups.length} 个历史备份）
-                  </span>
+                    {t("目录已就绪（含 ")}{backups.length} {t(" 个历史备份）")}</span>
                 ) : (
-                  <span>首次备份时将自动创建该目录</span>
+                  <span>{t("首次备份时将自动创建该目录")}</span>
                 )}
               </p>
             </>
@@ -284,7 +276,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               onChange={e => setBackupLabel(e.target.value)}
               disabled={isRunning}
               maxLength={30}
-              placeholder="可选备注名（例如：升级前备份 / 阶段归档）"
+              placeholder={t("可选备注名（例如：升级前备份 / 阶段归档）")}
               className="mobile-touch w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-xs text-gray-800 outline-none transition focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800/80 dark:text-gray-100"
             />
           </div>
@@ -301,12 +293,12 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             {isRunning ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>正在备份中…</span>
+                <span>{t("正在备份中…")}</span>
               </>
             ) : (
               <>
                 <Play className="h-4 w-4 fill-current" />
-                <span>立即完整备份</span>
+                <span>{t("立即完整备份")}</span>
               </>
             )}
           </button>
@@ -318,13 +310,9 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             <div className="flex items-center justify-between text-xs font-bold text-indigo-700 dark:text-indigo-300">
               <span className="flex items-center gap-1.5">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {progress.percent < 100 ? `正在复制文件 (${progress.percent}%)` : '正在写入元数据与校验...'}
+                {progress.percent < 100 ? t("正在复制文件 ({0}%)", [progress.percent]) : t("正在写入元数据与校验...")}
               </span>
-              <span className="tabular-nums">
-                {progress.copiedFiles.toLocaleString('zh-CN')} / {progress.totalFiles.toLocaleString('zh-CN')} 文件
-                {' · '}
-                {formatBytes(progress.copiedBytes)} / {formatBytes(progress.totalBytes)}
-              </span>
+              <span className="tabular-nums">{t("{0} / {1} 文件{2}{3} / {4}", [progress.copiedFiles.toLocaleString(getLanguage()), progress.totalFiles.toLocaleString(getLanguage()), ' · ', formatBytes(progress.copiedBytes), formatBytes(progress.totalBytes)])}</span>
             </div>
 
             {/* 进度条轨道 */}
@@ -336,9 +324,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
             </div>
 
             {progress.currentItem && (
-              <p className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={progress.currentItem}>
-                正在处理: {progress.currentItem}
-              </p>
+              <p className="truncate font-mono text-micro text-gray-500 dark:text-gray-400" title={progress.currentItem}>{t("正在处理: {0}", [progress.currentItem])}</p>
             )}
           </div>
         )}
@@ -354,14 +340,11 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="flex items-center gap-2">
             <FolderArchive className="h-4 w-4 text-indigo-500" />
             <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-              历史备份存档
-            </span>
-            <span className="rounded-full bg-gray-200/80 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-              {backups.length} 个
-            </span>
+              {t("历史备份存档")}</span>
+            <span className="rounded-full bg-gray-200/80 px-2 py-0.5 text-micro font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">{t("{0} 个", [backups.length])}</span>
           </div>
           <div className="flex items-center gap-1 text-xs text-gray-400">
-            <span>{isHistoryExpanded ? '收起列表' : '展开查看'}</span>
+            <span>{isHistoryExpanded ? t("收起列表") : t("展开查看")}</span>
             {isHistoryExpanded ? (
               <ChevronDown className="h-4 w-4" />
             ) : (
@@ -374,8 +357,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <div className="border-t border-gray-200 p-3 dark:border-gray-700">
             {backups.length === 0 ? (
               <div className="py-6 text-center text-xs text-gray-400 dark:text-gray-500">
-                暂无备份
-              </div>
+                {t("暂无备份")}</div>
             ) : (
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {backups.map(backup => {
@@ -396,13 +378,12 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                             </span>
                             {backup.label && (
                               <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-medium text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
-                                {backup.label}
+                                {t(backup.label)}
                               </span>
                             )}
                             {isZip && (
                               <span className="flex-none rounded bg-amber-50 px-1.5 py-0.5 text-micro font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                                ZIP 压缩包
-                              </span>
+                                {t("ZIP 压缩包")}</span>
                             )}
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-meta text-gray-400">
@@ -412,7 +393,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                             {backup.fileCount > 0 && (
                               <>
                                 <span>·</span>
-                                <span>{backup.fileCount.toLocaleString('zh-CN')} 文件</span>
+                                <span>{t("{0} 文件", [backup.fileCount.toLocaleString(getLanguage())])}</span>
                               </>
                             )}
                           </div>
@@ -427,25 +408,23 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                               data-agent-action="business" onClick={() => void handleDeleteBackup(backup.name)}
                               disabled={deletingName === backup.name}
                               className="mobile-touch flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-meta font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
-                              title="确认永久删除此备份"
+                              title={t("确认永久删除此备份")}
                             >
                               {deletingName === backup.name ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : (
                                 <Check className="h-3 w-3" />
                               )}
-                              确认删除
-                            </button>
+                              {t("确认删除")}</button>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteName(null)}
                               disabled={deletingName === backup.name}
                               className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                              title="取消删除"
+                              title={t("取消删除")}
                             >
                               <X className="h-3 w-3" />
-                              取消
-                            </button>
+                              {t("取消")}</button>
                           </div>
                         ) : (
                           <>
@@ -453,21 +432,19 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                               type="button"
                               onClick={() => void handleOpenFolder(backup.path)}
                               className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
-                              title="在文件资源管理器中打开此备份"
+                              title={t("在文件资源管理器中打开此备份")}
                             >
                               <ExternalLink className="h-3 w-3" />
-                              定位
-                            </button>
+                              {t("定位")}</button>
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteName(backup.name)}
                               disabled={Boolean(deletingName) || isRunning}
                               className="mobile-touch flex items-center gap-1 rounded-lg border border-transparent px-2.5 py-1 text-meta font-medium text-gray-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:hover:border-rose-900/50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 disabled:opacity-40"
-                              title={`删除此备份存档（释放 ${formatBytes(backup.totalBytes)}）`}
+                              title={t("删除此备份存档（释放 {0}）", [formatBytes(backup.totalBytes)])}
                             >
                               <Trash2 className="h-3 w-3" />
-                              删除
-                            </button>
+                              {t("删除")}</button>
                           </>
                         )}
                       </div>

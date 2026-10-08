@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
 import { DanbooruCoverCandidate, DanbooruCoverSet, danbooruService } from '../services/danbooruService';
@@ -30,6 +31,7 @@ const lookupErrorMessage = (error: unknown) => {
 };
 
 export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad, notify }) => {
+  useLanguage();
   const rootRef = useRef<HTMLDivElement>(null);
   const viewActive = useContext(ImageActivityContext);
   const prewarm = useRef<ReturnType<typeof createMediaPrewarmSession> | null>(null);
@@ -272,15 +274,15 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
         }
       }} />
       <ImageShareOverlay imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify} />
-      <span className="pointer-events-none absolute bottom-16 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{isSavedCover ? '已保存封面' : 'Danbooru'}</span>
-      {canBrowse && <button data-card-action="true" type="button" disabled={previousIndex < 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="hover-reveal-touch mobile-touch absolute left-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title="上一张" aria-label="上一张"><ChevronLeft className="h-4 w-4" /></button>}
-      {canBrowse && <button data-card-action="true" type="button" disabled={isLoadingMore || (nextIndex < 0 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
-      {fixedSrc && !browseSaved && !canBrowse && <button data-card-action="true" type="button" onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85" title="下一张" aria-label="下一张"><ChevronRight className="h-4 w-4" /></button>}
+      <span className="pointer-events-none absolute bottom-16 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{isSavedCover ? t("已保存封面") : 'Danbooru'}</span>
+      {canBrowse && <button data-card-action="true" type="button" disabled={previousIndex < 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="hover-reveal-touch mobile-touch absolute left-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title={t("上一张")} aria-label={t("上一张")}><ChevronLeft className="h-4 w-4" /></button>}
+      {canBrowse && <button data-card-action="true" type="button" disabled={isLoadingMore || (nextIndex < 0 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title={t("下一张")} aria-label={t("下一张")}><ChevronRight className="h-4 w-4" /></button>}
+      {fixedSrc && !browseSaved && !canBrowse && <button data-card-action="true" type="button" onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85" title={t("下一张")} aria-label={t("下一张")}><ChevronRight className="h-4 w-4" /></button>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
       <ImageIcon className={`h-7 w-7 ${coverSet === undefined || isLoadingMore ? 'animate-pulse' : ''}`} />
-      <span className="mt-2 text-micro">{coverSet === undefined || isLoadingMore ? '正在查找参考图…' : lookupError || (failedSources.size ? '封面图片加载失败' : '暂无可用的 Danbooru 封面')}</span>
-      {(coverSet === null || failedSources.size > 0) && !isLoadingMore && <button type="button" onClick={event => { event.stopPropagation(); setRetryToken(value => value + 1); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800">重试加载封面</button>}
-      {coverSet?.hasMore && <button type="button" disabled={isLoadingMore} onClick={event => { event.stopPropagation(); void loadNextCandidatePage(); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800">继续查找封面</button>}
+      <span className="mt-2 text-micro">{coverSet === undefined || isLoadingMore ? t("正在查找参考图…") : lookupError || (failedSources.size ? t("封面图片加载失败") : t("暂无可用的 Danbooru 封面"))}</span>
+      {(coverSet === null || failedSources.size > 0) && !isLoadingMore && <button type="button" onClick={event => { event.stopPropagation(); setRetryToken(value => value + 1); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800">{t("重试加载封面")}</button>}
+      {coverSet?.hasMore && <button type="button" disabled={isLoadingMore} onClick={event => { event.stopPropagation(); void loadNextCandidatePage(); }} className="mt-2 rounded-lg border border-gray-300 px-2 py-1.5 text-micro hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800">{t("继续查找封面")}</button>}
     </div>}
   </div>;
 };

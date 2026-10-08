@@ -1,3 +1,4 @@
+import { t, getLanguage } from '../../services/i18n';
 import React from 'react';
 import { Bot, History, Image, Sparkles, Star, Upload } from 'lucide-react';
 import { Inspiration, InspirationSourceType, NAIParams, User } from '../../types';
@@ -25,7 +26,7 @@ export const sourceIcon = (source?: InspirationSourceType) => {
 };
 
 export const formatDate = (value?: number) => value
-  ? new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(value)
+  ? new Intl.DateTimeFormat(getLanguage(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(value)
   : '从未使用';
 
 export const splitTags = (value: string) => normalizeInspirationTags(value.split(/[,，\n]+/));
@@ -44,12 +45,12 @@ export const CollectionButton: React.FC<{
 }> = ({ active, count, icon, label, onClick }) => (
   <button type="button" onClick={onClick} className={`flex h-10 w-full items-center gap-2 rounded-xl border px-3 text-left text-sm font-semibold transition ${active ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}>
     <span className="flex h-5 w-5 items-center justify-center [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
-    <span className="min-w-0 flex-1 truncate">{label}</span><span className="text-meta font-medium text-gray-400">{count}</span>
+    <span className="min-w-0 flex-1 truncate">{t(label)}</span><span className="text-meta font-medium text-gray-400">{count}</span>
   </button>
 );
 
 export const RatingStars: React.FC<{ value: number; onChange?: (value: number) => void; compact?: boolean }> = ({ value, onChange, compact }) => (
-  <div className="flex items-center gap-0.5" aria-label={`${value} 星`}>
-    {[1, 2, 3, 4, 5].map(star => <button key={star} type="button" disabled={!onChange} onClick={event => { event.stopPropagation(); onChange?.(value === star ? 0 : star); }} className={`${compact ? 'h-5 w-5' : 'h-8 w-8'} flex items-center justify-center disabled:cursor-default`} aria-label={`${star} 星`}><Star className={`${compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} ${star <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-700'}`} /></button>)}
+  <div className="flex items-center gap-0.5" aria-label={t("{0} 星", [value])}>
+    {[1, 2, 3, 4, 5].map(star => <button key={star} type="button" disabled={!onChange} onClick={event => { event.stopPropagation(); onChange?.(value === star ? 0 : star); }} className={`${compact ? 'h-5 w-5' : 'h-8 w-8'} flex items-center justify-center disabled:cursor-default`} aria-label={t("{0} 星", [star])}><Star className={`${compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} ${star <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-700'}`} /></button>)}
   </div>
 );

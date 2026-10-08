@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../../services/appearancePreferences';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
@@ -120,7 +121,24 @@ describe('GlobalSettings', () => {
 
   afterEach(() => {
     cleanup();
+    setLanguage('zh-CN');
     vi.unstubAllGlobals();
+  });
+  it('真实设置选择五种语言，保存选择并保留未完成的自定义主题名称', () => {
+    render(React.createElement(SettingsHarness));
+    fireEvent.click(screen.getByRole('button', { name: '另存当前主题' }));
+    const draft = screen.getByPlaceholderText(/例如：晴空午夜/) as HTMLInputElement;
+    fireEvent.change(draft, { target: { value: '取消, 我的主题' } });
+    const select = screen.getByLabelText('语言') as HTMLSelectElement;
+    expect(Array.from(select.options).map(option => option.text)).toEqual(LANGUAGES.map(item => item.name));
+    for (const item of LANGUAGES) {
+      fireEvent.change(select, { target: { value: item.code } });
+      expect(document.documentElement.lang).toBe(item.code);
+      expect(localStorage.getItem('nai_language')).toBe(item.code);
+      expect(screen.getByLabelText(t('语言'))).toBe(select);
+      expect(draft.value).toBe('取消, 我的主题');
+      expect(screen.getByRole('button', { name: t('另存当前主题') })).toBeTruthy();
+    }
   });
   it('Key 默认记住，取消后重开仍为关闭，重新开启保存当前 Key', async () => {
     const view = render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));

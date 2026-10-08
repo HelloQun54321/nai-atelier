@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderBase, screen, waitFor } from '@testing-library/react';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ImageTaggerModelManager } from '../../components/ImageTaggerModelManager';
 import { imageTaggerService, ImageTaggerStatus } from '../../services/imageTaggerService';
@@ -25,7 +26,18 @@ beforeEach(() => {
     if (status.downloadingModel === id) status.downloadingModel = null;
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.clearAllMocks(); });
+
+it('五种语言更新真实模型管理页和共用下载状态，不启动下载', async () => {
+  render(<ImageTaggerModelManager notify={vi.fn()} />);
+  await screen.findByText('尚未下载');
+  for (const language of LANGUAGES) {
+    act(() => setLanguage(language.code));
+    expect(screen.getByText(t('尚未下载'))).toBeTruthy();
+    expect(taggerProgressText({ ...status.models[1], stage: 'downloading', receivedBytes: 630_000_000 })).toBe(t('正在下载 {0}% · {1}', [50, '630 MB / 1.26 GB']));
+  }
+  expect(imageTaggerService.downloadModel).not.toHaveBeenCalled();
+});
 
 it('下载不改变使用模型，用户单独选择后更新所有状态', async () => {
   const notify = vi.fn(); render(<ImageTaggerModelManager notify={notify} />);

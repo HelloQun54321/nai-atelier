@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import { isTopmostModal } from './useModalA11y';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
@@ -5,6 +6,7 @@ import { createPortal } from 'react-dom';
 
 /** 移动同一个挂载容器，切换全屏时保留底图、蒙版像素和画布事件。 */
 const CanvasLayer: React.FC<React.PropsWithChildren<{ fullscreen: boolean }>> = ({ fullscreen, children }) => {
+  useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [host] = useState(() => {
     const element = document.createElement('div');
@@ -60,6 +62,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
   onFocusedInteractionMove,
   onFocusedInteractionEnd,
 }) => {
+  useLanguage();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -215,7 +218,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       role={isFullscreen ? 'dialog' : undefined}
       data-agent-command-scope={isFullscreen ? agentCommandScope : undefined}
       aria-modal={isFullscreen ? true : undefined}
-      aria-label={isFullscreen ? '全屏大画板精修' : undefined}
+      aria-label={isFullscreen ? t("全屏大画板精修") : undefined}
       className={
         isFullscreen
           ? 'fixed inset-0 z-[1250] flex flex-col bg-gray-50 p-4 dark:bg-gray-950 backdrop-blur-md sm:p-6 select-none'
@@ -226,8 +229,8 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       {isFullscreen && (
         <div className="mb-3 flex items-center justify-between gap-3 text-gray-900 dark:text-gray-100">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-bold" title="右键／空格拖动 · Ctrl+滚轮缩放">全屏大画板精修</span>
-            <span className="text-xs text-gray-400">{width} × {height} 像素</span>
+            <span className="text-sm font-bold" title={t("右键／空格拖动 · Ctrl+滚轮缩放")}>{t("全屏大画板精修")}</span>
+            <span className="text-xs text-gray-400">{t("{0} × {1} 像素", [width, height])}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -236,7 +239,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
               className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               <X className="h-4 w-4" />
-              <span>完成 (Esc)</span>
+              <span>{t("完成 (Esc)")}</span>
             </button>
           </div>
         </div>
@@ -257,7 +260,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
           <div className="absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg border border-gray-200/80 bg-white/90 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90">
             <button
               type="button"
-              title="缩小"
+              title={t("缩小")}
               disabled={zoom <= 1}
               onClick={handleZoomOut}
               className="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -266,15 +269,15 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             </button>
             <button
               type="button"
-              title="重置缩放 (适应视口)"
+              title={t("重置缩放 (适应视口)")}
               onClick={handleZoomReset}
               className="px-1.5 py-0.5 font-mono text-meta font-semibold text-indigo-600 hover:bg-indigo-50 rounded dark:text-indigo-400 dark:hover:bg-indigo-950/40"
             >
-              {zoom === 1 ? '适应' : `${Math.round(zoom * 100)}%`}
+              {zoom === 1 ? t("适应") : `${Math.round(zoom * 100)}%`}
             </button>
             <button
               type="button"
-              title="放大"
+              title={t("放大")}
               disabled={zoom >= 4}
               onClick={handleZoomIn}
               className="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -284,7 +287,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <div className="mx-0.5 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
             <button
               type="button"
-              title={isFullscreen ? '退出全屏精修' : '展开全屏大画板'}
+              title={isFullscreen ? t("退出全屏精修") : t("展开全屏大画板")}
               onClick={() => setIsFullscreen(!isFullscreen)}
               className="flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
             >
@@ -299,7 +302,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
           <canvas
             ref={maskCanvasRef}
             tabIndex={maskEditable ? 0 : -1}
-            aria-label="图片编辑画布"
+            aria-label={t("图片编辑画布")}
             aria-disabled={!maskEditable || isBusy}
             className={`absolute inset-0 h-full w-full opacity-0 ${spacePressed ? 'pointer-events-none' : maskEditable && !isBusy ? 'cursor-crosshair touch-none' : 'pointer-events-none cursor-default'}`}
             onPointerDown={e => {
@@ -329,17 +332,17 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <div
               role="button"
               tabIndex={0}
-              aria-label="移动聚焦重绘选区"
+              aria-label={t("移动聚焦重绘选区")}
               className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 cursor-move rounded bg-amber-300/90 px-1.5 py-0.5 text-mini font-bold text-amber-950 shadow"
               onPointerDown={event => onFocusedInteractionStart?.(event, 'move')}
               onPointerMove={onFocusedInteractionMove}
               onPointerUp={onFocusedInteractionEnd}
               onPointerCancel={onFocusedInteractionEnd}
-            >移动</div>
+            >{t("移动")}</div>
             <div
               role="button"
               tabIndex={0}
-              aria-label="调整聚焦重绘选区大小"
+              aria-label={t("调整聚焦重绘选区大小")}
               className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-se-resize rounded-full border-2 border-amber-950 bg-amber-300 shadow"
               onPointerDown={event => onFocusedInteractionStart?.(event, 'resize')}
               onPointerMove={onFocusedInteractionMove}
@@ -348,7 +351,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             />
           </div>}
         </div>
-        {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">选择底图</div>}
+        {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">{t("选择底图")}</div>}
       </div>
     </div>
     </CanvasLayer>

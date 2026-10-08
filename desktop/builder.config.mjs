@@ -2,7 +2,7 @@ export default {
   appId: 'com.naiatelier.desktop',
   productName: 'NAI Atelier',
   directories: { app: '.desktop-build/app', output: 'release', buildResources: 'desktop' },
-  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'services/appReleases.mjs', 'package.json', '!node_modules{,/**/*}'],
+  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'services/appReleases.mjs', 'locales/**/*', 'package.json', '!node_modules{,/**/*}'],
   // extraResources 的根 node_modules 会被打包器默认跳过，需要独立映射。
   extraResources: [
     { from: '.desktop-build/runtime', to: 'runtime', filter: ['**/*'] },
@@ -12,7 +12,7 @@ export default {
   npmRebuild: false,
   publish: { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'release' },
   electronVersion: '44.5.1',
-  electronLanguages: ['zh-CN', 'en-US'],
+  electronLanguages: ['zh-CN', 'zh-TW', 'en-US', 'ja', 'ko'],
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'public/nai-atelier.ico',
@@ -31,7 +31,8 @@ export default {
     uninstallDisplayName: 'NAI Atelier',
     deleteAppDataOnUninstall: false,
     runAfterFinish: true,
-    installerLanguages: ['zh_CN', 'en_US'],
+    installerLanguages: ['zh_CN', 'zh_TW', 'en_US', 'ja_JP', 'ko_KR'],
+    displayLanguageSelector: true,
     language: '2052',
     license: 'LICENSE',
     include: 'desktop/installer.nsh',

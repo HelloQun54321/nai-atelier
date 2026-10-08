@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 
 import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
@@ -46,7 +47,7 @@ const formatHistoryDay = (key: string) => {
     if (key === today) return '今天';
     if (key === yesterday) return '昨天';
     const date = new Date(`${key}T00:00:00`);
-    return date.toLocaleDateString('zh-CN', { ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}), month: 'long', day: 'numeric', weekday: 'short' });
+    return date.toLocaleDateString(getLanguage(), { ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}), month: 'long', day: 'numeric', weekday: 'short' });
 };
 
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
@@ -121,17 +122,18 @@ const HistoryCard = React.memo(function HistoryCard({
     onImageLoadRatio: (itemId: string, ratio: number) => void;
     notify: GenHistoryProps['notify'];
 }) {
+  const language = useLanguage();
     // 图片区展示比例：真实测量比 → params → 默认；父级传下来时随真实比例更新（只影响这张卡）
     const ratio = useMemo(() => resolveHistoryImageRatio(item, measuredRatio), [item, measuredRatio]);
 
-    const createdAt = useMemo(() => new Date(item.createdAt).toLocaleString(), [item.createdAt]);
+    const createdAt = useMemo(() => new Date(item.createdAt).toLocaleString(getLanguage()), [item.createdAt, language]);
 
     return (
         <PressRevealSurface pressDisabled={selectionMode}
             data-history-id={item.id}
             role="button"
             tabIndex={0}
-            aria-label={`查看生成于 ${createdAt} 的图片`}
+            aria-label={t("查看生成于 {0} 的图片", [createdAt])}
             className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
             onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
@@ -144,7 +146,7 @@ const HistoryCard = React.memo(function HistoryCard({
             }}
         >
             <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
-                <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={`生成于 ${createdAt} 的图片`} className="w-full h-full object-cover" onLoad={event => {
+                <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("生成于 {0} 的图片", [createdAt])} className="w-full h-full object-cover" onLoad={event => {
                     const image = event.currentTarget;
                     const imageRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
                     if (Number.isFinite(imageRatio) && imageRatio > 0) onImageLoadRatio(item.id, imageRatio);
@@ -154,14 +156,14 @@ const HistoryCard = React.memo(function HistoryCard({
                 {!selectionMode && <div data-card-action="true" className="hover-reveal-touch absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
                     {isFavoritePending ? (
                         // 收藏写入中只替换心形，下载和复制仍能使用。
-                        <span role="status" aria-label="正在更新收藏" className="hover-reveal-touch pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
+                        <span role="status" aria-label={t("正在更新收藏")} className="hover-reveal-touch pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
                     ) : (
                         <FavoriteButton overlay active={Boolean(item.isFavorite)} className="hover-reveal-touch !h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
                     )}
                     <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
                 </div>}
                 {!selectionMode && <div data-card-action="true" className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
-                    <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label="删除历史图片" title="删除">
+                    <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t("删除历史图片")} title={t("删除")}>
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
@@ -175,6 +177,7 @@ const HistoryCard = React.memo(function HistoryCard({
 });
 
 export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+  const language = useLanguage();
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
     const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -996,8 +999,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             group.push(item);
             groups.set(key, group);
         });
-        return Array.from(groups, ([key, groupItems]) => ({ key, label: formatHistoryDay(key), items: groupItems }));
-    }, [items, browseQuery.sort]);
+        return Array.from(groups, ([key, groupItems]) => ({ key, label: t(formatHistoryDay(key)), items: groupItems }));
+    }, [items, browseQuery.sort, language]);
     const selectionFavoritePending = Array.from(selectedIds).some(id => pendingFavoriteIds.has(id));
 
     // 历史卡预计高度：图片区（列宽 / 图片比例）+ 边框 2px + 列间 12px 间距；手机端另计底部时间行。
@@ -1061,59 +1064,55 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             <WorkspaceToolbar>
                 <div className="history-toolbar-shell">
                     {selectionMode ? <>
-                        <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">已选 {selectedIds.size} 张</span>
-                        <ToolbarButton onClick={exitSelectionMode} className="md:hidden">完成</ToolbarButton>
+                        <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
+                        <ToolbarButton onClick={exitSelectionMode} className="md:hidden">{t("完成")}</ToolbarButton>
                         <div className="history-selection-actions hidden flex-1 md:flex">
-                            <span className="mr-auto flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">多选模式 · 已选 {selectedIds.size} 张</span>
-                            <ToolbarButton onClick={selectCurrentPage}>全选本页</ToolbarButton>
-                            <ToolbarButton onClick={invertCurrentPageSelection}>反选本页</ToolbarButton>
+                            <span className="mr-auto flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</span>
+                            <ToolbarButton onClick={selectCurrentPage}>{t("全选本页")}</ToolbarButton>
+                            <ToolbarButton onClick={invertCurrentPageSelection}>{t("反选本页")}</ToolbarButton>
                             <span aria-hidden="true" className="history-toolbar-divider" />
-                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending}>收藏选中</ToolbarButton>
-                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending}>取消收藏</ToolbarButton>
-                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size}>删除选中</ToolbarButton>
-                            <ToolbarButton onClick={exitSelectionMode}>退出多选</ToolbarButton>
+                            <ToolbarButton tone="favorite" onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending}>{t("收藏选中")}</ToolbarButton>
+                            <ToolbarButton onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending}>{t("取消收藏")}</ToolbarButton>
+                            <ToolbarButton tone="danger" onClick={() => void handleBulkDelete()} disabled={!selectedIds.size}>{t("删除选中")}</ToolbarButton>
+                            <ToolbarButton onClick={exitSelectionMode}>{t("退出多选")}</ToolbarButton>
                         </div>
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
                         <div className="history-toolbar-status">
-                            {newImageCount > 0 && <ToolbarButton aria-label={`新增 ${newImageCount} 张图片 · 查看最新`} title={`新增 ${newImageCount} 张图片 · 查看最新`} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">新图</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
-                            <span className="history-result-count">{totalCount} 张</span>
+                            {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
+                            <span className="history-result-count">{t("{0} 张", [totalCount])}</span>
                             <div ref={managementAnchorRef} className="relative">
-                                <ToolbarButton aria-label={newImageCount ? `管理，新增 ${newImageCount} 张图片` : '管理'} title={migrationProgress ? migrationProgress.total > 0 ? `正在迁移浏览器历史 ${migrationProgress.current}/${migrationProgress.total}，请勿关闭页面…` : '正在检查浏览器历史…' : '历史管理'} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
-                                    {migrationProgress ? <span role="status" aria-label="历史迁移进度"><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">管理</span><ChevronDown className="history-management-chevron" />
+                                <ToolbarButton aria-label={newImageCount ? t("管理，新增 {0} 张图片", [newImageCount]) : t("管理")} title={migrationProgress ? migrationProgress.total > 0 ? t("正在迁移浏览器历史 {0}/{1}，请勿关闭页面…", [migrationProgress.current, migrationProgress.total]) : t("正在检查浏览器历史…") : t("历史管理")} className="history-management-button relative" onClick={() => setShowCleanMenu(value => !value)} disabled={migrationProgress !== null}>
+                                    {migrationProgress ? <span role="status" aria-label={t("历史迁移进度")}><LoaderCircle className="animate-spin" /></span> : <ListChecks />}<span className="history-management-label">{t("管理")}</span><ChevronDown className="history-management-chevron" />
                                     {newImageCount > 0 && <span aria-hidden="true" className="history-new-image-badge">{newImageCount > 99 ? '99+' : '+' + newImageCount}</span>}
                                 </ToolbarButton>
                                 {showCleanMenu && !isMobileViewport && (
-                                    <AnchoredToolbarPopover anchorRef={managementAnchorRef} title="历史管理" width={256} onClose={() => setShowCleanMenu(false)}>
+                                    <AnchoredToolbarPopover anchorRef={managementAnchorRef} title={t("历史管理")} width={256} onClose={() => setShowCleanMenu(false)}>
                                         <button
                                             type="button"
                                             onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
-                                            <ListChecks className="h-4 w-4" />批量选择图片
-                                        </button>
+                                            <ListChecks className="h-4 w-4" />{t("批量选择图片")}</button>
 
                                         <button
                                             type="button"
                                             onClick={() => handleCleanMenuClick('days')}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
-                                            <Clock3 className="h-4 w-4" />按时间清理历史…
-                                        </button>
+                                            <Clock3 className="h-4 w-4" />{t("按时间清理历史…")}</button>
                                         <button
                                             type="button"
                                             onClick={() => handleCleanMenuClick('count')}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
-                                            <Layers className="h-4 w-4" />按数量保留最新…
-                                        </button>
+                                            <Layers className="h-4 w-4" />{t("按数量保留最新…")}</button>
                                         <button
                                             type="button"
                                             onClick={handleClearAll}
                                             className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm border-t border-gray-200 mt-2 pt-3 dark:border-gray-800 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                         >
-                                            <Trash2 className="h-4 w-4" />清空全部
-                                        </button>
+                                            <Trash2 className="h-4 w-4" />{t("清空全部")}</button>
                                     </AnchoredToolbarPopover>
                                 )}
                             </div>
@@ -1122,37 +1121,37 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 </div>
             </WorkspaceToolbar>
 
-            <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title="历史管理" onClose={() => setShowCleanMenu(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
                 <div className="space-y-2">
-                            {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>新增 {newImageCount} 张图片 · 查看最新</ToolbarButton>}
-                            <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">批量选择图片</button>
-                            <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">删除指定天数以前的历史</button>
-                            <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">只保留最近指定数量</button>
-                            <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">清空全部历史</button>
+                            {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
+                            <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>
+                            <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("删除指定天数以前的历史")}</button>
+                            <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>
+                            <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("清空全部历史")}</button>
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
 
-            <ImagePreviewPortal><MobileBottomSheet open={showPageMenu && isMobileViewport} title="跳转页码" onClose={() => setShowPageMenu(false)}>
+            <ImagePreviewPortal><MobileBottomSheet open={showPageMenu && isMobileViewport} title={t("跳转页码")} onClose={() => setShowPageMenu(false)}>
                 <div className="space-y-3">
                     <div className="grid grid-cols-[auto_1fr_auto] gap-2">
-                        <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">首页</button>
+                        <button onClick={() => { void goToPage(1); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">{t("首页")}</button>
                         <input type="number" min="1" max={totalPages} value={jumpPage} onChange={event => setJumpPage(event.target.value)} placeholder={`${currentPage} / ${totalPages}`} className="min-w-0 rounded-xl border border-gray-300 bg-white px-3 text-center dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-                        <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">尾页</button>
+                        <button onClick={() => { void goToPage(totalPages); setShowPageMenu(false); }} className="mobile-touch rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600">{t("尾页")}</button>
                     </div>
-                    <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">跳转</button>
+                    <button onClick={() => { const page = Number(jumpPage); if (page >= 1 && page <= totalPages) void goToPage(page); setJumpPage(''); setShowPageMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">{t("跳转")}</button>
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
 
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
-                {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>历史加载失败</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>重试</ToolbarButton></div>}
+                {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
                 {isLoading ? (
-                    <PageSpinner label="加载中…" className="h-full" />
+                    <PageSpinner label={t("加载中…")} className="h-full" />
                 ) : items.length === 0 ? (
                     <EmptyState
                         className="h-full py-10"
                         icon={favoriteOnly ? <Heart className="h-8 w-8" /> : <Clock3 className="h-8 w-8" />}
-                        title={browseQuery.from || browseQuery.to || browseQuery.search || browseQuery.model || browseQuery.operation || browseQuery.source ? '没有符合条件的历史图片' : favoriteOnly ? '还没有收藏历史图片' : '暂无生成记录'}
-                        hint={browseQuery.from || browseQuery.to || browseQuery.search || browseQuery.model || browseQuery.operation || browseQuery.source ? '调整筛选条件，或重置条件查看全部历史' : favoriteOnly ? '点击图片右上角的爱心即可收藏' : '在实验室中生成的图片会自动保存到历史记录'}
+                        title={browseQuery.from || browseQuery.to || browseQuery.search || browseQuery.model || browseQuery.operation || browseQuery.source ? t("没有符合条件的历史图片") : favoriteOnly ? t("还没有收藏历史图片") : t("暂无生成记录")}
+                        hint={browseQuery.from || browseQuery.to || browseQuery.search || browseQuery.model || browseQuery.operation || browseQuery.source ? t("调整筛选条件，或重置条件查看全部历史") : favoriteOnly ? t("点击图片右上角的爱心即可收藏") : t("在实验室中生成的图片会自动保存到历史记录")}
                     />
                 ) : (
                     <>
@@ -1160,8 +1159,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                           {historyGroups.map(group => <section key={group.key}>
                             {group.label && <div className="mb-2 flex items-center gap-2 py-1.5">
                               <CalendarDays className="h-4 w-4 text-indigo-500" />
-                              <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{group.label}</h2>
-                              <span className="text-xs text-gray-400">{group.items.length} 张</span>
+                              <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200">{t(group.label)}</h2>
+                              <span className="text-xs text-gray-400">{t("{0} 张", [group.items.length])}</span>
                             </div>}
                             {imageDisplay.layout === 'masonry' ? (
                               <ShortestColumnMasonry
@@ -1178,28 +1177,28 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             )}
                           </section>)}
                         </div>
-                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">多选模式 · 已选 {selectedIds.size} 张</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">全选</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">反选</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">退出</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">收藏</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">取消收藏</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">删除</button></div></div>}
+                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <>
                                 <div className="mx-auto mb-4 flex max-w-sm items-center justify-center gap-2">
-                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">已加载 {items.length} 张 · 跳转页码</button>
+                                <button onClick={() => setShowPageMenu(true)} className="mobile-touch rounded-lg text-sm font-bold text-indigo-600 dark:text-indigo-300 md:hidden">{t("已加载 {0} 张 · 跳转页码", [items.length])}</button>
                                 <form onSubmit={submitDesktopPageJump} className="hidden items-center justify-center gap-1.5 md:flex">
-                                    <span className="text-sm text-gray-500">滚动浏览 · 跳到第</span>
-                                    <input type="number" min="1" max={totalPages} value={desktopJumpPage} onChange={event => setDesktopJumpPage(event.target.value)} onFocus={event => event.currentTarget.select()} aria-label="输入页码跳转" className="h-10 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300" />
-                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">/ {totalPages} 页</span>
+                                    <span className="text-sm text-gray-500">{t("滚动浏览 · 跳到第")}</span>
+                                    <input type="number" min="1" max={totalPages} value={desktopJumpPage} onChange={event => setDesktopJumpPage(event.target.value)} onFocus={event => event.currentTarget.select()} aria-label={t("输入页码跳转")} className="h-10 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300" />
+                                    <span className="text-sm font-bold text-indigo-600 dark:text-indigo-300">{t("/ {0} 页", [totalPages])}</span>
                                 </form>
                             </div>
                             <div ref={historyPageSentinelRef} data-history-load-more="true" className="h-1 w-full" aria-hidden="true" />
                             </>}
                             <div className="flex flex-col items-center justify-center py-6">
-                                {appendFailed && <ToolbarButton onClick={() => { setAppendFailed(false); void appendNextPage(); }}>加载更多失败 · 重试</ToolbarButton>}
+                                {appendFailed && <ToolbarButton onClick={() => { setAppendFailed(false); void appendNextPage(); }}>{t("加载更多失败 · 重试")}</ToolbarButton>}
                                 {isLoading ? (
-                                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />加载中...</div>
+                                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400"><LoaderCircle className="h-4 w-4 animate-spin" />{t("加载中...")}</div>
                                 ) : (
                                     <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
-                                        <p>当前显示第 {getDisplayedRange().start} - {getDisplayedRange().end} 张</p>
-                                        <p className="mt-1">已加载 {items.length} / {totalCount} 张{favoriteOnly ? '收藏' : ''}{isAppending ? ' · 正在加载更多…' : ''}</p>
+                                        <p>{t("当前显示第 {0} - {1} 张", [getDisplayedRange().start, getDisplayedRange().end])}</p>
+                                        <p className="mt-1">{t("已加载 {0} / {1} 张{2}{3}", [items.length, totalCount, favoriteOnly ? t("收藏") : '', isAppending ? t(" · 正在加载更多…") : ''])}</p>
                                     </div>
                                 )}
                             </div>
@@ -1224,45 +1223,44 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 filename={getDownloadFilename(lightbox.createdAt)}
                 notify={notify}
             >
-                            <div className="flex-shrink-0 space-y-3" role="group" aria-label="历史图片操作">
+                            <div className="flex-shrink-0 space-y-3" role="group" aria-label={t("历史图片操作")}>
                                 <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-                                    <span className="shrink-0 text-sm font-semibold">导入模式</span>
-                                    <ToolbarSelect label="实验室导入模式" containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport || isPublishing} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
-                                        <option value="text-to-image">文生图</option>
-                                        <option value="image-to-image">图生图</option>
-                                        <option value="inpaint">局部重绘</option>
-                                        <option value="outpaint">扩图</option>
+                                    <span className="shrink-0 text-sm font-semibold">{t("导入模式")}</span>
+                                    <ToolbarSelect label={t("实验室导入模式")} containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport || isPublishing} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
+                                        <option value="text-to-image">{t("文生图")}</option>
+                                        <option value="image-to-image">{t("图生图")}</option>
+                                        <option value="inpaint">{t("局部重绘")}</option>
+                                        <option value="outpaint">{t("扩图")}</option>
                                     </ToolbarSelect>
                                 </div>
                                 {canReuseEditMask && <label className="flex items-center gap-2 text-sm">
                                     <input type="checkbox" checked={reuseEditMask} disabled={isPreparingImport || isPublishing} onChange={event => setReuseEditMask(event.target.checked)} />
-                                    复用原蒙版
-                                </label>}
+                                    {t("复用原蒙版")}</label>}
                                 <ToolbarButton tone="primary" className="w-full" onClick={handleImportToLab} disabled={isPreparingImport || isPublishing}>
                                     <Save />
-                                    {isPreparingImport ? '正在读取元数据...' : '导入到实验室'}
+                                    {isPreparingImport ? t("正在读取元数据...") : t("导入到实验室")}
                                 </ToolbarButton>
                                 <div className="rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/20">
-                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">加入灵感库</label>
+                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">{t("加入灵感库")}</label>
                                     <div className="flex gap-2">
                                         <input
                                             id="history-inspiration-title"
                                             type="text"
-                                            placeholder="为这张图取个标题..."
+                                            placeholder={t("为这张图取个标题...")}
                                             className="min-w-0 flex-1 px-3 py-2 rounded border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-gray-800 text-sm outline-none dark:text-white focus:border-indigo-500 transition-colors"
                                             value={publishTitle}
                                             disabled={isPublishing || isPreparingImport}
                                             onChange={event => setPublishTitle(event.target.value)}
                                         />
                                         <ToolbarButton tone="primary" onClick={handlePublish} disabled={isPublishing || isPreparingImport} className="whitespace-nowrap">
-                                            {isPublishing ? '整理中' : '加入'}
+                                            {isPublishing ? t("整理中") : t("加入")}
                                         </ToolbarButton>
                                     </div>
                                 </div>
                             </div>
                             <div className="space-y-4">
-                                {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label="识别图片 Tag" />}
-                                <details open className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary className="mb-3 cursor-pointer text-xs font-semibold">提示词与生成参数</summary><ParamsViewer
+                                {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label={t("识别图片 Tag")} />}
+                                <details open className="rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary className="mb-3 cursor-pointer text-xs font-semibold">{t("提示词与生成参数")}</summary><ParamsViewer
                                     params={lightbox.params}
                                     prompt={lightbox.prompt}
                                     negativePrompt={getHistoryNegativePrompt(lightbox)}
@@ -1275,20 +1273,20 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Clean Modal */}
             {showCleanModal && (<ImagePreviewPortal>
-                <div role="dialog" aria-modal="true" aria-label="确认清理历史" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div role="dialog" aria-modal="true" aria-label={t("确认清理历史")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800">
-                        <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />确认清理</h3>
+                        <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />{t("确认清理")}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days'
-                                ? `将删除 ${cleanDays} 天前的 ${cleanPreviewCount} 张图片`
-                                : `按全部生成历史执行，将删除 ${cleanPreviewCount} 张，只保留最近 ${cleanCount} 张`
+                                ? t("将删除 {0} 天前的 {1} 张图片", [cleanDays, cleanPreviewCount])
+                                : t("按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张", [cleanPreviewCount, cleanCount])
                             }
                         </p>
-                        <p className="text-xs text-red-500 mb-4">此操作无法恢复</p>
+                        <p className="text-xs text-red-500 mb-4">{t("此操作无法恢复")}</p>
                         <div className="mb-4">
                             {cleanMode === 'days' ? (
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">天数</label>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t("天数")}</label>
                                     <input
                                         type="number"
                                         min="1"
@@ -1307,7 +1305,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 </div>
                             ) : (
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">保留数量</label>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{t("保留数量")}</label>
                                     <input
                                         type="number"
                                         min="1"
@@ -1333,15 +1331,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                 onClick={() => setShowCleanModal(false)}
                                 className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold"
                             >
-                                取消
-                            </button>
+                                {t("取消")}</button>
                             <button
                                 data-agent-action="business" onClick={handleCleanConfirm}
                                 disabled={!Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
                                 className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                确认删除
-                            </button>
+                                {t("确认删除")}</button>
                         </div>
                     </div>
                 </div>
@@ -1349,18 +1345,17 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Success Modal */}
             {showSuccessModal && (<ImagePreviewPortal>
-                <div role="dialog" aria-modal="true" aria-label="已加入灵感库" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div role="dialog" aria-modal="true" aria-label={t("已加入灵感库")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col items-center text-center animate-bounce-in">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
                             ✨
                         </div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">已加入灵感库</h3>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t("已加入灵感库")}</h3>
                         <button
                             onClick={() => setShowSuccessModal(false)}
                             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"
                         >
-                            确定
-                        </button>
+                            {t("确定")}</button>
                     </div>
                 </div>
             </ImagePreviewPortal>)}

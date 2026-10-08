@@ -23,7 +23,9 @@ test('Windows 安装资源独立启动、D1/R2 持久化、词库可写与退出
     // 精简后的真实安装依赖验证，不联网调用模型或下载反推权重。
     const native = execFileSync(join(runtime, 'node.exe'), ['--no-warnings', '--input-type=module', '-e', "import assert from 'node:assert/strict'; const sharp=(await import('sharp')).default; const {decode}=await import('fast-png'); const ort=await import('onnxruntime-node'); const image=decode(await sharp({create:{width:2,height:2,channels:4,background:'#fff'}}).png().toBuffer()); assert.equal(image.width,2); assert.equal(image.height,2); assert.deepEqual(Array.from(new ort.Tensor('float32',Float32Array.from([1,2]),[1,2]).data),[1,2]); await import('@earendil-works/pi-agent-core'); for(const api of ['openai-completions','openai-responses','anthropic-messages']) await import('@earendil-works/pi-ai/api/'+api); console.log('native-and-providers-ok');"], { cwd: runtime, env: { ...process.env, PATH: join(process.env.SystemRoot, 'System32') }, windowsHide: true, encoding: 'utf8', timeout: 20_000 });
     assert.match(native, /native-and-providers-ok/);
-    await new Promise(done => occupied.listen({ port: 0, host: '127.0.0.1' }, done));
+    // 使用普通高位端口，避免系统随机分配到 Fetch 拒绝访问的 IRC 等保留端口。
+    const occupiedPort = (await findDesktopPorts({ preferred: 35000 })).gateway;
+    await new Promise(done => occupied.listen({ port: occupiedPort, host: '127.0.0.1' }, done));
     const base = occupied.address().port;
     ports = await findDesktopPorts({ preferred: base });
     assert.notEqual(ports.gateway, base);

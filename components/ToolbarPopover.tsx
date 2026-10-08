@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Filter } from 'lucide-react';
 import { ToolbarButton } from './DesignSystem';
@@ -16,6 +17,7 @@ export function getToolbarPopoverPosition(anchor: { left: number; width: number;
 }
 
 const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; children: React.ReactNode }> = ({ title, position, children }) => {
+  useLanguage();
   const panelRef = useModalA11y<HTMLDivElement>(true);
   return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className="appearance-panel fixed z-[1801] -translate-x-1/2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{children}</div>;
 };
@@ -28,6 +30,7 @@ export const AnchoredToolbarPopover: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
 }> = ({ anchorRef, title, width = 384, onClose, children }) => {
+  useLanguage();
   const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 0 });
   useLayoutEffect(() => {
     const update = () => {
@@ -71,6 +74,7 @@ export const ToolbarPopover: React.FC<{
   className?: string;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
 }> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, className = '', children }) => {
+  useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
@@ -87,8 +91,8 @@ export const ToolbarPopover: React.FC<{
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    <ToolbarButton onClick={() => setOpen(value => !value)} aria-label={`${label}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className={`mobile-touch !px-2.5 md:!px-3 ${(active ?? countValue > 0) ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}`}>
-      {icon}<span className="hidden sm:inline">{label}{countValue > 0 ? ` ${countValue}` : ''}</span>
+    <ToolbarButton onClick={() => setOpen(value => !value)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className={`mobile-touch !px-2.5 md:!px-3 ${(active ?? countValue > 0) ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}`}>
+      {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>
     </ToolbarButton>
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;

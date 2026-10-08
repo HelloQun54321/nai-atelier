@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useEffect } from 'react';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
@@ -12,6 +13,7 @@ export const InteractionPopover: React.FC<React.PropsWithChildren<{
   align?: 'center' | 'end';
   className?: string;
 }>> = ({ id, label, anchorRef, onClose, width = 320, align = 'center', className = '', children }) => {
+  useLanguage();
   const panel = useModalA11y<HTMLDivElement>(true);
   const position = useAgentPopoverPosition(true, anchorRef, panel, width, align);
   useEffect(() => {
@@ -26,7 +28,7 @@ export const InteractionPopover: React.FC<React.PropsWithChildren<{
   }, [anchorRef, onClose, panel]);
   return <>
     <div aria-hidden="true" className="fixed inset-0 z-[1900]" onPointerDown={event => { event.stopPropagation(); onClose(); }} onClick={event => event.stopPropagation()} />
-    <div ref={panel} id={id} role="dialog" aria-modal="true" aria-label={label} style={position}
+    <div ref={panel} id={id} role="dialog" aria-modal="true" aria-label={t(label)} style={position}
       onClick={event => event.stopPropagation()} className={`appearance-panel fixed z-[1901] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900 ${className}`}>{children}</div>
   </>;
 };

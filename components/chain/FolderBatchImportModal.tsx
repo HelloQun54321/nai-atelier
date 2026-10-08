@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../../services/i18n';
 import { PressRevealSurface } from '../PressRevealSurface';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, CheckSquare, EyeOff, FileQuestion, FolderOpen, FolderUp, Layers, Loader2, RefreshCw, Sparkles, Square, Trash2, X } from 'lucide-react';
@@ -230,6 +231,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   onSuccess,
   notify,
 }) => {
+  useLanguage();
   const folderInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const rootDirectoryHandleRef = useRef<any>(null);
@@ -915,7 +917,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
 
   return (
     <ImagePreviewPortal>
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="批量导入风格串" className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("批量导入风格串")} className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 md:p-6" onClick={handleModalClose}>
       <div
         className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onClick={e => e.stopPropagation()}
@@ -927,14 +929,14 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               <FolderUp className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900 dark:text-white">批量导入文件夹图片为风格串</h2>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">{t("批量导入文件夹图片为风格串")}</h2>
             </div>
           </div>
           <button
             type="button"
             onClick={handleModalClose}
             disabled={isScanning || isImporting}
-            aria-label="关闭批量导入"
+            aria-label={t("关闭批量导入")}
             className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200 disabled:opacity-30"
           >
             <X className="h-5 w-5" />
@@ -962,12 +964,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <FolderOpen className="h-8 w-8" />
               </div>
               <h3 className="mb-1 text-base font-bold text-gray-800 dark:text-gray-200">
-                将图片文件夹或多张图片拖到此处
-              </h3>
+                {t("将图片文件夹或多张图片拖到此处")}</h3>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <input
-                  ref={folderInputRef} aria-label="导入图片文件夹"
+                  ref={folderInputRef} aria-label={t("导入图片文件夹")}
                   type="file"
                   // @ts-expect-error webkitdirectory is standard for folder picker
                   webkitdirectory=""
@@ -977,7 +978,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   onChange={handleFileInputChange}
                 />
                 <input
-                  ref={filesInputRef} aria-label="批量导入 PNG 图片"
+                  ref={filesInputRef} aria-label={t("批量导入 PNG 图片")}
                   type="file"
                   accept="image/png"
                   multiple
@@ -990,15 +991,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-indigo-500 transition active:scale-[0.98]"
                 >
                   <FolderOpen className="h-4 w-4" />
-                  选择文件夹
-                </button>
+                  {t("选择文件夹")}</button>
                 <button
                   type="button"
                   onClick={() => filesInputRef.current?.click()}
                   className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 transition"
                 >
-                  选择多张 PNG 图片
-                </button>
+                  {t("选择多张 PNG 图片")}</button>
               </div>
             </div>
           )}
@@ -1008,10 +1007,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
               <Loader2 className="h-10 w-10 animate-spin text-indigo-600 dark:text-indigo-400" />
               <div>
-                <h4 className="text-base font-bold text-gray-800 dark:text-gray-200">正在分析图片元数据并比对现有库...</h4>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  已扫描 {scanProgress.current} / {scanProgress.total} 张
-                </p>
+                <h4 className="text-base font-bold text-gray-800 dark:text-gray-200">{t("正在分析图片元数据并比对现有库...")}</h4>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("已扫描 {0} / {1} 张", [scanProgress.current, scanProgress.total])}</p>
                 <p className="mt-0.5 text-meta font-mono text-gray-400 truncate max-w-md">{scanProgress.fileName}</p>
               </div>
               <div className="w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-1.5">
@@ -1031,16 +1028,14 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-indigo-600 dark:text-indigo-400 flex-none" />
                   <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
-                    成功识别 <b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> 个有效风格串
-                    {duplicateItemsCount > 0 ? (
+                    {t("成功识别 ")}<b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> {t(" 个有效风格串")}{duplicateItemsCount > 0 ? (
                       <>
-                        （含 <b className="text-emerald-600 dark:text-emerald-400">{newItemsCount}</b> 张新素材，
-                        <span className="text-gray-500 dark:text-gray-400">{duplicateItemsCount} 张已在库中已自动排除</span>）
+                        {t("（含 ")}<b className="text-emerald-600 dark:text-emerald-400">{newItemsCount}</b> {t(" 张新素材，")}<span className="text-gray-500 dark:text-gray-400">{t("{0} 张已在库中已自动排除", [duplicateItemsCount])}</span>）
                       </>
                     ) : (
-                      <span>（全部为新素材）</span>
+                      <span>{t("（全部为新素材）")}</span>
                     )}
-                    {ignoredFiles.length > 0 && `，跳过 ${ignoredFiles.length} 张无生成参数的文件`}
+                    {ignoredFiles.length > 0 && t("，跳过 {0} 张无生成参数的文件", [ignoredFiles.length])}
                   </span>
                 </div>
                 <div className="flex items-center gap-2.5 flex-wrap">
@@ -1049,10 +1044,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       type="button"
                       onClick={handleOpenCleanupModal}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-600 shadow-sm transition hover:bg-rose-100 hover:border-rose-300 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/70"
-                      title="删除无元数据图片与已在库中重复的图片"
+                      title={t("删除无元数据图片与已在库中重复的图片")}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      <span>清理无意义图片 ({totalJunkCount})</span>
+                      <span>{t("清理无意义图片 ({0})", [totalJunkCount])}</span>
                     </button>
                   )}
                   {duplicateItemsCount > 0 && (
@@ -1061,7 +1056,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       onClick={selectOnlyNewItems}
                       className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
                     >
-                      <Layers className="h-3.5 w-3.5" /> 仅选新素材 ({newItemsCount})
+                      <Layers className="h-3.5 w-3.5" /> {t(" 仅选新素材 (")}{newItemsCount})
                     </button>
                   )}
                   {detectedItems.length > 0 && (
@@ -1072,12 +1067,10 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     >
                       {detectedItems.every(i => i.selected) ? (
                         <>
-                          <CheckSquare className="h-4 w-4" /> 取消全选
-                        </>
+                          <CheckSquare className="h-4 w-4" /> {t(" 取消全选")}</>
                       ) : (
                         <>
-                          <Square className="h-4 w-4" /> 全选
-                        </>
+                          <Square className="h-4 w-4" /> {t(" 全选")}</>
                       )}
                     </button>
                   )}
@@ -1090,8 +1083,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     }}
                     className="text-xs text-gray-500 hover:text-red-500 dark:text-gray-400"
                   >
-                    重新扫描
-                  </button>
+                    {t("重新扫描")}</button>
                 </div>
               </div>
 
@@ -1100,7 +1092,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 {detectedItems.map(item => (
                   <PressRevealSurface
                     key={item.id}
-                    role="checkbox" aria-label={`导入条目：${item.name}`} aria-checked={item.selected} tabIndex={0} onClick={() => toggleSelectItem(item.id)}
+                    role="checkbox" aria-label={t("导入条目：{0}", [item.name])} aria-checked={item.selected} tabIndex={0} onClick={() => toggleSelectItem(item.id)}
                     className={`group relative flex flex-col rounded-xl border p-2.5 transition cursor-pointer select-none ${
                       item.selected
                         ? 'border-indigo-500 bg-indigo-50/30 dark:border-indigo-500/80 dark:bg-indigo-950/20 shadow-sm'
@@ -1125,17 +1117,16 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       {item.isDuplicate && (
                         <div
                           className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
-                          title={`已存在同参数风格串: ${item.duplicateOfName || '现有风格串'}`}
+                          title={t("已存在同参数风格串: {0}", [item.duplicateOfName || '现有风格串'])}
                         >
-                          已在库中
-                        </div>
+                          {t("已在库中")}</div>
                       )}
                       <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 text-mini font-mono text-gray-200 backdrop-blur-sm">
                         {item.params.width}×{item.params.height}
                       </span>
                       <button type="button" onClick={event => { event.stopPropagation(); removeItem(item.id); }}
                         data-card-action="true" className="hover-reveal-md mobile-touch absolute left-1.5 bottom-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-red-950/50"
-                        title="从本次导入列表移除，不删除原文件" aria-label={`移除导入候选：${item.name}`}>
+                        title={t("从本次导入列表移除，不删除原文件")} aria-label={t("移除导入候选：{0}", [item.name])}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -1146,16 +1137,16 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           type="text"
                           value={item.name}
                           onChange={e => updateItemName(item.id, e.target.value)}
-                          placeholder="风格串名称"
+                          placeholder={t("风格串名称")}
                           className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-bold text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                         />
                       </div>
                       <div className="mt-1 flex items-center justify-between text-micro text-gray-500 dark:text-gray-400">
                         <span className="truncate">{getNaiModelDisplayLabel(item.params.model)}</span>
-                        <span className="flex-none font-mono">{item.params.steps} 步</span>
+                        <span className="flex-none font-mono">{t("{0} 步", [item.params.steps])}</span>
                       </div>
                       <p className="mt-1 line-clamp-2 text-micro text-gray-400 font-mono break-all leading-tight">
-                        {item.prompt || '(无提示词)'}
+                        {item.prompt || t("(无提示词)")}
                       </p>
                     </div>
 
@@ -1175,17 +1166,17 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     />
                     <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                       <EyeOff className="h-3.5 w-3.5 text-amber-500" />
-                      <span>标记为「待实测」</span>
+                      <span>{t("标记为「待实测」")}</span>
                     </div>
                   </label>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 dark:text-gray-400 flex-none">附加标签:</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 flex-none">{t("附加标签:")}</span>
                     <input
                       type="text"
                       value={customTag}
                       onChange={e => setCustomTag(e.target.value)}
-                      placeholder="可选，例如：外部收集, 2026-08"
+                      placeholder={t("可选，例如：外部收集, 2026-08")}
                       className="h-8 w-48 rounded-lg border border-gray-300 bg-white px-2.5 text-xs text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                     />
                   </div>
@@ -1202,7 +1193,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       />
                       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                         <Trash2 className="h-3.5 w-3.5 text-indigo-500" />
-                        <span>导入后删除本地源文件</span>
+                        <span>{t("导入后删除本地源文件")}</span>
                       </div>
                     </label>
 
@@ -1215,15 +1206,12 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       />
                       <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                         <Trash2 className="h-3.5 w-3.5 text-rose-500" />
-                        <span>自动清理无用素材</span>
+                        <span>{t("自动清理无用素材")}</span>
                         {totalJunkCount > 0 ? (
-                          <span className="text-meta font-semibold text-rose-600 dark:text-rose-400">
-                            （含 {totalJunkCount} 张无元数据/重复图）
-                          </span>
+                          <span className="text-meta font-semibold text-rose-600 dark:text-rose-400">{t("（含 {0} 张无元数据/重复图）", [totalJunkCount])}</span>
                         ) : (
                           <span className="text-meta font-normal text-gray-500 dark:text-gray-400 hidden sm:inline">
-                            （无元数据与未导入的重复图）
-                          </span>
+                            {t("（无元数据与未导入的重复图）")}</span>
                         )}
                       </div>
                     </label>
@@ -1238,10 +1226,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
               <Loader2 className="h-8 w-8 animate-spin text-indigo-600 dark:text-indigo-400" />
               <div>
-                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200">正在保存风格串与封面...</h4>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  进度：{importProgress.current} / {importProgress.total}（{importProgress.name}）
-                </p>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200">{t("正在保存风格串与封面...")}</h4>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("进度：{0} / {1}（{2}）", [importProgress.current, importProgress.total, importProgress.name])}</p>
               </div>
               <div className="w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-2">
                 <div
@@ -1258,9 +1244,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {detectedItems.length > 0 && !isScanning && !isImporting && (
               <span>
-                已选中 <b className="text-indigo-600 dark:text-indigo-400">{selectedCount}</b> / {detectedItems.length} 个风格串
-                {duplicateItemsCount > 0 && (
-                  <span className="ml-1 text-gray-400">（已自动排除 {duplicateItemsCount} 个已有风格串）</span>
+                {t("已选中 ")}<b className="text-indigo-600 dark:text-indigo-400">{selectedCount}</b> / {detectedItems.length} {t(" 个风格串")}{duplicateItemsCount > 0 && (
+                  <span className="ml-1 text-gray-400">{t("（已自动排除 {0} 个已有风格串）", [duplicateItemsCount])}</span>
                 )}
               </span>
             )}
@@ -1272,8 +1257,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               disabled={isScanning || isImporting}
               className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
             >
-              取消
-            </button>
+              {t("取消")}</button>
             {detectedItems.length > 0 && (
               <button
                 type="button"
@@ -1284,13 +1268,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 {isImporting ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    正在导入...
-                  </>
+                    {t("正在导入...")}</>
                 ) : (
                   <>
                     <Check className="h-3.5 w-3.5" />
-                    导入选中的 {selectedCount} 个风格串
-                  </>
+                    {t("导入选中的 ")}{selectedCount} {t(" 个风格串")}</>
                 )}
               </button>
             )}
@@ -1301,7 +1283,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
       {/* Junk Files Cleanup Modal */}
       {showCleanupModal && (
         <div
-          ref={cleanupRef} role="dialog" aria-modal="true" aria-label="整理待清理文件"
+          ref={cleanupRef} role="dialog" aria-modal="true" aria-label={t("整理待清理文件")}
           className="fixed inset-0 z-[1400] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 md:p-6"
           onClick={() => !isDeleting && setShowCleanupModal(false)}
         >
@@ -1316,8 +1298,8 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   <Trash2 className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">清理本地无意义图片</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">永久删除所选本地文件</p>
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white">{t("清理本地无意义图片")}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{t("永久删除所选本地文件")}</p>
                 </div>
               </div>
               <button
@@ -1341,9 +1323,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       ? 'bg-rose-600 text-white shadow-sm'
                       : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-800'
                   }`}
-                >
-                  全部 ({totalJunkCount})
-                </button>
+                >{t("全部 ({0})", [totalJunkCount])}</button>
                 {ignoredFiles.length > 0 && (
                   <button
                     type="button"
@@ -1353,9 +1333,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         ? 'bg-rose-600 text-white shadow-sm'
                         : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-800'
                     }`}
-                  >
-                    无元数据/非NAI ({ignoredFiles.length})
-                  </button>
+                  >{t("无元数据/非NAI ({0})", [ignoredFiles.length])}</button>
                 )}
                 {duplicateItemsCount > 0 && (
                   <button
@@ -1366,9 +1344,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                         ? 'bg-rose-600 text-white shadow-sm'
                         : 'text-gray-600 hover:bg-gray-200/60 dark:text-gray-300 dark:hover:bg-gray-800'
                     }`}
-                  >
-                    重复风格串 ({duplicateItemsCount})
-                  </button>
+                  >{t("重复风格串 ({0})", [duplicateItemsCount])}</button>
                 )}
               </div>
 
@@ -1378,30 +1354,28 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   onClick={selectAllCurrentCategoryJunk}
                   className="text-xs font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400"
                 >
-                  全选
-                </button>
+                  {t("全选")}</button>
                 <span className="text-gray-300 dark:text-gray-700">|</span>
                 <button
                   type="button"
                   onClick={deselectAllCurrentCategoryJunk}
                   className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 >
-                  清空选择
-                </button>
+                  {t("清空选择")}</button>
               </div>
             </div>
 
             {/* Cleanup Items List */}
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-5 space-y-2.5 ">
               {currentCategoryJunkItems.length === 0 ? (
-                <div className="py-12 text-center text-xs text-gray-400">当前分类下没有可清理的图片</div>
+                <div className="py-12 text-center text-xs text-gray-400">{t("当前分类下没有可清理的图片")}</div>
               ) : (
                 currentCategoryJunkItems.map(item => {
                   const isSelected = selectedCleanupIds.has(item.id);
                   return (
                     <div
                       key={item.id}
-                      role="checkbox" aria-label={`待清理文件：${item.name}`} aria-checked={isSelected} aria-disabled={isDeleting} tabIndex={0} onClick={() => !isDeleting && toggleCleanupItemSelection(item.id)}
+                      role="checkbox" aria-label={t("待清理文件：{0}", [item.name])} aria-checked={isSelected} aria-disabled={isDeleting} tabIndex={0} onClick={() => !isDeleting && toggleCleanupItemSelection(item.id)}
                       className={`flex items-center justify-between gap-3 rounded-xl border p-2.5 transition cursor-pointer select-none ${
                         isSelected
                           ? 'border-rose-300 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20'
@@ -1439,7 +1413,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                                   : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
                               }`}
                             >
-                              {item.reasonType === 'no-metadata' ? '无元数据' : '重复素材'}
+                              {item.reasonType === 'no-metadata' ? t("无元数据") : t("重复素材")}
                             </span>
                             <span className="text-gray-400 truncate">{item.reasonText}</span>
                             <span className="font-mono text-gray-400 flex-none">{formatFileSize(item.size)}</span>
@@ -1456,13 +1430,12 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             <div className="flex flex-none flex-col gap-3 border-t border-gray-200 p-4 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900/60 rounded-b-2xl">
               <div className="flex items-center gap-2 text-meta text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4 flex-none" />
-                <span>永久删除所选文件，无法从回收站恢复。</span>
+                <span>{t("永久删除所选文件，无法从回收站恢复。")}</span>
               </div>
 
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  已勾选 <b className="text-rose-600 dark:text-rose-400">{selectedCleanupIds.size}</b> / {totalJunkCount} 个文件
-                </span>
+                  {t("已勾选 ")}<b className="text-rose-600 dark:text-rose-400">{selectedCleanupIds.size}</b> / {totalJunkCount} {t(" 个文件")}</span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1470,8 +1443,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     disabled={isDeleting}
                     className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
                   >
-                    返回
-                  </button>
+                    {t("返回")}</button>
                   <button
                     type="button"
                     data-agent-action="business" onClick={executeDeleteJunkFiles}
@@ -1481,13 +1453,12 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     {isDeleting ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        正在删除 ({deleteProgress.current}/{deleteProgress.total})...
+                        {t("正在删除 (")}{deleteProgress.current}/{deleteProgress.total})...
                       </>
                     ) : (
                       <>
                         <Trash2 className="h-3.5 w-3.5" />
-                        彻底删除选中的 {selectedCleanupIds.size} 个本地文件
-                      </>
+                        {t("彻底删除选中的 ")}{selectedCleanupIds.size} {t(" 个本地文件")}</>
                     )}
                   </button>
                 </div>

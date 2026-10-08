@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { GenerationMode } from '../types';
@@ -22,10 +23,11 @@ export const ChainEditorModeHeader: React.FC<ChainEditorModeHeaderProps> = ({
   isGenerating = false,
   onBack,
 }) => {
+  useLanguage();
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       <IconButton
-        label={isLaboratory ? '退出实验室，返回上一页面' : `返回${entityLabel}列表`}
+        label={isLaboratory ? t("退出实验室，返回上一页面") : t("返回{0}列表", [t(entityLabel)])}
         onClick={() => void onBack()}
         className={isLaboratory ? 'flex-none md:hidden' : 'flex-none'}
       >

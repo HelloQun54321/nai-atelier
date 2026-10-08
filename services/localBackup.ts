@@ -1,3 +1,4 @@
+import { getLanguage } from './i18n';
 export interface BackupRecord {
   name: string;
   path: string;
@@ -63,7 +64,7 @@ export function formatBackupDate(iso: string | null | undefined): string {
   if (!iso) return '未知';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '未知';
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(getLanguage(), {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

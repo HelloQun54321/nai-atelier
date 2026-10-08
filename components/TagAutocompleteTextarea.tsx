@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Languages, LoaderCircle } from 'lucide-react';
@@ -69,7 +70,7 @@ export const findCompletionTarget = (value: string, caret: number): CompletionTa
 
 const formatPostCount = (count: number) => {
   if (!Number.isFinite(count) || count >= Number.MAX_SAFE_INTEGER) return '官方';
-  return new Intl.NumberFormat('zh-CN', { notation: count >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(count);
+  return new Intl.NumberFormat(getLanguage(), { notation: count >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(count);
 };
 
 export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = ({
@@ -90,6 +91,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   onCompositionEnd,
   ...textareaProps
 }) => {
+  useLanguage();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
@@ -409,7 +411,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       />
 
       {tagAssistEnabled && showTranslations && translations.length > 0 && (
-        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label="提示词中文翻译">
+        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")}>
           <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
@@ -434,7 +436,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                       aria-pressed={selected}
                     >
                       <span className={`max-w-52 truncate font-mono text-micro ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
-                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || '词库暂无翻译'}>{item.chinese || '待翻译'}</span>
+                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
                     </button>,
                   );
                   cursor += 1;
@@ -476,7 +478,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {members.map((member, memberIndex) => (
                       <span key={member.id} className={`flex min-w-0 flex-col px-2 py-1 ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
                         <span className={`max-w-52 truncate font-mono text-micro ${groupTextTone}`} title={member.displayTag}>{member.displayTag}</span>
-                        <span className={`max-w-48 truncate text-xs font-medium ${groupTextTone}`} title={member.chinese || '词库暂无翻译'}>{member.chinese || '待翻译'}</span>
+                        <span className={`max-w-48 truncate text-xs font-medium ${groupTextTone}`} title={member.chinese || t("词库暂无翻译")}>{member.chinese || t("待翻译")}</span>
                       </span>
                     ))}
                     {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${groupTextTone}`}>{closeSyntax}</span>}
@@ -487,30 +489,30 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             })()}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <InfoPopover label="Tag 权重说明" preserveSelection content={'先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前 Agent 模型，可能产生模型调用费用。'} />
-            <InfoPopover label="Tag 完整对照" preserveSelection content={translations.map(item => `${item.displayTag}\n${item.chinese || '词库暂无翻译'}`).join('\n\n')} className="mobile-touch whitespace-nowrap rounded-md px-1 text-micro text-gray-500 underline decoration-dotted underline-offset-2 dark:text-gray-400">完整对照</InfoPopover>
+            <InfoPopover label={t("Tag 权重说明")} preserveSelection content={t("先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前 Agent 模型，可能产生模型调用费用。")} />
+            <InfoPopover label={t("Tag 完整对照")} preserveSelection content={translations.map(item => `${item.displayTag}\n${item.chinese || '词库暂无翻译'}`).join('\n\n')} className="mobile-touch whitespace-nowrap rounded-md px-1 text-micro text-gray-500 underline decoration-dotted underline-offset-2 dark:text-gray-400">{t("完整对照")}</InfoPopover>
             <div className="flex shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md border border-gray-300 dark:border-gray-600 [&>button]:shrink-0">
               <button
                 type="button"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
                 className={`px-2 py-1 font-mono text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title="花括号增强类型：{tag}"
+                title={t("花括号增强类型：{tag}")}
               >{'{ }'}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('bracket')}
                 aria-pressed={weightKind === 'bracket'}
                 className={`border-x border-gray-200 px-2 py-1 font-mono text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'bracket' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title="方括号减弱类型：[tag]"
+                title={t("方括号减弱类型：[tag]")}
               >{'[ ]'}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
                 className={`border-r border-gray-200 px-2 py-1 text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'numeric' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title="数值权重类型：1.1::tag::"
-              >数值</button>
+                title={t("数值权重类型：1.1::tag::")}
+              >{t("数值")}</button>
               <button
                 type="button"
                 onClick={() => {
@@ -520,8 +522,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 }}
                 disabled={!weightKind || !selectedTokens.length}
                 className="px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
-                title="把选中的 Tag 按当前选择的类型添加/转换权重"
-              >添加权重</button>
+                title={t("把选中的 Tag 按当前选择的类型添加/转换权重")}
+              >{t("添加权重")}</button>
             </div>
             <div className={`flex shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md border transition-colors [&>button]:shrink-0 ${selectedTokens.length ? 'border-[var(--nai-accent)]' : 'border-gray-300 opacity-40 dark:border-gray-600'}`}>
               <button
@@ -529,7 +531,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
                 disabled={!selectedTokens.length}
                 className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
-                title="减弱权重 0.1（Shift+点击为 ±0.01）"
+                title={t("减弱权重 0.1（Shift+点击为 ±0.01）")}
               >−</button>
               <input
                 value={weightInput}
@@ -538,8 +540,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 onKeyDown={event => { if (event.key === 'Enter') commitWeightInput(); }}
                 disabled={!selectedTokens.length}
                 inputMode="decimal"
-                placeholder="权重"
-                title="输入数值权重后回车，作用于选中的整组"
+                placeholder={t("权重")}
+                title={t("输入数值权重后回车，作用于选中的整组")}
                 className="w-14 shrink-0 border-x border-gray-200 bg-transparent px-1 py-1 text-center font-mono text-meta text-gray-600 placeholder:text-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500"
               />
               <button
@@ -547,7 +549,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 onClick={event => applyWeight('up', undefined, event.shiftKey ? 0.01 : 0.1)}
                 disabled={!selectedTokens.length}
                 className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
-                title="增强权重 0.1（Shift+点击为 ±0.01）"
+                title={t("增强权重 0.1（Shift+点击为 ±0.01）")}
               >+</button>
             </div>
             <button
@@ -555,18 +557,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               onClick={() => applyWeight('remove')}
               disabled={!selectedTokens.length}
               className="shrink-0 whitespace-nowrap rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
-            >移除权重</button>
-            {translationError && <InfoPopover label="翻译失败详情" preserveSelection content={translationError} className="min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
+            >{t("移除权重")}</button>
+            {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
             {allowAiTranslation && !disabled && missingTags.length > 0 && (
               <button
                 type="button"
                 onClick={() => void translateMissing()}
                 disabled={translationLoading}
                 className="ml-auto inline-flex min-h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
-                title={`使用当前 Agent 模型翻译 ${missingTags.length} 个词库缺失项`}
+                title={t("使用当前 Agent 模型翻译 {0} 个词库缺失项", [missingTags.length])}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
-                {translationLoading ? '翻译中' : `翻译缺失项 ${missingTags.length}`}
+                {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}
               </button>
             )}
           </div>
@@ -582,7 +584,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           className={`appearance-panel touch-pan-y overflow-y-auto rounded-xl border border-gray-200 bg-white select-none shadow-2xl dark:border-gray-800 dark:bg-gray-900 ${dropUp ? 'mb-1' : 'mt-1'}`}
         >
           {isLoading && suggestions.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">正在加载 Tag…</div>
+            <div className="px-3 py-2 text-xs text-gray-400">{t("正在加载 Tag…")}</div>
           ) : suggestions.map((suggestion, index) => (
             <button
               ref={(element) => { optionRefs.current[index] = element; }}

@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useRef, useState } from 'react';
 import { Copy, Download, LoaderCircle } from 'lucide-react';
 import { copySharedImage, downloadSharedImage, useCleanSharedImages } from '../services/imageSharing';
@@ -16,6 +17,7 @@ interface Props {
 
 /** 各页面仅提供复制和下载，是否清洗统一由设置决定。 */
 export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData }) => {
+  useLanguage();
   const clean = useCleanSharedImages();
   const busyRef = useRef(false);
   const [busy, setBusy] = useState('');
@@ -56,9 +58,9 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       className={`${variant === 'overlay' || variant === 'card' ? '' : 'mobile-touch min-h-10'} inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}
     >
       {busy === action ? <LoaderCircle className={`${variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4'} animate-spin`} /> : <Icon className={variant === 'overlay' ? 'h-3.5 w-3.5' : 'h-4 w-4'} />}
-      {!iconOnly && <span>{label}</span>}
+      {!iconOnly && <span>{t(label)}</span>}
     </button>)}
-    {error && <span role="alert" className={variant === 'card' && notify ? 'sr-only' : `basis-full text-xs ${variant === 'overlay' || variant === 'card' ? 'max-w-64 rounded-lg bg-black/80 p-2 text-red-300' : 'text-red-600 dark:text-red-400'}`}>{error}</span>}
+    {error && <span role="alert" className={variant === 'card' && notify ? 'sr-only' : `basis-full text-xs ${variant === 'overlay' || variant === 'card' ? 'max-w-64 rounded-lg bg-black/80 p-2 text-red-300' : 'text-red-600 dark:text-red-400'}`}>{t(error)}</span>}
   </div>;
 };
 

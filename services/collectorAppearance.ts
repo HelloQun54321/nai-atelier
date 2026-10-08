@@ -1,20 +1,22 @@
 import { useEffect } from 'react';
 import type { AppearancePreferences } from './appearancePreferences';
+import { useLanguage, type Language } from './i18n';
 
 export const collectorIsLocal = (hostname: string) => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
-export type CollectorAppearance = Pick<AppearancePreferences, 'themeMode' | 'accentColor' | 'motion'> & { isDark: boolean };
+export type CollectorAppearance = Pick<AppearancePreferences, 'themeMode' | 'accentColor' | 'motion'> & { isDark: boolean; language?: Language };
 
 /** 外观同步位于应用根部，切页不卸载；串行合并快速调色，避免旧请求覆盖新偏好。 */
 export function useCollectorAppearance(preferences: AppearancePreferences, isDark: boolean) {
+  const language = useLanguage();
   const { themeMode, accentColor, motion } = preferences;
   useEffect(() => {
     if (!collectorIsLocal(window.location.hostname)) return;
-    const appearance = { themeMode, accentColor, motion, isDark };
+    const appearance = { themeMode, accentColor, motion, isDark, language };
     void syncCollectorAppearance(appearance);
     const sync = () => { void syncCollectorAppearance(appearance); };
     window.addEventListener('focus', sync);
     return () => window.removeEventListener('focus', sync);
-  }, [themeMode, accentColor, motion, isDark]);
+  }, [themeMode, accentColor, motion, isDark, language]);
 }
 
 let pending: CollectorAppearance | null = null;

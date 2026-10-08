@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
@@ -59,6 +60,7 @@ export const InspirationDetail: React.FC<Props> = ({
   onCreateArtistChain,
   onOpenItem,
 }) => {
+  useLanguage();
   const closeLayer = useMobileHistoryLayer(true, onClose, 'inspiration-detail');
   const [draft, setDraft] = useState(item);
   const [busy, setBusy] = useState('');
@@ -238,12 +240,12 @@ export const InspirationDetail: React.FC<Props> = ({
   return (
     <ImagePreviewPortal>
     <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
-      <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={`灵感详情：${draft.title || '未命名灵感'} · #${draft.id}`} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
+      <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={t("灵感详情：{0} · #{1}", [draft.title || '未命名灵感', draft.id])} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
         <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
           <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
           <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
-          <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label="关闭">
+          <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label={t("关闭")}>
             <X className="h-5 w-5" />
           </button>
           <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
@@ -252,9 +254,7 @@ export const InspirationDetail: React.FC<Props> = ({
               {sourceLabel(draft.sourceType)}
             </span>
             {draft.parentId && (
-              <span className="rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur">
-                衍生自 {draft.parentId}
-              </span>
+              <span className="rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur">{t("衍生自 {0}", [draft.parentId])}</span>
             )}
           </div>
         </PressRevealSurface>
@@ -277,9 +277,9 @@ export const InspirationDetail: React.FC<Props> = ({
                   value={draft.boardId || ''}
                   onChange={e => void updateAndPersist('boardId', e.target.value, e.target.value ? '已移入灵感板' : '已移至未整理')}
                   className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-0.5 text-micro font-semibold text-gray-700 outline-none transition hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-                  title="切换所属灵感板"
+                  title={t("切换所属灵感板")}
                 >
-                  <option value="">📁 未整理</option>
+                  <option value="">{t("📁 未整理")}</option>
                   {boards.map(board => (
                     <option key={board.id} value={board.id}>📁 {board.name}</option>
                   ))}
@@ -288,8 +288,8 @@ export const InspirationDetail: React.FC<Props> = ({
                   type="button"
                   disabled={!editable}
                   onClick={() => void updateAndPersist('isPinned', !draft.isPinned, draft.isPinned ? '已取消置顶' : '已置顶')}
-                  title={draft.isPinned ? '已置顶（点击取消）' : '置顶灵感'}
-                  aria-label={draft.isPinned ? '已置顶' : '置顶灵感'}
+                  title={draft.isPinned ? t("已置顶（点击取消）") : t("置顶灵感")}
+                  aria-label={draft.isPinned ? t("已置顶") : t("置顶灵感")}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-micro font-bold transition ${
                     draft.isPinned
                       ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/70 dark:text-amber-300'
@@ -297,13 +297,13 @@ export const InspirationDetail: React.FC<Props> = ({
                   }`}
                 >
                   <Pin className={`h-3 w-3 ${draft.isPinned ? 'fill-current' : ''}`} />
-                  <span>{draft.isPinned ? '已置顶' : '置顶'}</span>
+                  <span>{draft.isPinned ? t("已置顶") : t("置顶")}</span>
                 </button>
               </div>
 
               <input
                 data-safe-mode-title="true"
-                aria-label="灵感标题"
+                aria-label={t("灵感标题")}
                 disabled={!editable}
                 value={draft.title}
                 onChange={e => update('title', e.target.value)}
@@ -312,7 +312,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     void updateAndPersist('title', draft.title.trim());
                   }
                 }}
-                placeholder="灵感标题..."
+                placeholder={t("灵感标题...")}
                 className="h-8 w-full rounded-lg border border-transparent bg-transparent px-1 text-base font-bold text-gray-950 transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-white dark:hover:border-gray-800 dark:focus:bg-gray-900 sm:text-lg"
               />
             </div>
@@ -328,8 +328,7 @@ export const InspirationDetail: React.FC<Props> = ({
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                  提示词
-                  {promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">（{promptTagCount} 个词元）</span>}
+                  {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} 个词元）", [promptTagCount])}</span>}
                 </span>
                 {draft.prompt && (
                   <button
@@ -338,12 +337,11 @@ export const InspirationDetail: React.FC<Props> = ({
                     className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
                   >
                     <Copy className="h-3 w-3" />
-                    复制
-                  </button>
+                    {t("复制")}</button>
                 )}
               </div>
               <div className="custom-scrollbar max-h-44 overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 select-text dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200">
-                {draft.prompt || <span className="text-gray-400 italic">（无提示词）</span>}
+                {draft.prompt || <span className="text-gray-400 italic">{t("（无提示词）")}</span>}
               </div>
             </div>
 
@@ -353,8 +351,8 @@ export const InspirationDetail: React.FC<Props> = ({
                 <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
                   <span className="flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                    <span>负面提示词</span>
-                    {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">（{negativeTagCount} 个词元）</span>}
+                    <span>{t("负面提示词")}</span>
+                    {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">{t("（{0} 个词元）", [negativeTagCount])}</span>}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -366,8 +364,7 @@ export const InspirationDetail: React.FC<Props> = ({
                       }}
                       className="text-micro font-semibold text-red-500 hover:underline dark:text-red-400"
                     >
-                      复制
-                    </button>
+                      {t("复制")}</button>
                     <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
                   </div>
                 </summary>
@@ -381,12 +378,11 @@ export const InspirationDetail: React.FC<Props> = ({
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                  标签
-                  {(draft.tags || []).length > 0 && (
+                  {t("标签")}{(draft.tags || []).length > 0 && (
                     <span className="ml-1 text-micro font-normal text-gray-400">（{(draft.tags || []).length}）</span>
                   )}
                 </span>
-                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label="识别图片 Tag" title="识别当前图片，挑选后追加到灵感标签" className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />识别图片 Tag</button>
+                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到灵感标签")} className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -401,7 +397,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         type="button"
                         onClick={() => handleRemoveTag(tag)}
                         className="text-indigo-400 opacity-60 transition hover:opacity-100 hover:text-red-500 dark:text-indigo-400"
-                        title={`删除 #${tag}`}
+                        title={t("删除 #{0}", [tag])}
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -412,7 +408,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   <input
                     autoFocus
                     type="text"
-                    placeholder="输入标签回车保存..."
+                    placeholder={t("输入标签回车保存...")}
                     value={newTagInput}
                     onChange={e => setNewTagInput(e.target.value)}
                     onKeyDown={e => {
@@ -437,21 +433,20 @@ export const InspirationDetail: React.FC<Props> = ({
                     className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
                   >
                     <Plus className="h-3 w-3" />
-                    添加标签
-                  </button>
+                    {t("添加标签")}</button>
                 )}
               </div>
             </div>
 
             {(sourceTags.length > 0 || reverseTags) && <section className="space-y-3 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
-              {sourceTags.length > 0 && <details><summary className="cursor-pointer text-xs font-bold">{draft.sourceType === 'danbooru' ? 'Danbooru 原站 Tag' : 'Pixiv 原站标签'} · {sourceTags.length}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{sourceTags.join(', ')}</p><ToolbarButton onClick={() => void copyTagText(sourceTags.join(', ')).then(() => notify('已复制原站标签'), () => notify('复制失败', 'error'))}><Copy />复制原站标签</ToolbarButton></details>}
-              {reverseTags && <details><summary className="cursor-pointer text-xs font-bold">反推 Tag · 模型预测</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{reverseTags.prompt}</p><ToolbarButton disabled={!reverseTags.prompt.trim()} onClick={() => void copyTagText(reverseTags.prompt).then(() => notify('已复制反推 Tag'), () => notify('复制失败', 'error'))}><Copy />复制反推 Tag</ToolbarButton></details>}
+              {sourceTags.length > 0 && <details><summary className="cursor-pointer text-xs font-bold">{draft.sourceType === 'danbooru' ? t("Danbooru 原站 Tag") : t("Pixiv 原站标签")} · {sourceTags.length}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{sourceTags.join(', ')}</p><ToolbarButton onClick={() => void copyTagText(sourceTags.join(', ')).then(() => notify('已复制原站标签'), () => notify('复制失败', 'error'))}><Copy />{t("复制原站标签")}</ToolbarButton></details>}
+              {reverseTags && <details><summary className="cursor-pointer text-xs font-bold">{t("反推 Tag · 模型预测")}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{reverseTags.prompt}</p><ToolbarButton disabled={!reverseTags.prompt.trim()} onClick={() => void copyTagText(reverseTags.prompt).then(() => notify('已复制反推 Tag'), () => notify('复制失败', 'error'))}><Copy />{t("复制反推 Tag")}</ToolbarButton></details>}
             </section>}
 
             {/* 整理备注（有内容展示便签，无内容一行占位） */}
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">整理备注</span>
+                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("整理备注")}</span>
               </div>
               {draft.notes ? (
                 <textarea
@@ -472,8 +467,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-gray-200 p-2 text-xs text-gray-400 transition hover:border-gray-300 hover:text-gray-600 dark:border-gray-800 dark:hover:border-gray-700"
                 >
                   <Pencil className="h-3 w-3" />
-                  添加整理备注...
-                </button>
+                  {t("添加整理备注...")}</button>
               ) : null}
             </div>
 
@@ -481,8 +475,8 @@ export const InspirationDetail: React.FC<Props> = ({
             <details className="group rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
               <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-700 select-none dark:text-gray-200">
                 <span className="flex items-center gap-1.5">
-                  <span>生成参数与来源详情</span>
-                  <span className="text-micro font-normal text-gray-400">（已使用 {draft.useCount || 0} 次）</span>
+                  <span>{t("生成参数与来源详情")}</span>
+                  <span className="text-micro font-normal text-gray-400">{t("（已使用 {0} 次）", [draft.useCount || 0])}</span>
                 </span>
                 <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
               </summary>
@@ -490,25 +484,24 @@ export const InspirationDetail: React.FC<Props> = ({
                 <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <div className="flex items-center gap-1.5">
                     <SourceIcon className="h-3.5 w-3.5 text-gray-400" />
-                    <span>来源：<b>{sourceLabel(draft.sourceType)}</b></span>
+                    <span>{t("来源：")}<b>{sourceLabel(draft.sourceType)}</b></span>
                   </div>
                   <div>
-                    <span>收录：{formatDate(draft.createdAt)}</span>
+                    <span>{t("收录：{0}", [formatDate(draft.createdAt)])}</span>
                   </div>
                   {draft.lastUsedAt && (
                     <div className="col-span-2">
-                      <span>最近流转：{formatDate(draft.lastUsedAt)}</span>
+                      <span>{t("最近流转：{0}", [formatDate(draft.lastUsedAt)])}</span>
                     </div>
                   )}
                   {draft.sourceId && (
-                    <p className="col-span-2 break-all text-meta text-gray-400">来源 ID：{draft.sourceId}</p>
+                    <p className="col-span-2 break-all text-meta text-gray-400">{t("来源 ID：{0}", [draft.sourceId])}</p>
                   )}
                   {draft.sourceUrl && (
                     <div className="col-span-2">
                       <a href={draft.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline dark:text-indigo-400">
                         <ExternalLink className="h-3 w-3" />
-                        打开原始页面
-                      </a>
+                        {t("打开原始页面")}</a>
                     </div>
                   )}
                 </div>
@@ -521,15 +514,14 @@ export const InspirationDetail: React.FC<Props> = ({
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
                   <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                  相似灵感
-                </h3>
+                  {t("相似灵感")}</h3>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   {similar.map(entry => (
                     <button
                       type="button"
                       key={entry.item.id}
                       data-safe-mode-work="true"
-                      title={`${entry.item.title} (相似度 ${entry.score})`}
+                      title={t("{0} (相似度 {1})", [entry.item.title, entry.score])}
                       onClick={() => onOpenItem(entry.item)}
                       className="group overflow-hidden rounded-xl border border-gray-200 text-left transition hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600"
                     >
@@ -558,14 +550,14 @@ export const InspirationDetail: React.FC<Props> = ({
                   className="mobile-touch flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2.5 text-xs font-bold text-white whitespace-nowrap sm:gap-2 sm:px-3.5"
                 >
                   <FlaskConical className="h-4 w-4 shrink-0" />
-                  <span className="truncate">导入实验室</span>
+                  <span className="truncate">{t("导入实验室")}</span>
                 </button>
                 <button
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
-                  aria-label="更多底图模式" aria-haspopup="menu" aria-expanded={labMenuOpen}
-                  title="选择导入模式"
+                  aria-label={t("更多底图模式")} aria-haspopup="menu" aria-expanded={labMenuOpen}
+                  title={t("选择导入模式")}
                   className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
                 >
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${labMenuOpen ? 'rotate-180' : ''}`} />
@@ -574,7 +566,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {labMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                    <div role="menu" aria-label="选择底图模式" className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div role="menu" aria-label={t("选择底图模式")} className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -582,8 +574,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
                       >
                         <FlaskConical className="h-3.5 w-3.5 text-indigo-500" />
-                        完整导入（文生图）
-                      </button>
+                        {t("完整导入（文生图）")}</button>
                       <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
                       <button
                         type="button"
@@ -592,8 +583,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：图生图
-                      </button>
+                        {t("底图：图生图")}</button>
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -601,8 +591,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：局部重绘
-                      </button>
+                        {t("底图：局部重绘")}</button>
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -610,8 +599,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
-                        底图：扩图
-                      </button>
+                        {t("底图：扩图")}</button>
                     </div>
                   </>
                 )}
@@ -626,14 +614,13 @@ export const InspirationDetail: React.FC<Props> = ({
                   className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
-                  提取资产
-                  <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
+                  {t("提取资产")}<ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
 
                 {assetMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
-                    <div role="menu" aria-label="提取图片资产" className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div role="menu" aria-label={t("提取图片资产")} className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={!onCreateArtistChain || Boolean(busy)}
@@ -641,8 +628,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
                       >
                         <Palette className="h-3.5 w-3.5 text-violet-500" />
-                        创建风格串
-                      </button>
+                        {t("创建风格串")}</button>
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -650,8 +636,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
                       >
                         <UserRound className="h-3.5 w-3.5 text-amber-500" />
-                        创建角色参考
-                      </button>
+                        {t("创建角色参考")}</button>
                       <button
                         type="button"
                         disabled={Boolean(busy)}
@@ -659,8 +644,7 @@ export const InspirationDetail: React.FC<Props> = ({
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
                       >
                         <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                        创建 Vibe
-                      </button>
+                        {t("创建 Vibe")}</button>
                     </div>
                   </>
                 )}
@@ -678,7 +662,7 @@ export const InspirationDetail: React.FC<Props> = ({
           onClose={() => setTaggerOpen(false)}
           imageUrl={draft.imageUrl}
           notify={notify}
-          actionLabel="追加 {count} 个 Tag 到灵感标签"
+          actionLabel={t("追加 {count} 个 Tag 到灵感标签")}
           onInsert={(newTags) => {
             const combined = normalizeInspirationTags([...(draft.tags || []), ...splitTags(newTags)]);
             void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);

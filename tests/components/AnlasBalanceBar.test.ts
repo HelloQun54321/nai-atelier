@@ -8,6 +8,7 @@ import { hashNaiApiKey, useAnlasBudget } from '../../services/anlasBudget';
 import { useNovelaiUsage } from '../../services/naiUsage';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { MobileGenerationResources } from '../../components/MobileGenerationResources';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
 type Subscription = React.ComponentProps<typeof AnlasBalanceBar>['subscription'];
 const budget = { remaining: 1666, loading: false };
@@ -17,9 +18,19 @@ const subscription = (total = 8000, overrides: Partial<Subscription> = {}): Subs
 });
 const responseFor = (payload: unknown) => ({ ok: true, json: async () => payload, text: async () => '' }) as Response;
 beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('Anlas 预算／余额布局', () => {
+  it('五种语言翻译余额详情、状态与悬停组合文案，保留真实数量', () => {
+    render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: subscription(200) }));
+    for (const language of LANGUAGES) {
+      act(() => setLanguage(language.code));
+      expect(screen.getByText(t('本地预算')).nextElementSibling?.textContent).toContain('1,666');
+      const refresh = screen.getByRole('button');
+      expect(refresh.title).toContain(t('账号余额已同步'));
+      if (language.code === 'en') expect(refresh.title).not.toMatch(/[\u3400-\u9fff]/);
+    }
+  });
   it('设置与触屏详情将标签放在数值上方，以等宽两列保留完整余额和显式刷新入口', () => {
     const account = subscription(68420);
     render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));

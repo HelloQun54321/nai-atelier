@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
@@ -12,20 +13,18 @@ export const PromptCopyButton: React.FC<{ onClick: () => void; title: string }> 
         title={title}
     >
         <Copy className="h-4 w-4" />
-        复制
-    </button>
+        {t("复制")}</button>
 );
 
 export type PresetSource = { name: string; modified: boolean };
 export type PresetSection = 'base' | 'subject' | 'negative' | 'settings';
 
 export const PresetSourceBadge: React.FC<{ source?: PresetSource }> = ({ source }) => source ? (
-    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={`来自：${source.name}${source.modified ? ' · 已修改' : ''}`}>
-        来自：{source.name}{source.modified ? ' · 已修改' : ''}
-    </span>
+    <span className="max-w-28 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-40" title={t("来自：{0}{1}", [source.name, source.modified ? t(' · 已修改') : ''])}>{t("来自：{0}{1}", [source.name, source.modified ? t(" · 已修改") : ''])}</span>
 ) : null;
 
 export const PresetSourceBadges: React.FC<{ sources: Record<string, PresetSource> }> = ({ sources }) => {
+  useLanguage();
     const merged = Object.values(sources).reduce<Record<string, PresetSource>>((result, source) => {
         result[source.name] = {
             name: source.name,
@@ -65,6 +64,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     tagAssistEnabled,
     splitPromptFields,
 }) => {
+  useLanguage();
     const [open, setOpen] = useState(false);
 
     useEffect(() => {

@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import type { PromptAgentDraft, NAIParams } from '../types';
 import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
@@ -138,6 +139,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   safeMode = false,
   onGenerateBarChange,
 }) => {
+  useLanguage();
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const agentScopeRef = useRef<HTMLDivElement>(null);
   const agentCommandScope = useId();
@@ -1122,7 +1124,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
             onClick={() => setMobileTab(value)}
             className={`relative min-w-0 text-sm font-bold ${mobileTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
           >
-            {label}
+            {t(label)}
             {mobileTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
           </button>
         ))}
@@ -1142,7 +1144,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           if (!control || control === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
         }}
       >
-        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">松手导入为当前编辑底图<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
+        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">{t("松手导入为当前编辑底图")}<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
         <ImageEditControls
           operation={operation}
           draft={draft}
@@ -1232,7 +1234,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
         <ImageEditPreview
           operation={operation}
           image={previewImage}
-          error={error}
+          error={t(error)}
           generationCostLabel={generationCostLabel(operation, focused, { ...outputSize, focusedRect: state.focusedRect, minimumContextArea })}
           onGenerate={() => { void submit(); }}
           isLoading={isLoading || isImportingImage}

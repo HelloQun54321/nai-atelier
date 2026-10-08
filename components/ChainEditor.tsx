@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult } from '../services/agentOperation.mjs';
@@ -65,6 +66,7 @@ interface ChainEditorProps {
 }
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
+  useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
@@ -1969,8 +1971,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
                             <FileDown className="h-6 w-6" />
                         </div>
-                        <div className="text-base font-bold text-gray-900 dark:text-white">松手导入配置</div>
-                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">PNG / JSON · 替换提示词与参数</div>
+                        <div className="text-base font-bold text-gray-900 dark:text-white">{t("松手导入配置")}</div>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t("PNG / JSON · 替换提示词与参数")}</div>
                     </div>
                 </div>
             )}
@@ -2039,7 +2041,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             />
             {activeGenerationMode === 'text-to-image' ? <>
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-                {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{label}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
+                {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
 
             {/* Editor Content */}
@@ -2081,7 +2083,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
-                            label="角色参考"
+                            label={t("角色参考")}
                             order={activeLabLayout.order.indexOf('characterReference')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
                             className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
@@ -2113,7 +2115,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Negative Prompt */}
                         <LabModuleSection
                             moduleId="negative"
-                            label="全局负面提示词"
+                            label={t("全局负面提示词")}
                             order={activeLabLayout.order.indexOf('negative')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
                             className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
@@ -2123,7 +2125,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>
-                                <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title="复制全局负面提示词" />
+                                <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} />
                             </div>
                             <TagAutocompleteTextarea
                                 tagAssistEnabled={tagAssistEnabled}
@@ -2138,7 +2140,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Params Component */}
                         <LabModuleSection
                             moduleId="params"
-                            label="参数设置"
+                            label={t("参数设置")}
                             order={activeLabLayout.order.indexOf('params')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.params)}
                             className={mobileEditorTab === 'params' ? 'block' : 'hidden lg:block'}
@@ -2325,10 +2327,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <div className="mobile-generation-actions flex fixed right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + var(--mobile-generation-bottom))` } : undefined}>
                 {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
                 <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
-                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label="查看当前预览图"><SmartImage src={mobileFloatingPreviewImage || ''} alt="当前预览图" /></button>}
+                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
                     <div className="flex flex-col items-end gap-2">
                         {queueStatus && <InlineCloudQueueStatus compact generationProgress={generationProgress} className="min-w-64 max-w-[calc(100vw-5rem)]" />}
-                        {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : activeEditOperation && imageEditBaseLoading ? '读取图片中…' : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || '请先选择底图' : `生成 · ${activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel}`}</span></button>}
+                        {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? t("生成中 {0}/{1}", [generationProgress.step, generationProgress.total]) : t("生成中…") : activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || t("请先选择底图") : t("生成 · {0}", [activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel])}</span></button>}
                     </div>
                 </div>
             </div>
@@ -2359,8 +2361,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 e.stopPropagation();
                                 showPreviousHistory();
                             }}
-                            title="上一张"
-                            aria-label="上一张历史图"
+                            title={t("上一张")}
+                            aria-label={t("上一张历史图")}
                         >
                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -2374,8 +2376,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 e.stopPropagation();
                                 showNextHistory();
                             }}
-                            title="下一张"
-                            aria-label="下一张历史图"
+                            title={t("下一张")}
+                            aria-label={t("下一张历史图")}
                         >
                             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -2384,7 +2386,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                     {lightboxItem && (
                         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
-                            {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
+                            {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString(getLanguage())}
                         </div>
                     )}
 

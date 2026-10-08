@@ -1,3 +1,4 @@
+import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -2442,7 +2443,7 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
     if (!isPixivConnectionMutationAllowed(req)) {
       return sendJson(res, 403, { error: '请在运行 NAI Atelier 的电脑上登录；登录后手机可浏览', code: 'PIXIV_CONNECT_LOCAL_ONLY' });
     }
-    return sendJson(res, 200, await pixivWebLogin.start());
+    return sendJson(res, 200, await pixivWebLogin.start(normalizeLanguage(req.headers['x-atelier-language'])));
   }
   if (url.pathname === '/api/pixiv/login/status') {
     if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -3451,7 +3452,10 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname === '/pixiv-login-complete') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: '仅支持 GET 请求' });
       if (!isLoopbackIp(req.socket.remoteAddress) || !pixivGallery.status().connected) return sendJson(res, 404, { error: '登录完成页不可用' });
-      const page = await readFile(new URL('./pixiv-login-complete.html', import.meta.url));
+      const language = normalizeLanguage(webLoginOrchestrator.active?.language);
+      let page = await readFile(new URL('./pixiv-login-complete.html', import.meta.url), 'utf8');
+      page = page.replace('lang="zh-CN"', `lang="${language}"`);
+      for (const message of ['Pixiv 已连接', '登录已完成，可以关闭此页', '回到工坊继续浏览。']) page = page.replaceAll(message, translate(language, message));
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" });
       return res.end(page);
     }

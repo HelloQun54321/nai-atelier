@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import {
@@ -69,7 +70,7 @@ const categoryLabels: Record<DanbooruTagCategory, string> = {
   meta: '元数据',
 };
 
-const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
+const formatCount = (value: number) => new Intl.NumberFormat(getLanguage(), {
   notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
   maximumFractionDigits: 1,
 }).format(value);
@@ -79,6 +80,7 @@ type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
 type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 
 export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+  useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
@@ -435,48 +437,45 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
-        <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder="输入中文或英文 Tag，回车搜索" aria-label="搜索 Danbooru" containerClassName="md:max-w-none!" /></form>
-        <ToolbarPopover title="Danbooru 筛选" count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
+        <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder={t("输入中文或英文 Tag，回车搜索")} aria-label={t("搜索 Danbooru")} containerClassName="md:max-w-none!" /></form>
+        <ToolbarPopover title={t("Danbooru 筛选")} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
         <div className="space-y-4">
-          <button type="button" onClick={() => void handleApplyFilter({ sort: 'rank', rating: 'all', ratio: 'all', soloOnly: false })} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
+          <button type="button" onClick={() => void handleApplyFilter({ sort: 'rank', rating: 'all', ratio: 'all', soloOnly: false })} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
           <label className="block text-sm font-bold dark:text-white">
-            排序方式
-            <select
+            {t("排序方式")}<select
               value={sort}
               onChange={event => { void handleApplyFilter({ sort: event.target.value as DanbooruSort }); }}
               className={TOOLBAR_FIELD_CLASS}
             >
-              <option value="rank">综合热度</option>
-              <option value="score">高分榜</option>
-              <option value="favcount">收藏榜</option>
-              <option value="latest">最新</option>
+              <option value="rank">{t("综合热度")}</option>
+              <option value="score">{t("高分榜")}</option>
+              <option value="favcount">{t("收藏榜")}</option>
+              <option value="latest">{t("最新")}</option>
             </select>
           </label>
           <label className="block text-sm font-bold dark:text-white">
-            评级范围
-            <select
+            {t("评级范围")}<select
               value={rating}
               onChange={event => { void handleApplyFilter({ rating: event.target.value as DanbooruRating }); }}
               className={TOOLBAR_FIELD_CLASS}
             >
-              <option value="all">全部评级</option>
-              <option value="g">全年龄 G</option>
-              <option value="s">微涩 S</option>
-              <option value="q">擦边 Q</option>
+              <option value="all">{t("全部评级")}</option>
+              <option value="g">{t("全年龄 G")}</option>
+              <option value="s">{t("微涩 S")}</option>
+              <option value="q">{t("擦边 Q")}</option>
               <option value="e">R-18 E</option>
             </select>
           </label>
           <label className="block text-sm font-bold dark:text-white">
-            画幅比例
-            <select
+            {t("画幅比例")}<select
               value={ratio}
               onChange={event => { void handleApplyFilter({ ratio: event.target.value as DanbooruRatio }); }}
               className={TOOLBAR_FIELD_CLASS}
             >
-              <option value="all">不限比例</option>
-              <option value="portrait">竖屏</option>
-              <option value="landscape">横屏</option>
-              <option value="square">方图</option>
+              <option value="all">{t("不限比例")}</option>
+              <option value="portrait">{t("竖屏")}</option>
+              <option value="landscape">{t("横屏")}</option>
+              <option value="square">{t("方图")}</option>
             </select>
           </label>
           <button
@@ -488,18 +487,18 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
             }`}
           >
-            {soloOnly ? '✓ 已启用仅单人 (solo)' : '启用仅单人 (solo)'}
+            {soloOnly ? t("✓ 已启用仅单人 (solo)") : t("启用仅单人 (solo)")}
           </button>
         </div>
         </ToolbarPopover>
-        <ToolbarButton aria-label="浏览足迹" onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">足迹</span></ToolbarButton>
+        <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-              <span className="font-bold text-gray-700 dark:text-gray-200">本地浏览足迹 ({historyItems.length} 条)</span>
+              <span className="font-bold text-gray-700 dark:text-gray-200">{t("本地浏览足迹 ({0} 条)", [historyItems.length])}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -508,25 +507,24 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 }}
                 className="text-red-500 hover:underline"
               >
-                清空足迹
-              </button>
+                {t("清空足迹")}</button>
             </div>
           ) : (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span>
                 {query === 'order:rank'
-                  ? '综合热门推荐'
+                  ? t("综合热门推荐")
                   : query.startsWith('explore:popular_month')
-                  ? '高分榜 · 月度热门'
+                  ? t("高分榜 · 月度热门")
                   : query.startsWith('explore:popular_week')
-                  ? '收藏榜 · 本周精选'
-                  : `检索：${query.replaceAll('_', ' ')}`}
+                  ? t("收藏榜 · 本周精选")
+                  : t("检索：{0}", [query.replaceAll('_', ' ')])}
               </span>
-              <span>已加载 {displayedItems.length} 件{hasMore ? ' · 滚动继续加载' : ' · 已全部加载'}</span>
+              <span>{t("已加载 {0} 件{1}", [displayedItems.length, hasMore ? t(" · 滚动继续加载") : t(" · 已全部加载")])}</span>
             </div>
           )}
 
-          {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+          {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{t(error)}</div>}
 
           {showHistory ? (
             historyItems.length ? (
@@ -580,10 +578,10 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                 ))}
               </div>
             ) : (
-              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Danbooru 浏览足迹" />
+              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Danbooru 浏览足迹")} />
             )
           ) : loading && !displayedItems.length ? (
-            <PageSpinner label="正在读取 Danbooru…" className="min-h-72" />
+            <PageSpinner label={t("正在读取 Danbooru…")} className="min-h-72" />
           ) : displayedItems.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
@@ -600,28 +598,28 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               </div>
             )
           ) : !loading && (
-            <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title="没有找到匹配图片" hint="请尝试放宽筛选条件或更换搜索词。" />
+            <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title={t("没有找到匹配图片")} hint={t("请尝试放宽筛选条件或更换搜索词。")} />
           )}
 
           {!showHistory && (
             <div className="mt-5 flex flex-col items-center gap-3 pb-4">
               <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
               {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
-                <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />已加载 {DANBOORU_APPEND_LIMIT} 件 · 继续加载更多</ToolbarButton>
+                <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />{t("已加载 ")}{DANBOORU_APPEND_LIMIT} {t(" 件 · 继续加载更多")}</ToolbarButton>
               )}
               <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
-                <span>滚动浏览 · 跳到第</span>
+                <span>{t("滚动浏览 · 跳到第")}</span>
                 <input
                   type="number"
                   min={1}
                   value={pageInput}
                   onChange={event => setPageInput(event.target.value)}
                   onFocus={event => event.currentTarget.select()}
-                  aria-label="输入页码跳转"
+                  aria-label={t("输入页码跳转")}
                   className="h-9 w-16 rounded-lg border border-indigo-200 bg-white px-2 text-center text-sm font-bold text-indigo-600 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/15 dark:border-indigo-900/60 dark:bg-gray-800 dark:text-indigo-300"
                 />
-                <span>页</span>
-                <ToolbarButton type="submit" disabled={loading}>跳转</ToolbarButton>
+                <span>{t("页")}</span>
+                <ToolbarButton type="submit" disabled={loading}>{t("跳转")}</ToolbarButton>
               </form>
             </div>
           )}
@@ -629,7 +627,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
 
         <DetailSidePanel
           open={Boolean(selected)}
-          title={selected ? `Danbooru #${selected.id}` : '作品详情'}
+          title={selected ? `Danbooru #${selected.id}` : t("作品详情")}
           sensitiveTitle
           subInfo={selected ? `${selected.width}×${selected.height} · ${selected.fileExt.toUpperCase()}` : undefined}
           sourceUrl={selected?.postUrl}
@@ -645,11 +643,11 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, reverse, existing)} notify={notify}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
-              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">复制</button></div>
+              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">{t("复制")}</button></div>
               <TagChipGroup chips={selected.tags[category].map(tag => ({ label: tag.replaceAll('_', ' '), onClick: () => { setInput(tag); void handleApplyFilter({ inputVal: tag }); } }))} />
                 </section>)}
               </>} />
-          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">选择作品</div>}
+          </div> : <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">{t("选择作品")}</div>}
         </DetailSidePanel>
       </div>
     </div>

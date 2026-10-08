@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import React from 'react';
 import { ArrowLeft, ChevronDown, Heart, Inbox, LoaderCircle, Search, X } from 'lucide-react';
@@ -7,8 +8,8 @@ export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string; size?: 'sm' | 'md' }> = ({ onClick, label = '关闭', className = '', size = 'md' }) => (
   <button
     type="button"
-    aria-label={label}
-    title={label}
+    aria-label={t(label)}
+    title={t(label)}
     onClick={onClick}
     className={`flex flex-none items-center justify-center rounded-xl border text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white ${
       size === 'sm' ? 'h-9 w-9' : 'h-10 w-10'
@@ -22,8 +23,8 @@ export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; lab
 export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string }> = ({ onClick, label = '返回', className = '' }) => (
   <button
     type="button"
-    aria-label={label}
-    title={label}
+    aria-label={t(label)}
+    title={t(label)}
     onClick={onClick}
     className={`inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 outline-none transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${className}`}
   >
@@ -35,7 +36,7 @@ export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; labe
 export const PageSpinner: React.FC<{ label?: string; className?: string }> = ({ label = '加载中…', className = '' }) => (
   <div className={`flex flex-col items-center justify-center text-gray-400 ${className}`} role="status" aria-live="polite">
     <LoaderCircle className="mb-3 h-8 w-8 animate-spin" />
-    <p>{label}</p>
+    <p>{t(label)}</p>
   </div>
 );
 
@@ -46,7 +47,7 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?
       {icon ?? <Inbox className="h-8 w-8" aria-hidden="true" />}
     </div>
     <p className="mt-4 text-base font-bold text-gray-600 dark:text-gray-300">{title}</p>
-    {hint && <p className="mt-2 max-w-sm text-sm text-gray-400 dark:text-gray-500">{hint}</p>}
+    {hint && <p className="mt-2 max-w-sm text-sm text-gray-400 dark:text-gray-500">{t(hint)}</p>}
     {action && <div className="mt-5">{action}</div>}
   </div>
 );
@@ -57,14 +58,15 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?
  * overlay=true：32px 圆形实底悬浮钮（卡片角常用形态，active 用 rose 系）。
  */
 export const FavoriteButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void; label?: string; className?: string; overlay?: boolean }> = ({ active, onClick, label, className = '', overlay = false }) => {
+  useLanguage();
   if (overlay) {
     const hint = label ?? (active ? '取消收藏' : '收藏');
     return (
       <button
         type="button"
-        data-card-action="true" aria-label={hint}
+        data-card-action="true" aria-label={t(hint)}
         aria-pressed={active}
-        title={hint}
+        title={t(hint)}
         onClick={onClick}
         className={`mobile-size-locked flex h-8 w-8 flex-none items-center justify-center rounded-full border shadow backdrop-blur transition ${
           active
@@ -80,9 +82,9 @@ export const FavoriteButton: React.FC<{ active: boolean; onClick: (e: React.Mous
   return (
     <button
       type="button"
-      data-card-action="true" aria-label={hint}
+      data-card-action="true" aria-label={t(hint)}
       aria-pressed={active}
-      title={hint}
+      title={t(hint)}
       onClick={onClick}
       className={`mobile-size-locked flex h-10 w-10 flex-none items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${
         active
@@ -126,13 +128,14 @@ const ICON_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-500 hover:border-
 
 /** 来源导航使用原生链接，尺寸与图标按钮一致，并保留新窗口／键盘行为。 */
 export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & { label: string }> = ({ label, className = '', children, ...props }) => (
-  <a aria-label={label} title={label} className={`${ICON_CONTROL_CLASS} ${ICON_NEUTRAL_CLASS} ${className}`} {...props}>{children}</a>
+  <a aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${ICON_NEUTRAL_CLASS} ${className}`} {...props}>{children}</a>
 );
 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
 }> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
+  useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : tone === 'favorite'
@@ -141,7 +144,7 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
       : ICON_NEUTRAL_CLASS;
   return (
-    <button type="button" aria-label={label} title={label} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
+    <button type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -155,6 +158,7 @@ export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElemen
   tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
   active?: boolean;
 }> = ({ tone = 'neutral', active = false, className = '', children, ...props }) => {
+  useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : tone === 'favorite'
@@ -179,7 +183,7 @@ export const ToolbarSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElemen
 }> = ({ label, icon, containerClassName = '', className = '', children, ...props }) => (
   <span className={`relative inline-flex flex-none ${containerClassName}`}>
     {icon && <span aria-hidden="true" className="toolbar-select-icon pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 dark:text-gray-300 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
-    <select aria-label={label} title={label} className={`${TOOLBAR_CONTROL_CLASS} ${TOOLBAR_NEUTRAL_CLASS} w-full appearance-none ${icon ? 'pl-9' : 'pl-3'} pr-9 ${className}`} {...props}>{children}</select>
+    <select aria-label={t(label)} title={t(label)} className={`${TOOLBAR_CONTROL_CLASS} ${TOOLBAR_NEUTRAL_CLASS} w-full appearance-none ${icon ? 'pl-9' : 'pl-3'} pr-9 ${className}`} {...props}>{children}</select>
     <ChevronDown aria-hidden="true" className="toolbar-select-chevron pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-300" />
   </span>
 );
@@ -187,6 +191,7 @@ export const ToolbarSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElemen
 export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   tone?: 'neutral' | 'primary';
 }> = ({ tone = 'neutral', className = '', children, ...props }) => {
+  useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
@@ -202,6 +207,7 @@ export const MediaCardShell: React.FC<React.HTMLAttributes<HTMLElement> & {
   selected?: boolean;
   pressReveal?: boolean;
 }> = ({ as = 'article', selected = false, pressReveal = false, className = '', children, ...props }) => {
+  useLanguage();
   const Element = pressReveal ? PressRevealSurface : as;
   return (
     <Element {...(pressReveal ? { as } : {})} className={`media-card overflow-hidden rounded-2xl border bg-white transition dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800/80 dark:hover:border-gray-700'} ${className}`} {...props}>
@@ -256,7 +262,7 @@ export const SegmentedControl = <T extends string = string>({
               : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
           }`}
         >
-          <span>{option.label}</span>
+          <span>{typeof option.label === 'string' ? t(option.label) : option.label}</span>
           {option.badge !== undefined && option.badge !== null && option.badge !== '' && (
             <span className={`rounded-full px-1.5 py-0.5 text-micro font-semibold leading-none ${
               active

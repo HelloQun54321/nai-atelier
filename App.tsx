@@ -1,3 +1,4 @@
+import { t, useLanguage } from './services/i18n';
 
 import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Layout } from './components/Layout';
@@ -37,6 +38,7 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => targetView !== 'edit';
 
 const App = () => {
+  useLanguage();
   const confirmAction = useConfirmDialog();
   useEffect(() => {
     // 各列表已自行恢复滚动，避免浏览器在 popstate 后再用历史旧值覆盖。
@@ -572,7 +574,7 @@ const App = () => {
   };
 
   if (!currentUser && !dbConfigError) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">正在启动本地应用…</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
   }
 
   // --- Database Setup Guide ---
@@ -580,9 +582,9 @@ const App = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">本地服务未连接</h2>
-          <p>请启动本地服务</p>
-          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">刷新</button>
+          <h2 className="text-2xl font-bold mb-2">{t("本地服务未连接")}</h2>
+          <p>{t("请启动本地服务")}</p>
+          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">{t("刷新")}</button>
         </div>
       </div>
     );
@@ -767,7 +769,7 @@ const App = () => {
         notify={notify}
         onOpenAgent={handleOpenAgent}
       >
-        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">正在加载工作区…</div>}>
+        <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("正在加载工作区…")}</div>}>
           {renderContent()}
         </Suspense>
       </Layout>

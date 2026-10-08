@@ -9,6 +9,7 @@ import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../.
 import type { LocalGenItem } from '../../types';
 import { db } from '../../services/dbService';
 import { buildBrowserHistoryOrder } from '../../services/historyBrowse';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
 const { confirmAction, listeners } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
@@ -57,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
     vi.useRealTimers();
     cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+    setLanguage('zh-CN');
     if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
     else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo;
 });
@@ -71,6 +73,17 @@ const setup = async (width = 1280, expectedCount = 2) => {
 };
 
 describe('历史缩略图就地操作', () => {
+    it('五种语言保留历史图片和用户内容，日期与操作文字立即更新', async () => {
+        const { container, cards } = await setup();
+        for (const language of LANGUAGES) {
+            act(() => setLanguage(language.code));
+            expect(container.querySelector('.mobile-gallery-item')).toBe(cards[0]);
+            expect(within(cards[0]).getByRole('button', { name: t('收藏') })).toBeTruthy();
+            expect(cards[0].dataset.historyId).toBe('history-1');
+        }
+        expect(localHistory.getPage).toHaveBeenCalledTimes(2);
+        expect(localHistory.delete).not.toHaveBeenCalled();
+    });
     it.each([1280, 390])('宽度 %s 清理确认脱离工作区，取消不删除历史', async width => {
         const { container } = await setup(width);
         fireEvent.click(screen.getByRole('button', { name: '管理' }));

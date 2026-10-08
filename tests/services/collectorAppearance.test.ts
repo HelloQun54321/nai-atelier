@@ -3,10 +3,11 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
 import { collectorIsLocal, syncCollectorAppearance, useCollectorAppearance } from '../../services/collectorAppearance';
+import { LANGUAGES, setLanguage } from '../../services/i18n';
 
 const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 describe('悬浮窗外观同步', () => {
   it('电脑本机才发送，局域网手机不改悬浮窗外观', () => {
     expect(collectorIsLocal('localhost')).toBe(true); expect(collectorIsLocal('127.0.0.1')).toBe(true);
@@ -17,15 +18,25 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences, isDark }) => useCollectorAppearance(preferences, isDark), { initialProps: initial });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe('/api/style-collector/appearance');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0ea5e9', motion: 'full' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0ea5e9', motion: 'full', language: 'zh-CN' });
     view.rerender({ ...initial, preferences: { ...initial.preferences, forceEmptySeed: true } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     view.rerender({ preferences: { ...initial.preferences, accentColor: '#8b5cf6', motion: 'off' }, isDark: true });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ themeMode: 'system', isDark: true, accentColor: '#8b5cf6', motion: 'off' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ themeMode: 'system', isDark: true, accentColor: '#8b5cf6', motion: 'off', language: 'zh-CN' });
     view.rerender({ preferences: { ...initial.preferences, themeMode: 'light' }, isDark: false });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     view.unmount(); act(() => window.dispatchEvent(new Event('focus'))); expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+  it('五种语言原位同步到原生悬浮窗，不需要重开收集任务', async () => {
+    renderHook(() => useCollectorAppearance(DEFAULT_APPEARANCE_PREFERENCES, false));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    for (const item of LANGUAGES.slice(1)) {
+      act(() => setLanguage(item.code));
+      await waitFor(() => expect(JSON.parse(fetchMock.mock.lastCall![1].body).language).toBe(item.code));
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock.mock.calls.every(call => call[0] === '/api/style-collector/appearance')).toBe(true);
   });
   it('快速调色串行提交并合并中间值，最后的颜色不会被旧请求覆盖', async () => {
     let release!: () => void;

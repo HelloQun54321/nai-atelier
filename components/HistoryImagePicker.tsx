@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react';
 import { PAGINATION_CONFIG } from '../config/pagination';
@@ -32,6 +33,7 @@ const getHistoryTypeLabel = (item: LocalGenItem) => {
 };
 
 export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect }) => {
+  useLanguage();
   const [items, setItems] = useState<LocalGenItem[]>([]);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
   const dialogRef = useModalA11y<HTMLDivElement>(open);
@@ -95,29 +97,29 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
       className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label="选择历史图片"
+      aria-label={t("选择历史图片")}
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
       <section className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
         <header className="flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-gray-900 dark:text-white">选择历史图片</h2>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">全部 {totalCount} 张</span>
+              <h2 className="font-bold text-gray-900 dark:text-white">{t("选择历史图片")}</h2>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">{t("全部 {0} 张", [totalCount])}</span>
             </div>
           </div>
           <div className="flex flex-none items-center gap-1">
-            <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label="关闭历史图片选择"><X className="h-5 w-5" /></button>
+            <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t("关闭历史图片选择")}><X className="h-5 w-5" /></button>
           </div>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {loading && items.length === 0 ? (
-            <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />正在读取历史图片…</div>
+            <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取历史图片…")}</div>
           ) : error ? (
-            <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{error}</span><button type="button" onClick={() => void loadPage(page)} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">重新读取</button></div>
+            <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={() => void loadPage(page)} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
           ) : items.length === 0 ? (
-            <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">历史页面中还没有生成图片</div>
+            <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">{t("历史页面中还没有生成图片")}</div>
           ) : (
             <div className="operation-card-grid grid items-start gap-3">
               {items.map(item => (
@@ -126,12 +128,12 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                   type="button"
                   onClick={() => onSelect(item, importParams)}
                   className="group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
-                  aria-label={`选择历史生成图片，${new Date(item.createdAt).toLocaleString('zh-CN')}`}
+                  aria-label={t("选择历史生成图片，{0}", [new Date(item.createdAt).toLocaleString(getLanguage())])}
                 >
                   <div className="w-full overflow-hidden bg-gray-100 dark:bg-gray-950" style={{ aspectRatio: getImageRatio(item) }}>
-                    <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt="历史生成图片" className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]" />
+                    <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("历史生成图片")} className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]" />
                   </div>
-                  <div className="truncate border-t border-gray-100 px-2 py-2 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{getHistoryTypeLabel(item)} · {new Date(item.createdAt).toLocaleString('zh-CN')}</div>
+                  <div className="truncate border-t border-gray-100 px-2 py-2 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{getHistoryTypeLabel(item)} · {new Date(item.createdAt).toLocaleString(getLanguage())}</div>
                 </button>
               ))}
             </div>
@@ -139,14 +141,13 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
         </div>
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-          <span className="text-xs text-gray-500 dark:text-gray-400">第 {page} / {totalPages} 页 · 每页 {pageSize} 张</span>
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300" title="开启后同时载入该图的提示词与生成参数">
+          <span className="text-xs text-gray-500 dark:text-gray-400">{t("第 {0} / {1} 页 · 每页 {2} 张", [page, totalPages, pageSize])}</span>
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300" title={t("开启后同时载入该图的提示词与生成参数")}>
             <input type="checkbox" checked={importParams} onChange={event => setImportParams(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
-            同时导入该图参数
-          </label>
+            {t("同时导入该图参数")}</label>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label="上一页历史图片"><ChevronLeft className="h-4 w-4" />上一页</button>
-            <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label="下一页历史图片">下一页<ChevronRight className="h-4 w-4" /></button>
+            <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("上一页历史图片")}><ChevronLeft className="h-4 w-4" />{t("上一页")}</button>
+            <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("下一页历史图片")}>{t("下一页")}<ChevronRight className="h-4 w-4" /></button>
           </div>
         </footer>
       </section>

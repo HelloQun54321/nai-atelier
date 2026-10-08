@@ -1,3 +1,4 @@
+import { t } from '../../services/i18n';
 import React from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
@@ -30,7 +31,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
 }) => (
     <LabModuleSection
         moduleId="prompt"
-        label="全局提示词"
+        label={t("全局提示词")}
         order={activeLabLayout.order.indexOf('prompt')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
         className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
@@ -42,14 +43,14 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
                 </div>
 
-                <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title="复制全局提示词" />
+                <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title={t("复制全局提示词")} />
             </div>
             <TagAutocompleteTextarea
                 tagAssistEnabled={tagAssistEnabled}
                 disabled={!canEdit}
                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
                 value={prompt}
-                placeholder="输入全局提示词，英文逗号分隔"
+                placeholder={t("输入全局提示词，英文逗号分隔")}
                 onValueChange={(nextValue) => {
                     setPrompt(nextValue);
                     markPresetSectionModified('base');

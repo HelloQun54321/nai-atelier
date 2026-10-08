@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Folder, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { db } from '../services/dbService';
@@ -22,6 +23,7 @@ const getImageRatio = (item: Inspiration) => {
 };
 
 export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ open, onClose, onSelect }) => {
+  useLanguage();
   const [items, setItems] = useState<Inspiration[]>([]);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const dialogRef = useModalA11y<HTMLDivElement>(open);
@@ -94,17 +96,15 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
       className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
-      aria-label="选择灵感图片"
+      aria-label={t("选择灵感图片")}
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
       <section className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
         <header className="flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-gray-900 dark:text-white">选择灵感图片</h2>
-              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
-                {filteredItems.length} / {items.length} 张
-              </span>
+              <h2 className="font-bold text-gray-900 dark:text-white">{t("选择灵感图片")}</h2>
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("{0} / {1} 张", [filteredItems.length, items.length])}</span>
             </div>
           </div>
           <div className="flex flex-none items-center gap-1">
@@ -112,7 +112,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
               type="button"
               onClick={onClose}
               className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-              aria-label="关闭灵感图片选择"
+              aria-label={t("关闭灵感图片选择")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -127,7 +127,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="搜索标题、提示词或标签…"
+              placeholder={t("搜索标题、提示词或标签…")}
               className="w-full bg-transparent text-xs text-gray-800 outline-none dark:text-gray-100"
             />
             {searchQuery && (
@@ -147,8 +147,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
                   : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300'
               }`}
             >
-              全部灵感
-            </button>
+              {t("全部灵感")}</button>
             <button
               type="button"
               onClick={() => setSelectedBoardId('unorganized')}
@@ -159,8 +158,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
               }`}
             >
               <Sparkles className="h-3 w-3" />
-              未整理
-            </button>
+              {t("未整理")}</button>
             {boards.map(board => (
               <button
                 key={board.id}
@@ -183,20 +181,18 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
         <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {loading && items.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <LoaderCircle className="h-5 w-5 animate-spin" />正在读取灵感库…
-            </div>
+              <LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取灵感库…")}</div>
           ) : error ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500">
-              <span>{error}</span>
+              <span>{t(error)}</span>
               <button type="button" onClick={() => void loadData()} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">
-                重新读取
-              </button>
+                {t("重新读取")}</button>
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-1 text-sm text-gray-500 dark:text-gray-400">
               <Folder className="h-8 w-8 text-gray-300 dark:text-gray-700 mb-1" />
-              <span>没有找到匹配的灵感图片</span>
-              {items.length === 0 && <span className="text-micro text-gray-400">可在灵感库中收藏或上传图片</span>}
+              <span>{t("没有找到匹配的灵感图片")}</span>
+              {items.length === 0 && <span className="text-micro text-gray-400">{t("可在灵感库中收藏或上传图片")}</span>}
             </div>
           ) : (
             <div className="operation-card-grid grid items-start gap-3">
@@ -206,7 +202,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
                   type="button"
                   onClick={() => onSelect(item, importParams)}
                   className="group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
-                  aria-label={`选择灵感图片：${item.title}`}
+                  aria-label={t("选择灵感图片：{0}", [item.title])}
                 >
                   <div className="w-full overflow-hidden bg-gray-100 dark:bg-gray-950" style={{ aspectRatio: getImageRatio(item) }}>
                     <SmartImage
@@ -219,7 +215,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
                   <div className="border-t border-gray-100 p-2 text-left dark:border-gray-700">
                     <div className="truncate text-xs font-bold text-gray-900 dark:text-white">{item.title}</div>
                     <div className="mt-0.5 flex items-center justify-between text-meta text-gray-400">
-                      <span className="truncate">{item.boardId ? (boardNameMap.get(item.boardId) || '未分类') : '未整理'}</span>
+                      <span className="truncate">{item.boardId ? (boardNameMap.get(item.boardId) || t("未分类")) : t("未整理")}</span>
                       {item.params?.width && item.params?.height && (
                         <span className="flex-none font-mono text-micro">{item.params.width}×{item.params.height}</span>
                       )}
@@ -233,22 +229,20 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
 
         {/* 底部操作条 */}
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer" title="开启后同时载入该灵感的提示词与生成参数">
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer" title={t("开启后同时载入该灵感的提示词与生成参数")}>
             <input
               type="checkbox"
               checked={importParams}
               onChange={event => setImportParams(event.target.checked)}
               className="h-4 w-4 accent-indigo-500 rounded"
             />
-            同时导入该图提示词与参数
-          </label>
+            {t("同时导入该图提示词与参数")}</label>
           <button
             type="button"
             onClick={onClose}
             className="mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
           >
-            取消
-          </button>
+            {t("取消")}</button>
         </footer>
       </section>
     </div>

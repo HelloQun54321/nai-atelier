@@ -1,3 +1,4 @@
+import { normalizeLanguage } from '../locales/index.mjs';
 import { execFile as nodeExecFile, spawn as nodeSpawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
@@ -319,7 +320,7 @@ export class PixivWebLoginOrchestrator {
     this.active = null;
   }
 
-  async start() {
+  async start(language = 'zh-CN') {
     if (this.active && PIXIV_LOGIN_ACTIVE_STATES.has(this.active.state)) {
       throw pixivLoginError('已有进行中的 Pixiv 登录', 'PIXIV_LOGIN_ACTIVE', 409);
     }
@@ -328,6 +329,7 @@ export class PixivWebLoginOrchestrator {
     const session = {
       id: randomBytes(12).toString('base64url'),
       state: 'starting',
+      language: normalizeLanguage(language),
       message: '正在打开默认浏览器…',
       createdAt: now,
       expiresAt: now + this.ttlMs,

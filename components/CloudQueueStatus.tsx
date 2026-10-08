@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useState, useSyncExternalStore } from 'react';
 import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive, subscribeCloudQueueStatus } from '../services/cloudQueue';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
@@ -24,7 +25,7 @@ const queueCountLabel = (status: QueueStatus) => {
   if (!['waiting', 'ready', 'generating'].includes(status.phase)) return null;
   const count = normalizeCloudQueueCount(status.queueSize);
   const prefix = status.phase === 'waiting' ? '队列共' : '最近队列数：';
-  return count === null ? '队列数量未知' : `${prefix} ${count} 个任务`;
+  return count === null ? t("队列数量未知") : t("{0} {1} 个任务", [t(prefix), count]);
 };
 
 const statusTone = (status: QueueStatus) => {
@@ -42,6 +43,7 @@ export const useCloudQueueStatus = () => useSyncExternalStore(
 );
 
 const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; generationProgress?: GenerationProgress | null }> = ({ status, compact = false, generationProgress }) => {
+  useLanguage();
   const [cancelling, setCancelling] = useState(false);
   const active = isCloudQueueTaskActive(status);
   return <div className={`relative z-[1] flex w-full items-center justify-center ${compact ? 'min-h-8' : 'min-h-7'}`}>
@@ -49,25 +51,27 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; genera
         <div className="flex min-w-0 max-w-full items-center justify-center gap-2">
           {active && <span aria-hidden="true" className="queue-status-spinner h-4 w-4 shrink-0 rounded-full border-2 border-white/90 border-t-transparent" />}
           <div className="min-w-0 text-center">
-            <p className="truncate text-sm font-bold leading-5">{statusLabel(status, generationProgress)}</p>
-            {queueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{queueCountLabel(status)}</p>}
-            {status.cleanupError && <p className="mt-0.5 text-xs leading-4 text-white/90">{status.cleanupError}</p>}
-            {!status.proxy && status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
+            <p className="truncate text-sm font-bold leading-5">{t(statusLabel(status, generationProgress))}</p>
+            {queueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{t(queueCountLabel(status))}</p>}
+            {status.cleanupError && <p className="mt-0.5 text-xs leading-4 text-white/90">{t(status.cleanupError)}</p>}
+            {!status.proxy && status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">{t("当前使用者：{0}", [status.greeting])}</p>}
           </div>
           {active && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
         </div>
       </div>
-      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? '取消中…' : status.proxy ? '停止等待' : '取消排队'}</button>}
+      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? t("取消中…") : status.proxy ? t("停止等待") : t("取消排队")}</button>}
   </div>;
 };
 
 export const InlineCloudQueueStatus: React.FC<{ compact?: boolean; className?: string; generationProgress?: GenerationProgress | null }> = ({ compact = false, className = '', generationProgress }) => {
+  useLanguage();
   const status = useCloudQueueStatus();
   if (!status || (status.phase === 'completed' && !status.cleanupError)) return null;
   return <div role="status" className={`queue-status-surface relative ${statusTone(status)} ${compact ? 'min-h-12 rounded-full px-4 py-2' : 'min-h-12 rounded-lg px-4 py-3'} text-white shadow-lg ${className}`}><QueueStatusBody status={status} compact={compact} generationProgress={generationProgress} /></div>;
 };
 
 export const CloudQueueStatus: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
+  useLanguage();
   const status = useCloudQueueStatus();
   if (!status || hidden || (status.phase === 'completed' && !status.cleanupError)) return null;
   return <div role="status" className={`queue-status-surface ${statusTone(status)} fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[1180] w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 rounded-2xl px-4 py-3 text-white shadow-xl md:bottom-5 md:left-auto md:right-5 md:w-80 md:translate-x-0`}><QueueStatusBody status={status} /></div>;

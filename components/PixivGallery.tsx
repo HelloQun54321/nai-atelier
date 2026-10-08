@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calendar,
@@ -99,12 +100,13 @@ const PIXIV_LOGIN_TERMINAL = new Set<PixivLoginState>(['connected', 'failed', 'c
 const PIXIV_LOGIN_SESSION_KEY = 'pixiv-login-session-id';
 const isActiveLoginState = (state?: PixivLoginState) => Boolean(state && PIXIV_LOGIN_ACTIVE.has(state));
 
-const formatCount = (value: number) => new Intl.NumberFormat('zh-CN', {
+const formatCount = (value: number) => new Intl.NumberFormat(getLanguage(), {
   notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
   maximumFractionDigits: 1,
 }).format(value);
 
 export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+  useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<PixivConnectionStatus | null>(null);
@@ -576,7 +578,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
             <span>♥ {formatCount(illust.totalBookmarks)}</span>
-            {illust.pageCount > 1 && <span>{illust.pageCount} 页</span>}
+            {illust.pageCount > 1 && <span>{t("{0} 页", [illust.pageCount])}</span>}
           </div>
         </div>
         <div className="p-2.5">
@@ -688,28 +690,28 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     return (
       <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
         <WorkspaceToolbar>
-          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">Pixiv 图库</div>
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">{t("Pixiv 图库")}</div>
         </WorkspaceToolbar>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
           <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
               <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
-            <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">Pixiv 图库</h2>
-            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">账号密码仅输入 Pixiv 官方页面。</p>
+            <h2 className="text-center text-base font-black text-gray-800 dark:text-gray-100">{t("Pixiv 图库")}</h2>
+            <p className="mb-4 mt-1 text-center text-xs leading-relaxed text-gray-500">{t("账号密码仅输入 Pixiv 官方页面。")}</p>
 
             {lanMode ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">请在电脑上登录，手机共用</div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta leading-relaxed text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">{t("请在电脑上登录，手机共用")}</div>
             ) : (
               <ToolbarButton type="button" tone="primary" className="h-12 w-full text-base" disabled={waiting} onClick={() => void handleStartLogin()}>
-                {waiting ? <><RefreshCw className="animate-spin" />等待完成…</> : <><LogIn />在默认浏览器登录</>}
+                {waiting ? <><RefreshCw className="animate-spin" />{t("等待完成…")}</> : <><LogIn />{t("在默认浏览器登录")}</>}
               </ToolbarButton>
             )}
 
             {activeLogin && (
               <div className="mt-3 space-y-2">
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-meta leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
-                  {activeLogin.message || '请在默认浏览器完成登录'}
+                  {t(activeLogin.message) || t("请在默认浏览器完成登录")}
                 </div>
                 {!activeLogin.automaticCallback && (
                   <form onSubmit={handleCompleteLogin} className="space-y-2">
@@ -718,14 +720,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                       autoComplete="off"
                       value={callbackUrl}
                       onChange={event => setCallbackUrl(event.target.value)}
-                      placeholder="备用：粘贴官方 callback 地址"
-                      aria-label="Pixiv 登录完成地址"
+                      placeholder={t("备用：粘贴官方 callback 地址")}
+                      aria-label={t("Pixiv 登录完成地址")}
                       className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
                     />
-                    <ToolbarButton type="submit" tone="primary" className="w-full" disabled={!callbackUrl.trim() || loginBusy}><LogIn />完成连接</ToolbarButton>
+                    <ToolbarButton type="submit" tone="primary" className="w-full" disabled={!callbackUrl.trim() || loginBusy}><LogIn />{t("完成连接")}</ToolbarButton>
                   </form>
                 )}
-                <ToolbarButton type="button" tone="danger" className="w-full" disabled={loginBusy} onClick={() => void handleCancelLogin()}><X />取消登录</ToolbarButton>
+                <ToolbarButton type="button" tone="danger" className="w-full" disabled={loginBusy} onClick={() => void handleCancelLogin()}><X />{t("取消登录")}</ToolbarButton>
               </div>
             )}
 
@@ -733,9 +735,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             {statusError && <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-meta leading-relaxed text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{statusError}</div>}
 
             <details className="mt-4 rounded-xl border border-gray-200 dark:border-gray-700">
-              <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-meta font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">高级：手动连接</summary>
+              <summary className="cursor-pointer select-none rounded-xl px-3 py-2 text-meta font-bold text-gray-500 hover:text-indigo-600 dark:text-gray-400">{t("高级：手动连接")}</summary>
               <form onSubmit={handleConnect} className="border-t border-gray-100 p-3 dark:border-gray-800">
-                <p className="mb-3 text-meta leading-relaxed text-gray-500">Token 加密保存在本机</p>
+                <p className="mb-3 text-meta leading-relaxed text-gray-500">{t("Token 加密保存在本机")}</p>
                 <label className="mb-1 block text-meta font-bold text-gray-500 dark:text-gray-400" htmlFor="pixiv-refresh-token">Refresh token</label>
                 <input
                   id="pixiv-refresh-token"
@@ -743,10 +745,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   autoComplete="off"
                   value={refreshToken}
                   onChange={event => setRefreshToken(event.target.value)}
-                  placeholder="粘贴 refresh token"
+                  placeholder={t("粘贴 refresh token")}
                   className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
                 />
-                <ToolbarButton type="submit" tone="primary" disabled={connecting} className="mt-3 w-full"><KeyRound />{connecting ? '连接中…' : '连接'}</ToolbarButton>
+                <ToolbarButton type="submit" tone="primary" disabled={connecting} className="mt-3 w-full"><KeyRound />{connecting ? t("连接中…") : t("连接")}</ToolbarButton>
               </form>
             </details>
           </div>
@@ -763,8 +765,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             <ToolbarSearch
               value={searchInput}
               onChange={event => setSearchInput(event.target.value)}
-              placeholder="Pixiv Tag 搜索，回车直接检索"
-              aria-label="搜索 Pixiv"
+              placeholder={t("Pixiv Tag 搜索，回车直接检索")}
+              aria-label={t("搜索 Pixiv")}
               containerClassName="min-w-[12rem] flex-1 md:max-w-none"
             />
           </form>
@@ -790,7 +792,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                       : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
                   }`}
                 >
-                  {tab.label}
+                  {t(tab.label)}
                 </button>
               );
             })}
@@ -804,21 +806,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
-              足迹
-            </button>
+              {t("足迹")}</button>
             {userContext && (
               <button
                 type="button"
                 onClick={() => void loadFeed('recommended', {})}
                 className="h-10 flex-none whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               >
-                返回推荐
-              </button>
+                {t("返回推荐")}</button>
             )}
           </div>
         </div>
-        <ToolbarPopover label="账户" title="Pixiv 账户" icon={<CircleUserRound />} width={280}>
-          {close => <button type="button" onClick={() => { close(); void handleDisconnect(); }} className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-400'}><Unplug />断开 Pixiv 连接</button>}
+        <ToolbarPopover label={t("账户")} title={t("Pixiv 账户")} icon={<CircleUserRound />} width={280}>
+          {close => <button type="button" onClick={() => { close(); void handleDisconnect(); }} className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-400'}><Unplug />{t("断开 Pixiv 连接")}</button>}
         </ToolbarPopover>
       </WorkspaceToolbar>
 
@@ -845,7 +845,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
-              {tab.label}
+              {t(tab.label)}
             </button>
           );
         })}
@@ -859,16 +859,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
           }`}
         >
-          足迹
-        </button>
+          {t("足迹")}</button>
         {userContext && (
           <button
             type="button"
             onClick={() => void loadFeed('recommended', {})}
             className="h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
           >
-            返回推荐
-          </button>
+            {t("返回推荐")}</button>
         )}
       </div>
 
@@ -877,8 +875,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-              <Flame className="size-3.5 text-orange-500" />榜单:
-            </span>
+              <Flame className="size-3.5 text-orange-500" />{t("榜单:")}</span>
             {rankingSubModes.map(sub => (
               <FilterPill
                 key={sub.id}
@@ -888,14 +885,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   void loadFeed('ranking', { ranking_mode: sub.id, date: rankingDate });
                 }}
               >
-                {sub.label}
+                {t(sub.label)}
               </FilterPill>
             ))}
           </div>
 
           <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
             <Calendar className="size-3.5 text-indigo-500" />
-            <span className="font-semibold">历史日期:</span>
+            <span className="font-semibold">{t("历史日期:")}</span>
             <input
               type="date"
               value={rankingDate}
@@ -914,8 +911,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 }}
                 className="text-xs text-indigo-600 hover:underline dark:text-indigo-400"
               >
-                今日
-              </button>
+                {t("今日")}</button>
             )}
           </div>
         </div>
@@ -925,8 +921,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       {mode === 'search' && !showHistory && (
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
           <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-            <Filter className="size-3.5 text-indigo-500" />排序:
-          </span>
+            <Filter className="size-3.5 text-indigo-500" />{t("排序:")}</span>
           {[
             { id: 'popular_desc', label: '热门度' },
             { id: 'date_desc', label: '最新' },
@@ -940,13 +935,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
               }}
             >
-              {opt.label}
+              {t(opt.label)}
             </FilterPill>
           ))}
 
           <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
 
-          <span className="font-semibold text-gray-500 dark:text-gray-400">收藏门槛:</span>
+          <span className="font-semibold text-gray-500 dark:text-gray-400">{t("收藏门槛:")}</span>
           {[
             { id: '', label: '不限' },
             { id: '10000users入り', label: '10000+ 收藏' },
@@ -961,7 +956,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 if (searchInput.trim()) void loadFeed('search', { word: searchInput.trim() });
               }}
             >
-              {opt.label}
+              {t(opt.label)}
             </FilterPill>
           ))}
         </div>
@@ -971,7 +966,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
         <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
-              <span className="font-bold text-gray-700 dark:text-gray-200">本地 Pixiv 浏览足迹 ({historyItems.length} 条)</span>
+              <span className="font-bold text-gray-700 dark:text-gray-200">{t("本地 Pixiv 浏览足迹 ({0} 条)", [historyItems.length])}</span>
               <button
                 type="button"
                 onClick={() => {
@@ -981,17 +976,16 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 }}
                 className="text-red-500 hover:underline"
               >
-                清空足迹
-              </button>
+                {t("清空足迹")}</button>
             </div>
           ) : (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span>{headerText}</span>
-              <span>{items.length} 件作品{nextCursor ? ' · 可加载更多' : ''}</span>
+              <span>{t("{0} 件作品{1}", [items.length, nextCursor ? t(" · 可加载更多") : ''])}</span>
             </div>
           )}
 
-          {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
+          {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{t(error)}</div>}
 
           {showHistory ? (
             historyItems.length ? (
@@ -1052,10 +1046,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 ))}
               </div>
             ) : (
-              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title="暂无 Pixiv 浏览足迹" />
+              <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Pixiv 浏览足迹")} />
             )
           ) : loading && !items.length ? (
-            <PageSpinner label="正在读取 Pixiv…" className="min-h-72" />
+            <PageSpinner label={t("正在读取 Pixiv…")} className="min-h-72" />
           ) : items.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
@@ -1071,14 +1065,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
               </div>
             )
           ) : !loading && (
-            <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title="没有找到作品" hint="请尝试其他关键词、排行榜或关注列表。" />
+            <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title={t("没有找到作品")} hint={t("请尝试其他关键词、排行榜或关注列表。")} />
           )}
 
           {!showHistory && nextCursor && (
             <div className="mt-5 flex items-center justify-center gap-3 pb-4">
               <ToolbarButton disabled={loadingMore} onClick={() => void loadMore()}>
-                <RefreshCw className={loadingMore ? 'animate-spin' : ''} />加载更多
-              </ToolbarButton>
+                <RefreshCw className={loadingMore ? 'animate-spin' : ''} />{t("加载更多")}</ToolbarButton>
               <div ref={autoLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
             </div>
           )}
@@ -1086,9 +1079,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
 
         <DetailSidePanel
           open={Boolean(selected)}
-          title={selected ? selected.title : '作品详情'}
+          title={selected ? selected.title : t("作品详情")}
           sensitiveTitle
-          subInfo={selected ? `Pixiv #${selected.id} · ${selected.width}×${selected.height} · ${currentPageCount} 页` : undefined}
+          subInfo={selected ? t("Pixiv #{0} · {1}×{2} · {3} 页", [selected.id, selected.width, selected.height, currentPageCount]) : undefined}
           sourceUrl={selected ? pixivArtworkUrl(selected) : undefined}
           onBack={closeMobileDetail}
           onClose={() => setSelectedId(null)}
@@ -1104,33 +1097,32 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   onNext: () => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1)),
                 }}
               >
-                <button type="button" className="block w-full cursor-zoom-in" aria-label="放大查看 Pixiv 图片" onClick={() => setZoomPage(selectedPage)}><SmartImage
+                <button type="button" className="block w-full cursor-zoom-in" aria-label={t("放大查看 Pixiv 图片")} onClick={() => setZoomPage(selectedPage)}><SmartImage
                   eager
                   src={buildPixivPreviewMediaUrl(selected, selectedPage)}
                   upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
                   upgradeVariant="original"
-                  alt={`${selected.title} 第 ${selectedPage + 1} 页`}
+                  alt={t("{0} 第 {1} 页", [selected.title, selectedPage + 1])}
                   className="max-h-[62vh] w-full object-contain"
                 /></button>
                 <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} notify={notify} />
               </DetailImageStage>
-              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={`${selected.title} 第 ${zoomPage + 1} 页`} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
+              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={t("{0} 第 {1} 页", [selected.title, zoomPage + 1])} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
                 const next=zoomPage+delta;if(next>=0&&next<currentPageCount){setZoomPage(next);setSelectedPage(next);}
               }} />}
               {selected.type === 'ugoira' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                  动图首帧 · 在 Pixiv 查看动画
-                </div>
+                  {t("动图首帧 · 在 Pixiv 查看动画")}</div>
               )}
               <div className="flex min-w-0 items-center gap-3 text-meta text-gray-500">
                 <span className="flex-none">♥ {formatCount(selected.totalBookmarks)}</span>
-                <span className="flex-none">浏览 {formatCount(selected.totalViews)}</span>
-                <button type="button" aria-label={`查看 ${selected.user.name} 的作者全集`} title={`查看 ${selected.user.name} 的作者全集`} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
+                <span className="flex-none">{t("浏览 {0}", [formatCount(selected.totalViews)])}</span>
+                <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
               </div>
               <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
                 sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, selectedPage, reverse, existing)} notify={notify}
                 trailingAction={<IconButton
-                  label={bookmarking ? '正在同步 Pixiv 收藏' : selected.isBookmarked ? '取消 Pixiv 收藏' : '收藏到 Pixiv'}
+                  label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
                   aria-pressed={Boolean(selected.isBookmarked)}
                   aria-busy={bookmarking}
                   tone={selected.isBookmarked ? 'favorite' : undefined}
@@ -1156,9 +1148,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="flex items-center gap-1.5 text-xs font-black text-gray-700 dark:text-gray-200">
                     <Sparkles className="size-3.5 text-amber-500" />
-                    相关作品推荐
-                  </h3>
-                  {loadingRelated && <span className="text-micro text-gray-400">正在寻找相似作品…</span>}
+                    {t("相关作品推荐")}</h3>
+                  {loadingRelated && <span className="text-micro text-gray-400">{t("正在寻找相似作品…")}</span>}
                 </div>
                 {relatedItems.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
@@ -1167,7 +1158,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                         key={rel.id}
                         className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
                       >
-                        <button type="button" onClick={() => openDetail(rel)} className="h-full w-full" aria-label={`查看相关作品 ${rel.title}`}>
+                        <button type="button" onClick={() => openDetail(rel)} className="h-full w-full" aria-label={t("查看相关作品 {0}", [rel.title])}>
                           <SmartImage
                             src={rel.urls.medium || rel.urls.thumb}
                             alt={rel.title}
@@ -1182,14 +1173,13 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                     ))}
                   </div>
                 ) : !loadingRelated && (
-                  <p className="text-center text-meta text-gray-400">暂无相关推荐</p>
+                  <p className="text-center text-meta text-gray-400">{t("暂无相关推荐")}</p>
                 )}
               </section>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-8 text-center text-sm text-gray-400">
-              选择作品
-            </div>
+              {t("选择作品")}</div>
           )}
         </DetailSidePanel>
       </div>

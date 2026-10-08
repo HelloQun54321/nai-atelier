@@ -22,6 +22,8 @@ import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOffi
 import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
+import { agentLanguagePolicy } from '../locales/index.mjs';
+
 const CONFIG_FILE = 'local-data/prompt-agent.json';
 const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
@@ -686,7 +688,7 @@ const validatePromptDraft = draft => {
 const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职责不是只给建议，而是读取项目中的真实数据并使用工具完成操作。
 
 规则：
-1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考使用中文，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
+1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考跟随本次交流语言，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
 2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
@@ -696,7 +698,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的项目业务 Agent。你的职�
 7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
 8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时直接使用本地文件工具。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
 9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。全部工具已注册，可直接调用；enable_tool_group 仅用于查询分类目录。
-10. 优先执行与当前要求相关的工具。完成后只用简短中文总结实际读取、修改或待确认的事项，不复述整份实验室内容。
+10. 优先执行与当前要求相关的工具。完成后按本次交流语言简短总结实际读取、修改或待确认的事项，不复述整份实验室内容。
 10. Precise/角色参考每张每次生图增加 Anlas，费用以当前官方同步规则与生成前确认估算为准，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
@@ -812,7 +814,7 @@ const researchBlock = `
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
 // Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
-const buildSystemPrompt = () => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}`;
+export const buildSystemPrompt = (language = 'zh-CN') => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}\n${agentLanguagePolicy(language)}`;
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -3190,7 +3192,7 @@ export class PromptAgentService {
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
     Object.assign(this.runs.get(sessionId), { contextData, draft, clientDraft });
-    const policySystemPrompt = buildSystemPrompt();
+    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language);
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';

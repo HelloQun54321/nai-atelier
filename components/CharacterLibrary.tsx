@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ViewableImage } from './ImageLightbox';
 import { useImageRatios } from './useImageRatios';
@@ -87,6 +88,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   notify,
   returnTargetId,
 }) => {
+  useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [cardRatios, updateImageRatio] = useImageRatios();
@@ -99,7 +101,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             const favorite = favorites.has(card.key);
             const selected = selectedKeys.has(card.key);
             return (
-              <PressRevealSurface as="article" key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={`选择角色：${card.name}`} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
+              <PressRevealSurface as="article" key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
@@ -110,7 +112,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   </> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
-                      <span className="mt-2 text-meta">暂无封面</span>
+                      <span className="mt-2 text-meta">{t("暂无封面")}</span>
                     </div>
                   )}
                   <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} />
@@ -122,21 +124,21 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   <div className="flex items-center justify-between gap-1.5">
                     <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-600 dark:text-indigo-400" strokeWidth={4} />}{card.name}</h2>
                     {card.kind === 'custom' ? (
-                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">自定义</span>
+                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("自定义")}</span>
                     ) : (
-                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">Tag 词库</span>
+                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
                     )}
                   </div>
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="mt-1 flex items-center justify-between gap-1 text-micro">
-                      <span className="text-gray-500">作品 {(card.postCount || 0).toLocaleString('zh-CN')}</span>
-                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={`匹配：${card.matchReason}`}>匹配：{card.matchReason}</span>}
+                      <span className="text-gray-500">{t("作品 {0}", [(card.postCount || 0).toLocaleString(getLanguage())])}</span>
+                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={t("匹配：{0}", [card.matchReason])}>{t("匹配：{0}", [card.matchReason])}</span>}
                     </div>
                   </> : (
                     <div className="mt-1 flex items-center justify-between gap-1.5 text-micro">
                       <div className="truncate font-mono text-gray-400 dark:text-gray-500" title={card.chain?.basePrompt || card.chain?.description || ''}>
-                        {card.chain?.basePrompt || card.chain?.description || '手工组合外貌与服装提示词'}
+                        {card.chain?.basePrompt || card.chain?.description || t("手工组合外貌与服装提示词")}
                       </div>
                       <button
                         type="button"
@@ -146,8 +148,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                         }}
                         className="flex-none font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
                       >
-                        编辑
-                      </button>
+                        {t("编辑")}</button>
                     </div>
                   )}
                 </div>
@@ -612,30 +613,30 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
        <WorkspaceToolbar>
          <div className="relative min-w-0 flex-1">
-           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder="搜索角色、作品或 Tag" containerClassName="md:max-w-none!" className="pr-9" />
+           <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
            {isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
          </div>
-         <ToolbarPopover title="筛选角色" count={Number(tab !== 'all') + Number(sort !== 'popular') + Number(showFavOnly)}>
+         <ToolbarPopover title={t("筛选角色")} count={Number(tab !== 'all') + Number(sort !== 'popular') + Number(showFavOnly)}>
            <div className="space-y-3">
-             <label className="block text-sm font-semibold dark:text-white">显示范围<select aria-label="角色范围" value={tab} onChange={event => { setTab(event.target.value as CharacterTab); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">全部角色</option><option value="catalog">角色 Tag</option><option value="custom">自定义角色</option></select></label>
-             <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="角色排序" value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option></select></label>
-             <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />只看收藏</label>
-             <button type="button" onClick={() => { setTab('all'); setSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
+             <label className="block text-sm font-semibold dark:text-white">{t("显示范围")}<select aria-label={t("角色范围")} value={tab} onChange={event => { setTab(event.target.value as CharacterTab); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t("全部角色")}</option><option value="catalog">{t("角色 Tag")}</option><option value="custom">{t("自定义角色")}</option></select></label>
+             <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
+             <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏")}</label>
+             <button type="button" onClick={() => { setTab('all'); setSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
            </div>
          </ToolbarPopover>
          <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-           <ToolbarButton aria-label={gachaCards ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || (gachaMode === 'custom' ? customChains.length === 0 : catalogTotal <= 0)} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? '再抽一批' : '随机抽卡'}</span></ToolbarButton>
-           <ToolbarPopover label="抽卡设置" title="角色抽卡设置" icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || (gachaMode === 'custom' ? customChains.length === 0 : catalogTotal <= 0)} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
+           <ToolbarPopover label={t("抽卡设置")} title={t("角色抽卡设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
              <div className="grid grid-cols-2 gap-3">
-               <label className="text-sm font-semibold dark:text-white">抽卡范围<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">Tag + 自定义</option><option value="catalog">只抽角色 Tag</option><option value="custom">只抽自定义</option></select></label>
-               <label className="text-sm font-semibold dark:text-white">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+               <label className="text-sm font-semibold dark:text-white">{t("抽卡范围")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("Tag + 自定义")}</option><option value="catalog">{t("只抽角色 Tag")}</option><option value="custom">{t("只抽自定义")}</option></select></label>
+               <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
              </div>
            </ToolbarPopover>
          </div>
-         <ToolbarButton tone="primary" aria-label="新建自定义角色" onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">新建角色</span></ToolbarButton>
+         <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
        </WorkspaceToolbar>
 
-       {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName="角色" showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
+       {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
       <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
@@ -655,19 +656,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
         {!searchTerm.trim() && !gachaCards && tab !== 'custom' && !showFavOnly && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
-            {isLoadingMore ? '正在加载更多角色…' : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">继续向下滚动加载更多</button> : catalogTotal ? '已加载完整角色目录' : null}
+            {isLoadingMore ? t("正在加载更多角色…") : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
           </div>
         )}
         {!isLoading && visibleCards.length === 0 && (
           <EmptyState
-            title="没有找到符合条件的角色"
+            title={t("没有找到符合条件的角色")}
             className="py-20"
             icon={<UserRound className="h-8 w-8" aria-hidden="true" />}
           />
         )}
       </div>
 
-      <TagSelectionBar count={selectedCards.length} unit="个角色" onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
+      <TagSelectionBar count={selectedCards.length} unit={t("个角色")} onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
 
        <ImagePreviewPortal>{lightbox?.previewImage && (
          <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
@@ -676,25 +677,25 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
           </PressRevealSurface>
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
-          <button onClick={() => setLightbox(null)} className="absolute left-5 top-5 text-3xl text-white" aria-label="关闭角色大图">×</button>
+          <button onClick={() => setLightbox(null)} className="absolute left-5 top-5 text-3xl text-white" aria-label={t("关闭角色大图")}>×</button>
         </div>
        )}
-       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || '角色详情'} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
-         <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">复制角色提示词</button>
-         <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">导入实验室</button>
+       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || t("角色详情")} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
+         <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">{t("复制角色提示词")}</button>
+         <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">{t("导入实验室")}</button>
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
            <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <>
              <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
              <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
-           </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">暂无封面</div>}</PressRevealSurface>
+           </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">{t("暂无封面")}</div>}</PressRevealSurface>
            <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">
              <div className="font-bold dark:text-white">{lightbox.name}</div>
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
              <div className="mt-3 grid grid-cols-2 gap-2">
-               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">编辑还原</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">Danbooru</a>}
+               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">{t("编辑还原")}</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">Danbooru</a>}
              </div>
-             {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">删除这个自定义角色</button>}
+             {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("删除这个自定义角色")}</button>}
            </div>
          </div>}
        </MobileDetailView></ImagePreviewPortal>
@@ -705,14 +706,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             ref={createDialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label="新建自定义还原角色"
+            aria-label={t("新建自定义还原角色")}
             className="appearance-panel ui-modal-enter w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900"
             onClick={event => event.stopPropagation()}
           >
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">新建自定义还原角色</h2>
-            <input autoFocus value={newName} onChange={event => setNewName(event.target.value)} placeholder="角色名称，例如：穆宁雪" className="mt-5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
-            <textarea value={newDescription} onChange={event => setNewDescription(event.target.value)} placeholder="简单描述（可选）" className="mt-3 h-24 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
-            <div className="mt-5 flex justify-end gap-2"><button onClick={() => setShowCreate(false)} className="rounded px-4 py-2 text-sm text-gray-500">取消</button><button onClick={submitCreate} disabled={!newName.trim()} className="rounded bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">创建并编辑</button></div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t("新建自定义还原角色")}</h2>
+            <input autoFocus value={newName} onChange={event => setNewName(event.target.value)} placeholder={t("角色名称，例如：穆宁雪")} className="mt-5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
+            <textarea value={newDescription} onChange={event => setNewDescription(event.target.value)} placeholder={t("简单描述（可选）")} className="mt-3 h-24 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 dark:text-white" />
+            <div className="mt-5 flex justify-end gap-2"><button onClick={() => setShowCreate(false)} className="rounded px-4 py-2 text-sm text-gray-500">{t("取消")}</button><button onClick={submitCreate} disabled={!newName.trim()} className="rounded bg-indigo-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{t("创建并编辑")}</button></div>
           </div>
         </div>
       </ImagePreviewPortal>)}

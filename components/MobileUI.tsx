@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useId, useRef } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import { useModalA11y } from './useModalA11y';
@@ -8,8 +9,8 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
 }> = ({ label, className = '', children, ...props }) => (
   <button
     type="button"
-    aria-label={label}
-    title={label}
+    aria-label={t(label)}
+    title={t(label)}
     className={`mobile-touch inline-flex h-11 w-11 flex-none items-center justify-center rounded-xl transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0 ${className}`}
     {...props}
   >
@@ -60,6 +61,7 @@ export const MobileBottomSheet: React.FC<{
   children: React.ReactNode;
   footer?: React.ReactNode;
 }> = ({ open, title, onClose, children, footer }) => {
+  useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
   // P2-17：底部弹层焦点管理（移入 / Tab 圈禁 / 关闭后归还）。
@@ -85,7 +87,7 @@ export const MobileBottomSheet: React.FC<{
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
         <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <h2 className="font-bold text-gray-900 dark:text-white">{title}</h2>
-          <MobileIconButton label="关闭" onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
+          <MobileIconButton label={t("关闭")} onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
         {footer && <footer className="appearance-surface mobile-safe-bottom border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">{footer}</footer>}
@@ -105,6 +107,7 @@ export const MobileDetailView: React.FC<{
   /** 将本详情整体接入安全模式的点击揭示逻辑（标题 + 内嵌作品图一起随 work 组显示）。 */
   sensitiveTitle?: boolean;
 }> = ({ open, title, subtitle, onClose, actions, footer, children, sensitiveTitle = false }) => {
+  useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'detail');
   // P2-17：全屏详情层焦点管理（移入 / Tab 圈禁 / 关闭后归还）。
   const dialogRef = useModalA11y<HTMLElement>(open);
@@ -120,7 +123,7 @@ export const MobileDetailView: React.FC<{
       data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     >
       <header className="mobile-detail-header">
-        <MobileIconButton label="返回" onClick={requestClose} className="text-gray-600 dark:text-gray-300">
+        <MobileIconButton label={t("返回")} onClick={requestClose} className="text-gray-600 dark:text-gray-300">
           <ArrowLeft className="h-6 w-6" />
         </MobileIconButton>
         <div className="min-w-0 flex-1">

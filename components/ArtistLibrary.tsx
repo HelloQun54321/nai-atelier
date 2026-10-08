@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
@@ -32,6 +33,7 @@ interface ArtistLibraryProps {
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground }) => {
+  useLanguage();
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, updateImageRatio] = useImageRatios();
@@ -51,7 +53,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     data-safe-mode-work="true"
                                     role="button"
                                     data-agent-action="select"
-                                    aria-label={`选择画师：${artist.name}`}
+                                    aria-label={t("选择画师：{0}", [artist.name])}
                                     aria-pressed={isSelected}
                                     tabIndex={0}
                                     className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
@@ -80,7 +82,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
                                         {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
-                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
+                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                     </div>
                                 </PressRevealSurface>
                             )
@@ -511,26 +513,26 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
                 <div className="relative min-w-0 flex-1">
-                    <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder="搜索画师名称或 Tag" containerClassName="md:max-w-none!" className="pr-9" />
+                    <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师名称或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
                     {isCatalogLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
-                <ToolbarPopover title="筛选画师" count={Number(artistSort !== 'popular') + Number(showFavOnly)}>
+                <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(showFavOnly)}>
                     <div className="space-y-3">
-                        <label className="block text-sm font-semibold dark:text-white">排序<select aria-label="画师排序" value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
-                            <option value="popular">{searchTerm.trim() ? '相关性优先 · 热度高' : '热度从高到低'}</option><option value="least">{searchTerm.trim() ? '相关性优先 · 热度低' : '热度从低到高'}</option><option value="name-asc">名称 A → Z</option><option value="name-desc">名称 Z → A</option>
+                        <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
+                            <option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option>
                         </select></label>
-                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />只看收藏</label>
-                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">重置筛选</button>
+                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏")}</label>
+                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
                 <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-                    <ToolbarButton aria-label={gachaArtists ? '再抽一批' : '随机抽卡'} onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">
-                        {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? '再抽一批' : '随机抽卡'}</span>
+                    <ToolbarButton aria-label={gachaArtists ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || artistCatalogCount <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">
+                        {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再抽一批") : t("随机抽卡")}</span>
                     </ToolbarButton>
-                    <ToolbarPopover label="抽卡设置" title="画师抽卡设置" icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+                    <ToolbarPopover label={t("抽卡设置")} title={t("画师抽卡设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
                         <div className="grid grid-cols-2 gap-3">
-                            <label className="text-sm font-semibold dark:text-white">抽卡方式<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">惊喜混合</option><option value="uniform">完全随机</option><option value="popular">热门画师</option></select></label>
-                            <label className="text-sm font-semibold dark:text-white">数量<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>6 位</option><option value={12}>12 位</option><option value={24}>24 位</option></select></label>
+                            <label className="text-sm font-semibold dark:text-white">{t("抽卡方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>
+                            <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
                         </div>
                     </ToolbarPopover>
                 </div>
@@ -539,7 +541,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             {gachaArtists && (
                 <GalleryActiveStateBanner
                     count={filteredArtists.length}
-                    entityName="画师"
+                    entityName={t("画师")}
                     showDrawAgain={false}
                     onDrawAgain={() => void drawGacha()}
                     onExit={returnToCatalog}
@@ -570,17 +572,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                 {!searchTerm.trim() && !gachaArtists && (
                     <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
                         {isLoadingMoreCatalog ? (
-                            <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />正在加载更多画师…</span>
+                            <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在加载更多画师…")}</span>
                         ) : hasMoreCatalog ? (
-                            <button type="button" onClick={() => void loadNextCatalogPage()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">继续向下滚动加载更多</button>
+                            <button type="button" onClick={() => void loadNextCatalogPage()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button>
                         ) : artistCatalogCount > 0 ? (
-                            <span>已加载完整画师目录</span>
+                            <span>{t("已加载完整画师目录")}</span>
                         ) : null}
                     </div>
                 )}
             </div>
 
-            <TagSelectionBar count={cart.length} unit="位画师" onClear={() => setCart([])} onCopy={copyCart} onImport={onNavigateToPlayground ? importCartToPlayground : undefined} />
+            <TagSelectionBar count={cart.length} unit={t("位画师")} onClear={() => setCart([])} onCopy={copyCart} onImport={onNavigateToPlayground ? importCartToPlayground : undefined} />
 
         </div>
     );

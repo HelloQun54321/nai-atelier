@@ -3,6 +3,7 @@ import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { LANGUAGES, translate } from '../../locales/index.mjs';
 
 // 自测不注册系统剪贴板，使用独立合成事件；不读取、覆盖或备份真实剪贴板内容。
 test('Windows native window protocol, pause baselines, screen clamp, topmost and no activation', { skip: process.platform !== 'win32', timeout: 20_000 }, async t => {
@@ -23,6 +24,7 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   await until(() => events.some(e => e.type === 'window'));
   assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 122, detail: '', detailVisible: true, detailEllipsis: true,
     title: '收集中', breathing: false, processing: false, tooltipWhileInactive: true, failureHint: false, failureTooltip: '', rounded: true, counters: { pending: 0, saved: 0, skipped: 0, failed: 0 },
+    pauseTextFits: true, metricLabelsFit: true,
     appearance: { themeMode: 'dark', dark: true, accent: '#0EA5E9', background: '#171B24', foreground: '#F0F2F8', muted: '#939DB5', failure: '#DE999D', motion: 'full' } });
   const detail = '失败：图片访问被拒绝 (403)，链接可能过期，请重新复制';
   send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail }, id: 'detail' });
@@ -80,6 +82,18 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   send('state', { state: { ...base, appearance }, id: 'explicit-light' }); await until(() => events.some(e => e.id === 'explicit-light'));
   send('system-theme', { dark: true, id: 'ignore-system' }); await until(() => events.some(e => e.id === 'ignore-system'));
   assert.equal(events.filter(e => e.type === 'window').at(-1).appearance.dark, false);
+  for (const language of LANGUAGES) {
+    const labels = Object.fromEntries(['收集中', '已暂停', ' · 已保存 ', '失败：', '暂停', '继续', '待处理', '已保存', '跳过', '失败'].map(message => [message, translate(language.code, message)]));
+    send('state', { state: { ...base, rawStage: base.stage, stage: translate(language.code, base.stage), appearance: { ...appearance, language: language.code, labels } }, id: 'language-' + language.code });
+    await until(() => events.some(e => e.id === 'language-' + language.code));
+    const current = events.filter(e => e.type === 'window').at(-1);
+    assert.equal(current.title, translate(language.code, '收集中'));
+    assert.equal(current.processing, true);
+    assert.deepEqual(current.counters, { pending: 2, saved: 4, skipped: 1, failed: 1 });
+    assert.equal(current.foreground, false);
+    assert.equal(current.pauseTextFits, true, language.code+' pause');
+    assert.equal(current.metricLabelsFit, true, language.code+' metrics');
+  }
   send('stop'); await until(() => child.exitCode !== null);
   assert.equal(child.exitCode, 0); assert.ok(events.some(e => e.type === 'stop'));
 });

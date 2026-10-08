@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 
@@ -16,6 +17,7 @@ interface ConfirmDialogContextValue {
 const ConfirmDialogContext = createContext<ConfirmDialogContextValue | null>(null);
 
 export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  useLanguage();
     const [options, setOptions] = useState<ConfirmDialogOptions | null>(null);
     const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
     // 打开确认框前的焦点元素：确认框卸载后归还焦点，保证键盘用户留在触发点附近。
@@ -97,9 +99,9 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 )}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <h2 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white">{options.title}</h2>
+                                <h2 id="confirm-dialog-title" className="text-lg font-bold text-gray-900 dark:text-white">{t(options.title)}</h2>
                                 <p id="confirm-dialog-description" className="mt-2 whitespace-pre-line text-sm leading-6 text-gray-600 dark:text-gray-300">
-                                    {options.message}
+                                    {t(options.message)}
                                 </p>
                             </div>
                         </div>
@@ -111,7 +113,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 onClick={() => closeDialog(false)}
                                 className="mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900"
                             >
-                                {options.cancelLabel || '取消'}
+                                {t(options.cancelLabel) || t("取消")}
                             </button>
                             <button
                                 type="button"
@@ -122,7 +124,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                     : 'bg-indigo-600 shadow-indigo-600/20 hover:bg-indigo-500 focus:ring-indigo-500'
                                     }`}
                             >
-                                {options.confirmLabel || '确认'}
+                                {t(options.confirmLabel) || t("确认")}
                             </button>
                         </div>
                     </div>

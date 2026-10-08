@@ -37,15 +37,17 @@ public sealed class CollectorStatusDot : Control {
 // 四列固定起点，标签弱化、数字突出；长计数省略，避免挤到相邻指标。
 public sealed class CollectorMetrics : Control {
     public int Pending, Saved, Skipped, Failed;
+    public string[] Labels = { "待处理", "已保存", "跳过", "失败" };
     public Color Muted = Color.FromArgb(151, 160, 174), Success = Color.FromArgb(152, 196, 172), Failure = Color.FromArgb(222, 153, 157);
     readonly Font numberFont = new Font("Microsoft YaHei UI", 9, FontStyle.Bold);
     public CollectorMetrics() { SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true); BackColor = Color.Transparent; }
+    public bool LabelsFit { get { foreach (string label in Labels) if (TextRenderer.MeasureText(label, Font, Size.Empty, TextFormatFlags.NoPadding).Width > Width / 4 - 27) return false; return true; } }
     protected override void OnPaint(PaintEventArgs e) {
-        string[] labels = { "待处理", "已保存", "跳过", "失败" }; int[] values = { Pending, Saved, Skipped, Failed };
+        string[] labels = Labels; int[] values = { Pending, Saved, Skipped, Failed };
         for (int i = 0; i < 4; i++) {
             int x = i * Width / 4;
             var flags = TextFormatFlags.NoPadding | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
-            int labelWidth = i < 2 ? 39 : 27;
+            int labelWidth = Math.Min(Width / 4 - 27, Math.Max(i < 2 ? 39 : 27, TextRenderer.MeasureText(labels[i], Font, Size.Empty, TextFormatFlags.NoPadding).Width));
             TextRenderer.DrawText(e.Graphics, labels[i], Font, new Rectangle(x, 0, labelWidth, Height), Muted, flags);
             Color color = i == 1 && values[i] > 0 ? Success : i == 3 && values[i] > 0 ? Failure : ForeColor;
             TextRenderer.DrawText(e.Graphics, values[i].ToString(), numberFont, new Rectangle(x + labelWidth + 3, 0, Width / 4 - labelWidth - 7, Height), color, flags);
@@ -76,6 +78,9 @@ public sealed class AtelierCollectorWindow : Form {
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
     readonly ConcurrentQueue<string> input = new ConcurrentQueue<string>();
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+    Dictionary<string, object> labels = new Dictionary<string, object>();
+    string rawStage = "";
+    string T(string message) { return labels.ContainsKey(message) ? Convert.ToString(labels[message]) : message; }
     readonly Label title = new Label(), phase = new Label(), detail = new Label(), failureHint = new Label();
     readonly CollectorStatusDot statusDot = new CollectorStatusDot();
     readonly CollectorMetrics metrics = new CollectorMetrics();
@@ -97,7 +102,7 @@ public sealed class AtelierCollectorWindow : Form {
     int saved;
     DateTime pulse = DateTime.MinValue;
     public AtelierCollectorWindow(bool selfTest, string initialAppearance) {
-        test = selfTest; Text = "Atelier 风格串收集"; FormBorderStyle = FormBorderStyle.None;
+        test = selfTest; Text = T("Atelier 风格串收集"); FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         BackColor = Color.FromArgb(30, 34, 42); ForeColor = Color.FromArgb(222, 227, 235);
@@ -108,11 +113,11 @@ public sealed class AtelierCollectorWindow : Form {
         metrics.SetBounds(16, 61, 324, 23); metrics.ForeColor = ForeColor;
         detail.SetBounds(22, 91, 312, 22); detail.AutoEllipsis = true; detail.BackColor = Color.FromArgb(36, 41, 50);
         failureHint.SetBounds(195, 11, 17, 23); failureHint.Text = "●"; failureHint.ForeColor = metrics.Failure; failureHint.Visible = false;
-        title.Text = "正在启动"; phase.Text = "等待本机服务确认";
-        Configure(pause, "暂停", 222, 44); Configure(collapse, "−", 272, 28); Configure(finish, "×", 310, 28);
+        title.Text = T("正在启动"); phase.Text = T("等待本机服务确认");
+        Configure(pause, T("暂停"), 222, 44); Configure(collapse, "−", 272, 28); Configure(finish, "×", 310, 28);
         finish.FlatAppearance.MouseOverBackColor = Color.FromArgb(75, 43, 50); finish.FlatAppearance.MouseDownBackColor = Color.FromArgb(92, 47, 56);
         finish.MouseEnter += delegate { finish.ForeColor = metrics.Failure; }; finish.MouseLeave += delegate { finish.ForeColor = metrics.Muted; };
-        detailTip.SetToolTip(pause, "暂停接收新复制，已入队图片继续处理"); detailTip.SetToolTip(collapse, "折叠状态窗"); detailTip.SetToolTip(finish, "结束收集");
+        detailTip.SetToolTip(pause, T("暂停接收新复制，已入队图片继续处理")); detailTip.SetToolTip(collapse, T("折叠状态窗")); detailTip.SetToolTip(finish, T("结束收集"));
         detailTip.ShowAlways = true; detailTip.InitialDelay = 350; detailTip.ReshowDelay = 100; detailTip.AutoPopDelay = 10000;
         Controls.AddRange(new Control[]{ statusDot, title, phase, metrics, detail, failureHint, pause, collapse, finish });
         ApplyAppearance(String.IsNullOrEmpty(initialAppearance) ? null : json.Deserialize<Dictionary<string, object>>(initialAppearance));
@@ -170,12 +175,25 @@ public sealed class AtelierCollectorWindow : Form {
     }
     void ApplyAppearance(Dictionary<string, object> value) {
         if (value != null) {
+            if (value.ContainsKey("labels")) labels = value["labels"] as Dictionary<string, object> ?? labels;
             string mode = Str(value, "themeMode"), color = Str(value, "accentColor"), nextMotion = Str(value, "motion");
             if (mode == "light" || mode == "dark" || mode == "system") themeMode = mode;
             if (Regex.IsMatch(color, @"^#[0-9a-fA-F]{6}$")) accent = ColorTranslator.FromHtml(color);
             if (nextMotion == "full" || nextMotion == "reduced" || nextMotion == "off") motion = nextMotion;
             if (value.ContainsKey("isDark")) fallbackDark = Convert.ToBoolean(value["isDark"]);
         }
+        Text = T("Atelier 风格串收集");
+        metrics.Labels = new string[]{ T("待处理"), T("已保存"), T("跳过"), T("失败") };
+        int metricsWidth = 324;
+        foreach (string label in metrics.Labels) metricsWidth = Math.Max(metricsWidth, (TextRenderer.MeasureText(label, metrics.Font, Size.Empty, TextFormatFlags.NoPadding).Width + 27) * 4);
+        metrics.Width = phase.Width = metricsWidth; detail.Width = metricsWidth - 12;
+        int extraWidth = metricsWidth - 324; collapse.Left = 272 + extraWidth; finish.Left = 310 + extraWidth;
+        pause.Text = paused ? T("继续") : T("暂停");
+        pause.Width = Math.Max(44, Math.Max(TextRenderer.MeasureText(T("暂停"), pause.Font).Width, TextRenderer.MeasureText(T("继续"), pause.Font).Width) + 12);
+        pause.Left = 266 + extraWidth - pause.Width; failureHint.Left = pause.Left - 27; title.Width = failureHint.Left - 41;
+        detailTip.SetToolTip(pause, paused ? T("继续接收之后的新复制") : T("暂停接收新复制，已入队图片继续处理"));
+        detailTip.SetToolTip(finish, T("结束收集"));
+        if (rawStage == "") { title.Text = T("正在启动"); phase.Text = T("等待本机服务确认"); }
         dark = value != null && themeMode == "system" && value.ContainsKey("isDark") ? fallbackDark : ResolveDark();
         BackColor = dark ? Color.FromArgb(23, 27, 36) : Color.White;
         ForeColor = dark ? Color.FromArgb(240, 242, 248) : Color.FromArgb(23, 30, 45);
@@ -186,7 +204,7 @@ public sealed class AtelierCollectorWindow : Form {
         pausedColor = dark ? Color.FromArgb(199, 179, 133) : Color.FromArgb(145, 111, 50);
         title.ForeColor = metrics.ForeColor = ForeColor; phase.ForeColor = metrics.Muted;
         detail.BackColor = dark ? Color.FromArgb(27, 32, 44) : Color.FromArgb(247, 248, 252);
-        detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith("已保存：") ? metrics.Success : metrics.Muted;
+        detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith(T("已保存：")) ? metrics.Success : metrics.Muted;
         failureHint.ForeColor = metrics.Failure;
         foreach (var button in new Button[]{ pause, collapse, finish }) {
             button.BackColor = BackColor; button.ForeColor = metrics.Muted;
@@ -200,12 +218,12 @@ public sealed class AtelierCollectorWindow : Form {
     }
     void Drag(object sender, MouseEventArgs e) { if (e.Button != MouseButtons.Left) return; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); SavePosition(); }
     void LayoutWindow() {
-        ClientSize = new Size(356, collapsed ? 43 : 122); phase.Visible = metrics.Visible = detail.Visible = !collapsed;
-        title.Text = (paused ? "已暂停" : "收集中") + (collapsed ? " · 已保存 " + saved.ToString() : "");
+        ClientSize = new Size(metrics.Width + 32, collapsed ? 43 : 122); phase.Visible = metrics.Visible = detail.Visible = !collapsed;
+        title.Text = (paused ? T("已暂停") : T("收集中")) + (collapsed ? T(" · 已保存 ") + saved.ToString() : "");
         detailTip.SetToolTip(title, title.Text); failureHint.Visible = collapsed && latestFailed; detailTip.SetToolTip(failureHint, latestFailure);
         statusDot.ForeColor = paused ? pausedColor : accent;
-        statusDot.SetProcessing(!paused && (phase.Text == "正在下载图片" || phase.Text == "正在解析图片" || phase.Text == "正在保存风格串"));
-        collapse.Text = collapsed ? "+" : "−"; detailTip.SetToolTip(collapse, collapsed ? "展开状态窗" : "折叠状态窗"); UpdateCorners(); ClampPosition(); Invalidate();
+        statusDot.SetProcessing(!paused && (rawStage == "正在下载图片" || rawStage == "正在解析图片" || rawStage == "正在保存风格串"));
+        collapse.Text = collapsed ? "+" : "−"; detailTip.SetToolTip(collapse, collapsed ? T("展开状态窗") : T("折叠状态窗")); UpdateCorners(); ClampPosition(); Invalidate();
     }
     void ClampPosition() {
         Rectangle area = Screen.FromRectangle(Bounds).WorkingArea;
@@ -262,7 +280,7 @@ public sealed class AtelierCollectorWindow : Form {
                     } else { Rectangle area = Screen.PrimaryScreen.WorkingArea; Location = new Point(area.Right - Width - 24, area.Top + 24); }
                     applyingPosition = false; LayoutWindow();
                     sequence = CurrentSequence();
-                    if (!test && !AddClipboardFormatListener(Handle)) throw new Exception("无法注册 Windows 剪贴板变化通知");
+                    if (!test && !AddClipboardFormatListener(Handle)) throw new Exception(T("无法注册 Windows 剪贴板变化通知"));
                     registered = !test; receiving = true;
                     SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
                     Emit(new { type = "listening", session = session });
@@ -270,19 +288,21 @@ public sealed class AtelierCollectorWindow : Form {
                 } else if (incoming != session) continue;
                 else if (cmd == "pause" || cmd == "resume") {
                     paused = cmd == "pause"; receiving = !paused; sequence = CurrentSequence(); readAttempts = 0;
-                    pause.Text = paused ? "继续" : "暂停"; pause.Enabled = true; LayoutWindow();
-                    detailTip.SetToolTip(pause, paused ? "继续接收之后的新复制" : "暂停接收新复制，已入队图片继续处理");
+                    pause.Text = paused ? T("继续") : T("暂停"); pause.Enabled = true; LayoutWindow();
+                    detailTip.SetToolTip(pause, paused ? T("继续接收之后的新复制") : T("暂停接收新复制，已入队图片继续处理"));
                 } else if (cmd == "stop") { receiving = false; Close(); return; }
                 else if (cmd == "state") {
                     var state = d["state"] as Dictionary<string, object>;
                     if (state != null) {
                         saved = Convert.ToInt32(state["saved"]); paused = Convert.ToBoolean(state["paused"]);
+                        rawStage = Str(state, "rawStage"); if (rawStage == "") rawStage = Str(state, "stage");
+                        if (state.ContainsKey("appearance")) ApplyAppearance(state["appearance"] as Dictionary<string, object>);
                         phase.Text = Str(state, "stage");
                         metrics.Pending = Convert.ToInt32(state["pending"]); metrics.Saved = saved; metrics.Skipped = Convert.ToInt32(state["skipped"]); metrics.Failed = Convert.ToInt32(state["failed"]); metrics.Invalidate();
-                        detailTip.SetToolTip(metrics, "待处理 " + metrics.Pending + " · 已保存 " + saved + " · 跳过 " + metrics.Skipped + " · 失败 " + metrics.Failed);
+                        detailTip.SetToolTip(metrics, T("待处理 ") + metrics.Pending + T(" · 已保存 ") + saved + T(" · 跳过 ") + metrics.Skipped + T(" · 失败 ") + metrics.Failed);
                         detail.Text = Str(state, "error") != "" ? Str(state, "error") : Str(state, "detail");
-                        latestFailed = detail.Text.StartsWith("失败：") || Str(state, "error") != ""; latestFailure = latestFailed ? detail.Text : "";
-                        detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith("已保存：") ? metrics.Success : metrics.Muted;
+                        latestFailed = detail.Text.StartsWith(T("失败：")) || Str(state, "error") != ""; latestFailure = latestFailed ? detail.Text : "";
+                        detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith(T("已保存：")) ? metrics.Success : metrics.Muted;
                         detailTip.SetToolTip(detail, detail.Text);
                         if (state.ContainsKey("appearance")) ApplyAppearance(state["appearance"] as Dictionary<string, object>);
                         LayoutWindow();
@@ -306,6 +326,7 @@ public sealed class AtelierCollectorWindow : Form {
             visiblePosition = area.Contains(Bounds), collapsed = collapsed, height = Height, detail = detail.Text, detailVisible = detail.Visible, detailEllipsis = detail.AutoEllipsis,
             title = title.Text, breathing = statusDot.Breathing, processing = statusDot.Processing, tooltipWhileInactive = detailTip.ShowAlways, failureHint = failureHint.Visible, failureTooltip = detailTip.GetToolTip(failureHint), rounded = nativeCorners || Region != null,
             counters = new { pending = metrics.Pending, saved = metrics.Saved, skipped = metrics.Skipped, failed = metrics.Failed },
+            pauseTextFits = TextRenderer.MeasureText(pause.Text, pause.Font).Width <= pause.Width - 8, metricLabelsFit = metrics.LabelsFit,
             appearance = new { themeMode = themeMode, dark = dark, accent = Hex(accent), background = Hex(BackColor), foreground = Hex(ForeColor), muted = Hex(metrics.Muted), failure = Hex(metrics.Failure), motion = motion } });
     }
     static string Hex(Color color) { return "#" + color.R.ToString("X2") + color.G.ToString("X2") + color.B.ToString("X2"); }

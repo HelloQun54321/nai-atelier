@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, MapPin, Trash2 } from 'lucide-react';
 import { CharacterParams, NAIParams } from '../../types';
@@ -11,11 +12,12 @@ import { moveCharacter, normalizeCharacterCoordinate } from '../../services/char
 import { CharacterPositionStage } from './CharacterPositionStage';
 
 const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: boolean; label: string; onCommit: (value: number) => void }> = ({ value, freeform, disabled, label, onCommit }) => {
+  useLanguage();
     const coordinate = normalizeCharacterCoordinate(value, freeform);
     const [draft, setDraft] = useState(String(coordinate));
     useEffect(() => setDraft(String(coordinate)), [coordinate]);
     return <input type="number" step={freeform ? '0.01' : '0.2'} min={freeform ? '0' : '0.1'} max={freeform ? '1' : '0.9'}
-        aria-label={label} disabled={disabled} value={draft}
+        aria-label={t(label)} disabled={disabled} value={draft}
         onChange={event => setDraft(event.target.value)}
         onBlur={() => {
             if (disabled) { setDraft(String(coordinate)); return; }
@@ -67,6 +69,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     positionImage,
     positionSize,
 }) => {
+  useLanguage();
     const [positionOpen, setPositionOpen] = useState(false);
     const reorder = (index: number, direction: -1 | 1) => {
         if (!canEdit) return;
@@ -76,7 +79,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     return (
     <LabModuleSection
         moduleId="characters"
-        label="角色专属提示词"
+        label={t("角色专属提示词")}
         order={activeLabLayout.order.indexOf('characters')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
         className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
@@ -89,8 +92,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                     <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
                         className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                        <MapPin className="h-3.5 w-3.5" />角色定位
-                    </button>
+                        <MapPin className="h-3.5 w-3.5" />{t("角色定位")}</button>
                     <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
                         <input
                             type="checkbox"
@@ -103,13 +105,12 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                             }}
                             className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-0"
                         />
-                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">AI 自动构图</span>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{t("AI 自动构图")}</span>
                     </label>
 
                     {canEdit && (
                         <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
-                            + 添加角色
-                        </button>
+                            {t("+ 添加角色")}</button>
                     )}
                 </div>
             </div>
@@ -124,57 +125,57 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 }} />}
             <div className="space-y-3">
                 {(characters || []).length === 0 && (
-                    <div className="text-xs text-gray-400 text-center py-2">暂无角色，点击上方添加</div>
+                    <div className="text-xs text-gray-400 text-center py-2">{t("暂无角色，点击上方添加")}</div>
                 )}
                 {(characters || []).map((char, idx) => (
                     <div key={`${scopeKey}:${char.id}`} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                         <div className="mb-2 flex items-center justify-between gap-2">
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                                <input type="checkbox" aria-label={`启用角色 ${idx + 1}`} checked={char.enabled !== false} disabled={!canEdit}
+                                <input type="checkbox" aria-label={t("启用角色 {0}", [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
                                     onChange={event => updateCharacter(idx, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
-                                角色 {idx + 1}{char.enabled === false && <span className="text-gray-400">· 已停用</span>}
+                                {t("角色 ")}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </label>
                             <div className="flex items-center gap-1">
-                                <button type="button" title="上移" aria-label={`上移角色 ${idx + 1}`} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
-                                <button type="button" title="下移" aria-label={`下移角色 ${idx + 1}`} disabled={!canEdit || idx === characters.length - 1} onClick={() => reorder(idx, 1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowDown className="h-4 w-4" /></button>
-                                <button type="button" title="移除角色提示词" aria-label="移除角色提示词" disabled={!canEdit} onClick={() => removeCharacter(idx)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-25 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" /></button>
+                                <button type="button" title={t("上移")} aria-label={t("上移角色 {0}", [idx + 1])} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
+                                <button type="button" title={t("下移")} aria-label={t("下移角色 {0}", [idx + 1])} disabled={!canEdit || idx === characters.length - 1} onClick={() => reorder(idx, 1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowDown className="h-4 w-4" /></button>
+                                <button type="button" title={t("移除角色提示词")} aria-label={t("移除角色提示词")} disabled={!canEdit} onClick={() => removeCharacter(idx)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-25 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" /></button>
                             </div>
                         </div>
                         <div className="flex flex-wrap gap-3 items-start sm:flex-nowrap">
                             <div className="min-w-0 flex-1 space-y-2">
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">角色提示词</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
                                         value={char.prompt}
                                         onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
-                                        placeholder="角色提示词"
+                                        placeholder={t("角色提示词")}
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">角色负面提示词</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色负面提示词")}</label>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
                                         value={char.negativePrompt || ''}
                                         onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
-                                        placeholder="选填"
+                                        placeholder={t("选填")}
                                     />
                                 </div>
                             </div>
                             <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
                               <div className="w-full space-y-2">
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">水平位置 (X)</label>
-                                    <CoordinateInput label={`角色 ${idx + 1} 水平位置`} value={char.x} freeform={freeformPosition}
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("水平位置 (X)")}</label>
+                                    <CoordinateInput label={t("角色 {0} 水平位置", [idx + 1])} value={char.x} freeform={freeformPosition}
                                         disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={x => updateCharacter(idx, { x })} />
                                 </div>
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">垂直位置 (Y)</label>
-                                    <CoordinateInput label={`角色 ${idx + 1} 垂直位置`} value={char.y} freeform={freeformPosition}
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("垂直位置 (Y)")}</label>
+                                    <CoordinateInput label={t("角色 {0} 垂直位置", [idx + 1])} value={char.y} freeform={freeformPosition}
                                         disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={y => updateCharacter(idx, { y })} />
                                 </div>
                               </div>

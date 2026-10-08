@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../../services/i18n';
 import React from 'react';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
@@ -19,6 +20,7 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
     isUploading,
     currentPreviewCover,
 }) => {
+  useLanguage();
     const dialogRef = useModalA11y<HTMLDivElement>(showForkModal);
     React.useEffect(() => {
         if (!showForkModal) return;
@@ -34,10 +36,10 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
     if (!showForkModal) return null;
 
     return (
-    <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label="选择保存类型" className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && !isUploading) setShowForkModal(false); }}>
+    <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("选择保存类型")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onMouseDown={e => { if (e.target === e.currentTarget && !isUploading) setShowForkModal(false); }}>
         <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm shadow-2xl border border-gray-200 dark:border-gray-800 p-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">选择保存类型</h3>
-            {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">当前图片将作为封面</p>}
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 text-center">{t("选择保存类型")}</h3>
+            {currentPreviewCover.source && <p className="mb-4 text-center text-xs text-gray-500 dark:text-gray-400">{t("当前图片将作为封面")}</p>}
             <div className="grid grid-cols-2 gap-4">
                 <button
                     onClick={() => void confirmFork('style')}
@@ -45,7 +47,7 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
                     className="flex flex-col items-center justify-center p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors gap-2"
                 >
                     <Palette className="h-6 w-6 text-indigo-500" />
-                    <span className="font-bold text-indigo-700 dark:text-indigo-300">{isUploading ? '保存中…' : '风格串'}</span>
+                    <span className="font-bold text-indigo-700 dark:text-indigo-300">{isUploading ? t("保存中…") : t("风格串")}</span>
                 </button>
                 <button
                     onClick={() => void confirmFork('character')}
@@ -53,15 +55,14 @@ export const ChainEditorForkModal: React.FC<ChainEditorForkModalProps> = ({
                     className="flex flex-col items-center justify-center p-4 rounded-xl bg-pink-50 dark:bg-pink-900/20 border-2 border-pink-200 dark:border-pink-800 hover:bg-pink-100 dark:hover:bg-pink-900/40 transition-colors gap-2"
                 >
                     <UserRound className="h-6 w-6 text-indigo-500" />
-                    <span className="font-bold text-pink-700 dark:text-pink-300">自定义角色</span>
+                    <span className="font-bold text-pink-700 dark:text-pink-300">{t("自定义角色")}</span>
                 </button>
             </div>
             <button
                 onClick={() => setShowForkModal(false)}
                 className="mt-6 w-full py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white text-sm font-medium"
             >
-                取消
-            </button>
+                {t("取消")}</button>
         </div>
     </div></ImagePreviewPortal>
     );

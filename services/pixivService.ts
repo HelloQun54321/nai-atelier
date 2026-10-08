@@ -1,3 +1,4 @@
+import { getLanguage } from './i18n';
 import { MediaVariant, buildMediaUrl } from './mobileImageCache';
 
 export type PixivFeedMode =
@@ -146,7 +147,7 @@ export const pixivService = {
     requestJson('/connect', { method: 'DELETE' }),
 
   startPixivLogin: async (): Promise<PixivLoginStatus> =>
-    requestJson('/login/start', { method: 'POST' }),
+    requestJson('/login/start', { method: 'POST', headers: { 'X-Atelier-Language': getLanguage() } }),
 
   getPixivLoginStatus: async (id: string): Promise<PixivLoginStatus> =>
     requestJson(`/login/status?id=${encodeURIComponent(id)}`),

@@ -23,6 +23,7 @@ import {
 } from '../../scripts/pixiv-local.mjs';
 import { createMediaGateway } from '../../scripts/media-gateway.mjs';
 import { PixivWebLoginOrchestrator } from '../../scripts/pixiv-web-login.mjs';
+import { LANGUAGES, translate } from '../../locales/index.mjs';
 
 const jsonResponse = (payload, status = 200) => new Response(JSON.stringify(payload), {
   status,
@@ -771,12 +772,12 @@ test('Pixiv request blocks disallowed targets and reports missing configuration'
 test('安装版协议处理器转交实际端口，网页登录换令牌复用图库网络与安全保存', async t => {
   const tokenDir = await makeTokenDir();
   const originalStart = PixivWebLoginOrchestrator.prototype.start;
-  t.mock.method(PixivWebLoginOrchestrator.prototype, 'start', function () {
+  t.mock.method(PixivWebLoginOrchestrator.prototype, 'start', function (language) {
     // 不打开真实浏览器、不写真实协议注册表，保留实际登录编排与 HTTP 回调。
     this.ensureSchemeHandler = async () => true;
     this.launchBrowser = async () => {};
     this.startWatcher = async () => { throw new Error('synthetic watcher unavailable'); };
-    return originalStart.call(this);
+    return originalStart.call(this, language);
   });
   const originalFetch = globalThis.fetch;
   t.mock.method(globalThis, 'fetch', (url, options) => {
@@ -810,6 +811,15 @@ test('安装版协议处理器转交实际端口，网页登录换令牌复用�
     assert.doesNotMatch(html, /test-packaged-code|test-web-refresh-token|test-web-access-token/);
     assert.doesNotMatch(JSON.stringify(completed), /test-packaged-code|test-web-refresh-token|test-web-access-token/);
     assert.doesNotMatch(await readFile(join(tokenDir, 'pixiv-tokens.json'), 'utf8'), /test-web-refresh-token|test-web-access-token/);
+    for (const language of LANGUAGES.slice(1)) {
+      await fetch(`${base}/api/pixiv/login/start`, { method: 'POST', headers: { 'X-Atelier-Language': language.code } });
+      const connected = await fetch(`${base}/api/pixiv/login/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callbackUrl: callback }) });
+      assert.equal(connected.status, 200);
+      const localized = await fetch(`${base}/pixiv-login-complete`).then(response => response.text());
+      assert.ok(localized.includes(`<html lang="${language.code}">`));
+      assert.ok(localized.includes(translate(language.code, 'Pixiv 已连接')));
+      assert.doesNotMatch(localized, /test-packaged-code|test-web-refresh-token|test-web-access-token/);
+    }
   } finally {
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections?.(); });
     await rm(tokenDir, { recursive: true, force: true });

@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export const AgentModelControl: React.FC<Props> = props => {
+  useLanguage();
   const [view, setView] = useState<'thinking' | 'models'>('thinking');
   const selectedPosition = Math.max(0, props.thinkingLevels.indexOf(props.thinkingLevel));
   const [draftPosition, setDraftPosition] = useState(selectedPosition);
@@ -129,14 +131,14 @@ export const AgentModelControl: React.FC<Props> = props => {
   };
   return <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
     <AgentContextRing usage={props.contextUsage} />
-    <button ref={trigger} type="button" aria-label="模型与思考设置" aria-haspopup="dialog" aria-expanded={props.open} disabled={props.disabled || busy} title={props.disabled ? `${name} · 任务执行期间不能切换` : `${name}${canThink ? ` · 思考：${agentThinkingLabels[props.thinkingLevel]}` : ''}`} onClick={() => props.onOpenChange(!props.open)} className="flex min-h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-transparent px-1.5 text-xs text-gray-700 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:text-gray-200 dark:hover:text-white">
+    <button ref={trigger} type="button" aria-label={t("模型与思考设置")} aria-haspopup="dialog" aria-expanded={props.open} disabled={props.disabled || busy} title={props.disabled ? t("{0} · 任务执行期间不能切换", [name]) : `${name}${canThink ? t(" · 思考：{0}", [t(agentThinkingLabels[props.thinkingLevel])]) : ''}`} onClick={() => props.onOpenChange(!props.open)} className="flex min-h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg bg-transparent px-1.5 text-xs text-gray-700 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50 dark:text-gray-200 dark:hover:text-white">
       <span className="min-w-0 truncate">{name}</span>{canThink && <span className="min-w-8 shrink-0 text-center text-gray-400 dark:text-gray-500">{agentThinkingLabels[props.thinkingLevel]}</span>}<ChevronDown className="h-3 w-3 shrink-0" />
     </button>
-    {props.open && createPortal(<div ref={popover} role="dialog" data-agent-surface aria-label="模型与思考" data-ultra={ultra && actualView === 'thinking'} style={{ ...position, visibility: positioned ? 'visible' : 'hidden' }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }} className="appearance-panel agent-model-popover z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+    {props.open && createPortal(<div ref={popover} role="dialog" data-agent-surface aria-label={t("模型与思考")} data-ultra={ultra && actualView === 'thinking'} style={{ ...position, visibility: positioned ? 'visible' : 'hidden' }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }} className="appearance-panel agent-model-popover z-[1300] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900">
       <div className="agent-model-heading">
-        {actualView === 'models' ? <button type="button" aria-label="选择模型" onClick={() => setView('thinking')} disabled={!props.activeModel} className="flex items-center justify-center rounded-lg text-gray-500 disabled:opacity-50 dark:text-gray-400"><ArrowLeft className="h-4 w-4" /></button> : <span>{showProgress && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}</span>}
-        <span className="agent-thinking-title text-sm font-medium text-indigo-600 dark:text-indigo-400">{actualView === 'thinking' ? canThink ? agentThinkingLabels[draftLevel] : '模型设置' : '选择模型'}</span>
-        <button type="button" aria-label="关闭模型菜单" onClick={close} className="flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+        {actualView === 'models' ? <button type="button" aria-label={t("选择模型")} onClick={() => setView('thinking')} disabled={!props.activeModel} className="flex items-center justify-center rounded-lg text-gray-500 disabled:opacity-50 dark:text-gray-400"><ArrowLeft className="h-4 w-4" /></button> : <span>{showProgress && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}</span>}
+        <span className="agent-thinking-title text-sm font-medium text-indigo-600 dark:text-indigo-400">{actualView === 'thinking' ? canThink ? agentThinkingLabels[draftLevel] : t("模型设置") : t("选择模型")}</span>
+        <button type="button" aria-label={t("关闭模型菜单")} onClick={close} className="flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
       </div>
       {actualView === 'thinking' ? <>
         <button type="button" data-model-trigger disabled={busy} onClick={() => setView('models')} className="agent-model-name mx-auto flex max-w-full items-center gap-1 text-xs text-gray-500 dark:text-gray-400"><span className="truncate">{name}</span><ChevronRight className="h-3.5 w-3.5 shrink-0" /></button>
@@ -144,7 +146,7 @@ export const AgentModelControl: React.FC<Props> = props => {
           <div className="agent-thinking-slider" data-dragging={dragging} data-saving={busy} data-empty={draftPosition === 0 && draftLevel === 'off'} style={{ '--agent-thinking-ratio': draftPosition / lastPosition } as React.CSSProperties}>
             <div aria-hidden="true" className="agent-thinking-track"><div className="agent-thinking-bed">{props.thinkingLevels.map((level, index) => <span key={level} className="agent-thinking-step" style={{ left: `calc(18px + (100% - 36px) * ${index / lastPosition})` }} />)}</div><div className="agent-thinking-fill"><div className="agent-thinking-ultra-wash" /><AgentThinkingParticles count={particleCount} intensity={intensity} /></div></div>
             <div aria-hidden="true" className="agent-thinking-thumb" />
-            <input type="range" aria-label="思考强度" aria-valuetext={agentThinkingLabels[draftLevel]} min={0} max={lastPosition} step="any" value={draftPosition} disabled={props.disabled || (busy && !thinkingPending.current)}
+            <input type="range" aria-label={t("思考强度")} aria-valuetext={t(agentThinkingLabels[draftLevel])} min={0} max={lastPosition} step="any" value={draftPosition} disabled={props.disabled || (busy && !thinkingPending.current)}
               onChange={event => { const value = Number(event.target.value); setDraftPosition(interacting.current ? value : Math.round(value)); }}
               onPointerDown={event => { interacting.current = true; setDragging(true); event.currentTarget.setPointerCapture?.(event.pointerId); }}
               onPointerUp={event => commitPosition(Number(event.currentTarget.value))}
@@ -152,19 +154,19 @@ export const AgentModelControl: React.FC<Props> = props => {
               onKeyDown={event => { const offset = ({ ArrowLeft: -1, ArrowDown: -1, PageDown: -1, ArrowRight: 1, ArrowUp: 1, PageUp: 1 } as Record<string, number>)[event.key]; if (offset !== undefined || event.key === 'Home' || event.key === 'End') { event.preventDefault(); interacting.current = true; setDraftPosition(event.key === 'Home' ? 0 : event.key === 'End' ? lastPosition : Math.max(0, Math.min(lastPosition, Math.round(draftPosition) + offset))); } }}
               onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) commitPosition(Number(event.currentTarget.value)); }} className="agent-thinking-range" />
           </div>
-        </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">当前模型不提供可调思考强度</p>}
+        </div> : <p className="py-2 text-center text-xs text-gray-500 dark:text-gray-400">{t("当前模型不提供可调思考强度")}</p>}
       </> : <>
-        {props.models.length > 8 && <input aria-label="搜索模型" placeholder="搜索模型或服务…" value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
+        {props.models.length > 8 && <input aria-label={t("搜索模型")} placeholder={t("搜索模型或服务…")} value={query} onChange={event => setQuery(event.target.value)} className="mb-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200" />}
         <div className="max-h-64 space-y-1 overflow-y-auto">
-          {props.models.filter(model => `${model.id} ${model.name} ${model.providerName || model.provider}`.toLowerCase().includes(query.toLowerCase())).map(model => { const current = model.provider === props.activeModel?.provider && model.id === props.activeModel?.id; return <button key={`${model.provider}/${model.id}`} data-model-choice data-model-current={current} type="button" aria-label={`选择模型：${formatModelOptionTitle(model, props.models)}`} aria-pressed={current} disabled={busy} onClick={() => current ? close() : void save(() => props.onModelChange(model), true)} className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left disabled:opacity-50 ${current ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-            <span className="min-w-0 flex-1"><span className="block truncate text-sm text-gray-800 dark:text-gray-100">{formatModelOptionTitle(model, props.models)}</span><span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{model.providerName || model.provider}{model.imageInput ? ' · 支持图片' : ''}</span></span>{current && <Check className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-300" />}
+          {props.models.filter(model => `${model.id} ${model.name} ${model.providerName || model.provider}`.toLowerCase().includes(query.toLowerCase())).map(model => { const current = model.provider === props.activeModel?.provider && model.id === props.activeModel?.id; return <button key={`${model.provider}/${model.id}`} data-model-choice data-model-current={current} type="button" aria-label={t("选择模型：{0}", [formatModelOptionTitle(model, props.models)])} aria-pressed={current} disabled={busy} onClick={() => current ? close() : void save(() => props.onModelChange(model), true)} className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left disabled:opacity-50 ${current ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm text-gray-800 dark:text-gray-100">{formatModelOptionTitle(model, props.models)}</span><span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{model.providerName || model.provider}{model.imageInput ? t(" · 支持图片") : ''}</span></span>{current && <Check className="h-4 w-4 shrink-0 text-gray-600 dark:text-gray-300" />}
           </button>; })}
-          {!props.models.length && <p className="p-3 text-xs text-gray-500">尚未接入模型服务</p>}
+          {!props.models.length && <p className="p-3 text-xs text-gray-500">{t("尚未接入模型服务")}</p>}
         </div>
       </>}
-      {error && <p role="alert" className="mt-3 break-words text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {busy && <p role="status" className="sr-only">正在保存…</p>}
-      {actualView === 'models' && <button type="button" data-configure disabled={busy} onClick={() => { close(); props.onConfigure(); }} className="mt-3 w-full border-t border-gray-100 pt-3 text-left text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200">配置模型服务 →</button>}
+      {error && <p role="alert" className="mt-3 break-words text-xs text-red-600 dark:text-red-400">{t(error)}</p>}
+      {busy && <p role="status" className="sr-only">{t("正在保存…")}</p>}
+      {actualView === 'models' && <button type="button" data-configure disabled={busy} onClick={() => { close(); props.onConfigure(); }} className="mt-3 w-full border-t border-gray-100 pt-3 text-left text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50 dark:border-gray-800 dark:text-gray-400 dark:hover:text-gray-200">{t("配置模型服务 →")}</button>}
     </div>, document.body)}
   </div>;
 };

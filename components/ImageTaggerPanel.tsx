@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ImagePlus, LoaderCircle, SlidersHorizontal, X } from 'lucide-react';
 import { ImageTaggerResult, imageTaggerService } from '../services/imageTaggerService';
@@ -42,6 +43,7 @@ const TAGGER_DEFAULT_PARAMS: PendingImportData['params'] = {
 };
 
 export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClose, onInsert, notify, actionLabel, imageUrl, contextual = false, initialResult, initialTags, onResult, onSendToLab, lockImage = false }) => {
+  useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -185,25 +187,25 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? '识别图片 Tag' : '图片反推 Tag'} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+  return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? t("识别图片 Tag") : t("图片反推 Tag")} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
     <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
-        <div><h2 className="text-sm font-black">{contextual ? '识别图片 Tag' : '图片反推 Danbooru Tag'}</h2><p className="text-micro text-gray-500">{selectedModel?.label || 'WD Tagger V3'} · 本地处理</p></div>
-        <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label="关闭"><X className="h-4 w-4" /></button>
+        <div><h2 className="text-sm font-black">{contextual ? t("识别图片 Tag") : t("图片反推 Danbooru Tag")}</h2><p className="text-micro text-gray-500">{t("{0} · 本地处理", [t(selectedModel?.label) || 'WD Tagger V3'])}</p></div>
+        <button type="button" disabled={busy} onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800" aria-label={t("关闭")}><X className="h-4 w-4" /></button>
       </header>
       <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden">
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
-          <input aria-label="上传反推图片" ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
+          <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
           <button type="button" disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
-            {preview ? <img src={preview} alt="待识别图片" className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />选择图片</span>}
-            {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : '正在本地识别图片…'}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label="模型下载进度" max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
+            {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />{t("选择图片")}</span>}
+            {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
-            <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />识别阈值</div>
+            <div className="flex items-center gap-2 text-xs font-bold"><SlidersHorizontal className="h-4 w-4" />{t("识别阈值")}</div>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <label className="text-meta text-gray-500">普通 Tag 阈值</label>
+                <label className="text-meta text-gray-500">{t("普通 Tag 阈值")}</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -211,7 +213,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                     max="80"
                     step="1"
                     disabled={busy}
-                    aria-label="普通 Tag 阈值百分比"
+                    aria-label={t("普通 Tag 阈值百分比")}
                     value={Math.round(threshold * 100)}
                     onChange={event => setThreshold(Math.max(0.15, Math.min(0.8, (parseInt(event.target.value, 10) || 15) / 100)))}
                     className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
@@ -219,11 +221,11 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                   <span className="font-mono text-meta text-gray-400">%</span>
                 </div>
               </div>
-              <input type="range" min="0.15" max="0.8" step="0.01" aria-label="普通 Tag 阈值" disabled={busy} value={threshold} onChange={event => setThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
+              <input type="range" min="0.15" max="0.8" step="0.01" aria-label={t("普通 Tag 阈值")} disabled={busy} value={threshold} onChange={event => setThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
             </div>
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <label className="text-meta text-gray-500">角色 Tag 阈值</label>
+                <label className="text-meta text-gray-500">{t("角色 Tag 阈值")}</label>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -231,7 +233,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                     max="95"
                     step="1"
                     disabled={busy}
-                    aria-label="角色 Tag 阈值百分比"
+                    aria-label={t("角色 Tag 阈值百分比")}
                     value={Math.round(characterThreshold * 100)}
                     onChange={event => setCharacterThreshold(Math.max(0.4, Math.min(0.95, (parseInt(event.target.value, 10) || 40) / 100)))}
                     className="w-14 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-violet-600 outline-none transition focus:border-violet-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-violet-400 dark:focus:border-violet-400 dark:focus:bg-gray-900"
@@ -239,15 +241,15 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
                   <span className="font-mono text-meta text-gray-400">%</span>
                 </div>
               </div>
-              <input type="range" min="0.4" max="0.95" step="0.01" aria-label="角色 Tag 阈值" disabled={busy} value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
+              <input type="range" min="0.4" max="0.95" step="0.01" aria-label={t("角色 Tag 阈值")} disabled={busy} value={characterThreshold} onChange={event => setCharacterThreshold(Number(event.target.value))} className="w-full cursor-pointer accent-violet-600 disabled:cursor-not-allowed disabled:opacity-50" />
             </div>
-            <button type="button" disabled={!file || busy || !modelReady} onClick={() => void run()} className="h-9 w-full rounded-xl bg-violet-600 text-xs font-bold text-white disabled:opacity-40">按当前阈值重新识别</button>
+            <button type="button" disabled={!file || busy || !modelReady} onClick={() => void run()} className="h-9 w-full rounded-xl bg-violet-600 text-xs font-bold text-white disabled:opacity-40">{t("按当前阈值重新识别")}</button>
           </div>
         </section>
         <section className="min-h-72 p-4 md:overflow-y-auto">
-          {!result && !busy && <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-sm text-gray-400"><p className="font-bold">选择一张图片开始识别</p><p className="mt-1 max-w-sm text-xs">预测 Tag，非原始 Prompt；不识别画师。</p></div>}
+          {!result && !busy && <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-sm text-gray-400"><p className="font-bold">{t("选择一张图片开始识别")}</p><p className="mt-1 max-w-sm text-xs">{t("预测 Tag，非原始 Prompt；不识别画师。")}</p></div>}
           {result && <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">识别出 {result.tags.length} 个 Tag</p><p className="text-micro text-gray-500">角色 {result.character.length} · 普通 {result.general.length}{result.rating ? ` · 分级预测 ${result.rating.name} ${percent(result.rating.confidence)}` : ''}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">全选</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">清空</button></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">{t("识别出 {0} 个 Tag", [result.tags.length])}</p><p className="text-micro text-gray-500">{t("角色 {0} · 普通 {1}{2}", [result.character.length, result.general.length, result.rating ? t(" · 分级预测 {0} {1}", [result.rating.name, percent(result.rating.confidence)]) : ''])}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">{t("全选")}</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">{t("清空")}</button></div></div>
             <div className="grid gap-2 sm:grid-cols-2">{visibleTags.map(tag => {
               const checked = selected.has(tag.name);
               return <button key={tag.name} type="button" aria-pressed={checked} onClick={() => toggle(tag.name)} className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-left ${checked ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
@@ -261,7 +263,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
       </div>
       <footer className="operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
         <ToolbarButton disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</ToolbarButton>
-        <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">送往实验室</ToolbarButton>
+        <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">{t("送往实验室")}</ToolbarButton>
       </footer>
     </div>
   </div></ImagePreviewPortal>;
@@ -282,6 +284,7 @@ interface ImageTaggerActionProps {
 
 /** 资料图片的上下文识别入口；不再作为列表顶栏的通用工具。 */
 export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, onInsert, actionLabel, className = '', imageUrl, text = false, label = '识别图片 Tag' }) => {
+  useLanguage();
   const [open, setOpen] = useState(false);
   const handleInsert = onInsert ?? ((tags: string) => {
     void navigator.clipboard.writeText(tags).then(
@@ -290,10 +293,10 @@ export const ImageTaggerAction: React.FC<ImageTaggerActionProps> = ({ notify, on
     );
   });
   return <>
-    {text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{label}</ToolbarButton> : <>
-      <IconButton label={label} onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
-      <MobileIconButton label={label} onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
+    {text ? <ToolbarButton onClick={() => setOpen(true)} className={`mobile-touch ${className}`}><ImagePlus />{t(label)}</ToolbarButton> : <>
+      <IconButton label={t(label)} onClick={() => setOpen(true)} className={`max-md:hidden ${className}`}><ImagePlus className="h-4 w-4" /></IconButton>
+      <MobileIconButton label={t(label)} onClick={() => setOpen(true)} className={`border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 md:hidden ${className}`}><ImagePlus className="h-5 w-5" /></MobileIconButton>
     </>}
-    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? '追加 {count} 个 Tag 到全局提示词' : '复制 {count} 个 Tag')} imageUrl={imageUrl} /></ImagePreviewPortal>}
+    {open && <ImagePreviewPortal><ImageTaggerPanel contextual open={open} onClose={() => setOpen(false)} onInsert={handleInsert} notify={notify} actionLabel={actionLabel ?? (onInsert ? t("追加 {count} 个 Tag 到全局提示词") : t("复制 {count} 个 Tag"))} imageUrl={imageUrl} /></ImagePreviewPortal>}
   </>;
 };

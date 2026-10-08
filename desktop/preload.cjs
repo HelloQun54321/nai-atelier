@@ -1,6 +1,10 @@
 // 沙盒页面只接收固定操作；主进程核对窗口、主帧与来源，不开放 Node 或任意 IPC。
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('atelierLanguage', {
+  initial: process.argv.find(value => value.startsWith('--atelier-language='))?.split('=')[1] || 'zh-CN',
+  set: value => ipcRenderer.invoke('atelier-language', value),
+});
 contextBridge.exposeInMainWorld('atelierDesktop', {
   status: () => ipcRenderer.invoke('atelier-desktop', 'status'),
   retry: () => ipcRenderer.invoke('atelier-desktop', 'retry'),

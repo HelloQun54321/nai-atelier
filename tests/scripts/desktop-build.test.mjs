@@ -8,6 +8,9 @@ import { RUNTIME_FILES, DESKTOP_FILES, RUNTIME_DEPENDENCIES, createRuntimePackag
 import builder from '../../desktop/builder.config.mjs';
 
 test('分发边界识别数据、缓存、词库、环境变量与测试资料，公开运行文件均不落保护区', async () => {
+  assert.ok(RUNTIME_FILES.includes('locales/index.mjs'));
+  assert.ok(RUNTIME_FILES.includes('locales/messages.json'));
+  assert.deepEqual(builder.nsis.installerLanguages, ['zh_CN', 'zh_TW', 'en_US', 'ja_JP', 'ko_KR']);
   assert.ok(RUNTIME_FILES.includes('worker/naiBilling.mjs'), '安装版必须包含网关共用的计费模块');
   assert.ok(RUNTIME_FILES.includes('worker/cloudQueueTarget.mjs'), '安装版必须包含通用生图中转地址识别');
   for (const name of ['local-data/prompt-agent.key', 'PUBLIC/TAG-DATA/tags.json', 'x\\local-cache\\model.onnx', '.env.local', '.dev.vars', '.git/config', 'logs/tests/gateway.log', 'tests/fixtures/synthetic.json', '.wrangler/tmp/test']) assert.equal(isPrivateDistributionPath(name), true, name);
@@ -55,7 +58,7 @@ test('精简只删除映射和类型声明，保留可执行文件、资源与�
     assert.equal(report.removedBytes, removed.length * 9);
     for (const file of removed) { assert.equal(isDistributionMetadata(file), true); await assert.rejects(readFile(join(deps, file)), { code: 'ENOENT' }); }
     for (const file of retained) { assert.equal(isDistributionMetadata(file), false); assert.equal(await readFile(join(deps, file), 'utf8'), 'synthetic'); }
-    assert.deepEqual(builder.electronLanguages, ['zh-CN', 'en-US']);
+    assert.deepEqual(builder.electronLanguages, ['zh-CN', 'zh-TW', 'en-US', 'ja', 'ko']);
   } finally { removeWorkspace(root); }
 });
 

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
 import { copySharedImage } from '../../services/imageSharing';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 
 const { get, post, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true } }));
@@ -65,7 +66,17 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
   window.history.replaceState(null, '');
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it.each(['style', 'character'] as const)('%s 搜索标题跟随五种语言，资料名称即使命中界面词典也保留原文', type => {
+  const label = type === 'character' ? '自定义角色' : '风格串';
+  render(React.createElement(ChainList, { ...props(), type, chains: [{ ...chains[0], type, name: '我的风格串' }] }));
+  for (const language of LANGUAGES) {
+    act(() => setLanguage(language.code));
+    expect(screen.getByPlaceholderText(t('搜索{0}', [t(type === 'character' ? '我的自定义角色' : '我的风格串')]))).toBeTruthy();
+    expect(screen.getByRole('button', { name: t('打开{0}：{1}', [t(label), '我的风格串']) })).toBeTruthy();
+  }
+});
 
 describe('风格串列表的酒馆筛选交互', () => {
   it.each(['desktop', 'mobile'])('Agent 在 %s 从大量卡片打开真实筛选浮层，读取选项并选中 V5 后实际过滤列表', async surface => {

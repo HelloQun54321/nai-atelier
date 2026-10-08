@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   acquireMobileThumbnailUrl,
@@ -55,6 +56,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   onLoad,
   pin = false,
 }) => {
+  useLanguage();
   const viewActive = useContext(ImageActivityContext);
   const containerRef = useRef<HTMLDivElement>(null);
   const onErrorRef = useRef(onError);
@@ -264,14 +266,14 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           loading="eager"
         />
       )}
-      {activated && !loaded && !failed && !upgradeLoaded && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">加载中…</span></div>}
+      {activated && !loaded && !failed && !upgradeLoaded && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">{t("加载中…")}</span></div>}
       {activated && failed && !upgradeLoaded && (
         <button
           type="button"
           className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-transparent px-2 text-micro text-gray-500 dark:text-gray-400"
           onClick={event => { event.stopPropagation(); setRetryToken(value => value + 1); }}
         >
-          <span className="text-lg opacity-70">▧</span><span>加载失败 · 重试</span>
+          <span className="text-lg opacity-70">▧</span><span>{t("加载失败 · 重试")}</span>
         </button>
       )}
     </div>
@@ -283,6 +285,7 @@ interface OriginalImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 }
 
 export const OriginalImage: React.FC<OriginalImageProps> = ({ src, decoding = 'async', onError, ...props }) => {
+  useLanguage();
   const viewActive = useContext(ImageActivityContext);
   const gatewaySrc = getMobileOriginalUrl(src);
   const [displaySrc, setDisplaySrc] = useState(gatewaySrc);

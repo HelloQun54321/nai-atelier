@@ -56,7 +56,8 @@ const remote=extractAndroidShared(path.join(root,'scripts/media-gateway.mjs'),['
 const pixivLogin=extractAndroidShared(path.join(root,'scripts/pixiv-web-login.mjs'),['PixivWebLoginOrchestrator'],
 `import {createHash,randomBytes} from '/mobile/shims/crypto.mjs';
 import {PIXIV_APP_CLIENT_ID,PIXIV_APP_CLIENT_SECRET,PIXIV_HASH_SECRET,PIXIV_OAUTH_TOKEN_URL,PIXIV_USER_AGENT} from '/scripts/pixiv-local.mjs';
-import {native} from '/mobile/native';`,{
+import {native} from '/mobile/native';
+import {normalizeLanguage} from '/locales/index.mjs';`,{
   ensurePixivSchemeHandler:'const ensurePixivSchemeHandler=async()=>true;',
   launchInDefaultBrowser:'const launchInDefaultBrowser=url=>native.openUrl({url});',
   startPixivCallbackWatcher:'const startPixivCallbackWatcher=async({onCallback})=>{const handle=await native.addListener("urlOpen",event=>onCallback(event.url));return {exitCode:null,kill(){handle.remove();}};}',

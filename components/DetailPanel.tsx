@@ -1,3 +1,4 @@
+import { t } from '../services/i18n';
 import React from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { BackButton, CloseButton, IconButton, IconLink } from './DesignSystem';
@@ -35,7 +36,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
   <aside
     data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     data-agent-page-scope={open ? 'detail' : undefined}
-    data-agent-page-title={`作品详情：${title}`}
+    data-agent-page-title={t("作品详情：{0}", [title])}
     aria-hidden={!open}
     className={`aitag-detail-panel appearance-surface ${open ? 'aitag-detail-panel--open flex' : 'aitag-detail-panel--closed hidden'} fixed inset-0 z-[1100] min-h-0 flex-col border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:static lg:z-auto lg:border-l`}
     aria-label={title}
@@ -49,7 +50,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
         </div>
       </div>
       <div className="flex flex-none items-center gap-2">
-        {sourceUrl && <IconLink label="查看原帖" href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink /></IconLink>}
+        {sourceUrl && <IconLink label={t("查看原帖")} href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink /></IconLink>}
         <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
       </div>
     </header>
@@ -74,9 +75,9 @@ export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, child
     <PressRevealSurface pressResetKey={pressResetKey} className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</PressRevealSurface>
     {pager && pager.count > 1 && (
       <div className="flex items-center justify-center gap-3">
-        <IconButton label="上一页" disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>
+        <IconButton label={t("上一页")} disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>
         <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{pager.page + 1} / {pager.count}</span>
-        <IconButton label="下一页" disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><ChevronRight /></IconButton>
+        <IconButton label={t("下一页")} disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><ChevronRight /></IconButton>
       </div>
     )}
   </div>

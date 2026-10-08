@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import './AgentSurface.css';
 import { getLastAgentPageRead, observeAgentPage, readAgentPage, type AgentPageSnapshot } from '../services/agentWorkspace';
 import { normalizeAgentGenerationResult, agentGenerationFailure, agentOperationError } from '../services/agentOperation.mjs';
@@ -73,6 +74,7 @@ const renderInlineMarkdown = (value: string, keyPrefix: string): React.ReactNode
 };
 
 const AgentContentCard: React.FC<{ title: string; content: string; code?: boolean }> = ({ title, content, code }) => {
+  useLanguage();
   const [expanded, setExpanded] = useState(content.length < 360);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -83,8 +85,8 @@ const AgentContentCard: React.FC<{ title: string; content: string; code?: boolea
   return <section className="my-2 overflow-hidden rounded-xl border border-gray-200 bg-gray-50/80 dark:border-gray-700 dark:bg-gray-950/70">
     <header className="flex min-h-10 items-center gap-2 border-b border-gray-200 px-3 dark:border-gray-800">
       <span className="min-w-0 flex-1 truncate text-meta font-bold text-gray-600 dark:text-gray-300">{title}</span>
-      <button type="button" onClick={() => setExpanded(value => !value)} className="flex h-8 items-center gap-1 rounded-lg px-2 text-micro font-bold text-gray-500 hover:bg-gray-200/70 dark:hover:bg-gray-800"><ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />{expanded ? '收起' : '展开'}</button>
-      <button type="button" onClick={() => void copy()} className="flex h-8 items-center gap-1 rounded-lg px-2 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? '已复制' : '复制'}</button>
+      <button type="button" onClick={() => setExpanded(value => !value)} className="flex h-8 items-center gap-1 rounded-lg px-2 text-micro font-bold text-gray-500 hover:bg-gray-200/70 dark:hover:bg-gray-800"><ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? 'rotate-180' : ''}`} />{expanded ? t("收起") : t("展开")}</button>
+      <button type="button" onClick={() => void copy()} className="flex h-8 items-center gap-1 rounded-lg px-2 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? t("已复制") : t("复制")}</button>
     </header>
     {expanded && <div className={`max-h-80 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-xs leading-5 ${code ? 'font-mono' : ''}`}>{content}</div>}
     {!expanded && <div className="truncate px-3 py-2 text-xs text-gray-400">{content}</div>}
@@ -96,7 +98,7 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   if (!expanded) {
     return <div className="space-y-2">
       <div className="line-clamp-4 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{text.slice(0, 520)}</div>
-      <button type="button" onClick={() => setExpanded(true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-50 px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"><Expand className="h-3.5 w-3.5" />展开完整长回答</button>
+      <button type="button" onClick={() => setExpanded(true)} className="inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-50 px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"><Expand className="h-3.5 w-3.5" />{t("展开完整长回答")}</button>
     </div>;
   }
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
@@ -108,12 +110,12 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
       const codeLines: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith('```')) { codeLines.push(lines[index]); index += 1; }
-      output.push(<AgentContentCard key={`code-${index}`} title={language ? `代码 · ${language}` : '代码'} content={codeLines.join('\n')} code />);
+      output.push(<AgentContentCard key={`code-${index}`} title={language ? t("代码 · {0}", [language]) : t("代码")} content={codeLines.join('\n')} code />);
       continue;
     }
     const commaCount = (line.match(/[,，]/g) || []).length;
     if (line.length >= 120 && commaCount >= 5) {
-      output.push(<AgentContentCard key={`prompt-${index}`} title="提示词" content={line} />);
+      output.push(<AgentContentCard key={`prompt-${index}`} title={t("提示词")} content={line} />);
       continue;
     }
     const heading = line.match(/^(#{1,3})\s+(.+)$/);
@@ -127,11 +129,11 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   return <>{output}</>;
 });
 
-const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <div aria-label="回答用量" className="min-w-0">
+const AgentUsageDetails: React.FC<{ message: PanelMessage }> = ({ message }) => <div aria-label={t("回答用量")} className="min-w-0">
   <div className="max-w-full break-words px-2 py-1 text-micro leading-5">
-    {message.model}{typeof message.usage?.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString()} tokens` : ''}
+    {message.model}{typeof message.usage?.totalTokens === 'number' ? ` · ${message.usage.totalTokens.toLocaleString(getLanguage())} tokens` : ''}
     {message.stopReason && message.stopReason !== 'stop' ? ` · ${message.stopReason}` : ''}
-    {message.visionUsage?.map((item, index) => <div key={index}>历史视觉用量：{item.model} · {item.imageCount} 图{typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString()} tokens` : ''}</div>)}
+    {message.visionUsage?.map((item, index) => <div key={index}>{t("历史视觉用量：{0} · {1} 图{2}", [item.model, item.imageCount, typeof item.usage?.totalTokens === 'number' ? ` · ${item.usage.totalTokens.toLocaleString(getLanguage())} tokens` : ''])}</div>)}
   </div>
 </div>;
 
@@ -161,20 +163,20 @@ const AgentMessageList = React.memo(({
   const visibleMessages = messages.slice(-visibleMessageCount);
   const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
   return <>
-    {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-meta font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">再显示前面的 {Math.min(60, hiddenMessageCount)} 条消息</button>}
+    {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-meta font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">{t("再显示前面的 {0} 条消息", [Math.min(60, hiddenMessageCount)])}</button>}
     {visibleMessages.map((message, index) => <article key={message.id} className={`group min-w-0 text-sm leading-7 text-gray-800 [overflow-wrap:anywhere] dark:text-gray-100 ${message.role === 'user' ? 'ml-auto flex max-w-[90%] flex-col items-end' : ''}`}>
       <div className={message.role === 'user' ? 'w-fit max-w-full whitespace-pre-wrap rounded-2xl bg-gray-100 px-4 py-2.5 dark:bg-gray-800' : message.role === 'error' ? 'whitespace-pre-wrap rounded-xl bg-red-50 px-3 py-2 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'min-w-0'}>
-      {!!message.thinking && <AgentDisclosure title="思考过程" label="思考过程" defaultExpanded={displayPreferences.thinkingExpanded}><AgentLiveOutput text={message.thinking} live={running && index === visibleMessages.length - 1} label="思考输出" className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400" /></AgentDisclosure>}
-      {!!message.tools?.length && <AgentDisclosure title={`工具活动 · ${message.tools.length} 项${message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted') ? ' · 有未完成项' : message.tools.some(tool => tool.state === 'running') ? ' · 处理中' : ''}`} label="工具活动" defaultExpanded={displayPreferences.toolsExpanded} error={message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted')}>
-        <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? '处理中' : tool.state === 'error' ? '失败' : tool.state === 'interrupted' ? '未完成' : '完成'} · {toolLabels[tool.name] || tool.name}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label="工具回执" className="my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
+      {!!message.thinking && <AgentDisclosure title={t("思考过程")} label={t("思考过程")} defaultExpanded={displayPreferences.thinkingExpanded}><AgentLiveOutput text={message.thinking} live={running && index === visibleMessages.length - 1} label={t("思考输出")} className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400" /></AgentDisclosure>}
+      {!!message.tools?.length && <AgentDisclosure title={t("工具活动 · {0} 项{1}", [message.tools.length, message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted') ? t(' · 有未完成项') : message.tools.some(tool => tool.state === 'running') ? t(' · 处理中') : ''])} label={t("工具活动")} defaultExpanded={displayPreferences.toolsExpanded} error={message.tools.some(tool => tool.state === 'error' || tool.state === 'interrupted')}>
+        <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? t("处理中") : tool.state === 'error' ? t("失败") : tool.state === 'interrupted' ? t("未完成") : t("完成")} · {t(toolLabels[tool.name] || tool.name)}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label={t("工具回执")} className="my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
-      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? '正在思考…' : '')} /> : message.text}
+      {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       </div>
       {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400">
-        {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? '已复制' : '复制'} aria-label={copiedMessageId === message.id ? '已复制' : '复制'}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
-        {message.role === 'user' && !running && <button type="button" onClick={() => onEdit(message)} aria-label="编辑重发" title="编辑重发" className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
-        {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title="重新回答；已完成的资料修改不会撤回" aria-label="重新生成"><RotateCcw className="h-3.5 w-3.5" /></button>}
+        {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? t("已复制") : t("复制")} aria-label={copiedMessageId === message.id ? t("已复制") : t("复制")}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
+        {message.role === 'user' && !running && <button type="button" onClick={() => onEdit(message)} aria-label={t("编辑重发")} title={t("编辑重发")} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
+        {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={t("重新回答；已完成的资料修改不会撤回")} aria-label={t("重新生成")}><RotateCcw className="h-3.5 w-3.5" /></button>}
         {message.role === 'agent' && Boolean(message.model || message.usage || message.visionUsage?.length) && <AgentUsageDetails message={message} />}
       </div>}
     </article>)}
@@ -186,6 +188,7 @@ const AgentMessageList = React.memo(({
   && previous.displayPreferences === next.displayPreferences);
 
 export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
+  useLanguage();
   const displayPreferences = useAgentDisplayPreferences();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<PanelMessage[]>([]);
@@ -471,7 +474,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const sessionReady = Boolean(activeSessionId && activeSession && activeModel);
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = running
-    ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? `正在${toolLabels[runningTool.name] || runningTool.name}` : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
+    ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? t("正在{0}", [t(toolLabels[runningTool.name] || runningTool.name)]) : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
     : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
 
   useLayoutEffect(() => {
@@ -679,6 +682,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       let artistFavorites: string[] = [];
       try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
+        language: getLanguage(),
         currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
@@ -866,34 +870,34 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       ref={panelRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Agent 控制面板"
+      aria-label={t("Agent 控制面板")}
       data-agent-surface
       className="agent-theme appearance-panel agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950"
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
-    <button type="button" aria-label="调整 Agent 宽度" onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
-    <button type="button" aria-label="调整 Agent 高度" onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>
-    {showSessions && <button type="button" aria-label="关闭会话列表" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="absolute inset-0 z-10 bg-black/35" />}
-    <aside aria-label="Agent 会话历史" className={`appearance-panel ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
+    <button type="button" aria-label={t("调整 Agent 宽度")} onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
+    <button type="button" aria-label={t("调整 Agent 高度")} onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>
+    {showSessions && <button type="button" aria-label={t("关闭会话列表")} onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="absolute inset-0 z-10 bg-black/35" />}
+    <aside aria-label={t("Agent 会话历史")} className={`appearance-panel ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
-        <b className="min-w-0 flex-1 truncate text-sm dark:text-white">Agent 对话</b>
-        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label="新建对话" title="新建对话"><Plus className="h-5 w-5" /></button>
-        <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="关闭会话列表" title="关闭"><X className="h-5 w-5" /></button>
+        <b className="min-w-0 flex-1 truncate text-sm dark:text-white">{t("Agent 对话")}</b>
+        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label={t("新建对话")} title={t("新建对话")}><Plus className="h-5 w-5" /></button>
+        <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("关闭会话列表")} title={t("关闭")}><X className="h-5 w-5" /></button>
       </div>
-      <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder="搜索对话" className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
+      <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder={t("搜索对话")} className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
         {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
-          <div className="py-8 text-center text-xs text-gray-400">没有找到匹配的对话</div>
+          <div className="py-8 text-center text-xs text-gray-400">{t("没有找到匹配的对话")}</div>
         ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
           {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
-            <span className="mt-0.5 block truncate text-micro text-gray-400">{displayModelName(session.model)} · {session.messageCount || 0} 轮 · {new Date(session.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">工作中</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">上次中断</span> : session.taskStatus === 'failed' ? <span className="text-red-500">上次失败</span> : <span className="text-emerald-600">就绪</span>}</span>
+            <span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} · {1} 轮 · {2}", [displayModelName(session.model), session.messageCount || 0, new Date(session.updatedAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })])}</span>
+            <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">{t("工作中")}</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">{t("上次中断")}</span> : session.taskStatus === 'failed' ? <span className="text-red-500">{t("上次失败")}</span> : <span className="text-emerald-600">{t("就绪")}</span>}</span>
           </button>}
-          <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="会话操作" title="会话操作"><MoreHorizontal className="h-4 w-4" /></button>
+          <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("会话操作")} title={t("会话操作")}><MoreHorizontal className="h-4 w-4" /></button>
           {sessionMenuId === session.id && <div data-session-menu className="appearance-panel absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900">
-            <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />重命名</button>
-            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />删除</button>
+            <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />{t("重命名")}</button>
+            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />{t("删除")}</button>
           </div>}
         </div>)}
       </div>
@@ -901,13 +905,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
     <section className="relative flex min-w-0 flex-1 flex-col">
       {runtimeWarning && <p role="status" className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{runtimeWarning}</p>}
-      {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">任务等待你确认：{item.operation.action}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>查看并决定</button></div>)}
-      {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? '模型不可用，请重新选择' : '请接入模型服务'}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? '选择模型' : '接入 API'}</button></div>}
+      {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">{t("任务等待你确认：{0}", [item.operation.action])}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>{t("查看并决定")}</button></div>)}
+      {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? t("模型不可用，请重新选择") : t("请接入模型服务")}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? t("选择模型") : t("接入 API")}</button></div>}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">
         <div className="flex h-12 items-center gap-1 px-2 md:px-3">
-          <button type="button" onClick={requestClose} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="返回" title="返回"><ArrowLeft className="h-5 w-5" /></button>
-          <button type="button" onClick={() => { setShowSessions(true); setShowModelMenu(false); setShowMoreMenu(false); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label="会话列表" title="会话列表"><List className="h-5 w-5" /></button>
+          <button type="button" onClick={requestClose} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label={t("返回")} title={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => { setShowSessions(true); setShowModelMenu(false); setShowMoreMenu(false); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" aria-label={t("会话列表")} title={t("会话列表")}><List className="h-5 w-5" /></button>
 
           {/* 标题与执行状态圆点合流 */}
           <div className="min-w-0 flex-1">
@@ -922,13 +926,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                         ? 'bg-amber-500'
                         : 'bg-emerald-500'
                 }`}
-                title={executionStatus}
+                title={t(executionStatus)}
               />
               <h2 className="truncate text-sm font-black text-gray-900 dark:text-white">
-                {activeSession?.title || '项目 Agent'}
+                {activeSession?.title || t("项目 Agent")}
               </h2>
             </div>
-            {running && <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500"><span className="truncate font-bold text-indigo-600 dark:text-indigo-400">{executionStatus}</span></div>}
+            {running && <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500"><span className="truncate font-bold text-indigo-600 dark:text-indigo-400">{t(executionStatus)}</span></div>}
           </div>
 
           {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
@@ -937,14 +941,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               type="button"
               onClick={() => setShowMoreMenu(value => { const next = !value; if (next) setShowModelMenu(false); return next; })}
               className={`mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 ${showMoreMenu ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-              aria-label="更多会话操作"
-              title="更多会话操作"
+              aria-label={t("更多会话操作")}
+              title={t("更多会话操作")}
             >
               <MoreHorizontal className="h-5 w-5" />
             </button>
             {showMoreMenu && (
               <div className="appearance-panel absolute right-0 top-11 z-30 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
-                <div className="border-b border-gray-100 p-3 dark:border-gray-800"><AgentChatDisplayOptions /></div><div className="hidden border-b border-gray-100 px-3 py-2 md:block dark:border-gray-800"><p className="mb-2 text-xs text-gray-500">面板宽度</p><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`min-h-8 rounded-lg text-xs ${Math.abs(panelWidth - item.width) < 30 ? 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{item.label}</button>)}</div></div>
+                <div className="border-b border-gray-100 p-3 dark:border-gray-800"><AgentChatDisplayOptions /></div><div className="hidden border-b border-gray-100 px-3 py-2 md:block dark:border-gray-800"><p className="mb-2 text-xs text-gray-500">{t("面板宽度")}</p><div className="grid grid-cols-3 gap-1">{[{ label: '窄', width: 440 }, { label: '标准', width: 540 }, { label: '宽', width: 680 }].map(item => <button key={item.width} type="button" onClick={() => choosePanelWidth(item.width)} className={`min-h-8 rounded-lg text-xs ${Math.abs(panelWidth - item.width) < 30 ? 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{t(item.label)}</button>)}</div></div>
                 <button
                   type="button"
                   onClick={() => {
@@ -953,10 +957,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   }}
                   disabled={exportingLog || !activeSessionId}
                   className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"
-                  aria-label="导出本会话 Agent 日志"
+                  aria-label={t("导出本会话 Agent 日志")}
                 >
                   <Download className="h-4 w-4 text-gray-400" />
-                  <span>{exportingLog ? '正在导出…' : '导出会话日志'}</span>
+                  <span>{exportingLog ? t("正在导出…") : t("导出会话日志")}</span>
                 </button>
                 <button
                   type="button"
@@ -966,24 +970,24 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   }}
                   disabled={!sessionReady || running || !messages.length}
                   className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"
-                  aria-label="清空对话"
+                  aria-label={t("清空对话")}
                 >
                   <Trash2 className="h-4 w-4 text-rose-500" />
-                  <span>清空当前对话</span>
+                  <span>{t("清空当前对话")}</span>
                 </button>
               </div>
             )}
           </div>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 pb-2 text-micro text-gray-500 dark:text-gray-400">
-          <span aria-live="polite">已读取：{pageRead?.title || '页面尚未就绪'}{pageRead?.capturedAt ? ` · ${new Date(pageRead.capturedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <span aria-live="polite">{t("已读取：{0}{1}", [pageRead?.title || t("页面尚未就绪"), pageRead?.capturedAt ? ` · ${new Date(pageRead.capturedAt).toLocaleTimeString(getLanguage(), { hour: '2-digit', minute: '2-digit' })}` : ''])}</span>
         </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
-          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">告诉我你想在项目里做什么</h3>{!sessionReady && <p className="mt-1 text-sm text-gray-500">{sessionInitError || (modelsLoaded && !activeModel ? '请接入模型' : '正在加载对话…')}</p>}{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">重试</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
+          {messages.length === 0 && <div className="my-8 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">{t("告诉我你想在项目里做什么")}</h3>{!sessionReady && <p className="mt-1 text-sm text-gray-500">{sessionInitError || (modelsLoaded && !activeModel ? t("请接入模型") : t("正在加载对话…"))}</p>}{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接 Agent 服务，请确认本地服务正在运行')); }} className="mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">{t("重试")}</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
             visibleMessageCount={visibleMessageCount}
@@ -996,14 +1000,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             onRetry={() => messageActionsRef.current.retry()}
             onMediaReady={() => { if (followBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' }); }}
           />
-          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />回到底部</button>}
+          {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}
         </div>
           <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
-          {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>正在编辑旧消息</b><span className="ml-1">发送后会从这里重新执行，后面的旧回答将被替换。</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">取消</button></div>}
-          {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">任务要求 {input.length} / 8000 字符，请分段发送。</p>}
-          {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">正在处理图片副本…</p>}
+          {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>{t("正在编辑旧消息")}</b><span className="ml-1">{t("发送后会从这里重新执行，后面的旧回答将被替换。")}</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">{t("取消")}</button></div>}
+          {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">{t("任务要求 {0} / 8000 字符，请分段发送。", [input.length])}</p>}
+          {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">{t("正在处理图片副本…")}</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
-          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">发送时交给 {`${activeModel?.provider}/${activeModel?.id}`}；图片用量计入当前模型。原文件保持不变。</p>}
+          {!!attachments.length && <p className="mb-2 text-micro text-gray-500">{t("发送时交给 {0}；图片用量计入当前模型。原文件保持不变。", [`${activeModel?.provider}/${activeModel?.id}`])}</p>}
           {!!attachments.length && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {attachments.map((attachment, index) => (
@@ -1013,7 +1017,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                     type="button"
                     onClick={() => setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index))}
                     className="flex h-4 w-4 items-center justify-center rounded-full text-indigo-400 hover:bg-indigo-200/60 hover:text-rose-600 dark:hover:bg-indigo-900 dark:hover:text-rose-300"
-                    aria-label={`移除附件 ${attachment.name}`}
+                    aria-label={t("移除附件 {0}", [attachment.name])}
                   >
                     ×
                   </button>
@@ -1021,13 +1025,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               ))}
             </div>
           )}
-          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label="任务要求" ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? '先接入或选择模型服务…' : '正在加载对话…' : running ? '可以先写下一条，任务结束后发送…' : editingMessageId ? '修改这条消息后重新发送…' : '输入要求，或粘贴图片…'} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或粘贴图片…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
           <div className="mt-1 flex min-w-0 items-center gap-2">
-            <label title={!sessionReady ? '请配置或选择模型服务' : supportsImages ? '添加图片' : '当前模型不支持图片输入'} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label="选择图片附件" onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
+            <label title={!sessionReady ? t("请配置或选择模型服务") : supportsImages ? t("添加图片") : t("当前模型不支持图片输入")} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label={t("选择图片附件")} onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
             <AgentPermissionSelect disabled={running} />
             <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} contextUsage={getAgentContextUsage(messages, activeModel)} open={showModelMenu} disabled={!props.open || running || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
-            {running && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full" aria-label="停止" title="停止任务；已完成的修改不会撤销"><Square className="h-3.5 w-3.5 fill-current" /></button>}
-            {!running && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '重新发送' : '执行'} title="发送 · Enter；换行 · Shift+Enter"><ArrowUp className="h-[18px] w-[18px]" /></button>}
+            {running && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full" aria-label={t("停止")} title={t("停止任务；已完成的修改不会撤销")}><Square className="h-3.5 w-3.5 fill-current" /></button>}
+            {!running && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? t("请配置或选择模型服务") : t("正在加载对话") : editingMessageId ? t("重新发送") : t("执行")} title={t("发送 · Enter；换行 · Shift+Enter")}><ArrowUp className="h-[18px] w-[18px]" /></button>}
           </div>
         </div>
       </main>

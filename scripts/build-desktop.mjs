@@ -14,6 +14,7 @@ export const RUNTIME_FILES = [
   ...['agentOperation', 'agentLabSync', 'agentConnection', 'danbooruErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'pngMetadata'].map(name => `services/${name}.mjs`),
   ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling'].map(name => `worker/${name}.mjs`),
   'LICENSE', 'PROJECT_AGENT.md', 'wrangler.toml', 'data/novelai-v45-tags.json',
+  'locales/index.mjs', 'locales/messages.json',
   ...['index.js', 'style.css', 'manifest.json', 'README.md'].map(name => `sillytavern-extension/npm-bridge/${name}`),
   ...PUBLIC_ICONS.map(name => `public/${name}`),
 ];
@@ -198,6 +199,8 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   await copyFile(join(root, 'scripts', 'desktop-runtime.mjs'), join(appRoot, 'scripts', 'desktop-runtime.mjs'));
   await mkdir(join(appRoot, 'services'), { recursive: true });
   await copyFile(join(root, 'services/appReleases.mjs'), join(appRoot, 'services/appReleases.mjs'));
+  await mkdir(join(appRoot, 'locales'), { recursive: true });
+  for (const file of ['index.mjs', 'messages.json']) await copyFile(join(root, 'locales', file), join(appRoot, 'locales', file));
   await bundleDesktopUpdater(appRoot);
   await writeFile(join(appRoot, 'package.json'), JSON.stringify({ name: 'nai-atelier-desktop', productName: 'NAI Atelier', version: pkg.version, description: 'NovelAI 个人本地创作工坊', author: 'NAI Atelier contributors', license: 'MIT', main: 'desktop/main.mjs', type: 'module', private: true }, null, 2) + '\n');
   const files = await inventory(runtime);

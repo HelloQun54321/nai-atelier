@@ -1,3 +1,4 @@
+import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useState } from 'react';
 import { InfoPopover } from './InfoPopover';
 import { ImageEditOperation, NAIParams } from '../types';
@@ -41,6 +42,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     forceEmptySeed = false,
     enforceFreeStepLimit = true,
 }) => {
+  useLanguage();
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
     const runtime = useNaiRuntime();
     // NovelAI 采样步数硬上限 50；免费上限取官方运行时同步值（默认 28），随官方调整自动更新。
@@ -124,16 +126,16 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {presetSource && (
                 <div className="mb-3 flex min-w-0 items-center gap-2">
-                    <InfoPopover label="预设来源详情" content={`来自：${presetSource.name}${presetSource.modified ? ' · 已修改' : ''}`} className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 underline decoration-dotted underline-offset-2 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64">来自：{presetSource.name}{presetSource.modified ? ' · 已修改' : ''}</InfoPopover>
+                    <InfoPopover label={t("预设来源详情")} content={t("来自：{0}{1}", [presetSource.name, presetSource.modified ? t(' · 已修改') : ''])} className="max-w-48 truncate rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-micro font-medium normal-case tracking-normal text-emerald-700 underline decoration-dotted underline-offset-2 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300 sm:max-w-64">{t("来自：{0}{1}", [presetSource.name, presetSource.modified ? t(" · 已修改") : ''])}</InfoPopover>
                 </div>
             )}
 
             {/* Official model-specific quality and UC presets */}
             <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-200 pb-4 dark:border-gray-700 sm:grid-cols-2">
                 <div>
-                    <label className="mb-1 block text-xs text-gray-500 dark:text-gray-500">质量预设</label>
+                    <label className="mb-1 block text-xs text-gray-500 dark:text-gray-500">{t("质量预设")}</label>
                     <select
-                        aria-label="质量预设"
+                        aria-label={t("质量预设")}
                         disabled={!canEdit}
                         className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm outline-none dark:border-gray-700 dark:bg-gray-900"
                         value={qualityPresetId}
@@ -143,9 +145,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     </select>
                 </div>
                 <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">负面预设</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">{t("负面预设")}</label>
                     <select
-                        aria-label="负面预设"
+                        aria-label={t("负面预设")}
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={ucPresetId}
@@ -159,9 +161,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             {/* Model and Resolution row (2 columns symmetric) */}
             <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="flex min-w-0 flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">生成模型</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("生成模型")}</label>
                     <select
-                        aria-label="生成模型"
+                        aria-label={t("生成模型")}
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={resolvedModelId}
@@ -194,19 +196,19 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         }}
                     >
                         {selectableModels.map(model => (
-                            <option key={model.id} value={model.id}>NovelAI {model.label}</option>
+                            <option key={model.id} value={model.id}>NovelAI {t(model.label)}</option>
                         ))}
                         {params.model && !selectableModels.some(model => model.id === params.model) && (
-                            <option value={params.model}>未知模型（{params.model}）</option>
+                            <option value={params.model}>{t("未知模型（{0}）", [params.model])}</option>
                         )}
                     </select>
                 </div>
 
                 {!hideResolution && (
                     <div className="flex min-w-0 flex-col gap-1">
-                        <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">图片画幅比例</label>
+                        <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("图片画幅比例")}</label>
                         <select
-                            aria-label="图片画幅比例"
+                            aria-label={t("图片画幅比例")}
                             disabled={!canEdit}
                             className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                             value={resolutionMode}
@@ -214,7 +216,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         >
                             {BUILTIN_ASPECT_RATIOS.map(item => (
                                 <option key={item.id} value={item.id}>
-                                    {item.label} ({item.baseWidth}x{item.baseHeight})
+                                    {t(item.label)} ({item.baseWidth}x{item.baseHeight})
                                 </option>
                             ))}
                         </select>
@@ -228,15 +230,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <div className="space-y-3">
                         <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                                尺寸清晰度放大（Scale）
-                            </span>
+                                {t("尺寸清晰度放大（Scale）")}</span>
                             <div className="flex items-center gap-1">
                                 <input
                                     type="number"
                                     min="1"
                                     max={activeRatioMax.maxScale}
                                     step="0.01"
-                                    aria-label="尺寸清晰度倍率数值"
+                                    aria-label={t("尺寸清晰度倍率数值")}
                                     disabled={!canEdit}
                                     value={Number(scaleMultiplier.toFixed(2))}
                                     onChange={(e) => {
@@ -247,7 +248,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 />
                                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">x</span>
                                 {scaleMultiplier >= activeRatioMax.maxScale && (
-                                    <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-normal text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">已达画幅极限</span>
+                                    <span className="ml-1 rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-normal text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">{t("已达画幅极限")}</span>
                                 )}
                             </div>
                         </div>
@@ -257,7 +258,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 min="1.0"
                                 max={activeRatioMax.maxScale}
                                 step="0.01"
-                                aria-label="尺寸缩放滑块"
+                                aria-label={t("尺寸缩放滑块")}
                                 disabled={!canEdit}
                                 value={Math.min(activeRatioMax.maxScale, scaleMultiplier)}
                                 onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
@@ -265,8 +266,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             />
                         </div>
                         <div className="flex items-center justify-between text-micro text-gray-400">
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">1.0x Opus 免费基准（0点）</span>
-                            <span>{activeRatioMax.maxScale.toFixed(2)}x 官方封顶（{activeRatioMax.width}×{activeRatioMax.height}）</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t("1.0x Opus 免费基准（0点）")}</span>
+                            <span>{t("{0}x 官方封顶（{1}×{2}）", [activeRatioMax.maxScale.toFixed(2), activeRatioMax.width, activeRatioMax.height])}</span>
                         </div>
                     </div>
 
@@ -278,9 +279,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                     : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
                             }`}
-                        >
-                            当前输出 {currentWidth.toLocaleString()} × {currentHeight.toLocaleString()} = {totalPixels.toLocaleString()} 像素 · {isOpusFree ? '在 Opus 免费像素范围内' : `超过免费像素上限 ${freeMaxArea.toLocaleString()}`}
-                        </div>
+                        >{t("当前输出 {0} × {1} = {2} 像素 · {3}", [currentWidth.toLocaleString(getLanguage()), currentHeight.toLocaleString(getLanguage()), totalPixels.toLocaleString(getLanguage()), isOpusFree ? t("在 Opus 免费像素范围内") : t("超过免费像素上限 {0}", [freeMaxArea.toLocaleString(getLanguage())])])}</div>
                     </div>
                 </div>
             )}
@@ -288,9 +287,9 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             {/* Generation parameters: Sampler, Steps, Seed (3 columns) */}
             <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">采样器</label>
+                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("采样器")}</label>
                     <select
-                        aria-label="采样器"
+                        aria-label={t("采样器")}
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={params.sampler || 'k_euler_ancestral'}
@@ -311,8 +310,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
                         <span className="flex items-center justify-between">
-                            生成步数
-                            {!enforceFreeStepLimit && <InfoPopover label="步数上限说明" content="已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。" className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">已解除上限</InfoPopover>}
+                            {t("生成步数")}{!enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
                         </span>
                     </label>
                     <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
@@ -329,18 +327,17 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
                 <div className="flex flex-col gap-1">
                     <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between font-medium">
-                        <span>随机种子</span>
+                        <span>{t("随机种子")}</span>
                         {forceEmptySeed && (
-                            <InfoPopover label="强制随机说明" content={params.seed !== undefined && params.seed !== null ? `原保存种子: ${params.seed}（关闭设置后恢复）` : '当前已在全局设置中强制随机'} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">
-                                已强制置空
-                            </InfoPopover>
+                            <InfoPopover label={t("强制随机说明")} content={params.seed !== undefined && params.seed !== null ? t("原保存种子: {0}（关闭设置后恢复）", [params.seed]) : t("当前已在全局设置中强制随机")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">
+                                {t("已强制置空")}</InfoPopover>
                         )}
                     </label>
                     <input
                         type="number"
                         className={`w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 ${forceEmptySeed ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
                         disabled={!canEdit}
-                        placeholder={forceEmptySeed ? '已强制置空 (随机)' : '随机'}
+                        placeholder={forceEmptySeed ? t("已强制置空 (随机)") : t("随机")}
                         value={forceEmptySeed ? '' : (params.seed === undefined || params.seed === null ? '' : params.seed)}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -358,7 +355,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <div className="col-span-full rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <button
                             type="button"
-                            aria-label="透明背景"
+                            aria-label={t("透明背景")}
                             disabled={!canEdit}
                             aria-pressed={params.transparent === true}
                             onClick={() => {
@@ -368,13 +365,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             }}
                             className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-gray-800"
                         >
-                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">透明背景</b></span>
+                            <span className="min-w-0"><b className="block text-xs text-gray-700 dark:text-gray-200">{t("透明背景")}</b></span>
                             <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${params.transparent ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${params.transparent ? 'translate-x-5' : ''}`} /></span>
                         </button>
                         {params.transparent && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
                             <div className="mb-1 flex items-center justify-between gap-3">
-                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">透明权重</label>
-                                <input type="number" aria-label="透明权重数值" min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
+                                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t("透明权重")}</label>
+                                <input type="number" aria-label={t("透明权重数值")} min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
                                     disabled={!canEdit} value={transparentWeightInput ?? transparentWeight}
                                     onChange={event => setTransparentWeightInput(event.target.value)}
                                     onBlur={event => {
@@ -384,7 +381,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                     onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }}
                                     className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900" />
                             </div>
-                            <input type="range" aria-label="透明权重" min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
+                            <input type="range" aria-label={t("透明权重")} min={TRANSPARENT_WEIGHT_MIN} max={TRANSPARENT_WEIGHT_MAX} step={TRANSPARENT_WEIGHT_STEP}
                                 disabled={!canEdit} value={transparentWeight} onChange={event => { setTransparentWeightInput(null); updateTransparentWeight(Number(event.target.value)); }}
                                 className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50" />
                         </div>}
@@ -392,9 +389,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 )}
 
                 {getActiveCharacters(params.characters).length > currentModelInfo.maxCharacters && (
-                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                        {currentModelInfo.label} 最多支持 {currentModelInfo.maxCharacters} 个角色提示词；当前启用了 {getActiveCharacters(params.characters).length} 个，请停用或删除多余角色后再生成。
-                    </p>
+                    <p className="col-span-full rounded-md bg-amber-50 px-2.5 py-1.5 text-meta leading-4 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">{t("{0} 最多支持 {1} 个角色提示词；当前启用了 {2} 个，请停用或删除多余角色后再生成。", [t(currentModelInfo.label), currentModelInfo.maxCharacters, getActiveCharacters(params.characters).length])}</p>
                 )}
             </div>
 
@@ -402,7 +397,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             <div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-300">引导控制</h4>
+                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("引导控制")}</h4>
                     </div>
                     <button
                         type="button"
@@ -415,7 +410,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         }}
                         className="flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 sm:w-[calc(50%-0.5rem)]"
                     >
-                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Variety+（多样性）</span>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{t("Variety+（多样性）")}</span>
                         <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${params.variety ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
                             <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${params.variety ? 'translate-x-4' : ''}`} />
                         </span>
@@ -431,7 +426,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 min="0"
                                 max="10"
                                 step="0.1"
-                                aria-label="CFG Scale 数值"
+                                aria-label={t("CFG Scale 数值")}
                                 disabled={!canEdit}
                                 value={params.scale ?? 5}
                                 onChange={(e) => {
@@ -465,7 +460,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 min="0"
                                 max="1"
                                 step="0.01"
-                                aria-label="CFG Rescale 数值"
+                                aria-label={t("CFG Rescale 数值")}
                                 disabled={!canEdit}
                                 value={params.cfgRescale ?? 0}
                                 onChange={(e) => {

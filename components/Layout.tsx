@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Brush,
@@ -93,6 +94,7 @@ const readMobileAgentDock = (): MobileAgentDock => {
 };
 
 export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentView, activeView = currentView, isDark, themeMode, setThemeMode, appearancePreferences, setAppearancePreferences, safeMode, safeModeStartup, safeModeHideTitles, setSafeModeStartup, setSafeModeHideTitles, toggleSafeMode, toast, hideNav, notify, onOpenAgent }) => {
+  useLanguage();
   const anlasBudget = useAnlasBudget();
   const novelaiSubscription = useNovelaiUsage();
   const [showSettings, setShowSettings] = useState(false);
@@ -294,13 +296,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
       {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
       <span className="flex h-6 w-6 items-center justify-center"><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.8} /></span>
-      <span className="text-micro font-medium">{label}</span>
+      <span className="text-micro font-medium">{t(label)}</span>
     </button>
   );
 
   return (
     <div className="relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
-      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="fixed left-1/2 top-4 z-[2000] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{toast.message}</span></div></div>}
+      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="fixed left-1/2 top-4 z-[2000] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{t(toast.message)}</span></div></div>}
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative z-40 hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
@@ -311,8 +313,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
               onClick={() => setSidebarCollapsed(false)}
               className="flex h-9 w-9 flex-none cursor-pointer items-center justify-center rounded-xl border border-[var(--nai-accent)]/20 bg-[var(--nai-accent)]/15 text-[var(--nai-accent)] shadow-xs outline-none transition hover:scale-105 hover:bg-[var(--nai-accent)]/25 focus-visible:ring-2 focus-visible:ring-indigo-500"
               data-safe-mode-ignore="true"
-              aria-label="展开侧边栏"
-              title="NAI Atelier（点击展开侧边栏）"
+              aria-label={t("展开侧边栏")}
+              title={t("NAI Atelier（点击展开侧边栏）")}
             >
               <Palette className="h-5 w-5" strokeWidth={2.2} />
             </button>
@@ -320,8 +322,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
               type="button"
               onClick={() => setSidebarCollapsed(false)}
               className="absolute -right-3 top-1/2 z-50 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm outline-none transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-500 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              aria-label="展开侧边栏"
-              title="展开侧边栏"
+              aria-label={t("展开侧边栏")}
+              title={t("展开侧边栏")}
             >
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={2.5} />
             </button>
@@ -336,8 +338,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
               type="button"
               onClick={() => setSidebarCollapsed(true)}
               className="flex h-7 w-7 flex-none items-center justify-center rounded-lg text-gray-400 outline-none transition hover:bg-gray-100 hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:hover:bg-gray-800"
-              aria-label="折叠侧边栏"
-              title="折叠侧边栏"
+              aria-label={t("折叠侧边栏")}
+              title={t("折叠侧边栏")}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -346,29 +348,29 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
 
         <nav className={`min-h-0 flex-1 overflow-y-auto py-2 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
           {desktopGroups.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-2 border-t border-gray-100 pt-2 dark:border-gray-800' : ''}>
-            {!sidebarCollapsed && <div className="mb-1 px-3 text-micro font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-600">{group.label}</div>}
+            {!sidebarCollapsed && <div className="mb-1 px-3 text-micro font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-600">{t(group.label)}</div>}
             <div className="space-y-1">{group.items.map(item => {
               const active = activeView === item.id;
-              return <button key={item.id} type="button" title={sidebarCollapsed ? item.label : undefined} aria-label={item.label} onClick={() => onNavigate(item.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
+              return <button key={item.id} type="button" title={sidebarCollapsed ? t(item.label) : undefined} aria-label={t(item.label)} onClick={() => onNavigate(item.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
                 {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
                 <item.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} />
-                {!sidebarCollapsed && <span className="ml-3 min-w-0 truncate text-sm">{item.label}</span>}
+                {!sidebarCollapsed && <span className="ml-3 min-w-0 truncate text-sm">{t(item.label)}</span>}
               </button>;
             })}</div>
           </div>)}
         </nav>
 
         <div className={`flex flex-none flex-col gap-2 border-t border-gray-200 py-2 dark:border-gray-800 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-          <button type="button" onClick={onOpenAgent} title={sidebarCollapsed ? '项目 Agent' : undefined} aria-label="项目 Agent" className={`flex h-11 w-full items-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/15 outline-none transition hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Sparkles className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 truncate text-sm font-bold">项目 Agent</span>}</button>
+          <button type="button" onClick={onOpenAgent} title={sidebarCollapsed ? t("项目 Agent") : undefined} aria-label={t("项目 Agent")} className={`flex h-11 w-full items-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/15 outline-none transition hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 dark:border dark:border-indigo-400/25 dark:bg-gradient-to-r dark:from-indigo-600/90 dark:to-violet-700/90 dark:shadow-lg dark:shadow-indigo-950/40 dark:hover:from-indigo-500 dark:hover:to-violet-600 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Sparkles className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 truncate text-sm font-bold">{t("项目 Agent")}</span>}</button>
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/70 dark:border-gray-800/80 dark:bg-gray-900/80">
             <AnlasBalanceBar collapsed={sidebarCollapsed} budget={anlasBudget} subscription={novelaiSubscription} />
             <OpusUsageBar collapsed={sidebarCollapsed} />
-            <button type="button" onClick={toggleSafeMode} title={sidebarCollapsed ? `安全模式：${safeMode ? '开' : '关'}` : undefined} aria-label={`安全模式：${safeMode ? '开' : '关'}`} aria-pressed={safeMode} className={`relative flex h-11 w-full items-center border-b border-gray-200 text-gray-500 outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800/70 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}><span className="flex items-center"><span className="relative"><ShieldCheck className={`h-5 w-5 ${safeMode ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />{sidebarCollapsed && safeMode && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-emerald-500 dark:border-gray-900" />}</span>{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">安全模式</span>}</span>{!sidebarCollapsed && <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeMode ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeMode ? 'translate-x-5' : 'translate-x-0'}`} /></span>}</button>
-            <button type="button" onClick={() => { setSettingsSection('home'); setShowSettings(true); }} title={sidebarCollapsed ? '全局设置' : undefined} aria-label="全局设置" className={`flex h-11 w-full items-center text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-white ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Settings className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">全局设置</span>}</button>
+            <button type="button" onClick={toggleSafeMode} title={sidebarCollapsed ? t("安全模式：{0}", [safeMode ? t('开') : t('关')]) : undefined} aria-label={t("安全模式：{0}", [safeMode ? t('开') : t('关')])} aria-pressed={safeMode} className={`relative flex h-11 w-full items-center border-b border-gray-200 text-gray-500 outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:border-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-800/70 ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'}`}><span className="flex items-center"><span className="relative"><ShieldCheck className={`h-5 w-5 ${safeMode ? 'text-emerald-600 dark:text-emerald-400' : ''}`} />{sidebarCollapsed && safeMode && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-emerald-500 dark:border-gray-900" />}</span>{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">{t("安全模式")}</span>}</span>{!sidebarCollapsed && <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeMode ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeMode ? 'translate-x-5' : 'translate-x-0'}`} /></span>}</button>
+            <button type="button" onClick={() => { setSettingsSection('home'); setShowSettings(true); }} title={sidebarCollapsed ? t("全局设置") : undefined} aria-label={t("全局设置")} className={`flex h-11 w-full items-center text-gray-500 outline-none transition hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-white ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'}`}><Settings className="h-5 w-5 flex-none" />{!sidebarCollapsed && <span className="ml-2 text-xs font-medium">{t("全局设置")}</span>}</button>
           </div>
         </div>
 
-        {!sidebarCollapsed && <button type="button" aria-label="调整侧边栏宽度" data-agent-interaction="resize" title="拖动调整宽度；双击恢复默认" onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>}
+        {!sidebarCollapsed && <button type="button" aria-label={t("调整侧边栏宽度")} data-agent-interaction="resize" title={t("拖动调整宽度；双击恢复默认")} onPointerDown={startSidebarResize} onDoubleClick={() => { setSidebarCollapsed(false); setSidebarWidth(SIDEBAR_DEFAULT_WIDTH); localStorage.setItem('nai_sidebar_width', String(SIDEBAR_DEFAULT_WIDTH)); }} className="group absolute -right-1 top-0 bottom-0 z-30 hidden w-2 cursor-col-resize outline-none md:block"><span className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${isSidebarResizing ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-indigo-400'}`} /></button>}
       </aside>
 
       <main ref={workspaceRef} className={`app-workspace workspace-container relative isolate flex min-w-0 flex-1 flex-col overflow-hidden bg-white transition-colors duration-300 dark:bg-gray-900 ${hideNav ? 'pb-0' : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))]'} md:pb-0`}>{children}</main>
@@ -377,8 +379,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         type="button"
         onPointerDown={startMobileAgentDrag}
         onClick={event => { if (event.detail === 0) onOpenAgent(); }}
-        aria-label="打开项目 Agent"
-        title="项目 Agent（可拖动）"
+        aria-label={t("打开项目 Agent")}
+        title={t("项目 Agent（可拖动）")}
         style={mobileAgentDrag
           ? { left: mobileAgentDrag.left, right: 'auto', top: `${clampMobileAgentY(mobileAgentDrag.y, Boolean(hideNav)) * 100}dvh` }
           : { left: mobileAgentDock.side === 'left' ? 0 : 'auto', right: mobileAgentDock.side === 'right' ? 0 : 'auto', top: `${clampMobileAgentY(mobileAgentDock.y, Boolean(hideNav)) * 100}dvh` }}
@@ -388,13 +390,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       </button>}
 
       {!hideNav && <>
-        {showResources && <div role="dialog" aria-modal="true" aria-label="资源库菜单" className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="appearance-panel absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">资源库</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label="关闭资源库菜单"><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-meta font-medium leading-none">{item.label}</span></button>; })}</div></div></div>}
+        {showResources && <div role="dialog" aria-modal="true" aria-label={t("资源库菜单")} className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="appearance-panel absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">{t("资源库")}</span><button onClick={() => setShowResources(false)} className="mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("关闭资源库菜单")}><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-meta font-medium leading-none">{t(item.label)}</span></button>; })}</div></div></div>}
         <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
-          <MobileNavButton label="风格串" active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
-          <MobileNavButton label="资源库" active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
-          <MobileNavButton label="实验室" active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
-          <MobileNavButton label="历史" active={activeView === 'history'} icon={icons.history} onClick={() => navigateMobile('history')} />
-          <MobileNavButton label="设置" active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />
+          <MobileNavButton label={t("风格串")} active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
+          <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
+          <MobileNavButton label={t("实验室")} active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
+          <MobileNavButton label={t("历史")} active={activeView === 'history'} icon={icons.history} onClick={() => navigateMobile('history')} />
+          <MobileNavButton label={t("设置")} active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />
         </div>
       </>}
 

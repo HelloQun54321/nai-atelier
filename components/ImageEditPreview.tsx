@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ImageEditOperation } from '../types';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -35,6 +36,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   onGenerate, onOpenLightbox, getDownloadFilename, generationData, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
+  useLanguage();
   const isGenerationDisabled = generationDisabled !== undefined
     ? generationDisabled
     : isLoading || (canGenerate !== undefined ? !canGenerate : false);
@@ -45,7 +47,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         isGenerating={isGenerating}
         generationProgress={generationProgress}
         handleGenerate={onGenerate}
-        errorMsg={error}
+        errorMsg={t(error)}
         generatedImage={image}
         previewImage={undefined}
         setLightboxImg={onOpenLightbox}
@@ -64,9 +66,9 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         onRemoveCurrentHistory={onRemoveCurrentHistory}
         onClearHistoryGroup={onClearHistoryGroup}
         generationCostLabel={generationCostLabel}
-        unavailableLabel={unavailableLabel || (isLoading ? '画布加载中…' : isGenerationDisabled && !isGenerating ? '请先选择底图' : undefined)}
-        emptyLabel="暂无生成结果"
-        resultAlt={`${getOperationLabel(operation)}预览`}
+        unavailableLabel={unavailableLabel || (isLoading ? t("画布加载中…") : isGenerationDisabled && !isGenerating ? t("请先选择底图") : undefined)}
+        emptyLabel={t("暂无生成结果")}
+        resultAlt={t("{0}预览", [getOperationLabel(operation)])}
         generationDisabled={isGenerationDisabled}
         hideGenerateButtonOnMobile
       />

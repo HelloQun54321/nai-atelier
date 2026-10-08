@@ -199,8 +199,13 @@ test('appearance is remembered before startup and updates one active listener wi
   const h = harness({ listener: async ({ appearance }) => { initial = appearance; return { command: async () => {}, close: () => {}, update: state => updates.push(state) }; } });
   const light = { themeMode: 'light', isDark: false, accentColor: '#8B5CF6', motion: 'off' };
   await h.manager.command('appearance', light); assert.equal(h.manager.state().enabled, false);
-  await h.manager.command('start'); assert.deepEqual(initial, { ...light, accentColor: '#8b5cf6' });
+  await h.manager.command('start'); assert.deepEqual({ themeMode: initial.themeMode, isDark: initial.isDark, accentColor: initial.accentColor, motion: initial.motion }, { ...light, accentColor: '#8b5cf6' });
+  assert.equal(initial.language, 'zh-CN');
   const before = h.manager.state();
+  await h.manager.command('appearance', { ...light, language: 'en' });
+  assert.equal(updates.at(-1).appearance.labels['已保存'], 'Saved');
+  assert.equal(updates.at(-1).stage, '等待复制图片链接');
+  assert.equal(h.manager.state().session, before.session);
   await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
   assert.equal(h.manager.state().session, before.session); assert.equal(h.manager.state().saved, before.saved); assert.equal(updates.at(-1).appearance.themeMode, 'dark');
   await assert.rejects(h.manager.command('appearance', { ...light, accentColor: 'red' }), /外观设置无效/);

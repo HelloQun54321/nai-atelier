@@ -5,6 +5,9 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { extractPngMetadata, hasCollectibleNaiMetadata } from '../services/pngMetadata.mjs';
 import { collectorErrorReason, downloadCollectorImage, imageLink } from './collector-download.mjs';
+import { normalizeLanguage, translate } from '../locales/index.mjs';
+
+const collectorLabels = language => Object.fromEntries(['待处理', '已保存', '跳过', '失败', 'Atelier 风格串收集', '正在启动', '等待本机服务确认', '暂停', '继续', '暂停接收新复制，已入队图片继续处理', '继续接收之后的新复制', '折叠状态窗', '展开状态窗', '结束收集', '已暂停', '收集中', ' · 已保存 ', '待处理 ', ' · 跳过 ', ' · 失败 ', '已保存：', '失败：'].map(message => [message, translate(language, message)]));
 
 export function collectorLocalRequest(req) {
   try {
@@ -62,7 +65,7 @@ export async function windowsCollector({ session, position, onEvent, selfTest = 
     });
   };
   try { await ready; } catch (error) { child.kill(); throw error; }
-  return { update: state => send({ command: 'state', state }), command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
+  return { update: state => send({ command: 'state', state: { ...state, rawStage: state.stage, stage: translate(state.appearance.language, state.stage), detail: translate(state.appearance.language, state.detail), error: translate(state.appearance.language, state.error) } }), command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
 }
 
 export class StyleCollector extends EventEmitter {
@@ -85,7 +88,8 @@ export class StyleCollector extends EventEmitter {
     const operation = this.control.then(async () => {
       if (action === 'appearance') {
         if (!id || !['light', 'dark', 'system'].includes(id.themeMode) || typeof id.isDark !== 'boolean' || !/^#[a-f0-9]{6}$/i.test(id.accentColor || '') || !['full', 'reduced', 'off'].includes(id.motion)) throw new Error('外观设置无效');
-        this.appearance = { themeMode: id.themeMode, isDark: id.isDark, accentColor: id.accentColor.toLowerCase(), motion: id.motion };
+        const language = normalizeLanguage(id.language);
+        this.appearance = { themeMode: id.themeMode, isDark: id.isDark, accentColor: id.accentColor.toLowerCase(), motion: id.motion, language, labels: collectorLabels(language) };
         if (this.run) this.publish(this.run); else this.emit('state', this.state());
         return this.state();
       }
