@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import sharp from 'sharp';
 
 const svg = `
@@ -35,17 +34,40 @@ const svg = `
 
 async function main() {
   const sizes = [256, 128, 64, 48, 32, 16];
-  const pngBuffers = [];
+  const frames = [];
 
   for (const size of sizes) {
-    const buffer = await sharp(Buffer.from(svg))
+    let buffer = await sharp(Buffer.from(svg))
       .resize(size, size)
       .png()
       .toBuffer();
-    pngBuffers.push({ width: size, height: size, buffer });
+    if (size < 256) {
+      // 小尺寸用 DIB，避免 Windows Shell 从 EXE 提取全 PNG 图标失败。
+      const rgba = await sharp(buffer).ensureAlpha().raw().toBuffer();
+      const maskStride = Math.ceil(size / 32) * 4;
+      const pixelsLength = size * size * 4;
+      buffer = Buffer.alloc(40 + pixelsLength + maskStride * size);
+      buffer.writeUInt32LE(40, 0);
+      buffer.writeInt32LE(size, 4);
+      buffer.writeInt32LE(size * 2, 8);
+      buffer.writeUInt16LE(1, 12);
+      buffer.writeUInt16LE(32, 14);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const source = (y * size + x) * 4;
+          const target = 40 + ((size - 1 - y) * size + x) * 4;
+          buffer[target] = rgba[source + 2];
+          buffer[target + 1] = rgba[source + 1];
+          buffer[target + 2] = rgba[source];
+          buffer[target + 3] = rgba[source + 3];
+          if (!rgba[source + 3]) buffer[40 + pixelsLength + (size - 1 - y) * maskStride + (x >> 3)] |= 0x80 >> (x % 8);
+        }
+      }
+    }
+    frames.push({ width: size, height: size, buffer });
   }
 
-  const count = pngBuffers.length;
+  const count = frames.length;
   const headerSize = 6;
   const dirEntrySize = 16;
   let offset = headerSize + count * dirEntrySize;
@@ -58,7 +80,7 @@ async function main() {
   const dirEntries = [];
   const imageBuffers = [];
 
-  for (const item of pngBuffers) {
+  for (const item of frames) {
     const { width, height, buffer } = item;
     const entry = Buffer.alloc(dirEntrySize);
     entry.writeUInt8(width >= 256 ? 0 : width, 0);
@@ -77,7 +99,7 @@ async function main() {
 
   const icoBuffer = Buffer.concat([header, ...dirEntries, ...imageBuffers]);
   fs.writeFileSync('public/app-icon.ico', icoBuffer);
-  fs.writeFileSync('public/app-icon.png', pngBuffers[0].buffer);
+  fs.writeFileSync('public/app-icon.png', frames[0].buffer);
   fs.writeFileSync('public/artist-palette-3d.ico', icoBuffer);
   fs.writeFileSync('public/nai-atelier.ico', icoBuffer);
   console.log('Successfully generated app-icon.ico, app-icon.png, artist-palette-3d.ico, and nai-atelier.ico');
