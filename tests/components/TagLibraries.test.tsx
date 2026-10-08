@@ -66,8 +66,7 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   const view = renderLibrary('character', 390, [saved]);
   const card = await screen.findByRole('button', { name: '选择角色：' + custom.name });
   const download = within(card).getByRole('button', { name: '下载图片' });
-  expect(download.parentElement!.className).toContain('absolute right-2 top-2');
-  expect(within(card).getByRole('button', { name: '编辑自定义角色信息' }).parentElement!.classList.contains('left-2')).toBe(true);
+  expectCustomCardLayout(card, true);
   fireEvent.click(download);
   await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(saved.previewImage, 'character-' + custom.name + '.png', false));
   fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
@@ -78,7 +77,7 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   expect(screen.getByRole('button', { name: '复制角色提示词' })).toBeTruthy();
   const imageCopies = screen.getAllByRole('button', { name: '复制图片' });
   expect(imageCopies).toHaveLength(3);
-  imageCopies.forEach(button => expect(button.parentElement!.className).toContain('absolute right-2 top-2'));
+  imageCopies.forEach(button => expect(button.closest('.right-2')!.className).toContain('absolute right-2 top-2'));
   const desktop = screen.getByRole('button', { name: '关闭角色大图' }).closest('[role="dialog"]')!;
   fireEvent.click(desktop.querySelector('.press-reveal-surface')!);
   expect(screen.queryByRole('button', { name: '关闭角色大图' })).toBeNull();
@@ -100,6 +99,27 @@ function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = []) {
     ? render(<ArtistLibrary artistsData={[]} notify={notify} onNavigateToPlayground={navigate} />)
     : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
   return { ...view, navigate, onCreate, onSelect, onUpdateChain, onDelete, notify };
+}
+
+function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
+  const remove = within(card).getByRole('button', { name: '删除这个自定义角色' });
+  const edit = within(card).getByRole('button', { name: '编辑自定义角色信息' });
+  const left = remove.parentElement!;
+  const right = edit.parentElement!;
+  expect(left.className).toContain('absolute left-2 top-2');
+  expect(left.classList.contains('hover-reveal-md')).toBe(true);
+  expect(within(left).getAllByRole('button')).toEqual([remove]);
+  expect(right.className).toContain('absolute right-2 top-2');
+  for (const token of ['hover-reveal-md', 'flex', 'flex-col', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
+  expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label')))
+    .toEqual(hasPreview ? ['下载图片', '复制图片', '编辑自定义角色信息'] : ['编辑自定义角色信息']);
+  for (const button of within(right).getAllByRole('button')) {
+    for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'rounded-full', 'border-white/60', 'bg-black/45']) expect(button.classList.contains(token)).toBe(true);
+  }
+  const favorite = within(card).getByRole('button', { name: '收藏' });
+  expect(card.querySelector('.mobile-gallery-frame')!.contains(favorite)).toBe(false);
+  expect(within(card).getByRole('heading').parentElement!.contains(favorite)).toBe(true);
+  expect(favorite.classList.contains('hover-reveal-touch')).toBe(true);
 }
 
 beforeEach(() => {
@@ -342,7 +362,7 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   await screen.findByText(/正在浏览随机抽取的 1 位角色/);
   const edit = screen.getByRole('button', { name: '编辑自定义角色信息' });
   expect(edit.className).not.toContain('md:hidden');
-  expect(edit.classList.contains('hover-reveal-md')).toBe(true);
+  expectCustomCardLayout(edit.closest('article')!, false);
   fireEvent.click(edit);
   expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
   expect(p.onSelect).not.toHaveBeenCalled();
@@ -361,8 +381,10 @@ it.each<Kind>(['artist', 'character'])('%s 手机卡片长按显露收藏，松�
   const card = await screen.findByRole('button', { name: `选择${kind === 'artist' ? '画师' : '角色'}：${kind === 'artist' ? entry.name : entry.chinese}` });
   longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
   const favorite = within(card).getByRole('button', { name: '收藏' });
+  expect(favorite.parentElement!.className).toContain('absolute left-2 top-2');
+  for (const token of ['mobile-size-locked', '!h-11', '!w-11', 'md:!h-8', 'md:!w-8', 'border-white/60', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
   expect(favorite.classList.contains('hover-reveal-touch')).toBe(true); fireEvent.click(favorite);
-  expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy(); expect(card.getAttribute('aria-pressed')).toBe('false');
+  expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
 });
 it('自定义角色长按显露编辑和收藏，松手不打开图或选择；编辑只走信息窗口', () => {
   renderLibrary('character', 390, [custom]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
@@ -374,14 +396,16 @@ it('自定义角色长按显露编辑和收藏，松手不打开图或选择；�
 it.each([
   { width: 1280, previewImage: undefined }, { width: 390, previewImage: undefined },
   { width: 1280, previewImage: '/synthetic.png' }, { width: 390, previewImage: '/synthetic.png' },
-])('宽度 $width、封面 $previewImage 的自定义角色有左上红色删除，词库角色没有；取消不删除', async ({ width, previewImage }) => {
+])('宽度 $width、封面 $previewImage 的自定义角色沿用风格串按钮布局，词库角色不可删除；取消不删除', async ({ width, previewImage }) => {
   const p = renderLibrary('character', width, [{ ...custom, previewImage }]);
   const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
   if (width === 390) { longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); }
   const remove = within(card).getByRole('button', { name: '删除这个自定义角色' });
-  expect(remove.parentElement!.className).toContain('absolute left-2 top-2');
-  expect(remove.parentElement!.classList.contains('hover-reveal-touch')).toBe(true);
+  expectCustomCardLayout(card, Boolean(previewImage));
   for (const token of ['bg-red-500', 'text-white', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(remove.classList.contains(token)).toBe(true);
+  fireEvent.click(within(card).getByRole('button', { name: '收藏' }));
+  expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true');
+  expect(card.getAttribute('aria-pressed')).toBe('false');
   const catalog = await screen.findByRole('button', { name: '选择角色：角色甲' });
   expect(within(catalog).queryByRole('button', { name: '删除这个自定义角色' })).toBeNull();
   confirmAction.mockResolvedValueOnce(false);

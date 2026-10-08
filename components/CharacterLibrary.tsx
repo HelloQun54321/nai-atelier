@@ -19,12 +19,12 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, LoaderCircle, Plus, Tag, UserRound } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
+import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Tag, Trash2, UserRound } from 'lucide-react';
+import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
@@ -106,16 +106,24 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? <>
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
                     <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
-                    <ImageShareOverlay imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} />
-                  </> : (
+                  ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-meta">{t("暂无封面")}</span>
                     </div>
                   )}
-                  <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} onDelete={card.kind === 'custom' && card.chain ? () => void deleteCustom(card) : undefined} />
+                  {card.kind === 'catalog' && <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} />}
+                  {card.kind === 'custom' && card.chain && <>
+                    <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
+                      <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                    <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+                      {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} />}
+                      <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
+                    </div>
+                  </>}
                   {selected && (
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80" />
                   )}
@@ -128,6 +136,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     ) : (
                       <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
                     )}
+                    {card.kind === 'custom' && <FavoriteButton active={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(card); }} className="hover-reveal-touch ml-1 flex-shrink-0" />}
                   </div>
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
