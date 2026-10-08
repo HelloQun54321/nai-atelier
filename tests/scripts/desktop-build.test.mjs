@@ -63,7 +63,7 @@ test('安装向导允许选择目录、保留用户数据，原生检查在解�
   assert.equal(builder.nsis.allowToChangeInstallationDirectory, true);
   assert.equal(builder.nsis.deleteAppDataOnUninstall, false);
   assert.deepEqual(builder.win.target, [{ target: 'nsis', arch: ['x64'] }]);
-  assert.deepEqual(builder.publish, { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'prerelease' });
+  assert.deepEqual(builder.publish, { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'release' });
   const installer = await readFile(new URL('../../desktop/installer.nsh', import.meta.url), 'utf8');
   for (const name of ['install-prerequisites.ps1', 'uninstall-integration.ps1']) {
     assert.equal(builder.extraResources.some(entry => entry.from === `desktop/${name}`), false);

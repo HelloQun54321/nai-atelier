@@ -10,7 +10,7 @@ export default {
   ],
   asar: true,
   npmRebuild: false,
-  publish: { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'prerelease' },
+  publish: { provider: 'github', owner: 'HelloQun54321', repo: 'nai-atelier', releaseType: 'release' },
   electronVersion: '44.5.1',
   electronLanguages: ['zh-CN', 'en-US'],
   win: {
