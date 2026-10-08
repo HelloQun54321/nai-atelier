@@ -33,7 +33,7 @@ import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
-import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, sourceIcon, splitTags } from './InspirationShared';
+import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, RatingStars, sourceIcon, splitTags } from './InspirationShared';
 
 interface Props {
   item: Inspiration;
@@ -148,6 +148,7 @@ export const InspirationDetail: React.FC<Props> = ({
         negativePrompt: draft.negativePrompt || '',
         params: draft.params || DEFAULT_PARAMS,
         mode: 'replace',
+        targetMode: 'text-to-image',
         sourceInspirationId: draft.id,
       };
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload));
@@ -308,13 +309,16 @@ export const InspirationDetail: React.FC<Props> = ({
                 value={draft.title}
                 onChange={e => update('title', e.target.value)}
                 onBlur={() => {
-                  if (draft.title.trim() && draft.title !== item.title) {
+                  if (draft.title.trim()) {
                     void updateAndPersist('title', draft.title.trim());
                   }
                 }}
                 placeholder={t("灵感标题...")}
                 className="h-8 w-full rounded-lg border border-transparent bg-transparent px-1 text-base font-bold text-gray-950 transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-white dark:hover:border-gray-800 dark:focus:bg-gray-900 sm:text-lg"
               />
+              <div role="group" aria-label={t("评分")}>
+                <RatingStars value={draft.rating || 0} onChange={editable ? value => { void updateAndPersist('rating', value); } : undefined} />
+              </div>
             </div>
 
             <div className="flex flex-none items-center gap-2">
@@ -340,13 +344,19 @@ export const InspirationDetail: React.FC<Props> = ({
                     {t("复制")}</button>
                 )}
               </div>
-              <div className="custom-scrollbar max-h-44 overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 select-text dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200">
-                {draft.prompt || <span className="text-gray-400 italic">{t("（无提示词）")}</span>}
-              </div>
+              <textarea
+                aria-label={t("提示词")}
+                readOnly={!editable}
+                value={draft.prompt || ''}
+                onChange={event => update('prompt', event.target.value)}
+                onBlur={() => void updateAndPersist('prompt', draft.prompt)}
+                placeholder={t("（无提示词）")}
+                className="custom-scrollbar min-h-24 max-h-44 w-full resize-y overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200"
+              />
             </div>
 
             {/* 负面提示词（默认轻量折叠单行，需要时才展开） */}
-            {draft.negativePrompt ? (
+            {(draft.negativePrompt || editable) ? (
               <details className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
                 <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
                   <span className="flex items-center gap-1.5">
@@ -357,6 +367,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={!draft.negativePrompt}
                       onClick={e => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -368,9 +379,14 @@ export const InspirationDetail: React.FC<Props> = ({
                     <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
                   </div>
                 </summary>
-                <div className="custom-scrollbar mt-2 max-h-28 overflow-y-auto border-t border-gray-100 pt-2 font-mono text-xs leading-relaxed text-gray-700 select-text dark:border-gray-800/50 dark:text-gray-300">
-                  {draft.negativePrompt}
-                </div>
+                <textarea
+                  aria-label={t("负面提示词")}
+                  readOnly={!editable}
+                  value={draft.negativePrompt || ''}
+                  onChange={event => update('negativePrompt', event.target.value)}
+                  onBlur={() => void updateAndPersist('negativePrompt', draft.negativePrompt || '')}
+                  className="custom-scrollbar mt-2 min-h-16 max-h-28 w-full resize-y overflow-y-auto rounded-lg border border-gray-100 bg-transparent p-2 font-mono text-xs leading-relaxed text-gray-700 outline-none focus:border-indigo-400 dark:border-gray-800/50 dark:text-gray-300"
+                />
               </details>
             ) : null}
 
@@ -453,11 +469,7 @@ export const InspirationDetail: React.FC<Props> = ({
                   disabled={!editable}
                   value={draft.notes}
                   onChange={e => update('notes', e.target.value)}
-                  onBlur={() => {
-                    if (draft.notes !== item.notes) {
-                      void updateAndPersist('notes', draft.notes || '');
-                    }
-                  }}
+                  onBlur={() => void updateAndPersist('notes', draft.notes || '')}
                   className="min-h-16 w-full resize-y rounded-xl border border-gray-100 bg-gray-50/80 p-2.5 text-xs leading-relaxed text-gray-800 outline-none transition focus:border-indigo-400 focus:bg-white dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200 dark:focus:bg-gray-900"
                 />
               ) : editable ? (
@@ -505,7 +517,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
-                <ParamsViewer params={draft.params || DEFAULT_PARAMS} notify={notify} />
+                {draft.params ? <ParamsViewer params={draft.params} notify={notify} /> : <p className="text-xs text-gray-400">{t("未记录生成参数")}</p>}
               </div>
             </details>
 

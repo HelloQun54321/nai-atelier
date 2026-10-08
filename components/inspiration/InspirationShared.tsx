@@ -51,6 +51,6 @@ export const CollectionButton: React.FC<{
 
 export const RatingStars: React.FC<{ value: number; onChange?: (value: number) => void; compact?: boolean }> = ({ value, onChange, compact }) => (
   <div className="flex items-center gap-0.5" aria-label={t("{0} 星", [value])}>
-    {[1, 2, 3, 4, 5].map(star => <button key={star} type="button" disabled={!onChange} onClick={event => { event.stopPropagation(); onChange?.(value === star ? 0 : star); }} className={`${compact ? 'h-5 w-5' : 'h-8 w-8'} flex items-center justify-center disabled:cursor-default`} aria-label={t("{0} 星", [star])}><Star className={`${compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} ${star <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-700'}`} /></button>)}
+    {[1, 2, 3, 4, 5].map(star => <button key={star} type="button" disabled={!onChange} aria-pressed={value === star} onClick={event => { event.stopPropagation(); onChange?.(value === star ? 0 : star); }} className={`mobile-touch ${compact ? 'h-5 w-5' : 'h-8 w-8'} flex items-center justify-center disabled:cursor-default`} aria-label={t("{0} 星", [star])}><Star className={`${compact ? 'h-3.5 w-3.5' : 'h-5 w-5'} ${star <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300 dark:text-gray-700'}`} /></button>)}
   </div>
 );

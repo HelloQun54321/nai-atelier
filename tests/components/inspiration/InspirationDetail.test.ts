@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCleanSharedImages } from '../../../services/imageSharing';
 import { InspirationDetail } from '../../../components/inspiration/InspirationDetail';
 import { Inspiration, InspirationBoard, User } from '../../../types';
 import { db } from '../../../services/dbService';
 import { readAgentPage } from '../../../services/agentWorkspace';
+import { IMPORT_SESSION_KEY } from '../../../services/metadataService';
+import { DEFAULT_PARAMS } from '../../../components/inspiration/InspirationShared';
+import { setLanguage, t } from '../../../services/i18n';
 
 vi.mock('../../../services/dbService', () => ({
   db: {
@@ -21,7 +24,7 @@ vi.mock('../../../components/SmartImage', () => ({
 }));
 
 vi.mock('../../../components/ParamsViewer', () => ({
-  ParamsViewer: () => React.createElement('div', { 'data-testid': 'params-viewer' }, '参数视图'),
+  ParamsViewer: ({ params }: any) => React.createElement('div', { 'data-testid': 'params-viewer', 'data-params': JSON.stringify(params) }, '参数视图'),
 }));
 
 vi.mock('../../../components/ImageTaggerPanel', () => ({
@@ -48,10 +51,111 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   });
 }
 
-beforeEach(() => { localStorage.clear(); });
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
 afterEach(() => {
   cleanup();
+  setLanguage('zh-CN');
   vi.clearAllMocks();
+});
+
+it('评分可即时保存，再点当前星级可清零，状态与手机触控区域明确', async () => {
+  const onRefresh = vi.fn(async () => {});
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh, onOpenItem: vi.fn() }));
+  const rating = screen.getByRole('group', { name: '评分' });
+  const star = within(rating).getByRole('button', { name: '5 星' });
+  expect(star.classList.contains('mobile-touch')).toBe(true);
+  fireEvent.click(star);
+  await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { rating: 5 });
+  expect(star.getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(star);
+  await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(2));
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { rating: 0 });
+  expect(star.getAttribute('aria-pressed')).toBe('false');
+});
+
+it('提示词失焦保存原文，允许清空；空负面词仍能添加并在导入时使用当前内容', async () => {
+  const item = { ...mockItem, negativePrompt: undefined };
+  render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  const prompt = screen.getByLabelText('提示词');
+  fireEvent.change(prompt, { target: { value: '  rain, [blue hair]  ' } });
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+  fireEvent.blur(prompt);
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { prompt: '  rain, [blue hair]  ' });
+  const negative = screen.getByLabelText('负面提示词');
+  fireEvent.change(negative, { target: { value: 'bad hands' } }); fireEvent.blur(negative);
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { negativePrompt: 'bad hands' });
+  fireEvent.change(prompt, { target: { value: '' } }); fireEvent.blur(prompt);
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { prompt: '' });
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  await waitFor(() => expect(db.markInspirationUsed).toHaveBeenCalledWith('insp-1'));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: '', negativePrompt: 'bad hands', targetMode: 'text-to-image', sourceInspirationId: 'insp-1' });
+});
+
+it('提示词保存失败显示错误并保留草稿，重新失焦可重试', async () => {
+  vi.mocked(db.updateInspiration).mockRejectedValueOnce(new Error('合成写入失败'));
+  const notify = vi.fn(), onRefresh = vi.fn(async () => {});
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify, onClose: vi.fn(), onRefresh, onOpenItem: vi.fn() }));
+  const prompt = screen.getByLabelText('提示词') as HTMLTextAreaElement;
+  fireEvent.change(prompt, { target: { value: 'manual edit' } }); fireEvent.blur(prompt);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成写入失败', 'error'));
+  expect(prompt.value).toBe('manual edit'); expect(onRefresh).not.toHaveBeenCalled();
+  fireEvent.blur(prompt);
+  await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { prompt: 'manual edit' });
+});
+
+it('修改后恢复原文字仍会保存，标题、备注和正负词遵循同一失焦规则', async () => {
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  const fields = [
+    ['title', screen.getByLabelText('灵感标题'), mockItem.title],
+    ['prompt', screen.getByLabelText('提示词'), mockItem.prompt],
+    ['negativePrompt', screen.getByLabelText('负面提示词'), mockItem.negativePrompt!],
+    ['notes', screen.getByDisplayValue(mockItem.notes!), mockItem.notes!],
+  ] as const;
+  for (const [key, input, original] of fields) {
+    fireEvent.change(input, { target: { value: 'temporary edit' } }); fireEvent.blur(input);
+    await waitFor(() => expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { [key]: 'temporary edit' }));
+    fireEvent.change(input, { target: { value: original } }); fireEvent.blur(input);
+    await waitFor(() => expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { [key]: original }));
+  }
+});
+
+it('非所有者的评分禁用、提示词只读，失焦不写入', () => {
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: { ...mockUser, id: 'other-user' }, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  for (const label of ['提示词', '负面提示词']) {
+    const input = screen.getByLabelText(label) as HTMLTextAreaElement;
+    expect(input.readOnly).toBe(true); fireEvent.blur(input);
+  }
+  expect(within(screen.getByRole('group', { name: '评分' })).getAllByRole('button').every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+});
+
+it('无参数的灵感显示未记录，导入时才使用默认参数；已有参数保持原样展示和导入', async () => {
+  const props = { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() };
+  const view = render(React.createElement(InspirationDetail, props));
+  expect(screen.queryByTestId('params-viewer')).toBeNull();
+  expect(screen.getByText('未记录生成参数')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  await waitFor(() => expect(db.markInspirationUsed).toHaveBeenCalledOnce());
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!).params).toEqual(DEFAULT_PARAMS);
+  const params = { ...DEFAULT_PARAMS, width: 1152, height: 768, seed: 54321, characters: [{ id: 'character', prompt: 'blue hair', negativePrompt: 'red hair', x: 0.3, y: 0.7 }] };
+  const item = { ...mockItem, params };
+  view.rerender(React.createElement(InspirationDetail, { ...props, item, items: [item] }));
+  expect(screen.queryByText('未记录生成参数')).toBeNull();
+  expect(JSON.parse(screen.getByTestId('params-viewer').dataset.params!)).toEqual(params);
+  fireEvent.click(screen.getByRole('button', { name: '更多底图模式' }));
+  fireEvent.click(screen.getByRole('button', { name: '底图：图生图' }));
+  await waitFor(() => expect(db.markInspirationUsed).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ params, mode: 'image-edit', imageEditOperation: 'image-to-image', baseImageUrl: mockItem.imageUrl });
+});
+
+it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const)('%s 的评分和未知参数跟随语言，创作原文保留', language => {
+  setLanguage(language);
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  expect(screen.getByRole('group', { name: t('评分') })).toBeTruthy();
+  expect(screen.getByText(t('未记录生成参数'))).toBeTruthy();
+  expect((screen.getByLabelText(t('提示词')) as HTMLTextAreaElement).value).toBe(mockItem.prompt);
 });
 
 const mockUser: User = {

@@ -1,13 +1,21 @@
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspirationGallery } from '../../components/InspirationGallery';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
 import { copySharedImage } from '../../services/imageSharing';
+import { api } from '../../services/api';
+import { extractMetadata } from '../../services/metadataService';
+import { NAI_QUALITY_TAGS } from '../../services/promptUtils';
+vi.mock('../../services/api', async original => {
+  const actual = await original<typeof import('../../services/api')>();
+  return { ...actual, api: { ...actual.api, uploadFile: vi.fn(async () => ({ url: '/api/assets/synthetic.png' })) } };
+});
+vi.mock('../../services/metadataService', async original => ({ ...await original<typeof import('../../services/metadataService')>(), extractMetadata: vi.fn(async () => null) }));
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn() }));
 
@@ -20,6 +28,8 @@ vi.mock('../../services/dbService', () => ({
     updateInspiration: vi.fn(),
     updateInspirationBoard: vi.fn(),
     deleteInspirationBoard: vi.fn(),
+    saveInspiration: vi.fn(async () => {}),
+    bulkUpdateInspirations: vi.fn(async () => {}),
   },
 }));
 
@@ -48,6 +58,8 @@ vi.mock('../../components/useKeepAliveScrollRestore', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks(); confirmAction.mockResolvedValue(true);
+  vi.mocked(extractMetadata).mockReset().mockResolvedValue(null);
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); static revokeObjectURL = vi.fn(); });
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
@@ -281,4 +293,115 @@ it('手机长按灵感封面显露选择入口，松手不打开详情，选择�
   expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(within(card).getByRole('button', { name: '选择灵感' }));
   expect(screen.getByText('已选 1 项')).toBeTruthy();
+});
+
+it.each(['moonlight', ''])('手动上传保留全局词「%s」的完整参数与角色，修改文字不丢参数', async initialPrompt => {
+  vi.mocked(extractMetadata).mockResolvedValue(JSON.stringify({
+    model: 'nai-diffusion-4-5-full', width: 1152, height: 768, steps: 24, scale: 6, seed: 54321,
+    sampler: 'k_dpmpp_2m', cfg_rescale: 0.2,
+    v4_prompt: { use_coords: true, caption: { base_caption: `${initialPrompt}${NAI_QUALITY_TAGS}`, char_captions: [{ char_caption: 'blue hair', centers: [{ x: 0.3, y: 0.7 }] }] } },
+    v4_negative_prompt: { caption: { base_caption: 'bad anatomy', char_captions: [{ char_caption: 'red hair' }] } },
+  }));
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  const dialog = screen.getByRole('dialog', { name: '加入灵感库' });
+  const file = new File(['synthetic'], 'reference.png', { type: 'image/png' });
+  fireEvent.change(within(dialog).getByLabelText('上传灵感图片'), { target: { files: [file] } });
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入灵感库' }) as HTMLButtonElement).disabled).toBe(false));
+  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe(initialPrompt);
+  const savedPrompt = initialPrompt ? 'moonlight, rain' : '';
+  if (initialPrompt) fireEvent.change(within(dialog).getByLabelText('提示词'), { target: { value: savedPrompt } });
+  fireEvent.click(within(dialog).getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(db.saveInspiration).toHaveBeenCalledOnce());
+  expect(api.uploadFile).toHaveBeenCalledWith(file, 'inspirations');
+  expect(db.saveInspiration).toHaveBeenCalledWith(expect.objectContaining({
+    prompt: savedPrompt, negativePrompt: 'bad anatomy', imageUrl: '/api/assets/synthetic.png',
+    params: expect.objectContaining({ model: 'nai-diffusion-4-5-full', width: 1152, height: 768, steps: 24, scale: 6,
+      seed: 54321, sampler: 'k_dpmpp_2m', cfgRescale: 0.2, qualityToggle: true, useCoords: true,
+      characters: [expect.objectContaining({ prompt: 'blue hair', negativePrompt: 'red hair', x: 0.3, y: 0.7 })] }),
+  }));
+});
+
+it('换成无元数据图片清除旧配置，旧图片的迟到解析不覆盖当前图，也不伪造默认参数', async () => {
+  let resolve!: (value: string | null) => void;
+  vi.mocked(extractMetadata).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  const dialog = screen.getByRole('dialog', { name: '加入灵感库' });
+  const input = within(dialog).getByLabelText('上传灵感图片');
+  fireEvent.change(input, { target: { files: [new File(['first'], 'first.png', { type: 'image/png' })] } });
+  expect((within(dialog).getByRole('button', { name: '正在读取图片…' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).matches(':disabled')).toBe(true);
+  const current = new File(['current'], 'current.jpg', { type: 'image/jpeg' });
+  fireEvent.change(input, { target: { files: [current] } });
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入灵感库' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.change(within(dialog).getByLabelText('提示词'), { target: { value: 'manual prompt' } });
+  await act(async () => resolve(JSON.stringify({ prompt: 'old prompt', width: 1024, height: 1024, seed: 1 })));
+  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('manual prompt');
+  fireEvent.click(within(dialog).getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(db.saveInspiration).toHaveBeenCalledWith(expect.objectContaining({ title: 'current', prompt: 'manual prompt', negativePrompt: '', params: undefined })));
+  expect(api.uploadFile).toHaveBeenCalledWith(current, 'inspirations');
+});
+
+it('换图清除已解析参数，保存失败保留当前图片和解析结果供重试', async () => {
+  vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: 'first', width: 1024, height: 1024, seed: 10 }));
+  vi.mocked(db.saveInspiration).mockRejectedValueOnce(new Error('合成保存失败'));
+  const notify = vi.fn();
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify }));
+  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  const dialog = screen.getByRole('dialog', { name: '加入灵感库' });
+  const input = within(dialog).getByLabelText('上传灵感图片');
+  fireEvent.change(input, { target: { files: [new File(['first'], 'first.png', { type: 'image/png' })] } });
+  await waitFor(() => expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('first'));
+  fireEvent.click(within(dialog).getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成保存失败', 'error'));
+  expect(db.saveInspiration).toHaveBeenLastCalledWith(expect.objectContaining({ params: expect.objectContaining({ seed: 10 }) }));
+  expect(screen.getByRole('dialog', { name: '加入灵感库' })).toBe(dialog);
+  fireEvent.change(input, { target: { files: [new File(['next'], 'next.jpg', { type: 'image/jpeg' })] } });
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入灵感库' }) as HTMLButtonElement).disabled).toBe(false));
+  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('');
+  fireEvent.click(within(dialog).getByRole('button', { name: '加入灵感库' }));
+  await waitFor(() => expect(db.saveInspiration).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'next', params: undefined })));
+});
+
+it.each([390, 1280])('宽度 %s 可归档、查看已归档并恢复，归档不会删除资料', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  const card = screen.getByText(mockInspirations[0].title).closest('article')!;
+  fireEvent.click(within(card).getByRole('button', { name: '选择灵感' }));
+  fireEvent.click(screen.getByRole('button', { name: '归档' }));
+  await waitFor(() => expect(props.onRefresh).toHaveBeenCalledOnce());
+  expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(['insp-1'], { archived: true });
+  const archived = mockInspirations.map(item => item.id === 'insp-1' ? { ...item, archived: true } : item);
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: archived }));
+  expect(screen.queryByText(mockInspirations[0].title)).toBeNull();
+  if (width < 768) {
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    const filter = screen.getByRole('dialog', { name: '筛选灵感' });
+    fireEvent.change(within(filter).getByRole('combobox', { name: '分类' }), { target: { value: 'archived' } });
+    fireEvent.click(within(filter).getByRole('button', { name: '查看 1 条结果' }));
+  } else fireEvent.click(screen.getByRole('button', { name: /已归档\s+1/ }));
+  expect(screen.queryByText(mockInspirations[1].title)).toBeNull();
+  fireEvent.click(within(screen.getByText(mockInspirations[0].title).closest('article')!).getByRole('button', { name: '选择灵感' }));
+  fireEvent.click(screen.getByRole('button', { name: '恢复到资料库' }));
+  await waitFor(() => expect(props.onRefresh).toHaveBeenCalledTimes(2));
+  expect(db.bulkUpdateInspirations).toHaveBeenLastCalledWith(['insp-1'], { archived: false });
+  view.rerender(React.createElement(InspirationGallery, props));
+  expect(screen.queryByText(mockInspirations[0].title)).toBeNull();
+  expect(screen.getByRole('heading', { name: '已归档' })).toBeTruthy();
+  expect(confirmAction).not.toHaveBeenCalled();
+});
+
+it('归档失败保留条目和选择，显示失败且不误报成功', async () => {
+  vi.mocked(db.bulkUpdateInspirations).mockRejectedValueOnce(new Error('合成归档失败'));
+  const notify = vi.fn(), refresh = vi.fn(async () => {});
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: refresh, notify }));
+  fireEvent.click(within(screen.getByText(mockInspirations[0].title).closest('article')!).getByRole('button', { name: '选择灵感' }));
+  fireEvent.click(screen.getByRole('button', { name: '归档' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成归档失败', 'error'));
+  expect(screen.getByText(mockInspirations[0].title)).toBeTruthy();
+  expect(screen.getByText('已选 1 项')).toBeTruthy();
+  expect(refresh).not.toHaveBeenCalled();
+  expect(notify).not.toHaveBeenCalledWith('已归档');
 });
