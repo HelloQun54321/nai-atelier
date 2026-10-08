@@ -1119,7 +1119,7 @@ export const extractNaiImagesPerPercent = text => {
 };
 
 export const extractNaiCostCoefficients = text => {
-  const m = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+\)/);
+  const m = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+(?:\*\w+)?\)/);
   if (!m) return null;
   const costCoefficientArea = Number(m[1]);
   const costCoefficientSteps = Number(m[2]);
@@ -1136,7 +1136,7 @@ export const extractNaiFreeTierLimits = text => {
 export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{let (\w+)=\{\.\.\.(\w+)\};[\s\S]{0,3500}?\w+\(\{price:\(0,\w+\.\w+\)\(\1,\w+,\w+\)\+\w+,additionalPrice:\w+\}\)\}/)?.[0] || null;
 
 export const extractNaiCostCalculator = text => {
-  const formula = text.match(/Math\.ceil\(\d+(?:\.\d+)?e-?\d+\*\w+\+\d+(?:\.\d+)?e-?\d+\*\w+\*\w+\)/);
+  const formula = text.match(/Math\.ceil\(\d+(?:\.\d+)?e-?\d+\*\w+\+\d+(?:\.\d+)?e-?\d+\*\w+\*\w+(?:\*\w+)?\)/);
   if (!formula) return null;
   const start = [...text.slice(0, formula.index).matchAll(/let \w+=function\(\w+,\w+,\w+\)\{/g)].at(-1)?.index;
   return start === undefined ? null : text.slice(start).match(/^let \w+=(function\(\w+,\w+,\w+\)\{[\s\S]*?return \w+(?:>\w+\.\w+\?-3:\w+)?\*\w+\})/)?.[1] || null;
@@ -1149,7 +1149,7 @@ export const extractNaiBillingRules = text => {
   const variable = free[1];
   const clauses = free[2].split('&&');
   if (!clauses.every(clause => new RegExp(`^(?:!${variable}\\.(?:characterRef|image|mask)|${variable}\\.width\\*${variable}\\.height<=\\d+|${variable}\\.steps<=\\d+)$`).test(clause))) return null;
-  const formula = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+\)\*\(\w+\?([\d.]+):\w+\?([\d.]+):1\)/);
+  const formula = text.match(/Math\.ceil\((\d+(?:\.\d+)?e-?\d+)\*\w+\+(\d+(?:\.\d+)?e-?\d+)\*\w+\*\w+(?:\*(\w+))?\)\*\(\w+\?([\d.]+):\w+\?([\d.]+):1\)/);
   if (!formula) return null;
   const calculator = extractNaiCostCalculator(text);
   if (!calculator || /\w+\+=/.test(calculator) || [...calculator.matchAll(/\w+-=/g)].length !== 1) return null;
@@ -1172,13 +1172,32 @@ export const extractNaiBillingRules = text => {
   for (const match of multipliers) {
     modelMultipliers[match[1]] = Number(match[2]);
   }
+  const modelStepMultipliers = {};
+  if (formula[3]) {
+    // 新模型的系数只作用于步数项，必须在第一次 ceil 前应用，不能并入整体系数。
+    const declaration = calculator.match(/let (\w+)=arguments\.length>5&&void 0!==arguments\[5\]\?arguments\[5\]:1,\w+=\w+\*\w+;return /);
+    const adjustment = calculator.match(/\}\(\w+,\w+,\w+,\w+,\w+&&\w+,function\((\w+)\)\{switch\(\1\)\{([^{}]+)default:return 1\}\}\((\w+)\)\)/);
+    if (declaration?.[1] !== formula[3] || !adjustment
+      || adjustment[3] !== calculator.match(/^function\(\w+,\w+,(\w+)\)/)?.[1]
+      || !calculator.includes(declaration[0] + formula[0]) || !calculator.includes(formula[0] + adjustment[0])) return null;
+    const branches = [...adjustment[2].matchAll(/((?:case [\w.]+:)+)return 1\/([\d.]+);/g)];
+    if (!branches.length || branches.map(branch => branch[0]).join('') !== adjustment[2]) return null;
+    for (const branch of branches) {
+      for (const match of branch[1].matchAll(/case ([\w.]+):/g)) {
+        const model = officialModelEnumToId(match[1]);
+        if (!model || Object.hasOwn(modelStepMultipliers, model)) return null;
+        modelStepMultipliers[model] = 1 / Number(branch[2]);
+      }
+    }
+  }
   const rules = {
     minimumCost: Number(minimum[1]), freeSamples: Number(freeSamples[1]),
     freeImageToImage: !clauses.includes(`!${variable}.image`),
     freeInpainting: !clauses.includes(`!${variable}.mask`),
     freeWithCharacterReference: true,
     modelMultipliers,
-    smeaMultiplier: Number(formula[4]), smeaDynamicMultiplier: Number(formula[3]),
+    modelStepMultipliers,
+    smeaMultiplier: Number(formula[5]), smeaDynamicMultiplier: Number(formula[4]),
     freeVibeCount: Number(vibe[4]), extraVibeCost: Number(vibe[2]),
     characterReferenceCost: Number(reference[2]), vibeEncodingCost: Number(encoding[1]),
   };
@@ -1186,20 +1205,13 @@ export const extractNaiBillingRules = text => {
 };
 
 /**
- * 官方模型能力表的结构是 switch-case 分组：`case"id":case"id":{...opusUsageLimit:!0}`，
- * 每个 case 组以一个 opusUsageLimit 结尾，据此归组得到全量模型清单与受限模型清单。
+ * 官方模型能力按 switch-case 的返回对象归组，新变体可继承已识别模型。
  */
 export const extractNaiModelCapabilities = text => {
-  const events = [...text.matchAll(/case"(nai-diffusion-[^"]+)":/g)]
-    .map(m => ({ index: m.index, label: m[1] }));
-  const limits = [...text.matchAll(/opusUsageLimit:(!0|!1)/g)]
-    .map(m => ({ index: m.index, limited: m[1] === '!0' }));
   const models = [];
   const usageLimitedModels = [];
   const streamedModels = [];
   const modelCapabilities = {};
-  let buffered = [];
-  let bufferedStart = 0;
   const readBoolean = (source, key, fallback = false) => {
     const match = source.match(new RegExp(`${key}:(!0|!1)`));
     return match ? match[1] === '!0' : fallback;
@@ -1208,31 +1220,32 @@ export const extractNaiModelCapabilities = text => {
     const match = source.match(new RegExp(`${key}:(\\d+)`));
     return match ? Number(match[1]) : fallback;
   };
-  for (const event of [...events, ...limits].sort((a, b) => a.index - b.index)) {
-    if (event.label) {
-      if (!buffered.length) bufferedStart = event.index;
-      buffered.push(event.label);
-      continue;
-    }
-    const source = text.slice(bufferedStart, event.index);
-    const streamed = /streamedResponses:!0/.test(source);
-    for (const label of buffered) {
+  const addGroup = (cases, source, base = {}, limited = false) => {
+    const streamed = readBoolean(source, 'streamedResponses', base.supportsStreamedResponses);
+    for (const match of cases.matchAll(/case"(nai-diffusion-[^"]+)":/g)) {
+      const label = match[1];
       if (!models.includes(label)) models.push(label);
-      if (event.limited && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
+      if (readBoolean(source, 'opusUsageLimit', limited) && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
       if (streamed && !streamedModels.includes(label)) streamedModels.push(label);
       modelCapabilities[label] = {
-        supportsVibes: readBoolean(source, 'vibetransfer'),
-        supportsCharacterReferences: readBoolean(source, 'characterReferences'),
-        supportsCharacterReferenceInpainting: readBoolean(source, 'charRefInpainting'),
+        supportsVibes: readBoolean(source, 'vibetransfer', base.supportsVibes),
+        supportsCharacterReferences: readBoolean(source, 'characterReferences', base.supportsCharacterReferences),
+        supportsCharacterReferenceInpainting: readBoolean(source, 'charRefInpainting', base.supportsCharacterReferenceInpainting),
         supportsStreamedResponses: streamed,
-        supportsTransparentBackground: readBoolean(source, 'transparency'),
-        maxCharacters: readNumber(source, 'maxCharacters', 0),
-        freeformCharacterPosition: readBoolean(source, 'freeformCharacterPosition'),
+        supportsTransparentBackground: readBoolean(source, 'transparency', base.supportsTransparentBackground),
+        maxCharacters: readNumber(source, 'maxCharacters', base.maxCharacters),
+        freeformCharacterPosition: readBoolean(source, 'freeformCharacterPosition', base.freeformCharacterPosition),
         qualityPresets: [],
         ucPresets: [],
       };
     }
-    buffered = [];
+  };
+  for (const group of text.matchAll(/((?:case"[^"]+":)+)(?:return)?\{([^{}]*opusUsageLimit:![01][^{}]*)\}/g)) {
+    addGroup(group[1], group[2]);
+  }
+  for (const group of text.matchAll(/((?:case"[^"]+":)+)return\{\.\.\.\w+\("(nai-diffusion-[^"]+)"\),([^{}]*(?:fixedSettings:\{[^{}]*\})?)\}/g)) {
+    const base = modelCapabilities[group[2]];
+    if (base) addGroup(group[1], group[3], base, usageLimitedModels.includes(group[2]));
   }
   return { models, usageLimitedModels, streamedModels, modelCapabilities };
 };
@@ -1241,9 +1254,9 @@ const officialModelEnumToId = value => {
   const raw = String(value || '').replace(/^.*\./, '');
   const inpainting = /Inpainting$/i.test(raw);
   const base = inpainting ? raw.slice(0, -'Inpainting'.length) : raw;
-  const match = base.match(/^naiDiffusionv?(\d+)(?:_(\d+))?(Full|Curated)(Preview)?$/i);
+  const match = base.match(/^naiDiffusionv?(\d+)(?:_(\d+))?(Full|Curated)(Preview|Medium)?$/i);
   if (!match) return null;
-  return `nai-diffusion-${match[1]}${match[2] ? `-${match[2]}` : ''}-${match[3].toLowerCase()}${match[4] ? '-preview' : ''}${inpainting ? '-inpainting' : ''}`;
+  return `nai-diffusion-${match[1]}${match[2] ? `-${match[2]}` : ''}-${match[3].toLowerCase()}${match[4] ? `-${match[4].toLowerCase()}` : ''}${inpainting ? '-inpainting' : ''}`;
 };
 
 const findBalancedEnd = (text, start, open = '[', close = ']') => {
@@ -1390,7 +1403,8 @@ export const computeNaiRuntimeSync = text => {
     next.streamedModels = capabilities.streamedModels;
     health.extracted.push('streamedModels');
   } else health.missed.push('streamedModels');
-  if (Object.keys(capabilities.modelCapabilities).length && capabilities.models.every(id => capabilities.modelCapabilities[id])) {
+  if (Object.keys(capabilities.modelCapabilities).length && capabilities.models.every(id => capabilities.modelCapabilities[id])
+    && Object.keys(billing?.modelStepMultipliers || {}).every(id => capabilities.modelCapabilities[id])) {
     next.modelCapabilities = { ...DEFAULT_NAI_RUNTIME.modelCapabilities, ...capabilities.modelCapabilities };
     health.extracted.push('modelCapabilities');
   } else health.missed.push('modelCapabilities');

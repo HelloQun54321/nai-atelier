@@ -12,3 +12,9 @@ export const NAI_BILLING_BUNDLE = [
   'async(t,r,i,a,n,o,s,l,c,d,h)=>{let u={...a};let g=0;g+=await priceForEncoding(s);g+=(0,q.H_0)(s.length);l&&characterReferences&&l.length>0&&(!a.mask||charRefInpainting)&&(g+=5*l.length*u.n_samples);d({price:(0,q.GIT)(u,p,f)+g,additionalPrice:g})}',
   'async getPrice(e,t,r,i){return await this.getEncoding(e,r,i)?{exists:!0,price:0}:{exists:!1,price:2}}',
 ].join(';');
+
+/** 合成 V5 Medium 新算式，保留旧算式夹具验证兼容；不复制远端完整代码。 */
+export const NAI_MEDIUM_BILLING_BUNDLE = NAI_BILLING_BUNDLE.replace(
+  'let w=Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)*(r?1.4:n?1.2:1);',
+  'let w=function(e,t,a,n,r){let i=arguments.length>5&&void 0!==arguments[5]?arguments[5]:1,l=e*t;return Math.ceil(2951823174884865e-21*l+5753298233447344e-22*l*a*i)*(r?1.4:n?1.2:1)}(f,d,M,t,t&&n,function(e){switch(e){case r.oM.naiDiffusionV5FullMedium:case r.oM.naiDiffusionV5FullMediumInpainting:return 1/1.06521739;default:return 1}}(a));',
+);

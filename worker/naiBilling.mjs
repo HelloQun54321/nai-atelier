@@ -7,6 +7,7 @@ export const DEFAULT_NAI_BILLING = {
   // 官方费用调用没有传入重试判定用的 characterRef；参考另收附加费。
   freeWithCharacterReference: true,
   modelMultipliers: { v5: 1.5 },
+  modelStepMultipliers: {},
   smeaMultiplier: 1.2,
   smeaDynamicMultiplier: 1.4,
   freeVibeCount: 4,
@@ -19,7 +20,7 @@ export const DEFAULT_NAI_BILLING = {
 export const isNaiBillingRules = value => Boolean(value && typeof value === 'object')
   && Object.entries(DEFAULT_NAI_BILLING).every(([key, baseline]) => {
     const actual = value[key];
-    if (key === 'modelMultipliers') return actual && typeof actual === 'object' && !Array.isArray(actual)
+    if (key === 'modelMultipliers' || key === 'modelStepMultipliers') return actual && typeof actual === 'object' && !Array.isArray(actual)
       && Object.values(actual).every(multiplier => Number.isFinite(multiplier) && multiplier > 0);
     return typeof baseline === 'boolean' ? typeof actual === 'boolean' : Number.isFinite(actual) && actual >= 0;
   });
@@ -38,7 +39,8 @@ export const estimateNaiBilling = (parameters, model, runtime, opus = false, usa
     && (!referenceCount || rules.freeWithCharacterReference)
     && (!parameters.image || rules.freeImageToImage)
     && (!parameters.mask || rules.freeInpainting);
-  const raw = Math.ceil(runtime.costCoefficientArea * width * height + runtime.costCoefficientSteps * width * height * steps);
+  const stepMultiplier = rules.modelStepMultipliers[model] ?? 1;
+  const raw = Math.ceil(runtime.costCoefficientArea * width * height + runtime.costCoefficientSteps * width * height * steps * stepMultiplier);
   const family = String(model || '').match(/^nai-diffusion-(\d+)(?:-|$)/)?.[1];
   const multiplier = rules.modelMultipliers[`v${family}`] ?? 1;
   const smea = parameters.sm ? parameters.sm_dyn ? rules.smeaDynamicMultiplier : rules.smeaMultiplier : 1;

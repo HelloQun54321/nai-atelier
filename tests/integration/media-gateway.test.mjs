@@ -1,5 +1,5 @@
 import '../support/node-environment.mjs';
-import { NAI_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
+import { NAI_BILLING_BUNDLE, NAI_MEDIUM_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from '../../scripts/media-memory-cache.mjs';
 import { createDanbooruLimiter } from '../../scripts/danbooru-loading.mjs';
 
@@ -1154,6 +1154,19 @@ test('成本估算跟随同步的运行时常量', () => {
   }
 });
 
+test('模型能力只读取返回对象，Medium 继承额度、流式和角色能力而不串入其他 switch', () => {
+  const source = 'case"nai-diffusion-unrelated":return"v5";'
+    + 'case"nai-diffusion-5-full":return{streamedResponses:!0,transparency:!0,maxCharacters:32,freeformCharacterPosition:!0,opusUsageLimit:!0};'
+    + 'case"nai-diffusion-5-full-medium":case"nai-diffusion-5-full-medium-inpainting":return{...f("nai-diffusion-5-full"),cfgRescale:!1,fixedSettings:{steps:14,sampler:"k_euler_ancestral",ucPresetId:"heavy"}}';
+  const result = extractNaiModelCapabilities(source);
+  assert.deepEqual(result.models, ['nai-diffusion-5-full', 'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting']);
+  assert.deepEqual(result.usageLimitedModels, result.models);
+  assert.deepEqual(result.streamedModels, result.models);
+  assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium'].maxCharacters, 32);
+  assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium-inpainting'].supportsTransparentBackground, true);
+  assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium'].freeformCharacterPosition, true);
+});
+
 test('官方计费提取覆盖免费资格、模型倍率与附加费，结构失配必须告警', () => {
   assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), DEFAULT_NAI_RUNTIME.billing);
   const changed = NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.characterRef&&!e.image&&!e.mask&&')
@@ -1193,6 +1206,45 @@ test('共享计费覆盖多张、参考资格、Strength 舍入及同步规则�
   } finally { applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing }); }
 });
 
+test('官方 Medium 步数系数动态提取，未知算式不能伪装成健康', () => {
+  const stepMultipliers = { 'nai-diffusion-5-full-medium': 1 / 1.06521739,
+    'nai-diffusion-5-full-medium-inpainting': 1 / 1.06521739 };
+  assert.deepEqual(extractNaiCostCoefficients(NAI_MEDIUM_BILLING_BUNDLE), {
+    costCoefficientArea: DEFAULT_NAI_RUNTIME.costCoefficientArea,
+    costCoefficientSteps: DEFAULT_NAI_RUNTIME.costCoefficientSteps,
+  });
+  assert.deepEqual(extractNaiBillingRules(NAI_MEDIUM_BILLING_BUNDLE), {
+    ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: stepMultipliers,
+  });
+  assert.deepEqual(extractNaiBillingRules(NAI_MEDIUM_BILLING_BUNDLE.replace('1/1.06521739', '1/2')).modelStepMultipliers,
+    { 'nai-diffusion-5-full-medium': 0.5, 'nai-diffusion-5-full-medium-inpainting': 0.5 });
+  for (const broken of [
+    NAI_MEDIUM_BILLING_BUNDLE.replace('1/1.06521739', 'getPrice(e)'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('1/1.06521739', '1/0'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('default:return 1', 'default:return 2'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('*l*a*i', '*l*a*unknown'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('naiDiffusionV5FullMedium:', 'unknownModel:'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('default:return 1', 'case r.oM.naiDiffusionV5FullMedium:return 1/2;default:return 1'),
+    NAI_MEDIUM_BILLING_BUNDLE.replace('default:return 1}}(a)', 'default:return 1}}(e)'),
+  ]) {
+    assert.equal(extractNaiBillingRules(broken), null);
+    assert.ok(computeNaiRuntimeSync(broken).health.missed.includes('billing'));
+  }
+  const presets = extractNaiPromptPresets('case n.oM.naiDiffusionV5FullMedium:case n.oM.naiDiffusionV5FullMediumInpainting:return[{id:"standard",name:"standard",suffix:"very aesthetic"}]');
+  assert.deepEqual(Object.keys(presets.qualityPresets), Object.keys(stepMultipliers));
+  try {
+    applyNaiRuntimeOverride({ billing: extractNaiBillingRules(NAI_MEDIUM_BILLING_BUNDLE),
+      usageLimitedModels: [...DEFAULT_NAI_RUNTIME.usageLimitedModels, ...Object.keys(stepMultipliers)] });
+    for (const model of Object.keys(stepMultipliers)) {
+      const body = { model, parameters: { width: 832, height: 1216, steps: 28, n_samples: 1 } };
+      assert.equal(estimateNovelAiGenerationCost(body, false, false), 29);
+      assert.equal(estimateNovelAiGenerationCost(body, false, true), 0);
+      assert.equal(estimateNovelAiGenerationCost(body, true, true), 29);
+      assert.deepEqual(computeGenerationPersonalUsage(body, 0, false, getNaiRuntime(), true, true), { anlasDelta: 0, opusImagesDelta: 1 });
+    }
+  } finally { applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing, usageLimitedModels: DEFAULT_NAI_RUNTIME.usageLimitedModels }); }
+});
+
 test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   const fullBundle = [
     NAI_BILLING_BUNDLE,
@@ -1210,6 +1262,15 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   assert.equal(full.health.ok, true);
   assert.deepEqual(full.health.missed, []);
   assert.equal(full.runtime.imagesPerPercent, 17.3);
+  const medium = computeNaiRuntimeSync(fullBundle.replace(NAI_BILLING_BUNDLE, NAI_MEDIUM_BILLING_BUNDLE)
+    + ';case"nai-diffusion-5-full-medium":case"nai-diffusion-5-full-medium-inpainting":return{...f("nai-diffusion-5-full"),cfgRescale:!1,fixedSettings:{steps:14,sampler:"k_euler_ancestral",ucPresetId:"heavy"}}');
+  assert.deepEqual(medium.health.missed, []);
+  assert.equal(medium.runtime.billing.modelStepMultipliers['nai-diffusion-5-full-medium'], 1 / 1.06521739);
+
+  assert.ok(medium.runtime.usageLimitedModels.includes('nai-diffusion-5-full-medium'));
+  assert.ok(medium.runtime.streamedModels.includes('nai-diffusion-5-full-medium-inpainting'));
+  const missingInheritance = computeNaiRuntimeSync(fullBundle.replace(NAI_BILLING_BUNDLE, NAI_MEDIUM_BILLING_BUNDLE));
+  assert.ok(missingInheritance.health.missed.includes('modelCapabilities'));
 
   // 官方改版后一项都提取不到：健康标记为失效，运行时保持内置默认值。
   const broken = computeNaiRuntimeSync('console.log("redesigned site")');

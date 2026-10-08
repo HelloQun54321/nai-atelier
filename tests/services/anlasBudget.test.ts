@@ -110,6 +110,19 @@ describe('formatGenerationCostLabel', () => {
 describe('image edit cost estimation', () => {
   const params = { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
 
+  it('Medium 步数系数在向上取整前生效，文生图与图生图／重绘共用动态规则', () => {
+    const medium = { ...params, model: 'nai-diffusion-5-full-medium' };
+    try {
+      applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {
+        [medium.model]: 1 / 1.06521739, [`${medium.model}-inpainting`]: 1 / 1.06521739,
+      } } });
+      expect(estimateV45GenerationCost(medium, false)).toBe(29);
+      expect(estimateV45GenerationCost(params, false)).toBe(30);
+      expect(estimateImageEditCost(medium, 'image-to-image', 0.7, false, 0, false)).toBe(20);
+      expect(estimateImageEditCost(medium, 'inpaint', 0.7, false, 0, false)).toBe(20);
+    } finally { applyEstimatorRuntime(DEFAULT_NAI_RUNTIME); }
+  });
+
   it('图生图、普通重绘与扩图按实际请求尺寸享受 Opus 免费档', () => {
     expect(estimateImageEditCost(params, 'image-to-image', 1, false, 4, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, false, 4, false)).toBe(0);

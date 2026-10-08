@@ -73,7 +73,12 @@ describe('naiRuntime refresh', () => {
     expect(recovered.health?.ok).toBe(true);
   });
 
-  it.each([{}, { ...DEFAULT_NAI_RUNTIME.billing, extraVibeCost: -1 }, { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: [] }])('损坏计费响应不伪装成同步成功：%s', async billing => {
+  it.each([{}, { ...DEFAULT_NAI_RUNTIME.billing, extraVibeCost: -1 }, { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: [] },
+    { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: undefined },
+    { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: [] },
+    { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: { medium: 0 } },
+    { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: { medium: Infinity } },
+  ])('损坏计费响应不伪装成同步成功：%s', async billing => {
     vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ ...DEFAULT_NAI_RUNTIME, billing, health: { ok: true, missed: [] } }) } as Response);
     const result = await refreshNaiRuntimeConfig();
     expect(result.health).toMatchObject({ ok: false, missed: ['billing'] });

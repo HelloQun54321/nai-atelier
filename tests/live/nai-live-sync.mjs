@@ -31,6 +31,10 @@ const compareOfficialBilling = async (bundle, runtime) => {
   bind(usage[1], usage[2], model => ({ opusUsageLimit: runtime.usageLimitedModels.includes(model) }));
   bind(family[1], family[2], model => /^nai-diffusion-5-/.test(model) ? 'v5' : 'v4');
   bind(family[1], family[3], { v4: 'v4', v5: 'v5' });
+  const modelEnum = source.match(/case (\w+)\.(\w+)\.naiDiffusion/);
+  if (modelEnum) bind(modelEnum[1], modelEnum[2], Object.fromEntries(
+    [...bundle.matchAll(/\w+\.(naiDiffusion\w+)="(nai-diffusion-[^"]+)"/g)].map(match => [match[1], match[2]]),
+  ));
   bind(active[1], active[2], subscription => subscription.active);
   bind(limit[1], limit[2], Number.MAX_SAFE_INTEGER);
   const context = createContext(bindings, { codeGeneration: { strings: false, wasm: false } });
@@ -67,9 +71,10 @@ const compareOfficialBilling = async (bundle, runtime) => {
   context.e = null;
   context.priceCalculator = new Script(`(${priceSource})`).runInContext(context, { timeout: 1000 });
   const cases = [];
-  for (const model of ['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full', 'nai-diffusion-5-curated'])
+  for (const model of new Set(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full', 'nai-diffusion-5-curated',
+    ...Object.keys(runtime.billing.modelStepMultipliers).filter(id => !id.endsWith('-inpainting'))]))
     for (const [width, height] of [[64, 64], [832, 1216], [1024, 1024], [1216, 960]])
-      for (const steps of [28, 29]) for (const strength of [0, 0.7, 1])
+      for (const steps of model.endsWith('-medium') ? [14, 28, 29] : [28, 29]) for (const strength of [0, 0.7, 1])
         for (const mode of ['generate', 'img2img', 'infill'])
           for (const [opus, usageExhausted] of [[true, false], [true, true], [false, false]])
             for (const samples of [1, 2]) for (const referenceCount of [0, 1]) {
@@ -130,7 +135,8 @@ try {
   ];
   console.log(`官方 bundle ${paths.length} 个 chunk，提取结果（默认值 → 实时值）：`);
   for (const [field, def, live] of rows) {
-    console.log(`  ${health.missed.some(missed => field.startsWith(missed)) || (field === 'usageLimitedModels' && health.missed.includes('models')) ? '✖' : '✔'} ${field}: ${def} → ${live}`);
+    const healthField = field.startsWith('costCoefficient') ? 'costCoefficients' : field;
+    console.log(`  ${health.missed.some(missed => healthField.startsWith(missed)) || (field === 'usageLimitedModels' && health.missed.includes('models')) ? '✖' : '✔'} ${field}: ${def} → ${live}`);
   }
   if (!health.ok) {
     console.error(`\n✖ 全部提取失效：官方大概率已改版，需要人工/AI 重新对接（未命中：${health.missed.join('、')}）`);
@@ -142,6 +148,6 @@ try {
   }
   console.log(`\n✔ 全部提取命中，${await compareOfficialBilling(bundle, runtime)} 组计价与官方实际费用调用一致`);
 } catch (error) {
-  console.error('✖ 自检失败（网络或官方站点问题）：', error.message || error);
+  console.error('✖ 自检失败：', error.message || error);
   process.exit(1);
 }

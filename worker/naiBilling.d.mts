@@ -5,6 +5,7 @@ export interface NaiBillingRules {
   freeInpainting: boolean;
   freeWithCharacterReference: boolean;
   modelMultipliers: Record<string, number>;
+  modelStepMultipliers: Record<string, number>;
   smeaMultiplier: number;
   smeaDynamicMultiplier: number;
   freeVibeCount: number;
