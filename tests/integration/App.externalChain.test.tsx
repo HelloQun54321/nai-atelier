@@ -7,7 +7,7 @@ import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
-  createChain: vi.fn(), createChainWithData: vi.fn(),
+  createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
 }));
 vi.mock('../../services/dbService', () => ({ db: mocks }));
 vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
@@ -17,7 +17,10 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains }: { chains: PromptChain[] }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}</div> }));
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{chains[0] && <button onClick={async () => {
+  try { await onDelete(chains[0].id); notify('合成删除成功'); }
+  catch { notify('合成删除失败', 'error'); }
+}}>删除合成风格串</button>}</div> }));
 vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack }: any) => <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button></div> }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
@@ -39,6 +42,7 @@ beforeEach(() => {
   mocks.getMe.mockResolvedValue({ id: 'owner', username: '合成用户', role: 'admin' });
   mocks.getAllChains.mockResolvedValue([]); mocks.getAllArtists.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
   mocks.createChain.mockResolvedValue(saved.id); mocks.createChainWithData.mockResolvedValue(saved);
+  mocks.deleteChain.mockResolvedValue(undefined);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -50,6 +54,22 @@ const setup = async (entry = 'aitag') => {
   fireEvent.click(screen.getByRole('button', { name: entry }));
   await screen.findByRole('button', { name: '保存合成作品' });
 };
+
+it.each([false, true])('共享删除回调失败=%s：结果传回调用方，成功刷新列表，失败保留条目', async fails => {
+  mocks.getAllChains.mockResolvedValue([saved]);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  if (fails) mocks.deleteChain.mockRejectedValueOnce(new Error('合成后端删除失败'));
+  else mocks.getAllChains.mockResolvedValueOnce([]);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  fireEvent.click(screen.getByRole('button', { name: '删除合成风格串' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(fails ? '合成删除失败' : '合成删除成功'));
+  expect(mocks.deleteChain).toHaveBeenCalledWith(saved.id);
+  expect(screen.getByTestId('list').textContent?.includes(saved.id)).toBe(fails);
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(fails ? 1 : 2);
+  expect(screen.getByTestId('view').textContent).toBe('list');
+  log.mockRestore();
+});
 
 it.each(['aitag', 'inspiration'])('%s 保存后直接打开服务端条目，无须等待整库刷新', async entry => {
   await setup(entry);

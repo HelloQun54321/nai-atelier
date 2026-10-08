@@ -556,7 +556,7 @@ const App = () => {
       await refreshData(true);
     } catch (e) {
       console.error('删除风格串失败', e);
-      notify('删除失败，请稍后重试', 'error');
+      throw e;
     } finally {
       // Stay on current list view
       setLoading(false);

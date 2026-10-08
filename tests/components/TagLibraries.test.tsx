@@ -29,7 +29,8 @@ const fixtures = vi.hoisted(() => ({
 
 // 只用合成目录和浏览器内存存储；禁止真实生图或网络图片读取。
 vi.mock('../../services/naiService', () => ({ generateImage: vi.fn() }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));
+const confirmAction = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc }: { tag: string; fixedSrc?: string }) =>
   <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc}>{tag}</div>,
 }));
@@ -94,14 +95,16 @@ function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = []) {
   const onCreate = vi.fn();
   const onSelect = vi.fn();
   const onUpdateChain = vi.fn();
+  const onDelete = vi.fn(async (_id: string) => {});
   const view = kind === 'artist'
     ? render(<ArtistLibrary artistsData={[]} notify={notify} onNavigateToPlayground={navigate} />)
-    : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={vi.fn()} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
-  return { ...view, navigate, onCreate, onSelect, onUpdateChain };
+    : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
+  return { ...view, navigate, onCreate, onSelect, onUpdateChain, onDelete, notify };
 }
 
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
+  confirmAction.mockResolvedValue(true);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('本测试禁止联网'); }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -366,4 +369,63 @@ it('自定义角色长按显露编辑和收藏，松手不打开图或选择；�
   longPress(card); expect(card.getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
   expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
+});
+
+it.each([
+  { width: 1280, previewImage: undefined }, { width: 390, previewImage: undefined },
+  { width: 1280, previewImage: '/synthetic.png' }, { width: 390, previewImage: '/synthetic.png' },
+])('宽度 $width、封面 $previewImage 的自定义角色有左上红色删除，词库角色没有；取消不删除', async ({ width, previewImage }) => {
+  const p = renderLibrary('character', width, [{ ...custom, previewImage }]);
+  const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+  if (width === 390) { longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); }
+  const remove = within(card).getByRole('button', { name: '删除这个自定义角色' });
+  expect(remove.parentElement!.className).toContain('absolute left-2 top-2');
+  expect(remove.parentElement!.classList.contains('hover-reveal-touch')).toBe(true);
+  for (const token of ['bg-red-500', 'text-white', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(remove.classList.contains(token)).toBe(true);
+  const catalog = await screen.findByRole('button', { name: '选择角色：角色甲' });
+  expect(within(catalog).queryByRole('button', { name: '删除这个自定义角色' })).toBeNull();
+  confirmAction.mockResolvedValueOnce(false);
+  fireEvent.click(remove);
+  await waitFor(() => expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ title: `删除“${custom.name}”？`, tone: 'danger' })));
+  expect(p.onDelete).not.toHaveBeenCalled();
+  fireEvent.click(remove);
+  await waitFor(() => expect(p.onDelete).toHaveBeenCalledWith(custom.id));
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+  expect(p.onSelect).not.toHaveBeenCalled();
+  expect(generateImage).not.toHaveBeenCalled();
+});
+
+it('自定义角色删除失败保留选择和详情且只提示失败，重试成功关闭详情并清除选择', async () => {
+  const p = renderLibrary('character', 390, [{ ...custom, previewImage: '/synthetic.png' }]);
+  const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+  fireEvent.click(card);
+  fireEvent.click(card.querySelector('button.h-full.w-full')!);
+  const detail = screen.getAllByRole('dialog', { name: custom.name }).find(dialog => dialog.classList.contains('mobile-detail'))!;
+  const remove = within(detail).getByRole('button', { name: '删除这个自定义角色' });
+  p.onDelete.mockRejectedValueOnce(new Error('合成删除失败'));
+  fireEvent.click(remove);
+  await waitFor(() => expect(p.notify).toHaveBeenCalledWith('删除失败，请稍后重试', 'error'));
+  expect(p.notify).not.toHaveBeenCalledWith('自定义角色已删除');
+  expect(card.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getAllByRole('dialog', { name: custom.name })).toHaveLength(2);
+  fireEvent.click(remove);
+  await waitFor(() => expect(p.notify).toHaveBeenCalledWith('自定义角色已删除'));
+  expect(screen.queryByRole('dialog', { name: custom.name })).toBeNull();
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+});
+
+it('删除抽卡中的自定义角色后，父级刷新移除抽卡卡片且不打开工作台', async () => {
+  const p = renderLibrary('character', 1280, [custom]);
+  fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  await screen.findByText(/正在浏览随机抽取的 1 位角色/);
+  p.onDelete.mockImplementation(async () => {
+    p.rerender(<CharacterLibrary chains={[]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={p.onDelete} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={p.notify} />);
+  });
+  fireEvent.click(screen.getByRole('button', { name: '删除这个自定义角色' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: `选择角色：${custom.name}` })).toBeNull());
+  expect(p.onDelete).toHaveBeenCalledWith(custom.id);
+  expect(p.onSelect).not.toHaveBeenCalled();
 });

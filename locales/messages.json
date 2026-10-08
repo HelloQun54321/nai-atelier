@@ -12485,6 +12485,18 @@
     "「{0}」を削除しますか？",
     "“{0}”을 삭제할까요?"
   ],
+  "删除：{0}": [
+    "刪除：{0}",
+    "Delete: {0}",
+    "削除：{0}",
+    "삭제: {0}"
+  ],
+  "该风格串及其本地预览将被永久删除，此操作无法撤销。": [
+    "此風格串及其本機預覽將被永久刪除，此操作無法復原。",
+    "This style chain and its local preview will be permanently deleted. This cannot be undone.",
+    "このスタイルチェーンとローカルプレビューを完全に削除します。元に戻せません。",
+    "이 스타일 체인과 로컬 미리보기를 영구 삭제합니다. 되돌릴 수 없습니다."
+  ],
   "该自定义角色还原及其本地预览将被永久删除，此操作无法撤销。": [
     "該自定義角色還原及其本地預覽將被永久刪除，此操作無法撤銷。",
     "This custom character recreation and its local preview will be permanently deleted. This cannot be undone.",

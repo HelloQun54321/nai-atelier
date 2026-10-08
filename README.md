@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.51.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.51.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -265,7 +265,7 @@ AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其�
 ### 🎨 画师库与 👤 角色库
 
 - **画师库**：使用当前词库中的画师 Tag，支持按热度与字母检索，以及 **随机抽卡**（惊喜混合／热门卡池）；
-- **角色库**：结合角色 Tag 与自定义角色配方，可将特征 Prompt 送入实验室；目录数量随词库版本变化。
+- **角色库**：结合角色 Tag 与自定义角色配方，可将特征 Prompt 送入实验室；目录数量随词库版本变化。风格串和自定义角色卡片的左上角提供红色删除按钮，桌面悬停／键盘聚焦或手机长按后显露，确认后删除条目及本地预览，无封面也可操作；角色 Tag 词库条目不提供删除。
 
 ### 🌐 外部素材发现：Pixiv · Danbooru · AITag
 

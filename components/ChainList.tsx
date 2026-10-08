@@ -8,7 +8,7 @@ import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions'
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, User } from 'lucide-react';
+import { Check, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, Trash2, User } from 'lucide-react';
 import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -24,13 +24,14 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { getCustomChainTags } from '../services/chainTags';
+import { useConfirmDialog } from './ConfirmDialog';
 
 interface ChainListProps {
   chains: PromptChain[];
   type: ChainType; // New Prop to filter view
   onCreate: (name: string, desc: string, type: ChainType) => void;
   onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void> | void;
   onRefresh: () => void;
   onUpdateChain: UpdateChainInfo;
   isLoading: boolean;
@@ -39,8 +40,9 @@ interface ChainListProps {
   returnTargetId?: string;
 }
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onRefresh, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
   useLanguage();
+  const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
   const masonryColumns = useMasonryColumnCount(imageDisplay);
@@ -113,6 +115,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setIsModalOpen(false);
     setNewName('');
     setNewDesc('');
+  };
+
+  const handleDelete = async (chain: PromptChain) => {
+    if (!await confirmAction({
+      title: t('删除“{0}”？', [chain.name]),
+      message: type === 'character' ? t('该自定义角色还原及其本地预览将被永久删除，此操作无法撤销。') : t('该风格串及其本地预览将被永久删除，此操作无法撤销。'),
+      confirmLabel: t('确认删除'),
+      tone: 'danger',
+    })) return;
+    try {
+      await onDelete(chain.id);
+    } catch {
+      notify('删除失败，请稍后重试', 'error');
+    }
   };
 
   // 模型筛选：选项固定为可选模型清单（注册表 + 网关同步的新模型），与链表内容无关。
@@ -226,6 +242,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
           style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
       >
+          {!syncSelection.open && !isGuest && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
+            <button type="button" onClick={event => { event.stopPropagation(); void handleDelete(chain); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t('删除：{0}', [chain.name])} title={t('删除')}><Trash2 className="h-4 w-4" /></button>
+          </div>}
           {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
           {!syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} />}

@@ -91,6 +91,7 @@ Desktop clipboard monitoring, unrestricted computer folders, the local SillyTave
 ### Style chains and references
 
 - **Style chains** save reusable prompt modules, negative prompts, characters, seeds, sampling settings and references. Character prompts and composition positions stay separate; positioning follows the selected model's capabilities.
+- **Deleting assets**: style chain and custom character cards have a red delete button at the upper left, revealed by hovering, keyboard focus or a long press on a phone. Confirmation deletes the entry and its local preview, including entries without a cover. Character Tag dictionary entries cannot be deleted from these cards.
 - **The Windows collector** watches copied image links while its floating window is enabled, downloads the original, and extracts embedded generation metadata into reusable presets. It supports pause, resume, collapse and progress display without interrupting the current app.
 - **Vibe Transfer** stores reusable style encodings locally on supported models. Creating a new encoding may cost Anlas; existing encodings can be reused. Supported models allow up to 16 Vibe references, with applicable reference fees estimated from current rules.
 - **Precise Reference** provides character/style references on models that support it. V4/V4.5 capabilities are not assumed to apply to V5; the interface follows the selected model and synchronized capabilities.

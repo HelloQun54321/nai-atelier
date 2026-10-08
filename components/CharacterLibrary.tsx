@@ -115,7 +115,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <span className="mt-2 text-meta">{t("暂无封面")}</span>
                     </div>
                   )}
-                  <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} />
+                  <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} onDelete={card.kind === 'custom' && card.chain ? () => void deleteCustom(card) : undefined} />
                   {selected && (
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80" />
                   )}
@@ -584,13 +584,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   };
 
   const deleteCustom = async (card: CharacterCard) => {
-    if (!card.chain || !await confirmAction({
+    if (card.kind !== 'custom' || !card.chain || !await confirmAction({
       title: `删除“${card.name}”？`,
       message: '该自定义角色还原及其本地预览将被永久删除，此操作无法撤销。',
       confirmLabel: '确认删除',
       tone: 'danger',
     })) return;
-    await onDelete(card.chain.id);
+    try {
+      await onDelete(card.chain.id);
+    } catch {
+      notify('删除失败，请稍后重试', 'error');
+      return;
+    }
+    setLightbox(current => current?.key === card.key ? null : current);
     setSelectedKeys(previous => {
       const next = new Set(previous);
       next.delete(card.key);
