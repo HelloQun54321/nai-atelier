@@ -27,5 +27,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "dist-ssr", ".desktop-build", "release", "local-data", "local-cache", "tests/.tmp", "logs"]
+  "exclude": ["node_modules", "dist", "dist-ssr", ".desktop-build", ".android-build", "release", "local-data", "local-cache", "tests/.tmp", "logs"]
 }

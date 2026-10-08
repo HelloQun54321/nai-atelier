@@ -1,0 +1,27 @@
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { md5 } from '@noble/hashes/legacy.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { gcm } from '@noble/ciphers/aes.js';
+import { Buffer } from 'buffer';
+
+export const randomUUID = () => globalThis.crypto.randomUUID();
+export const randomBytes = size => Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(size)));
+export const timingSafeEqual = (a,b) => { if(a.length!==b.length)throw new Error('摘要长度不一致');let result=0;for(let i=0;i<a.length;i++)result|=a[i]^b[i];return result===0; };
+export const createHash = name => {
+  const hash = ({ sha256, sha512, md5 })[name];
+  if (!hash) throw new Error(`不支持摘要算法 ${name}`);
+  const state = hash.create();
+  return { update(value, encoding) { state.update(Buffer.from(value, encoding)); return this; }, digest(encoding) { const value = Buffer.from(state.digest()); return encoding ? value.toString(encoding) : value; } };
+};
+export const createHmac = (name, key) => {
+  const state = hmac.create(({ sha256, sha512 })[name], key);
+  return { update(value) { state.update(Buffer.from(value)); return this; }, digest(encoding) { const value = Buffer.from(state.digest()); return encoding ? value.toString(encoding) : value; } };
+};
+export const createCipheriv = (_name, key, iv) => {
+  let tag;
+  return { update(value, encoding) { const result = gcm(key, iv).encrypt(Buffer.from(value, encoding)); tag = Buffer.from(result.subarray(-16)); return Buffer.from(result.subarray(0, -16)); }, final: () => Buffer.alloc(0), getAuthTag: () => tag };
+};
+export const createDecipheriv = (_name, key, iv) => {
+  let tag;
+  return { setAuthTag(value) { tag = value; }, update(value) { return Buffer.from(gcm(key, iv).decrypt(Buffer.concat([value, tag]))); }, final: () => Buffer.alloc(0) };
+};

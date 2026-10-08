@@ -567,15 +567,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     try {
       const log = await promptAgentService.getAuditLog(activeSessionId);
       const blob = new Blob([`${JSON.stringify(log, null, 2)}\n`], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
       const title = (activeSession?.title || 'agent').replace(/[\\/:*?"<>|]/g, '_').slice(0, 36);
-      anchor.href = url;
-      anchor.download = `nai-agent-log-${title || 'session'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      const { downloadFile } = await import('../services/fileDownload');
+      await downloadFile(blob, `nai-agent-log-${title || 'session'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
     } catch (error) {
       setLogExportError(error instanceof Error ? error.message : '导出日志失败');
     } finally {

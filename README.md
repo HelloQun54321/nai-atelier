@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.50.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.51.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -20,7 +20,7 @@
 
 ## 🧭 项目定位
 
-NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。它不是单纯的提示词输入框，而是围绕长期个人使用建立的完整创作工作流：
+NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本地创作工坊。它围绕长期个人使用建立完整创作工作流：
 
 > **寻找素材灵感 → 模块化组合 Prompt → 单张生成与流式反馈 → 局部加工与微调 → 沉淀为个人资产 → 随时在电脑与手机上继续创作。**
 
@@ -93,12 +93,13 @@ NAI Atelier 是一套运行在个人电脑上的 NovelAI 本地创作工坊。�
 
 ## 🚀 快速上手
 
-工坊提供 **Windows EXE 安装版** 与 **源码本地部署** 两种方式，两者功能完全一致：
+工坊提供 **Windows EXE 安装版**、**源码本地部署** 与 **Android 独立 APK**：
 
 | 使用方式 | 适合人群 | 运行准备 | 开启入口 |
 | :--- | :--- | :--- | :--- |
 | **EXE 安装版** | 普通使用者（推荐） | Windows 10/11 x64，无需配置 Node.js/Git | [下载已发布安装包](https://github.com/HelloQun54321/nai-atelier/releases)，双击安装向导 |
 | **源码本地部署** | 开发者 / 自由定制者 | Node.js 22+ (推荐 24.x) 与 Git | 克隆仓库并执行本地启动命令 |
+| **Android 独立 APK** | 希望手机独立创作的使用者 | Android 8.0+、64 位 ARM、手机自身网络 | 安装本地构建的 APK；使用和构建见 [Android 说明](./docs/ANDROID_STANDALONE.md) |
 
 ### 方式一：Windows EXE 安装版（推荐）
 

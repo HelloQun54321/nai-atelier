@@ -12,6 +12,7 @@
 | `tests/support/` | 临时工作区、Node 隔离环境等共用工具 |
 | `tests/fixtures/` | 合成的测试数据与生成器，不存私人资料或真实凭据 |
 | `tests/live/` | 用户显式执行的联网检查 |
+| `tests/android/` | Android 原生仪器回归，全部使用应用内独立合成目录 |
 | `logs/tests/` | npm 测试入口的完整日志，每类最近一次运行覆盖对应日志；旧根目录测试日志保存在 `archive/` |
 | `tests/.tmp/` | 忽略入库的临时工作区与一次性排查文件 |
 
@@ -35,6 +36,10 @@ npm run test:gateway -- --test-name-pattern="同步健康记录" tests/integrati
 
 # 显式联网检查，不包含在上面的离线回归中
 npm run test:live-sync
+
+# 显式 Android 检查：先启动隔离模拟器，不向真实手机写测试资料
+$env:ANDROID_SERIAL='emulator-5556'
+npm run test:android
 ```
 
 联网自检抓取当前官方 Web 应用，逐项验证模型、免费门槛、倍率与附加费提取，并在无文件／网络／进程能力的测试沙箱中执行官方实际费用调用及完整基础计价函数，覆盖尺寸、步数、订阅、额度、多张、参考、Vibe 与 Strength 的组合；按实际调用传入参考，不人为添加重试判定字段。不调用生图或付费编码接口。

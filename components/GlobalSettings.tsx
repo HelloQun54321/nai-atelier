@@ -6,6 +6,8 @@ import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSha
 import { copyTagText } from '../services/externalImageTags';
 import { DataBackupManager } from './DataBackupManager';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
+import { AndroidStorageManager } from './AndroidStorageManager';
+import { isAndroidApp } from '../services/platform';
 import { AppUpdateManager } from './AppUpdateManager';
 import { SillyTavernBridgeExport } from './SillyTavernBridgeExport';
 import {
@@ -281,7 +283,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   useEffect(() => {
-    if (!open || activeSection !== 'maintenance') return;
+    if (!open || activeSection !== 'maintenance' || isAndroidApp()) return;
     void refreshMaintenanceStatus();
   }, [open, activeSection, refreshMaintenanceStatus]);
 
@@ -474,16 +476,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const allPresets: AppearancePreset[] = [BUILTIN_APPEARANCE_PRESET, ...customPresets];
   const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
 
-  const downloadJson = (filename: string, data: unknown) => {
+  const downloadJson = async (filename: string, data: unknown) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const { downloadFile } = await import('../services/fileDownload');
+    await downloadFile(blob, filename);
   };
 
   const applyPreset = (preset: AppearancePreset) => {
@@ -557,23 +553,24 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     notify?.('已重命名为「' + trimmed + '」', 'success');
   };
 
-  const handleExportSinglePreset = (preset: AppearancePreset) => {
+  const handleExportSinglePreset = async (preset: AppearancePreset) => {
     const filename = `nai-preset-${preset.name.toLowerCase().replace(/[^a-z0-9_\u4e00-\u9fa5]/gi, '_')}.json`;
-    downloadJson(filename, [preset]);
-    notify?.('已导出预设「' + preset.name + '」', 'success');
+    try { await downloadJson(filename, [preset]); notify?.('已导出预设「' + preset.name + '」', 'success'); }
+    catch (error) { notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
   };
 
-  const handleExportAllPresets = () => {
+  const handleExportAllPresets = async () => {
     if (customPresets.length === 0) {
       notify?.('暂无自定义预设可导出');
       return;
     }
-    downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
+    try { await downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
       version: 1,
       exportedAt: Date.now(),
       presets: customPresets,
     });
-    notify?.(`已导出 ${customPresets.length} 个自定义预设`, 'success');
+    notify?.(`已导出 ${customPresets.length} 个自定义预设`, 'success'); }
+    catch (error) { notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
   };
 
   const handleImportPresets = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1267,7 +1264,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           </section>
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
-            {activeSection === 'maintenance' && <div className="space-y-5">
+            {activeSection === 'maintenance' && (isAndroidApp() ? <AndroidStorageManager notify={notify} /> : <div className="space-y-5">
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />
@@ -1334,7 +1331,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><AppUpdateManager /></div>
               {/* 关于 NAI Atelier */}
               <div className="flex items-center justify-between gap-4"><div><h4 className="font-semibold text-gray-900 dark:text-white">关于 NAI Atelier</h4><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">个人维护版本 · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex flex-none items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-500"><ExternalLink className="h-3.5 w-3.5" />打开 GitHub</a></div>
-            </div>}
+            </div>)}
           </section>
           </div>
         </div>

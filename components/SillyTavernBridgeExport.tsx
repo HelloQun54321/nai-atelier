@@ -162,14 +162,8 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
         zip.file(filename, content);
       }
       const blob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'npm-bridge.zip';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const { downloadFile } = await import('../services/fileDownload');
+      await downloadFile(blob, 'npm-bridge.zip');
       notify('智慧姬同步扩展包已下载 (npm-bridge.zip)');
     } catch (err: any) {
       notify(`下载失败：${err?.message || '未知错误'}`);

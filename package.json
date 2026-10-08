@@ -1,7 +1,7 @@
 {
   "name": "nai-atelier",
   "private": true,
-  "version": "1.50.0",
+  "version": "1.51.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,25 +22,35 @@
     "test:live-sync": "node tests/run.mjs live-sync",
     "build:local": "vite build && npm run build:worker",
     "build:desktop": "node scripts/build-desktop.mjs",
-    "build:desktop:dir": "node scripts/build-desktop.mjs --dir"
+    "build:desktop:dir": "node scripts/build-desktop.mjs --dir",
+    "build:android": "node scripts/build-android.mjs --release",
+    "build:android:debug": "node scripts/build-android.mjs",
+    "test:android": "node scripts/test-android.mjs"
   },
   "overrides": {
     "shell-quote": "^1.8.5",
     "ws": "8.21.0"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
     "@earendil-works/pi-agent-core": "^0.81.1",
     "@earendil-works/pi-ai": "^0.81.1",
+    "@noble/ciphers": "2.1.1",
+    "@noble/hashes": "2.4.0",
+    "buffer": "6.0.3",
     "fast-png": "^8.0.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.27.0",
     "onnxruntime-node": "1.21.1",
+    "path-browserify": "1.0.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "sharp": "^0.35.4",
     "undici": "^7.29.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@cloudflare/workers-types": "^4.20250214.0",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/react": "^16.3.2",

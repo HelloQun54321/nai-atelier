@@ -150,6 +150,13 @@ export const imageSharingFilename = (filename: string, blob: Blob, clean: boolea
 
 export const downloadSharedImage = async (source: string, filename: string, clean = getCleanSharedImages()) => {
   const blob = await prepareImage(source, clean, false);
+  const { isAndroidApp } = await import('./platform');
+  if (isAndroidApp()) {
+    const { native, writeBlob } = await import('../mobile/native');
+    const path = await writeBlob(blob, `share/${crypto.randomUUID()}.${blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png'}`);
+    await native.share({ action: 'download', path, mime: blob.type, filename: imageSharingFilename(filename, blob, clean) });
+    return;
+  }
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement('a');

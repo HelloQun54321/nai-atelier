@@ -78,12 +78,8 @@ export const vibeService = {
   download: async (asset: VibeAsset) => {
     const response = await fetch(`/api/vibes/${encodeURIComponent(asset.id)}/file`);
     if (!response.ok) return await responseError(response);
-    const url = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${asset.name}.naiv4vibe`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const { downloadFile } = await import('./fileDownload');
+    await downloadFile(await response.blob(), `${asset.name}.naiv4vibe`);
   },
 
   listGroups: async (): Promise<VibeGroup[]> => (await api.get('/vibe-groups')).items || [],

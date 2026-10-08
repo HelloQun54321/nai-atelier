@@ -511,6 +511,7 @@ export class FeedCache {
 // ---- 图库服务：连接/断开/feed，供本机网关使用 ----
 
 export class PixivGalleryService {
+  /** @param {{fetch?: typeof globalThis.fetch, tokenDir?: string, clientId?: string, clientSecret?: string, store?: PixivTokenStore, oauth?: PixivOAuthClient, feedCacheTtlMs?: number, feedCacheMaxEntries?: number}} [options] 原生平台与 Node 共用同一连接契约。 */
   constructor({ fetch: requestFetch = globalThis.fetch, tokenDir, clientId, clientSecret, store, oauth, feedCacheTtlMs, feedCacheMaxEntries } = {}) {
     this.store = store || new PixivTokenStore({ dir: tokenDir });
     this.oauth = oauth || new PixivOAuthClient({ fetch: requestFetch, store: this.store, clientId, clientSecret });
@@ -578,6 +579,7 @@ export class PixivGalleryService {
     return { connected: true };
   }
 
+  /** @param {{mode?: string, cursor?: string, params?: Record<string, any>}} [options] */
   async feed({ mode, cursor, params = {} } = {}) {
     const selectedMode = String(mode || '').trim();
     if (!PIXIV_FEED_MODES.has(selectedMode)) throw pixivError('不支持的 Pixiv feed 模式', 'PIXIV_INVALID_MODE', 400);
@@ -627,6 +629,7 @@ export class PixivGalleryService {
     };
   }
 
+  /** @param {{illustId?: string | number, restrict?: string}} [options] */
   async addBookmark({ illustId, restrict = 'public' } = {}) {
     const id = String(illustId || '').trim();
     if (!id) throw pixivError('添加收藏需要 illust_id 参数', 'PIXIV_INVALID_PARAMS', 400);
