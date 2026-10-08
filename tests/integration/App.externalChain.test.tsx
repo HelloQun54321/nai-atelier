@@ -4,14 +4,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import { consumeEditorSessionDiscarded } from '../../services/labWorkspace';
+import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
+  confirm: vi.fn(), save: vi.fn(), canSave: true,
 }));
 vi.mock('../../services/dbService', () => ({ db: mocks }));
 vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
   <div data-testid="view">{currentView}</div>
   {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
@@ -21,7 +24,10 @@ vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, n
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button>}</div> }));
-vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack }: any) => <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button></div> }));
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack, saveRef, setIsDirty }: any) => {
+  React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
+  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button></div>;
+} }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
   id: 'aitag-synthetic', type: 'style', userId: 'owner', name: '合成作品 P1', description: '', tags: [],
@@ -43,6 +49,10 @@ beforeEach(() => {
   mocks.getAllChains.mockResolvedValue([]); mocks.getAllArtists.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
   mocks.createChain.mockResolvedValue(saved.id); mocks.createChainWithData.mockResolvedValue(saved);
   mocks.deleteChain.mockResolvedValue(undefined);
+  mocks.canSave = true;
+  mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue(true);
+  mocks.save.mockReset(); mocks.save.mockResolvedValue(true);
+  consumeEditorSessionDiscarded(saved.id);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -69,6 +79,61 @@ it.each([false, true])('共享删除回调失败=%s：结果传回调用方，�
   expect(mocks.getAllChains).toHaveBeenCalledTimes(fails ? 1 : 2);
   expect(screen.getByTestId('view').textContent).toBe('list');
   log.mockRestore();
+});
+
+it.each(['save', 'discard', 'cancel'] as const)('离开编辑页选择 %s：保存与放弃分开处理草稿，取消保持原页', async action => {
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '保存合成作品' }));
+  await screen.findByTestId('editor');
+  const key = `nai-lab-workspace-v1:${saved.id}`;
+  sessionStorage.setItem(key, '合成会话草稿');
+  fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
+  mocks.confirm.mockImplementation(async (options: ConfirmDialogOptions) => action === 'save' ? options.onSave!() : action === 'discard');
+  fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe(action === 'cancel' ? 'edit' : 'list'));
+  expect(mocks.confirm.mock.lastCall?.[0]).toMatchObject({ title: '有未保存的修改', cancelLabel: '继续编辑', onSave: expect.any(Function) });
+  expect(mocks.save).toHaveBeenCalledTimes(action === 'save' ? 1 : 0);
+  expect(sessionStorage.getItem(key)).toBe(action === 'discard' ? null : '合成会话草稿');
+  expect(consumeEditorSessionDiscarded(saved.id)).toBe(action === 'discard');
+});
+
+it('离开前保存失败留在原页，下一次点击仍提示未保存；成功后继续原定跳转', async () => {
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '保存合成作品' }));
+  await screen.findByTestId('editor');
+  fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
+  const key = `nai-lab-workspace-v1:${saved.id}`;
+  sessionStorage.setItem(key, '失败后仍需保留的合成草稿');
+  mocks.confirm.mockImplementation((options: ConfirmDialogOptions) => options.onSave!());
+  mocks.save.mockResolvedValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(screen.getByTestId('view').textContent).toBe('edit');
+  expect(sessionStorage.getItem(key)).toBe('失败后仍需保留的合成草稿');
+  expect(consumeEditorSessionDiscarded(saved.id)).toBe(false);
+  let resolve!: (success: boolean) => void;
+  mocks.save.mockImplementationOnce(() => new Promise<boolean>(done => { resolve = done; }));
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+  expect(mocks.confirm).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('view').textContent).toBe('edit');
+  await act(async () => resolve(true));
+  expect(screen.getByTestId('view').textContent).toBe('list');
+  expect(sessionStorage.getItem(key)).toBe('失败后仍需保留的合成草稿');
+  expect(consumeEditorSessionDiscarded(saved.id)).toBe(false);
+});
+
+it('当前模式不能保存时仍可继续编辑或放弃，不提供无效的保存动作', async () => {
+  mocks.canSave = false;
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '保存合成作品' }));
+  await screen.findByTestId('editor');
+  fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
+  mocks.confirm.mockResolvedValue(false);
+  fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+  expect(mocks.confirm.mock.lastCall?.[0].onSave).toBeUndefined();
+  expect(mocks.confirm.mock.lastCall?.[0].cancelLabel).toBe('继续编辑');
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(screen.getByTestId('view').textContent).toBe('edit');
 });
 
 it.each(['aitag', 'inspiration'])('%s 保存后直接打开服务端条目，无须等待整库刷新', async entry => {

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalGenItem, PromptChain } from '../../types';
 import { cloneDefaultLabPageLayouts } from '../../services/appearancePreferences';
 import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
-import { ChainEditor } from '../../components/ChainEditor';
+import { ChainEditor, type ChainEditorSaveHandle } from '../../components/ChainEditor';
 import { DEFAULT_NAI_RUNTIME, type NaiRuntimeConfig } from '../../services/naiRuntime';
 import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
@@ -114,6 +114,7 @@ const chain: PromptChain = {
 const fallback = () => createLabWorkspaceSession(chain.basePrompt, 'subject', chain.negativePrompt, chain.params, { light: true });
 const setup = (entry: PromptChain = chain) => {
   const props = { chain: entry, allChains: [entry], onUpdateChain: vi.fn(async () => {}), onFork: vi.fn(async () => {}), setIsDirty: vi.fn(), notify: vi.fn(),
+    saveRef: React.createRef<ChainEditorSaveHandle>(),
     tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
   return { ...render(<ChainEditor {...props} />), props };
 };
@@ -143,6 +144,59 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it.each(['style', 'character'] as const)('%s 离开前保存复用当前最新草稿，返回成功并清除未保存标记', async type => {
+  const { props } = setup({ ...chain, type });
+  fireEvent.change(textPrompt(), { target: { value: '修改后的最新提示词' } });
+  expect(props.saveRef.current?.canSave).toBe(true);
+  let result: boolean | undefined;
+  await act(async () => { result = await props.saveRef.current!.save(); });
+  expect(result).toBe(true);
+  expect(props.onUpdateChain).toHaveBeenCalledExactlyOnceWith(chain.id, expect.objectContaining({ basePrompt: '修改后的最新提示词', negativePrompt: chain.negativePrompt, params: expect.objectContaining({ width: 832 }) }));
+  expect(props.setIsDirty).toHaveBeenLastCalledWith(false);
+  expect(props.notify).toHaveBeenLastCalledWith(type === 'style' ? '风格串已保存' : '自定义角色已保存');
+});
+
+it('离开前保存失败返回 false，保留原草稿与未保存标记，重试仍能保存', async () => {
+  const { props } = setup();
+  fireEvent.change(textPrompt(), { target: { value: '不能丢失的草稿' } });
+  props.onUpdateChain.mockRejectedValueOnce(new Error('合成保存失败'));
+  let result: boolean | undefined;
+  await act(async () => { result = await props.saveRef.current!.save(); });
+  expect(result).toBe(false);
+  expect(textPrompt().value).toBe('不能丢失的草稿');
+  expect(props.setIsDirty).toHaveBeenLastCalledWith(true);
+  expect(props.notify).toHaveBeenLastCalledWith('保存失败：合成保存失败', 'error');
+  await act(async () => { result = await props.saveRef.current!.save(); });
+  expect(result).toBe(true);
+  expect(props.onUpdateChain).toHaveBeenCalledTimes(2);
+});
+
+it('离开前保存能力跟随模式与忙碌状态，不保存编辑模式或自由实验室的半套配置', async () => {
+  const { props, unmount } = setup();
+  for (const label of ['图生图', '局部重绘', '扩图']) {
+    await switchTo(label);
+    expect(props.saveRef.current?.canSave).toBe(false);
+    expect(await props.saveRef.current!.save()).toBe(false);
+  }
+  expect(props.onUpdateChain).not.toHaveBeenCalled();
+  await switchTo('文生图');
+  let resolve!: () => void;
+  props.onUpdateChain.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+  let pending!: Promise<boolean>;
+  act(() => { pending = props.saveRef.current!.save(); });
+  expect(props.saveRef.current?.canSave).toBe(false);
+  expect(await props.saveRef.current!.save()).toBe(false);
+  await act(async () => { resolve(); await pending; });
+  expect(props.onUpdateChain).toHaveBeenCalledOnce();
+  expect(props.saveRef.current?.canSave).toBe(true);
+  unmount();
+  expect(props.saveRef.current).toBeNull();
+  const lab = setup({ ...chain, id: 'playground' });
+  expect(lab.props.saveRef.current?.canSave).toBe(false);
+  expect(await lab.props.saveRef.current!.save()).toBe(false);
+  expect(lab.props.onUpdateChain).not.toHaveBeenCalled();
+});
 
 it('图生图使用缩放副本的实际像素估费、发送转换后参数并保存历史，当前草稿保持原坐标', async () => {
   sessionStorage.setItem('nai_api_key', 'image-size-fixture');

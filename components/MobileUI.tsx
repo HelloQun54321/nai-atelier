@@ -18,7 +18,7 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
   </button>
 );
 
-export const useMobileHistoryLayer = (open: boolean, onClose: () => void, prefix: string) => {
+export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boolean, prefix: string) => {
   const active = useContext(ImageActivityContext);
   const reactId = useId();
   const markerRef = useRef(`${prefix}-${reactId}`);
@@ -27,15 +27,19 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void, prefix
 
   useEffect(() => {
     // 手机与平板窗口注册返回关闭，历史／灵感等模态同样适用；后台视图不参与返回。
-    if (!open || !active || typeof window === 'undefined' || !window.matchMedia('(max-width: 1279px)').matches) return;
+    if (!open || !active || typeof window === 'undefined' || !window.matchMedia?.('(max-width: 1279px)').matches) return;
     const marker = markerRef.current;
     if (window.history.state?.__naiMobileLayer !== marker) {
       window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker,
         __naiMobileLayers: [...(window.history.state?.__naiMobileLayers || []), marker] }, '');
     }
+    const layerState = window.history.state;
     // 返回到子层的上一层时，仍在历史中的父层继续保留；不能一次返回全关。
     const handlePopState = (event: PopStateEvent) => {
-      if (!event.state?.__naiMobileLayers?.includes(marker)) onCloseRef.current();
+      if (!event.state?.__naiMobileLayers?.includes(marker) && onCloseRef.current() === false) {
+        // 在途保存拒绝关闭时补回当前层，下一次返回仍只作用于此窗口。
+        window.history.pushState(layerState, '');
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => {

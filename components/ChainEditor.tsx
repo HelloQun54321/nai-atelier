@@ -46,12 +46,18 @@ import { ChainEditorPresetModal } from './chain/ChainEditorPresetModal';
 import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
 import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
 
+export interface ChainEditorSaveHandle {
+    canSave: boolean;
+    save: () => Promise<boolean>;
+}
+
 interface ChainEditorProps {
     chain: PromptChain;
     allChains: PromptChain[]; // Need access to other chains for importing
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
     setIsDirty: (isDirty: boolean) => void;
+    saveRef?: React.Ref<ChainEditorSaveHandle>;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
     agentOpenToken?: number;
@@ -65,7 +71,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
@@ -1293,7 +1299,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     }, []);
 
     const handleSaveAll = async () => {
-        if (!isOwner || isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return;
+        if (!isOwner || isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return false;
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1322,12 +1328,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             setHasChanges(false);
             notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存${cover.changed ? '，当前图片已设为封面' : ''}`);
+            return true;
         } catch (error: any) {
             notify(`保存失败：${error?.message || '未知错误'}`, 'error');
+            return false;
         } finally {
             setIsUploading(false);
         }
     };
+
+    React.useImperativeHandle(saveRef, () => ({
+        canSave: isOwner && !isUploading && canSaveActiveModeToLibrary && chain.id !== 'playground',
+        save: handleSaveAll,
+    }));
 
     const handleFork = () => {
         if (!canSaveActiveModeToLibrary || isUploading) return;

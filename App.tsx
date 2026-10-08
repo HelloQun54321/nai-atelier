@@ -9,6 +9,7 @@ import { db } from './services/dbService';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
+import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
   applyAppearancePreferences,
   AppearancePreferences,
@@ -74,6 +75,7 @@ const App = () => {
 
   // Dirty State for Navigation Guard
   const [isEditorDirty, setIsEditorDirty] = useState(false);
+  const editorSaveRef = useRef<ChainEditorSaveHandle | null>(null);
 
   // Personal-mode owner loaded from the local service.
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -456,11 +458,15 @@ const App = () => {
 
   const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean } = {}) => {
     if (isEditorDirty) {
+      const editor = editorSaveRef.current;
+      let saved = false;
       if (!await confirmAction({
-        title: '放弃未保存的更改？',
-        message: '当前修改尚未保存，离开后将会丢失。',
+        title: '有未保存的修改',
+        message: editor?.canSave ? '是否保存当前修改后离开？' : '当前修改尚未保存，离开后将会丢失。',
         confirmLabel: '放弃并离开',
+        cancelLabel: '继续编辑',
         tone: 'danger',
+        onSave: editor?.canSave ? async () => { saved = (await editorSaveRef.current?.save()) ?? false; return saved; } : undefined,
       })) {
         return;
       }
@@ -468,7 +474,7 @@ const App = () => {
       setIsEditorDirty(false);
       // 「放弃」必须真实生效：清掉该串的实验室工作区草稿（否则重进会恢复“已放弃”的修改），
       // 并标记编辑器卸载时跳过自动补封面。
-      if (view === 'edit' && selectedId) {
+      if (!saved && view === 'edit' && selectedId) {
         deleteLabWorkspaceSession(getLabWorkspaceSessionKey(selectedId));
         markEditorSessionDiscarded(selectedId);
       }
@@ -629,6 +635,7 @@ const App = () => {
           onUpdateChain={handleUpdateChain}
           onFork={handleForkChain}
           setIsDirty={setIsEditorDirty}
+          saveRef={editorSaveRef}
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}

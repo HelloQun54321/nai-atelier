@@ -13,7 +13,11 @@ vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: {
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true, supportsCharacterReferences: true }) }));
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remaining: 10 }) }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: async () => null }) }));
-vi.mock('../../components/SmartImage', () => ({ SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />, OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
+vi.mock('../../components/SmartImage', async importOriginal => ({
+  ...await importOriginal<typeof import('../../components/SmartImage')>(),
+  SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
+  OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
+}));
 vi.mock('../../services/vibeService', () => ({ vibeService: { list: fixtures.vibeList, listGroups: async () => [], encode: fixtures.encode, rename: fixtures.rename, archive: fixtures.archive } }));
 vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: { list: fixtures.refList, create: fixtures.create, rename: fixtures.rename, archive: fixtures.archive } }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };

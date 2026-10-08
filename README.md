@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.51.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.51.4-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -178,6 +178,7 @@ flowchart LR
 - **模块化解耦分层**：全局提示词、可独立开关的风格模块与全局负面词清晰分层，避免反复手动拼词；
 - **多角色独立图层**：每个角色拥有独立正负面词，文生图与编辑模式均支持直观的 X/Y 构图定位（V4/V4.5 格点吸附，V5 自由定位）；
 - **参数全套封存**：画面比例、尺寸、Steps、CFG、Variety+、采样器与 Seed 一并封存；
+- **离开前保存**：风格串或自定义角色有未保存修改时，可选择「保存并离开」「放弃并离开」或「继续编辑」。保存成功才跳转，失败保留草稿；目前无法完整入库的编辑模式仍只提供继续／放弃；
 - **风格串收集模式（Windows 懒人置顶窗）**：在 Discord 频道或网页中浏览心仪作品时，开启置顶小窗后只需右键「复制图片链接」，工坊在后台自动静默下载并提取原图内嵌的隐写元数据（Stealth PNGInfo），完整还原提示词、结构化角色与生成参数，无需切回工坊窗口即可自动沉淀为新预设。
 
 <div align="center">
