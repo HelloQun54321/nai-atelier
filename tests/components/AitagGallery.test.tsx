@@ -115,6 +115,46 @@ const noSelection = () => works.forEach(work => {
   expect(card(work.id).className).not.toContain('brightness-');
 });
 
+it.each([['NAI', 1], ['SD', 4]])('猜测 p0 失败后使用 %s 作品实际的 p%s 首图，不必打开作品组', async (imageType, firstPage) => {
+  const remote = `https://ai-img.10118899.xyz/${imageType}/1/1_p0.webp`;
+  const work = { ...works[0], AI_type: imageType, firstImage: undefined, localFirstImageUrl: undefined, remoteFirstImageUrl: remote, hasCachedDetail: false, hasFullyCachedImages: false };
+  mocks.search.mockResolvedValue({ items: [work, works[1]], total: 2, page: 1, page_size: 60 });
+  mocks.getWork.mockResolvedValue({ work, images: [{ ...works[0].firstImage!, image_type: imageType, file_name: `1_p${firstPage}`, local_image_url: undefined }] });
+  await setup();
+  expect(card(1).querySelector('img')?.getAttribute('src')).toBe(remote);
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  fireEvent.error(card(1).querySelector('img')!);
+  await waitFor(() => expect(card(1).querySelector('img')?.getAttribute('src')).toBe(`https://ai-img.10118899.xyz/${imageType}/1/1_p${firstPage}.webp`));
+  expect(mocks.getWork).toHaveBeenCalledExactlyOnceWith(1);
+  noSelection();
+  expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
+  fireEvent.click(within(card(1)).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(`/api/media?source=${encodeURIComponent(`https://ai-img.10118899.xyz/${imageType}/1/1_p${firstPage}.webp`)}&variant=original`, false));
+  // 真实地址也失败时保留原有错误出口，不循环请求详情。
+  fireEvent.error(card(1).querySelector('img')!);
+  fireEvent.error(card(1).querySelector('img')!);
+  expect(within(card(1)).getByText('图片加载失败')).toBeTruthy();
+  expect(mocks.getWork).toHaveBeenCalledTimes(1);
+});
+
+it('首图详情请求失败后保留错误出口，重试可重新取得真实首图且不选择作品', async () => {
+  const work = { ...works[0], firstImage: undefined, localFirstImageUrl: undefined, remoteFirstImageUrl: 'https://ai-img.10118899.xyz/NAI/1/1_p0.webp', hasCachedDetail: false, hasFullyCachedImages: false };
+  mocks.search.mockResolvedValue({ items: [work, works[1]], total: 2, page: 1, page_size: 60 });
+  mocks.getWork.mockRejectedValueOnce(new Error('模拟详情连接失败')).mockResolvedValue({ work, images: [{ ...works[0].firstImage!, local_image_url: '/synthetic/actual-p1.webp' }] });
+  const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+  await setup();
+  fireEvent.error(card(1).querySelector('img')!);
+  await waitFor(() => expect(errorLog).toHaveBeenCalled());
+  expect(mocks.getWork).toHaveBeenCalledTimes(1);
+  const retry = within(card(1)).getByRole('button', { name: '重试' });
+  fireEvent.keyDown(retry, { key: 'Enter' }); fireEvent.click(retry);
+  noSelection();
+  fireEvent.error(card(1).querySelector('img')!);
+  await waitFor(() => expect(card(1).querySelector('img')?.getAttribute('src')).toBe('/synthetic/actual-p1.webp'));
+  expect(mocks.getWork).toHaveBeenCalledTimes(2);
+  noSelection();
+});
+
 it('封面候选耗尽后显示失败、重试和原页入口，重试不误开详情', async () => {
   await setup();
   const preview = () => card(1).querySelector('img')!;

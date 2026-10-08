@@ -171,7 +171,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   </div>
 );
 
-const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; notify: AitagGalleryProps['notify'] }> = ({ work, detail, onImageLoad, notify }) => {
+const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; onResolveFirstImage: () => void; notify: AitagGalleryProps['notify'] }> = ({ work, detail, onImageLoad, onResolveFirstImage, notify }) => {
   useLanguage();
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
@@ -221,6 +221,10 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
       onError={() => {
         // 只在候选内前进：耗尽后不再自增，渲染上面的占位而不是空白
         setCandidatePosition(current => ({ key: candidatesKey, index: Math.min((current.key === candidatesKey ? current.index : 0) + 1, candidates.length) }));
+        // 列表猜测的 p0 未必存在；缺少首图元数据时复用详情请求取得真实文件名。
+        if (index === candidates.length - 1 && !detailImage && !firstImage && !legacyFirstImage) {
+          onResolveFirstImage();
+        }
       }}
     />
     <ImageShareOverlay imageUrl={getMobileOriginalUrl(src)} filename={`aitag-${work.id}-p1.png`} notify={notify} />
@@ -416,6 +420,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             work={work}
             detail={details[work.id]}
             notify={notify}
+            onResolveFirstImage={() => { void getDetail(work).catch(console.error); }}
             onImageLoad={(width, height) => {
               const ratio = width / Math.max(1, height);
               if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
