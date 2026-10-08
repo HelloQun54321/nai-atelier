@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.50.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.50.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -105,7 +105,7 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 
 ### 方式一：Windows EXE 安装版（推荐）
 
-1. 前往 **[GitHub Releases 下载页](https://github.com/HelloQun54321/nai-atelier/releases)**，下载最新正式版 `NAI-Atelier-Setup-*.exe` 安装包；首个正式版为 **1.50.0**，旧预发布保留在版本列表；
+1. 前往 **[GitHub Releases 下载页](https://github.com/HelloQun54321/nai-atelier/releases)**，下载最新正式版 `NAI-Atelier-Setup-*.exe` 安装包；当前 Windows 正式版为 **[1.50.1](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.50.1)**，1.50.0 用户可直接使用应用内更新，历史版本保留在版本列表；
 2. 双击运行安装程序，自主选择程序安装位置（首次运行会检查微软 VC++ x64 运行库）；
 3. 安装完成后从桌面图标打开 **NAI Atelier**，按下方引导开启创作。
 

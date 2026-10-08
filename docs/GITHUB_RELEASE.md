@@ -6,7 +6,17 @@ Release 是项目的版本下载页：一个版本标签指向一份确定的代
 
 ## 当前 Windows 发布版
 
-本次发行 **v1.50.0 · 首个正式版**，不勾选预发布，标记为 GitHub 最新正式版本。下载入口仍为 [NAI Atelier Releases](https://github.com/HelloQun54321/nai-atelier/releases)；正式版发布后也可由 `/releases/latest` 发现。安装包包含截至图生图输出尺寸修复的全部已确认改动，后续功能调整另开版本。
+当前为 **[v1.50.1 · 生图中转排队兼容](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.50.1)**，正式发行并标记为 Latest。1.50.0 用户在“系统设置 → 数据与维护 → 应用更新”检查、下载并重启安装；关闭接收预发布也能发现，无需先卸载，本次没有数据库迁移。
+
+构建与标签绑定提交 `b72d2e2dadac780a5883e59be2c6880fbd2fddc9`，提供 `NAI-Atelier-Setup-1.50.1-x64.exe`、同名 `.sha256`、`latest.yml` 与 `INSTALL-Windows-zh-CN.txt` 四份附件。安装包 263,795,154 字节，SHA-256 为 `60076eac687587af16f08078da154734b435f2c5011ccf63c7122703bdd7bfe4`；源码标签、EXE 内部版本及更新元数据一致。发布清单和公开下载验收分别保存在本地 `release/PUBLISH-v1.50.1.json` 与 `release/PUBLIC-CHECK-v1.50.1.json`。
+
+后台回归首次 473 项通过、1 项专用 Android WebView 烟测按环境规则跳过、1 项测试端口冲突；端口冲突项隔离重跑通过，共 474 项通过。5 项更新入口回归、Windows 11 实际窗口、合成 D1/R2 重启持久化、词库可写及退出回收通过。与 1.50.0 相同的实际捆绑更新器分别验证正式／预发布偏好下的发现，公开安装包下载通过 SHA-512 与 SHA-256 核对；四份远端附件大小与哈希均一致。本次未覆盖现有安装执行真实重启升级，Windows 10 尚未单独实测。
+
+发布后的记录提交按工程规则递增源码版本，发行标签和安装包始终保持 1.50.1 及上述构建提交，不因此改名或重定向；应用更新只跟随公开 Release。
+
+## v1.50.0 首个正式版记录
+
+2026-10-08 首次发行 **v1.50.0 · 首个正式版**，不勾选预发布，当时标记为 GitHub 最新正式版本。下载入口仍为 [NAI Atelier Releases](https://github.com/HelloQun54321/nai-atelier/releases)；当前最新正式版由 `/releases/latest` 发现。1.50.0 安装包包含截至图生图输出尺寸修复的全部已确认改动。
 
 本次提供 `NAI-Atelier-Setup-1.50.0-x64.exe`、同名 `.sha256`、`latest.yml` 与 `INSTALL-Windows-zh-CN.txt`。精确构建提交、文件大小、哈希及验收记录随本地 `release/PUBLISH-v1.50.0.json` 保存，公开下载检查记录在 `release/PUBLIC-CHECK-v1.50.0.json`；标签始终绑定本次安装包的源码提交，发布状态以 GitHub 页面为准。
 
