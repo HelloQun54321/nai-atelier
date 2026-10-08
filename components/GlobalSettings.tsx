@@ -29,6 +29,7 @@ import { getCachedCloudQueuePreferences, getCloudQueuePreferences, setCloudQueue
 import { naiKeyVault, NaiKeyEntry } from '../services/naiKeyVault';
 import { readActiveNaiKey, getRememberNaiKey, setRememberNaiKey, NAI_KEY_REMEMBER_CHANGED } from '../services/naiKeyStorage';
 import { PromptAgentSettings } from './PromptAgentSettings';
+import { getCloudQueueGenerationUrl } from '../worker/cloudQueueTarget.mjs';
 import {
   AppearancePreferences,
   AppearancePreset,
@@ -1161,15 +1162,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" />
                   <b className="text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b>
                 </label>
-                <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">按 Key 保存，同 Key 依次生图。</span>
-                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">不上传 Key、提示词或图片。</p>
+                <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? '按 Key 保存，由中转服务排队。' : '按 Key 保存，同 Key 依次生图。'}</span>
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? '启用中转会发送 Key、提示词及本次参考图；停止等待不保证服务端取消。' : '不上传 Key、提示词或图片。'}</p>
               </div>
               <div className="mt-2 flex flex-wrap gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
                 <label className="min-w-0 flex-[3_1_20rem]">
                   <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">公共队列服务地址</span>
-                  <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder="https://your-queue.example.com" className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
+                  <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder="排队服务或完整的 /ai/generate-image 地址" className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
                 </label>
-                {cloudQueue.enabled && <div className="min-w-0 flex-[2_1_16rem]">
+                {cloudQueue.enabled && !getCloudQueueGenerationUrl(cloudQueue.serviceUrl) && <div className="min-w-0 flex-[2_1_16rem]">
                   <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                     <label htmlFor="settings-cloud-queue-greeting" className="text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label>
                     <label className="mobile-touch flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title="显示当前使用者的个性语"><input type="checkbox" aria-label="显示当前使用者的个性语" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" /><span>显示个性语</span></label>

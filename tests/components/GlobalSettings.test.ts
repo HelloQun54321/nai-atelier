@@ -197,6 +197,25 @@ describe('GlobalSettings', () => {
     expect(screen.queryByRole('checkbox', { name: '低消耗模式' })).toBeNull();
   });
 
+  it.each(['https://nai.ry.mk/ai/generate-image', 'https://relay.example/prefix/ai/generate-image/'])('通用中转 %s 明确传输内容，话语设置仅在 st-chatu 协议生效', async serviceUrl => {
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    const address = await screen.findByRole('textbox', { name: '公共队列服务地址' });
+    const enabled = screen.getByRole('checkbox', { name: '多人拼车公共队列' });
+    fireEvent.click(enabled);
+    await screen.findByRole('checkbox', { name: '显示当前使用者的个性语' });
+    fireEvent.change(address, { target: { value: serviceUrl } });
+    fireEvent.blur(address);
+    await screen.findByText('按 Key 保存，由中转服务排队。');
+    expect(screen.getByText(/启用中转会发送 Key、提示词及本次参考图/)).toBeTruthy();
+    expect(screen.queryByText('不上传 Key、提示词或图片。')).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: '显示当前使用者的个性语' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: '排队个性语（最多15字）' })).toBeNull();
+    fireEvent.change(address, { target: { value: 'https://st-chatu-novelai-queue.hf.space/' } });
+    fireEvent.blur(address);
+    expect(await screen.findByRole('checkbox', { name: '显示当前使用者的个性语' })).toBeTruthy();
+    expect(screen.getByText('不上传 Key、提示词或图片。')).toBeTruthy();
+  });
+
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 

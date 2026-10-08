@@ -16,6 +16,7 @@ import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
 import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '../worker/naiBilling.mjs';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
+import { getCloudQueueGenerationUrl } from '../worker/cloudQueueTarget.mjs';
 import { PIXIV_IMAGE_HOST, PIXIV_REFERER, PixivGalleryService } from './pixiv-local.mjs';
 import { PixivWebLoginOrchestrator } from './pixiv-web-login.mjs';
 import { localBackupService, saveBackupConfig, openInExplorer } from './local-backup.mjs';
@@ -842,7 +843,7 @@ export const parseInvalidVibeCacheKeys = async response => {
   return { invalidKeys: null, text };
 };
 
-export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch) => requestRemote(NAI_GENERATE_URL, {
+export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch, targetUrl = NAI_GENERATE_URL) => requestRemote(targetUrl, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -850,9 +851,10 @@ export const fetchNovelAiGeneration = (payload, authorization, signal = AbortSig
   },
   body: JSON.stringify(payload),
   signal,
+  ...(targetUrl !== NAI_GENERATE_URL ? { redirect: 'error' } : {}),
 });
 
-export const fetchNovelAiGenerationStream = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch) => requestRemote(NAI_GENERATE_STREAM_URL, {
+export const fetchNovelAiGenerationStream = (payload, authorization, signal = AbortSignal.timeout(300_000), requestRemote = fetch, targetUrl = NAI_GENERATE_STREAM_URL) => requestRemote(targetUrl, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -861,6 +863,7 @@ export const fetchNovelAiGenerationStream = (payload, authorization, signal = Ab
   },
   body: JSON.stringify(payload),
   signal,
+  ...(targetUrl !== NAI_GENERATE_STREAM_URL ? { redirect: 'error' } : {}),
 });
 
 /** 网关只需观察事件名；图片正文保持原字节流转发，避免二次编码。 */
@@ -1623,6 +1626,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
   const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
+  const generationProxyUrl = queueEnabled ? getCloudQueueGenerationUrl(queuePreferences.serviceUrl) : null;
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -1639,7 +1643,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
-  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
+  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController, keyHash });
   const releaseQueue = async () => {
     const lock = queueLock;
     queueLock = null;
@@ -1706,7 +1710,9 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       delete payload.parameters.reference_image_multiple;
       delete payload.parameters.reference_information_extracted_multiple;
       delete payload.parameters.reference_image_multiple_cached;
-      payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings);
+      // 中转与官方不能共用远端缓存命中；完整发送已有编码，不因缓存拒绝重发生图。
+      payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings,
+        generationProxyUrl ? new Set(resolvedVibeEncodings.map(getVibeCacheSecretKey)) : null);
       payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
         ? slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)))
         : normalizeVibeStrengths(slots);
@@ -1756,7 +1762,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       delete payload.parameters._local_focused_inpainting;
       delete payload.parameters._local_minimum_context_area;
     }
-    if (queueEnabled) {
+    if (queueEnabled && !generationProxyUrl) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
         taskId: queueTaskId,
@@ -1768,10 +1774,12 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
+    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
     const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
     // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
-    const response = resolvedVibeEncodings
+    generationSignal.throwIfAborted();
+    const response = resolvedVibeEncodings && !generationProxyUrl
       ? await generateWithVibeCacheRetry(
         payload,
         authorization,
@@ -1779,7 +1787,9 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
         vibeCacheKeysSentWithData,
         (nextPayload, nextAuthorization) => fetchNovelAiGeneration(nextPayload, nextAuthorization, generationSignal, requestRemote),
       )
-      : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote);
+      : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_URL);
+    generationSignal.throwIfAborted();
+    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'generating', cancelable: false });
     const responseBody = Buffer.from(await response.arrayBuffer());
     let estimatedCost, anlasBudget, accountingFailed = false;
     if (response.ok) {
@@ -1828,6 +1838,10 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     if (requestAborted || error?.name === 'AbortError') return sendJson(res, 499, { error: '已取消排队', code: 'QUEUE_CANCELLED' });
     if (Number(error.status)) return sendJson(res, Number(error.status), { error: error.message, code: error.code });
     const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    if (generationProxyUrl) return sendJson(res, timedOut ? 504 : 502, {
+      error: timedOut ? '生图中转等待超时，请检查中转服务状态' : '无法连接生图中转，请检查服务地址和网络',
+      code: timedOut ? 'NAI_PROXY_TIMEOUT' : 'NAI_PROXY_UNREACHABLE',
+    });
     return sendJson(res, timedOut ? 504 : 502, {
       error: timedOut
         ? '电脑连接 NovelAI 超时，请检查电脑 VPN 后重试'
@@ -1851,6 +1865,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
   const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
+  const generationProxyUrl = queueEnabled ? getCloudQueueGenerationUrl(queuePreferences.serviceUrl, true) : null;
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -1865,7 +1880,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
-  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', cancelable: true, controller: requestController, keyHash });
+  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController, keyHash });
   const releaseQueue = async () => {
     const lock = queueLock;
     queueLock = null;
@@ -1904,7 +1919,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     delete payload.parameters._local_minimum_context_area;
     payload.parameters.stream = 'sse';
 
-    if (queueEnabled) {
+    if (queueEnabled && !generationProxyUrl) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
         taskId: queueTaskId,
@@ -1916,10 +1931,14 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
+    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
     const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
 
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
-    const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote);
+    generationSignal.throwIfAborted();
+    const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
+    generationSignal.throwIfAborted();
+    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'generating', cancelable: false });
     if (!upstream.ok) {
       const upstreamError = new Error(await upstream.text() || `NovelAI HTTP ${upstream.status}`);
       upstreamError.status = upstream.status;

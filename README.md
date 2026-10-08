@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.50.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.50.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -34,7 +34,7 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 | 🔋 **费用可见、过程可控** | 自动换算 Opus 电池剩余张数，自主设定本地点数预算，查看费用估算与付费确认，单张观察、拒绝盲目消耗 |
 
 > [!IMPORTANT]
-> **适用范围**：常规免费创作以 NovelAI 活跃 **Opus** 订阅为前提（非活跃 Opus 按付费档估算）。文档中的 **Anlas** 即官方代币（点数）；**Opus 限额** 即官方为 V5 模型引入的电池型免费生成配额。第三方中转服务未做适配。
+> **适用范围**：常规免费创作以 NovelAI 活跃 **Opus** 订阅为前提（非活跃 Opus 按付费档估算）。文档中的 **Anlas** 即官方代币（点数）；**Opus 限额** 即官方为 V5 模型引入的电池型免费生成配额。通用 NovelAI 兼容中转已接通普通／流式生图，第三方订阅、余额与额外计费规则尚未适配；界面沿用官方费用估算，不代表中转站实际收费。
 
 ---
 
@@ -350,11 +350,10 @@ flowchart TD
   - 深度参考并对接 SillyTavern 生图扩展 [st-chatu8](https://github.com/damoshen123/st-chatu8)；
   - 支持工坊精选风格串、永久 Vibe 画风编码与历史原图的双向无缝桥接，打通酒馆 RP 沉浸对话与工坊精细打磨之间的资产壁垒；
   - 详细同步规则、二进制去重与协议实现请参阅 [**SillyTavern 桥接技术指南**](./docs/SILLYTAVERN_BRIDGE.md)。
-- **👥 多人拼车公共排队（与 st-chatu8 队列协同）**：
-  - **并发冲突防护**：当多人共享拼车同一个 NovelAI Opus Key，或工坊与酒馆多端同时出图时，自动接入与 st-chatu8 兼容的云端公共队列服务，按序协调生图请求，防止触发官方并发报错；
-  - **Key 哈希安全隔离**：仅使用 Key 的 SHA-256 指纹参与排队握手，绝不向队列服务发送原始 API Key，杜绝凭据泄露；
-  - **排队状态实时感知**：生图时直观显示前方等待任务数与柔和渐变动效，支持自定义 15 字「排队个性语」；
-  - **随时无损取消**：等待期间随时一键取消排队，不占连接、不扣减额度、不浪费等待时间。
+- **👥 多人拼车公共排队与通用生图中转**：
+  - **st-chatu 协议排队**：在「NovelAI 与 Anlas → 多人拼车公共队列」填写兼容服务的基础地址，例如 `https://st-chatu-novelai-queue.hf.space/`；只用 Key 的 SHA-256 指纹协调顺序，取得许可后由工坊请求 NovelAI，不向队列上传原始 Key、提示词或图片。支持排队人数、自定义 15 字个性语及「显示当前使用者的个性语」，等待阶段可以取消；
+  - **通用生图中转**：同一输入框也可填写任意兼容服务的完整 `/ai/generate-image` 地址，例如 `https://nai.ry.mk/ai/generate-image`，支持路径前缀及对应流式接口；启用后直接把生图请求交给中转服务排队，不调用 st-chatu 的握手接口。中转会接收当前 Key、提示词及本次参考内容，填写地址时明确提示；
+  - **准确显示状态**：中转等待显示「中转排队／生成中…」，不猜测服务端人数，隐藏仅对 st-chatu 生效的个性语输入及显示开关。可「停止等待」中断本次连接，实际生成是否停止由服务端决定；失败不自动重发或回退官方，费用仍按已有官方规则估算。
 
 ---
 

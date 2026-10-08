@@ -3,8 +3,9 @@ import test from 'node:test';
 import { createServer, request } from 'node:http';
 import { Readable, Writable } from 'node:stream';
 import { once } from 'node:events';
-import { DEFAULT_NAI_RUNTIME, CloudQueueCoordinator, handleGenerateRequest, handleGenerateStreamRequest } from '../../scripts/media-gateway.mjs';
+import { DEFAULT_NAI_RUNTIME, CloudQueueCoordinator, handleGenerateRequest, handleGenerateStreamRequest, buildCachedVibeReferences, generateWithVibeCacheRetry } from '../../scripts/media-gateway.mjs';
 import { normalizeCloudQueueCount } from '../../worker/cloudQueueNumbers.mjs';
+import { getCloudQueueGenerationUrl } from '../../worker/cloudQueueTarget.mjs';
 
 // 只使用模拟外部请求和注入的结算函数，不启动真实网关、不读取或改写私人数据。
 const preferences = { enabled: true, serviceUrl: 'https://queue.example', greeting: '', showGreeting: true };
@@ -33,14 +34,145 @@ class TestResponse extends Writable {
 const setup = (remote, options = {}) => new CloudQueueCoordinator(remote, preferences.serviceUrl, { pollIntervalMs: 5, waitTimeoutMs: 2000, ...options });
 const generationOptions = { prepareBilling: async () => ({ runtime: DEFAULT_NAI_RUNTIME }), settleGeneration: async () => ({ estimatedCost: 0, anlasBudget: null }), };
 const finalFrame = 'event: final\ndata: {"image":"test"}\n\n';
-const run = (handler, q, remote, taskId, res = new TestResponse(), options = {}, action = 'generate') => ({
+const run = (handler, q, remote, taskId, res = new TestResponse(), options = {}, action = 'generate', taskPreferences = preferences) => ({
   res,
-  pending: handler(requestFor(taskId, action), res, '', 0, q, preferences, remote, { ...generationOptions, ...options }),
+  pending: handler(requestFor(taskId, action), res, '', 0, q, taskPreferences, remote, { ...generationOptions, ...options }),
 });
 const waitUntil = async predicate => {
   for (let i = 0; i < 400; i++) { if (predicate()) return; await sleep(5); }
   assert.fail('模拟任务未达到预期状态');
 };
+
+test('通用中转识别任意域名、端口与前缀，只接受明确的兼容生图接口', () => {
+  for (const prefix of ['https://nai.ry.mk', 'https://relay.example/v1', 'http://127.0.0.1:8199/prefix']) {
+    for (const suffix of ['/ai/generate-image', '/ai/generate-image/', '/ai/generate-image-stream']) {
+      assert.equal(getCloudQueueGenerationUrl(prefix + suffix), prefix + '/ai/generate-image');
+      assert.equal(getCloudQueueGenerationUrl(prefix + suffix, true), prefix + '/ai/generate-image-stream');
+    }
+  }
+  for (const value of ['', 'invalid', 'https://st-chatu-novelai-queue.hf.space/', 'https://relay.example/v1',
+    'https://relay.example/ai/generate-image-extra', 'https://user:pass@relay.example/ai/generate-image',
+    'https://relay.example/ai/generate-image?key=synthetic', 'https://relay.example/ai/generate-image#fragment',
+    'ftp://relay.example/ai/generate-image']) assert.equal(getCloudQueueGenerationUrl(value), null, value);
+});
+
+const proxyPreferences = { ...preferences, serviceUrl: 'https://relay.example/prefix/ai/generate-image/' };
+for (const handler of handlers) {
+  const label = handler === handleGenerateRequest ? 'normal' : 'stream';
+  for (const action of modes) {
+    test(`${label} ${action}：通用中转直接提交完整请求，由服务端排队，不调用 HF 协议`, async () => {
+      const q = setup(async () => assert.fail('中转不得调用独立队列接口'));
+      const taskId = `proxy-${label}-${action}`;
+      let calls = 0, settled = 0;
+      const { pending, res } = run(handler, q, async (url, options) => {
+        calls++;
+        assert.equal(url, 'https://relay.example/prefix/ai/generate-image' + (label === 'stream' ? '-stream' : ''));
+        assert.equal(options.method, 'POST');
+        assert.equal(options.headers.Authorization, 'Bearer test-key');
+        assert.equal(options.redirect, 'error');
+        const body = JSON.parse(options.body);
+        assert.equal(body.action, action === 'outpaint' ? 'infill' : action);
+        assert.equal(body.model, payload(action).model);
+        assert.equal(body.parameters._local_edit_operation, undefined);
+        assert.equal(q.get(taskId).proxy, true);
+        assert.equal(q.get(taskId).phase, 'waiting');
+        assert.equal(q.get(taskId).position, null);
+        assert.equal(q.get(taskId).queueSize, null);
+        return new Response(label === 'stream' ? finalFrame : 'synthetic-image');
+      }, taskId, undefined, { settleGeneration: async ({ keyHash }) => {
+        settled++;
+        assert.match(keyHash, /^[a-f0-9]{64}$/);
+        return { estimatedCost: 0, anlasBudget: null };
+      } }, action, proxyPreferences);
+      await pending;
+      assert.equal(calls, 1); assert.equal(settled, 1);
+      assert.equal(res.statusCode, 200);
+      assert.match(res.body(), label === 'stream' ? /event: final/ : /synthetic-image/);
+      assert.equal(q.get(taskId).phase, 'completed');
+      assert.equal(q.get(taskId).controller, null);
+    });
+  }
+
+  test(`${label}：关闭中转后仍使用官方接口，不触发队列请求`, async () => {
+    const q = setup(async () => assert.fail('关闭队列时不能调用队列'));
+    const { pending, res } = run(handler, q, async url => {
+      assert.equal(url, 'https://image.novelai.net/ai/generate-image' + (label === 'stream' ? '-stream' : ''));
+      return new Response(label === 'stream' ? finalFrame : 'image');
+    }, `proxy-off-${label}`, undefined, {}, 'generate', { ...proxyPreferences, enabled: false });
+    await pending; assert.equal(res.statusCode, 200);
+  });
+
+  for (const status of [401, 429, 500]) {
+    test(`${label}：中转 ${status} 不结算、不重试、不回退官方`, async () => {
+      let calls = 0;
+      const q = setup(async () => assert.fail('不应调用队列服务'));
+      const { pending, res } = run(handler, q, async () => { calls++; return new Response('synthetic rejection', { status }); },
+        `proxy-rejected-${label}-${status}`, undefined, { settleGeneration: () => assert.fail('失败不得结算') }, 'generate', proxyPreferences);
+      await pending;
+      assert.equal(calls, 1); assert.equal(res.statusCode, status);
+      assert.equal(q.get(`proxy-rejected-${label}-${status}`).phase, 'error');
+    });
+  }
+
+  for (const cancel of [false, true]) {
+    test(`${label}：中转${cancel ? '停止等待' : '超时'}中断同一请求，不结算、不重新发起`, async () => {
+      const taskId = `proxy-abort-${label}-${cancel}`;
+      const q = setup(async () => assert.fail('中转不退出独立队列'));
+      let calls = 0;
+      const { pending, res } = run(handler, q, async (url, options) => {
+        calls++;
+        assert.equal(q.get(taskId).cancelable, true);
+        return new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true }));
+      }, taskId, undefined, { generationTimeoutMs: cancel ? 2000 : 20, settleGeneration: () => assert.fail('失败或停止不得结算') }, 'generate', proxyPreferences);
+      await waitUntil(() => calls === 1);
+      if (cancel) q.get(taskId).controller.abort(new DOMException('用户停止等待', 'AbortError'));
+      await pending;
+      assert.equal(calls, 1); assert.equal(res.statusCode, cancel ? 499 : 504);
+      assert.equal(q.get(taskId).phase, cancel ? 'cancelled' : 'error');
+    });
+  }
+
+  test(`${label}：中转停止等待后迟到的成功响应不能交付或结算`, async () => {
+    const taskId = `proxy-late-${label}`;
+    const q = setup(async () => assert.fail('中转不调用队列'));
+    const { pending, res } = run(handler, q, async () => {
+      q.get(taskId).controller.abort(new DOMException('停止等待', 'AbortError'));
+      return new Response(label === 'stream' ? finalFrame : 'late-image');
+    }, taskId, undefined, { settleGeneration: () => assert.fail('停止后不得结算') }, 'generate', proxyPreferences);
+    await pending;
+    assert.equal(res.statusCode, 499); assert.equal(q.get(taskId).phase, 'cancelled');
+    assert.doesNotMatch(res.body(), /event: final|late-image/);
+  });
+}
+
+test('中转完整发送已在官方缓存的 Vibe 编码，缓存拒绝不重发生图', async () => {
+  const encoding = 'synthetic-encoded-vibe'.repeat(10);
+  const refs = buildCachedVibeReferences([encoding]);
+  await generateWithVibeCacheRetry({ parameters: { reference_image_multiple_cached: refs } }, 'Bearer synthetic', [encoding],
+    new Set(refs.map(item => item.cache_secret_key)), async () => new Response('image'));
+  assert.equal(buildCachedVibeReferences([encoding])[0].data, undefined);
+  const worker = createServer((req, res) => {
+    assert.match(req.url, /^\/api\/vibes\/synthetic-vibe\/encodings\/synthetic-encoding\/data$/);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ variant: { model: 'nai-diffusion-4-5-full' }, encoding }));
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    const body = payload('generate');
+    body.parameters._local_vibes = { enabled: true, slots: [{ vibeId: 'synthetic-vibe', encodingId: 'synthetic-encoding', strength: 0.6 }] };
+    const req = requestFor('proxy-vibe');
+    const customReq = Readable.from([Buffer.from(JSON.stringify(body))]);
+    Object.assign(customReq, { method: req.method, headers: req.headers, socket: req.socket, setTimeout: req.setTimeout });
+    const res = new TestResponse(); let calls = 0;
+    const q = setup(async () => assert.fail('中转不进入独立队列'));
+    await handleGenerateRequest(customReq, res, '', worker.address().port, q, proxyPreferences, async (url, options) => {
+      calls++;
+      assert.equal(JSON.parse(options.body).parameters.reference_image_multiple_cached[0].data, encoding);
+      return new Response(JSON.stringify({ message: 'INVALID_CACHE_KEYS', details: { invalidKeys: refs.map(item => item.cache_secret_key) } }), { status: 400 });
+    }, { ...generationOptions, settleGeneration: () => assert.fail('拒绝不得结算') });
+    assert.equal(calls, 1, res.body()); assert.equal(res.statusCode, 400);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
 
 test('队列数量：保留 0，缺失和非法值保持未知', () => {
   for (const value of [0, '0', ' 0 ']) assert.equal(normalizeCloudQueueCount(value), 0);

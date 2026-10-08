@@ -8,17 +8,19 @@ const statusLabel = (status: QueueStatus, progress?: GenerationProgress | null) 
   if (status.phase === 'preparing') return '准备生成…';
   if (status.phase === 'joining') return '加入队列中…';
   if (status.phase === 'waiting') {
+    if (status.proxy) return '中转排队／生成中…';
     const ahead = normalizeCloudQueueCount(status.position);
     return ahead === null ? '排队中 · 前方任务数未知' : `排队中 · 前方 ${ahead} 个任务`;
   }
   if (status.phase === 'ready') return '即将生成…';
   if (status.phase === 'generating') return progress ? `生成中 ${progress.step}/${progress.total}` : '生成中…';
-  if (status.phase === 'cancelled') return '已取消排队';
+  if (status.phase === 'cancelled') return status.proxy ? '已停止等待' : '已取消排队';
   if (status.phase === 'error') return status.error || '公共队列连接失败';
   return '生成完成';
 };
 
 const queueCountLabel = (status: QueueStatus) => {
+  if (status.proxy) return null;
   if (!['waiting', 'ready', 'generating'].includes(status.phase)) return null;
   const count = normalizeCloudQueueCount(status.queueSize);
   const prefix = status.phase === 'waiting' ? '队列共' : '最近队列数：';
@@ -50,12 +52,12 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; genera
             <p className="truncate text-sm font-bold leading-5">{statusLabel(status, generationProgress)}</p>
             {queueCountLabel(status) && <p className="mt-0.5 text-xs leading-4 text-white/90">{queueCountLabel(status)}</p>}
             {status.cleanupError && <p className="mt-0.5 text-xs leading-4 text-white/90">{status.cleanupError}</p>}
-            {status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
+            {!status.proxy && status.greeting && <p className="mt-0.5 truncate text-center text-xs leading-4 text-white/75">当前使用者：{status.greeting}</p>}
           </div>
           {active && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
         </div>
       </div>
-      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? '取消中…' : '取消排队'}</button>}
+      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? '取消中…' : status.proxy ? '停止等待' : '取消排队'}</button>}
   </div>;
 };
 

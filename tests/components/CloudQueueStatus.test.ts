@@ -55,6 +55,21 @@ describe('公共队列数量展示', () => {
       emitCloudQueueStatus({ taskId: 'count', phase: 'completed', queueSize: 0 });
       expect(renderStatus()).toBe('');
     });
+
+    it(`${name}：中转等待不虚构排队人数、不展示 st-chatu 个性语`, () => {
+      emitCloudQueueStatus({ taskId: 'proxy', phase: 'waiting', proxy: true, cancelable: true, greeting: '旧的个性语', position: 0, queueSize: 0 });
+      const html = renderStatus();
+      expect(html).toContain('中转排队／生成中…');
+      expect(html).toContain('停止等待');
+      expect(html).not.toMatch(/前方|队列共|队列数量|当前使用者|旧的个性语/);
+      emitCloudQueueStatus({ taskId: 'proxy', phase: 'cancelled', cancelable: false });
+      expect(renderStatus()).toContain('已停止等待');
+    });
+
+    it(`${name}：st-chatu 队列继续显示当前使用者话语`, () => {
+      emitCloudQueueStatus({ taskId: 'queue', phase: 'waiting', greeting: '正在生成中～' });
+      expect(renderStatus()).toContain('当前使用者：正在生成中～');
+    });
   }
 });
 

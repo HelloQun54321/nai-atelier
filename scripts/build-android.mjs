@@ -29,6 +29,8 @@ import { mkdir,readFile,readdir,rename,unlink,writeFile } from '/mobile/shims/fs
 import { readRequestBody,requestWorkerJson,requestWorkerBuffer } from '/mobile/node-http';
 import { DEFAULT_NAI_BILLING,estimateNaiBilling,isNaiBillingRules } from '/worker/naiBilling.mjs';
 import { LAN_ACCESS_COOKIE } from '/worker/sharedWhitelist.mjs';
+import { normalizeCloudQueueCount } from '/worker/cloudQueueNumbers.mjs';
+import { getCloudQueueGenerationUrl } from '/worker/cloudQueueTarget.mjs';
 import { prepareMobileReference } from '/mobile/image';`, {
     readRequestBody: '', requestWorkerJson: '', requestWorkerBuffer: '',
     preparePreciseReferenceImage: 'const preparePreciseReferenceImage = prepareMobileReference;',

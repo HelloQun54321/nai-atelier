@@ -16,6 +16,7 @@ export interface CloudQueueStatus {
   error?: string;
   cleanupError?: string;
   cancelable?: boolean;
+  proxy?: boolean;
 }
 
 const defaults: CloudQueuePreferences = { enabled: false, greeting: '正在生成中～', showGreeting: true, serviceUrl: '' };
@@ -99,7 +100,7 @@ export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiK
   }
   // 生成结果与清理警告独立；前端补写终态时不能覆盖同一任务的释放失败反馈。
   currentQueueStatus = status && currentQueueStatus?.taskId === status.taskId && currentQueueStatusKey === normalizedSourceApiKey
-    ? { ...status, cleanupError: status.cleanupError || currentQueueStatus.cleanupError }
+    ? { ...status, proxy: status.proxy ?? currentQueueStatus.proxy, cleanupError: status.cleanupError || currentQueueStatus.cleanupError }
     : status;
   currentQueueStatusKey = status ? normalizedSourceApiKey : '';
   statusListeners.forEach(listener => listener());

@@ -18,3 +18,13 @@ test('手机词库生成必须留下原子切换，由共用生成器保留字�
   assert.match(source,/characterSearchRecords/);assert.match(source,/artistNamePages/);assert.match(source,/characterNamePages/);
   assert.doesNotMatch(source,/DatabaseSync|await rm\(|rename\(STAGING|local-data/);
 });
+
+test('手机共用生图处理器包含通用中转分支，构建注入地址和队列数量依赖', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['handleGenerateRequest', 'handleGenerateStreamRequest']);
+  assert.match(source, /getCloudQueueGenerationUrl\(queuePreferences\.serviceUrl\)/);
+  assert.match(source, /getCloudQueueGenerationUrl\(queuePreferences\.serviceUrl, true\)/);
+  const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
+  assert.match(build, /import \{ getCloudQueueGenerationUrl \} from '\/worker\/cloudQueueTarget\.mjs'/);
+  assert.match(build, /import \{ normalizeCloudQueueCount \} from '\/worker\/cloudQueueNumbers\.mjs'/);
+});
