@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLabImageEditDraft } from '../../services/labWorkspace';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../services/appearancePreferences';
@@ -24,11 +24,15 @@ vi.mock('../../components/ImageEditControls', () => ({ ImageEditControls: (props
   <canvas ref={props.canvasProps.maskCanvasRef} />
   <canvas ref={props.canvasProps.overlayCanvasRef} />
   <button onClick={props.onApplyOutpaint}>应用</button>
+  <button onClick={() => props.onFocusedChange(false)}>普通重绘</button>
+  <button onClick={props.onInvertMask}>反选蒙版</button>
+  <button onClick={props.onClearMask}>清空蒙版</button>
   <button onClick={() => props.onExpansionChange({ top: 0, bottom: 0, left: 192, right: 192 })}>正方形</button>
   <output data-testid="source">{props.outpaintSourceSize?.width}×{props.outpaintSourceSize?.height}</output>
 </div> }));
-vi.mock('../../components/ImageEditPreview', () => ({ ImageEditPreview: (props: { canGenerate: boolean; onGenerate: () => void }) =>
-  <button disabled={!props.canGenerate} onClick={props.onGenerate}>生成</button> }));
+vi.mock('../../components/ImageEditPreview', () => ({ ImageEditPreview: (props: { canGenerate: boolean; unavailableLabel?: string; onGenerate: () => void }) => <>
+  <output data-testid="desktop-status">{props.unavailableLabel || '生成'}</output>
+  <button disabled={!props.canGenerate} onClick={props.onGenerate}>生成</button></> }));
 
 const expansion = { top: 128, bottom: 192, left: 0, right: 0 };
 const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
@@ -36,15 +40,21 @@ const onCanvasChange = vi.fn(), onGenerate = vi.fn(async (_request: ImageEditReq
 const readBlobText = (blob: Blob) => new Promise<string>(resolve => {
   const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob);
 });
-const Harness = ({ restored = false }: { restored?: boolean }) => {
-  const [draft, setDraft] = useState(() => createLabImageEditDraft('outpaint', 'night sky, water', '', params,
+const Harness = ({ restored = false, operation = 'outpaint', baseImage = 'original-image', isBaseImageLoading = false }: { restored?: boolean; operation?: 'outpaint' | 'inpaint' | 'image-to-image'; baseImage?: string | null; isBaseImageLoading?: boolean }) => {
+  const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'night sky, water', '', params,
     { expansion, ...(restored ? { appliedExpansion: expansion } : {}) }));
-  return <ImageEditPanel baseImage="original-image" previewImage={null} operation="outpaint" draft={draft} layout={DEFAULT_LAB_PAGE_LAYOUTS.outpaint}
+  const [mobileLabel, setMobileLabel] = useState('');
+  return <><output data-testid="mobile-status">{mobileLabel}</output><ImageEditPanel baseImage={baseImage} isBaseImageLoading={isBaseImageLoading} previewImage={null} operation={operation} draft={draft} layout={DEFAULT_LAB_PAGE_LAYOUTS[operation]}
     tagAssistEnabled={false} apiKey="" notify={vi.fn()} generationCostLabel={() => '点数'}
     onPromptChange={vi.fn()} onNegativePromptChange={vi.fn()} onPromptSource={vi.fn()}
     onDraftChange={patch => setDraft(previous => ({ ...previous, ...patch }))}
     onBaseImageChange={vi.fn()} onCanvasChange={onCanvasChange} onGenerate={onGenerate}
-    onOpenLightbox={vi.fn()} getDownloadFilename={() => 'fixture.png'} />;
+    onGenerateBarChange={bar => setMobileLabel(bar.unavailableLabel || '生成')}
+    onOpenLightbox={vi.fn()} getDownloadFilename={() => 'fixture.png'} /></>;
+};
+const expectStatus = (label: string) => {
+  expect(screen.getByTestId('desktop-status').textContent).toBe(label);
+  expect(screen.getByTestId('mobile-status').textContent).toBe(label);
 };
 
 beforeEach(() => {
@@ -83,7 +93,8 @@ describe('扩图应用与提交', () => {
       expansion: { top: 0, right: 0, bottom: 0, left: 0 }, appliedExpansion: undefined,
     }} />);
     await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('height', 1216));
-    await waitFor(() => expect((screen.getByText('生成') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('desktop-status').textContent).toBe('请先涂画重绘区域'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
     expect(clearRect.mock.calls.length).toBeGreaterThan(previousClears);
     expect(createOutpaintCanvas).toHaveBeenCalledTimes(1);
     expect(createImageBitmap).toHaveBeenCalledTimes(2);
@@ -92,18 +103,21 @@ describe('扩图应用与提交', () => {
   it('重复应用不会叠加，改比例重新从原图生成，未应用时拦截生成', async () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId('source').textContent).toBe('832×1216'));
-    expect((screen.getByText('生成') as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expectStatus('请先应用画布扩展'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByText('应用')); fireEvent.click(screen.getByText('应用'));
     await waitFor(() => expect(onCanvasChange).toHaveBeenCalledTimes(1));
     expect(onCanvasChange.mock.calls[0][0]).toBe('original-image');
     expect(await readBlobText(vi.mocked(createOutpaintCanvas).mock.calls[0][0])).toBe('original-image');
     expect(screen.getByTestId('image')).toHaveProperty('height', 1536);
+    await waitFor(() => expectStatus('生成'));
     fireEvent.click(screen.getByText('应用'));
     expect(createOutpaintCanvas).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByText('生成'));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     expect(onGenerate.mock.calls[0][0]).toMatchObject({ canvasWidth: 832, canvasHeight: 1536, expansion });
     fireEvent.click(screen.getByText('正方形'));
-    expect((screen.getByText('生成') as HTMLButtonElement).disabled).toBe(true);
+    expectStatus('请先应用画布扩展');
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByText('应用'));
     await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('width', 1216));
     expect(screen.getByTestId('image')).toHaveProperty('height', 1216);
@@ -115,8 +129,66 @@ describe('扩图应用与提交', () => {
     await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('height', 1536));
     expect(screen.getByTestId('source').textContent).toBe('832×1216');
     expect(vi.mocked(createOutpaintCanvas).mock.calls[0][1]).toEqual(expansion);
-    await waitFor(() => expect((screen.getByText('生成') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByText('生成'));
+    await waitFor(() => expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
     expect(onGenerate.mock.calls[0][0]).toMatchObject({ canvasWidth: 832, canvasHeight: 1536, expansion });
+  });
+
+  it('扩图应用期间桌面和手机显示应用中，不继续提示未应用', async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    onCanvasChange.mockReturnValueOnce(pending);
+    render(<Harness />);
+    await waitFor(() => expectStatus('请先应用画布扩展'));
+    fireEvent.click(screen.getByText('应用'));
+    await waitFor(() => expectStatus('应用画布扩展中…'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { finish(); });
+    await waitFor(() => expectStatus('生成'));
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 没有底图时桌面和手机一致提示选择底图', async operation => {
+    render(<Harness operation={operation} baseImage={null} />);
+    await waitFor(() => expectStatus('请先选择底图'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(createImageBitmap).not.toHaveBeenCalled();
+  });
+
+  it('恢复本地底图期间两端显示读取中，读取结束后图生图可直接生成', async () => {
+    const view = render(<Harness operation="image-to-image" isBaseImageLoading />);
+    await waitFor(() => expectStatus('读取图片中…'));
+    await waitFor(() => expect(screen.getByTestId('image')).toHaveProperty('height', 1216));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(<Harness operation="image-to-image" />);
+    await waitFor(() => expectStatus('生成'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('聚焦缺选区与普通重绘空蒙版分别提示，反选后可生成，清空立即恢复提示', async () => {
+    const contexts = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(function (this: HTMLCanvasElement) {
+      if (!contexts.has(this)) {
+        let pixels = new Uint8ClampedArray(4);
+        contexts.set(this, {
+          drawImage: vi.fn(), clearRect: () => { pixels = new Uint8ClampedArray(4); },
+          putImageData: (image: ImageData) => { pixels = new Uint8ClampedArray(image.data); },
+          createImageData: () => ({ data: new Uint8ClampedArray(4) }),
+          getImageData: () => ({ data: new Uint8ClampedArray(pixels) }),
+        } as unknown as CanvasRenderingContext2D);
+      }
+      return contexts.get(this)!;
+    });
+    render(<Harness operation="inpaint" />);
+    await waitFor(() => expectStatus('请先框选区域'));
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText('普通重绘'));
+    expectStatus('请先涂画重绘区域');
+    fireEvent.click(screen.getByText('反选蒙版'));
+    expectStatus('生成');
+    fireEvent.click(screen.getByRole('button', { name: '生成' }));
+    expect(onGenerate).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByText('清空蒙版'));
+    expectStatus('请先涂画重绘区域');
+    expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

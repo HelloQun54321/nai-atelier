@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   delayedBaseSave: null as Promise<void> | null,
   runtime: null as NaiRuntimeConfig | null,
   subscription: null as NovelaiSubscriptionInfo | null,
+  subscriptionLoading: false,
   refreshedSubscription: null as NovelaiSubscriptionInfo | null,
   delayedSubscription: null as Promise<NovelaiSubscriptionInfo | null> | null,
 }));
@@ -35,7 +36,7 @@ vi.mock('../../services/naiRuntime', async importOriginal => {
 });
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
-  useNovelaiUsage: () => ({ info: state.subscription, usage: state.subscription?.usage, loading: false, error: null, fetchedAt: 0, refresh: async () => state.refreshedSubscription, refreshIfStale: async () => state.delayedSubscription || state.refreshedSubscription }),
+  useNovelaiUsage: () => ({ info: state.subscription, usage: state.subscription?.usage, loading: state.subscriptionLoading, error: null, fetchedAt: 0, refresh: async () => state.refreshedSubscription, refreshIfStale: async () => state.delayedSubscription || state.refreshedSubscription }),
 }));
 vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
@@ -62,6 +63,7 @@ vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteText
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
+  <output aria-label="文生图费用">{props.generationCostLabel}</output>
   <output aria-label="预览历史编号">{props.historyLabel}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览下一张</button>}
   <button onClick={() => { void props.handleGenerate(); }}>生成合成文生图</button>
@@ -85,6 +87,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <output aria-label="编辑费用">{props.generationCostLabel(props.operation, props.draft.focused, { width: 832, height: 1216, focusedRect: props.draft.focusedRect })}</output>
   <button onClick={() => props.onDraftChange({ focused: false })}>使用普通重绘</button>
   <output aria-label="编辑底图">{props.baseImage}</output>
+  <output aria-label="编辑底图读取状态">{String(props.isBaseImageLoading)}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
   <output aria-label="编辑结果">{props.previewImage}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览编辑下一张</button>}
@@ -123,6 +126,7 @@ beforeEach(() => {
   state.delayedBaseSave = null;
   state.runtime = { ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } };
   state.subscription = null; state.refreshedSubscription = null;
+  state.subscriptionLoading = false;
   state.delayedSubscription = null;
   state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
   state.confirm.mockReset(); state.confirm.mockResolvedValue(true); state.history.mockReset(); state.history.mockResolvedValue([]); state.generate.mockReset(); state.addHistory.mockReset(); state.unlinkHistory.mockClear();
@@ -176,12 +180,13 @@ it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失
 });
 
 it('保持打开的实验室继续接收运行时更新，按钮费用不冻结在首次加载值', async () => {
+  state.subscription = { active: false, tier: 3 };
   const entry = { ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full', steps: 29 } };
   const { rerender, props } = setup(entry);
-  expect(screen.getByRole('button', { name: /^生成 · 30 点/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^生成 · 30 Anlas/ })).toBeTruthy();
   state.runtime = { ...state.runtime!, billing: { ...DEFAULT_NAI_RUNTIME.billing, modelMultipliers: { v5: 2 } } };
   rerender(<ChainEditor {...props} />);
-  expect(screen.getByRole('button', { name: /^生成 · 40 点/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^生成 · 40 Anlas/ })).toBeTruthy();
   expect(state.generate).not.toHaveBeenCalled();
 });
 
@@ -306,14 +311,45 @@ it.each(['playground', chain.id])('%s 局部重绘重置后默认聚焦，图生
   expect(state.generate).not.toHaveBeenCalled();
 });
 
-it('默认聚焦未框选时提示先框选，手动关闭后才显示普通重绘费用', async () => {
+it('默认聚焦未框选时费用留空，手动关闭后显示普通重绘费用', async () => {
+  state.subscription = { active: false, tier: 3 };
   setup();
   await switchTo('局部重绘');
   expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('true');
-  expect(screen.getByLabelText('编辑费用').textContent).toBe('先框选区域');
+  expect(screen.getByLabelText('编辑费用').textContent).toBe('');
   fireEvent.click(screen.getByRole('button', { name: '使用普通重绘' }));
   expect(screen.getByLabelText('聚焦重绘状态').textContent).toBe('false');
-  expect(screen.getByLabelText('编辑费用').textContent).toMatch(/^\d+ 点$/);
+  expect(screen.getByLabelText('编辑费用').textContent).toMatch(/^\d+ Anlas$/);
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it.each(['nai-diffusion-5-full', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full'])('%s 四模式统一显示免费或 Opus，已有快照刷新时不闪回确认', async model => {
+  state.subscription = { active: true, tier: 3 };
+  state.subscriptionLoading = true;
+  setup({ ...chain, params: { ...chain.params, model } });
+  const label = model.startsWith('nai-diffusion-5-') ? '消耗 Opus 额度' : '免费';
+  expect(screen.getByLabelText('文生图费用').textContent).toBe(label);
+  expect(screen.getByRole('button', { name: `生成 · ${label}` })).toBeTruthy();
+  for (const mode of ['图生图', '局部重绘', '扩图']) {
+    await switchTo(mode);
+    if (mode === '局部重绘') fireEvent.click(screen.getByRole('button', { name: '使用普通重绘' }));
+    expect(screen.getByLabelText('编辑费用').textContent).toBe(label);
+  }
+  expect(state.generate).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('订阅尚未知（刷新 %s）时四模式明确费用未知，文生图仍可点击', async loading => {
+  state.subscriptionLoading = loading;
+  setup();
+  const label = loading ? '费用确认中…' : '费用未知';
+  expect(screen.getByLabelText('文生图费用').textContent).toBe(label);
+  expect((screen.getByRole('button', { name: `生成 · ${label}` }) as HTMLButtonElement).disabled).toBe(false);
+  for (const mode of ['图生图', '局部重绘', '扩图']) {
+    await switchTo(mode);
+    if (mode === '局部重绘') fireEvent.click(screen.getByRole('button', { name: '使用普通重绘' }));
+    expect(screen.getByLabelText('编辑费用').textContent).toBe(label);
+  }
+  expect(state.confirm).not.toHaveBeenCalled();
   expect(state.generate).not.toHaveBeenCalled();
 });
 
@@ -716,10 +752,13 @@ describe('统一工作台真实状态链路', () => {
     });
     setup();
     await switchTo('扩图');
+    expect(screen.getByLabelText('编辑底图读取状态').textContent).toBe('true');
+    expect((screen.getByRole('button', { name: '读取图片中…' }) as HTMLButtonElement).disabled).toBe(true);
     await switchTo('局部重绘');
     await act(async () => { release(new Blob(['late base'], { type: 'image/png' })); });
     expect(screen.getByRole('region', { name: 'inpaint' })).toBeTruthy();
     expect(screen.getByLabelText('编辑底图').textContent).toBe('');
+    expect(screen.getByLabelText('编辑底图读取状态').textContent).toBe('false');
     expect(screen.getByLabelText('编辑蒙版').textContent).toBe('');
   });
 });

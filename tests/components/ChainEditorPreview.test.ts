@@ -118,9 +118,9 @@ describe('生成后的操作恢复', () => {
     emitCloudQueueStatus({ taskId: 'task', phase: 'waiting' });
     const onGenerate = vi.fn();
     const view = renderPreview(onGenerate);
-    expect(screen.queryByRole('button', { name: /生成图片/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^生成.*免费$/ })).toBeNull();
     act(() => emitCloudQueueStatus({ taskId: 'task', phase: 'completed' }));
-    const button = screen.getByRole('button', { name: /生成图片/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     expect(screen.queryByText('生成完成')).toBeNull();
     fireEvent.click(button);
@@ -137,7 +137,7 @@ describe('生成后的操作恢复', () => {
     const onGenerate = vi.fn();
     renderPreview(onGenerate);
     expect(screen.getByRole('status')).toBeTruthy();
-    const button = screen.getByRole('button', { name: /生成图片/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
     expect(onGenerate).toHaveBeenCalledTimes(1);
@@ -161,12 +161,42 @@ describe('生成后的操作恢复', () => {
       onGenerate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', canGenerate: true,
     };
     const view = render(React.createElement(ImageEditPreview, props));
-    const button = screen.getByRole('button', { name: /生成.*结果/ }) as HTMLButtonElement;
+    const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     expect(button.className).toContain('hidden lg:flex');
     fireEvent.click(button);
     expect(onGenerate).toHaveBeenCalledTimes(1);
     view.rerender(React.createElement(ImageEditPreview, { ...props, canGenerate: false }));
-    expect((screen.getByRole('button', { name: /生成.*结果/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '请先选择底图' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('四模式共用生成状态', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 桌面排队可取消，开始生成后显示步数，完成即恢复', operation => {
+    emitCloudQueueStatus({ taskId: 'shared', phase: 'waiting', position: 2, cancelable: true });
+    const common = { isGenerating: true, generationProgress: { step: 8, total: 28 }, generationCostLabel: '消耗 Opus 额度' };
+    const props = { ...common, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' };
+    const editProps = { ...common, operation: operation === 'text-to-image' ? 'image-to-image' as const : operation, image: null, error: null, canGenerate: true, onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' };
+    const view = render(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, props) : React.createElement(ImageEditPreview, editProps));
+    expect(screen.getByRole('status').textContent).toContain('排队中 · 前方 2 个任务');
+    expect(screen.getByRole('button', { name: '取消排队' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /生成中/ })).toBeNull();
+    act(() => emitCloudQueueStatus({ taskId: 'shared', phase: 'generating', cancelable: false }));
+    expect(screen.getByRole('status').textContent).toContain('生成中 8/28');
+    expect(screen.queryByRole('button', { name: '取消排队' })).toBeNull();
+    act(() => emitCloudQueueStatus({ taskId: 'shared', phase: 'completed' }));
+    view.rerender(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, { ...props, isGenerating: false }) : React.createElement(ImageEditPreview, { ...editProps, isGenerating: false }));
+    expect((screen.getByRole('button', { name: /^生成.*消耗 Opus 额度$/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it.each(['读取图片中…', '画布加载中…', '请先框选区域', '请先涂画重绘区域', '请先应用画布扩展', '应用画布扩展中…'])('编辑未就绪准确显示 %s，不混入费用', unavailableLabel => {
+    const generate = vi.fn();
+    render(React.createElement(ImageEditPreview, { operation: 'inpaint', image: null, error: null, generationCostLabel: '消耗 Opus 额度', canGenerate: false, unavailableLabel, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' }));
+    const button = screen.getByRole('button', { name: unavailableLabel }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.queryByText('消耗 Opus 额度')).toBeNull();
+    fireEvent.click(button);
+    expect(generate).not.toHaveBeenCalled();
   });
 });

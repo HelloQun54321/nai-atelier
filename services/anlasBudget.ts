@@ -67,8 +67,8 @@ export const usageForCostEstimate = async (
 /** 生成按钮的费用提示：V5 等受限模型的免费档也会消耗 Opus 额度。 */
 export const formatGenerationCostLabel = (cost: number, model?: string): string => {
   const usesOpusAllowance = isOpusUsageLimitedModel(model);
-  if (cost > 0) return `${cost} 点`;
-  return usesOpusAllowance ? '消耗额度' : '免费';
+  if (cost > 0) return `${cost} Anlas`;
+  return usesOpusAllowance ? '消耗 Opus 额度' : '免费';
 };
 
 /**
@@ -100,12 +100,6 @@ export const estimateImageEditCost = (
     vibeCount: operation === 'image-to-image' && params.vibes?.enabled ? params.vibes.slots.length : 0,
     referenceCount: params.characterReferences?.enabled ? params.characterReferences.slots.length : 0,
   }, params.model || DEFAULT_NAI_MODEL, estimatorRuntime, typeof opusTier === 'number' && opusTier >= 3, opusUsageExhausted).cost;
-};
-
-export const formatImageEditCostLabel = (cost: number, _operation: ImageEditOperation, _focused: boolean, opusTier?: number) => {
-  if (opusTier === undefined) return '费用以官方返回为准';
-  if (opusTier >= 3 && cost === 0) return '零 Anlas';
-  return `${cost} 点`;
 };
 
 const broadcastBudget = (state: AnlasBudgetState, keyHash: string) => {

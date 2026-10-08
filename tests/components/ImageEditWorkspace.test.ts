@@ -570,7 +570,7 @@ describe('ImageEditPreview', () => {
     expect(preview?.className).toContain('lg:w-1/2');
     expect(screen.queryByLabelText('图片编辑画布')).toBeNull();
     expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /生成局部重绘结果/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^生成.*预计消耗 12 Anlas$/ })).toBeTruthy();
   });
 
   it('移动端编辑预览卡带 image-edit-preview-shell 标记并隐藏内嵌生成按钮', () => {
@@ -590,7 +590,7 @@ describe('ImageEditPreview', () => {
     expect(shell.className).toContain('hidden');
     expect(shell.className).toContain('lg:contents');
     expect(shell.className).not.toContain('lg:hidden');
-    const generateButton = screen.getByRole('button', { name: /生成局部重绘结果/ });
+    const generateButton = screen.getByRole('button', { name: /^生成.*预计消耗 12 Anlas$/ });
     // 移动端隐藏内嵌生成按钮（hidden），桌面端显示（lg:flex）——绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
     expect(generateButton.className).toContain('hidden');
     expect(generateButton.className).toContain('lg:flex');
@@ -639,7 +639,7 @@ describe('ImageEditPreview', () => {
       getDownloadFilename: () => 'fixture.png',
     }));
 
-    const generateButton = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    const generateButton = screen.getByRole('button', { name: /^生成/ }) as HTMLButtonElement;
     expect(generateButton.disabled).toBe(false);
     fireEvent.click(generateButton);
     expect(onGenerate).toHaveBeenCalledOnce();
@@ -657,7 +657,7 @@ describe('ImageEditPreview', () => {
       getDownloadFilename: () => 'fixture.png',
     }));
 
-    const buttonNoBase = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    const buttonNoBase = screen.getByRole('button', { name: '请先选择底图' }) as HTMLButtonElement;
     expect(buttonNoBase.disabled).toBe(true);
 
     rerender(React.createElement(ImageEditPreview, {
@@ -672,7 +672,7 @@ describe('ImageEditPreview', () => {
       getDownloadFilename: () => 'fixture.png',
     }));
 
-    const buttonLoading = screen.getByRole('button', { name: /生成图生图结果/ }) as HTMLButtonElement;
+    const buttonLoading = screen.getByRole('button', { name: '画布加载中…' }) as HTMLButtonElement;
     expect(buttonLoading.disabled).toBe(true);
   });
 

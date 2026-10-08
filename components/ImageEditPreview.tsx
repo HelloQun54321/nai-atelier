@@ -13,6 +13,7 @@ interface ImageEditPreviewProps {
   isLoading?: boolean;
   canGenerate?: boolean;
   generationDisabled?: boolean;
+  unavailableLabel?: string;
   onGenerate: () => void;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
@@ -30,7 +31,7 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
-  canGenerate, generationDisabled,
+  canGenerate, generationDisabled, unavailableLabel,
   onGenerate, onOpenLightbox, getDownloadFilename, generationData, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
@@ -63,10 +64,9 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         onRemoveCurrentHistory={onRemoveCurrentHistory}
         onClearHistoryGroup={onClearHistoryGroup}
         generationCostLabel={generationCostLabel}
-        generateLabel={`生成${getOperationLabel(operation)}结果`}
+        unavailableLabel={unavailableLabel || (isLoading ? '画布加载中…' : isGenerationDisabled && !isGenerating ? '请先选择底图' : undefined)}
         emptyLabel="暂无生成结果"
         resultAlt={`${getOperationLabel(operation)}预览`}
-        showQueueStatus={false}
         generationDisabled={isGenerationDisabled}
         hideGenerateButtonOnMobile
       />

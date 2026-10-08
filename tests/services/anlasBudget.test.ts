@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
-import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, formatImageEditCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
+import { ANLAS_BUDGET_CHANGED_EVENT, applyEstimatorRuntime, estimateImageEditCost, estimateV45GenerationCost, formatGenerationCostLabel, hashNaiApiKey, isOpusUsageLimitedModel, usageForCostEstimate, useAnlasBudget } from '../../services/anlasBudget';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { isActiveOpusSubscription } from '../../services/naiUsage';
 
@@ -80,20 +80,30 @@ describe('formatGenerationCostLabel', () => {
       const cost = estimateV45GenerationCost(params, opus, false);
       const expected = /^nai-diffusion-5-/.test(model) ? 30 : 20;
       expect(cost).toBe(expected);
-      expect(formatGenerationCostLabel(cost, model)).toBe(`${expected} 点`);
+      expect(formatGenerationCostLabel(cost, model)).toBe(`${expected} Anlas`);
       const editCost = estimateImageEditCost(params, 'inpaint', 1, true, opus ? expired.tier : 0, false);
       expect(editCost).toBe(expected);
-      expect(formatImageEditCostLabel(editCost, 'inpaint', true, opus ? expired.tier : 0)).toBe(`${expected} 点`);
+      expect(formatGenerationCostLabel(editCost, model)).toBe(`${expected} Anlas`);
     }
   });
   it('V5 免费档提示会消耗 Opus 额度而不是免费', () => {
-    expect(formatGenerationCostLabel(0, 'nai-diffusion-5-full')).toBe('消耗额度');
-    expect(formatGenerationCostLabel(0, 'nai-diffusion-5-curated')).toBe('消耗额度');
+    expect(formatGenerationCostLabel(0, 'nai-diffusion-5-full')).toBe('消耗 Opus 额度');
+    expect(formatGenerationCostLabel(0, 'nai-diffusion-5-curated')).toBe('消耗 Opus 额度');
   });
 
   it('V4.5 免费档仍显示免费，超出免费档显示 Anlas 点数', () => {
     expect(formatGenerationCostLabel(0, 'nai-diffusion-4-5-full')).toBe('免费');
-    expect(formatGenerationCostLabel(2, 'nai-diffusion-5-full')).toBe('2 点');
+    expect(formatGenerationCostLabel(2, 'nai-diffusion-5-full')).toBe('2 Anlas');
+  });
+
+  it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-4-5-full', 'nai-diffusion-4-full'])('%s 四模式的零 Anlas 提示同源，受限模型明确消耗 Opus', model => {
+    const params = { model, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
+    const label = model.startsWith('nai-diffusion-5-') ? '消耗 Opus 额度' : '免费';
+    expect(formatGenerationCostLabel(estimateV45GenerationCost(params, true, false), model)).toBe(label);
+    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) {
+      expect(formatGenerationCostLabel(estimateImageEditCost(params, operation, 1, false, 3, false), model)).toBe(label);
+    }
+    expect(formatGenerationCostLabel(estimateImageEditCost(params, 'inpaint', 1, true, 3, false), model)).toBe(label);
   });
 });
 
@@ -110,9 +120,6 @@ describe('image edit cost estimation', () => {
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 3, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 4, false)).toBe(0);
     expect(estimateImageEditCost(params, 'inpaint', 1, true, 2, false)).toBeGreaterThan(0);
-    expect(formatImageEditCostLabel(0, 'inpaint', true, 3)).toBe('零 Anlas');
-    expect(formatImageEditCostLabel(0, 'inpaint', true, 4)).toBe('零 Anlas');
-    expect(formatImageEditCostLabel(0, 'inpaint', true, undefined)).toBe('费用以官方返回为准');
   });
 
   it('does not charge retained Vibe slots for operations that do not send Vibe', () => {

@@ -32,7 +32,7 @@ interface ChainEditorPreviewProps {
     generationCostLabel: string;
     transparentPreview?: boolean;
     generationProgress?: { step: number; total: number } | null;
-    generateLabel?: string;
+    unavailableLabel?: string;
     emptyLabel?: string;
     resultAlt?: string;
     showQueueStatus?: boolean;
@@ -66,7 +66,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     generationCostLabel,
     transparentPreview = false,
     generationProgress = null,
-    generateLabel = '生成图片',
+    unavailableLabel,
     emptyLabel = '暂无生成结果',
     resultAlt = '已生成',
     showQueueStatus = true,
@@ -163,15 +163,15 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                 <div className="mt-4 flex flex-none flex-col items-center">
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
-                    {showQueueStatus && queueStatus && <InlineCloudQueueStatus className="mb-2 w-full max-w-xs flex-shrink-0" />}
+                    {showQueueStatus && queueStatus && <InlineCloudQueueStatus generationProgress={generationProgress} className="mb-2 w-full max-w-xs flex-shrink-0" />}
                     {!(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button
                         data-agent-action="business" onClick={handleGenerate}
                         disabled={isGenerating || generationDisabled}
                         className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}
                     >
                         <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
-                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : generateLabel}</span>
-                        {!isGenerating && <span className="generation-action-button__cost">{generationCostLabel}</span>}
+                        <span>{isGenerating ? generationProgress ? `生成中 ${generationProgress.step}/${generationProgress.total}` : '生成中…' : unavailableLabel || '生成'}</span>
+                        {!isGenerating && !unavailableLabel && generationCostLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                 </div>
             </div>

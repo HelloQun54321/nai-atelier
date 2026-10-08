@@ -35,6 +35,7 @@ interface ImageEditPanelProps {
   baseImage: string | null;
   /** 同一张图片再次作为新底图导入时，也必须重建画布并清掉旧蒙版。 */
   baseImageVersion?: number;
+  isBaseImageLoading?: boolean;
   previewImage: string | null;
   operation: ImageEditOperation;
   draft: LabImageEditDraft;
@@ -99,6 +100,7 @@ const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, 
 export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   baseImage,
   baseImageVersion = 0,
+  isBaseImageLoading = false,
   previewImage,
   operation,
   draft,
@@ -176,6 +178,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [minimumContextArea, setMinimumContextArea] = useState(normalizeMinimumContextArea(draft.minimumContextArea));
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [manualMaskEditing, setManualMaskEditing] = useState(false);
+  const [hasMask, setHasMask] = useState(false);
   const [expansion, setExpansion] = useState<ImageEditCanvasExpansion>(draft.expansion || emptyExpansion);
   const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
   const [isApplyingOutpaint, setIsApplyingOutpaint] = useState(false);
@@ -199,7 +202,17 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
   const pendingOutpaint = operation === 'outpaint' && !isSameOutpaintExpansion(expansion, draft.appliedExpansion || emptyExpansion);
-  const canGenerate = !isLoading && !isImportingImage && !isGenerating && !isApplyingOutpaint && !pendingOutpaint && state.width > 0 && state.height > 0 && Boolean(imageCanvasRef.current) && (operation === 'image-to-image' || Boolean(maskCanvasRef.current));
+  const unavailableLabel = isImportingImage || isBaseImageLoading ? '读取图片中…'
+    : isApplyingOutpaint ? '应用画布扩展中…'
+    : isLoading ? '画布加载中…'
+    : !baseImage || !state.width || !state.height ? '请先选择底图'
+    : pendingOutpaint ? '请先应用画布扩展'
+    : !imageCanvasRef.current || (operation !== 'image-to-image' && !maskCanvasRef.current) ? '画布加载中…'
+    : normalization ? '请先处理底图尺寸'
+    : operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2) ? '请先框选区域'
+    : operation !== 'image-to-image' && !hasMask ? '请先涂画重绘区域'
+    : undefined;
+  const canGenerate = !isGenerating && !unavailableLabel;
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
   // 通过回调上报而非可变 ref，父组件才能在自己渲染时拿到最新状态。
@@ -209,7 +222,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       generate: () => { void submit(); },
       costLabel: generationCostLabel(operation, focused, { width: state.width, height: state.height, focusedRect: state.focusedRect, minimumContextArea }),
       canGenerate,
-      unavailableLabel: isImportingImage ? '读取图片中…' : pendingOutpaint ? '请先应用画布扩展' : isApplyingOutpaint || isLoading ? '画布加载中…' : '请先选择底图',
+      unavailableLabel,
     });
   });
 
@@ -242,13 +255,16 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     const target = overlay.getContext('2d');
     if (!source || !target) return;
     const output = target.createImageData(mask.width, mask.height);
+    let hasInk = false;
     for (let index = 0; index < source.data.length; index += 4) {
       output.data[index] = 239;
       output.data[index + 1] = 68;
       output.data[index + 2] = 68;
+      hasInk ||= source.data[index + 3] !== 0;
       output.data[index + 3] = source.data[index + 3] ? Math.max(40, source.data[index + 3] * 0.55) : 0;
     }
     target.putImageData(output, 0, 0);
+    setHasMask(hasInk);
   };
 
   const restoreSnapshot = (item: MaskSnapshot) => {
@@ -1186,6 +1202,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           isLoading={isLoading || isImportingImage}
           isGenerating={isGenerating}
           canGenerate={canGenerate}
+          unavailableLabel={unavailableLabel}
           generationProgress={generationProgress}
           onOpenLightbox={onOpenLightbox}
           getDownloadFilename={getDownloadFilename}
