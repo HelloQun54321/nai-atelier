@@ -1,14 +1,13 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PromptChain, ChainType } from '../types';
-import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
-import { ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, Copy, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, Trash2, User } from 'lucide-react';
+import { Check, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, User } from 'lucide-react';
 import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -22,7 +21,6 @@ import { isStChatu8ExportableChain } from '../worker/stChatu8Policy.mjs';
 import { WisdomSyncToolbar } from './WisdomSyncToolbar';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
-import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { getCustomChainTags } from '../services/chainTags';
 
@@ -40,147 +38,11 @@ interface ChainListProps {
   returnTargetId?: string;
 }
 
-// Internal Component: Smart Copy Modal
-const CopyModal: React.FC<{
-    chain: PromptChain;
-    onClose: () => void;
-    notify: (msg: string) => void;
-}> = ({ chain, onClose, notify }) => {
-    const dialogRef = useModalA11y<HTMLDivElement>(true);
-    useEffect(() => {
-        const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && isTopmostModal(dialogRef.current)) onClose(); };
-        window.addEventListener('keydown', close);
-        return () => window.removeEventListener('keydown', close);
-    }, [onClose]);
-    // Default checked based on chain type
-    // Artist chain: usually Base (artist tag) + Modules (Style)
-    // Character chain: usually Base (char tag) + Modules (Costume)
-    const [checkBase, setCheckBase] = useState(true);
-    const [checkSubject, setCheckSubject] = useState(false); // Subject is variable, usually skipped for static copy
-    const [checkNegative, setCheckNegative] = useState(false);
-
-    // Initialize module selection (all active modules checked by default)
-    const [selectedModules, setSelectedModules] = useState<Record<string, boolean>>(() => {
-        const initial: Record<string, boolean> = {};
-        chain.modules?.forEach(m => {
-            if (m.isActive) initial[m.id] = true;
-        });
-        return initial;
-    });
-
-    const handleCopy = () => {
-        const parts: string[] = [];
-
-        // 1. Base
-        if (checkBase && chain.basePrompt) parts.push(chain.basePrompt);
-
-        // 2. Pre-Modules
-        chain.modules?.forEach(m => {
-            if (selectedModules[m.id] && m.position === 'pre') parts.push(m.content);
-        });
-
-        // 3. Subject (Optional)
-        if (checkSubject && chain.variableValues?.subject) parts.push(chain.variableValues.subject);
-
-        // 4. Post-Modules
-        chain.modules?.forEach(m => {
-            if (selectedModules[m.id] && (m.position === 'post' || !m.position)) parts.push(m.content);
-        });
-
-        const finalPrompt = parts.join(', ').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/,\s*$/, '');
-        navigator.clipboard.writeText(finalPrompt);
-        notify('已复制选中内容');
-        onClose();
-    };
-
-    const copyNegative = () => {
-        navigator.clipboard.writeText(chain.negativePrompt);
-        notify('负面 Prompt 已复制');
-    };
-
-    return (
-        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={chain.type === 'character' ? '复制自定义角色内容' : '复制风格串内容'} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={e => e.stopPropagation()}>
-                <div className="operation-header px-4 border-b border-gray-200 dark:border-gray-800 flex flex-none justify-between items-center bg-gray-50 dark:bg-gray-900">
-                    <h3 className="font-bold text-gray-900 dark:text-white truncate pr-4">{chain.name}</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">✕</button>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
-                    {/* Description Section (Full View) */}
-                    {chain.description && (
-                         <div className="bg-yellow-50 dark:bg-yellow-900/10 p-3 rounded-xl border border-yellow-100 dark:border-yellow-900/30 text-sm text-gray-700 dark:text-gray-300">
-                             <div className="font-bold text-xs text-yellow-600 dark:text-yellow-500 mb-1 uppercase">说明</div>
-                             <div className="whitespace-pre-wrap break-words">{chain.description}</div>
-                         </div>
-                    )}
-
-                    <div className="space-y-3">
-                        <h4 className="font-bold text-xs text-indigo-500 uppercase tracking-wider">选择要复制的内容</h4>
-
-                        {/* Base Prompt */}
-                        <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
-                            <input type="checkbox" checked={checkBase} onChange={e => setCheckBase(e.target.checked)} className="mt-1" />
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm dark:text-white">基础画风</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-2 break-all">{chain.basePrompt || '(空)'}</div>
-                            </div>
-                        </label>
-
-                        {/* Modules */}
-                        {chain.modules && chain.modules.length > 0 && (
-                            <div className="space-y-2 pl-4 border-l-2 border-gray-200 dark:border-gray-800">
-                                {chain.modules.map(m => (
-                                    <label key={m.id} className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!selectedModules[m.id]}
-                                            onChange={e => setSelectedModules({...selectedModules, [m.id]: e.target.checked})}
-                                        />
-                                        <span className="text-sm dark:text-gray-300">{m.name}</span>
-                                        <span className="text-xs text-gray-400 font-mono truncate max-w-[150px]">{m.content}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Subject */}
-                        <label className="flex items-start gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer">
-                            <input type="checkbox" checked={checkSubject} onChange={e => setCheckSubject(e.target.checked)} className="mt-1" />
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm dark:text-white">全局提示词 (变量)</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400 font-mono line-clamp-1">{chain.variableValues?.subject || '(空)'}</div>
-                            </div>
-                        </label>
-                    </div>
-
-                    {/* Negative Prompt Quick Copy */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-800">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-xs text-red-500 uppercase">全局负面提示词</span>
-                            <button onClick={copyNegative} className="text-xs text-indigo-600 hover:underline">仅复制负面</button>
-                        </div>
-                        <div className="text-xs text-gray-400 bg-gray-50 dark:bg-gray-900 p-2 rounded-xl font-mono max-h-20 overflow-y-auto">
-                            {chain.negativePrompt || '(空)'}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="operation-footer border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-none justify-end gap-2">
-                    <button onClick={onClose} className="px-4 py-2 text-gray-500 hover:text-gray-800 dark:hover:text-white">关闭</button>
-                    <button onClick={handleCopy} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg">复制选中组合</button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onRefresh, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onRefresh, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences();
   const masonryColumns = useMasonryColumnCount(imageDisplay);
   const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
-  const confirmAction = useConfirmDialog();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -188,7 +50,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [tagSearch, setTagSearch] = useState('');
-  const [copyModalChain, setCopyModalChain] = useState<PromptChain | null>(null);
   const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -344,9 +205,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     [previewRatios, syncSelection.open, syncSelection.entries],
   );
 
-  const deleteChain = async (chain: PromptChain) => {
-    if (await confirmAction({ title: `删除“${chain.name}”？`, message: `该${chain.type === 'character' ? '自定义角色' : '风格串'}及其配置将被永久删除，此操作无法撤销。`, confirmLabel: '确认删除', tone: 'danger' })) onDelete(chain.id);
-  };
   const renderChainCard = (chain: PromptChain) => (
     <PressRevealSurface pressDisabled={syncSelection.open} key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={syncSelection.selecting ? 'checkbox' : 'button'}
@@ -358,27 +216,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
-      {/* 原位操作由鼠标悬停／键盘聚焦／触屏长按显露。 */}
-      {!syncSelection.open && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-10 flex max-w-[calc(100%-4.5rem)] flex-wrap items-center gap-1">
-          {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-gray-100 hover:text-gray-900 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-gray-800" title="编辑信息" aria-label={`编辑${chain.type === 'character' ? '自定义角色' : '风格串'}信息：${chain.name}`}><Pencil className="h-4 w-4" /></button>}
-          {!isGuest && <button
-            type="button"
-            onClick={async event => {
-              event.stopPropagation();
-              await deleteChain(chain);
-            }}
-            className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-red-50 hover:text-red-500 dark:bg-black/70 dark:text-gray-300 dark:hover:text-red-400"
-            title="删除"
-            aria-label={`删除：${chain.name}`}
-          ><Trash2 className="h-4 w-4" /></button>}
-          <button
-              onClick={(e) => { e.stopPropagation(); setCopyModalChain(chain); }}
-          className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full bg-white/90 p-0 text-indigo-600 shadow-sm backdrop-blur hover:bg-indigo-50 dark:bg-black/70 dark:text-indigo-400 dark:hover:bg-indigo-900/50"
-              title="复制/查看详情" aria-label={`复制/查看详情：${chain.name}`}
-          >
-              <Copy className="h-4 w-4" />
-          </button>
-      </div>}
       {syncSelection.selecting && syncSelection.available.has(chain.id) && <span aria-hidden="true" className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm ${syncSelection.selected.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-400 bg-white/90 text-transparent dark:border-gray-500 dark:bg-gray-900/90'}`}><Check className="h-4 w-4" /></span>}
       {syncSelection.selecting && !isStChatu8ExportableChain(chain) && <span className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">仅 V4.5 / V5</span>}
 
@@ -387,6 +224,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
           style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
       >
+          {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
+          {!syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} />}
+            {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title="编辑信息" aria-label={`编辑${chain.type === 'character' ? '自定义角色' : '风格串'}信息：${chain.name}`}><Pencil className="h-4 w-4" /></button>}
+          </div>}
           {isUntestedChain(chain) && (
             <div
               className="absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
@@ -408,7 +250,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                         if (Number.isFinite(ratio) && ratio > 0 && previewRatios[chain.id] !== ratio) setPreviewRatios(previous => ({ ...previous, [chain.id]: ratio }));
                       }}
                   />
-                  {!syncSelection.open && <ImageShareOverlay imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} />}
               </div>
           ) : (
               <div className="text-gray-400 dark:text-gray-700">
@@ -596,16 +437,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         </div>
       </ImagePreviewPortal>)}
 
-      {/* Smart Copy Modal */}
       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
-      {copyModalChain && (
-          <ImagePreviewPortal><CopyModal
-            chain={copyModalChain}
-            onClose={() => setCopyModalChain(null)}
-            notify={notify}
-          /></ImagePreviewPortal>
-      )}
-
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal
         isOpen={isFolderImportOpen}

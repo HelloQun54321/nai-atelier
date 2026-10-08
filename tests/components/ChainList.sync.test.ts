@@ -9,14 +9,13 @@ import { ChainList } from '../../components/ChainList';
 import { copySharedImage } from '../../services/imageSharing';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 
-const { get, post, preferences, confirmAction } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true }, confirmAction: vi.fn() }));
+const { get, post, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true } }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
 vi.mock('../../services/api', () => ({ api: { get, post } }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => React.createElement('button', { role: 'switch', 'aria-label': '收集模式' }) }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => React.createElement('button', { 'aria-label': '图片反推' }) }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: ({ isOpen, onSuccess }: { isOpen: boolean; onSuccess: () => void }) => isOpen ? React.createElement('button', { onClick: onSuccess }, '完成测试导入') : null }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: () => null }));
-vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'grid' }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 2, ShortestColumnMasonry: () => null }));
 vi.mock('../../components/useRestoreListAnchor', () => ({ useRestoreListAnchor: () => {} }));
@@ -30,24 +29,37 @@ const chain = (id: string, name: string, model = 'nai-diffusion-4-5-full'): Prom
 });
 const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风格 V5', 'nai-diffusion-5-full'), chain('v4', '风格 V4', 'nai-diffusion-4-full')];
 const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() });
-it('封面右上复制图片不打开工作台或组合详情，管理按钮移左且保留顺序', async () => {
+it.each(['style', 'character'] as const)('%s 封面仅保留右上透明下载、复制和下方铅笔，子操作不打开工作台', async type => {
   const p = props();
-  render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], previewImage: '/synthetic/cover.png' }] }));
-  const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
+  const label = type === 'character' ? '自定义角色' : '风格串';
+  render(React.createElement(ChainList, { ...p, type, chains: [{ ...chains[0], type, previewImage: '/synthetic/cover.png' }] }));
+  const card = screen.getByRole('button', { name: `打开${label}：风格 A` });
   const imageCopy = within(card).getByRole('button', { name: '复制图片' });
-  expect(imageCopy.parentElement!.className).toContain('absolute right-2 top-2');
-  const management = within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }).parentElement!;
-  expect(management.classList.contains('left-2')).toBe(true);
-  expect(within(management).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['编辑风格串信息：风格 A', '删除：风格 A', '复制/查看详情：风格 A']);
+  const edit = within(card).getByRole('button', { name: `编辑${label}信息：风格 A` });
+  const controls = edit.parentElement!;
+  expect(controls.className).toContain('absolute right-2 top-2');
+  expect(controls.classList.contains('flex-col')).toBe(true);
+  expect(controls.classList.contains('hover-reveal-md')).toBe(true);
+  expect(controls.contains(imageCopy)).toBe(true);
+  const buttons = within(controls).getAllByRole('button');
+  expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['下载图片', '复制图片', `编辑${label}信息：风格 A`]);
+  for (const button of buttons) {
+    for (const token of ['bg-black/45', 'border-white/60', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(button.classList.contains(token)).toBe(true);
+    expect(button.classList.contains('bg-white/90')).toBe(false);
+  }
+  expect(within(card).queryByRole('button', { name: '删除：风格 A' })).toBeNull();
+  expect(within(card).queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
   fireEvent.click(imageCopy);
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
   fireEvent.keyDown(imageCopy, { key: 'Enter' });
+  fireEvent.keyDown(edit, { key: 'Enter' });
+  fireEvent.click(edit);
+  expect(screen.getByRole('dialog', { name: `编辑${label}信息` })).toBeTruthy();
   expect(p.onSelect).not.toHaveBeenCalled();
-  expect(screen.queryByRole('dialog', { name: '复制风格串内容' })).toBeNull();
+  expect(p.onDelete).not.toHaveBeenCalled();
 });
 beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
-  confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
   post.mockImplementation(async (_path, body) => ({ entries: body.chainIds.map((chainId: string) => ({ chainId, requestId: chainId, status: 'pending', requestedAt: 1, confirmedAt: 0, lastVerifiedAt: 0 })), lastSnapshotAt: 0 }));
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
@@ -74,7 +86,11 @@ describe('风格串列表的酒馆筛选交互', () => {
     let operation!: ReturnType<typeof operateAgentPage>;
     act(() => { operation = operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' }); }); await operation;
     expect(p.onSelect).toHaveBeenCalledExactlyOnceWith('a');
-    fireEvent.keyDown(screen.getAllByTitle('复制/查看详情')[0], { key: 'Enter' }); expect(p.onSelect).toHaveBeenCalledTimes(1);
+    const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
+    expect(edit.parentElement!.className).toContain('absolute right-2 top-2');
+    expect(screen.queryByRole('button', { name: '下载图片' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制图片' })).toBeNull();
+    fireEvent.keyDown(edit, { key: 'Enter' }); expect(p.onSelect).toHaveBeenCalledTimes(1);
   });
   it.each(['desktop', 'mobile'])('%s 自定义标签可组合模型与状态筛选，多选要求同时包含，选项不被结果缩掉', surface => {
     const items = [
@@ -156,45 +172,54 @@ describe('风格串列表的酒馆筛选交互', () => {
   });
 
   it('访客及同步挑选模式不显示卡片编辑入口', async () => {
-    const p = props(); const view = render(React.createElement(ChainList, { ...p, isGuest: true }));
+    const p = { ...props(), chains: [{ ...chains[0], previewImage: '/synthetic/cover.png' }] };
+    const view = render(React.createElement(ChainList, { ...p, isGuest: true }));
     expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
     view.rerender(React.createElement(ChainList, p));
     await waitFor(() => expect(screen.getByRole('button', { name: '智慧姬同步' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
     expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下载图片' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制图片' })).toBeNull();
     expect(screen.queryByRole('button', { name: /更多操作：/ })).toBeNull();
   });
 
-  it.each([390, 1024, 1280])('宽度 %s 的触屏长按显露原位操作，可查看并复制组合，子操作不打开工作台', async width => {
+  it.each([390, 1024, 1280])('宽度 %s 的触屏长按显露同组图片取用与编辑，子操作不打开工作台', async width => {
     vi.stubGlobal('innerWidth', width);
-    const writeText = vi.fn(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
-    const p = props(); render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], basePrompt: 'synthetic style', description: '完整组合说明' }] }));
+    const p = props(); render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], previewImage: '/synthetic/cover.png', description: '完整组合说明' }] }));
     const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
     expect(screen.queryByRole('button', { name: '更多操作：风格 A' })).toBeNull();
     expect(card.hasAttribute('data-press-revealed')).toBe(false); longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
     const controls = card.querySelector('[data-card-action]')!;
-    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['编辑风格串信息：风格 A', '删除：风格 A', '复制/查看详情：风格 A']);
-    fireEvent.click(within(card).getByRole('button', { name: '复制/查看详情：风格 A' }));
-    const copy = screen.getByRole('dialog', { name: '复制风格串内容' });
-    expect(within(copy).getByText('完整组合说明')).toBeTruthy();
-    fireEvent.click(within(copy).getByRole('button', { name: /复制选中/ }));
-    expect(writeText).toHaveBeenCalledWith('synthetic style');
+    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['下载图片', '复制图片', '编辑风格串信息：风格 A']);
+    fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
+    await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
+    fireEvent.click(within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }));
+    const edit = screen.getByRole('dialog', { name: '编辑风格串信息' });
+    expect((within(edit).getByRole('textbox', { name: '描述' }) as HTMLTextAreaElement).value).toBe('完整组合说明');
     expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
   });
 
-  it('手机原位删除继续确认，取消无副作用；访客只允许查看与复制', async () => {
+  it('手机移除白色按钮；访客有封面时只提供图片取用，无封面不留空操作组', async () => {
     vi.stubGlobal('innerWidth', 390);
-    const p = props(); const view = render(React.createElement(ChainList, p));
-    const remove = () => { longPress(screen.getByRole('button', { name: '打开风格串：风格 A' })); fireEvent.click(screen.getByRole('button', { name: '删除：风格 A' })); };
-    remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
-    expect(p.onDelete).not.toHaveBeenCalled();
-    confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(p.onDelete).toHaveBeenCalledExactlyOnceWith('a'));
+    const p = { ...props(), chains: [{ ...chains[0], previewImage: '/synthetic/cover.png' }] };
+    const view = render(React.createElement(ChainList, p));
+    longPress(screen.getByRole('button', { name: '打开风格串：风格 A' }));
+    expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制/查看详情：风格 A' })).toBeNull();
     view.rerender(React.createElement(ChainList, { ...p, isGuest: true }));
     longPress(screen.getByRole('button', { name: '打开风格串：风格 A' }));
     expect(screen.queryByRole('button', { name: '删除：风格 A' })).toBeNull();
-    expect(screen.getByRole('button', { name: '复制/查看详情：风格 A' })).toBeTruthy();
-    expect(p.onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /编辑风格串信息/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+    await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
+    view.rerender(React.createElement(ChainList, { ...p, chains: [chains[0]], isGuest: true }));
+    const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
+    expect(card.querySelector('.hover-reveal-md')).toBeNull();
+    expect(p.onSelect).not.toHaveBeenCalled(); expect(p.onDelete).not.toHaveBeenCalled();
   });
 
   it('顶栏按查找、同步、添加排序；刷新与图片反推入口移除', async () => {
@@ -280,7 +305,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it.each(['style', 'character'] as const)('%s 新建与复制弹窗脱离工作区隔离层，保留回调与应用主题', type => {
+  it.each(['style', 'character'] as const)('%s 新建与编辑弹窗脱离工作区隔离层，保留回调与应用主题', type => {
     const p = { ...props(), type, chains: chains.map(item => ({ ...item, type })) };
     const label = type === 'character' ? '新建自定义角色' : '新建风格串';
     const view = render(React.createElement('div', { className: 'agent-stage safe-mode' },
@@ -296,9 +321,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     fireEvent.click(within(create).getByRole('button', { name: '创建' }));
     expect(p.onCreate).toHaveBeenCalledWith('合成预设', '', type);
     expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getAllByTitle('复制/查看详情')[0]);
-    const copy = screen.getByRole('dialog', { name: type === 'character' ? '复制自定义角色内容' : '复制风格串内容' });
-    expect(copy.parentElement).toBe(stage); expect(copy.closest('.safe-mode')).toBe(stage);
+    fireEvent.click(screen.getAllByTitle('编辑信息')[0]);
+    const edit = screen.getByRole('dialog', { name: type === 'character' ? '编辑自定义角色信息' : '编辑风格串信息' });
+    expect(edit.closest('main')).toBeNull(); expect(edit.closest('.safe-mode')).toBe(stage);
   });
 
   it('卡片勾选取代打开编辑；跨搜索保持选择，V5 可选、V4 禁用，保存所选 V4.5 与 V5', async () => {

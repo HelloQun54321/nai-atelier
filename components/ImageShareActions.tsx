@@ -3,6 +3,8 @@ import { Copy, Download, LoaderCircle } from 'lucide-react';
 import { copySharedImage, downloadSharedImage, useCleanSharedImages } from '../services/imageSharing';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 
+export const IMAGE_CARD_ACTION_CLASS = 'mobile-touch mobile-size-locked h-11 w-11 rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90 md:h-8 md:w-8';
+
 interface Props {
   imageUrl: string;
   filename: string;
@@ -39,7 +41,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   };
   const iconOnly = variant === 'compact' || variant === 'card';
   const buttonClass = variant === 'card'
-    ? 'mobile-touch mobile-size-locked h-11 w-11 rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90 md:h-8 md:w-8'
+    ? IMAGE_CARD_ACTION_CLASS
     : variant === 'overlay'
     ? 'rounded bg-black/70 px-3 py-1.5 text-xs font-medium leading-4 text-white hover:bg-black/85'
     : 'rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800';

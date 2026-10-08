@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.40.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.40.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -208,7 +208,7 @@ flowchart LR
 - **无损原图与参数本地落盘**：每次生成的原图与全套 Prompt、Seed、采样参数即时保存入本地 D1 数据库与 R2 存储，清空浏览器缓存绝不丢失；
 - **连续沉浸式翻阅**：支持大图上一张/下一张连续浏览、键盘方向键切换与 100% 原始尺寸像素级查验；
 - **一键回填与微调**：大图详情直接提供「导入到实验室」，可指定送往文生图、图生图或局部重绘继续加工；
-- **统一图片取用**：AITag、Pixiv、Danbooru、画师库、角色库、灵感库与风格串封面都可直接下载、复制图片；卡片、详情和大图统一在图片区右上按「下载 → 复制」竖排，桌面悬停／键盘聚焦显露，触屏长按显露。外站作品卡片取首图，详情按对应图片／当前页取用，目录翻图后取当前显示的图片；Tag、角色提示词及风格串内容复制保持各自入口。
+- **统一图片取用**：AITag、Pixiv、Danbooru、画师库、角色库、灵感库与风格串封面都可直接下载、复制图片；卡片、详情和大图统一在图片区右上按「下载 → 复制」竖排，桌面悬停／键盘聚焦显露，触屏长按显露。风格串卡片在同列最下方放透明铅笔编辑，无封面仍可编辑；移除白色按钮组和独立风格串内容复制弹窗，通过复制图片携带其中的创作信息。外站作品卡片取首图，详情按对应图片／当前页取用，目录翻图后取当前显示的图片；Tag 与角色提示词复制保持各自入口。
 - **图片分享与隐私保护**：各入口共用图片分享设置。在设置中开启「分享图片时移除生成信息」后，分享出的图片会自动清洗隐藏元数据；原始资产和完整生成信息保留，清洗失败会明确提示。
 
 ---
