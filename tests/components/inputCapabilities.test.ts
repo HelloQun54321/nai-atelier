@@ -91,11 +91,13 @@ it('纯触屏的模拟 hover 不会显露；文字层始终不拦截图片点击
   actions.classList.add('hover-reveal-info'); group.setAttribute('data-press-revealed', 'true');
   expect(stylesFor(actions, devices[0])).toMatchObject({ opacity: '1', 'pointer-events': 'none' });
 });
-it('触控动作保留 44px 命中区域，显露不通过更改尺寸或定位实现', () => {
-  const { group, actions, button } = fixture('md');
-  expect(stylesFor(button, devices[0])).toMatchObject({ 'min-width': '2.75rem', 'min-height': '2.75rem' });
-  const before = stylesFor(actions, devices[0]); group.setAttribute('data-press-revealed', 'true');
-  const after = stylesFor(actions, devices[0]);
-  const geometric = (values: Record<string, string>) => Object.keys(values).filter(key => /height|width|display|position|padding|margin/.test(key));
-  expect(geometric(before)).toEqual(geometric(after)); expect(geometric(after)).toHaveLength(0);
+it.each(devices.filter(device => device.anyPointer === 'coarse'))('触控设备 $width / $pointer：卡片与大小预览均保留 44px 命中区域，显露不改变几何布局', device => {
+  for (const kind of ['md', 'lg', 'touch'] as const) {
+    const { group, actions, button } = fixture(kind);
+    expect(stylesFor(button, device)).toMatchObject({ 'min-width': '2.75rem', 'min-height': '2.75rem' });
+    const before = stylesFor(actions, device); group.setAttribute('data-press-revealed', 'true');
+    const after = stylesFor(actions, device);
+    const geometric = (values: Record<string, string>) => Object.keys(values).filter(key => /height|width|display|position|padding|margin/.test(key));
+    expect(geometric(before)).toEqual(geometric(after)); expect(geometric(after)).toHaveLength(0);
+  }
 });

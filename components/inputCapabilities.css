@@ -7,6 +7,8 @@
   .hover-reveal-touch { opacity: 0; pointer-events: none; }
   .hover-reveal-md.mobile-touch,
   .hover-reveal-md .mobile-touch,
+  .hover-reveal-lg.mobile-touch,
+  .hover-reveal-lg .mobile-touch,
   .hover-reveal-touch.mobile-touch,
   .hover-reveal-touch .mobile-touch { min-width: 2.75rem; min-height: 2.75rem; touch-action: manipulation; }
 }

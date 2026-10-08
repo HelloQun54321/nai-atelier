@@ -1,9 +1,9 @@
 import React, { useRef } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { ImageShareActions } from './ImageShareActions';
+import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Upload } from 'lucide-react';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 
-const IMAGE_PREVIEW_BUTTON_CLASS = 'inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium leading-4 whitespace-nowrap disabled:opacity-50';
+const IMAGE_PREVIEW_BUTTON_CLASS = `${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:cursor-wait disabled:opacity-50`;
 
 interface Props {
   imageUrl?: string | null;
@@ -29,21 +29,25 @@ export const ImagePreviewActions: React.FC<Props> = ({
   const visibility = onBack ? 'hover-reveal-md' : 'hover-reveal-lg';
   return <>
     {(onBack || (imageUrl && canManageHistoryGroup)) && <div data-card-action="true" className={`pointer-events-none absolute top-4 left-4 z-30 flex flex-col items-start ${onBack ? 'gap-6' : 'gap-2'} ${onBack ? '' : visibility}`} onClick={event => event.stopPropagation()}>
-      {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回小图" title="返回小图" className="pointer-events-auto mobile-touch inline-flex h-12 w-12 items-center justify-center rounded-lg bg-black/70 text-white hover:bg-black/85">
+      {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label="返回小图" title="返回小图" className={`${IMAGE_PREVIEW_BUTTON_CLASS} pointer-events-auto !h-12 !w-12`}>
         <ArrowLeft className="h-7 w-7" aria-hidden="true" />
       </button>}
-      {imageUrl && canManageHistoryGroup && <div className={`flex flex-col ${onBack ? 'gap-6' : 'gap-2'} ${visibility}`}>
-        <button type="button" onClick={() => onRemoveCurrentHistory?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-red-600/90 text-white shadow-lg backdrop-blur hover:bg-red-500`} title="从当前风格串历史组移除这张图，历史页仍会保留">删除</button>
-        <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-gray-900/85 text-white shadow-lg backdrop-blur hover:bg-gray-800`} title="清空当前风格串历史组，历史页仍会保留">清除</button>
+      {imageUrl && canManageHistoryGroup && <div className={`flex flex-col gap-2 ${visibility}`}>
+        <button type="button" onClick={() => onRemoveCurrentHistory?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-red-600/90 hover:!bg-red-500`} aria-label="移除当前图片" title="移除当前图片，历史页仍会保留"><ImageMinus className="h-4 w-4" aria-hidden="true" /></button>
+        <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-gray-900/85 hover:!bg-gray-800`} aria-label="清空当前历史组" title="清空当前历史组，历史页仍会保留"><ListX className="h-4 w-4" aria-hidden="true" /></button>
       </div>}
     </div>}
-    {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-stretch gap-2 ${visibility}`} onClick={event => event.stopPropagation()}>
+    {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-center gap-2 ${visibility}`} onClick={event => event.stopPropagation()}>
       <ImageShareActions imageUrl={imageUrl} generationData={generationData} filename={filename} notify={notify} variant="card" className="flex-col" />
-      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-indigo-600/90 text-white hover:bg-indigo-600`}>{isUploading ? '上传中...' : '设为封面'}</button>}
+      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label="设为封面" title={isUploading ? '封面处理中…' : '设为封面并保存'} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-600/90 hover:!bg-indigo-600`}>
+        {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-indigo-600" strokeWidth={3} /></span>}
+      </button>}
     </div>}
     {onUploadCover && <div data-card-action="true" className={`absolute bottom-4 right-4 z-30 ${visibility}`} onClick={event => event.stopPropagation()}>
       <input aria-label="上传作品封面" type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onUploadCover} />
-      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className={`${IMAGE_PREVIEW_BUTTON_CLASS} bg-gray-800/80 text-white shadow-lg backdrop-blur hover:bg-gray-700`}>{isUploading ? '上传中...' : '手动上传'}</button>
+      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} aria-busy={isUploading} aria-label="手动上传封面" title={isUploading ? '封面处理中…' : '手动上传封面并保存'} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-gray-800/80 hover:!bg-gray-700`}>
+        {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
+      </button>
     </div>}
   </>;
 };

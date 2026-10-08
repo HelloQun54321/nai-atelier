@@ -597,16 +597,17 @@ describe('ImageEditPreview', () => {
     expect(generateButton.className).not.toContain('lg:hidden');
   });
 
-  it('与文生图一致显示历史管理按钮、切换按钮和计数', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 与文生图一致显示圆形历史管理、切换按钮和计数，点击管理不误开大图', operation => {
     const onRemoveCurrentHistory = vi.fn();
     const onClearHistoryGroup = vi.fn();
+    const onOpenLightbox = vi.fn();
     render(React.createElement(ImageEditPreview, {
-      operation: 'image-to-image',
+      operation,
       image: 'data:image/png;base64,fixture',
       error: null,
       generationCostLabel: '免费',
       onGenerate: vi.fn(),
-      onOpenLightbox: vi.fn(),
+      onOpenLightbox,
       getDownloadFilename: () => 'fixture.png',
       canNavigateHistory: true,
       historyLabel: '2 / 21',
@@ -620,10 +621,17 @@ describe('ImageEditPreview', () => {
     expect(screen.getByText('2 / 21')).toBeTruthy();
     expect(screen.getByRole('button', { name: '上一张历史图' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '下一张历史图' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '删除' }));
-    fireEvent.click(screen.getByRole('button', { name: '清除' }));
+    const remove = screen.getByRole('button', { name: '移除当前图片' });
+    const clear = screen.getByRole('button', { name: '清空当前历史组' });
+    expect(remove.classList.contains('rounded-full')).toBe(true);
+    expect(remove.classList.contains('!bg-red-600/90')).toBe(true);
+    expect(clear.classList.contains('rounded-full')).toBe(true);
+    expect(clear.classList.contains('!bg-gray-900/85')).toBe(true);
+    fireEvent.click(remove);
+    fireEvent.click(clear);
     expect(onRemoveCurrentHistory).toHaveBeenCalledOnce();
     expect(onClearHistoryGroup).toHaveBeenCalledOnce();
+    expect(onOpenLightbox).not.toHaveBeenCalled();
   });
 
   it('载入底图后右侧无生成结果（image 为 null）时，若 canGenerate 为 true 则生成按钮可用', () => {
