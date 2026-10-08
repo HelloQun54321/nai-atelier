@@ -42,10 +42,11 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   const controls = edit.parentElement!;
   expect(controls.className).toContain('absolute right-2 top-2');
   expect(controls.classList.contains('flex-col')).toBe(true);
-  expect(controls.classList.contains('hover-reveal-md')).toBe(true);
+  expect(controls.classList.contains('hover-reveal-md')).toBe(false);
+  expect(within(controls).getByRole('button', { name: '收藏' }).closest('.hover-reveal-md')).toBeNull();
   expect(controls.contains(imageCopy)).toBe(true);
   const buttons = within(controls).getAllByRole('button');
-  expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['下载图片', '复制图片', `编辑${label}信息：风格 A`]);
+  expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', `编辑${label}信息：风格 A`]);
   for (const button of buttons) {
     for (const token of ['bg-black/45', 'border-white/60', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(button.classList.contains(token)).toBe(true);
     expect(button.classList.contains('bg-white/90')).toBe(false);
@@ -197,7 +198,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); render(React.createElement(ChainList, p));
     const edit = screen.getByRole('button', { name: '编辑风格串信息：风格 A' });
     expect(edit.className).not.toContain('hidden');
-    expect(edit.parentElement?.classList.contains('hover-reveal-md')).toBe(true);
+    expect(edit.classList.contains('hover-reveal-md')).toBe(true);
     fireEvent.click(edit);
     expect(p.onSelect).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '改名后的风格' } });
@@ -231,7 +232,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(card.hasAttribute('data-press-revealed')).toBe(false); longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
     const controls = card.querySelector('[data-card-action].right-2')!;
-    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['下载图片', '复制图片', '编辑风格串信息：风格 A']);
+    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '编辑风格串信息：风格 A']);
     fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
     fireEvent.click(within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }));
@@ -444,3 +445,11 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(screen.queryByRole('button', { name: '智慧姬同步' })).toBeNull(); expect(post).not.toHaveBeenCalled();
   });
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

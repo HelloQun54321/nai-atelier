@@ -16,9 +16,6 @@ import {
   getAitagModelLabel,
   getAitagType,
 } from '../services/aitagService';
-import { db } from '../services/dbService';
-import { CollectionFolderSelect } from './inspiration/CollectionControls';
-import { rememberCollectionFolder } from '../services/inspirationUtils';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
 import { SmartImage } from './SmartImage';
@@ -27,8 +24,8 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, LoaderCircle, Package, Star } from 'lucide-react';
-import { FavoriteButton, IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { ExternalLink, Filter, FlaskConical, LoaderCircle, Package } from 'lucide-react';
+import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
@@ -36,6 +33,7 @@ import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageShareOverlay } from './ImageShareActions';
+import { collectionSnapshot, subscribeCollection, aitagCollectionImages, type CollectionTarget } from '../services/collectionFavorites';
 import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCache';
 
 interface AitagGalleryProps {
@@ -173,7 +171,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   </div>
 );
 
-const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; onResolveFirstImage: () => void; notify: AitagGalleryProps['notify'] }> = ({ work, detail, onImageLoad, onResolveFirstImage, notify }) => {
+const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; onResolveFirstImage: () => void; notify: AitagGalleryProps['notify']; favorite: CollectionTarget; onFavoriteChange: (active: boolean) => void }> = ({ work, detail, onImageLoad, onResolveFirstImage, notify, favorite, onFavoriteChange }) => {
   useLanguage();
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
@@ -229,7 +227,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
         }
       }}
     />
-    <ImageShareOverlay imageUrl={getMobileOriginalUrl(src)} filename={`aitag-${work.id}-p1.png`} notify={notify} />
+    <ImageShareOverlay imageUrl={getMobileOriginalUrl(src)} filename={`aitag-${work.id}-p1.png`} notify={notify} favorite={favorite} onFavoriteChange={onFavoriteChange} />
   </>);
 };
 
@@ -318,7 +316,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const savingImageRef = useRef<string | null>(null);
   const [savingImage, setSavingImage] = useState<string | null>(null);
-  const [collectionFolderId, setCollectionFolderId] = useState('');
   const [error, setError] = useState<string | null>(() => aitagPageCache.error);
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
@@ -372,7 +369,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const renderAitagCard = (work: AitagWorkSummary) => {
     const type = getAitagType(work);
     const isSelected = selectedId === work.id;
-    const isFavorite = isAitagFavorite(work);
     const detail = details[work.id];
     const imageCount = getAitagWorkImageCount(work, detail);
     const cacheLevel = getAitagCardCacheLevel(work, detail);
@@ -423,6 +419,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             work={work}
             detail={details[work.id]}
             notify={notify}
+            favorite={{ imageUrl: '', sourceType: 'aitag', sourceId: String(work.id), title: work.title, groupSize: Number(work.image_count || work.imageCount || 1), getGroup: async () => aitagCollectionImages(await getDetail(work)) }}
+            onFavoriteChange={active => updateWorkFavorite(work, active)}
             onResolveFirstImage={() => { void getDetail(work).catch(console.error); }}
             onImageLoad={(width, height) => {
               const ratio = width / Math.max(1, height);
@@ -444,19 +442,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>
-            {/* 卡片本身可点（含 Enter 键冒泡打开详情）：用外层 span 拦掉键盘冒泡，
-                收藏按钮的鼠标点击已在 onClick 里 stopPropagation */}
-            <span onKeyDownCapture={e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
-              <FavoriteButton
-                overlay
-                active={isFavorite}
-                onClick={e => {
-                  e.stopPropagation();
-                  void toggleFavorite(work);
-                }}
-                className="hover-reveal-touch flex-shrink-0"
-              />
-            </span>
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
             <span className="truncate">#{work.id}</span>
@@ -1030,38 +1015,22 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     refreshCacheStatus(sort, normalized).catch(console.error);
   };
 
-  const toggleFavorite = async (work: AitagWorkSummary) => {
-    const nextFavorite = !isAitagFavorite(work);
-    const now = Date.now();
-    setItems(prev => {
-      const nextItems = prev
-        .map(item => item.id === work.id
-          ? { ...item, isFavorite: nextFavorite, is_favorite: nextFavorite ? 1 : 0, favoriteAt: nextFavorite ? now : undefined, favorite_at: nextFavorite ? now : undefined }
-          : item
-        )
-        .filter(item => cacheFilter !== 'favorite' || isAitagFavorite(item));
-      aitagPageCache = { ...aitagPageCache, items: nextItems };
-      return nextItems;
-    });
+  useEffect(() => {
+    const sync = () => {
+      const states = new Map<string, boolean>();
+      for (const item of collectionSnapshot()) if (item.sourceType === 'aitag' && item.sourceId) states.set(item.sourceId, Boolean(states.get(item.sourceId) || !item.archived));
+      setItems(previous => previous.map(work => states.has(String(work.id)) ? { ...work, isFavorite: states.get(String(work.id)), is_favorite: states.get(String(work.id)) ? 1 : 0 } : work).filter(work => cacheFilter !== 'favorite' || isAitagFavorite(work)));
+    };
+    sync(); return subscribeCollection(sync);
+  }, [cacheFilter]);
 
-    try {
-      const result = await aitagService.setFavorite(work.id, nextFavorite, {
-        sort,
-        timeRange: getAitagTimeRange(sort, rankMonth),
-      });
-      if (result.item) {
-        setItems(prev => {
-          const nextItems = prev
-            .map(item => item.id === work.id ? { ...item, ...result.item } : item)
-            .filter(item => cacheFilter !== 'favorite' || isAitagFavorite(item));
-          aitagPageCache = { ...aitagPageCache, items: nextItems };
-          return nextItems;
-        });
-      }
-    } catch (e: any) {
-      loadWorks(page, { silent: true });
-      notify(e.message || '加入收藏库失败', 'error');
-    }
+  const updateWorkFavorite = (work: AitagWorkSummary, active: boolean) => {
+    setItems(previous => {
+      const next = previous.map(item => item.id === work.id ? { ...item, isFavorite: active, is_favorite: active ? 1 : 0 } : item).filter(item => cacheFilter !== 'favorite' || isAitagFavorite(item));
+      aitagPageCache = { ...aitagPageCache, items: next };
+      return next;
+    });
+    onRefreshInspiration?.();
   };
 
   const submitPageInput = () => {
@@ -1199,40 +1168,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       notify('已保存到风格串');
     } catch (e: any) {
       notify(e.message || '保存失败', 'error');
-    } finally {
-      savingImageRef.current = null;
-      setSavingImage(null);
-    }
-  };
-
-  const saveToInspiration = async (image: AitagImage, index: number) => {
-    if (savingImageRef.current !== null) return;
-    const imageKey = `inspiration-${image.work_id}-${image.file_name}`;
-    savingImageRef.current = imageKey;
-    setSavingImage(imageKey);
-    try {
-      const importData = parseImageImportData(image);
-      await db.saveInspiration({
-        id: createUuid(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        title: getImageTitle(image, index),
-        boardId: collectionFolderId || undefined,
-        imageUrl: buildAitagImageUrl(image),
-        prompt: importData.prompt,
-        negativePrompt: importData.negativePrompt,
-        params: importData.params,
-        tags: ['AITag', selectedWork ? getAitagType(selectedWork) : image.image_type].filter(Boolean),
-        sourceType: 'aitag',
-        sourceId: String(image.work_id),
-        sourceUrl: selectedWork ? getAitagUrl(selectedWork) : `https://aitag.win/i/${image.work_id}`,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      onRefreshInspiration?.();
-      rememberCollectionFolder(collectionFolderId); notify('已加入收藏库');
-    } catch (e: any) {
-      notify(e.message || '加入收藏库失败', 'error');
     } finally {
       savingImageRef.current = null;
       setSavingImage(null);
@@ -1404,7 +1339,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("aitag 原页")}</ToolbarLink>
                 <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("Pixiv 原页")}</ToolbarLink>
               </div>
-              <label className="flex items-center justify-end gap-2 text-xs text-gray-500">{t("收藏夹")}<CollectionFolderSelect value={collectionFolderId} onChange={setCollectionFolderId} disabled={savingImage !== null} notify={notify} /></label>
               {selectedDetail.images
                 .slice()
                 .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
@@ -1416,8 +1350,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
                         <PressRevealSurface className="group relative">
-                          <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
-                          <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} />
+                          <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                          <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} />
                         </PressRevealSurface>
                         <div className="p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">
@@ -1437,7 +1371,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                             </div>
                             <div className="flex flex-none gap-2">
                               <IconButton label={t("保存到风格串")} disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
-                              <IconButton label={t("加入收藏库")} tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
                               <IconButton label={t("导入实验室")} tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}

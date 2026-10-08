@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Info, LoaderCircle, Maximize, Minus, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Info, LoaderCircle, Maximize, Minus, Plus, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -22,7 +22,7 @@ interface Props {
   onDetailsChange: (open: boolean) => void;
   onNavigate: (delta: number) => void;
   onClose: () => void;
-  onFavorite: () => void;
+  onFavorite: () => Promise<void>;
   onDelete: () => void;
   filename: string;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -80,10 +80,9 @@ export const HistoryImageViewer: React.FC<Props> = props => {
               <OriginalImage key={`${item.id}:${retry}`} src={item.imageUrl} alt={t("历史生成图片预览")} draggable={false} data-safe-mode-ignore="true" className="history-viewer-image" style={view.imageStyle} onLoad={view.onLoad} onError={() => setImageFailed(true)} />
               {imageFailed && <button data-card-action="true" className="history-viewer-error" onClick={() => { setImageFailed(false); setRetry(value => value + 1); }}>{t("原图加载失败 · 重试")}</button>}
               <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">
-                <button className="history-viewer-button" aria-label={item.isFavorite ? t("取消收藏") : t("收藏")} aria-pressed={Boolean(item.isFavorite)} disabled={props.favoritePending} onClick={props.onFavorite}>{props.favoritePending ? <LoaderCircle className="animate-spin" /> : <Heart className={item.isFavorite ? 'fill-current text-rose-400' : ''} />}</button>
                 <button className="history-viewer-button history-viewer-delete" aria-label={t("删除这张历史图片")} onClick={props.onDelete}><Trash2 /></button>
               </div>
-              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="hover-reveal-md history-viewer-share" />
+              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.onFavorite} />
               <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label={t("上一张图片")} disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
               <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label={t("下一张图片")} disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
               {navigating && <span role="status" className="history-viewer-loading"><LoaderCircle className="animate-spin" />{t("正在加载图片")}</span>}

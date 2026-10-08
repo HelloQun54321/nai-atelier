@@ -8,6 +8,7 @@ import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageE
 import { useNaiRuntime } from '../services/naiRuntime';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
+import type { CollectionTarget } from '../services/collectionFavorites';
 import { getCopiedImageData, type ImageGenerationData } from '../services/imageClipboardContext';
 import { ImageEditControls } from './ImageEditControls';
 import { ImageEditPreview } from './ImageEditPreview';
@@ -65,6 +66,7 @@ interface ImageEditPanelProps {
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
   generationData?: ImageGenerationData;
+  favorite?: CollectionTarget;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -127,6 +129,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onOpenLightbox,
   getDownloadFilename,
   generationData,
+  favorite,
   canNavigateHistory,
   historyLabel,
   onPreviousHistory,
@@ -1244,7 +1247,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           generationProgress={generationProgress}
           onOpenLightbox={onOpenLightbox}
           getDownloadFilename={getDownloadFilename}
-          generationData={generationData}
+          generationData={generationData} favorite={favorite}
           canNavigateHistory={canNavigateHistory}
           historyLabel={historyLabel}
           onPreviousHistory={onPreviousHistory}

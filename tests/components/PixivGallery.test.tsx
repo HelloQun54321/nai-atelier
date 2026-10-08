@@ -1,3 +1,4 @@
+import { toggleCollectionTarget } from '../../services/collectionFavorites';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -100,31 +101,32 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AIT
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
 });
 
-it('Pixiv 当前页保存原图与原站标签，不把原站标签假装成生图提示词，主操作直接反推', async () => {
-  render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+it('Pixiv 卡片一键收藏全组，详情爱心只收藏当前页并保留原站标签', async () => {
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  const open = await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  fireEvent.click(within(open.closest('article')!).getByRole('button', { name: '收藏整个作品组' }));
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledOnce());
+  const group = vi.mocked(toggleCollectionTarget).mock.calls[0][0];
+  expect(await group.getGroup!()).toEqual([expect.objectContaining({ imageId: '0', sourceId: '100' }), expect.objectContaining({ imageId: '1', sourceId: '100' })]);
+  fireEvent.click(open);
   await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
-  expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
-  const source = screen.getByRole('link', { name: '查看原帖' });
-  expect(source.closest('header')).toBeTruthy();
+  const source = screen.getByRole('link', { name: '查看原帖' }); expect(source.closest('header')).toBeTruthy();
   expect(source.getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
-  expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
-  vi.mocked(db.getInspirationBoards).mockResolvedValueOnce([{ id: 'composition', name: '构图参考', userId: 'owner', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
+  expect(screen.queryByRole('button', { name: '加入收藏库' })).toBeNull();
+  expect(screen.queryByRole('combobox', { name: '收藏夹' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '加入收藏库' }).hasAttribute('disabled')).toBe(false));
-  await screen.findByRole('option', { name: '构图参考' });
-  fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
-  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ boardId: 'composition', prompt: '', imageUrl: '/api/assets/uploaded', title: 'synthetic artwork · 第 2 页', analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1 }, sourceId: '100' })));
-  expect(importPixivImageAsFile).toHaveBeenCalledWith('https://i.pximg.net/p1.png');
+  const surface = container.querySelector('img[alt="synthetic artwork 第 2 页"]')!.closest('.press-reveal-surface')!;
+  fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[1][0]).toMatchObject({ imageUrl: 'https://i.pximg.net/p1.png', prompt: '', sourceType: 'pixiv', sourceId: '100', imageId: '1', analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1 } });
+  expect(pixivService.addBookmark).not.toHaveBeenCalled();
 });
 
 it('作者名直接进入全集，站内心形收藏与本地灵感保存区分，执行中阻止重复并保持状态', async () => {
   const notify = vi.fn();
   render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '加入收藏库' }).hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
   expect(screen.queryByRole('button', { name: '作者全集' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看 artist 的作者全集' }));
   await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('user', expect.objectContaining({ params: { user_id: '10' } })));
@@ -132,6 +134,7 @@ it('作者名直接进入全集，站内心形收藏与本地灵感保存区分�
   vi.mocked(pixivService.addBookmark).mockReturnValueOnce(new Promise(resolve => { finish = () => resolve({ success: true }); }));
   const favorite = screen.getByRole('button', { name: '收藏到 Pixiv' });
   expect(favorite.getAttribute('aria-pressed')).toBe('false');
+  expect(within(favorite).getByText('P')).toBeTruthy();
   expect(screen.getByRole('group', { name: '图片操作' }).contains(favorite)).toBe(true);
   expect(favorite.classList.contains('w-10')).toBe(true);
   fireEvent.click(favorite);
@@ -151,3 +154,11 @@ it('作者名直接进入全集，站内心形收藏与本地灵感保存区分�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('synthetic failure', 'error'));
   expect(screen.getByRole('button', { name: '收藏到 Pixiv' }).getAttribute('aria-pressed')).toBe('false');
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

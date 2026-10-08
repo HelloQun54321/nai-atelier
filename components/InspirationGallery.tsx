@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Check, CheckSquare, FolderPlus, Library, Pencil, Pin, Plus, Sparkles, Star, Trash2, Upload, X } from 'lucide-react';
+import { Check, CheckSquare, FolderPlus, Heart, Library, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
@@ -20,7 +20,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { InspirationDetail } from './inspiration/InspirationDetail';
 import { CollectionFolderSelect, CollectionTagInput } from './inspiration/CollectionControls';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
-import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, SortMode, sourceIcon, splitTags } from './inspiration/InspirationShared';
+import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
 interface InspirationGalleryProps {
   currentUser: User;
@@ -36,7 +36,7 @@ interface InspirationGalleryProps {
 interface UploadDraft { title: string; prompt: string; negativePrompt: string; notes: string; tags: string; boardId: string; params?: NAIParams; }
 const EMPTY_UPLOAD: UploadDraft = { title: '', prompt: '', negativePrompt: '', notes: '', tags: '', boardId: '' };
 
-export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground, chains = [], onCreateArtistChain, onSetChainCover }) => {
+export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground, onCreateArtistChain }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
@@ -54,8 +54,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const draggedIdsRef = useRef<string[]>([]);
   const movingRef = useRef(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [ratingFilter, setRatingFilter] = useState(0);
-  const [sort, setSort] = useState<SortMode>('created');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<Inspiration | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -91,9 +89,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const counts = useMemo(() => ({
     all: items.filter(item => !item.archived).length,
     unorganized: items.filter(item => !item.archived && !item.boardId).length,
-    pinned: items.filter(item => !item.archived && item.isPinned).length,
-    recent: items.filter(item => !item.archived && item.lastUsedAt).length,
-    archived: items.filter(item => item.archived).length,
   }), [items]);
 
   const allTags = useMemo(() => {
@@ -113,14 +108,14 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const sourceCounts = useMemo(() => {
     const result: Record<string, number> = {};
     items.forEach(item => {
-      if (Boolean(item.archived) !== (collection === 'archived')) return;
+      if (item.archived) return;
       const key = item.sourceType || 'other';
       result[key] = (result[key] || 0) + 1;
     });
     return result;
-  }, [items, collection]);
+  }, [items]);
   const availableSources = useMemo(() => {
-    return (['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'other'] as InspirationSourceType[])
+    return (['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'artist', 'character', 'chain', 'other'] as InspirationSourceType[])
       .filter(source => (sourceCounts[source] || 0) > 0 || source === sourceFilter);
   }, [sourceCounts, sourceFilter]);
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
@@ -128,24 +123,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const filtered = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
     return items.filter(item => {
-      if (collection === 'archived') { if (!item.archived) return false; } else if (item.archived) return false;
+      if (item.archived) return false;
       if (collection === 'unorganized' && item.boardId) return false;
-      if (collection === 'pinned' && !item.isPinned) return false;
-      if (collection === 'recent' && !item.lastUsedAt) return false;
       if (sourceFilter && (item.sourceType || 'other') !== sourceFilter) return false;
       if (boardId && item.boardId !== boardId) return false;
       if (!tagFilter.every(tag => (item.tags || []).includes(tag))) return false;
-      if (ratingFilter && (item.rating || 0) < ratingFilter) return false;
       if (query && ![item.title, item.prompt, item.negativePrompt, item.notes, ...(item.tags || [])].join('\n').toLowerCase().includes(query)) return false;
       return true;
     }).sort((a, b) => {
-      if (a.isPinned !== b.isPinned) return Number(b.isPinned) - Number(a.isPinned);
-      if (sort === 'used') return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
-      if (sort === 'popular') return (b.useCount || 0) - (a.useCount || 0);
-      if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
       return b.createdAt - a.createdAt;
     });
-  }, [items, collection, boardId, sourceFilter, tagFilter, ratingFilter, debouncedSearch, sort]);
+  }, [items, collection, boardId, sourceFilter, tagFilter, debouncedSearch]);
 
   const setUploadValue = <K extends keyof UploadDraft>(key: K, value: UploadDraft[K]) => setUploadDraft(previous => ({ ...previous, [key]: value }));
 
@@ -229,12 +217,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       void moveToFolder(ids, target);
     },
   });
-  const runBulkUpdate = async (updates: Partial<Inspiration>, success: string) => {
-    if (!selectedIds.size) return; setBusy('bulk');
-    try { await db.bulkUpdateInspirations(Array.from(selectedIds), updates); setSelectedIds(new Set()); await onRefresh(); notify(success); }
-    catch (error: any) { notify(error.message || '批量操作失败', 'error'); }
-    finally { setBusy(''); }
-  };
   const addBulkTags = async () => {
     const additions = splitTags(bulkTag); if (!additions.length || !selectedIds.size) return; setBusy('bulk');
     try { await Promise.all(items.filter(item => selectedIds.has(item.id)).map(item => db.updateInspiration(item.id, { tags: normalizeInspirationTags([...(item.tags || []), ...additions]) }))); setBulkTag(''); setSelectedIds(new Set()); await onRefresh(); notify('标签已添加'); }
@@ -242,17 +224,14 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     finally { setBusy(''); }
   };
   const deleteSelected = async () => {
-    if (!selectedIds.size || !await confirmAction({ title: `删除 ${selectedIds.size} 条收藏？`, message: '此操作不可撤销。被其他资料引用的原图会安全保留。', confirmLabel: '删除', tone: 'danger' })) return;
-    setBusy('bulk'); try { await db.bulkDeleteInspirations(Array.from(selectedIds)); setSelectedIds(new Set()); await onRefresh(); notify('已删除选中收藏'); }
-    catch (error: any) { notify(error.message || '删除失败', 'error'); } finally { setBusy(''); }
+    if (!selectedIds.size || !await confirmAction({ title: `取消 ${selectedIds.size} 张图片的收藏？`, message: '原图与已有分类信息会保留。', confirmLabel: '取消收藏', tone: 'danger' })) return;
+    setBusy('bulk'); try { await db.bulkDeleteInspirations(Array.from(selectedIds)); setSelectedIds(new Set()); await onRefresh(); notify('已取消选中收藏'); }
+    catch (error: any) { notify(error.message || '取消收藏失败', 'error'); } finally { setBusy(''); }
   };
 
-  const selectedItems = items.filter(item => selectedIds.has(item.id));
-  const allSelectedPinned = selectedItems.length > 0 && selectedItems.every(item => item.isPinned);
-  const allSelectedArchived = selectedItems.length > 0 && selectedItems.every(item => item.archived);
-  const activeTitle = boardId ? boards.find(board => board.id === boardId)?.name : collection === 'unorganized' ? '未整理' : collection === 'pinned' ? '已置顶' : collection === 'recent' ? '最近使用' : collection === 'archived' ? '已归档' : '全部收藏';
-  const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length + Number(ratingFilter > 0) + Number(sort !== 'created');
-  const resetFilters = () => { setBoardId(''); setTagFilter([]); setTagQuery(''); setSourceFilter(''); setRatingFilter(0); setSort('created'); setCollection('all'); };
+  const activeTitle = boardId ? boards.find(board => board.id === boardId)?.name : sourceFilter ? sourceLabel(sourceFilter) : collection === 'unorganized' ? '未整理' : '全部';
+  const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length;
+  const resetFilters = () => { setBoardId(''); setTagFilter([]); setTagQuery(''); setSourceFilter(''); setCollection('all'); };
   const addFilterTag = () => {
     const tag = tagQuery.trim();
     if (allTags.some(([existing]) => existing === tag)) { setTagFilter(previous => Array.from(new Set([...previous, tag]))); setTagQuery(''); }
@@ -263,17 +242,24 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <button type="button" aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
   </div>;
   const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} {...folderDropProps(board.id)} className={`group flex items-center rounded-xl border ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
-    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); if (collection === 'unorganized') setCollection('all'); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
+    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
   </PressRevealSurface>;
+  const renderNavigation = () => <div>
+    <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>
+    <div className="space-y-1">
+      <CollectionButton active={collection === 'all' && !boardId && !sourceFilter} count={counts.all} icon={<Heart />} label={t('全部')} onClick={() => { setCollection('all'); setBoardId(''); setSourceFilter(''); }} />
+      <div {...folderDropProps('')} className={dropTarget === '' ? 'rounded-xl ring-2 ring-indigo-500' : ''}><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Library />} label={t('未整理')} onClick={() => { setCollection('unorganized'); setBoardId(''); setSourceFilter(''); }} /></div>
+    </div>
+    <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
+    <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p>
+    <div className="space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div>
+    <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
+    <div className="mb-2 flex items-center justify-between px-2"><span className="text-meta font-bold text-gray-400">{t('自定义收藏夹')}</span><button type="button" aria-label={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-8 w-8 items-center justify-center text-indigo-600"><FolderPlus className="h-4 w-4" /></button></div>
+    <div className="space-y-1">{boards.map(renderBoardRow)}{!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="mobile-touch w-full rounded-xl border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-400 dark:border-gray-700">{t('创建第一个收藏夹')}</button>}</div>
+  </div>;
   const renderFilterControls = (mobile: boolean) => <div className="grid grid-cols-2 gap-3">
-    {mobile && <>
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("分类")}<select value={collection} onChange={event => { setCollection(event.target.value as SmartCollection); if (event.target.value === 'unorganized') setBoardId(''); }} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="all">{t("全部收藏")}</option><option value="unorganized">{t("未整理")}</option>{counts.pinned > 0 && <option value="pinned">{t("已置顶")}</option>}{(counts.archived > 0 || collection === 'archived') && <option value="archived">{t("已归档")}</option>}</select></label>
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300">{t('来源')}<select aria-label={t('来源')} value={sourceFilter} onChange={event => setSourceFilter(event.target.value as InspirationSourceType | '')} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950"><option value="">{t('全部来源')}</option>{availableSources.map(source => <option key={source} value={source}>{t(sourceLabel(source))}</option>)}</select></label>
-    <div className="col-span-2" role="group" aria-label={t("收藏夹")}><div className="flex items-center justify-between text-sm font-bold text-gray-600 dark:text-gray-300"><span>{t("收藏夹")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-xl text-indigo-600" aria-label={t("新建收藏夹")}><FolderPlus className="h-4 w-4" /></button></div><div className="max-h-40 space-y-1 overflow-y-auto"><button type="button" aria-pressed={!boardId} onClick={() => setBoardId('')} className={`mobile-touch flex w-full items-center rounded-xl px-3 text-left text-sm ${!boardId ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}>{t("全部收藏夹")}</button>{boards.map(renderBoardRow)}</div></div>
-    </>}
+    {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}
     <div className="col-span-2"><label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t('标签（同时满足）')}<div className="mt-1.5 flex gap-2"><CollectionTagInput aria-label={t('标签')} value={tagQuery} suggestions={allTags.map(([tag]) => tag).filter(tag => !tagFilter.includes(tag))} onChange={event => setTagQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addFilterTag(); } }} onBlur={addFilterTag} placeholder={t('搜索已有标签')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><button type="button" aria-label={t('添加筛选标签')} disabled={!allTags.some(([tag]) => tag === tagQuery.trim()) || tagFilter.includes(tagQuery.trim())} onClick={addFilterTag} className="mobile-touch rounded-xl px-3 text-indigo-600 disabled:opacity-40"><Plus className="h-4 w-4" /></button></div></label></div>
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("最低评分")}<select value={ratingFilter} onChange={event => setRatingFilter(Number(event.target.value))} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="0">{t("全部评分")}</option><option value="1">{t("1 星以上")}</option><option value="2">{t("2 星以上")}</option><option value="3">{t("3 星以上")}</option><option value="4">{t("4 星以上")}</option><option value="5">{t("5 星")}</option></select></label>
-    <label className="col-span-2 text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("排序")}<select value={sort} onChange={event => setSort(event.target.value as SortMode)} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="created">{t("最近收藏")}</option><option value="used">{t("最近使用")}</option><option value="popular">{t("使用最多")}</option><option value="rating">{t("评分最高")}</option></select></label>
     {tagFilter.length > 0 && <div className="col-span-2 flex flex-wrap gap-1">{tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}</div>}
   </div>;
 
@@ -281,38 +267,21 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <WorkspaceToolbar>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索标题、提示词、备注或标签")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
       <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
-        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setRatingFilter(0); setSort('created'); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
+        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
       </ToolbarPopover>
       <ToolbarButton aria-label={selectedIds.size ? t("取消全部选择") : t("全选筛选结果")} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3" tone={selectedIds.size ? 'primary' : 'neutral'}><CheckSquare /><span className="hidden sm:inline">{selectedIds.size ? t("取消已选 ") + selectedIds.size : t("全选筛选结果")}</span></ToolbarButton>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
     </WorkspaceToolbar>
-    {(collection !== 'all' || boardId || sourceFilter || tagFilter.length > 0 || ratingFilter > 0) && <div role="group" aria-label={t('当前筛选')} className="flex flex-none flex-wrap gap-1 border-b border-gray-200 px-3 py-1 dark:border-gray-800 md:px-5">
-      {collection !== 'all' && filterChip(t(collection === 'unorganized' ? '未整理' : collection === 'pinned' ? '已置顶' : collection === 'archived' ? '已归档' : '最近使用'), () => setCollection('all'))}
+    {(collection !== 'all' || boardId || sourceFilter || tagFilter.length > 0) && <div role="group" aria-label={t('当前筛选')} className="flex flex-none flex-wrap gap-1 border-b border-gray-200 px-3 py-1 dark:border-gray-800 md:px-5">
+      {collection !== 'all' && filterChip(t('未整理'), () => setCollection('all'))}
       {boardId && filterChip(t('收藏夹：{0}', [boardNameById.get(boardId) || '']), () => setBoardId(''))}
       {sourceFilter && filterChip(t('来源：{0}', [t(sourceLabel(sourceFilter))]), () => setSourceFilter(''))}
       {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
-      {ratingFilter > 0 && filterChip(t('最低评分：{0}', [ratingFilter]), () => setRatingFilter(0))}
     </div>}
 
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-56 flex-none overflow-y-auto border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-900/60 md:block">
-        <div className="mb-2 px-2 text-meta font-black uppercase tracking-widest text-gray-400">{t("视图")}</div>
-        <div className="space-y-1">
-          <CollectionButton active={collection === 'all' && !boardId} count={counts.all} icon={<Library />} label={t("全部收藏")} onClick={() => { setCollection('all'); setBoardId(''); }} />
-          <div {...folderDropProps('')} className={dropTarget === '' ? 'rounded-xl ring-2 ring-indigo-500' : ''}><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Sparkles />} label={t("未整理")} onClick={() => { setCollection('unorganized'); setBoardId(''); }} /></div>
-          {(counts.pinned > 0 || collection === 'pinned') && (
-            <CollectionButton active={collection === 'pinned'} count={counts.pinned} icon={<Pin />} label={t("已置顶")} onClick={() => { setCollection('pinned'); setBoardId(''); }} />
-          )}
-          {(counts.archived > 0 || collection === 'archived') && (
-            <CollectionButton active={collection === 'archived'} count={counts.archived} icon={<Archive />} label={t("已归档")} onClick={() => { setCollection('archived'); setBoardId(''); }} />
-          )}
-        </div>
-
-        <div className="mb-2 mt-6 flex items-center justify-between px-2"><span className="text-meta font-black uppercase tracking-widest text-gray-400">{t("收藏夹")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="text-indigo-600" aria-label={t("新建收藏夹")}><FolderPlus className="h-4 w-4" /></button></div>
-        <div className="space-y-1">
-          {boards.map(renderBoardRow)}
-          {!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-400 dark:border-gray-700">{t("创建第一个收藏夹")}</button>}
-        </div>
+        {renderNavigation()}
       </aside>
 
       <main ref={mainScrollRef} onScroll={onMainScrollRestore} className="min-w-0 flex-1 overflow-y-auto">
@@ -320,44 +289,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           <b className="mr-1 text-sm text-indigo-800 dark:text-indigo-200">{t("已选 {0} 项", [selectedIds.size])}</b>
           <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
           <div className="flex h-9 overflow-hidden rounded-lg border border-indigo-200 bg-white dark:border-indigo-800 dark:bg-gray-900"><CollectionTagInput value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" onClick={() => void addBulkTags()} className="border-l border-indigo-200 px-2 text-xs font-bold text-indigo-600 dark:border-indigo-800">{t("添加")}</button></div>
-          <button type="button" onClick={() => void runBulkUpdate({ isPinned: !allSelectedPinned }, allSelectedPinned ? '已取消置顶' : '已置顶')} className="h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-bold dark:border-indigo-800 dark:bg-gray-900">{allSelectedPinned ? t("取消置顶") : t("置顶")}</button>
-          <button type="button" disabled={Boolean(busy)} onClick={() => void runBulkUpdate({ archived: !allSelectedArchived }, allSelectedArchived ? '已恢复' : '已归档')} className="mobile-touch h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-bold disabled:opacity-40 dark:border-indigo-800 dark:bg-gray-900">{allSelectedArchived ? t("恢复到资料库") : t("归档")}</button>
-          <button type="button" onClick={() => void deleteSelected()} className="ml-auto h-9 rounded-lg bg-red-600 px-3 text-xs font-bold text-white"><Trash2 className="mr-1 inline h-3.5 w-3.5" />{t("删除")}</button>
+          <button type="button" onClick={() => void deleteSelected()} className="ml-auto h-9 rounded-lg bg-red-600 px-3 text-xs font-bold text-white"><Trash2 className="mr-1 inline h-3.5 w-3.5" />{t("取消收藏")}</button>
         </div>}
 
-        <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{t("{0} 条收藏 · {1}", [filtered.length, sort === 'created' ? t("最近收藏") : sort === 'used' ? t("最近使用") : sort === 'popular' ? t("使用最多") : t("评分最高")])}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">{t("清除条件")}</button>}</div>
-
-        {availableSources.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200/80 bg-white/40 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-900/20 md:px-5">
-            <span className="mr-1 text-micro font-bold text-gray-400">{t("来源")}</span>
-            {availableSources.map(source => {
-              const SourceIcon = sourceIcon(source);
-              const isSelected = sourceFilter === source;
-              const count = sourceCounts[source] || 0;
-              return (
-                <button
-                  key={source}
-                  type="button"
-                  onClick={() => {
-                    setSourceFilter(isSelected ? '' : source);
-                  }}
-                  aria-pressed={isSelected}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                    isSelected
-                      ? 'bg-indigo-50 text-indigo-600 font-semibold ring-1 ring-indigo-500/20 dark:bg-indigo-950/60 dark:text-indigo-300'
-                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200/80 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <SourceIcon className="h-3 w-3" />
-                  <span>{sourceLabel(source)}</span>
-                  <span className={`text-micro ${isSelected ? 'text-indigo-500 dark:text-indigo-400' : 'text-gray-400'}`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{t("{0} 张图片", [filtered.length])}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">{t("清除条件")}</button>}</div>
 
         {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
           {filtered.map(item => {
@@ -372,11 +307,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
               }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
               <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
                 <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} onClick={() => selectedIds.size ? toggleSelected(item.id) : setDetail(item)} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={item.title} thumbnailVariant="thumb-320" /></button>
-                <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full border border-white/70 bg-white/90 px-2 py-1 text-micro font-bold text-gray-700 shadow-sm backdrop-blur dark:border-white/15 dark:bg-black/60 dark:text-white"><SourceIcon className="h-3 w-3" />{sourceLabel(item.sourceType)}</span>{item.isPinned && <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white shadow"><Pin className="h-3.5 w-3.5 fill-current" /></span>}</div>
+                <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full border border-white/70 bg-white/90 px-2 py-1 text-micro font-bold text-gray-700 shadow-sm backdrop-blur dark:border-white/15 dark:bg-black/60 dark:text-white"><SourceIcon className="h-3 w-3" />{sourceLabel(item.sourceType)}</span></div>
                 <button data-card-action="true" type="button" onClick={() => toggleSelected(item.id)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
-                <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${item.title || 'inspiration'}.png`} notify={notify} />
+                <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${item.title || 'inspiration'}.png`} favorite={{ imageUrl: item.imageUrl, collectionId: item.id }} notify={notify} />
               </div>
-              <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3>{(item.rating || 0) > 0 && <span className="inline-flex items-center gap-0.5 text-meta font-bold text-amber-500"><Star className="h-3 w-3 fill-current" />{item.rating}</span>}</div>{item.notes ? <p className="mt-1 line-clamp-2 text-meta leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-micro text-gray-400">{item.prompt || t("尚未填写提示词")}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-micro text-gray-400"><span>{boardNameById.get(item.boardId || '') || t("未整理")}</span><span>{t("使用 {0} 次", [item.useCount || 0])}</span></div></button>
+              <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3></div>{item.notes ? <p className="mt-1 line-clamp-2 text-meta leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-micro text-gray-400">{item.prompt || t("尚未填写提示词")}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-micro text-gray-400"><span>{boardNameById.get(item.boardId || '') || t("未整理")}</span></div></button>
             </MediaCardShell>;
           })}
         </div> : (
@@ -384,7 +319,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             className="min-h-[45vh] px-6"
             icon={<Sparkles className="h-8 w-8" />}
             title={t("这里还没有匹配的收藏")}
-            hint={t("从生成历史快速收藏，再在这里补充板、标签和备注；也可以直接上传参考图。")}
+            hint={t("点击图片上的爱心收藏，再拖入收藏夹整理。")}
             action={<button type="button" onClick={() => setUploadOpen(true)} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">{t("加入第一条收藏")}</button>}
           />
         )}

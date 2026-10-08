@@ -34,9 +34,10 @@ describe('小图和全屏大图的共用操作', () => {
     expect(right.classList.contains('md:w-32')).toBe(false);
     expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
-    expect(right.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
+    expect(right.classList.contains('hover-reveal-lg')).toBe(false);
+    expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-lg')).toBeNull();
     expect(right.classList.contains('items-center')).toBe(true);
-    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['下载图片', '复制图片', '设为封面']);
+    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);
     for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
       for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'mobile-size-locked', 'border-white/60', 'backdrop-blur', 'focus-visible:ring-white', 'justify-center']) expect(button.classList.contains(token)).toBe(true);
@@ -78,7 +79,7 @@ describe('小图和全屏大图的共用操作', () => {
 
   it('编辑模式、封面图与无图状态保留各自权限，没有历史项不提供移除或清空', () => {
     const view = render(React.createElement(ImagePreviewActions, { imageUrl: '/edit.png', filename: 'NAI.png', onBack: vi.fn() }));
-    expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['返回小图', '下载图片', '复制图片']);
+    expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['返回小图', '收藏', '下载图片', '复制图片']);
     expect(screen.queryByRole('button', { name: '设为封面' })).toBeNull();
     view.rerender(React.createElement(ImagePreviewActions, { imageUrl: null, filename: 'NAI.png' }));
     expect(screen.queryAllByRole('button')).toHaveLength(0);
@@ -118,3 +119,11 @@ describe('小图和全屏大图的共用操作', () => {
     expect(screen.getByRole('button', { name: '复制图片' }).hasAttribute('disabled')).toBe(false);
   });
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

@@ -192,3 +192,10 @@ describe('扩图应用与提交', () => {
     expect((screen.getByRole('button', { name: '生成' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

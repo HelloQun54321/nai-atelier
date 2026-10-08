@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import React from 'react';
-import { ArrowLeft, ChevronDown, Heart, Inbox, LoaderCircle, Search, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Inbox, LoaderCircle, Search, X } from 'lucide-react';
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 
 /** 弹层/面板右上角的关闭钮：复用 IconButton 的中性色阶与圆角。 */
@@ -51,51 +51,6 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?
     {action && <div className="mt-5">{action}</div>}
   </div>
 );
-
-/**
- * 自绘收藏心形按钮统一形态。收藏语义色为 rose（玫瑰红），
- * 与危险红（danger red）的区别靠「心形图标 + 卡片角悬浮位」表达，不改变危险按钮。
- * overlay=true：32px 圆形实底悬浮钮（卡片角常用形态，active 用 rose 系）。
- */
-export const FavoriteButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void; label?: string; className?: string; overlay?: boolean }> = ({ active, onClick, label, className = '', overlay = false }) => {
-  useLanguage();
-  if (overlay) {
-    const hint = label ?? (active ? '取消收藏' : '收藏');
-    return (
-      <button
-        type="button"
-        data-card-action="true" aria-label={t(hint)}
-        aria-pressed={active}
-        title={t(hint)}
-        onClick={onClick}
-        className={`mobile-size-locked flex h-8 w-8 flex-none items-center justify-center rounded-full border shadow backdrop-blur transition ${
-          active
-            ? 'border-rose-400 bg-rose-500 text-white hover:bg-rose-400'
-            : 'border-white/60 bg-black/45 text-white hover:bg-black/65 dark:text-white/90'
-        } [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${className}`}
-      >
-        <Heart className={active ? 'fill-current' : ''} />
-      </button>
-    );
-  }
-  const hint = label ?? (active ? '取消收藏' : '收藏');
-  return (
-    <button
-      type="button"
-      data-card-action="true" aria-label={t(hint)}
-      aria-pressed={active}
-      title={t(hint)}
-      onClick={onClick}
-      className={`mobile-size-locked flex h-10 w-10 flex-none items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-indigo-500 outline-none [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${
-        active
-          ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
-          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-rose-500 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-rose-400'
-      } ${className}`}
-    >
-      <Heart className={active ? 'fill-current' : ''} />
-    </button>
-  );
-};
 
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;

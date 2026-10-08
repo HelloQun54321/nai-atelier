@@ -290,3 +290,10 @@ describe('ImageEditPanel base image drop', () => {
     expect(lastCall.canGenerate).toBe(false);
   });
 });
+
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

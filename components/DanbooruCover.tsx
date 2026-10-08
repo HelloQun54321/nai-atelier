@@ -17,6 +17,7 @@ interface DanbooruCoverProps {
   /** 封面图片加载完成后上报自然宽高（瀑布流按真实比例排布用）。 */
   onImageLoad?: (width: number, height: number) => void;
   notify?: (message: string, type?: 'success' | 'error') => void;
+  onFavoriteChange?: (active: boolean) => void;
 }
 
 const firstCandidateIndex = (result: DanbooruCoverSet) => {
@@ -30,7 +31,7 @@ const lookupErrorMessage = (error: unknown) => {
     ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
 };
 
-export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad, notify }) => {
+export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad, notify, onFavoriteChange }) => {
   useLanguage();
   const rootRef = useRef<HTMLDivElement>(null);
   const viewActive = useContext(ImageActivityContext);
@@ -273,7 +274,8 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           onImageLoad?.(image.naturalWidth, image.naturalHeight);
         }
       }} />
-      <ImageShareOverlay imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify} />
+      <ImageShareOverlay imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify}
+        favorite={{ imageUrl: getMobileOriginalUrl(displayedSrc), title: alt || tag, sourceType: kind, sourceId: tag, imageId: String(currentCandidate?.id || displayedSrc) }} onFavoriteChange={onFavoriteChange} />
       <span className="pointer-events-none absolute bottom-16 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{isSavedCover ? t("已保存封面") : 'Danbooru'}</span>
       {canBrowse && <button data-card-action="true" type="button" disabled={previousIndex < 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="hover-reveal-touch mobile-touch absolute left-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title={t("上一张")} aria-label={t("上一张")}><ChevronLeft className="h-4 w-4" /></button>}
       {canBrowse && <button data-card-action="true" type="button" disabled={isLoadingMore || (nextIndex < 0 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title={t("下一张")} aria-label={t("下一张")}><ChevronRight className="h-4 w-4" /></button>}

@@ -136,3 +136,10 @@ describe('图生图输出尺寸与提交副本', () => {
     expect(options?.params.characters?.[0].x).toBeCloseTo(0.5 + (0.2 - 0.5) * 1664 / 2432);
   });
 });
+
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

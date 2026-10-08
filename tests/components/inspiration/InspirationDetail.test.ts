@@ -71,20 +71,13 @@ it('添加标签可复用其他作品的原名，回车后不重复生成标签�
   expect(document.getElementById(next.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeNull();
 });
 
-it('评分可即时保存，再点当前星级可清零，状态与手机触控区域明确', async () => {
-  const onRefresh = vi.fn(async () => {});
-  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh, onOpenItem: vi.fn() }));
-  const rating = screen.getByRole('group', { name: '评分' });
-  const star = within(rating).getByRole('button', { name: '5 星' });
-  expect(star.classList.contains('mobile-touch')).toBe(true);
-  fireEvent.click(star);
-  await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
-  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { rating: 5 });
-  expect(star.getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(star);
-  await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(2));
-  expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-1', { rating: 0 });
-  expect(star.getAttribute('aria-pressed')).toBe('false');
+it('收藏详情去除评分、置顶、相似推荐和资产菜单，保留已有资料', () => {
+  render(React.createElement(InspirationDetail, { item: { ...mockItem, rating: 5, isPinned: true }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  expect(screen.queryByRole('group', { name: '评分' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '置顶收藏' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
+  expect(screen.queryByText('相似收藏')).toBeNull();
+  expect(db.updateInspiration).not.toHaveBeenCalled();
 });
 
 it('提示词失焦保存原文，允许清空；空负面词仍能添加并在导入时使用当前内容', async () => {
@@ -140,7 +133,7 @@ it('非所有者的评分禁用、提示词只读，失焦不写入', () => {
     const input = screen.getByLabelText(label) as HTMLTextAreaElement;
     expect(input.readOnly).toBe(true); fireEvent.blur(input);
   }
-  expect(within(screen.getByRole('group', { name: '评分' })).getAllByRole('button').every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+  expect(screen.queryByRole('group', { name: '评分' })).toBeNull();
   expect(db.updateInspiration).not.toHaveBeenCalled();
 });
 
@@ -166,7 +159,7 @@ it('无参数的收藏显示未记录，导入时才使用默认参数；已有�
 it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const)('%s 的评分和未知参数跟随语言，创作原文保留', language => {
   setLanguage(language);
   render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
-  expect(screen.getByRole('group', { name: t('评分') })).toBeTruthy();
+  expect(screen.queryByRole('group', { name: t('评分') })).toBeNull();
   expect(screen.getByText(t('未记录生成参数'))).toBeTruthy();
   expect((screen.getByLabelText(t('提示词')) as HTMLTextAreaElement).value).toBe(mockItem.prompt);
 });
@@ -253,7 +246,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     // 图片识别在标签区；底部保留导入和提取资产，分享位于图片右上。
     expect(screen.getByRole('button', { name: /识别图片 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.getByTitle('复制图片')).toBeTruthy();
   });
@@ -319,26 +312,12 @@ describe('InspirationDetail 全新重构界面走查', () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
   });
 
-  it('顶栏图钉切换置顶状态并即时保存', async () => {
-    const onRefresh = vi.fn();
-    render(
-      React.createElement(InspirationDetail, {
-        item: mockItem,
-        items: [mockItem],
-        boards: mockBoards,
-        currentUser: mockUser,
-        notify: vi.fn(),
-        onClose: vi.fn(),
-        onRefresh,
-        onOpenItem: vi.fn(),
-      })
-    );
-
-    const pinBtn = screen.getByRole('button', { name: '置顶收藏' });
-    fireEvent.click(pinBtn);
-    expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { isPinned: true });
-    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-  });
+  it('自动来源标签保持固定，自定义标签仍可移除', async () => {
+  render(React.createElement(InspirationDetail, { item: { ...mockItem, sourceType: 'history', tags: ['生成历史', '自定义'] }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  expect(screen.queryByTitle('删除 #生成历史')).toBeNull();
+  fireEvent.click(screen.getByTitle('删除 #自定义'));
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: ['生成历史'] }));
+});
 
   it('底部双核工具条展开底图模式与资产提取子项', () => {
     render(
@@ -362,12 +341,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByRole('button', { name: /底图：局部重绘/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /底图：扩图/ })).toBeTruthy();
 
-    // 展开资产菜单
-    const assetBtn = screen.getByRole('button', { name: /提取资产/ });
-    fireEvent.click(assetBtn);
-    expect(screen.getByRole('button', { name: /创建风格串/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /创建角色参考/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /创建 Vibe/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
   });
 
   it('标题修改失焦后即时持久化保存', () => {
@@ -391,3 +365,11 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { title: '日落海滩少女' });
   });
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

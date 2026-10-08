@@ -6,22 +6,15 @@ import {
   ExternalLink,
   FlaskConical,
   ImagePlus,
-  Palette,
   Pencil,
-  Pin,
   Plus,
-  Sparkles,
-  UserRound,
   Wand2,
   X,
 } from 'lucide-react';
 import { ImageEditOperation, Inspiration, InspirationBoard, PromptChain, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
-import { createUuid } from '../../services/id';
-import { characterReferenceService } from '../../services/characterReferenceService';
-import { vibeService } from '../../services/vibeService';
-import { inspirationSimilarity, normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
+import { normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionTagInput } from './CollectionControls';
 import { CloseButton, ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
@@ -34,7 +27,7 @@ import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
-import { canEditItem, DEFAULT_PARAMS, fetchImageFile, formatDate, RatingStars, sourceIcon, splitTags } from './InspirationShared';
+import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from './InspirationShared';
 
 interface Props {
   item: Inspiration;
@@ -58,8 +51,6 @@ export const InspirationDetail: React.FC<Props> = ({
   onClose,
   onRefresh,
   onNavigateToPlayground,
-  onCreateArtistChain,
-  onOpenItem,
 }) => {
   useLanguage();
   const closeLayer = useMobileHistoryLayer(true, onClose, 'inspiration-detail');
@@ -67,7 +58,6 @@ export const InspirationDetail: React.FC<Props> = ({
   const [busy, setBusy] = useState('');
   const [taggerOpen, setTaggerOpen] = useState(false);
   const [labMenuOpen, setLabMenuOpen] = useState(false);
-  const [assetMenuOpen, setAssetMenuOpen] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
@@ -79,17 +69,9 @@ export const InspirationDetail: React.FC<Props> = ({
     setDraft(item);
     setTaggerOpen(false);
     setLabMenuOpen(false);
-    setAssetMenuOpen(false);
     setIsAddingTag(false);
     setNewTagInput('');
   }, [item]);
-
-  const similar = useMemo(() => items
-    .filter(candidate => candidate.id !== item.id && !candidate.archived)
-    .map(candidate => ({ item: candidate, score: inspirationSimilarity(item, candidate) }))
-    .filter(entry => entry.score > 1)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6), [item, items]);
 
   const promptTagCount = useMemo(() => {
     return (draft.prompt || '').split(',').map(s => s.trim()).filter(Boolean).length;
@@ -133,6 +115,7 @@ export const InspirationDetail: React.FC<Props> = ({
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
+    if (tagToRemove === sourceLabel(draft.sourceType)) return;
     const nextTags = (draft.tags || []).filter(t => t !== tagToRemove);
     void updateAndPersist('tags', nextTags);
   };
@@ -191,54 +174,6 @@ export const InspirationDetail: React.FC<Props> = ({
     }
   };
 
-  const createArtistChain = async () => {
-    if (!onCreateArtistChain) return;
-    setBusy('chain');
-    try {
-      const now = Date.now();
-      await onCreateArtistChain({
-        id: createUuid(),
-        userId: currentUser.id,
-        username: currentUser.username,
-        type: 'style',
-        name: draft.title || '收藏风格串',
-        description: draft.notes || `由收藏库“${draft.title}”创建`,
-        tags: [],
-        previewImage: draft.imageUrl,
-        basePrompt: draft.prompt || '',
-        negativePrompt: draft.negativePrompt || '',
-        modules: [],
-        params: draft.params || DEFAULT_PARAMS,
-        variableValues: { subject: '' },
-        createdAt: now,
-        updatedAt: now,
-      });
-      await db.markInspirationUsed(draft.id);
-      notify('已创建风格串');
-      setAssetMenuOpen(false);
-    } catch (error: any) {
-      notify(error?.message || '创建风格串失败', 'error');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const createAsset = async (kind: 'character' | 'vibe') => {
-    setBusy(kind);
-    try {
-      const file = await fetchImageFile(draft);
-      if (kind === 'character') await characterReferenceService.create(file, draft.title || '收藏角色参考');
-      else await vibeService.create(file, draft.title || '收藏 Vibe');
-      await db.markInspirationUsed(draft.id);
-      notify(kind === 'character' ? '已创建角色参考' : '已创建 Vibe 资产');
-      setAssetMenuOpen(false);
-    } catch (error: any) {
-      notify(error?.message || '创建资产失败', 'error');
-    } finally {
-      setBusy('');
-    }
-  };
-
   const SourceIcon = sourceIcon(draft.sourceType);
 
   return (
@@ -247,8 +182,8 @@ export const InspirationDetail: React.FC<Props> = ({
       <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={t("收藏详情：{0} · #{1}", [draft.title || '未命名收藏', draft.id])} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
         <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
-          <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
-          <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
+          <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
+          <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
           <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label={t("关闭")}>
             <X className="h-5 w-5" />
           </button>
@@ -288,21 +223,6 @@ export const InspirationDetail: React.FC<Props> = ({
                     <option key={board.id} value={board.id}>📁 {board.name}</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  disabled={!editable}
-                  onClick={() => void updateAndPersist('isPinned', !draft.isPinned, draft.isPinned ? '已取消置顶' : '已置顶')}
-                  title={draft.isPinned ? t("已置顶（点击取消）") : t("置顶收藏")}
-                  aria-label={draft.isPinned ? t("已置顶") : t("置顶收藏")}
-                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-micro font-bold transition ${
-                    draft.isPinned
-                      ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/70 dark:text-amber-300'
-                      : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                  }`}
-                >
-                  <Pin className={`h-3 w-3 ${draft.isPinned ? 'fill-current' : ''}`} />
-                  <span>{draft.isPinned ? t("已置顶") : t("置顶")}</span>
-                </button>
               </div>
 
               <input
@@ -319,9 +239,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 placeholder={t("收藏标题...")}
                 className="h-8 w-full rounded-lg border border-transparent bg-transparent px-1 text-base font-bold text-gray-950 transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-white dark:hover:border-gray-800 dark:focus:bg-gray-900 sm:text-lg"
               />
-              <div role="group" aria-label={t("评分")}>
-                <RatingStars value={draft.rating || 0} onChange={editable ? value => { void updateAndPersist('rating', value); } : undefined} />
-              </div>
+
             </div>
 
             <div className="flex flex-none items-center gap-2">
@@ -411,7 +329,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     className="group inline-flex items-center gap-1 rounded-lg bg-indigo-50/80 px-2.5 py-1 text-meta font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
                   >
                     #{tag}
-                    {editable && (
+                    {editable && tag !== sourceLabel(draft.sourceType) && (
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(tag)}
@@ -492,7 +410,7 @@ export const InspirationDetail: React.FC<Props> = ({
               <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-700 select-none dark:text-gray-200">
                 <span className="flex items-center gap-1.5">
                   <span>{t("生成参数与来源详情")}</span>
-                  <span className="text-micro font-normal text-gray-400">{t("（已使用 {0} 次）", [draft.useCount || 0])}</span>
+
                 </span>
                 <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
               </summary>
@@ -526,32 +444,7 @@ export const InspirationDetail: React.FC<Props> = ({
             </details>
 
             {/* 相似收藏推荐 */}
-            {similar.length > 0 && (
-              <div>
-                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
-                  <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                  {t("相似收藏")}</h3>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                  {similar.map(entry => (
-                    <button
-                      type="button"
-                      key={entry.item.id}
-                      data-safe-mode-work="true"
-                      title={t("{0} (相似度 {1})", [entry.item.title, entry.score])}
-                      onClick={() => onOpenItem(entry.item)}
-                      className="group overflow-hidden rounded-xl border border-gray-200 text-left transition hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600"
-                    >
-                      <div className="aspect-square bg-gray-100 dark:bg-gray-900">
-                        <SmartImage src={entry.item.imageUrl} alt={entry.item.title} eager thumbnailVariant="thumb-240" className="h-full w-full object-cover transition group-hover:scale-105" />
-                      </div>
-                      <p data-safe-mode-title="true" className="truncate px-1.5 py-1 text-micro font-bold text-gray-700 dark:text-gray-300">
-                        {entry.item.title}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+
           </div>
 
           {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
@@ -571,7 +464,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 <button
                   type="button"
                   disabled={Boolean(busy)}
-                  onClick={() => { setLabMenuOpen(!labMenuOpen); setAssetMenuOpen(false); }}
+                  onClick={() => { setLabMenuOpen(!labMenuOpen); }}
                   aria-label={t("更多底图模式")} aria-haspopup="menu" aria-expanded={labMenuOpen}
                   title={t("选择导入模式")}
                   className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
@@ -621,50 +514,6 @@ export const InspirationDetail: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* 提取资产 */}
-              <div className="relative flex-none">
-                <button
-                  type="button"
-                  disabled={Boolean(busy)}
-                  aria-haspopup="menu" aria-expanded={assetMenuOpen} onClick={() => { setAssetMenuOpen(!assetMenuOpen); setLabMenuOpen(false); }}
-                  className="mobile-touch flex h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-700 dark:hover:bg-gray-800/80 whitespace-nowrap transition-colors sm:px-3.5"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-500 dark:text-indigo-400" />
-                  {t("提取资产")}<ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${assetMenuOpen ? 'rotate-180' : ''}`} />
-                </button>
-
-                {assetMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-20" onClick={() => setAssetMenuOpen(false)} />
-                    <div role="menu" aria-label={t("提取图片资产")} className="appearance-panel absolute bottom-12 right-0 z-30 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-                      <button
-                        type="button"
-                        disabled={!onCreateArtistChain || Boolean(busy)}
-                        onClick={() => { setAssetMenuOpen(false); void createArtistChain(); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
-                      >
-                        <Palette className="h-3.5 w-3.5 text-violet-500" />
-                        {t("创建风格串")}</button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setAssetMenuOpen(false); void createAsset('character'); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <UserRound className="h-3.5 w-3.5 text-amber-500" />
-                        {t("创建角色参考")}</button>
-                      <button
-                        type="button"
-                        disabled={Boolean(busy)}
-                        onClick={() => { setAssetMenuOpen(false); void createAsset('vibe'); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-800"
-                      >
-                        <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                        {t("创建 Vibe")}</button>
-                    </div>
-                  </>
-                )}
-              </div>
 
             </div>
           </footer>

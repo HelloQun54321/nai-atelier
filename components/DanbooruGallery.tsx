@@ -11,10 +11,7 @@ import {
   buildDanbooruFilterQuery,
 } from '../services/danbooruService';
 import { db } from '../services/dbService';
-import { api } from '../services/api';
-import { importDanbooruCoverAsDataUrl } from '../services/danbooruCoverImport';
-import { copyTagText as copyText, externalImageAnalysis, type ExternalImageTags } from '../services/externalImageTags';
-import { createUuid } from '../services/id';
+import { copyTagText as copyText, externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -79,7 +76,7 @@ type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest';
 type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
 type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 
-export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -375,7 +372,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <p className="mt-1 truncate text-micro text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
           </div>
         </button>
-        {post.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(post.sampleUrl)} filename={`danbooru-${post.id}.${post.fileExt}`} notify={notify} />}
+        {post.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(post.sampleUrl)} filename={`danbooru-${post.id}.${post.fileExt}`} favorite={collectionImage(post)} notify={notify} />}
       </PressRevealSurface>
     );
   };
@@ -387,38 +384,15 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration, boardId = ''): Promise<Inspiration> => {
-    const analysis = externalImageAnalysis(danbooruAllTags(post), 0, reverse, existing);
-    if (existing) {
-      const updates = { analysis, ...(boardId !== (existing.boardId || '') ? { boardId } : {}), ...(reverse ? { prompt: reverse.prompt } : {}) };
-      await db.updateInspiration(existing.id, updates);
-      onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
-      return { ...existing, ...updates };
-    }
-    const character = post.tags.character[0]?.replaceAll('_', ' ');
-    const artist = post.tags.artist[0]?.replaceAll('_', ' ');
-    const imageUrl = await importDanbooruCoverAsDataUrl(post.sampleUrl);
-    const response = await api.post('/inspirations', {
-      id: createUuid(),
-      userId: currentUser.id,
-      username: currentUser.username,
-      title: character || artist || `Danbooru #${post.id}`,
-      imageUrl,
-      prompt: reverse?.prompt ?? danbooruPromptTags(post),
-      analysis,
-      boardId: boardId || undefined,
-      tags: ['Danbooru', ...post.tags.character.slice(0, 3), ...post.tags.artist.slice(0, 2)],
-      sourceType: 'danbooru',
-      sourceId: String(post.id),
-      sourceUrl: post.postUrl,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    onRefreshInspiration?.();
-    notify('已加入收藏库');
-    return response.item;
-  };
+  const collectionImage = (post: DanbooruPost) => ({ imageUrl: post.sampleUrl, sourceType: 'danbooru' as const, sourceId: String(post.id), sourceUrl: post.postUrl, title: post.tags.character[0] || post.tags.artist[0] || 'Danbooru #' + post.id, prompt: externalImageDrafts.get('danbooru:' + post.id + ':0')?.prompt || danbooruPromptTags(post), analysis: externalImageAnalysis(danbooruAllTags(post), 0, externalImageDrafts.get('danbooru:' + post.id + ':0')) });
 
+  const saveReverseTags = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+    if (!existing) throw new Error('请先收藏这张图片');
+    const updates = { analysis: externalImageAnalysis(danbooruAllTags(post), 0, reverse, existing), ...(reverse ? { prompt: reverse.prompt } : {}) };
+    await db.updateInspiration(existing.id, updates);
+    onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
+    return { ...existing, ...updates };
+  };
   const submitPageJump = (event?: FormEvent) => {
     event?.preventDefault();
     const value = Number(pageInput);
@@ -574,7 +548,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                         <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
                       </div>
                     </button>
-                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} notify={notify} />}
+                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'danbooru', sourceId: String(item.sourceId), sourceUrl: 'https://danbooru.donmai.us/posts/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
                   </PressRevealSurface>
                 ))}
               </div>
@@ -637,11 +611,11 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         >
           {selected ? <div className="space-y-4">
             <DetailImageStage pressResetKey={selected.id}>
-              <ViewableImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} className="max-h-[62vh] w-full object-contain" />
-              {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} />}
+              <ViewableImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} filename={`danbooru-${selected.id}.${selected.fileExt}`} favorite={collectionImage(selected)} notify={notify} className="max-h-[62vh] w-full object-contain" />
+              {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} favorite={collectionImage(selected)} notify={notify} />}
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
-              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing, boardId) => saveToInspiration(selected, reverse, existing, boardId)} notify={notify}
+              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveReverseTags(selected, reverse, existing)} notify={notify}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">{t("复制")}</button></div>

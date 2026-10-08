@@ -24,8 +24,8 @@ export const rememberCollectionFolder = (id?: string) => {
 };
 
 export const sourceLabel = (source?: InspirationSourceType) => ({
-  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', other: '其他来源',
-}[source || 'other']);
+  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
+}[source || 'other'] || '其他来源');
 
 export const suggestInspirationTags = (item: Pick<Inspiration, 'prompt' | 'params' | 'sourceType' | 'tags'>) => {
   const prompt = String(item.prompt || '').toLowerCase();

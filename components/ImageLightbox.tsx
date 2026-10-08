@@ -9,12 +9,13 @@ import { useImageViewport } from './useImageViewport';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
+import type { CollectionTarget } from '../services/collectionFavorites';
 
 export const ImageLightbox:React.FC<React.PropsWithChildren<{
-  src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;
+  src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;
   notify?:(message:string,type?:'success'|'error')=>void;
   onClose:()=>void;onSwipe?:(delta:number)=>void;customActions?:boolean;
-}>>=({src,alt='图片预览',filename='image.png',generationData,notify,onClose,onSwipe,customActions=false,children})=>{
+}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,children})=>{
   useLanguage();
   const dialog=useModalA11y<HTMLDivElement>(true);
   const close=useMobileHistoryLayer(true,onClose,'image-zoom');
@@ -29,7 +30,7 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
       <OriginalImage src={src} alt={alt} draggable={false} style={view.imageStyle} onLoad={view.onLoad} data-safe-mode-ignore="true" />
       {!customActions&&<>
         <button type="button" data-card-action="true" aria-label={t("返回图片详情")} className={`${IMAGE_CARD_ACTION_CLASS} absolute left-4 top-4 z-30 flex items-center justify-center`} onClick={close}><ArrowLeft className="h-5 w-5" /></button>
-        <ImageShareOverlay imageUrl={src} filename={filename} generationData={generationData} notify={notify} className="!top-4 !right-4" />
+        <ImageShareOverlay imageUrl={src} filename={filename} generationData={generationData} favorite={favorite} notify={notify} className="!top-4 !right-4" />
       </>}
       {children}
     </PressRevealSurface>
@@ -43,9 +44,9 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
 };
 
 /** 详情原图点按进入同一大图查看器，原有详情滚动与分享控件仍留在原位。 */
-export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,notify,onClick,...props})=>{
+export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,favorite,notify,onClick,...props})=>{
   useLanguage();
   const [open,setOpen]=useState(false);
   return <><button type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} draggable={false} onClick={onClick} /></button>
-    {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} notify={notify} onClose={()=>setOpen(false)} />}</>;
+    {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} favorite={favorite} notify={notify} onClose={()=>setOpen(false)} />}</>;
 };

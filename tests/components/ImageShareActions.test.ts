@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageShareActions, ImageShareOverlay } from '../../components/ImageShareActions';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
+import { toggleCollectionTarget } from '../../services/collectionFavorites';
 
 vi.mock('../../services/imageSharing', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/imageSharing')>(),
@@ -15,6 +16,24 @@ beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('共用图片分享操作', () => {
+  it('整组爱心在等待时禁用，复制仍可用；失败保留状态并允许重试', async () => {
+    let fail!: (error: Error) => void;
+    vi.mocked(toggleCollectionTarget).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    const group = { imageUrl: '/group.png', sourceType: 'pixiv' as const, sourceId: 'group', getGroup: vi.fn(async () => []) };
+    const notify = vi.fn();
+    render(React.createElement(ImageShareOverlay, { imageUrl: '/group.png', filename: 'group.png', favorite: group, notify }));
+    const heart = screen.getByRole('button', { name: '收藏整个作品组' });
+    fireEvent.click(heart); fireEvent.click(heart);
+    expect(heart.hasAttribute('disabled')).toBe(true);
+    expect(heart.closest('.hover-reveal-md')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+    await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/group.png', false));
+    await act(async () => fail(new Error('合成收藏失败')));
+    expect(notify).toHaveBeenCalledWith('合成收藏失败', 'error');
+    expect(heart.getAttribute('aria-pressed')).toBe('false'); expect(heart.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(heart);
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('已收藏整个作品组', 'success'));
+  });
   it('图库浮层固定右上竖排，长按显露，键盘操作不会触发父卡片', () => {
     const parentKey = vi.fn();
     const view = render(React.createElement(PressRevealSurface, { onKeyDown: parentKey }, React.createElement(ImageShareOverlay, { imageUrl: '/synthetic.png', filename: 'synthetic.png' })));
@@ -22,7 +41,9 @@ describe('共用图片分享操作', () => {
     const group = screen.getByTitle('下载图片').parentElement!;
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('flex-col')).toBe(true);
-    expect(group.classList.contains('hover-reveal-md')).toBe(true);
+    expect(group.classList.contains('hover-reveal-md')).toBe(false);
+    expect(screen.getByTitle('收藏').closest('.hover-reveal-md')).toBeNull();
+    expect(screen.getByTitle('下载图片').classList.contains('hover-reveal-md')).toBe(true);
     expect(surface.hasAttribute('data-press-revealed')).toBe(false);
     longPress(surface);
     expect(surface.getAttribute('data-press-revealed')).toBe('true');
@@ -42,14 +63,14 @@ describe('共用图片分享操作', () => {
     fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
     await waitFor(() => expect(downloadSharedImage).toHaveBeenCalledWith('/source.png', 'source.png', true));
   });
-  it.each(['overlay', 'toolbar', 'compact', 'card'] as const)('%s 始终仅两个按钮，复制和下载都跟随设置', async variant => {
+  it.each(['overlay', 'toolbar', 'compact', 'card'] as const)('%s 收藏始终排在下载与复制之前，复制和下载都跟随设置', async variant => {
     const parentClick = vi.fn();
     const parentPointerDown = vi.fn();
     const notify = vi.fn();
     render(React.createElement('div', { onClick: parentClick, onPointerDown: parentPointerDown }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant, notify })));
     for (const clean of [false, true, false]) {
       act(() => setCleanSharedImages(clean));
-      expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['下载图片', '复制图片']);
+      expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片']);
       fireEvent.pointerDown(screen.getByRole('button', { name: '复制图片' }));
       fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
       await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/original-image', clean));
@@ -67,7 +88,7 @@ describe('共用图片分享操作', () => {
     let rejectDownload!: (error: Error) => void;
     vi.mocked(downloadSharedImage).mockImplementation(() => new Promise((_, reject) => { rejectDownload = reject; }));
     const notify = vi.fn();
-    const view = render(React.createElement(PressRevealSurface, { role: 'button', 'aria-label': '作品' }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'hover-reveal-md' })));
+    const view = render(React.createElement(PressRevealSurface, { role: 'button', 'aria-label': '作品' }, React.createElement(ImageShareActions, { imageUrl: '/original-image', filename: 'NAI.png', variant: 'card', notify, className: 'flex-col' })));
     const card = view.container.querySelector('.press-reveal-surface')!; longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
     const download = screen.getByRole('button', { name: '下载图片' });
@@ -107,3 +128,11 @@ describe('共用图片分享操作', () => {
     expect((copy as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

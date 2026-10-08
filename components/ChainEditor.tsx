@@ -2176,6 +2176,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
                 <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
+                    favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                     generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
                     isGenerating={isGenerating}
                     handleGenerate={handleGenerate}
@@ -2205,6 +2206,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </div>
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
+                favorite={imageEditPreviewItem ? { imageUrl: imageEditPreviewItem.imageUrl, sourceType: 'history', sourceId: imageEditPreviewItem.id } : undefined}
                 key={chain.id}
                 generationData={imageEditPreviewItem ? { prompt: imageEditPreviewItem.prompt, negativePrompt: imageEditPreviewItem.negativePrompt, params: imageEditPreviewItem.params } : undefined}
                 baseImage={imageEditBaseImage}
@@ -2355,6 +2357,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 <ImageLightbox src={lightboxImg} customActions onClose={() => setLightboxImg(null)} onSwipe={delta => delta < 0 ? showPreviousHistory() : showNextHistory()}>
                     <ImagePreviewActions
                         imageUrl={lightboxImg}
+                        favorite={lightboxItem ? { imageUrl: lightboxItem.imageUrl, sourceType: 'history', sourceId: lightboxItem.id } : { imageUrl: lightboxImg, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, title: chain.name, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                         generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
                         filename={getDownloadFilename()}
                         notify={notify}

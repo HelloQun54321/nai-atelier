@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ImageEditOperation } from '../types';
 import { ChainEditorPreview } from './ChainEditorPreview';
+import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 
 interface ImageEditPreviewProps {
@@ -19,6 +20,7 @@ interface ImageEditPreviewProps {
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
   generationData?: ImageGenerationData;
+  favorite?: CollectionTarget;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -33,7 +35,7 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
   canGenerate, generationDisabled, unavailableLabel,
-  onGenerate, onOpenLightbox, getDownloadFilename, generationData, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
+  onGenerate, onOpenLightbox, getDownloadFilename, generationData, favorite, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
   useLanguage();
@@ -56,7 +58,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         handleSavePreview={() => undefined}
         handleUploadCover={() => undefined}
         getDownloadFilename={getDownloadFilename}
-        generationData={generationData}
+        generationData={generationData} favorite={favorite}
         hideCoverActions
         canNavigateHistory={canNavigateHistory}
         historyLabel={historyLabel}

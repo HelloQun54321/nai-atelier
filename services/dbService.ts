@@ -2,6 +2,7 @@
 import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
 import { normalizeChainTags } from './chainTags';
+import { loadCollection, updateCollection, removeCollection, markCollectionUsed } from './collectionFavorites';
 
 /**
  * blob: URL 只在创建它的页面会话内有效，落库后重启即失效。
@@ -91,8 +92,8 @@ class DBService {
   }
 
   // --- Inspirations ---
-  async getAllInspirations(): Promise<Inspiration[]> {
-    return await api.get('/inspirations');
+  async getAllInspirations(user?: User): Promise<Inspiration[]> {
+    return user ? loadCollection(user) : api.get('/inspirations');
   }
 
   async getInspirationsBySource(sourceType: 'danbooru' | 'pixiv', sourceId: string): Promise<Inspiration[]> {
@@ -122,23 +123,23 @@ class DBService {
   }
 
   async updateInspiration(id: string, updates: Partial<Inspiration>): Promise<void> {
-    await api.put(`/inspirations/${id}`, updates);
+    await updateCollection([id], updates);
   }
 
   async deleteInspiration(id: string): Promise<void> {
-    await api.delete(`/inspirations/${id}`);
+    await removeCollection([id]);
   }
 
   async bulkDeleteInspirations(ids: string[]): Promise<void> {
-    await api.post('/inspirations/bulk-delete', { ids });
+    await removeCollection(ids);
   }
 
   async bulkUpdateInspirations(ids: string[], updates: Partial<Inspiration>): Promise<void> {
-    await api.post('/inspirations/bulk-update', { ids, updates });
+    await updateCollection(ids, updates);
   }
 
   async markInspirationUsed(id: string): Promise<void> {
-    await api.post(`/inspirations/${encodeURIComponent(id)}/use`, {});
+    await markCollectionUsed(id);
   }
 
 }

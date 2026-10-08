@@ -98,28 +98,21 @@ describe('历史缩略图就地操作', () => {
         expect(localHistory.keepOnly).not.toHaveBeenCalled();
     });
 
-    it('收藏到所选收藏夹后的提示挂到根层，关闭提示不重复保存', async () => {
-        vi.mocked(db.getInspirationBoards).mockResolvedValueOnce([{ id: 'composition', name: '构图参考', userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
-        const { container, cards } = await setup();
-        fireEvent.click(cards[0]);
-        await screen.findByRole('option', { name: '构图参考' });
-        fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
-        fireEvent.change(screen.getByPlaceholderText('为这张图取个标题...'), { target: { value: '合成标题' } });
-        fireEvent.click(screen.getByRole('button', { name: '加入' }));
-        const dialog = await screen.findByRole('dialog', { name: '已加入收藏库' });
-        expect(dialog.parentElement).toBe(container.firstElementChild);
-        expect(dialog.closest('main')).toBeNull();
-        fireEvent.click(within(dialog).getByRole('button', { name: '确定' }));
-        expect(screen.queryByRole('dialog', { name: '已加入收藏库' })).toBeNull();
-        expect(db.saveInspiration).toHaveBeenCalledOnce();
-        expect(db.saveInspiration).toHaveBeenCalledWith(expect.objectContaining({ boardId: 'composition', imageUrl: items[0].imageUrl, prompt: items[0].prompt }));
-    });
+    it('历史详情直接用统一爱心，不再二次填写收藏表单或重复保存图片', async () => {
+  const { cards } = await setup(); fireEvent.click(cards[0]);
+  expect(screen.queryByPlaceholderText('为这张图取个标题...')).toBeNull();
+  expect(screen.queryByRole('combobox', { name: '收藏夹' })).toBeNull();
+  const viewer = screen.getByRole('dialog', { name: '历史图片查看器' });
+  fireEvent.click(within(viewer).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(localHistory.setFavorite).toHaveBeenCalledExactlyOnceWith(items[0].id, true));
+  expect(db.saveInspiration).not.toHaveBeenCalled();
+});
 
     it.each([1280, 390])('宽度 %s 删除在左上，右上依次收藏、下载、复制，所有按钮无文字', async width => {
         const { cards } = await setup(width);
         const card = within(cards[0]);
         const favorite = card.getByRole('button', { name: '收藏' });
-        const right = favorite.parentElement!;
+        const right = favorite.parentElement!.parentElement!;
         expect(right.classList.contains('right-2')).toBe(true);
         expect(right.classList.contains('top-2')).toBe(true);
         expect(within(right).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片']);
@@ -128,7 +121,9 @@ describe('历史缩略图就地操作', () => {
         expect(remove.parentElement?.classList.contains('top-2')).toBe(true);
         for (const button of card.getAllByRole('button')) expect(button.textContent).toBe('');
         const share = card.getByRole('button', { name: '下载图片' }).parentElement!;
-        expect(share.classList.contains('hover-reveal-md')).toBe(true);
+        expect(share.classList.contains('hover-reveal-md')).toBe(false);
+        expect(favorite.closest('.hover-reveal-touch')).toBeNull();
+        expect(card.getByRole('button', { name: '下载图片' }).classList.contains('hover-reveal-md')).toBe(true);
         expect(remove.parentElement?.classList.contains('hover-reveal-md')).toBe(true);
     });
 
@@ -182,7 +177,7 @@ describe('历史缩略图就地操作', () => {
         vi.mocked(localHistory.setFavorite).mockImplementationOnce(() => new Promise(resolve => { resolveFavorite = resolve; }));
         const { cards } = await setup();
         fireEvent.click(within(cards[0]).getByRole('button', { name: '收藏' }));
-        expect(within(cards[0]).getByRole('status', { name: '正在更新收藏' })).toBeTruthy();
+        expect((within(cards[0]).getByRole('button', { name: '收藏' }) as HTMLButtonElement).disabled).toBe(true);
         fireEvent.click(within(cards[0]).getByRole('button', { name: '复制图片' }));
         await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith(items[0].imageUrl, false, { prompt: items[0].prompt, negativePrompt: items[0].negativePrompt, params: items[0].params }));
         await act(async () => resolveFavorite(1));
@@ -197,13 +192,14 @@ describe('历史详情导入实验室', () => {
         if (width < 768) fireEvent.click(screen.getByRole('button', { name: '图片详情' }));
         return result;
     };
-    it.each([1280, 390])('宽度 %s 操作在参数之前，灵感表单直接可用，模式默认文生图', async width => {
+    it.each([1280, 390])('宽度 %s 操作在参数之前，统一爱心常驻，模式默认文生图', async width => {
         await openDetails(width);
         const panel = screen.getByLabelText('图片详情面板');
         const actions = within(panel).getByRole('group', { name: '历史图片操作' });
         const params = within(panel).getByText('提示词与生成参数');
         expect(actions.compareDocumentPosition(params) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(screen.getByLabelText('加入收藏库').closest('details')).toBeNull();
+        expect(screen.queryByLabelText('加入收藏库')).toBeNull();
+        expect(screen.getAllByRole('button', { name: '收藏' }).length).toBeGreaterThan(0);
         const select = screen.getByRole('combobox', { name: '实验室导入模式' }) as HTMLSelectElement;
         expect(select.value).toBe('text-to-image');
         expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['文生图', '图生图', '局部重绘', '扩图']);
@@ -350,8 +346,7 @@ describe('历史连续浏览会话', () => {
         });
         const { container } = await setup(1280, 20);
         fireEvent.click(cardById(container, 'browse-19'));
-        fireEvent.click(screen.getByText('加入收藏库'));
-        const input = screen.getByPlaceholderText('为这张图取个标题...');
+        const input = screen.getByRole('combobox', { name: '实验室导入模式' });
         fireEvent.keyDown(input, { key: 'ArrowRight' });
         expect(screen.getByText('20 / 25')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: '下一张图片' }));
@@ -405,7 +400,7 @@ describe('历史连续浏览会话', () => {
     it('手机长按只显露操作，松手不打开大图、不进入多选；批量选择仍从管理进入', async () => {
         const { cards } = await setup(390);
         const favorite = within(cards[0]).getByRole('button', { name: '收藏' });
-        expect(favorite.closest('[data-card-action]')?.classList.contains('hover-reveal-touch')).toBe(true);
+        expect(favorite.closest('.hover-reveal-touch')).toBeNull();
         longPress(cards[0]);
         expect(cards[0].getAttribute('data-press-revealed')).toBe('true');
         expect(screen.queryByRole('dialog', { name: '历史图片查看器' })).toBeNull();
@@ -486,3 +481,11 @@ describe('历史顶栏状态一致性', () => {
         expect(screen.getByLabelText('结束日期')).toBeTruthy();
     });
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

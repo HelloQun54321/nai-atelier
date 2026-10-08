@@ -1,3 +1,4 @@
+import { toggleCollectionTarget } from '../../services/collectionFavorites';
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
@@ -192,8 +193,8 @@ it('封面候选推进后收藏等无关重渲染不倒退到已失败的地址'
   fireEvent.error(card(1).querySelector('img')!);
   const preview = card(1).querySelector('img')!;
   expect(preview.getAttribute('src')).toBe('/api/assets/aitag/1.png');
-  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏' }));
-  await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalled());
+  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏整个作品组' }));
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalled());
   expect(card(1).querySelector('img')).toBe(preview);
   expect(preview.getAttribute('src')).toBe('/api/assets/aitag/1.png');
 });
@@ -249,12 +250,12 @@ it('再次点击或使用 Enter／空格取消，❌ 也取消且关闭重排不
 it('收藏和收藏按钮键盘事件不切换焦点，也不关闭选中详情', async () => {
   await setup();
   fireEvent.click(card(1)); selected(1);
-  const favorite = within(card(2)).getByRole('button', { name: '收藏' });
+  const favorite = within(card(2)).getByRole('button', { name: '收藏整个作品组' });
   fireEvent.keyDown(favorite, { key: 'Enter' }); selected(1);
   fireEvent.click(favorite);
-  await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalledWith(2, true, expect.any(Object)));
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'aitag', sourceId: '2', getGroup: expect.any(Function) })));
   selected(1);
-  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏' }));
+  fireEvent.click(within(card(1)).getByRole('button', { name: '收藏整个作品组' }));
   selected(1);
 });
 
@@ -419,29 +420,33 @@ it('失败只显示错误并恢复按钮，重试可以保存，其他复用入�
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
 });
 
-it('相邻的加入收藏库同样显示进度并拦截连点，保持原本不跳转的行为', async () => {
-  let resolve!: () => void;
-  mocks.saveInspiration.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
-  mocks.getInspirationBoards.mockResolvedValue([{ id: 'composition', name: '构图参考', userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
-  const { notify } = await setup(); fireEvent.click(card(1));
-  await screen.findByRole('option', { name: '构图参考' });
-  fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
-  const button = await screen.findByRole('button', { name: '加入收藏库' });
+it('详情逐张收藏保持实际图片与元数据，爱心忙碌时阻止重复点击', async () => {
+  let finish!: (active: boolean) => void;
+  vi.mocked(toggleCollectionTarget).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const { container, notify } = await setup(); fireEvent.click(card(1));
+  const surface = await waitFor(() => { const node = container.querySelector('img[alt="AITAG 作品图片"]')?.closest('.press-reveal-surface'); expect(node).toBeTruthy(); return node!; });
+  const button = within(surface as HTMLElement).getByRole('button', { name: '收藏' });
   fireEvent.click(button); fireEvent.click(button);
-  expect(mocks.saveInspiration).toHaveBeenCalledTimes(1);
-  expect(button.getAttribute('aria-busy')).toBe('true');
-  expect((screen.getByRole('button', { name: '保存到风格串' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(mocks.saveInspiration.mock.calls[0][0]).toMatchObject({ boardId: 'composition', imageUrl: '/api/assets/aitag/1.png', prompt: 'synthetic prompt 1', sourceType: 'aitag' });
-  await act(async () => resolve());
-  await waitFor(() => expect(notify).toHaveBeenCalledWith('已加入收藏库'));
+  expect(toggleCollectionTarget).toHaveBeenCalledTimes(1); expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[0][0]).toMatchObject({ imageUrl: '/api/assets/aitag/1.png', prompt: 'synthetic prompt 1', sourceType: 'aitag', sourceId: '1' });
+  expect(screen.queryByRole('combobox', { name: '收藏夹' })).toBeNull();
+  await act(async () => finish(true));
+  expect(notify).toHaveBeenCalledWith('已加入收藏库', 'success');
   expect(mocks.navigate).not.toHaveBeenCalled(); expect(mocks.createChain).not.toHaveBeenCalled();
-  expect(mocks.getWork).toHaveBeenCalledTimes(1);
 });
 
 it('手机 AITag 卡片长按显露收藏，松手不打开详情，收藏不选择作品', async () => {
   vi.stubGlobal('innerWidth', 390); await setup(); const item = card(1); longPress(item);
   expect(item.getAttribute('data-press-revealed')).toBe('true'); expect(item.getAttribute('aria-pressed')).toBe('false');
   expect(mocks.getWork).not.toHaveBeenCalled();
-  const button = within(item).getByRole('button', { name: '收藏' }); expect(button.classList.contains('hover-reveal-touch')).toBe(true);
-  fireEvent.click(button); await waitFor(() => expect(mocks.setFavorite).toHaveBeenCalledOnce()); expect(item.getAttribute('aria-pressed')).toBe('false');
+  const button = within(item).getByRole('button', { name: '收藏整个作品组' }); expect(button.closest('.hover-reveal-touch')).toBeNull();
+  fireEvent.click(button); await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledOnce()); expect(item.getAttribute('aria-pressed')).toBe('false');
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

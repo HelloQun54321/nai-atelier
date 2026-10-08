@@ -3,7 +3,6 @@ import { PressRevealSurface } from './PressRevealSurface';
 
 import React, { useCallback, useContext, useMemo, useState, useEffect, useRef } from 'react';
 import { LocalHistoryDateRange, LocalHistoryPage, localHistory } from '../services/localHistory';
-import { db } from '../services/dbService';
 import { GenerationMode, LocalGenItem, PromptChain, User } from '../types';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
@@ -16,10 +15,11 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, FavoriteButton, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
+import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { getLabModeLabel } from '../services/labWorkspace';
+import { syncHistoryCollectionFavorites } from '../services/collectionFavorites';
 import { ImageShareActions } from './ImageShareActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageTaggerAction } from './ImageTaggerPanel';
@@ -27,8 +27,6 @@ import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { type HistoryBrowseOrder, type HistoryBrowseQuery } from '../services/historyBrowse';
 import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
-import { CollectionFolderSelect } from './inspiration/CollectionControls';
-import { rememberCollectionFolder } from '../services/inspirationUtils';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -119,7 +117,7 @@ const HistoryCard = React.memo(function HistoryCard({
     isFavoritePending: boolean;
     onToggleSelect: (itemId: string) => void;
     onOpen: (item: LocalGenItem) => void;
-    onFavorite: (item: LocalGenItem, e: React.MouseEvent) => void;
+    onFavorite: (item: LocalGenItem) => Promise<void>;
     onDelete: (item: LocalGenItem, e: React.MouseEvent) => void;
     onImageLoadRatio: (itemId: string, ratio: number) => void;
     notify: GenHistoryProps['notify'];
@@ -155,14 +153,8 @@ const HistoryCard = React.memo(function HistoryCard({
                 }} />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                 {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
-                {!selectionMode && <div data-card-action="true" className="hover-reveal-touch absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
-                    {isFavoritePending ? (
-                        // 收藏写入中只替换心形，下载和复制仍能使用。
-                        <span role="status" aria-label={t("正在更新收藏")} className="hover-reveal-touch pointer-events-none flex h-11 w-11 items-center justify-center rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur md:h-8 md:w-8"><LoaderCircle className="h-4 w-4 animate-spin" /></span>
-                    ) : (
-                        <FavoriteButton overlay active={Boolean(item.isFavorite)} className="hover-reveal-touch !h-11 !w-11 md:!h-8 md:!w-8" onClick={e => onFavorite(item, e)} />
-                    )}
-                    <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className={`flex-col ${HISTORY_CARD_HOVER_ACTIONS}`} />
+                {!selectionMode && <div data-card-action="true" className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
+                    <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
                 </div>}
                 {!selectionMode && <div data-card-action="true" className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
                     <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t("删除历史图片")} title={t("删除")}>
@@ -178,7 +170,7 @@ const HistoryCard = React.memo(function HistoryCard({
     );
 });
 
-export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const language = useLanguage();
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences();
@@ -207,10 +199,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     const closeLightbox = () => {
         lightboxRef.current = null; navigationRequestRef.current++; requestCloseLightbox();
     };
-    const [isPublishing, setIsPublishing] = useState(false);
-    const [publishTitle, setPublishTitle] = useState('');
-    const [collectionFolderId, setCollectionFolderId] = useState('');
-    const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -554,8 +542,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 if (page > currentPageRef.current) { currentPageRef.current = page; setCurrentPage(page); }
             }
             returnItemRef.current = target.id;
-            setPublishTitle(''); setCollectionFolderId('');
-            setLightbox(target);
+                setLightbox(target);
             const pages = Math.ceil(order.length / PAGE_SIZE);
             if (page < pages) void preloadPage(page + 1, pages, currentPageRef.current);
             if (page > 1) void preloadPage(page - 1, pages, currentPageRef.current);
@@ -606,7 +593,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     }, [lightbox]);
 
     historyChangeRef.current = change => {
-        if (change.type !== 'add' && !change.external) return;
+        if (change.type !== 'add' && change.type !== 'favorite' && !change.external) return;
         if (change.type === 'delete' && change.id) { void removeBrowseItems(new Set([change.id])); return; }
         if (change.type === 'favorite' && change.id && typeof change.favorite === 'boolean') {
             if (dateRangeRef.current.favoriteOnly && !change.favorite) { void removeBrowseItems(new Set([change.id])); return; }
@@ -807,6 +794,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         setFavoritePending([item.id], true);
         try {
             await localHistory.setFavorite(item.id, favorite);
+            await syncHistoryCollectionFavorites([item.id], favorite);
+            onRefreshInspiration?.();
             if (dateRangeRef.current.favoriteOnly && !favorite) {
                 await removeBrowseItems(new Set([item.id]));
             } else {
@@ -826,6 +815,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         setFavoritePending(ids, true);
         try {
             await localHistory.setFavorites(ids, favorite);
+            await syncHistoryCollectionFavorites(ids, favorite);
+            onRefreshInspiration?.();
             if (dateRangeRef.current.favoriteOnly && !favorite) {
                 await removeBrowseItems(new Set(ids));
             } else {
@@ -928,44 +919,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
         }
     };
 
-    const handlePublish = async () => {
-        if (!lightbox) return;
-        if (!publishTitle.trim()) {
-            notify('请输入标题', 'error');
-            return;
-        }
-        setIsPublishing(true);
-        try {
-            const importData = await getImportDataFromHistoryItem(lightbox);
-            await db.saveInspiration({
-                id: createUuid(),
-                title: publishTitle,
-                boardId: collectionFolderId || undefined,
-                imageUrl: lightbox.imageUrl,
-                prompt: importData.prompt,
-                negativePrompt: importData.negativePrompt,
-                params: importData.params,
-                userId: currentUser.id,
-                username: currentUser.username,
-                tags: ['生成历史'],
-                sourceType: 'history',
-                sourceId: lightbox.id,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-            });
-            notify('已加入收藏库，稍后可继续分类整理');
-            rememberCollectionFolder(collectionFolderId);
-            setIsPublishing(false);
-            if (lightboxRef.current?.id === lightbox.id) {
-                setPublishTitle(''); setLightbox(null); setShowSuccessModal(true);
-            }
-            onRefreshInspiration?.();
-        } catch (e: any) {
-            notify('加入收藏库失败: ' + e.message, 'error');
-            setIsPublishing(false);
-        }
-    };
-
     const handleImportToLab = async () => {
         if (!lightbox || isPreparingImport) return;
 
@@ -1031,13 +984,10 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     const handleOpenHistoryItem = useCallback((item: LocalGenItem) => {
         returnItemRef.current = item.id;
-        setPublishTitle(''); setCollectionFolderId('');
         setLightbox(item);
     }, []);
 
-    const handleCardFavorite = useCallback((item: LocalGenItem, event: React.MouseEvent) => {
-        void handleFavorite(item, event);
-    }, [handleFavorite]);
+    const handleCardFavorite = (item: LocalGenItem) => handleFavorite(item);
 
     const handleCardDelete = useCallback((item: LocalGenItem, event: React.MouseEvent) => {
         void handleDelete(item.id, event);
@@ -1217,13 +1167,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 item={lightbox}
                 index={Math.max(0, dateRangeRef.current.orderIds?.indexOf(lightbox.id) ?? 0)}
                 total={totalCount}
-                navigating={isNavigating || isPublishing || isPreparingImport}
+                navigating={isNavigating || isPreparingImport}
                 favoritePending={pendingFavoriteIds.has(lightbox.id)}
                 detailsOpen={detailsOpen}
                 onDetailsChange={setDetailsOpen}
                 onNavigate={delta => void navigateToHistoryIndex((dateRangeRef.current.orderIds?.indexOf(lightbox.id) ?? 0) + delta)}
                 onClose={closeLightbox}
-                onFavorite={() => void handleFavorite(lightbox)}
+                onFavorite={() => handleFavorite(lightbox)}
                 onDelete={() => void handleDelete(lightbox.id)}
                 filename={getDownloadFilename(lightbox.createdAt)}
                 notify={notify}
@@ -1231,7 +1181,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                             <div className="flex-shrink-0 space-y-3" role="group" aria-label={t("历史图片操作")}>
                                 <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                                     <span className="shrink-0 text-sm font-semibold">{t("导入模式")}</span>
-                                    <ToolbarSelect label={t("实验室导入模式")} containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport || isPublishing} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
+                                    <ToolbarSelect label={t("实验室导入模式")} containerClassName="min-w-0 w-full" value={targetImportMode} disabled={isPreparingImport} onChange={event => { setImportMode(event.target.value as GenerationMode); setReuseEditMask(false); }}>
                                         <option value="text-to-image">{t("文生图")}</option>
                                         <option value="image-to-image">{t("图生图")}</option>
                                         <option value="inpaint">{t("局部重绘")}</option>
@@ -1239,30 +1189,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     </ToolbarSelect>
                                 </div>
                                 {canReuseEditMask && <label className="flex items-center gap-2 text-sm">
-                                    <input type="checkbox" checked={reuseEditMask} disabled={isPreparingImport || isPublishing} onChange={event => setReuseEditMask(event.target.checked)} />
+                                    <input type="checkbox" checked={reuseEditMask} disabled={isPreparingImport} onChange={event => setReuseEditMask(event.target.checked)} />
                                     {t("复用原蒙版")}</label>}
-                                <ToolbarButton tone="primary" className="w-full" onClick={handleImportToLab} disabled={isPreparingImport || isPublishing}>
+                                <ToolbarButton tone="primary" className="w-full" onClick={handleImportToLab} disabled={isPreparingImport}>
                                     <Save />
                                     {isPreparingImport ? t("正在读取元数据...") : t("导入到实验室")}
                                 </ToolbarButton>
-                                <div className="rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/20">
-                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">{t("加入收藏库")}</label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            id="history-inspiration-title"
-                                            type="text"
-                                            placeholder={t("为这张图取个标题...")}
-                                            className="min-w-0 flex-1 px-3 py-2 rounded border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-gray-800 text-sm outline-none dark:text-white focus:border-indigo-500 transition-colors"
-                                            value={publishTitle}
-                                            disabled={isPublishing || isPreparingImport}
-                                            onChange={event => setPublishTitle(event.target.value)}
-                                        />
-                                        <ToolbarButton tone="primary" onClick={handlePublish} disabled={isPublishing || isPreparingImport} className="whitespace-nowrap">
-                                            {isPublishing ? t("整理中") : t("加入")}
-                                        </ToolbarButton>
-                                    </div>
-                                    <div className="mt-2"><CollectionFolderSelect value={collectionFolderId} onChange={setCollectionFolderId} disabled={isPublishing || isPreparingImport} notify={notify} className="mobile-touch h-10 w-full rounded-lg border border-indigo-200 bg-white px-2 text-sm dark:border-indigo-800 dark:bg-gray-800" /></div>
-                                </div>
                             </div>
                             <div className="space-y-4">
                                 {!lightbox.prompt?.trim() && <ImageTaggerAction notify={notify} imageUrl={buildMediaUrl(lightbox.imageUrl, 'original')} text label={t("识别图片 Tag")} />}
@@ -1349,22 +1281,6 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 </div>
             </ImagePreviewPortal>)}
 
-            {/* Success Modal */}
-            {showSuccessModal && (<ImagePreviewPortal>
-                <div role="dialog" aria-modal="true" aria-label={t("已加入收藏库")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col items-center text-center animate-bounce-in">
-                        <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
-                            ✨
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t("已加入收藏库")}</h3>
-                        <button
-                            onClick={() => setShowSuccessModal(false)}
-                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"
-                        >
-                            {t("确定")}</button>
-                    </div>
-                </div>
-            </ImagePreviewPortal>)}
         </div>
     );
 };

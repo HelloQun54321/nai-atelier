@@ -1,3 +1,4 @@
+import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ViewableImage } from './ImageLightbox';
@@ -24,13 +25,12 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Tag, Trash2, UserRound } from 'lucide-react';
-import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
+import { ToolbarButton, ToolbarSearch, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
-import { TagCoverActions } from './TagCoverActions';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
@@ -98,7 +98,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       return imageHeight + 82; // 名称 + tagName/描述文本区
     }, [cardRatios]);
     const renderCharacterCard = (card: CharacterCard) => {
-            const favorite = favorites.has(card.key);
             const selected = selectedKeys.has(card.key);
             return (
               <PressRevealSurface as="article" key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
@@ -106,7 +105,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
                     <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
@@ -114,14 +113,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <span className="mt-2 text-meta">{t("暂无封面")}</span>
                     </div>
                   )}
-                  {card.kind === 'catalog' && <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} />}
                   {card.kind === 'custom' && card.chain && <>
                     <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
                       <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>
                     </div>
-                    <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
-                      {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} />}
-                      <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
+                    <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+                      {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} />}
+                      <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
                     </div>
                   </>}
                   {selected && (
@@ -136,7 +134,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     ) : (
                       <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
                     )}
-                    {card.kind === 'custom' && <FavoriteButton active={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(card); }} className="hover-reveal-touch ml-1 flex-shrink-0" />}
                   </div>
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
@@ -442,11 +439,26 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
 
-  const toggleFavorite = (card: CharacterCard) => {
-    const wasFavorite = favorites.has(card.key);
+  useEffect(() => {
+    const sync = () => setFavorites(previous => {
+      const next = new Set(previous);
+      const groups = new Map<string, boolean>();
+      for (const item of collectionSnapshot()) {
+        if (!["character"].includes(item.sourceType || '') || !item.sourceId) continue;
+        const id = item.sourceId!.startsWith('catalog:') || item.sourceId!.startsWith('custom:') ? item.sourceId! : customChains.some(chain => chain.id === item.sourceId) ? 'custom:' + item.sourceId : 'catalog:' + item.sourceId;
+        groups.set(id, Boolean(groups.get(id) || !item.archived));
+      }
+      groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
+      return next;
+    });
+    sync(); return subscribeCollection(sync);
+  }, [customChains]);
+
+  const toggleFavorite = (card: CharacterCard, active?: boolean) => {
+    const wasFavorite = !(active ?? !favorites.has(card.key));
     setFavorites(previous => {
       const next = new Set(previous);
-      if (next.has(card.key)) next.delete(card.key); else next.add(card.key);
+      if (wasFavorite) next.delete(card.key); else next.add(card.key);
       localStorage.setItem('nai_character_favorites', JSON.stringify([...next]));
       return next;
     });
@@ -689,7 +701,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
           <PressRevealSurface className="group relative flex h-full w-full items-center justify-center" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) setLightbox(null); }}>
             <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" data-safe-mode-ignore="true" />
-            <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
+            <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} />
           </PressRevealSurface>
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
           <button onClick={() => setLightbox(null)} className="absolute left-5 top-5 text-3xl text-white" aria-label={t("关闭角色大图")}>×</button>
@@ -701,8 +713,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
            <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <>
-             <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
-             <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
+             <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
+             <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} />
            </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">{t("暂无封面")}</div>}</PressRevealSurface>
            <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">
              <div className="font-bold dark:text-white">{lightbox.name}</div>

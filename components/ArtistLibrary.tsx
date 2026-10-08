@@ -1,3 +1,4 @@
+import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
@@ -15,7 +16,6 @@ import { Check, ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
-import { TagCoverActions } from './TagCoverActions';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
@@ -44,7 +44,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     }, [artistRatios]);
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
-                            const isFav = favorites.has(artist.name);
                             const displayImg = artist.imageUrl || artist.previewUrl || artist.benchmarks?.[0] || '';
 
                             return (
@@ -70,10 +69,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             alt={artist.chineseName || artist.name}
                                             fixedSrc={displayImg}
                                             notify={notify}
+                                            onFavoriteChange={() => toggleFav(artist, undefined, collectionSnapshot().some(item => item.sourceType === 'artist' && item.sourceId === artist.name && !item.archived))}
                                             onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
-                                        <TagCoverActions favorite={isFav} onToggleFavorite={() => toggleFav(artist)} />
 
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none" />
@@ -275,9 +274,24 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         return () => observer.disconnect();
     }, [gachaArtists, hasMoreCatalog, loadNextCatalogPage, searchTerm]);
 
-    const toggleFav = (artist: Artist, e?: React.MouseEvent) => {
+  useEffect(() => {
+    const sync = () => setFavorites(previous => {
+      const next = new Set(previous);
+      const groups = new Map<string, boolean>();
+      for (const item of collectionSnapshot()) {
+        if (!["artist"].includes(item.sourceType || '') || !item.sourceId) continue;
+        const id = item.sourceId!;
+        groups.set(id, Boolean(groups.get(id) || !item.archived));
+      }
+      groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
+      return next;
+    });
+    sync(); return subscribeCollection(sync);
+  }, []);
+
+    const toggleFav = (artist: Artist, e?: React.MouseEvent, active?: boolean) => {
         e?.stopPropagation();
-        const wasFavorite = favorites.has(artist.name);
+        const wasFavorite = !(active ?? !favorites.has(artist.name));
         const newFav = new Set(favorites);
         if (wasFavorite) newFav.delete(artist.name);
         else newFav.add(artist.name);

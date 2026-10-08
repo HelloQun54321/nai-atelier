@@ -1293,6 +1293,25 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
     });
   }
 
+  if (path === '/api/aitag/favorites' && method === 'GET') {
+    await ensureAitagCacheSchema(db);
+    const rows = await db.prepare(`SELECT w.*, d.detail_json FROM aitag_works w
+      LEFT JOIN aitag_work_details d ON d.work_id = w.id
+      WHERE w.is_favorite = 1 ORDER BY w.favorite_at DESC`).all<any>();
+    const seen = new Set<number>();
+    const details = rows.results.flatMap(row => {
+      if (seen.has(row.id)) return [];
+      seen.add(row.id);
+      const work = mapAitagWorkRow(row);
+      let detail: any;
+      try { detail = JSON.parse(row.detail_json || 'null'); } catch { /* 使用已缓存首图。 */ }
+      const images = getAitagDetailImages(detail);
+      const first = work.firstImage || work.first_image;
+      return [{ work, images: images.length ? images : first ? [first] : [] }];
+    });
+    return json(details, 200, { 'Cache-Control': 'no-store' });
+  }
+
   const favoriteMatch = path.match(/^\/api\/aitag\/work\/(\d+)\/favorite$/);
   if (favoriteMatch && method === 'POST') {
     try { await ensureAitagCacheSchema(db); } catch (e) { await initDB(); }
@@ -1307,10 +1326,14 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
     await db.prepare(`
       UPDATE aitag_works
       SET is_favorite = ?, favorite_at = ?, updated_at = ?
-      WHERE id = ? AND source_sort = ?
-    `).bind(isFavorite ? 1 : 0, isFavorite ? now : null, now, workId, sourceSort).run();
+      WHERE id = ?
+    `).bind(isFavorite ? 1 : 0, isFavorite ? now : null, now, workId).run();
 
-    const item = (await getCachedAitagWorksByIds(db, [workId], sourceSort))[0];
+    let item = (await getCachedAitagWorksByIds(db, [workId], sourceSort))[0];
+    if (!item) {
+      const row = await db.prepare('SELECT * FROM aitag_works WHERE id = ? LIMIT 1').bind(workId).first<any>();
+      if (row) item = mapAitagWorkRow(row);
+    }
     if (!item) return error('Aitag work not found in local cache', 404);
 
 

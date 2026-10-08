@@ -72,3 +72,11 @@ it('同帧多张图片仅更新一次父状态，重复尺寸和非法尺寸不�
   const before = result.current[0];
   act(() => result.current[1]('a', 800, 400)); act(() => callbacks.shift()!(0)); expect(result.current[0]).toBe(before);
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

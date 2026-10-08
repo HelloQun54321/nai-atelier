@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React, { useRef } from 'react';
 import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Upload } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 
 const IMAGE_PREVIEW_BUTTON_CLASS = `${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:cursor-wait disabled:opacity-50`;
@@ -10,6 +11,7 @@ interface Props {
   imageUrl?: string | null;
   filename: string;
   generationData?: ImageGenerationData;
+    favorite?: CollectionTarget;
   notify?: (message: string, type?: 'success' | 'error') => void;
   canManageHistoryGroup?: boolean;
   onRemoveCurrentHistory?: () => void;
@@ -23,7 +25,7 @@ interface Props {
 
 /** 小图与大图共用操作位置、紧凑尺寸及权限，仅大图增加返回入口。 */
 export const ImagePreviewActions: React.FC<Props> = ({
-  imageUrl, filename, generationData, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
+  imageUrl, filename, generationData, favorite, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
   onSetCover, onUploadCover, isUploading = false, onBack, backButtonRef,
 }) => {
   useLanguage();
@@ -39,9 +41,9 @@ export const ImagePreviewActions: React.FC<Props> = ({
         <button type="button" onClick={() => onClearHistoryGroup?.()} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-gray-900/85 hover:!bg-gray-800`} aria-label={t("清空当前历史组")} title={t("清空当前历史组，历史页仍会保留")}><ListX className="h-4 w-4" aria-hidden="true" /></button>
       </div>}
     </div>}
-    {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-center gap-2 ${visibility}`} onClick={event => event.stopPropagation()}>
-      <ImageShareActions imageUrl={imageUrl} generationData={generationData} filename={filename} notify={notify} variant="card" className="flex-col" />
-      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-600/90 hover:!bg-indigo-600`}>
+    {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-center gap-2`} onClick={event => event.stopPropagation()}>
+      <ImageShareActions imageUrl={imageUrl} generationData={generationData} favorite={favorite} filename={filename} notify={notify} variant="card" className="flex-col" revealClassName={visibility} />
+      {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-600/90 hover:!bg-indigo-600`}>
         {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-indigo-600" strokeWidth={3} /></span>}
       </button>}
     </div>}

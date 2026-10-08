@@ -285,7 +285,7 @@ export interface Artist {
 }
 
 // Inspiration Gallery Types
-export type InspirationSourceType = 'history' | 'aitag' | 'danbooru' | 'pixiv' | 'upload' | 'agent' | 'other';
+export type InspirationSourceType = 'history' | 'aitag' | 'danbooru' | 'pixiv' | 'upload' | 'agent' | 'artist' | 'character' | 'chain' | 'other';
 
 export interface InspirationBoard {
   id: string;

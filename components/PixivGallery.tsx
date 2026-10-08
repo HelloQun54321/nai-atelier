@@ -17,11 +17,10 @@ import {
   X,
 } from 'lucide-react';
 import { db } from '../services/dbService';
-import { createUuid } from '../services/id';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataService';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Inspiration, NAIParams, User } from '../types';
-import { externalImageAnalysis, type ExternalImageTags } from '../services/externalImageTags';
+import { externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
 import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -46,12 +45,10 @@ import {
   buildPixivMediaUrl,
   buildPixivPreviewMediaUrl,
   getPixivCurrentPageUrl,
-  importPixivImageAsFile,
   pixivArtworkUrl,
   pixivPageCount,
   pixivService,
 } from '../services/pixivService';
-import { api } from '../services/api';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 
 interface PixivGalleryProps {
@@ -105,7 +102,7 @@ const formatCount = (value: number) => new Intl.NumberFormat(getLanguage(), {
   maximumFractionDigits: 1,
 }).format(value);
 
-export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -586,7 +583,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <p className="mt-1 truncate text-micro text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
         </div>
       </button>
-      <ImageShareOverlay imageUrl={buildPixivMediaUrl(illust, 0, 'original')} filename={`pixiv-${illust.id}-p1.png`} notify={notify} />
+      <ImageShareOverlay imageUrl={buildPixivMediaUrl(illust, 0, 'original')} filename={`pixiv-${illust.id}-p1.png`} favorite={collectionGroup(illust)} notify={notify} />
     </MediaCardShell>;
   };
 
@@ -645,39 +642,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (illust: PixivIllust, page: number, reverse?: ExternalImageTags, existing?: Inspiration, boardId = ''): Promise<Inspiration> => {
-    const analysis = externalImageAnalysis(illust.tags, page, reverse, existing);
-    if (existing) {
-      const updates = { analysis, ...(boardId !== (existing.boardId || '') ? { boardId } : {}), ...(reverse ? { prompt: reverse.prompt } : {}) };
-      await db.updateInspiration(existing.id, updates);
-      onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
-      return { ...existing, ...updates };
-    }
-    const pageUrl = getPixivCurrentPageUrl(illust, page);
-    // 经 /api/upload 转存为 R2 资产 URL：避免多 MB base64 dataURL 直接入库并随灵感缓存常驻内存
-    const imageFile = await importPixivImageAsFile(pageUrl);
-    const uploaded = await api.uploadFile(imageFile, 'inspirations');
-    const response = await api.post('/inspirations', {
-      id: createUuid(),
-      userId: currentUser.id,
-      username: currentUser.username,
-      title: `${illust.title || `Pixiv #${illust.id}`}${pixivPageCount(illust) > 1 ? ` · 第 ${page + 1} 页` : ''}`,
-      imageUrl: uploaded.url,
-      prompt: reverse?.prompt ?? '',
-      analysis,
-      boardId: boardId || undefined,
-      tags: ['Pixiv', ...illust.tags.slice(0, 8)],
-      sourceType: 'pixiv',
-      sourceId: illust.id,
-      sourceUrl: pixivArtworkUrl(illust),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-    onRefreshInspiration?.();
-    notify('已加入收藏库');
-    return response.item;
+  const collectionImage = (illust: PixivIllust, page: number) => {
+    const reverse = externalImageDrafts.get('pixiv:' + illust.id + ':' + page);
+    return { imageUrl: getPixivCurrentPageUrl(illust, page), sourceType: 'pixiv' as const, sourceId: illust.id, imageId: String(page), sourceUrl: pixivArtworkUrl(illust), title: illust.title + (pixivPageCount(illust) > 1 ? ' · ' + (page + 1) : ''), prompt: reverse?.prompt || '', analysis: externalImageAnalysis(illust.tags, page, reverse) };
   };
+  const collectionGroup = (illust: PixivIllust) => ({ ...collectionImage(illust, 0), groupSize: pixivPageCount(illust), getGroup: async () => Array.from({ length: pixivPageCount(illust) }, (_, page) => collectionImage(illust, page)) });
 
+  const saveReverseTags = async (illust: PixivIllust, page: number, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+    if (!existing) throw new Error('请先收藏这张图片');
+    const updates = { analysis: externalImageAnalysis(illust.tags, page, reverse, existing), ...(reverse ? { prompt: reverse.prompt } : {}) };
+    await db.updateInspiration(existing.id, updates);
+    onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
+    return { ...existing, ...updates };
+  };
   const currentPageCount = selected ? pixivPageCount(selected) : 1;
   const headerText = mode === 'user' && userContext
     ? `画师：${userContext.name}`
@@ -1042,7 +1019,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                         <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
                       </div>
                     </button>
-                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} notify={notify} />}
+                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'pixiv', sourceId: String(item.sourceId), imageId: '0', sourceUrl: 'https://www.pixiv.net/artworks/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
                   </MediaCardShell>
                 ))}
               </div>
@@ -1106,9 +1083,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   alt={t("{0} 第 {1} 页", [selected.title, selectedPage + 1])}
                   className="max-h-[62vh] w-full object-contain"
                 /></button>
-                <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} notify={notify} />
+                <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} favorite={collectionImage(selected, selectedPage)} notify={notify} />
               </DetailImageStage>
-              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={t("{0} 第 {1} 页", [selected.title, zoomPage + 1])} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
+              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={t("{0} 第 {1} 页", [selected.title, zoomPage + 1])} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} favorite={collectionImage(selected, zoomPage)} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
                 const next=zoomPage+delta;if(next>=0&&next<currentPageCount){setZoomPage(next);setSelectedPage(next);}
               }} />}
               {selected.type === 'ugoira' && (
@@ -1121,7 +1098,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
               </div>
               <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing, boardId) => saveToInspiration(selected, selectedPage, reverse, existing, boardId)} notify={notify}
+                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveReverseTags(selected, selectedPage, reverse, existing)} notify={notify}
                 trailingAction={<IconButton
                   label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
                   aria-pressed={Boolean(selected.isBookmarked)}
@@ -1130,7 +1107,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   disabled={bookmarking}
                   onClick={() => void handleToggleBookmark(selected)}
                 >
-                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <Heart className={selected.isBookmarked ? 'fill-current' : ''} />}
+                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <span className="relative inline-flex h-5 w-5 items-center justify-center"><Heart className={selected.isBookmarked ? 'fill-current' : ''} /><span aria-hidden="true" className="absolute -bottom-1 -right-1 rounded bg-white px-0.5 text-[9px] font-black leading-3 text-blue-600 dark:bg-gray-900">P</span></span>}
                 </IconButton>}
                 sourceTags={selected.tags.length > 0 ? (
                   <TagChipGroup
@@ -1169,7 +1146,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                             <p className="truncate font-semibold">{rel.title}</p>
                           </div>
                         </button>
-                        <ImageShareOverlay imageUrl={buildPixivMediaUrl(rel, 0, 'original')} filename={`pixiv-${rel.id}-p1.png`} notify={notify} />
+                        <ImageShareOverlay imageUrl={buildPixivMediaUrl(rel, 0, 'original')} filename={`pixiv-${rel.id}-p1.png`} favorite={collectionGroup(rel)} notify={notify} />
                       </PressRevealSurface>
                     ))}
                   </div>

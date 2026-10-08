@@ -1,3 +1,4 @@
+import { toggleCollectionTarget } from '../../services/collectionFavorites';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -100,6 +101,7 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
 
 it('详情主操作是图片反推，原站复制／使用独立，保存实际图片及原站标注', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
+  search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl: 'https://cdn.donmai.us/original/synthetic.png' }]));
   vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
   await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
@@ -112,8 +114,9 @@ it('详情主操作是图片反推，原站复制／使用独立，保存实际�
   expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
-  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ imageUrl: 'data:image/png;base64,c3ludGhldGlj', prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
+  fireEvent.click(screen.getAllByRole('button', { name: '收藏' }).at(-1)!);
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'danbooru', sourceId: String(post.id), prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
+  expect(screen.queryByRole('button', { name: '加入收藏库' })).toBeNull();
 });
 it('同一作品更新已存反推，不重复下载或创建，保留原分类与备注', async () => {
   search.mockImplementation(async options => result(options?.query, [post]));
@@ -122,7 +125,7 @@ it('同一作品更新已存反推，不重复下载或创建，保留原分类�
   await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
   await screen.findByRole('textbox', { name: '反推 Tag' });
   fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited hair' } });
-  fireEvent.click(screen.getByRole('button', { name: '更新收藏库' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存反推 Tag' }));
   await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith('saved', { prompt: 'edited hair', analysis: { extra: 'keep', externalSourcePage: 0, externalSourceTags: ['synthetic_artist', 'solo'], imageTagger: { ...stored.analysis.imageTagger, prompt: 'edited hair' } } }));
   expect(importDanbooruCoverAsDataUrl).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });
@@ -213,3 +216,11 @@ it('筛选后的空页仍可继续读取后续页，不因条目数量未变而�
   await waitFor(() => expect(observers.length).toBeGreaterThan(previousObservers));
   expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 3, limit: 40 }));
 });
+
+// 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

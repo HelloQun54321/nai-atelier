@@ -91,7 +91,7 @@ describe('四模式的分享入口', () => {
     expect(onCover).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
   });
-  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 预览随设置清洗，始终只有复制和下载', operation => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 预览随设置清洗，收藏常驻且复用下载与复制', operation => {
     setCleanSharedImages(true);
     const image = '/api/local-history/share-test/image';
     if (operation === 'text-to-image') {
@@ -203,3 +203,10 @@ describe('四模式共用生成状态', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

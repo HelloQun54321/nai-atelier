@@ -214,7 +214,7 @@ const App = () => {
   const loadInspirations = async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
     try {
-      const data = await db.getAllInspirations();
+      const data = await db.getAllInspirations(currentUser || undefined);
       setInspirationsCache(data);
       setLastInspirationFetch(Date.now());
     } catch (e) {
@@ -230,8 +230,13 @@ const App = () => {
       void loadInspirations(true);
     };
     window.addEventListener('nai-project-data-changed', refreshAgentChanges);
-    return () => window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
-  }, []);
+    const refreshCollection = () => { void loadInspirations(true); };
+    window.addEventListener('nai-collection-changed', refreshCollection);
+    return () => {
+      window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
+      window.removeEventListener('nai-collection-changed', refreshCollection);
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)');

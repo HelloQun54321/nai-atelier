@@ -35,3 +35,10 @@ it('长按保留原位分享，查看器返回与键盘 Esc 可退出；详情�
   render(<ViewableImage src="/synthetic.png" alt="合成作品"/>);fireEvent.click(screen.getByRole('button',{name:'放大查看：合成作品'}));
   expect(screen.getByRole('dialog',{name:'图片预览'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'返回图片详情'}));expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
+}));

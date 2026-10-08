@@ -1,3 +1,4 @@
+import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -9,7 +10,7 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, Trash2, User } from 'lucide-react';
-import { FavoriteButton, ToolbarButton, ToolbarSearch, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
+import { ToolbarButton, ToolbarSearch, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -91,11 +92,26 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     }
   }, []);
 
-  const toggleFav = (id: string, e?: React.MouseEvent) => {
+  useEffect(() => {
+    const sync = () => setFavorites(previous => {
+      const next = new Set(previous);
+      const groups = new Map<string, boolean>();
+      for (const item of collectionSnapshot()) {
+        if (!["chain","character"].includes(item.sourceType || '') || !item.sourceId) continue;
+        const id = item.sourceId!;
+        groups.set(id, Boolean(groups.get(id) || !item.archived));
+      }
+      groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
+      return next;
+    });
+    sync(); return subscribeCollection(sync);
+  }, []);
+
+  const toggleFav = (id: string, e?: React.MouseEvent, active?: boolean) => {
     if (e) e.stopPropagation();
     setFavorites(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
+      if (!(active ?? !next.has(id))) {
         next.delete(id);
       } else {
         next.add(id);
@@ -246,9 +262,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <button type="button" onClick={event => { event.stopPropagation(); void handleDelete(chain); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t('删除：{0}', [chain.name])} title={t('删除')}><Trash2 className="h-4 w-4" /></button>
           </div>}
           {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
-          {!syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
-            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} />}
-            {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
+          {!syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} onFavoriteChange={() => toggleFav(chain.id, undefined, collectionSnapshot().some(item => item.sourceId === chain.id && !item.archived))} />}
+            {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </div>}
           {isUntestedChain(chain) && (
             <div
@@ -287,12 +303,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
           <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("生成模型")}>{getNaiModelDisplayLabel(chain.params?.model)}</span>
-          {!syncSelection.selecting && <FavoriteButton
-            active={favorites.has(chain.id)}
-            onClick={(e) => toggleFav(chain.id, e)}
-            label={favorites.has(chain.id) ? t("取消收藏") : t("收藏该串")}
-            className="hover-reveal-touch ml-1 flex-shrink-0"
-          />}
         </div>
       </div>
       {syncSelection.open && syncSelection.entries.has(chain.id) && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800" onClick={event => event.stopPropagation()}>
