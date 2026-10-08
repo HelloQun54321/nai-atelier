@@ -39,6 +39,28 @@ it('尺寸返回保留旧卡片所在列，新卡片仍选择当前最短列', (
   for (const key of items) expect(next.get(key)).toBe(old.get(key));
   expect(columns[1]).toEqual(['b', 'd', 'e']);
 });
+it('真实瀑布流隐藏时保留卡片身份和列，返回与切页不因零宽度清空列表', () => {
+  let resize!: (width: number) => void;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) {
+      resize = width => callback([{ contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    observe() { resize(390); }
+    disconnect() {}
+  });
+  const items = ['a', 'b', 'c', 'd'];
+  const { container } = render(<ShortestColumnMasonry stableColumns columns={2} items={items} getItemKey={value => value} estimateItemHeight={() => 100} renderItem={value => <img data-testid={value} src={`/synthetic/${value}.png`} />} />);
+  const cards = items.map(value => screen.getByTestId(value));
+  const columns = cards.map(card => card.parentElement);
+  for (const width of [0, 390, 0, 640]) {
+    act(() => resize(width));
+    items.forEach((value, index) => {
+      expect(screen.getByTestId(value)).toBe(cards[index]);
+      expect(cards[index].parentElement).toBe(columns[index]);
+    });
+    expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(2);
+  }
+});
 it('同帧多张图片仅更新一次父状态，重复尺寸和非法尺寸不会改变状态', () => {
   const callbacks: FrameRequestCallback[] = [];
   const raf = vi.fn((callback: FrameRequestCallback) => { callbacks.push(callback); return callbacks.length; });

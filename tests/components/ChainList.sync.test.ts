@@ -13,7 +13,7 @@ vi.mock('../../services/api', () => ({ api: { get, post } }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => React.createElement('button', { role: 'switch', 'aria-label': '收集模式' }) }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => React.createElement('button', { 'aria-label': '图片反推' }) }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: ({ isOpen, onSuccess }: { isOpen: boolean; onSuccess: () => void }) => isOpen ? React.createElement('button', { onClick: onSuccess }, '完成测试导入') : null }));
-vi.mock('../../components/SmartImage', () => ({ SmartImage: () => null }));
+vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: () => null }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'grid' }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 2, ShortestColumnMasonry: () => null }));

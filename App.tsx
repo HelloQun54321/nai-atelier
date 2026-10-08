@@ -38,6 +38,12 @@ const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => 
 
 const App = () => {
   const confirmAction = useConfirmDialog();
+  useEffect(() => {
+    // 各列表已自行恢复滚动，避免浏览器在 popstate 后再用历史旧值覆盖。
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+    return () => { window.history.scrollRestoration = previous; };
+  }, []);
   const [view, setView] = useState<ViewState>('list');
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };

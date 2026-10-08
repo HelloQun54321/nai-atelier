@@ -125,6 +125,8 @@ export const ShortestColumnMasonry = <T,>({
     if (!element) return;
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
+      // 详情覆盖或 keep-alive 隐藏时宽度为 0；保留已有卡片，避免清空列表及滚动锚点。
+      if (width <= 0) return;
       setContainerWidth(previous => (Math.abs(previous - width) > 0.5 ? width : previous));
     });
     observer.observe(element);

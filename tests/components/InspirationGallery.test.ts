@@ -22,6 +22,7 @@ vi.mock('../../services/dbService', () => ({
 }));
 
 vi.mock('../../components/SmartImage', () => ({
+  ImageActivityContext: React.createContext(true),
   SmartImage: ({ thumbnailVariant: _thumbnailVariant, ...props }: any) => React.createElement('img', props),
   OriginalImage: (props: any) => React.createElement('img', props),
 }));

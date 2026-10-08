@@ -76,6 +76,16 @@ it('写入失败保持来源页，只显示失败，不伪报已保存', async (
   expect(screen.queryByTestId('editor')).toBeNull();
 });
 
+it('应用自行保持滚动，关闭详情的浏览器返回不再恢复历史旧位置', async () => {
+  window.history.scrollRestoration = 'auto';
+  await setup();
+  expect(window.history.scrollRestoration).toBe('manual');
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  expect(window.history.scrollRestoration).toBe('manual');
+  cleanup();
+  expect(window.history.scrollRestoration).toBe('auto');
+});
+
 it('生成后记账错误明确提示，随后的成功通知不能立即覆盖费用异常', async () => {
   await setup();
   act(() => window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, { detail: { message: '图片已生成，但本地用量记账失败；勿重复生成' } })));

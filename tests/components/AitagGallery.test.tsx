@@ -9,19 +9,23 @@ import type { User } from '../../types';
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
   masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), saveInspiration: vi.fn(),
+  realMasonry: false,
 }));
 vi.mock('../../services/aitagService', async original => ({
   ...await original<typeof import('../../services/aitagService')>(),
   aitagService: { ...mocks },
 }));
 vi.mock('../../services/dbService', () => ({ db: { saveInspiration: mocks.saveInspiration } }));
-vi.mock('../../components/ShortestColumnMasonry', () => ({
-  useMasonryColumnCount: () => 3,
-  ShortestColumnMasonry: (props: { items: AitagWorkSummary[]; renderItem: (work: AitagWorkSummary) => React.ReactNode }) => {
-    mocks.masonry(props);
-    return <div>{props.items.map(props.renderItem)}</div>;
-  },
-}));
+vi.mock('../../components/ShortestColumnMasonry', async original => {
+  const actual = await original<typeof import('../../components/ShortestColumnMasonry')>();
+  return { ...actual, useMasonryColumnCount: () => 3,
+    ShortestColumnMasonry: (props: Parameters<typeof actual.ShortestColumnMasonry<AitagWorkSummary>>[0]) => {
+      mocks.masonry(props);
+      if (mocks.realMasonry) return <actual.ShortestColumnMasonry {...props} />;
+      return <div>{props.items.map(props.renderItem)}</div>;
+    },
+  };
+});
 vi.mock('../../components/SmartImage', async () => {
   const { createContext } = await import('react');
   return {
@@ -44,6 +48,7 @@ const rect = (top: number, height: number) => ({ top, height, bottom: top + heig
 
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); callbacks.clear();
+  mocks.realMasonry = false;
   document.documentElement.className = ''; delete document.documentElement.dataset.safeMode;
   tops[1] = 1800; tops[2] = 2500;
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? works : [], total: 2, page: options.page, page_size: 60 }));
@@ -251,6 +256,51 @@ it('窄屏返回取消详情，离开 AITag 后返回事件不清掉保留的作
   noSelection();
   expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
   window.history.replaceState({}, '');
+});
+
+it.each(['页面返回', '系统返回'])('真实瀑布流：%s 关闭手机详情后保留原作品及浏览位置，不重新从首页加载', async action => {
+  mocks.realMasonry = true;
+  let resize!: (width: number) => void;
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList);
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(element: Element) {
+      if (element.classList.contains('chain-masonry')) {
+        resize = width => this.callback([{ target: element, contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+        resize(390);
+      }
+    }
+    unobserve() {} disconnect() {}
+  });
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.closest('main')?.classList.contains('hidden') ? 0 : 600;
+  });
+  window.history.replaceState({}, '');
+  const returnToList = () => {
+    window.history.replaceState({}, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: {} }));
+  };
+  vi.spyOn(window.history, 'back').mockImplementation(returnToList);
+  const { main } = await setup();
+  main.scrollTop = 1600; fireEvent.scroll(main);
+  const original = card(1);
+  const searchCount = mocks.search.mock.calls.length;
+  fireEvent.click(original);
+  expect(main.className).toContain('hidden lg:block');
+  act(() => resize(0));
+  // 模拟 display:none 清零；真实卡片必须仍在 DOM 中供返回定位使用。
+  main.scrollTop = 0; fireEvent.scroll(main);
+  expect(card(1)).toBe(original);
+  if (action === '页面返回') fireEvent.click(screen.getByRole('button', { name: '返回' }));
+  else returnToList();
+  await waitFor(() => expect(main.classList.contains('hidden')).toBe(false));
+  expect(main.scrollTop).toBe(1650);
+  act(() => resize(390));
+  expect(card(1)).toBe(original);
+  expect(main.scrollTop).toBe(1650);
+  noSelection();
+  expect(mocks.search).toHaveBeenCalledTimes(searchCount);
+  expect(mocks.searchCache).not.toHaveBeenCalled();
 });
 
 it('详情请求尚未完成时取消，迟到结果不会重开详情或恢复暗态', async () => {

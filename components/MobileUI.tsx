@@ -1,6 +1,7 @@
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useContext, useEffect, useId, useRef } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import { useModalA11y } from './useModalA11y';
+import { ImageActivityContext } from './SmartImage';
 
 export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
@@ -17,27 +18,30 @@ export const MobileIconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonEle
 );
 
 export const useMobileHistoryLayer = (open: boolean, onClose: () => void, prefix: string) => {
+  const active = useContext(ImageActivityContext);
   const reactId = useId();
   const markerRef = useRef(`${prefix}-${reactId}`);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    // 覆盖层区间注册返回关闭：图库详情在 xl(1280px) 以下都是全屏覆盖，历史页/灵感详情
-    // 的模态在平板上同样存在——此前只在 <768px 注册，平板（768~1279px）按返回键
-    // 会直接退出整个页面而不是关闭详情层。
-    if (!open || typeof window === 'undefined' || !window.matchMedia('(max-width: 1279px)').matches) return;
+    // 手机与平板窗口注册返回关闭，历史／灵感等模态同样适用；后台视图不参与返回。
+    if (!open || !active || typeof window === 'undefined' || !window.matchMedia('(max-width: 1279px)').matches) return;
     const marker = markerRef.current;
     if (window.history.state?.__naiMobileLayer !== marker) {
-      window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker }, '');
+      window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker,
+        __naiMobileLayers: [...(window.history.state?.__naiMobileLayers || []), marker] }, '');
     }
-    const handlePopState = () => onCloseRef.current();
-    window.addEventListener('popstate', handlePopState, { once: true });
+    // 返回到子层的上一层时，仍在历史中的父层继续保留；不能一次返回全关。
+    const handlePopState = (event: PopStateEvent) => {
+      if (!event.state?.__naiMobileLayers?.includes(marker)) onCloseRef.current();
+    };
+    window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
       if (window.history.state?.__naiMobileLayer === marker) window.history.back();
     };
-  }, [open]);
+  }, [open, active]);
 
   return () => {
     const marker = markerRef.current;
