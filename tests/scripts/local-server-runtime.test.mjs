@@ -6,7 +6,18 @@ import { tmpdir, platform } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
-import { inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy } from '../../scripts/local-server-runtime.mjs';
+import { getLanUrls, inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy } from '../../scripts/local-server-runtime.mjs';
+
+test('手机地址排除虚拟网卡与无效地址、去重并使用实际端口', () => {
+  const entry = (address, extra = {}) => ({ address, family: 'IPv4', internal: false, ...extra });
+  assert.deepEqual(getLanUrls(4123, {
+    Ethernet: [entry('10.0.0.2'), entry('192.168.1.8'), entry('127.0.0.1', { internal: true }), entry('169.254.1.2'), entry('198.18.0.1'), entry('0.0.0.0'), entry('::1', { family: 'IPv6' })],
+    'Wi-Fi': [entry('192.168.1.8')],
+    'vEthernet (WSL)': [entry('172.20.0.1')],
+    Tailscale: [entry('100.64.0.1')],
+  }), ['http://192.168.1.8:4123', 'http://10.0.0.2:4123']);
+  assert.deepEqual(getLanUrls(4123, {}), []);
+});
 
 const response = value => ({ ok: true, json: async () => value });
 const projectDir = resolve('synthetic-project');

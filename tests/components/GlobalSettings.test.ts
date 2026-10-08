@@ -250,10 +250,10 @@ describe('GlobalSettings', () => {
     expect(screen.getByRole('button', { name: /隐私与分享/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /数据与维护/ })).toBeTruthy();
 
-    // 初始外观区包含明暗模式、安全模式（防社死）与图片列表布局
+    // 外观区保留明暗模式与图片列表布局，防窥设置归入隐私分类。
     expect(screen.getByText('明暗模式')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^安全模式/ })).toBeTruthy();
-    expect(screen.getByText('启动时自动开启安全模式')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^安全模式/ })).toBeNull();
+    expect(screen.queryByText('启动时自动开启安全模式')).toBeNull();
     expect(screen.getByText('图片列表布局')).toBeTruthy();
 
     // 切换至「生图偏好与实验室」
@@ -264,12 +264,15 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('实验室模块布局')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
+    expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /同时隐藏作品名称/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '启动时自动开启安全模式' })).toBeTruthy();
     expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(false);
 
     // 切换至「数据与维护」
     fireEvent.click(screen.getByRole('button', { name: /数据与维护/ }));
     expect(await screen.findByText('重要数据备份')).toBeTruthy();
-    expect(screen.getByText('局域网访问密码')).toBeTruthy();
+    expect(screen.getByText('局域网访问')).toBeTruthy();
   });
 
   it('选中的主题卡片强调色与色标会随着外观偏好的强调色改变而同步联动', async () => {

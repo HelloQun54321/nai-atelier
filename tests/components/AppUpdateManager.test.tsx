@@ -29,7 +29,11 @@ describe('应用更新入口', () => {
     render(<AppUpdateManager />);
     expect(screen.queryByText('重启并安装')).toBeNull();
     expect(screen.queryByText('下载更新')).toBeNull();
+    expect(screen.queryByText('只检查已发布版本')).toBeNull();
+    expect(screen.queryByText(/双击项目中的/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更新方式' }));
     expect(screen.getByText(/双击项目中的/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
     fireEvent.click(screen.getByText('检查更新'));
     await screen.findByRole('alert'); expect(screen.getByRole('alert').textContent).toContain('503');
     expect(screen.getByText('下载页').getAttribute('href')).toBe('https://github.com/HelloQun54321/nai-atelier/releases');

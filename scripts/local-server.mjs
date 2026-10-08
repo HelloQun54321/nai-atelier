@@ -3,11 +3,11 @@ import { createInterface } from 'node:readline';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { connect as connectNet, createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
-import { networkInterfaces, platform } from 'os';
+import { platform } from 'os';
 import { resolve as resolvePath } from 'node:path';
 import { startTagUpdateServer } from './tag-update-server.mjs';
 import { createMediaGateway } from './media-gateway.mjs';
-import { LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
+import { getLanUrls, LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
 import { ensureDesktopLauncher } from './desktop-launcher.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
@@ -56,26 +56,6 @@ function loadLanAccessConfig() {
   };
   writeFileSync(LAN_CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
   return config;
-}
-
-/** 虚拟网卡特征名（WSL/Hyper-V、虚拟机、隧道类）：手机无法经它们访问电脑。 */
-const VIRTUAL_ADAPTER_PATTERN = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|tailscale|zerotier|utun|tun|tap/i;
-
-function getLanUrls() {
-  const addresses = [];
-  for (const [name, entries] of Object.entries(networkInterfaces())) {
-    // Windows 上 networkInterfaces 的键即适配器名，虚拟网卡直接跳过。
-    if (VIRTUAL_ADAPTER_PATTERN.test(name)) continue;
-    for (const entry of entries || []) {
-      if (entry.family !== 'IPv4' || entry.internal) continue;
-      // 169.254/0.x 是链路本地；198.18.0.0/15 是保留测试段（TUN 代理虚拟网卡常用），均非真实局域网。
-      if (/^(169\.254|0\.|198\.1[89]\.)/.test(entry.address)) continue;
-      addresses.push(entry.address);
-    }
-  }
-  const unique = [...new Set(addresses)];
-  unique.sort((a, b) => Number(!/^192\.168\./.test(a)) - Number(!/^192\.168\./.test(b)));
-  return unique.map(address => `http://${address}:${GATEWAY_PORT}`);
 }
 
 function checkCommand(cmd) {
@@ -369,7 +349,7 @@ async function findAvailableWorkerPort(preferredPort = 3001) {
 async function startServer() {
   const lanAccess = loadLanAccessConfig();
   const outboundProxyUrl = getOutboundProxyUrl();
-  const lanUrls = getLanUrls();
+  const lanUrls = getLanUrls(GATEWAY_PORT);
   const workerPort = await findAvailableWorkerPort(Number(process.env.NAI_WORKER_PORT || 3001));
   console.log(`\x1b[32m启动本地服务 (端口 ${GATEWAY_PORT})...\x1b[0m`);
   console.log('\x1b[90m数据存储位置: ./local-data/\x1b[0m');

@@ -1,5 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, stat, unlink } from 'node:fs/promises';
+import { join, resolve, sep } from 'node:path';
 import sharp from 'sharp';
 import { IMAGE_TAGGER_MODELS, DEFAULT_IMAGE_TAGGER_MODEL } from '../services/imageTaggerModels.mjs';
 import { downloadTaggerFile, fileSize, verifiedFile } from './tagger-model-download.mjs';
@@ -93,6 +93,7 @@ export class ImageTaggerService {
 
   startDownload(id) {
     const model = this.definition(id);
+    if (this.changing) throw problem('正在管理反推模型，请稍候', 409);
     if (this.download) {
       if (this.download.model === id) return this.download.promise;
       throw problem('已有模型正在下载，请完成或暂停后再下载其他模型', 409);
@@ -132,6 +133,33 @@ export class ImageTaggerService {
     if (!task) return;
     task.controller.abort();
     await task.promise.catch(() => {});
+  }
+
+  async deleteModel(id) {
+    await this.preference();
+    const model = this.definition(id);
+    if (this.busy || this.changing || this.initializing) throw problem('模型正在使用，请完成后再删除', 409);
+    // 仅删除注册表内的模型文件及续传副本，保留目录中的其他内容。
+    const paths = model.files.flatMap(file => {
+      const path = join(this.directory, model.directory, file.name);
+      return [path, `${path}.download`];
+    });
+    const root = `${resolve(this.directory)}${sep}`;
+    if (paths.some(path => !resolve(path).startsWith(root))) throw problem('模型缓存路径无效');
+    this.changing = true;
+    try {
+      if (this.download?.model === id) await this.pauseDownload();
+      if (this.model === id) {
+        await this.session?.release();
+        this.session = null; this.tags = null;
+      }
+      await Promise.allSettled(paths.map(path => this.verifications.get(path)?.promise));
+      for (const path of paths) await unlink(path).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    } finally {
+      this.jobs.delete(id);
+      for (const path of paths) this.verifications.delete(path);
+      this.changing = false;
+    }
   }
 
   async init() {

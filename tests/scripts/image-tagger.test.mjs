@@ -129,6 +129,49 @@ test('cancel download stops job and records resumable paused state', async t => 
   const status = await manager.status(); assert.equal(status.downloadingModel, null); assert.equal(status.models[0].stage, 'paused');
 });
 
+test('deletion releases selected model, clears only its files and allows a fresh download', async t => {
+  const f = await fixture(t);
+  const manager = new ImageTaggerService(async url => new Response(url.endsWith('.csv') ? csv : bytes), { directory: f.directory, models: definitions });
+  await manager.startDownload(f.model.id);
+  await manager.startDownload(definitions[1].id);
+  const modelDirectory = join(f.directory, f.model.directory);
+  await writeFile(join(modelDirectory, 'model.onnx.download'), bytes.subarray(0, 8));
+  await writeFile(join(modelDirectory, 'keep.txt'), 'keep');
+  let released = false;
+  manager.session = { release: async () => { released = true; assert.ok(await stat(join(modelDirectory, 'model.onnx'))); } };
+  manager.tags = [];
+  manager.busy = true;
+  await assert.rejects(manager.deleteModel(f.model.id), { status: 409 });
+  assert.equal(released, false);
+  manager.busy = false;
+  await assert.rejects(manager.deleteModel('../invalid'), /不支持/);
+  await manager.deleteModel(f.model.id);
+  assert.equal(released, true); assert.equal(manager.session, null); assert.equal(manager.tags, null);
+  for (const name of ['model.onnx', 'selected_tags.csv', 'model.onnx.download']) await assert.rejects(stat(join(modelDirectory, name)), { code: 'ENOENT' });
+  assert.equal(await readFile(join(modelDirectory, 'keep.txt'), 'utf8'), 'keep');
+  const status = await manager.status();
+  assert.equal(status.model, f.model.id); assert.equal(status.models[0].stage, 'missing'); assert.equal(status.models[0].receivedBytes, 0);
+  assert.equal(status.models[1].downloaded, true);
+  await manager.startDownload(f.model.id);
+  assert.equal((await manager.status()).downloaded, true);
+  const invalid = new ImageTaggerService(undefined, { directory: join(f.directory, 'cache'), models: [{ ...f.model, directory: '..' }] });
+  await assert.rejects(invalid.deleteModel(f.model.id), /路径无效/);
+});
+
+test('deleting a downloading model waits for abort and removes partial files and stale progress', async t => {
+  const f = await fixture(t);
+  const manager = new ImageTaggerService((_url, { signal }) => new Promise((_resolve, reject) => {
+    if (signal.aborted) reject(signal.reason); else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  }), { directory: f.directory, models: definitions });
+  await mkdir(join(f.directory, f.model.directory));
+  await writeFile(join(f.directory, f.model.directory, 'model.onnx.download'), bytes.subarray(0, 8));
+  manager.startDownload(f.model.id);
+  await manager.deleteModel(f.model.id);
+  const status = await manager.status();
+  assert.equal(status.downloadingModel, null); assert.equal(status.models[0].stage, 'missing'); assert.equal(status.models[0].receivedBytes, 0);
+  assert.equal(manager.jobs.has(f.model.id), false);
+});
+
 test('all models load matching files, use own defaults and reject stale model requests', async t => {
   const f = await fixture(t); const loads = [];
   const manager = new ImageTaggerService(async url => new Response(url.endsWith('.csv') ? csv : bytes), { directory: f.directory, models: definitions,
@@ -160,7 +203,7 @@ test('active inference prevents concurrent recognition and selection', async t =
 
 test('gateway protects controls, returns precise failures and leaves absent thresholds to model defaults', async () => {
   const calls = [];
-  const manager = { status: async () => ({ model: 'synthetic' }), select: async id => { calls.push(id); }, startDownload: id => { calls.push(id); }, pauseDownload: async () => { calls.push('pause'); }, tag: async (_image, options) => { calls.push(options); return { tags: [] }; } };
+  const manager = { status: async () => ({ model: 'synthetic' }), select: async id => { calls.push(id); }, startDownload: id => { calls.push(id); }, pauseDownload: async () => { calls.push('pause'); }, deleteModel: async id => { calls.push(['delete', id]); }, tag: async (_image, options) => { calls.push(options); return { tags: [] }; } };
   const invoke = async (path, body = '{}', overrides = {}) => {
     const req = Readable.from([Buffer.from(body)]); req.setTimeout = () => {}; req.method = path.endsWith('/status') ? 'GET' : 'POST';
     req.headers = { host: 'localhost:3000', origin: 'http://localhost:3000', 'content-type': 'image/png' }; req.socket = { remoteAddress: '127.0.0.1' }; Object.assign(req, overrides);
@@ -171,6 +214,10 @@ test('gateway protects controls, returns precise failures and leaves absent thre
   assert.equal((await invoke('/api/image-tagger/model', '{"model":"selected"}')).code, 200); assert.equal(calls.at(-1), 'selected');
   assert.equal((await invoke('/api/image-tagger/download', '{"model":"downloaded"}')).code, 200); assert.equal(calls.at(-1), 'downloaded');
   assert.equal((await invoke('/api/image-tagger/pause')).code, 200); assert.equal(calls.at(-1), 'pause');
+  assert.equal((await invoke('/api/image-tagger/delete', '{"model":"removed"}')).code, 200); assert.deepEqual(calls.at(-1), ['delete', 'removed']);
+  assert.equal((await invoke('/api/image-tagger/delete', '{}')).code, 400);
+  assert.equal((await invoke('/api/image-tagger/delete', '{"model":"removed"}', { socket: { remoteAddress: '192.168.1.2' } })).code, 401);
+  assert.equal((await invoke('/api/image-tagger/delete', '{"model":"removed"}', { headers: { host: 'localhost:3000', origin: 'http://evil.example' } })).code, 403);
   assert.equal((await invoke('/api/image-tagger/model', '{}')).code, 400);
   assert.equal((await invoke('/api/image-tagger/model', '{}', { socket: { remoteAddress: '192.168.1.2' } })).code, 401);
   assert.equal((await invoke('/api/image-tagger/model', '{}', { headers: { host: 'localhost:3000', origin: 'http://evil.example' } })).code, 403);

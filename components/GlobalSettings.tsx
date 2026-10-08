@@ -3,6 +3,7 @@ import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSharing';
+import { copyTagText } from '../services/externalImageTags';
 import { DataBackupManager } from './DataBackupManager';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { AppUpdateManager } from './AppUpdateManager';
@@ -48,7 +49,7 @@ import {
   ThemeMode,
   validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -56,6 +57,7 @@ type SettingsPage = 'home' | SettingsSection;
 interface LocalMaintenanceStatus {
   gatewayReady: boolean;
   workerReady: boolean;
+  lanUrls?: string[];
   thumbnailCache: {
     count: number;
     bytes: number;
@@ -691,19 +693,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式（防社死）</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
-                <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">点击图片临时显示</p>
-                <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                  <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">点击名称临时显示</span></span>
-                  <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
-                </button>
-                <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
-                  <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b></span>
-                  <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
-                </button>
-              </div>
-
-              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
                 <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">图片列表布局</div>
                 <div className="grid grid-cols-3 gap-2">
                   {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{label}</button>)}
@@ -1085,6 +1074,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   })}
                 </div>
               </div>
+              <div className="border-t border-gray-200 pt-4 dark:border-gray-700"><ImageTaggerModelManager notify={notify} /></div>
             </div>}
           </section>
           <section id={`settings-novelai`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'novelai' ? 'hidden' : ''}`}>
@@ -1175,24 +1165,35 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </button>
                 <button type="button" onClick={() => void addKeyEntry()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500">添加</button>
               </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs leading-5">
+                <label className="flex min-w-0 cursor-pointer items-center gap-2 text-gray-600 dark:text-gray-300">
+                  <input type="checkbox" checked={rememberApiKey} title="关闭后仅当前标签页使用" onChange={event => updateRememberApiKey(event.target.checked)} className="shrink-0 rounded border-gray-300 text-indigo-600" />
+                  <span>在本机记住当前使用的 API Key</span>
+                </label>
+                <p className="text-amber-600 dark:text-amber-400">Key 明文保存在本机，局域网访问需密码。</p>
+              </div>
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-              <input type="checkbox" checked={rememberApiKey} title="关闭后仅当前标签页使用" onChange={event => updateRememberApiKey(event.target.checked)} className="rounded border-gray-300 text-indigo-600" />
-              在本机记住当前使用的 API Key
-            </label>
-            <p className="mt-2 text-xs leading-relaxed text-amber-600 dark:text-amber-400">Key 明文保存在本机，局域网访问需密码。</p>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-              <label className="flex min-h-11 items-center justify-between gap-3">
-                <span><b className="block text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b><span className="mt-0.5 block text-meta leading-5 text-gray-500 dark:text-gray-400">按 Key 保存，同 Key 依次生图。</span></span>
-                <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-5 w-5 shrink-0 rounded border-gray-300 text-indigo-600" />
-              </label>
-              <div className="mt-3 space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
-                <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">公共队列服务地址</label><input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder="https://your-queue.example.com" className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /></div>
-                {cloudQueue.enabled && <>
-                  <div><label className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label><input value={cloudQueue.greeting} maxLength={15} onChange={event => { const greeting = event.currentTarget.value.slice(0, 15); setCloudQueue(value => ({ ...value, greeting })); }} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" /></div>
-                  <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-gray-700 dark:text-gray-200"><span>显示当前使用者的个性语</span><input type="checkbox" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-5 w-5 rounded border-gray-300 text-indigo-600" /></label>
-                </>}
-                <p className="text-meta leading-5 text-amber-600 dark:text-amber-400">不上传 Key、提示词或图片。</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <label className="mobile-touch flex cursor-pointer items-center gap-2">
+                  <input type="checkbox" checked={cloudQueue.enabled} onChange={event => updateCloudQueue({ enabled: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" />
+                  <b className="text-sm text-gray-800 dark:text-gray-100">多人拼车公共队列</b>
+                </label>
+                <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">按 Key 保存，同 Key 依次生图。</span>
+                <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">不上传 Key、提示词或图片。</p>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
+                <label className="min-w-0 flex-[3_1_20rem]">
+                  <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">公共队列服务地址</span>
+                  <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder="https://your-queue.example.com" className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
+                </label>
+                {cloudQueue.enabled && <div className="min-w-0 flex-[2_1_16rem]">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                    <label htmlFor="settings-cloud-queue-greeting" className="text-xs font-bold text-gray-500 dark:text-gray-400">排队个性语（最多15字）</label>
+                    <label className="mobile-touch flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title="显示当前使用者的个性语"><input type="checkbox" aria-label="显示当前使用者的个性语" checked={cloudQueue.showGreeting} onChange={event => updateCloudQueue({ showGreeting: event.target.checked })} className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600" /><span>显示个性语</span></label>
+                  </div>
+                  <input id="settings-cloud-queue-greeting" value={cloudQueue.greeting} maxLength={15} onChange={event => { const greeting = event.currentTarget.value.slice(0, 15); setCloudQueue(value => ({ ...value, greeting })); }} onBlur={() => updateCloudQueue({ greeting: cloudQueue.greeting })} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
+                </div>}
               </div>
             </div>
             <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
@@ -1269,6 +1270,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id="settings-privacy" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'privacy' ? 'hidden' : ''}`}>
             <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">隐私与分享</h3>
+            {activeSection === 'privacy' && <div className="mb-4">
+              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />安全模式（防社死）</span><span>{safeMode ? '已开启' : '已关闭'}</span></button>
+              <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">点击图片临时显示</p>
+              <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">同时隐藏作品名称</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">点击名称临时显示</span></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
+              <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+                <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">启动时自动开启安全模式</b></span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
+            </div>}
             <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
               <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">分享图片时移除生成信息</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">复制／下载时移除生成信息；原图与历史保留。</span></span>
               <input type="checkbox" aria-label="分享图片时移除生成信息" checked={cleanSharedImages} onChange={event => {
@@ -1280,7 +1293,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
             {activeSection === 'maintenance' && <div className="space-y-5">
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><ImageTaggerModelManager notify={notify} /></div>
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />
@@ -1296,16 +1308,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <SillyTavernBridgeExport notify={notify} />
               </div>
 
-              {/* 局域网访问密码 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white">局域网访问密码</h4>
-                    <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">四位数字，保存后立即生效。</p>
-                  </div>
-                  <Lock className="h-4 w-4 flex-none text-indigo-500" />
+              {/* 局域网访问 */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-5 dark:border-gray-700">
+                <div className="min-w-0 flex-1 basis-64">
+                  <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white"><Lock className="h-4 w-4 flex-none text-indigo-500" />局域网访问</h4>
+                  {maintenanceStatus?.lanUrls ? maintenanceStatus.lanUrls.length > 0 ? maintenanceStatus.lanUrls.map(url => (
+                    <div key={url} className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="flex-none">手机访问</span>
+                      <span className="min-w-0 break-all font-mono select-all">{url}</span>
+                      <button type="button" onClick={() => void copyTagText(url).then(() => notify('手机访问地址已复制'), () => notify('复制失败，请手动选择地址复制', 'error'))} aria-label={`复制手机访问地址 ${url}`} title="复制手机访问地址" className="mobile-touch flex flex-none items-center justify-center rounded-lg px-2 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><Copy className="h-3.5 w-3.5" /></button>
+                    </div>
+                  )) : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">未检测到可用的局域网地址。</p> : <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{maintenanceStatusError ? '手机访问地址读取失败' : maintenanceStatus ? '重启工坊后显示手机访问地址' : '正在读取手机访问地址…'}</p>}
                 </div>
-                <div className="mt-3 flex items-center gap-2">
+                <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-none">
                   <input
                     type="password"
                     inputMode="numeric"
@@ -1315,8 +1330,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     maxLength={4}
                     value={lanPin}
                     onChange={event => setLanPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 4))}
+                    aria-label="新局域网访问密码"
                     placeholder="新的 4 位数字密码"
-                    className="mobile-touch w-40 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    title="四位数字，保存后立即生效"
+                    className="mobile-touch min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 sm:w-40 sm:flex-none"
                   />
                   <button
                     type="button"

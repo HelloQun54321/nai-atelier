@@ -25,6 +25,7 @@ import { StyleCollector, collectorLocalRequest } from './style-collector.mjs';
 import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-cache.mjs';
 import { createDanbooruLimiter, createDanbooruDiskCache } from './danbooru-loading.mjs';
 import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../services/danbooruErrors.mjs';
+import { getLanUrls } from './local-server-runtime.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
@@ -2792,10 +2793,11 @@ export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTa
   try {
     if (statusRequest) return sendJson(res, 200, await imageTagger.status());
     if (url.pathname.endsWith('/pause')) { await imageTagger.pauseDownload(); return sendJson(res, 200, { success: true }); }
-    if (url.pathname.endsWith('/model') || url.pathname.endsWith('/download')) {
+    if (url.pathname.endsWith('/model') || url.pathname.endsWith('/download') || url.pathname.endsWith('/delete')) {
       const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8'));
       if (typeof body?.model !== 'string') return sendJson(res, 400, { error: '请选择反推模型' });
       if (url.pathname.endsWith('/model')) await imageTagger.select(body.model);
+      else if (url.pathname.endsWith('/delete')) await imageTagger.deleteModel(body.model);
       else imageTagger.startDownload(body.model);
       return sendJson(res, 200, { success: true });
     }
@@ -3377,7 +3379,7 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, Number(error.status) || 400, { error: error.message || 'Agent 请求失败' });
       }
     }
-    if (['/api/image-tagger', '/api/image-tagger/status', '/api/image-tagger/model', '/api/image-tagger/download', '/api/image-tagger/pause'].includes(url.pathname)) return handleImageTaggerRequest(req, res, url, lanSecret, imageTagger);
+    if (['/api/image-tagger', '/api/image-tagger/status', '/api/image-tagger/model', '/api/image-tagger/download', '/api/image-tagger/pause', '/api/image-tagger/delete'].includes(url.pathname)) return handleImageTaggerRequest(req, res, url, lanSecret, imageTagger);
     if (url.pathname === '/api/local-maintenance/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -3388,7 +3390,7 @@ const serveDistFile = async (req, res, url) => {
       } catch {
         // 媒体网关仍可回应时，向设置页如实报告核心 Worker 未就绪。
       }
-      return sendJson(res, 200, { gatewayReady: true, workerReady, thumbnailCache: cache.stats() });
+      return sendJson(res, 200, { gatewayReady: true, workerReady, lanUrls: getLanUrls(server.address().port), thumbnailCache: cache.stats() });
     }
     if (url.pathname === '/api/local-maintenance/backup/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

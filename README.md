@@ -5,7 +5,7 @@
 
   **面向 NovelAI 的个人本地创作工坊**
 
-  [![Version](https://img.shields.io/badge/version-1.38.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.39.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -131,7 +131,7 @@ npm run dev:local
 2. **下载词库**：在「Tag 补全词库」点击「检查并更新」，一键下载并生成本地 32 万中英双向 Tag 词典；
 3. **文生图测试**：进入「生图实验室 → 文生图」，输入提示词。使用默认 V4.5/V5 尺寸与步数（零 Anlas 免费范围）；
 4. **生成与观察**：点击生成，实时观察渲染成图，确认无误后可一键将满意配置「保存为风格串」；
-5. **开启局域网**：手机连接同一 Wi-Fi，输入电脑终端显示的 IP 地址与 4 位密码，随时躺在床上继续创作。
+5. **开启局域网**：手机连接同一 Wi-Fi，在「系统设置 → 数据与维护 → 局域网访问」复制手机访问地址，输入 4 位密码，随时躺在床上继续创作。
 
 ---
 
@@ -261,6 +261,7 @@ AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其�
 ### 🔍 本地图片反推 Tag（WD Tagger）
 
 直接在电脑本地使用 CPU 对图片反推 Danbooru Tag，**无需上传第三方云端，零 Anlas 消耗**。支持 WD ViT V3、WD SwinV2 V3、WD EVA02-Large V3 模型，首次按需下载后即可离线运行：
+- **模型管理**：在「系统设置 → 生图偏好与实验室」底部下载、选择或删除模型；删除只清理对应模型缓存，再次使用时重新下载。
 - **角色框一键粘贴反推（Paste-to-Tag）**：在多角色创作时，手头有参考图无需单独打开反推面板，直接在目标角色中按 `Ctrl+V` 或点击「粘贴反推」，系统自动识别并把角色特征 Tag 秒级追加到该角色专属提示词中，交互行云流水。
 
 ---

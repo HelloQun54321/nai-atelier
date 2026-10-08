@@ -75,7 +75,7 @@ const tagFile = async (file: File, options: { threshold?: number; characterThres
   return addTranslations(result);
 };
 
-const control = async (action: 'model' | 'download' | 'pause', model?: string) => {
+const control = async (action: 'model' | 'download' | 'pause' | 'delete', model?: string) => {
   await readResponse(await fetch(`/api/image-tagger/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) }));
 };
-export const imageTaggerService = { getStatus, tagFile, selectModel: (model: string) => control('model', model), downloadModel: (model: string) => control('download', model), pauseDownload: () => control('pause') };
+export const imageTaggerService = { getStatus, tagFile, selectModel: (model: string) => control('model', model), downloadModel: (model: string) => control('download', model), pauseDownload: () => control('pause'), deleteModel: (model: string) => control('delete', model) };

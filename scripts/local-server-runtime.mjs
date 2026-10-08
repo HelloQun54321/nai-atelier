@@ -1,10 +1,28 @@
 import { execFileSync } from 'node:child_process';
-import { platform } from 'node:os';
+import { networkInterfaces, platform } from 'node:os';
 import { resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 
 export const LOCAL_LAUNCHER_PORT = 3003;
+
+/** 启动日志与设置页共用真实网卡地址，排除手机无法访问的虚拟网卡。 */
+export const getLanUrls = (port, interfaces = networkInterfaces()) => {
+  const addresses = [];
+  for (const [name, entries] of Object.entries(interfaces)) {
+    if (/vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|tailscale|zerotier|utun|tun|tap/i.test(name)) continue;
+    for (const entry of entries || []) {
+      if (entry.family !== 'IPv4' || entry.internal) continue;
+      // 链路本地、未指定与 TUN 代理常用的保留测试段不作为手机入口。
+      if (/^(169\.254|0\.|198\.1[89]\.)/.test(entry.address)) continue;
+      addresses.push(entry.address);
+    }
+  }
+  const unique = [...new Set(addresses)];
+  unique.sort((a, b) => Number(!/^192\.168\./.test(a)) - Number(!/^192\.168\./.test(b)));
+  return unique.map(address => `http://${address}:${port}`);
+};
+
 const launcherPath = '/__atelier/launcher';
 const launcherMarker = 'nai-atelier-local-launcher';
 const requestJson = async (path, fetchImpl, port = 3000, timeout = 2000) => {
