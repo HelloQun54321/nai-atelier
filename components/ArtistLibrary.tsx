@@ -10,7 +10,7 @@ import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryEntriesAt, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
+import { Check, ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
@@ -67,21 +67,18 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             kind="artist"
                                             alt={artist.chineseName || artist.name}
                                             fixedSrc={displayImg}
+                                            notify={notify}
                                             onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
                                         />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
                                         <TagCoverActions favorite={isFav} onToggleFavorite={() => toggleFav(artist)} />
 
                                         {isSelected && (
-                                            <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none">
-                                                <div className="absolute top-2 left-2 bg-indigo-600 text-white p-1 rounded-full shadow-lg">
-                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
-                                                </div>
-                                            </div>
+                                            <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none" />
                                         )}
                                     </div>
                                     <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{artist.name}</div>
+                                        <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
                                         {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
                                         {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title="Danbooru 关联作品数">作品 {artist.postCount.toLocaleString('zh-CN')}</div>}
                                     </div>

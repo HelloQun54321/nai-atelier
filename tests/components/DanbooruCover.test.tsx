@@ -6,6 +6,9 @@ import { DanbooruCover } from '../../components/DanbooruCover';
 import { danbooruService, type DanbooruCoverCandidate } from '../../services/danbooruService';
 import { ImageActivityContext } from '../../components/SmartImage';
 import { ApiError } from '../../services/api';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+import { getMobileOriginalUrl } from '../../services/mobileImageCache';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 
 vi.mock('../../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn(), getCoverFallback: vi.fn() } }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
@@ -61,6 +64,22 @@ beforeEach(() => {
   fallback.mockResolvedValue({ representative: null, candidates: [] });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it.each(['artist', 'character'] as const)('%s 分享跟随当前候选和加载回退，不操作上一张或已保存封面', async kind => {
+  covers.mockResolvedValue(set([candidate(1), candidate(2)]));
+  const parent = vi.fn();
+  render(<div onClick={parent}><DanbooruCover tag="synthetic" kind={kind} alt="封面" fixedSrc="/api/assets/saved" notify={vi.fn()} /></div>);
+  fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/api/assets/saved', false));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(getMobileOriginalUrl(candidate(2).sampleUrl), kind + '-synthetic-2.png', false));
+  failImage();
+  fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(getMobileOriginalUrl(candidate(2).previewUrl), false));
+  expect(parent).not.toHaveBeenCalled();
+});
 
 it('大图失败先换公开预览，再失败自动换下一候选，上一张不返回坏图', async () => {
   covers.mockResolvedValue(set([candidate(1), candidate(2)]));

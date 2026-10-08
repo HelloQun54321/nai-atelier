@@ -9,6 +9,8 @@ import type { PromptChain } from '../../types';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { generateImage } from '../../services/naiService';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 import {
   getArtistDictionaryEntriesAt, getArtistDictionaryPage,
   getCharacterDictionaryEntriesAt, getCharacterDictionaryPage,
@@ -58,6 +60,28 @@ const custom: PromptChain = {
   createdAt: 1, updatedAt: 1,
 };
 type Kind = 'artist' | 'character';
+it('自定义角色图片操作不选择或打开条目，手机与桌面预览沿用右上分享', async () => {
+  const saved = { ...custom, previewImage: 'data:image/png;base64,c3ludGhldGlj' };
+  const view = renderLibrary('character', 390, [saved]);
+  const card = await screen.findByRole('button', { name: '选择角色：' + custom.name });
+  const download = within(card).getByRole('button', { name: '下载图片' });
+  expect(download.parentElement!.className).toContain('absolute right-2 top-2');
+  expect(within(card).getByRole('button', { name: '编辑自定义角色信息' }).parentElement!.classList.contains('left-2')).toBe(true);
+  fireEvent.click(download);
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(saved.previewImage, 'character-' + custom.name + '.png', false));
+  fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(saved.previewImage, false));
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+  expect(view.onSelect).not.toHaveBeenCalled();
+  fireEvent.click(card.querySelector('button.h-full.w-full')!);
+  expect(screen.getByRole('button', { name: '复制角色提示词' })).toBeTruthy();
+  const imageCopies = screen.getAllByRole('button', { name: '复制图片' });
+  expect(imageCopies).toHaveLength(3);
+  imageCopies.forEach(button => expect(button.parentElement!.className).toContain('absolute right-2 top-2'));
+  const desktop = screen.getByRole('button', { name: '关闭角色大图' }).closest('[role="dialog"]')!;
+  fireEvent.click(desktop.querySelector('.press-reveal-surface')!);
+  expect(screen.queryByRole('button', { name: '关闭角色大图' })).toBeNull();
+});
 const entriesFor = (kind: Kind) => kind === 'artist' ? fixtures.artists : fixtures.characters;
 const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEntriesAt : getCharacterDictionaryEntriesAt;
 const favoritesKey = (kind: Kind) => kind === 'artist' ? 'nai_fav_artists' : 'nai_character_favorites';

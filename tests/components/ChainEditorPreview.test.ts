@@ -77,13 +77,14 @@ describe('四模式的分享入口', () => {
     expect(remove.closest('[data-card-action]')?.classList.contains('left-4')).toBe(true);
     expect(remove.classList.contains('py-1.5')).toBe(true);
     expect(remove.classList.contains('text-xs')).toBe(cover.classList.contains('text-xs'));
-    const download = screen.getByRole('button', { name: '下载' });
+    const download = screen.getByRole('button', { name: '下载图片' });
     expect(download.classList.contains('justify-center')).toBe(true);
-    expect(download.classList.contains('py-1.5')).toBe(true);
+    expect(download.classList.contains('rounded-full')).toBe(true);
+    expect(download.classList.contains('h-11')).toBe(true);
     expect(download.classList.contains('min-h-10')).toBe(false);
-    expect(download.classList.contains('mobile-touch')).toBe(false);
-    expect(download.parentElement?.classList.contains('items-stretch')).toBe(true);
-    expect(download.parentElement?.classList.contains('items-center')).toBe(false);
+    expect(download.classList.contains('mobile-touch')).toBe(true);
+    expect(download.parentElement?.classList.contains('flex-col')).toBe(true);
+    expect(download.parentElement?.classList.contains('items-center')).toBe(true);
     fireEvent.click(cover);
     expect(onCover).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
@@ -103,13 +104,13 @@ describe('四模式的分享入口', () => {
         onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'NAI.png',
       }));
     }
-    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
     act(() => setCleanSharedImages(false));
-    expect(screen.getByRole('button', { name: '复制' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
-    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
   });
 });
 

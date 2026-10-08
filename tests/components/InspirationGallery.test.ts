@@ -7,6 +7,8 @@ import { InspirationGallery } from '../../components/InspirationGallery';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
+import { copySharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn() }));
 
 vi.mock('../../services/dbService', () => ({
@@ -57,6 +59,24 @@ const mockUser: User = {
   role: 'user',
   createdAt: 1,
 };
+it('灵感卡片右上复制图片不选择或打开详情，详情图片保持同位置且底部不重复分享', async () => {
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  const card = within(container).getByText(mockInspirations[0].title).closest('article')!;
+  const copy = within(card).getByRole('button', { name: '复制图片' });
+  expect(copy.parentElement!.className).toContain('absolute right-2 top-2');
+  expect(within(card).getByRole('button', { name: '选择灵感' }).classList.contains('left-2')).toBe(true);
+  fireEvent.click(copy);
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(mockInspirations[0].imageUrl, false));
+  expect(document.querySelector('[data-agent-page-scope="detail"]')).toBeNull();
+  expect(within(card).getByRole('button', { name: '选择灵感' }).classList.contains('bg-indigo-600')).toBe(false);
+  fireEvent.click(within(card).getByRole('img').closest('button')!);
+  const detail = document.querySelector<HTMLElement>('[data-agent-page-scope="detail"]')!;
+  const detailCopy = within(detail).getByRole('button', { name: '复制图片' });
+  expect(detailCopy.closest('section')!.classList.contains('press-reveal-surface')).toBe(true);
+  expect(detailCopy.parentElement!.className).toContain('absolute right-2 top-2');
+  expect(detailCopy.closest('footer')).toBeNull();
+  expect(detail.querySelector('footer')!.querySelector('[data-card-action]')).toBeNull();
+});
 
 const mockInspirations: Inspiration[] = [
   {

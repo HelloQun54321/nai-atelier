@@ -32,16 +32,21 @@ describe('小图和全屏大图的共用操作', () => {
     expect(right.classList.contains('right-4')).toBe(true);
     expect(right.classList.contains('w-28')).toBe(false);
     expect(right.classList.contains('md:w-32')).toBe(false);
-    expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-touch' : 'hover-reveal-lg')).toBe(true);
+    expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(!fullscreen);
-    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['复制', '下载', '设为封面']);
+    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '删除', '清除'] : ['删除', '清除']);
-    for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '复制' }), screen.getByRole('button', { name: '下载' })]) {
+    for (const button of [removeButton, clearButton, coverButton]) {
       expect(button.classList.contains('py-1.5')).toBe(true);
       expect(button.classList.contains('leading-4')).toBe(true);
       expect(button.classList.contains('min-h-10')).toBe(false);
       expect(button.classList.contains('mobile-touch')).toBe(false);
       expect(button.classList.contains('justify-center')).toBe(true);
+    }
+    for (const button of [screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
+      expect(button.classList.contains('rounded-full')).toBe(true);
+      expect(button.classList.contains('h-11')).toBe(true);
+      expect(button.classList.contains('md:h-8')).toBe(true);
     }
     fireEvent.click(removeButton);
     fireEvent.click(clearButton);
@@ -65,7 +70,7 @@ describe('小图和全屏大图的共用操作', () => {
 
   it('编辑模式、封面图与无图状态保留各自权限，没有历史项不提供删除或清除', () => {
     const view = render(React.createElement(ImagePreviewActions, { imageUrl: '/edit.png', filename: 'NAI.png', onBack: vi.fn() }));
-    expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['返回小图', '复制', '下载']);
+    expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['返回小图', '下载图片', '复制图片']);
     expect(screen.queryByRole('button', { name: '设为封面' })).toBeNull();
     view.rerender(React.createElement(ImagePreviewActions, { imageUrl: null, filename: 'NAI.png' }));
     expect(screen.queryAllByRole('button')).toHaveLength(0);
@@ -90,6 +95,6 @@ describe('小图和全屏大图的共用操作', () => {
       imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onUploadCover: upload, isUploading: true, onBack: vi.fn(),
     }));
     expect(screen.getAllByRole('button', { name: '上传中...' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
-    expect(screen.getByRole('button', { name: '复制' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: '复制图片' }).hasAttribute('disabled')).toBe(false);
   });
 });

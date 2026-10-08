@@ -5,6 +5,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AitagWorkSummary } from '../../services/aitagService';
 import type { User } from '../../types';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
@@ -85,6 +87,29 @@ const setup = async (layout = 'masonry') => {
 };
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+it('首图操作跟随实际候选，点击和回车不打开详情；详情逐图导出且按文件顺序命名', async () => {
+  await setup();
+  const first = card(1);
+  fireEvent.click(within(first).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/1.png', false));
+  fireEvent.error(first.querySelector('img')!);
+  fireEvent.click(within(first).getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/assets/aitag/1.png', 'aitag-1-p1.png', false));
+  fireEvent.keyDown(within(first).getByRole('button', { name: '复制图片' }), { key: 'Enter' });
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  expect(first.getAttribute('aria-pressed')).toBe('false');
+  mocks.getWork.mockResolvedValueOnce({ work: works[0], images: [
+    { ...works[0].firstImage!, id: 12, file_name: '2.png', local_image_url: '/synthetic/detail-2.png' },
+    { ...works[0].firstImage!, id: 11, file_name: '1.png', local_image_url: '/synthetic/detail-1.png' },
+  ] });
+  fireEvent.click(first);
+  // 两张详情图都沿用各自的长按容器，操作不会收起详情。
+  await waitFor(() => expect(document.querySelector('img[src="/synthetic/detail-2.png"]')).toBeTruthy());
+  const surface = document.querySelector('img[src="/synthetic/detail-2.png"]')!.closest('.press-reveal-surface')!;
+  fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/synthetic/detail-2.png', 'aitag-1-p2.png', false));
+  expect(first.getAttribute('aria-pressed')).toBe('true');
+});
 const noSelection = () => works.forEach(work => {
   expect(card(work.id).getAttribute('aria-pressed')).toBe('false');
   expect(card(work.id).className).not.toContain('brightness-');

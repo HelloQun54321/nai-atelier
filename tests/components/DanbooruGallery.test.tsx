@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DanbooruGallery } from '../../components/DanbooruGallery';
 import { danbooruService, resolveDanbooruQuery, type DanbooruPost } from '../../services/danbooruService';
@@ -10,6 +10,8 @@ import { api } from '../../services/api';
 import { importDanbooruCoverAsDataUrl } from '../../services/danbooruCoverImport';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { galleryHistoryService } from '../../services/galleryHistoryService';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 
 vi.mock('../../services/danbooruService', async original => ({
   ...await original<typeof import('../../services/danbooruService')>(),
@@ -54,6 +56,22 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+it.each([false, true])('足迹=%s：列表和详情使用同一图片，图片操作不打开详情或记浏览足迹', async history => {
+  const sampleUrl = 'data:image/png;base64,c3ludGhldGlj';
+  search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl }]));
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue([{ id: 'danbooru:1', source: 'danbooru', sourceId: 1, title: 'synthetic_artist', previewUrl: '', sampleUrl, tags: [], viewedAt: 1 }]);
+  await setup();
+  if (history) fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
+  const open = screen.getByRole('button', { name: /synthetic[ _]artist/ });
+  const card = open.closest('article')!;
+  fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(sampleUrl, false));
+  expect(galleryHistoryService.recordView).not.toHaveBeenCalled();
+  fireEvent.click(open);
+  const surface = screen.getByRole('img', { name: 'Danbooru #1' }).closest('.press-reveal-surface')!;
+  fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(sampleUrl, expect.stringMatching(/^danbooru-1\./), false));
+});
 it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
   const posts = [post, { ...post, id: 2, tags: { ...post.tags, artist: ['second_artist'] } }]
     .map(item => ({ ...item, sampleUrl: 'data:image/png;base64,c3ludGhldGlj' }));

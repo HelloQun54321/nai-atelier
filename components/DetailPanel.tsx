@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { BackButton, CloseButton, IconButton, IconLink } from './DesignSystem';
+import { PressRevealSurface } from './PressRevealSurface';
 
 /**
  * 图库详情层共享组件：统一"移动端/平板全屏覆盖 → lg 桌面右侧栏"的面板骨架。
@@ -57,6 +58,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
 );
 
 interface DetailImageStageProps {
+  pressResetKey?: React.Key;
   /** 可选翻页控件（多页作品单页浏览模式） */
   pager?: {
     page: number;
@@ -67,9 +69,9 @@ interface DetailImageStageProps {
   children: React.ReactNode;
 }
 
-export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, children }) => (
+export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, children, pressResetKey }) => (
   <div className="space-y-4">
-    <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</div>
+    <PressRevealSurface pressResetKey={pressResetKey} className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</PressRevealSurface>
     {pager && pager.count > 1 && (
       <div className="flex items-center justify-center gap-3">
         <IconButton label="上一页" disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>

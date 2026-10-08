@@ -2,6 +2,10 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { within } from '@testing-library/react';
+import { longPress } from '../support/touchEvents';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 import { PixivGallery } from '../../components/PixivGallery';
 import { pixivService, importPixivImageAsFile, type PixivIllust } from '../../services/pixivService';
 import { db } from '../../services/dbService';
@@ -28,6 +32,37 @@ beforeEach(() => {
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情分享跟随当前页', async history => {
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue([{ id: 'pixiv:100', source: 'pixiv', sourceId: '100', title: illust.title, artistName: illust.user.name, previewUrl: '', sampleUrl: illust.metaPages[0], tags: [], viewedAt: 1 }]);
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  const open = await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  if (history) fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
+  const card = screen.getByRole('button', { name: /synthetic artwork.*artist/ }).closest('article')!;
+  fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[0]) + '&variant=original', false));
+  expect(galleryHistoryService.recordView).not.toHaveBeenCalled();
+  fireEvent.click(history ? within(card).getByRole('button', { name: /synthetic artwork.*artist/ }) : open);
+  const firstSurface = container.querySelector('img[alt="synthetic artwork 第 1 页"]')!.closest('.press-reveal-surface')!;
+  longPress(firstSurface);
+  expect(firstSurface.getAttribute('data-press-revealed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  const surface = container.querySelector('img[alt="synthetic artwork 第 2 页"]')!.closest('.press-reveal-surface')!;
+  expect(surface).toBe(firstSurface);
+  expect(surface.hasAttribute('data-press-revealed')).toBe(false);
+  fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false));
+});
+it('相关推荐沿用首图取用，复制图片不切换当前详情', async () => {
+  const related = { ...illust, id: '102', title: 'related synthetic', metaPages: ['https://i.pximg.net/related.png'] };
+  vi.mocked(pixivService.getRelated).mockResolvedValueOnce([related]);
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+  const open = await screen.findByRole('button', { name: '查看相关作品 related synthetic' });
+  const card = open.closest('.press-reveal-surface')!;
+  fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(related.metaPages[0]) + '&variant=original', false));
+  expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
+});
 it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
   const works = [illust, { ...illust, id: '101', title: 'second artwork' }];
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));

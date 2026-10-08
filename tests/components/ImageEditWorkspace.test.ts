@@ -569,7 +569,7 @@ describe('ImageEditPreview', () => {
     expect(preview?.className).toContain('lg:order-2');
     expect(preview?.className).toContain('lg:w-1/2');
     expect(screen.queryByLabelText('图片编辑画布')).toBeNull();
-    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^生成.*预计消耗 12 Anlas$/ })).toBeTruthy();
   });
 

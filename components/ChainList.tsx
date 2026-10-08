@@ -4,6 +4,8 @@ import { PromptChain, ChainType } from '../types';
 import { useConfirmDialog } from './ConfirmDialog';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
+import { ImageShareOverlay } from './ImageShareActions';
+import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, Copy, EyeOff, Filter, FolderUp, Heart, Image, Link2, Pencil, Plus, Trash2, User } from 'lucide-react';
@@ -357,7 +359,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
       {/* 原位操作由鼠标悬停／键盘聚焦／触屏长按显露。 */}
-      {!syncSelection.open && <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center justify-end gap-1">
+      {!syncSelection.open && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-10 flex max-w-[calc(100%-4.5rem)] flex-wrap items-center gap-1">
           {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur hover:bg-gray-100 hover:text-gray-900 dark:bg-black/70 dark:text-gray-300 dark:hover:bg-gray-800" title="编辑信息" aria-label={`编辑${chain.type === 'character' ? '自定义角色' : '风格串'}信息：${chain.name}`}><Pencil className="h-4 w-4" /></button>}
           {!isGuest && <button
             type="button"
@@ -387,7 +389,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       >
           {isUntestedChain(chain) && (
             <div
-              className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
+              className="absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
               title="待实测：在此风格串生成后自动去除"
             >
               <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
@@ -406,6 +408,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                         if (Number.isFinite(ratio) && ratio > 0 && previewRatios[chain.id] !== ratio) setPreviewRatios(previous => ({ ...previous, [chain.id]: ratio }));
                       }}
                   />
+                  {!syncSelection.open && <ImageShareOverlay imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} />}
               </div>
           ) : (
               <div className="text-gray-400 dark:text-gray-700">

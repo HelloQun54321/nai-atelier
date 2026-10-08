@@ -17,6 +17,8 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ImageShareOverlay } from './ImageShareActions';
+import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Plus, Tag, UserRound } from 'lucide-react';
@@ -101,7 +103,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button> : (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? <>
+                    <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
+                    <ImageShareOverlay imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} />
+                  </> : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
                       <span className="mt-2 text-meta">暂无封面</span>
@@ -109,14 +114,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                   )}
                   <TagCoverActions favorite={favorite} onToggleFavorite={() => toggleFavorite(card)} onEditInfo={card.kind === 'custom' && card.chain ? () => setInfoChain(card.chain!) : undefined} />
                   {selected && (
-                    <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80">
-                      <div className="absolute left-2 top-2 rounded-full bg-indigo-600 p-1 text-white shadow-lg"><Check className="h-3 w-3" strokeWidth={4} /></div>
-                    </div>
+                    <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80" />
                   )}
                 </div>
                 <div className="p-3">
                   <div className="flex items-center justify-between gap-1.5">
-                    <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{card.name}</h2>
+                    <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-600 dark:text-indigo-400" strokeWidth={4} />}{card.name}</h2>
                     {card.kind === 'custom' ? (
                       <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">自定义</span>
                     ) : (
@@ -667,17 +670,23 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
        <ImagePreviewPortal>{lightbox?.previewImage && (
          <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
-          <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" onClick={event => event.stopPropagation()} data-safe-mode-ignore="true" />
+          <PressRevealSurface className="group relative flex h-full w-full items-center justify-center" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) setLightbox(null); }}>
+            <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" data-safe-mode-ignore="true" />
+            <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
+          </PressRevealSurface>
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
-          <button onClick={() => setLightbox(null)} className="absolute right-5 top-5 text-3xl text-white">×</button>
+          <button onClick={() => setLightbox(null)} className="absolute left-5 top-5 text-3xl text-white" aria-label="关闭角色大图">×</button>
         </div>
        )}
        <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || '角色详情'} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
-         <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">复制</button>
+         <button onClick={() => void copyCharacter(lightbox)} className="mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">复制角色提示词</button>
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">导入实验室</button>
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
-           <div className="overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" data-safe-mode-ignore="true" /> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">暂无封面</div>}</div>
+           <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <>
+             <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" data-safe-mode-ignore="true" />
+             <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
+           </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">暂无封面</div>}</PressRevealSurface>
            <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">
              <div className="font-bold dark:text-white">{lightbox.name}</div>
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}

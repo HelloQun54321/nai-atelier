@@ -6,6 +6,8 @@ import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
+import { copySharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 
 const { get, post, preferences, confirmAction } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true }, confirmAction: vi.fn() }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
@@ -28,6 +30,21 @@ const chain = (id: string, name: string, model = 'nai-diffusion-4-5-full'): Prom
 });
 const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风格 V5', 'nai-diffusion-5-full'), chain('v4', '风格 V4', 'nai-diffusion-4-full')];
 const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() });
+it('封面右上复制图片不打开工作台或组合详情，管理按钮移左且保留顺序', async () => {
+  const p = props();
+  render(React.createElement(ChainList, { ...p, chains: [{ ...chains[0], previewImage: '/synthetic/cover.png' }] }));
+  const card = screen.getByRole('button', { name: '打开风格串：风格 A' });
+  const imageCopy = within(card).getByRole('button', { name: '复制图片' });
+  expect(imageCopy.parentElement!.className).toContain('absolute right-2 top-2');
+  const management = within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }).parentElement!;
+  expect(management.classList.contains('left-2')).toBe(true);
+  expect(within(management).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['编辑风格串信息：风格 A', '删除：风格 A', '复制/查看详情：风格 A']);
+  fireEvent.click(imageCopy);
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
+  fireEvent.keyDown(imageCopy, { key: 'Enter' });
+  expect(p.onSelect).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: '复制风格串内容' })).toBeNull();
+});
 beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
   confirmAction.mockReset(); confirmAction.mockResolvedValue(false);

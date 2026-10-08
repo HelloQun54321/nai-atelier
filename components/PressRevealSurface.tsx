@@ -5,7 +5,7 @@ const REVEAL_EVENT = 'nai-card-actions-reveal';
 const ACTION_TARGET = '[data-card-action], input, textarea, select, a';
 
 type Props = React.HTMLAttributes<HTMLElement> & {
-  as?: 'div' | 'article';
+  as?: 'div' | 'article' | 'section';
   pressDisabled?: boolean;
   pressResetKey?: React.Key;
   elementRef?: React.Ref<HTMLElement>;

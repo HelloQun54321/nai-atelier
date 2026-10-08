@@ -91,9 +91,10 @@ it('历史大图触屏长按显露辅助按钮，松手不翻图；双指操作�
   vi.stubGlobal('innerWidth', 390); const { stage, image, onNavigate, onClose } = setup(false);
   longPress(image); expect(stage.getAttribute('data-press-revealed')).toBe('true');
   expect(onNavigate).not.toHaveBeenCalled(); expect(onClose).not.toHaveBeenCalled();
-  for (const name of ['收藏', '删除这张历史图片', '复制', '下载', '上一张图片', '下一张图片']) {
+  for (const name of ['收藏', '删除这张历史图片', '上一张图片', '下一张图片']) {
     expect(screen.getByRole('button', { name }).closest('.hover-reveal-touch')).toBeTruthy();
   }
+  for (const name of ['下载图片', '复制图片']) expect(screen.getByRole('button', { name }).closest('.hover-reveal-md')).toBeTruthy();
   installPointerEvents(); vi.useFakeTimers();
   fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 1, clientX: 100, clientY: 100, button: 0 });
   fireEvent.pointerDown(stage, { pointerType: 'touch', pointerId: 2, isPrimary: false, clientX: 200, clientY: 100, button: 0 });

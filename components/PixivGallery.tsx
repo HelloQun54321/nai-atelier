@@ -28,6 +28,9 @@ import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { SmartImage } from './SmartImage';
+import { ImageShareOverlay } from './ImageShareActions';
+import { getMobileOriginalUrl } from '../services/mobileImageCache';
+import { PressRevealSurface } from './PressRevealSurface';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import {
   PixivConnectionStatus,
@@ -561,7 +564,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
+    return <MediaCardShell pressReveal key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
@@ -578,6 +581,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           <p className="mt-1 truncate text-micro text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
         </div>
       </button>
+      <ImageShareOverlay imageUrl={buildPixivMediaUrl(illust, 0, 'original')} filename={`pixiv-${illust.id}-p1.png`} notify={notify} />
     </MediaCardShell>;
   };
 
@@ -997,7 +1001,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <MediaCardShell key={item.id} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
+                  <MediaCardShell pressReveal key={item.id} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
                     <button
                       type="button"
                       onClick={() => {
@@ -1047,6 +1051,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                         <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
                       </div>
                     </button>
+                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} notify={notify} />}
                   </MediaCardShell>
                 ))}
               </div>
@@ -1095,6 +1100,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
           {selected ? (
             <div className="space-y-4">
               <DetailImageStage
+                pressResetKey={`${selected.id}:${selectedPage}`}
                 pager={{
                   page: selectedPage,
                   count: currentPageCount,
@@ -1110,6 +1116,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   alt={`${selected.title} 第 ${selectedPage + 1} 页`}
                   className="max-h-[62vh] w-full object-contain"
                 />
+                <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} notify={notify} />
               </DetailImageStage>
               {selected.type === 'ugoira' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
@@ -1157,21 +1164,22 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 {relatedItems.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
                     {relatedItems.slice(0, 9).map(rel => (
-                      <button
+                      <PressRevealSurface
                         key={rel.id}
-                        type="button"
-                        onClick={() => openDetail(rel)}
                         className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
                       >
-                        <SmartImage
-                          src={rel.urls.medium || rel.urls.thumb}
-                          alt={rel.title}
-                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-mini text-white">
-                          <p className="truncate font-semibold">{rel.title}</p>
-                        </div>
-                      </button>
+                        <button type="button" onClick={() => openDetail(rel)} className="h-full w-full" aria-label={`查看相关作品 ${rel.title}`}>
+                          <SmartImage
+                            src={rel.urls.medium || rel.urls.thumb}
+                            alt={rel.title}
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-mini text-white">
+                            <p className="truncate font-semibold">{rel.title}</p>
+                          </div>
+                        </button>
+                        <ImageShareOverlay imageUrl={buildPixivMediaUrl(rel, 0, 'original')} filename={`pixiv-${rel.id}-p1.png`} notify={notify} />
+                      </PressRevealSurface>
                     ))}
                   </div>
                 ) : !loadingRelated && (

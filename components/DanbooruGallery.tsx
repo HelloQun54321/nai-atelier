@@ -25,7 +25,9 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { OriginalImage, SmartImage } from './SmartImage';
-import { buildMediaUrl, selectThumbnailVariant } from '../services/mobileImageCache';
+import { ImageShareOverlay } from './ImageShareActions';
+import { PressRevealSurface } from './PressRevealSurface';
+import { buildMediaUrl, getMobileOriginalUrl, selectThumbnailVariant } from '../services/mobileImageCache';
 import { createMediaPrewarmSession } from '../services/mediaPrewarm';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 import { Clock } from 'lucide-react';
@@ -347,7 +349,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
     const ratio = `${post.width || 3} / ${post.height || 4}`;
     return (
-      <article
+      <PressRevealSurface as="article"
         key={post.id}
         data-safe-mode-work="true"
         className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
@@ -370,7 +372,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             <p className="mt-1 truncate text-micro text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
           </div>
         </button>
-      </article>
+        {post.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(post.sampleUrl)} filename={`danbooru-${post.id}.${post.fileExt}`} notify={notify} />}
+      </PressRevealSurface>
     );
   };
 
@@ -528,7 +531,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <article key={item.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+                  <PressRevealSurface as="article" key={item.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
                     <button
                       type="button"
                       onClick={() => {
@@ -571,7 +574,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
                         <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
                       </div>
                     </button>
-                  </article>
+                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} notify={notify} />}
+                  </PressRevealSurface>
                 ))}
               </div>
             ) : (
@@ -632,8 +636,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
           onClose={() => setSelectedId(null)}
         >
           {selected ? <div className="space-y-4">
-            <DetailImageStage>
+            <DetailImageStage pressResetKey={selected.id}>
               <OriginalImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} className="max-h-[62vh] w-full object-contain" />
+              {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} />}
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
               sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, reverse, existing)} notify={notify}

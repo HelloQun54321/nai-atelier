@@ -31,7 +31,8 @@ import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { buildMediaUrl } from '../services/mobileImageCache';
+import { ImageShareOverlay } from './ImageShareActions';
+import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCache';
 
 interface AitagGalleryProps {
   active: boolean;
@@ -170,7 +171,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   </div>
 );
 
-const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void }> = ({ work, detail, onImageLoad }) => {
+const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; notify: AitagGalleryProps['notify'] }> = ({ work, detail, onImageLoad, notify }) => {
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
   const detailImage = detail?.images?.[0];
@@ -204,7 +205,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
   if (index >= candidates.length) {
     return <AitagPreviewFallback work={work} onRetry={() => { setCandidatePosition({ key: candidatesKey, index: 0 }); setRetryKey(value => value + 1); }} />;
   }
-  return (
+  return (<>
     <SmartImage
       key={retryKey}
       src={src}
@@ -221,7 +222,8 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
         setCandidatePosition(current => ({ key: candidatesKey, index: Math.min((current.key === candidatesKey ? current.index : 0) + 1, candidates.length) }));
       }}
     />
-  );
+    <ImageShareOverlay imageUrl={getMobileOriginalUrl(src)} filename={`aitag-${work.id}-p1.png`} notify={notify} />
+  </>);
 };
 
 interface AitagPageCache {
@@ -411,6 +413,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <AitagPreviewImage
             work={work}
             detail={details[work.id]}
+            notify={notify}
             onImageLoad={(width, height) => {
               const ratio = width / Math.max(1, height);
               if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
@@ -422,7 +425,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro font-bold">
             {type || 'AI'}
           </div>
-          <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
+          <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {imageCount}P
           </div>
         </div>
@@ -1405,7 +1408,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                        <PressRevealSurface className="group relative">
+                          <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                          <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} />
+                        </PressRevealSurface>
                         <div className="p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 space-y-1.5">

@@ -25,7 +25,9 @@ import { CloseButton, ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
 import { OriginalImage, SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
-import { ImageShareActions } from '../ImageShareActions';
+import { ImageShareOverlay } from '../ImageShareActions';
+import { PressRevealSurface } from '../PressRevealSurface';
+import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
@@ -237,8 +239,9 @@ export const InspirationDetail: React.FC<Props> = ({
     <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
       <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={`灵感详情：${draft.title || '未命名灵感'} · #${draft.id}`} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
-        <section className="relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
+        <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
           <OriginalImage src={draft.imageUrl} alt={draft.title} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
+          <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
           <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label="关闭">
             <X className="h-5 w-5" />
           </button>
@@ -253,7 +256,7 @@ export const InspirationDetail: React.FC<Props> = ({
               </span>
             )}
           </div>
-        </section>
+        </PressRevealSurface>
 
         {/* 右侧清爽灵感工作台 */}
         <section className="flex min-h-0 w-full flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:w-[520px]">
@@ -662,10 +665,6 @@ export const InspirationDetail: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* 分享副本与显式原图下载 */}
-              <div className="flex flex-none items-center">
-                <ImageShareActions imageUrl={draft.imageUrl} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} variant="compact" />
-              </div>
             </div>
           </footer>
         </section>

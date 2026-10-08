@@ -126,31 +126,35 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(boardSelect.value).toBe('');
 
     // 独立复制按钮
-    const copyButtons = screen.getAllByRole('button', { name: '复制' });
+    const copyButtons = screen.getAllByRole('button', { name: '复制图片' });
     expect(copyButtons.length).toBeGreaterThanOrEqual(1);
 
     // 标签胶囊化展示
     expect(screen.getByText('#夏日')).toBeTruthy();
     expect(screen.getByText('#少女')).toBeTruthy();
 
-    // 图片识别在标签区；底部保留导入、提取资产与图片分享
+    // 图片识别在标签区；底部保留导入和提取资产，分享位于图片右上。
     expect(screen.getByRole('button', { name: /识别图片 Tag/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /提取资产/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.getByTitle('复制图片')).toBeTruthy();
   });
 
-  it('开启清洗后保持两个分享按钮，窄屏操作条允许换行', () => {
+  it('开启清洗后保持两个分享按钮，图片右上竖排且脱离工作区隔离层', () => {
     setCleanSharedImages(true);
     render(React.createElement(InspirationDetail, {
       item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser,
       notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn(),
     }));
-    expect(screen.getByRole('button', { name: '下载' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
     expect(screen.getByTitle('复制图片').closest('.ui-backdrop-enter')?.parentElement).toBe(document.body);
-    const footer = screen.getByTitle('复制图片').closest('footer');
+    const group = screen.getByTitle('复制图片').parentElement!;
+    expect(group.className).toContain('absolute right-2 top-2');
+    expect(group.classList.contains('flex-col')).toBe(true);
+    expect(group.closest('footer')).toBeNull();
+    const footer = document.querySelector('footer');
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 

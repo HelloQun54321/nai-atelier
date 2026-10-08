@@ -105,12 +105,12 @@ describe('历史缩略图就地操作', () => {
         const right = favorite.parentElement!;
         expect(right.classList.contains('right-2')).toBe(true);
         expect(right.classList.contains('top-2')).toBe(true);
-        expect(within(right).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['收藏', '下载', '复制']);
+        expect(within(right).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片']);
         const remove = card.getByRole('button', { name: '删除历史图片' });
         expect(remove.parentElement?.classList.contains('left-2')).toBe(true);
         expect(remove.parentElement?.classList.contains('top-2')).toBe(true);
         for (const button of card.getAllByRole('button')) expect(button.textContent).toBe('');
-        const share = card.getByRole('button', { name: '下载' }).parentElement!;
+        const share = card.getByRole('button', { name: '下载图片' }).parentElement!;
         expect(share.classList.contains('hover-reveal-md')).toBe(true);
         expect(remove.parentElement?.classList.contains('hover-reveal-md')).toBe(true);
     });
@@ -120,10 +120,10 @@ describe('历史缩略图就地操作', () => {
         const timer = vi.spyOn(window, 'setTimeout');
         for (const clean of [false, true]) {
             act(() => setCleanSharedImages(clean));
-            const copy = within(cards[1]).getByRole('button', { name: '复制' });
+            const copy = within(cards[1]).getByRole('button', { name: '复制图片' });
             fireEvent.pointerDown(copy); fireEvent.click(copy);
             await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(items[1].imageUrl, clean, { prompt: items[1].prompt, negativePrompt: items[1].negativePrompt, params: items[1].params }));
-            const download = within(cards[0]).getByRole('button', { name: '下载' });
+            const download = within(cards[0]).getByRole('button', { name: '下载图片' });
             fireEvent.pointerDown(download); fireEvent.click(download);
             await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(items[0].imageUrl, 'NAI-2026-10-02-02-30-01.png', clean));
             await waitFor(() => expect((download as HTMLButtonElement).disabled).toBe(false));
@@ -166,7 +166,7 @@ describe('历史缩略图就地操作', () => {
         const { cards } = await setup();
         fireEvent.click(within(cards[0]).getByRole('button', { name: '收藏' }));
         expect(within(cards[0]).getByRole('status', { name: '正在更新收藏' })).toBeTruthy();
-        fireEvent.click(within(cards[0]).getByRole('button', { name: '复制' }));
+        fireEvent.click(within(cards[0]).getByRole('button', { name: '复制图片' }));
         await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith(items[0].imageUrl, false, { prompt: items[0].prompt, negativePrompt: items[0].negativePrompt, params: items[0].params }));
         await act(async () => resolveFavorite(1));
         expect(within(cards[0]).getByRole('button', { name: '取消收藏' })).toBeTruthy();
