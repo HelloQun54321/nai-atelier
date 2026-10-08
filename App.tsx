@@ -696,6 +696,7 @@ const App = () => {
         return <InspirationGallery
           currentUser={currentUser}
           inspirationsData={inspirationsCache}
+          labModuleOrder={appearancePreferences.labPageLayouts['text-to-image'].order}
           onRefresh={() => loadInspirations(true)}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}

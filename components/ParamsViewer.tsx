@@ -42,6 +42,8 @@ const ParamItem = ({ label, value }: { label: string; value: React.ReactNode }) 
  * Boilerplate 参数（sm, sm_dyn, noise_schedule 等）不展示。
  */
 interface ParamsViewerProps {
+    /** 收藏详情按实验室顺序分区展示；其他入口仍展示全部。 */
+    section?: 'params' | 'characters' | 'characterReference' | 'vibe';
     /** 生成参数 */
     params: NAIParams;
     /** 正面提示词（可选展示） */
@@ -56,6 +58,7 @@ interface ParamsViewerProps {
 
 export const ParamsViewer: React.FC<ParamsViewerProps> = ({
     params,
+    section,
     prompt,
     negativePrompt,
     edit,
@@ -114,7 +117,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
             )}
 
             {/* 核心参数网格 */}
-            <div>
+            {(!section || section === 'params') && <div>
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -161,9 +164,9 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                         />
                     )}
                 </div>
-            </div>
+            </div>}
 
-            {params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (
+            {(!section || section === 'characterReference') && params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (
                 <div>
                     <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">{t("角色参考 ({0})", [params.characterReferences.slots.length])}</label>
                     <div className="space-y-2">
@@ -180,7 +183,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                 </div>
             )}
 
-            {params.vibes?.enabled && params.vibes.slots.length > 0 && (
+            {(!section || section === 'vibe') && params.vibes?.enabled && params.vibes.slots.length > 0 && (
                 <div>
                     <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-violet-500">
                         Vibe Transfer ({params.vibes.slots.length})
@@ -222,7 +225,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
             )}
 
             {/* 多角色列表 */}
-            {params.characters && params.characters.length > 0 && (
+            {(!section || section === 'characters') && params.characters && params.characters.length > 0 && (
                 <div>
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

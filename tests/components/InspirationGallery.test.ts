@@ -44,14 +44,6 @@ vi.mock('../../components/ConfirmDialog', () => ({
   useConfirmDialog: () => confirmAction,
 }));
 
-vi.mock('../../services/appearancePreferences', () => ({
-  useMobileImageDisplayPreferences: () => ({
-    mobileImageAspectRatio: 'auto',
-    mobileImageObjectFit: 'contain',
-    desktopColumns: 4,
-    mobileColumns: 2,
-  }),
-}));
 
 vi.mock('../../components/useKeepAliveScrollRestore', () => ({
   useKeepAliveScrollRestore: () => vi.fn(),
@@ -128,6 +120,38 @@ const mockInspirations: Inspiration[] = [
   },
 ];
 
+it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签，图片左下不遮挡', () => {
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  expect(container.querySelector('main h1')).toBeNull();
+  const sidebar = container.querySelector('aside')!;
+  expect(sidebar.classList.contains('w-44')).toBe(true);
+  expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:block')).toBe(true);
+  for (const item of mockInspirations) {
+    const card = screen.getByText(item.title).closest('article')!;
+    expect(within(card).getByText('#' + item.tags![0])).toBeTruthy();
+    expect(within(card).queryByText(item.prompt)).toBeNull();
+    expect(within(card).queryByText('未整理')).toBeNull();
+    expect(card.querySelector('.bottom-2.left-2')).toBeNull();
+  }
+  expect(screen.queryByText('自动收录')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  expect(within(screen.getByRole('dialog', { name: '加入收藏库' })).queryByText('备注')).toBeNull();
+});
+
+it('收藏搜索不再匹配备注；详情接收文生图排序，调整后即时生效', async () => {
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, { ...props, labModuleOrder: ['negative', 'params', 'prompt'] }));
+  const card = screen.getByText(mockInspirations[0].title).closest('article')!;
+  fireEvent.click(within(card).getByRole('img').closest('button')!);
+  const sections = () => Array.from(view.container.querySelectorAll('[data-collection-section]'), element => element.getAttribute('data-collection-section'));
+  expect(sections()).toEqual(['tags', 'negative', 'params', 'prompt']);
+  view.rerender(React.createElement(InspirationGallery, { ...props, labModuleOrder: ['prompt', 'params', 'negative'] }));
+  expect(sections()).toEqual(['tags', 'prompt', 'params', 'negative']);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '自动收录' } });
+  await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());
+});
+
 describe('InspirationGallery 来源筛选与未整理心智', () => {
   it('未整理分类正确包含未分配收藏夹的卡片（即使有来源标签与备注）', () => {
     render(
@@ -185,7 +209,7 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
   it('桌面筛选不重复侧栏导航，重置清除条件并保留当前收藏夹与搜索', async () => {
     render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
     fireEvent.click(screen.getByRole('button', { name: /Danbooru\s+1/ }));
-    fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词、备注或标签'), { target: { value: '带有标签' } });
+    fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '带有标签' } });
     fireEvent.click(screen.getByRole('button', { name: '筛选 1' }));
     const filter = screen.getByRole('dialog', { name: '筛选收藏' });
     expect(within(filter).queryByRole('combobox', { name: '分类' })).toBeNull();
@@ -197,7 +221,7 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     fireEvent.click(within(filter).getByRole('button', { name: '重置筛选' }));
     expect(screen.getByText('未整理带有标签的图')).toBeTruthy();
     await waitFor(() => expect(screen.queryByText('Pixiv 收藏图')).toBeNull());
-    expect((screen.getByPlaceholderText('搜索标题、提示词、备注或标签') as HTMLInputElement).value).toBe('带有标签');
+    expect((screen.getByPlaceholderText('搜索标题、提示词或标签…') as HTMLInputElement).value).toBe('带有标签');
   });
 
   it('手机筛选保留分类入口，并与桌面共用条件', () => {
@@ -223,7 +247,7 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
       inspirationsData: [...mockInspirations, { ...mockInspirations[0], id: 'other-user', userId: 'user-2', title: '他人的资料' }],
       onRefresh: vi.fn(), notify: vi.fn(),
     }));
-    fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词、备注或标签'), { target: { value: '图' } });
+    fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '图' } });
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
     expect(screen.getByText('已选 3 项')).toBeTruthy();
     expect(screen.getByText('取消已选 3')).toBeTruthy();
@@ -509,7 +533,7 @@ it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开�
   const images = within(panel).getAllByRole('img');
   expect(images.map(image => image.getAttribute('src'))).toEqual([0, 1, 2].map(page => '/synthetic/group-' + page + '.png'));
   expect(within(panel).getAllByRole('button', { name: '收藏' })).toHaveLength(3);
-  expect(within(panel).getAllByRole('textbox', { name: '收藏标题' })).toHaveLength(3);
+  expect(within(panel).getAllByRole('button', { name: '修改收藏标题' })).toHaveLength(3);
   expect(within(panel).getAllByRole('textbox', { name: '提示词' }).map(input => (input as HTMLTextAreaElement).value)).toEqual(['prompt-0', 'prompt-1', 'prompt-2']);
   expect(document.querySelector('[data-agent-page-title^="收藏详情"]')).toBeNull();
   expect(document.querySelector('.ui-modal-enter')).toBeNull();
@@ -554,7 +578,7 @@ it.each([390, 1280])('宽度 %s：各来源单张收藏也使用作品组侧栏�
     expect(within(panel).getAllByRole('img')).toHaveLength(1);
     expect(within(panel).getByText('1 张图片')).toBeTruthy();
     expect((within(panel).getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe(item.prompt);
-    expect(within(panel).getByRole('combobox', { name: '切换所属收藏夹' })).toBeTruthy();
+    expect(within(panel).queryByRole('combobox', { name: '切换所属收藏夹' })).toBeNull();
     expect(document.querySelector('.ui-modal-enter')).toBeNull();
     fireEvent.click(within(panel).getByRole('button', { name: width < 1024 ? '返回' : '关闭' }));
   }

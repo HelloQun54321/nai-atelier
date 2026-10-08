@@ -1,3 +1,4 @@
+import { normalizeAppearancePreferences, saveAppearancePreferences } from '../../services/appearancePreferences';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -42,7 +43,7 @@ const ExternalGallery = ({ onCreateArtistChain, notify }: any) => <button onClic
   catch (error: any) { notify(error.message, 'error'); }
 }}>保存合成作品</button>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
-vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items">{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
+vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
@@ -228,7 +229,10 @@ it('共享收藏已加载时直接进入收藏库，跨页面爱心保存或取�
   try {
     const collection = await import('../../services/collectionFavorites');
     await collection.loadCollection({ id: 'owner', username: '合成用户', role: 'admin', createdAt: 1 });
+    const order = ['negative', 'params', 'prompt', 'characters', 'vibe', 'characterReference'];
+    saveAppearancePreferences(normalizeAppearancePreferences({ labPageLayouts: { 'text-to-image': { order } } }));
     await setup('inspiration');
+    expect(JSON.parse(screen.getByTestId('collection-items').dataset.moduleOrder!)).toEqual(order);
     expect(mocks.getAllInspirations).not.toHaveBeenCalled();
     const image = { imageUrl: '/synthetic/instant.png', title: '立即显示的新收藏', sourceType: 'character' as const, sourceId: 'instant' };
     const reads = get.mock.calls.length;

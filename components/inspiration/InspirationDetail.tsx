@@ -11,10 +11,11 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { ImageEditOperation, Inspiration, InspirationBoard, User } from '../../types';
+import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../../services/appearancePreferences';
+import { ImageEditOperation, Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
-import { normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
+import { normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionTagInput } from './CollectionControls';
 import { ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
@@ -29,7 +30,7 @@ import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from '
 interface Props {
   item: Inspiration;
   items: Inspiration[];
-  boards: InspirationBoard[];
+  labModuleOrder?: LabPageModuleId[];
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
@@ -40,7 +41,7 @@ interface Props {
 export const InspirationDetail: React.FC<Props> = ({
   item,
   items,
-  boards,
+  labModuleOrder = DEFAULT_LAB_MODULE_ORDER,
   currentUser,
   notify,
   onClose,
@@ -50,6 +51,8 @@ export const InspirationDetail: React.FC<Props> = ({
   useLanguage();
   const displayedItem = useRef(item);
   const [draft, setDraft] = useState(item);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [busy, setBusy] = useState('');
   const [taggerOpen, setTaggerOpen] = useState(false);
   const [labMenuOpen, setLabMenuOpen] = useState(false);
@@ -67,12 +70,13 @@ export const InspirationDetail: React.FC<Props> = ({
       if (draft.id !== item.id) return item;
       const next = { ...item };
       // 同组其他图片保存时刷新侧栏，保留当前尚未保存的输入。
-      for (const key of ['title', 'prompt', 'negativePrompt', 'notes', 'tags', 'boardId'] as const) {
+      for (const key of ['title', 'prompt', 'negativePrompt', 'tags', 'boardId'] as const) {
         if (draft[key] !== previous[key]) Object.assign(next, { [key]: draft[key] });
       }
       return next;
     });
     if (previous.id === item.id) return;
+    setEditingTitle(false);
     setTaggerOpen(false);
     setLabMenuOpen(false);
     setIsAddingTag(false);
@@ -99,11 +103,12 @@ export const InspirationDetail: React.FC<Props> = ({
     update(key, value);
     try {
       await db.updateInspiration(item.id, { [key]: value });
-      if (key === 'boardId') rememberCollectionFolder(value as string);
       await onRefresh();
       if (successMsg) notify(successMsg);
+      return true;
     } catch (error: any) {
       notify(error?.message || '更新失败', 'error');
+      return false;
     }
   };
 
@@ -182,6 +187,107 @@ export const InspirationDetail: React.FC<Props> = ({
 
   const SourceIcon = sourceIcon(draft.sourceType);
 
+
+  const detailSections: Partial<Record<LabPageModuleId, React.ReactNode>> = {
+    prompt: (<div data-collection-section="prompt">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
+          {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} 个词元）", [promptTagCount])}</span>}
+        </span>
+        {draft.prompt && (
+          <button
+            type="button"
+            onClick={() => handleCopy(draft.prompt, '提示词')}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+          >
+            <Copy className="h-3 w-3" />
+            {t("复制")}</button>
+        )}
+      </div>
+      <textarea
+        aria-label={t("提示词")}
+        readOnly={!editable}
+        value={draft.prompt || ''}
+        onChange={event => update('prompt', event.target.value)}
+        onBlur={() => void updateAndPersist('prompt', draft.prompt)}
+        placeholder={t("（无提示词）")}
+        className="custom-scrollbar min-h-24 max-h-44 w-full resize-y overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200"
+      />
+    </div>),
+    negative: ((draft.negativePrompt || editable) ? (
+      <details data-collection-section="negative" className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
+        <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+            <span>{t("负面提示词")}</span>
+            {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">{t("（{0} 个词元）", [negativeTagCount])}</span>}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!draft.negativePrompt}
+              onClick={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleCopy(draft.negativePrompt || '', '负面提示词');
+              }}
+              className="text-micro font-semibold text-red-500 hover:underline dark:text-red-400"
+            >
+              {t("复制")}</button>
+            <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
+          </div>
+        </summary>
+        <textarea
+          aria-label={t("负面提示词")}
+          readOnly={!editable}
+          value={draft.negativePrompt || ''}
+          onChange={event => update('negativePrompt', event.target.value)}
+          onBlur={() => void updateAndPersist('negativePrompt', draft.negativePrompt || '')}
+          className="custom-scrollbar mt-2 min-h-16 max-h-28 w-full resize-y overflow-y-auto rounded-lg border border-gray-100 bg-transparent p-2 font-mono text-xs leading-relaxed text-gray-700 outline-none focus:border-indigo-400 dark:border-gray-800/50 dark:text-gray-300"
+        />
+      </details>
+    ) : null),
+    params: (<details data-collection-section="params" className="group rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
+      <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-700 select-none dark:text-gray-200">
+        <span className="flex items-center gap-1.5">
+          <span>{t("生成参数与来源详情")}</span>
+
+        </span>
+        <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
+        <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-1.5">
+            <SourceIcon className="h-3.5 w-3.5 text-gray-400" />
+            <span>{t("来源：")}<b>{sourceLabel(draft.sourceType)}</b></span>
+          </div>
+          <div>
+            <span>{t("收录：{0}", [formatDate(draft.createdAt)])}</span>
+          </div>
+          {draft.lastUsedAt && (
+            <div className="col-span-2">
+              <span>{t("最近流转：{0}", [formatDate(draft.lastUsedAt)])}</span>
+            </div>
+          )}
+          {draft.sourceId && (
+            <p className="col-span-2 break-all text-meta text-gray-400">{t("来源 ID：{0}", [draft.sourceId])}</p>
+          )}
+          {draft.sourceUrl && (
+            <div className="col-span-2">
+              <a href={draft.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline dark:text-indigo-400">
+                <ExternalLink className="h-3 w-3" />
+                {t("打开原始页面")}</a>
+            </div>
+          )}
+        </div>
+        {draft.params ? <ParamsViewer section="params" params={draft.params} notify={notify} /> : <p className="text-xs text-gray-400">{t("未记录生成参数")}</p>}
+      </div>
+    </details>),
+    characters: draft.params?.characters?.length ? <section data-collection-section="characters"><ParamsViewer section="characters" params={draft.params} notify={notify} /></section> : null,
+    characterReference: draft.params?.characterReferences?.enabled && draft.params.characterReferences.slots.length ? <section data-collection-section="characterReference"><ParamsViewer section="characterReference" params={draft.params} notify={notify} /></section> : null,
+    vibe: draft.params?.vibes?.enabled && draft.params.vibes.slots.length ? <section data-collection-section="vibe"><ParamsViewer section="vibe" params={draft.params} notify={notify} /></section> : null,
+  };
+
   return (
     <article data-safe-mode-work="true" data-collection-item={item.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative bg-gray-100 dark:bg-black/60">
@@ -190,117 +296,33 @@ export const InspirationDetail: React.FC<Props> = ({
       </PressRevealSurface>
       {/* 每张图片的整理与生成信息 */}
         <section className="w-full">
-          {/* 图片标题、来源时间与收藏夹 */}
-          <header className="flex flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-micro font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                  <SourceIcon className="h-3 w-3" />
-                  {sourceLabel(draft.sourceType)}
-                </span>
-                <span className="text-micro text-gray-400">
-                  {formatDate(draft.createdAt)}
-                </span>
-                {draft.parentId && <span className="text-micro text-gray-400">{t('衍生自 {0}', [draft.parentId])}</span>}
-                <select
-                  disabled={!editable}
-                  value={draft.boardId || ''}
-                  onChange={e => void updateAndPersist('boardId', e.target.value, e.target.value ? '已移入收藏夹' : '已移至未整理')}
-                  className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-0.5 text-micro font-semibold text-gray-700 outline-none transition hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-                  title={t("切换所属收藏夹")}
-                >
-                  <option value="">{t("📁 未整理")}</option>
-                  {boards.map(board => (
-                    <option key={board.id} value={board.id}>📁 {board.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <input
-                data-safe-mode-title="true"
-                aria-label={t("收藏标题")}
-                disabled={!editable}
-                value={draft.title}
-                onChange={e => update('title', e.target.value)}
-                onBlur={() => {
-                  if (draft.title.trim()) {
-                    void updateAndPersist('title', draft.title.trim());
-                  }
-                }}
-                placeholder={t("收藏标题...")}
-                className="h-8 w-full rounded-lg border border-transparent bg-transparent px-1 text-base font-bold text-gray-950 transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-white dark:hover:border-gray-800 dark:focus:bg-gray-900 sm:text-lg"
-              />
-
-            </div>
-
+          <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+            {editingTitle ? <input
+              ref={titleInputRef}
+              autoFocus
+              data-safe-mode-title="true"
+              aria-label={t("收藏标题")}
+              value={draft.title}
+              onFocus={event => event.currentTarget.select()}
+              onChange={event => update('title', event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.currentTarget.blur();
+                if (event.key === 'Escape') { event.stopPropagation(); update('title', item.title); setEditingTitle(false); }
+              }}
+              onBlur={() => {
+                const title = draft.title.trim();
+                if (!title) { update('title', item.title); setEditingTitle(false); return; }
+                void updateAndPersist('title', title).then(saved => { if (saved) setEditingTitle(false); });
+              }}
+              className="h-8 min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-1 text-base font-bold text-gray-950 outline-none dark:bg-gray-900 dark:text-white sm:text-lg"
+            /> : <h2 data-safe-mode-title="true" className="min-w-0 truncate text-base font-bold text-gray-950 dark:text-white sm:text-lg">{draft.title}</h2>}
+            {editable && <button type="button" aria-label={t("修改收藏标题")} title={t("修改收藏标题")} onClick={() => { setEditingTitle(true); titleInputRef.current?.focus(); titleInputRef.current?.select(); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>}
           </header>
 
           {/* 详情随作品组侧栏统一滚动 */}
           <div className="space-y-4 p-4">
-            {/* 正面提示词卡片（核心主角） */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                  {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} 个词元）", [promptTagCount])}</span>}
-                </span>
-                {draft.prompt && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(draft.prompt, '提示词')}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
-                  >
-                    <Copy className="h-3 w-3" />
-                    {t("复制")}</button>
-                )}
-              </div>
-              <textarea
-                aria-label={t("提示词")}
-                readOnly={!editable}
-                value={draft.prompt || ''}
-                onChange={event => update('prompt', event.target.value)}
-                onBlur={() => void updateAndPersist('prompt', draft.prompt)}
-                placeholder={t("（无提示词）")}
-                className="custom-scrollbar min-h-24 max-h-44 w-full resize-y overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200"
-              />
-            </div>
-
-            {/* 负面提示词（默认轻量折叠单行，需要时才展开） */}
-            {(draft.negativePrompt || editable) ? (
-              <details className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
-                <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                    <span>{t("负面提示词")}</span>
-                    {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">{t("（{0} 个词元）", [negativeTagCount])}</span>}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={!draft.negativePrompt}
-                      onClick={e => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleCopy(draft.negativePrompt || '', '负面提示词');
-                      }}
-                      className="text-micro font-semibold text-red-500 hover:underline dark:text-red-400"
-                    >
-                      {t("复制")}</button>
-                    <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
-                  </div>
-                </summary>
-                <textarea
-                  aria-label={t("负面提示词")}
-                  readOnly={!editable}
-                  value={draft.negativePrompt || ''}
-                  onChange={event => update('negativePrompt', event.target.value)}
-                  onBlur={() => void updateAndPersist('negativePrompt', draft.negativePrompt || '')}
-                  className="custom-scrollbar mt-2 min-h-16 max-h-28 w-full resize-y overflow-y-auto rounded-lg border border-gray-100 bg-transparent p-2 font-mono text-xs leading-relaxed text-gray-700 outline-none focus:border-indigo-400 dark:border-gray-800/50 dark:text-gray-300"
-                />
-              </details>
-            ) : null}
-
             {/* 标签区：胶囊化展示 + 轻量添加 */}
-            <div>
+            <div data-collection-section="tags">
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
                   {t("标签")}{(draft.tags || []).length > 0 && (
@@ -369,67 +391,7 @@ export const InspirationDetail: React.FC<Props> = ({
               {reverseTags && <details><summary className="cursor-pointer text-xs font-bold">{t("反推 Tag · 模型预测")}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{reverseTags.prompt}</p><ToolbarButton disabled={!reverseTags.prompt.trim()} onClick={() => void copyTagText(reverseTags.prompt).then(() => notify('已复制反推 Tag'), () => notify('复制失败', 'error'))}><Copy />{t("复制反推 Tag")}</ToolbarButton></details>}
             </section>}
 
-            {/* 整理备注（有内容展示便签，无内容一行占位） */}
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("整理备注")}</span>
-              </div>
-              {draft.notes ? (
-                <textarea
-                  disabled={!editable}
-                  value={draft.notes}
-                  onChange={e => update('notes', e.target.value)}
-                  onBlur={() => void updateAndPersist('notes', draft.notes || '')}
-                  className="min-h-16 w-full resize-y rounded-xl border border-gray-100 bg-gray-50/80 p-2.5 text-xs leading-relaxed text-gray-800 outline-none transition focus:border-indigo-400 focus:bg-white dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200 dark:focus:bg-gray-900"
-                />
-              ) : editable ? (
-                <button
-                  type="button"
-                  onClick={() => update('notes', ' ')}
-                  className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-gray-200 p-2 text-xs text-gray-400 transition hover:border-gray-300 hover:text-gray-600 dark:border-gray-800 dark:hover:border-gray-700"
-                >
-                  <Pencil className="h-3 w-3" />
-                  {t("添加整理备注...")}</button>
-              ) : null}
-            </div>
-
-            {/* 生成参数与来源详情（折叠面板） */}
-            <details className="group rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
-              <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-700 select-none dark:text-gray-200">
-                <span className="flex items-center gap-1.5">
-                  <span>{t("生成参数与来源详情")}</span>
-
-                </span>
-                <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
-                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                  <div className="flex items-center gap-1.5">
-                    <SourceIcon className="h-3.5 w-3.5 text-gray-400" />
-                    <span>{t("来源：")}<b>{sourceLabel(draft.sourceType)}</b></span>
-                  </div>
-                  <div>
-                    <span>{t("收录：{0}", [formatDate(draft.createdAt)])}</span>
-                  </div>
-                  {draft.lastUsedAt && (
-                    <div className="col-span-2">
-                      <span>{t("最近流转：{0}", [formatDate(draft.lastUsedAt)])}</span>
-                    </div>
-                  )}
-                  {draft.sourceId && (
-                    <p className="col-span-2 break-all text-meta text-gray-400">{t("来源 ID：{0}", [draft.sourceId])}</p>
-                  )}
-                  {draft.sourceUrl && (
-                    <div className="col-span-2">
-                      <a href={draft.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline dark:text-indigo-400">
-                        <ExternalLink className="h-3 w-3" />
-                        {t("打开原始页面")}</a>
-                    </div>
-                  )}
-                </div>
-                {draft.params ? <ParamsViewer params={draft.params} notify={notify} /> : <p className="text-xs text-gray-400">{t("未记录生成参数")}</p>}
-              </div>
-            </details>
+            {labModuleOrder.map(module => <React.Fragment key={module}>{detailSections[module]}</React.Fragment>)}
 
 
           </div>
