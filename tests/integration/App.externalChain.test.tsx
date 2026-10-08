@@ -3,7 +3,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
-import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import { api, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import { localHistory } from '../../services/localHistory';
 import { consumeEditorSessionDiscarded } from '../../services/labWorkspace';
 import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 
@@ -41,7 +42,7 @@ const ExternalGallery = ({ onCreateArtistChain, notify }: any) => <button onClic
   catch (error: any) { notify(error.message, 'error'); }
 }}>保存合成作品</button>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
-vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <ExternalGallery {...props} /> }));
+vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items">{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
@@ -216,4 +217,28 @@ it('保存中离开再返回来源页，旧保存完成也不打断新的浏览�
   await act(async () => resolve(saved));
   expect(screen.getByTestId('view').textContent).toBe('aitag');
   expect(screen.queryByTestId('editor')).toBeNull();
+});
+
+
+it('共享收藏已加载时直接进入收藏库，跨页面爱心保存或取消立即更新页面，不追加整库请求', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async () => []);
+  const post = vi.spyOn(api, 'post').mockImplementation(async (_path, body) => ({ item: body }));
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ success: true });
+  const history = vi.spyOn(localHistory, 'getPage').mockResolvedValue({ items: [], count: 0 });
+  try {
+    const collection = await import('../../services/collectionFavorites');
+    await collection.loadCollection({ id: 'owner', username: '合成用户', role: 'admin', createdAt: 1 });
+    await setup('inspiration');
+    expect(mocks.getAllInspirations).not.toHaveBeenCalled();
+    const image = { imageUrl: '/synthetic/instant.png', title: '立即显示的新收藏', sourceType: 'character' as const, sourceId: 'instant' };
+    const reads = get.mock.calls.length;
+    await act(async () => { await collection.toggleCollectionTarget(image); });
+    expect(screen.getByTestId('collection-items').textContent).toBe(image.title);
+    expect(get).toHaveBeenCalledTimes(reads); expect(mocks.getAllInspirations).not.toHaveBeenCalled();
+    await act(async () => { await collection.toggleCollectionTarget(image); });
+    expect(screen.getByTestId('collection-items').textContent).toBe('');
+    expect(get).toHaveBeenCalledTimes(reads); expect(mocks.getAllInspirations).not.toHaveBeenCalled();
+    await act(async () => { window.dispatchEvent(new Event('nai-project-data-changed')); });
+    expect(mocks.getAllInspirations).toHaveBeenCalledOnce();
+  } finally { get.mockRestore(); post.mockRestore(); put.mockRestore(); history.mockRestore(); }
 });

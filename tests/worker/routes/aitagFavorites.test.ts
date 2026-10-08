@@ -4,7 +4,9 @@ import type { RouteContext } from '../../../worker/routes/types';
 
 const database = (rows: any[]) => {
   const writes: { sql: string; values: unknown[] }[] = [];
+  const queries: string[] = [];
   const db = { prepare(sql: string) {
+    queries.push(sql);
     let values: any[] = [];
     const query = {
       bind(...bound: any[]) { values = bound; return query; },
@@ -22,7 +24,7 @@ const database = (rows: any[]) => {
     };
     return query;
   } };
-  return { db, writes };
+  return { db, writes, queries };
 };
 const invoke = async (db: unknown, path: string, favorite?: boolean) => {
   const url = new URL(`http://localhost${path}`);
@@ -34,7 +36,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 it('只读汇总不同榜单的同一收藏组，完整详情优先，旧记录回退到已缓存首图', async () => {
   const detail = { work: { id: 1 }, images: [0, 1].map(index => ({ id: index, work_id: 1, file_name: `1_p${index}`, local_image_url: `/api/assets/aitag/${index}.webp` })) };
-  const { db, writes } = database([
+  const { db, writes, queries } = database([
     { id: 1, source_sort: 'new', is_favorite: 1, detail_json: JSON.stringify(detail) },
     { id: 1, source_sort: 'hot', is_favorite: 1, detail_json: JSON.stringify(detail) },
     { id: 2, source_sort: 'new', is_favorite: 1, detail_json: 'invalid', first_image_json: JSON.stringify({ file_name: '2_p3', local_image_url: '/api/assets/aitag/2.webp' }) },
@@ -47,6 +49,19 @@ it('只读汇总不同榜单的同一收藏组，完整详情优先，旧记录�
   expect(body[1].images[0].file_name).toBe('2_p3');
   expect(response.headers.get('Cache-Control')).toBe('no-store');
   expect(writes).toEqual([]); expect(fetch).not.toHaveBeenCalled();
+  expect(queries).toHaveLength(1); expect(queries[0]).toMatch(/^SELECT/);
+});
+
+it('尚无 AITag 缓存表时返回空收藏，不触发建表；真实读取异常继续报错', async () => {
+  const all = vi.fn().mockRejectedValueOnce(new Error('D1_ERROR: no such table: aitag_works: SQLITE_ERROR'))
+    .mockRejectedValueOnce(new Error('D1_ERROR: no such table: aitag_work_details: SQLITE_ERROR'))
+    .mockRejectedValueOnce(new Error('合成数据库读取失败'));
+  const prepare = vi.fn(() => ({ all }));
+  const db = { prepare };
+  expect(await (await invoke(db, '/api/aitag/favorites')).json()).toEqual([]);
+  expect(await (await invoke(db, '/api/aitag/favorites')).json()).toEqual([]);
+  await expect(invoke(db, '/api/aitag/favorites')).rejects.toThrow('合成数据库读取失败');
+  expect(prepare).toHaveBeenCalledTimes(3);
 });
 
 it('作品组收藏同步所有榜单副本，默认榜单不存在时也能从缓存返回同一作品', async () => {

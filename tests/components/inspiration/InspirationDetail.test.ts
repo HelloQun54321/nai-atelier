@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCleanSharedImages } from '../../../services/imageSharing';
 import { InspirationDetail } from '../../../components/inspiration/InspirationDetail';
+import { DetailSidePanel } from '../../../components/DetailPanel';
 import { Inspiration, InspirationBoard, User } from '../../../types';
 import { db } from '../../../services/dbService';
 import { readAgentPage } from '../../../services/agentWorkspace';
@@ -60,7 +61,7 @@ afterEach(() => {
 
 it('添加标签可复用其他作品的原名，回车后不重复生成标签，并保留已有标签', async () => {
   const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光'] }];
-  render(React.createElement(InspirationDetail, { item: mockItem, items, boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: mockItem, items, boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
   fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
   const input = screen.getByPlaceholderText('输入标签回车保存...');
   expect(document.getElementById(input.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeTruthy();
@@ -72,7 +73,7 @@ it('添加标签可复用其他作品的原名，回车后不重复生成标签�
 });
 
 it('收藏详情去除评分、置顶、相似推荐和资产菜单，保留已有资料', () => {
-  render(React.createElement(InspirationDetail, { item: { ...mockItem, rating: 5, isPinned: true }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: { ...mockItem, rating: 5, isPinned: true }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn() }));
   expect(screen.queryByRole('group', { name: '评分' })).toBeNull();
   expect(screen.queryByRole('button', { name: '置顶收藏' })).toBeNull();
   expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
@@ -82,7 +83,7 @@ it('收藏详情去除评分、置顶、相似推荐和资产菜单，保留已�
 
 it('提示词失焦保存原文，允许清空；空负面词仍能添加并在导入时使用当前内容', async () => {
   const item = { ...mockItem, negativePrompt: undefined };
-  render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
   const prompt = screen.getByLabelText('提示词');
   fireEvent.change(prompt, { target: { value: '  rain, [blue hair]  ' } });
   expect(db.updateInspiration).not.toHaveBeenCalled();
@@ -101,7 +102,7 @@ it('提示词失焦保存原文，允许清空；空负面词仍能添加并在�
 it('提示词保存失败显示错误并保留草稿，重新失焦可重试', async () => {
   vi.mocked(db.updateInspiration).mockRejectedValueOnce(new Error('合成写入失败'));
   const notify = vi.fn(), onRefresh = vi.fn(async () => {});
-  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify, onClose: vi.fn(), onRefresh, onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify, onClose: vi.fn(), onRefresh }));
   const prompt = screen.getByLabelText('提示词') as HTMLTextAreaElement;
   fireEvent.change(prompt, { target: { value: 'manual edit' } }); fireEvent.blur(prompt);
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成写入失败', 'error'));
@@ -112,7 +113,7 @@ it('提示词保存失败显示错误并保留草稿，重新失焦可重试', a
 });
 
 it('修改后恢复原文字仍会保存，标题、备注和正负词遵循同一失焦规则', async () => {
-  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
   const fields = [
     ['title', screen.getByLabelText('收藏标题'), mockItem.title],
     ['prompt', screen.getByLabelText('提示词'), mockItem.prompt],
@@ -128,7 +129,7 @@ it('修改后恢复原文字仍会保存，标题、备注和正负词遵循同�
 });
 
 it('非所有者的评分禁用、提示词只读，失焦不写入', () => {
-  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: { ...mockUser, id: 'other-user' }, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: { ...mockUser, id: 'other-user' }, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn() }));
   for (const label of ['提示词', '负面提示词']) {
     const input = screen.getByLabelText(label) as HTMLTextAreaElement;
     expect(input.readOnly).toBe(true); fireEvent.blur(input);
@@ -138,7 +139,7 @@ it('非所有者的评分禁用、提示词只读，失焦不写入', () => {
 });
 
 it('无参数的收藏显示未记录，导入时才使用默认参数；已有参数保持原样展示和导入', async () => {
-  const props = { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() };
+  const props = { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) };
   const view = render(React.createElement(InspirationDetail, props));
   expect(screen.queryByTestId('params-viewer')).toBeNull();
   expect(screen.getByText('未记录生成参数')).toBeTruthy();
@@ -158,7 +159,7 @@ it('无参数的收藏显示未记录，导入时才使用默认参数；已有�
 
 it.each(['zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const)('%s 的评分和未知参数跟随语言，创作原文保留', language => {
   setLanguage(language);
-  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn() }));
   expect(screen.queryByRole('group', { name: t('评分') })).toBeNull();
   expect(screen.getByText(t('未记录生成参数'))).toBeTruthy();
   expect((screen.getByLabelText(t('提示词')) as HTMLTextAreaElement).value).toBe(mockItem.prompt);
@@ -195,18 +196,18 @@ const mockItem: Inspiration = {
 describe('InspirationDetail 全新重构界面走查', () => {
   it('Agent 优先读取当前收藏详情身份，换作品更新、关闭后恢复列表', () => {
     const draw = (item?: Inspiration) => React.createElement('main', { 'data-agent-view': 'inspiration' },
-      React.createElement('p', null, '收藏列表摘要 '.repeat(400)), item && React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+      React.createElement('p', null, '收藏列表摘要 '.repeat(400)), item && React.createElement(DetailSidePanel, { open: true, title: item.title + ' · #' + item.id, onClose: vi.fn(), children: React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }) }));
     const view = render(draw(mockItem));
-    const first = readAgentPage(); expect(first).toMatchObject({ foreground: 'detail', view: 'inspiration' }); expect(first.title).toBe('收藏库 · 收藏详情：海边少女 · #insp-1'); expect(first.text).not.toContain('收藏列表摘要');
+    const first = readAgentPage(); expect(first).toMatchObject({ foreground: 'detail', view: 'inspiration' }); expect(first.title).toBe('收藏库 · 作品详情：海边少女 · #insp-1'); expect(first.text).not.toContain('收藏列表摘要');
     view.rerender(draw({ ...mockItem, id: 'insp-2', title: '合成夜景' }));
-    const next = readAgentPage(); expect(next.title).toBe('收藏库 · 收藏详情：合成夜景 · #insp-2'); expect(next.snapshotId).not.toBe(first.snapshotId);
+    const next = readAgentPage(); expect(next.title).toBe('收藏库 · 作品详情：合成夜景 · #insp-2'); expect(next.snapshotId).not.toBe(first.snapshotId);
     view.rerender(draw()); expect(readAgentPage().title).toBe('收藏库'); expect(readAgentPage().text).toContain('收藏列表摘要');
   });
   it('外部作品原站与反推标签分别可查和复制，分类标签保持原样', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => {}) } });
     const reverse = { prompt: 'blue hair', createdAt: 1, result: { model: 'test', tags: [], general: [], character: [], rating: null } };
     const item = { ...mockItem, sourceType: 'pixiv' as const, analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1, imageTagger: reverse } };
-    render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+    render(React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
     expect(screen.getByText('Pixiv 原站标签 · 1')).toBeTruthy();
     expect(screen.getByText('反推 Tag · 模型预测')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '复制原站标签', hidden: true }));
@@ -226,7 +227,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         notify,
         onClose: vi.fn(),
         onRefresh: vi.fn(),
-        onOpenItem: vi.fn(),
       })
     );
 
@@ -255,11 +255,12 @@ describe('InspirationDetail 全新重构界面走查', () => {
     setCleanSharedImages(true);
     render(React.createElement(InspirationDetail, {
       item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser,
-      notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn(),
+      notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}),
     }));
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
-    expect(screen.getByTitle('复制图片').closest('.ui-backdrop-enter')?.parentElement).toBe(document.body);
+    expect(screen.getByTitle('复制图片').closest('article')).toBeTruthy();
+    expect(document.querySelector('.ui-backdrop-enter')).toBeNull();
     const group = screen.getByTitle('复制图片').parentElement!;
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('flex-col')).toBe(true);
@@ -278,7 +279,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh: vi.fn(),
-        onOpenItem: vi.fn(),
       })
     );
 
@@ -301,7 +301,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh,
-        onOpenItem: vi.fn(),
       })
     );
 
@@ -313,13 +312,13 @@ describe('InspirationDetail 全新重构界面走查', () => {
   });
 
   it('自动来源标签保持固定，自定义标签仍可移除', async () => {
-  render(React.createElement(InspirationDetail, { item: { ...mockItem, sourceType: 'history', tags: ['生成历史', '自定义'] }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(), onOpenItem: vi.fn() }));
+  render(React.createElement(InspirationDetail, { item: { ...mockItem, sourceType: 'history', tags: ['生成历史', '自定义'] }, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn() }));
   expect(screen.queryByTitle('删除 #生成历史')).toBeNull();
   fireEvent.click(screen.getByTitle('删除 #自定义'));
   await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: ['生成历史'] }));
 });
 
-  it('底部双核工具条展开底图模式与资产提取子项', () => {
+  it('底部工具条可展开底图模式，不再提供资产提取', () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
@@ -329,8 +328,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh: vi.fn(),
-        onOpenItem: vi.fn(),
-        onCreateArtistChain: vi.fn(),
       })
     );
 
@@ -354,7 +351,6 @@ describe('InspirationDetail 全新重构界面走查', () => {
         notify: vi.fn(),
         onClose: vi.fn(),
         onRefresh: vi.fn(),
-        onOpenItem: vi.fn(),
       })
     );
 
@@ -373,3 +369,18 @@ vi.mock('../../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+
+it('侧栏刷新保留当前未保存的输入，未编辑的生成参数仍随资料更新，换图重置草稿', async () => {
+  const props = { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) };
+  const view = render(React.createElement(InspirationDetail, props));
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), { target: { value: '尚未失焦的草稿' } });
+  const updated = { ...mockItem, params: { ...DEFAULT_PARAMS, seed: 12 } };
+  view.rerender(React.createElement(InspirationDetail, { ...props, item: updated }));
+  expect((screen.getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe('尚未失焦的草稿');
+  expect(JSON.parse(screen.getByTestId('params-viewer').dataset.params!)).toMatchObject({ seed: 12 });
+  fireEvent.blur(screen.getByRole('textbox', { name: '提示词' }));
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenLastCalledWith(mockItem.id, { prompt: '尚未失焦的草稿' }));
+  view.rerender(React.createElement(InspirationDetail, { ...props, item: { ...mockItem, id: 'new-image', prompt: '另一张原词' } }));
+  expect((screen.getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe('另一张原词');
+});

@@ -486,3 +486,76 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+
+const groupedImages: Inspiration[] = [2, 0, 1].map(page => ({
+  id: 'group-' + page, userId: mockUser.id, title: '我的作品组 · ' + (page + 1), imageUrl: '/synthetic/group-' + page + '.png', prompt: 'prompt-' + page,
+  sourceType: 'aitag', sourceId: 'work-1', sourceUrl: 'https://aitag.win/i/1', createdAt: 10 + page,
+  tags: ['AITag'], analysis: { collectionImageId: 'work_p' + page, collectionGroupSize: 3 },
+}));
+
+it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开才在共用侧栏逐张显示图片与整理信息', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const { container, rerender } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages, mockInspirations[0]], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  const card = screen.getByText('我的作品组').closest('article')!;
+  expect(container.querySelectorAll('article')).toHaveLength(2);
+  expect(within(card).getByRole('img').getAttribute('src')).toBe('/synthetic/group-0.png');
+  expect(within(card).getByText('3 张图片')).toBeTruthy();
+  expect(screen.queryByRole('img', { name: groupedImages[0].title })).toBeNull();
+  fireEvent.click(within(card).getByRole('img').closest('button')!);
+  const panel = screen.getByRole('complementary', { name: '我的作品组' });
+  expect(panel.classList.contains('fixed')).toBe(true); expect(panel.classList.contains('lg:static')).toBe(true);
+  expect(container.querySelector('main')!.classList.contains('hidden')).toBe(true); expect(container.querySelector('main')!.classList.contains('lg:block')).toBe(true);
+  const images = within(panel).getAllByRole('img');
+  expect(images.map(image => image.getAttribute('src'))).toEqual([0, 1, 2].map(page => '/synthetic/group-' + page + '.png'));
+  expect(within(panel).getAllByRole('button', { name: '收藏' })).toHaveLength(3);
+  expect(within(panel).getAllByRole('textbox', { name: '收藏标题' })).toHaveLength(3);
+  expect(within(panel).getAllByRole('textbox', { name: '提示词' }).map(input => (input as HTMLTextAreaElement).value)).toEqual(['prompt-0', 'prompt-1', 'prompt-2']);
+  expect(document.querySelector('[data-agent-page-title^="收藏详情"]')).toBeNull();
+  expect(document.querySelector('.ui-modal-enter')).toBeNull();
+  rerender(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages.map(image => image.id === 'group-1' ? { ...image, archived: true } : image), mockInspirations[0]], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  expect(within(panel).getAllByRole('img')).toHaveLength(2);
+  fireEvent.click(within(panel).getByRole('button', { name: width < 1024 ? '返回' : '关闭' }));
+  expect(screen.queryByRole('complementary', { name: '我的作品组' })).toBeNull();
+  expect(container.querySelector('main')!.classList.contains('hidden')).toBe(false);
+});
+
+it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不带走其他夹的组员，展开仍能看全组', async () => {
+  const onRefresh = vi.fn(async () => {});
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: groupedImages, onRefresh, notify: vi.fn() }));
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const card = screen.getByText('我的作品组').closest('article')!;
+  fireEvent.click(within(card).getByRole('button', { name: '选择收藏' })); expect(screen.getByText('已选 3 项')).toBeTruthy();
+  fireEvent.click(within(card).getByRole('button', { name: '选择收藏' })); expect(screen.queryByText('已选 3 项')).toBeNull();
+  const dataTransfer = dragData(); fireEvent.dragStart(card, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(expect.arrayContaining(['group-0', 'group-1', 'group-2']), { boardId: 'board-1' }));
+  cleanup(); vi.clearAllMocks();
+  const splitGroup = groupedImages.map(image => image.id === 'group-0' ? { ...image, boardId: 'board-1' } : image);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: splitGroup, onRefresh, notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: /未整理\s+2/ }));
+  const filteredCard = screen.getByText('我的作品组').closest('article')!;
+  const target = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  fireEvent.dragStart(filteredCard, { dataTransfer: dragData() }); fireEvent.drop(target, { dataTransfer: dragData() });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(expect.arrayContaining(['group-1', 'group-2']), { boardId: 'board-1' }));
+  expect(vi.mocked(db.bulkUpdateInspirations).mock.lastCall![0]).toHaveLength(2);
+  fireEvent.click(within(filteredCard).getByRole('img').closest('button')!);
+  expect(within(screen.getByRole('complementary', { name: '我的作品组' })).getAllByRole('img')).toHaveLength(3);
+});
+
+
+it.each([390, 1280])('宽度 %s：各来源单张收藏也使用作品组侧栏，直接整理，不打开独立详情弹窗', async width => {
+  vi.stubGlobal('innerWidth', width);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  for (const item of mockInspirations) {
+    const card = screen.getByText(item.title).closest('article')!;
+    expect(within(card).getByText('1 张图片')).toBeTruthy();
+    fireEvent.click(within(card).getByRole('img').closest('button')!);
+    const panel = screen.getByRole('complementary', { name: item.title });
+    expect(within(panel).getAllByRole('img')).toHaveLength(1);
+    expect(within(panel).getByText('1 张图片')).toBeTruthy();
+    expect((within(panel).getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe(item.prompt);
+    expect(within(panel).getByRole('combobox', { name: '切换所属收藏夹' })).toBeTruthy();
+    expect(document.querySelector('.ui-modal-enter')).toBeNull();
+    fireEvent.click(within(panel).getByRole('button', { name: width < 1024 ? '返回' : '关闭' }));
+  }
+});

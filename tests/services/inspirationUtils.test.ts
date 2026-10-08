@@ -80,3 +80,21 @@ describe('inspirationSimilarity', () => {
     expect(inspirationSimilarity(p1, p2)).toBeGreaterThan(inspirationSimilarity(p1, p3));
   });
 });
+
+
+describe('收藏作品组', () => {
+  it('按用户、来源和作品编号折叠，按真实页码选封面，历史和无来源编号的单图保持独立', async () => {
+    const { groupCollectionItems } = await import('../../services/inspirationUtils');
+    const base = { id: 'p10', userId: 'owner', sourceType: 'pixiv', sourceId: '99', imageUrl: '/p10.png', title: '组 · 11', prompt: '', createdAt: 1, analysis: { collectionImageId: '10' } } as any;
+    const first = { ...base, id: 'p0', imageUrl: '/p0.png', analysis: { externalSourcePage: 0 } };
+    const next = { ...base, id: 'p2', analysis: { collectionImageId: '2' } };
+    const other = [
+      { ...base, id: 'another-user', userId: 'other' }, { ...base, id: 'aitag', sourceType: 'aitag' },
+      { ...base, id: 'no-id-1', sourceId: undefined }, { ...base, id: 'no-id-2', sourceId: undefined },
+      { ...base, id: 'history-1', sourceType: 'history' }, { ...base, id: 'history-2', sourceType: 'history' },
+    ];
+    const items = [base, next, first, ...other];
+    expect(groupCollectionItems(items)).toEqual([[first, next, base], ...other.map(item => [item])]);
+    expect(items[0]).toBe(base);
+  });
+});

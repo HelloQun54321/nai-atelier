@@ -1294,10 +1294,13 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
   }
 
   if (path === '/api/aitag/favorites' && method === 'GET') {
-    await ensureAitagCacheSchema(db);
     const rows = await db.prepare(`SELECT w.*, d.detail_json FROM aitag_works w
       LEFT JOIN aitag_work_details d ON d.work_id = w.id
-      WHERE w.is_favorite = 1 ORDER BY w.favorite_at DESC`).all<any>();
+      WHERE w.is_favorite = 1 ORDER BY w.favorite_at DESC`).all<any>().catch((cause: unknown) => {
+        // 尚未使用 AITag 的旧库没有缓存表，读取收藏不应触发建表检查。
+        if (/no such table: aitag_(works|work_details)\b/i.test(String(cause))) return { results: [] };
+        throw cause;
+      });
     const seen = new Set<number>();
     const details = rows.results.flatMap(row => {
       if (seen.has(row.id)) return [];

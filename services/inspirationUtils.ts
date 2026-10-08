@@ -27,6 +27,25 @@ export const sourceLabel = (source?: InspirationSourceType) => ({
   history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
 }[source || 'other'] || '其他来源');
 
+export const collectionGroupKey = (item: Inspiration) => JSON.stringify(
+  item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv')
+    ? [item.userId, item.sourceType, item.sourceId] : ['image', item.id]
+);
+
+export const groupCollectionItems = (items: Inspiration[]): Inspiration[][] => {
+  const groups = new Map<string, Inspiration[]>();
+  for (const item of items) {
+    const key = collectionGroupKey(item);
+    const group = groups.get(key);
+    if (group) group.push(item); else groups.set(key, [item]);
+  }
+  return Array.from(groups.values(), group => group.sort((a, b) =>
+    String(a.analysis?.collectionImageId ?? a.analysis?.externalSourcePage ?? a.imageUrl).localeCompare(
+      String(b.analysis?.collectionImageId ?? b.analysis?.externalSourcePage ?? b.imageUrl), undefined, { numeric: true }
+    )
+  ));
+};
+
 export const suggestInspirationTags = (item: Pick<Inspiration, 'prompt' | 'params' | 'sourceType' | 'tags'>) => {
   const prompt = String(item.prompt || '').toLowerCase();
   const artists = Array.from(prompt.matchAll(/artist:([^,\n:]+)/g)).map(match => `画师:${match[1].trim()}`);

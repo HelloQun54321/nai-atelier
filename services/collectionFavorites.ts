@@ -87,9 +87,26 @@ export function matchesCollectionImage(item: Inspiration, image: CollectionImage
 export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspiration[]): Inspiration[] {
   const activeIds = new Set(favorites.map(item => item.id));
   const result = stored.map(item => ({ ...item, ...(isAutomaticFavorite(item.id) && !activeIds.has(item.id) ? { archived: true } : {}) }));
+  const byUrl = new Map<string, number>();
+  const bySource = new Map<string, number>();
+  const sourceKey = (item: Inspiration) => {
+    if (!item.sourceType || !item.sourceId) return '';
+    const imageId = item.sourceType === 'history' || item.sourceType === 'danbooru' ? '' : item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage;
+    return imageId === undefined ? '' : JSON.stringify([item.userId, item.sourceType, item.sourceId, String(imageId)]);
+  };
+  const index = (item: Inspiration, position: number) => {
+    for (const url of [item.imageUrl, item.analysis?.collectionOriginalUrl]) {
+      if (typeof url !== 'string') continue;
+      const key = JSON.stringify([item.userId, url]);
+      if (!byUrl.has(key)) byUrl.set(key, position);
+    }
+    const key = sourceKey(item);
+    if (key && !bySource.has(key)) bySource.set(key, position);
+  };
+  result.forEach(index);
   for (const favorite of favorites) {
-    const existing = result.find(item => item.userId === favorite.userId && matchesCollectionImage(item, { ...favorite, imageId: favorite.analysis?.collectionImageId as string | undefined }));
-    if (!existing) result.push(favorite);
+    const existing = result[Math.min(byUrl.get(JSON.stringify([favorite.userId, favorite.imageUrl])) ?? Infinity, bySource.get(sourceKey(favorite)) ?? Infinity)];
+    if (!existing) { result.push(favorite); index(favorite, result.length - 1); }
     else if (favorite.sourceType === 'history') existing.archived = false;
   }
   return result.map(item => ({ ...item, tags: normalizeInspirationTags([sourceLabel(item.sourceType), ...(item.tags || [])]) }));
@@ -99,10 +116,12 @@ async function loadImageFavorites(user: User): Promise<Inspiration[]> {
   const [history, details] = await Promise.all([
     (async () => {
       const result: LocalGenItem[] = [];
+      let total = Infinity;
       for (let page = 0; ; page++) {
-        const batch = await localHistory.getPage(page, 200, { favoriteOnly: true });
+        const batch = await localHistory.getPage(page, 200, { favoriteOnly: true }, page === 0);
+        if (page === 0) total = batch.count ?? Infinity;
         result.push(...batch.items);
-        if (result.length >= (batch.count ?? Infinity) || batch.items.length < 200) return result;
+        if (result.length >= total || batch.items.length < 200) return result;
       }
     })(),
     api.get('/aitag/favorites').catch((cause: unknown) => {
@@ -165,7 +184,9 @@ export async function removeCollection(ids: string[]): Promise<void> {
 
 export function collectionTargetActive(target: CollectionTarget): boolean {
   if (target.getGroup) {
-    const group = items.filter(item => item.sourceType === target.sourceType && item.sourceId === target.sourceId);
+    const userId = target.collectionId ? items.find(item => item.id === target.collectionId)?.userId : owner?.id;
+    const group = items.filter(item => item.userId === userId && item.sourceType === target.sourceType && item.sourceId === target.sourceId);
+    if (target.collectionId) return group.some(item => !item.archived);
     const size = Math.max(Number(group.find(item => item.analysis?.collectionGroupSize)?.analysis?.collectionGroupSize) || 1, target.groupSize || 1);
     return new Set(group.filter(item => !item.archived).map(item => item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? item.imageUrl)).size >= size;
   }
@@ -183,7 +204,8 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
   const favorite = !collectionTargetActive(target);
   const action = mutation.catch(() => false).then(async () => {
     if (!favorite) {
-      const selected = items.filter(item => !item.archived && (target.getGroup ? item.sourceType === target.sourceType && item.sourceId === target.sourceId : matchesCollectionImage(item, target)));
+      const userId = target.collectionId ? items.find(item => item.id === target.collectionId)?.userId : owner?.id;
+      const selected = items.filter(item => !item.archived && (target.getGroup ? item.userId === userId && item.sourceType === target.sourceType && item.sourceId === target.sourceId : matchesCollectionImage(item, target)));
       await removeCollection(selected.map(item => item.id));
       return false;
     }
@@ -227,7 +249,6 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
   pendingTargets.set(key, action); mutation = action;
   try { return await action; } finally {
     pendingTargets.delete(key);
-    window.dispatchEvent(new Event('nai-collection-changed'));
   }
 }
 

@@ -34,6 +34,8 @@ it('只读汇总全部旧历史收藏与 AITag 组内图片，不复制原图或
   const result = await loadCollection(user);
   expect(result).toHaveLength(204);
   expect(mocks.historyPage).toHaveBeenCalledTimes(2);
+  expect(mocks.historyPage).toHaveBeenNthCalledWith(1, 0, 200, { favoriteOnly: true }, true);
+  expect(mocks.historyPage).toHaveBeenNthCalledWith(2, 1, 200, { favoriteOnly: true }, false);
   expect(result.find(item => item.sourceType === 'aitag')).toEqual(expect.objectContaining({ prompt: 'AITag 原词', tags: ['AITag'], analysis: { collectionImageId: '3_p1.png', collectionGroupSize: 2 }, params: expect.objectContaining({ seed: 1 }) }));
   expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.uploadFile).not.toHaveBeenCalled();
 });
@@ -164,4 +166,37 @@ it('旧作品组仅缓存首图时不会误认为全组已收藏', async () => {
   details = [{ work: { id: 5, image_count: 3 }, images: [{ id: 1, work_id: 5, file_name: '5_p0', local_image_url: '/api/assets/first.webp' }] }];
   await service.loadCollection(user);
   expect(service.collectionTargetActive({ imageUrl: '/api/assets/first.webp', sourceType: 'aitag', sourceId: '5', groupSize: 3, getGroup: async () => [] })).toBe(false);
+});
+
+
+it('收藏库内未收全的作品组仍显示已收藏，整组取消仅移除该用户已经收藏的图片', async () => {
+  stored = [
+    { id: 'one', userId: user.id, imageUrl: '/one.png', sourceType: 'pixiv', sourceId: 'work', title: '组 · 2', prompt: '', createdAt: 1, analysis: { collectionImageId: '1', collectionGroupSize: 5 } },
+    { id: 'other', userId: 'another-owner', imageUrl: '/other.png', sourceType: 'pixiv', sourceId: 'work', title: '另一份', prompt: '', createdAt: 1 },
+  ];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const getGroup = vi.fn(async () => [{ imageUrl: '/one.png', collectionId: 'one' }]);
+  const target = { imageUrl: '/one.png', collectionId: 'one', sourceType: 'pixiv' as const, sourceId: 'work', groupSize: 1, getGroup };
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(await service.toggleCollectionTarget(target)).toBe(false);
+  expect(stored[0].archived).toBe(true); expect(stored[1].archived).not.toBe(true);
+  expect(getGroup).not.toHaveBeenCalled(); expect(mocks.uploadFile).not.toHaveBeenCalled();
+});
+
+it('大量旧收藏按索引汇总，不对每张图片反复扫描整份列表，保留旧页码兼容与首条匹配', async () => {
+  const { mergeCollectionFavorites } = await import('../../services/collectionFavorites');
+  let reads = 0;
+  const favorites = Array.from({ length: 500 }, (_, index) => {
+    const item: Inspiration = { id: 'fav-' + index, userId: user.id, sourceType: 'pixiv', sourceId: 'work-' + index, imageUrl: '', title: '图片', prompt: '', createdAt: 1, analysis: { collectionImageId: '0' } };
+    Object.defineProperty(item, 'imageUrl', { enumerable: true, get() { reads++; return '/new-' + index + '.png'; } });
+    return item;
+  });
+  const stored = favorites.map((item, index) => ({ ...item, id: 'old-' + index, imageUrl: '/old-' + index + '.png', boardId: 'folder', analysis: { externalSourcePage: 0 } }));
+  reads = 0;
+  const result = mergeCollectionFavorites(stored, favorites);
+  expect(result).toHaveLength(500); expect(result.every(item => item.boardId === 'folder')).toBe(true);
+  expect(reads).toBeLessThan(500 * 10);
+  const bySource = { ...stored[0], imageUrl: '/source-match.png' };
+  const byUrl = { ...stored[0], id: 'later', sourceId: 'different', imageUrl: favorites[0].imageUrl };
+  expect(mergeCollectionFavorites([bySource, byUrl], [favorites[0]])).toHaveLength(2);
 });

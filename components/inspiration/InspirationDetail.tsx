@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../../services/i18n';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Copy,
@@ -11,21 +11,18 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { ImageEditOperation, Inspiration, InspirationBoard, PromptChain, User } from '../../types';
+import { ImageEditOperation, Inspiration, InspirationBoard, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
 import { normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionTagInput } from './CollectionControls';
-import { CloseButton, ToolbarButton } from '../DesignSystem';
+import { ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
-import { SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
 import { ImageShareOverlay } from '../ImageShareActions';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { ViewableImage } from '../ImageLightbox';
 import { getMobileOriginalUrl } from '../../services/mobileImageCache';
-import { ImagePreviewPortal } from '../ImagePreviewPortal';
-import { useMobileHistoryLayer } from '../MobileUI';
 import { ImageTaggerPanel } from '../ImageTaggerPanel';
 import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from './InspirationShared';
 
@@ -38,8 +35,6 @@ interface Props {
   onClose: () => void;
   onRefresh: () => Promise<void>;
   onNavigateToPlayground?: () => void;
-  onCreateArtistChain?: (chain: PromptChain) => Promise<void>;
-  onOpenItem: (item: Inspiration) => void;
 }
 
 export const InspirationDetail: React.FC<Props> = ({
@@ -53,7 +48,7 @@ export const InspirationDetail: React.FC<Props> = ({
   onNavigateToPlayground,
 }) => {
   useLanguage();
-  const closeLayer = useMobileHistoryLayer(true, onClose, 'inspiration-detail');
+  const displayedItem = useRef(item);
   const [draft, setDraft] = useState(item);
   const [busy, setBusy] = useState('');
   const [taggerOpen, setTaggerOpen] = useState(false);
@@ -66,7 +61,18 @@ export const InspirationDetail: React.FC<Props> = ({
   const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
 
   useEffect(() => {
-    setDraft(item);
+    const previous = displayedItem.current;
+    displayedItem.current = item;
+    setDraft(draft => {
+      if (draft.id !== item.id) return item;
+      const next = { ...item };
+      // 同组其他图片保存时刷新侧栏，保留当前尚未保存的输入。
+      for (const key of ['title', 'prompt', 'negativePrompt', 'notes', 'tags', 'boardId'] as const) {
+        if (draft[key] !== previous[key]) Object.assign(next, { [key]: draft[key] });
+      }
+      return next;
+    });
+    if (previous.id === item.id) return;
     setTaggerOpen(false);
     setLabMenuOpen(false);
     setIsAddingTag(false);
@@ -177,30 +183,14 @@ export const InspirationDetail: React.FC<Props> = ({
   const SourceIcon = sourceIcon(draft.sourceType);
 
   return (
-    <ImagePreviewPortal>
-    <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
-      <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={t("收藏详情：{0} · #{1}", [draft.title || '未命名收藏', draft.id])} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
-        {/* 左侧大图展示舞台 */}
-        <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
-          <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
-          <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
-          <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label={t("关闭")}>
-            <X className="h-5 w-5" />
-          </button>
-          <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm backdrop-blur dark:border-white/15 dark:bg-black/60 dark:text-white">
-              <SourceIcon className="h-3.5 w-3.5" />
-              {sourceLabel(draft.sourceType)}
-            </span>
-            {draft.parentId && (
-              <span className="rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white backdrop-blur">{t("衍生自 {0}", [draft.parentId])}</span>
-            )}
-          </div>
-        </PressRevealSurface>
-
-        {/* 右侧清爽收藏工作台 */}
-        <section className="flex min-h-0 w-full flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:w-[520px]">
-          {/* 顶栏：轻量去噪，只留标题、来源时间、画板切换与关闭 */}
+    <article data-safe-mode-work="true" data-collection-item={item.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative bg-gray-100 dark:bg-black/60">
+        <ViewableImage src={draft.imageUrl} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
+        <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
+      </PressRevealSurface>
+      {/* 每张图片的整理与生成信息 */}
+        <section className="w-full">
+          {/* 图片标题、来源时间与收藏夹 */}
           <header className="flex flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -211,6 +201,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 <span className="text-micro text-gray-400">
                   {formatDate(draft.createdAt)}
                 </span>
+                {draft.parentId && <span className="text-micro text-gray-400">{t('衍生自 {0}', [draft.parentId])}</span>}
                 <select
                   disabled={!editable}
                   value={draft.boardId || ''}
@@ -242,13 +233,10 @@ export const InspirationDetail: React.FC<Props> = ({
 
             </div>
 
-            <div className="flex flex-none items-center gap-2">
-              <CloseButton onClick={closeLayer} className="hidden lg:inline-flex" />
-            </div>
           </header>
 
-          {/* 滚动内容区 */}
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5">
+          {/* 详情随作品组侧栏统一滚动 */}
+          <div className="space-y-4 p-4">
             {/* 正面提示词卡片（核心主角） */}
             <div>
               <div className="mb-1.5 flex items-center justify-between">
@@ -443,7 +431,6 @@ export const InspirationDetail: React.FC<Props> = ({
               </div>
             </details>
 
-            {/* 相似收藏推荐 */}
 
           </div>
 
@@ -518,7 +505,6 @@ export const InspirationDetail: React.FC<Props> = ({
             </div>
           </footer>
         </section>
-      </div>
 
       {taggerOpen && (
         <ImageTaggerPanel
@@ -534,7 +520,6 @@ export const InspirationDetail: React.FC<Props> = ({
           }}
         />
       )}
-    </div>
-    </ImagePreviewPortal>
+    </article>
   );
 };

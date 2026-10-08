@@ -6,6 +6,7 @@ import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
+import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
@@ -224,6 +225,13 @@ const App = () => {
   };
 
   useEffect(() => {
+    if (!currentUser) return;
+    const updateCollectionSnapshot = () => {
+      setInspirationsCache(collectionSnapshot());
+      setLastInspirationFetch(Date.now());
+    };
+    if (collectionRevision()) updateCollectionSnapshot();
+    const unsubscribe = subscribeCollection(updateCollectionSnapshot);
     const refreshAgentChanges = () => {
       void refreshData(true);
       void loadArtists(true);
@@ -233,6 +241,7 @@ const App = () => {
     const refreshCollection = () => { void loadInspirations(true); };
     window.addEventListener('nai-collection-changed', refreshCollection);
     return () => {
+      unsubscribe();
       window.removeEventListener('nai-project-data-changed', refreshAgentChanges);
       window.removeEventListener('nai-collection-changed', refreshCollection);
     };
