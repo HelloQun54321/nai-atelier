@@ -23,10 +23,11 @@ import { vibeService } from '../../services/vibeService';
 import { inspirationSimilarity, normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
 import { CloseButton, ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
-import { OriginalImage, SmartImage } from '../SmartImage';
+import { SmartImage } from '../SmartImage';
 import { ParamsViewer } from '../ParamsViewer';
 import { ImageShareOverlay } from '../ImageShareActions';
 import { PressRevealSurface } from '../PressRevealSurface';
+import { ViewableImage } from '../ImageLightbox';
 import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
@@ -240,7 +241,7 @@ export const InspirationDetail: React.FC<Props> = ({
       <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={`灵感详情：${draft.title || '未命名灵感'} · #${draft.id}`} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
         <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
-          <OriginalImage src={draft.imageUrl} alt={draft.title} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
+          <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
           <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={`${draft.title || 'inspiration'}.png`} notify={notify} className="!top-[max(.75rem,env(safe-area-inset-top))]" />
           <button type="button" onClick={closeLayer} className="absolute left-3 top-[max(.75rem,env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur lg:hidden" aria-label="关闭">
             <X className="h-5 w-5" />

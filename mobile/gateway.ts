@@ -3,6 +3,7 @@ import { db } from './storage';
 import { runHandler } from './node-http';
 import { json } from '../worker/routes/types';
 import { thumbnailResponse } from './image';
+import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
   getNaiRuntime, applyNaiRuntimeOverride, computeNaiRuntimeSync, fetchNaiRuntimeText,
   sanitizeNovelAiSubscription, cacheNovelAiSubscription, CloudQueueCoordinator,
@@ -93,7 +94,7 @@ export async function mobileGateway(request: Request): Promise<Response | null> 
     const { validateMediaSource } = await import('../worker/mediaValidation');
     const validated = validateMediaSource(source);
     if (!validated) return json({ error: '不支持的图片来源' }, 400);
-    const headers:Record<string,string> = /pximg.net/.test(source) ? { referer: 'https://www.pixiv.net/' } : /10118899.xyz/.test(source) ? { referer: 'https://aitag.win/' } : {};
+    const headers:Record<string,string> = /pximg.net/.test(source) ? { referer: 'https://www.pixiv.net/' } : /10118899.xyz/.test(source) ? { ...AITAG_BROWSER_HEADERS, accept:'image/*' } : {};
     const response = await fetch(source, { headers, signal: request.signal });
     if (!response.ok) return response;
     return thumbnailResponse(response,variant);

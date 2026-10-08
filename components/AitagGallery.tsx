@@ -1,4 +1,5 @@
 import { PressRevealSurface } from './PressRevealSurface';
+import { ViewableImage } from './ImageLightbox';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AitagCacheStatus,
@@ -17,7 +18,7 @@ import {
 import { db } from '../services/dbService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { SmartImage } from './SmartImage';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
@@ -1409,7 +1410,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
                         <PressRevealSurface className="group relative">
-                          <OriginalImage src={buildAitagImageUrl(image)} alt="" className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                          <ViewableImage src={buildAitagImageUrl(image)} alt="AITAG 作品图片" filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} notify={notify} />
                         </PressRevealSurface>
                         <div className="p-3 space-y-3">

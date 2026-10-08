@@ -93,7 +93,7 @@ export const TagChip: React.FC<TagChipDescriptor> = ({ label, onClick }) => (
     type="button"
     onClick={onClick}
     disabled={!onClick}
-    className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 dark:disabled:hover:border-gray-700 dark:disabled:hover:text-gray-300"
+    className="max-w-full break-words rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-default disabled:hover:border-gray-200 disabled:hover:text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 dark:disabled:hover:border-gray-700 dark:disabled:hover:text-gray-300"
   >
     {label}
   </button>

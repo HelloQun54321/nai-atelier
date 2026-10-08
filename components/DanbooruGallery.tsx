@@ -24,9 +24,10 @@ import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { SmartImage } from './SmartImage';
 import { ImageShareOverlay } from './ImageShareActions';
 import { PressRevealSurface } from './PressRevealSurface';
+import { ViewableImage } from './ImageLightbox';
 import { buildMediaUrl, getMobileOriginalUrl, selectThumbnailVariant } from '../services/mobileImageCache';
 import { createMediaPrewarmSession } from '../services/mediaPrewarm';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
@@ -637,7 +638,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
         >
           {selected ? <div className="space-y-4">
             <DetailImageStage pressResetKey={selected.id}>
-              <OriginalImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} className="max-h-[62vh] w-full object-contain" />
+              <ViewableImage src={selected.sampleUrl} alt={`Danbooru #${selected.id}`} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} className="max-h-[62vh] w-full object-contain" />
               {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} />}
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}

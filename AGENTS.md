@@ -111,7 +111,9 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 
 版本号唯一来源是 `package.json` 的 `version` 字段；运行时展示使用 `vite.config.ts` 注入的 `__APP_VERSION__` 常量（类型声明在 `env.d.ts`）。**禁止在任何代码、组件中硬编码版本字符串。**
 
-每一个改动项目内容的提交都必须携带一次版本递增，在提交前执行：
+项目显示版本只跟随电脑端迭代。仅 Android 独立实现、手机适配及其文档／测试的提交不推进 `package.json` 版本；Android 在 `android/gradle.properties` 的 `atelierAndroidBuild` 独立递增安装构建号，`versionName` 仍从项目版本读取。构建号必须高于此前已交付 APK，保证同签名覆盖安装保留手机资料，即使用户要求调回显示版本也不能降低构建号。
+
+电脑端迭代的每个项目内容提交都必须携带一次版本递增，在提交前执行：
 
 | 提交主类型 | 递增级别 |
 | --- | --- |
@@ -121,7 +123,7 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 
 - 命令：`node scripts/bump-version.mjs minor`（或 `patch` / `major` / `set:X.Y.Z`），脚本自动同步 package.json、package-lock.json 与 README 版本徽章；版本变更与代码改动进同一个提交。
 - 同一提交包含多种类型时按最高级别递增。
-- 不得跳过递增，也不得手工散改各处版本号。
+- 电脑端迭代不得跳过递增；仅 Android 迭代按上述独立构建号规则执行，不得手工散改项目版本号。
 
 ## CHANGELOG 规则
 

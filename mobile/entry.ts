@@ -16,7 +16,7 @@ async function phoneFetch(input: RequestInfo | URL, options?: RequestInit): Prom
   const request = new Request(input instanceof Request ? input : new URL(String(input), location.origin), options);
   const url = new URL(request.url);
   if (!['http:','https:'].includes(url.protocol)) return webFetch(request);
-  if (!['localhost','127.0.0.1','[::1]'].includes(url.hostname)) return nativeFetch(request);
+  if (!['localhost','127.0.0.1','[::1]'].includes(url.hostname)) return nativeFetch(request,{headers:options?.headers});
   try {
     if (url.pathname.startsWith('/tag-data/')) {
       const pointer = await db.prepare("SELECT value FROM settings WHERE key='mobile_dictionary_path'").first<{value:string}>();
@@ -28,8 +28,9 @@ async function phoneFetch(input: RequestInfo | URL, options?: RequestInit): Prom
       const source=url.searchParams.get('url') || '';
       const { classifyAitagRemoteTarget, classifyDanbooruRemoteTarget, AITAG_BROWSER_HEADERS } = await import('mobile:remote');
       const aitag=url.pathname.endsWith('aitag-fetch');
-      if (!(aitag?classifyAitagRemoteTarget:classifyDanbooruRemoteTarget)(source)) return error('不支持的图库来源',400);
-      return nativeFetch(source,{headers:aitag?AITAG_BROWSER_HEADERS:{'user-agent':'NAI-Atelier'},signal:request.signal});
+      const targetType=(aitag?classifyAitagRemoteTarget:classifyDanbooruRemoteTarget)(source);
+      if (!targetType) return error('不支持的图库来源',400);
+      return nativeFetch(source,{headers:aitag?{...AITAG_BROWSER_HEADERS,...(targetType==='image'?{accept:'image/*'}:{})}:{'user-agent':'NAI-Atelier'},signal:request.signal});
     }
     if(!url.pathname.startsWith('/api/'))return webFetch(request);
     const gateway = await mobileGateway(request);

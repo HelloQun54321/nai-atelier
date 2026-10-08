@@ -14,6 +14,10 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class AtelierAndroidTest {
+    @Test public void browserGalleryOnlyUsesExistingPublicHttpsEndpoints(){
+        for(String path:new String[]{"config?v=260528a","ai_works_search?page=1","rank/monthly/real","rank/monthly/fixed?month=2026-09","work/123"})assertTrue(AtelierBrowserRequest.allowed("https://aitag.win/api/"+path));
+        for(String url:new String[]{"http://aitag.win/api/config","https://aitag.win:444/api/config","https://user@aitag.win/api/config","https://aitag.win/admin","https://localhost/api/config","https://aitag.win.evil.invalid/api/config","https://aitag.win/api/work/../config","https://aitag.win/api/config/other"})assertFalse(AtelierBrowserRequest.allowed(url));
+    }
     Context context;File workspace;AtelierStore store;
     @Before public void start() throws Exception {
         Context target=InstrumentationRegistry.getInstrumentation().getTargetContext();workspace=new File(target.getCacheDir(),"synthetic-test-"+UUID.randomUUID());

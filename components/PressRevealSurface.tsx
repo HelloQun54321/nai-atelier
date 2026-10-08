@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 export const PRESS_REVEAL_DELAY = 450;
 const REVEAL_EVENT = 'nai-card-actions-reveal';
 const ACTION_TARGET = '[data-card-action], input, textarea, select, a';
+const SURFACE_TARGET = '.press-reveal-surface';
 
 type Props = React.HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'article' | 'section';
@@ -81,6 +82,7 @@ export const PressRevealSurface: React.FC<Props> = ({
       if (event.pointerType) setInput(event.pointerType);
       onPointerDownCapture?.(event);
       if (event.isPrimary === false) { setRevealed(false); return; }
+      if ((event.target as Element).closest(SURFACE_TARGET) !== rootRef.current) return;
       if (event.defaultPrevented || pressDisabled || !['touch', 'pen'].includes(event.pointerType)
         || event.button !== 0
         || (event.target as Element).closest(ACTION_TARGET)) return;

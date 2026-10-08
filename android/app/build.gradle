@@ -1,6 +1,5 @@
 apply plugin: 'com.android.application'
 def atelierVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
-def atelierParts = atelierVersion.tokenize('.').collect { it.toInteger() }
 def atelierSigning = new Properties()
 def atelierSigningFile = file('../../.android-build/signing.properties')
 if (atelierSigningFile.exists()) atelierSigningFile.withInputStream { atelierSigning.load(it) }
@@ -12,7 +11,7 @@ android {
         applicationId "io.github.helloqun54321.naiatelier"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode atelierParts[0] * 1000000 + atelierParts[1] * 1000 + atelierParts[2]
+        versionCode atelierAndroidBuild.toInteger()
         versionName atelierVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

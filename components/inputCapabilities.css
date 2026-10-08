@@ -36,7 +36,7 @@
 .press-reveal-surface[data-agent-hover] .hover-reveal-md,
 .press-reveal-surface[data-agent-hover] .hover-reveal-lg,
 .press-reveal-surface[data-agent-hover] .hover-reveal-touch { opacity: 1; pointer-events: auto; }
-.press-reveal-surface { -webkit-user-select: none; user-select: none; }
+.press-reveal-surface { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .press-reveal-surface input,
 .press-reveal-surface textarea { -webkit-user-select: text; user-select: text; }
 .press-reveal-surface img { -webkit-touch-callout: none; }

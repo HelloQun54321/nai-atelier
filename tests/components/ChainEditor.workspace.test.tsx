@@ -240,11 +240,12 @@ it('贴底资源不占图片／生成操作行，图片入口继续打开大图�
   expect(actions.contains(screen.getByRole('button', { name: /^查看账户资源/ }))).toBe(false);
   fireEvent.click(preview);
   const lightbox = await screen.findByRole('dialog', { name: '图片预览' });
-  longPress(lightbox); expect(lightbox.getAttribute('data-press-revealed')).toBe('true');
+  const imageStage=within(lightbox).getByLabelText('图片平移与缩放');
+  longPress(within(lightbox).getByRole('img')); expect(imageStage.getAttribute('data-press-revealed')).toBe('true');
   expect(screen.getByRole('dialog', { name: '图片预览' })).toBe(lightbox);
   expect(screen.queryByRole('button', { name: /^查看账户资源/ })).toBeNull();
-  fireEvent.click(lightbox);
-  expect(screen.getByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
+  fireEvent.click(imageStage);
+  expect(await screen.findByRole('button', { name: /^查看账户资源/ })).toBeTruthy();
   expect(state.generate).not.toHaveBeenCalled();
 });
 

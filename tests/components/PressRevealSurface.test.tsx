@@ -88,3 +88,8 @@ it('长按后即使没有释放点击，键盘点击也不会被吞掉', () => {
   const { root, open } = fixture(); down(root); advance(); fireEvent.pointerUp(root); fireEvent.click(root, { detail: 0 });
   expect(open).toHaveBeenCalledOnce();
 });
+it('内层图片长按只启动内层控件，父卡片不同时显露或打开',()=>{
+  const open=vi.fn();render(<PressRevealSurface aria-label="父卡片" onClick={open}><PressRevealSurface aria-label="内层图片"><img src="synthetic.png" alt="合成预览" /><button data-card-action="true">下载</button></PressRevealSurface></PressRevealSurface>);
+  const parent=screen.getByLabelText('父卡片'),child=screen.getByLabelText('内层图片');down(screen.getByRole('img'));advance();fireEvent.pointerUp(child);fireEvent.click(child,{detail:1});
+  expect(revealed(child)).toBe(true);expect(revealed(parent)).toBe(false);expect(open).not.toHaveBeenCalled();
+});

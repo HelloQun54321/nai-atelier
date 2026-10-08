@@ -148,7 +148,7 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
 };
 
 /** 按钮与选择器共用外观；尺寸、字号和圆角由全局主题变量控制。 */
-export const TOOLBAR_CONTROL_CLASS = 'inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
+export const TOOLBAR_CONTROL_CLASS = 'inline-flex h-10 flex-none items-center justify-center gap-2 whitespace-nowrap rounded-xl border text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
 const TOOLBAR_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800';
 
 export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {

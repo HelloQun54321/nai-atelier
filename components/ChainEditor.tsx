@@ -1,4 +1,4 @@
-import { PressRevealSurface } from './PressRevealSurface';
+import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult } from '../services/agentOperation.mjs';
 import { AgentDraftReview } from './AgentDraftReview';
@@ -15,14 +15,13 @@ import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImpor
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImagePreviewActions } from './ImagePreviewActions';
-import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { MobileGenerationResources } from './MobileGenerationResources';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob } from '../services/imageEdit';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { useConfirmDialog } from './ConfirmDialog';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
@@ -2338,8 +2337,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             {/* Lightbox Modal */}
             {lightboxImg && (
-                <ImagePreviewPortal>
-                <PressRevealSurface pressResetKey={lightboxImg} role="dialog" aria-modal="true" aria-label="图片预览" className="fixed inset-0 z-[1500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setLightboxImg(null)}>
+                <ImageLightbox src={lightboxImg} customActions onClose={() => setLightboxImg(null)} onSwipe={delta => delta < 0 ? showPreviousHistory() : showNextHistory()}>
                     <ImagePreviewActions
                         imageUrl={lightboxImg}
                         generationData={lightboxItem ? { prompt: lightboxItem.prompt, negativePrompt: lightboxItem.negativePrompt, params: lightboxItem.params } : undefined}
@@ -2369,7 +2367,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </svg>
                         </button>
                     )}
-                    <OriginalImage src={lightboxImg} data-safe-mode-ignore="true" className="max-w-full max-h-full object-contain rounded shadow-2xl" onClick={e => e.stopPropagation()} />
                     {previewHistory.length > 1 && (
                         <button data-card-action="true"
                             className="hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
@@ -2386,13 +2383,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
                     {lightboxItem && (
-                        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
+                        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
                             {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString('zh-CN')}
                         </div>
                     )}
 
-                </PressRevealSurface>
-                </ImagePreviewPortal>
+                </ImageLightbox>
             )}
 
             <ChainEditorPresetModal

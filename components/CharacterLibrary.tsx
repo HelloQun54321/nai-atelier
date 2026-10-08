@@ -1,4 +1,5 @@
 import { PressRevealSurface } from './PressRevealSurface';
+import { ViewableImage } from './ImageLightbox';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -684,7 +685,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
            <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <>
-             <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="w-full object-contain" data-safe-mode-ignore="true" />
+             <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
              <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} notify={notify} />
            </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">暂无封面</div>}</PressRevealSurface>
            <div className="rounded-2xl bg-white p-4 text-sm shadow-sm dark:bg-gray-800">

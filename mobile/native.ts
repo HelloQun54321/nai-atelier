@@ -8,6 +8,7 @@ export const native = registerPlugin<{
   object(options: Reply): Promise<Reply>;
   secure(options: Reply): Promise<Reply>;
   http(options: Reply): Promise<Reply>;
+  browserHttp(options: Reply): Promise<Reply>;
   cancel(options: Reply): Promise<void>;
   tagger(options: Reply): Promise<Reply>;
   share(options: Reply): Promise<void>;
@@ -40,6 +41,20 @@ export async function nativeFetch(input: RequestInfo | URL, options?: RequestIni
   const request = input instanceof Request && !options ? input : new Request(input, options);
   request.signal.throwIfAborted();
   const id = crypto.randomUUID();
+  // Chromium 的 Request 会剥离 Referer／User-Agent，原生传输从调用参数保留原始请求头。
+  const headers = Object.fromEntries(new Headers(options?.headers || request.headers));
+  const url = new URL(request.url);
+  // JSON 图库接口使用 Chromium，和 NovelAI／大文件的原生流传输分别适配。
+  if (url.hostname === 'aitag.win' && url.pathname.startsWith('/api/') && request.method === 'GET') {
+    const abort=()=>{void native.cancel({id}).catch(()=>{});};
+    request.signal.addEventListener('abort',abort,{once:true});
+    try {
+      const result=await native.browserHttp({id,url:request.url,headers});
+      request.signal.throwIfAborted();
+      const response=new Response(result.body,{status:result.status,headers:{'content-type':result.type}});
+      Object.defineProperty(response,'url',{value:result.url});return response;
+    } finally {request.signal.removeEventListener('abort',abort);}
+  }
   const body = ['GET', 'HEAD'].includes(request.method) ? undefined : bytesToBase64(new Uint8Array(await request.arrayBuffer()));
   return new Promise<Response>((resolve, reject) => {
     let controller: ReadableStreamDefaultController<Uint8Array>;
@@ -58,7 +73,7 @@ export async function nativeFetch(input: RequestInfo | URL, options?: RequestIni
     } });
     request.signal.addEventListener('abort', abort, { once: true });
     if (request.signal.aborted) { abort(); return; }
-    native.http({ id, url: request.url, method: request.method, headers: Object.fromEntries(request.headers), body, manual: request.redirect === 'manual', background:request.method==='POST'&&Boolean(request.headers.get('content-type')?.startsWith('application/json')) }).catch(error => {
+    native.http({ id, url: request.url, method: request.method, headers, body, manual: request.redirect === 'manual', background:request.method==='POST'&&Boolean(request.headers.get('content-type')?.startsWith('application/json')) }).catch(error => {
       if (!ended) { controller.error(error); reject(error); finish(); }
     });
   });

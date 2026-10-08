@@ -19,6 +19,7 @@ describe('GenerationModeNav', () => {
     expect(screen.getAllByRole('button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: '局部重绘' }).getAttribute('aria-current')).toBe('page');
     expect(container.querySelectorAll('.min-w-0')).toHaveLength(4);
+    screen.getAllByRole('button').forEach(button=>expect(button.className).toContain('whitespace-nowrap'));
 
     fireEvent.click(screen.getByRole('button', { name: '扩图' }));
     expect(onSelect).toHaveBeenCalledWith('outpaint');

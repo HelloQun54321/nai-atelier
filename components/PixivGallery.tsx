@@ -31,6 +31,7 @@ import { SmartImage } from './SmartImage';
 import { ImageShareOverlay } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { PressRevealSurface } from './PressRevealSurface';
+import { ImageLightbox } from './ImageLightbox';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import {
   PixivConnectionStatus,
@@ -124,6 +125,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { trigger: selectedId });
   const [selectedPage, setSelectedPage] = useState(0);
+  const [zoomPage, setZoomPage] = useState<number | null>(null);
+  useEffect(() => setZoomPage(null), [selectedId]);
   const [userContext, setUserContext] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1108,16 +1111,19 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                   onNext: () => setSelectedPage(value => Math.min(currentPageCount - 1, value + 1)),
                 }}
               >
-                <SmartImage
+                <button type="button" className="block w-full cursor-zoom-in" aria-label="放大查看 Pixiv 图片" onClick={() => setZoomPage(selectedPage)}><SmartImage
                   eager
                   src={buildPixivPreviewMediaUrl(selected, selectedPage)}
                   upgradeSrc={buildPixivMediaUrl(selected, selectedPage, 'original')}
                   upgradeVariant="original"
                   alt={`${selected.title} 第 ${selectedPage + 1} 页`}
                   className="max-h-[62vh] w-full object-contain"
-                />
+                /></button>
                 <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} notify={notify} />
               </DetailImageStage>
+              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={`${selected.title} 第 ${zoomPage + 1} 页`} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
+                const next=zoomPage+delta;if(next>=0&&next<currentPageCount){setZoomPage(next);setSelectedPage(next);}
+              }} />}
               {selected.type === 'ugoira' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                   动图首帧 · 在 Pixiv 查看动画

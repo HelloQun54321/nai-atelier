@@ -27,7 +27,7 @@ public class AtelierPlugin extends Plugin {
     AtelierTagger tagger;
     final ExecutorService storage = Executors.newSingleThreadExecutor();
     final ExecutorService network = Executors.newCachedThreadPool();
-    static final class RequestJob {volatile boolean cancelled;volatile Call call;}
+    static final class RequestJob {volatile boolean cancelled;volatile Call call;volatile Runnable browserCancel;}
     final Map<String,RequestJob> connections = new ConcurrentHashMap<>();
     final java.util.concurrent.atomic.AtomicInteger backgroundTasks=new java.util.concurrent.atomic.AtomicInteger();
     final android.os.Handler taskHandler=new android.os.Handler(android.os.Looper.getMainLooper());
@@ -39,6 +39,11 @@ public class AtelierPlugin extends Plugin {
     @Override public void load() {
         try { store = new AtelierStore(getContext()); tagger = new AtelierTagger(getContext(),store); }
         catch (Exception e) { throw new IllegalStateException("手机工坊存储初始化失败",e); }
+        // 图片长按由工坊控件处理，避免 WebView 原生保存菜单抢走指针事件；输入框仍保留文本菜单。
+        bridge.getWebView().setOnLongClickListener(view -> {
+            int type=bridge.getWebView().getHitTestResult().getType();
+            return type==android.webkit.WebView.HitTestResult.IMAGE_TYPE||type==android.webkit.WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE;
+        });
         bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
             @Override public WebResourceResponse shouldInterceptRequest(android.webkit.WebView view,WebResourceRequest request) {
                 Uri uri = request.getUrl(); String path = uri.getPath();
@@ -111,7 +116,11 @@ public class AtelierPlugin extends Plugin {
         if(bytes.length==4)return a!=0&&a!=10&&a!=127&&a<224&&!(a==100&&b>=64&&b<=127)&&!(a==169&&b==254)&&!(a==172&&b>=16&&b<=31)&&!(a==192&&(b==168||b==0||b==2))&&!(a==198&&(b==18||b==19||b==51&&(bytes[2]&255)==100))&&!(a==203&&b==0&&(bytes[2]&255)==113);
         return bytes.length==16&&(a&0xe0)==0x20&&!(a==0x20&&b==0x02)&&!(a==0x20&&b==0x01&&((bytes[2]==0&&bytes[3]==0)||(bytes[2]&255)==0x0d&&(bytes[3]&255)==0xb8));
     }
-    @PluginMethod public void cancel(PluginCall call) {RequestJob job=connections.get(call.getString("id"));if(job!=null){job.cancelled=true;if(job.call!=null)job.call.cancel();}call.resolve();}
+    @PluginMethod public void cancel(PluginCall call) {RequestJob job=connections.get(call.getString("id"));if(job!=null){job.cancelled=true;if(job.call!=null)job.call.cancel();if(job.browserCancel!=null)job.browserCancel.run();}call.resolve();}
+    @PluginMethod public void browserHttp(PluginCall call) {
+        String id=call.getString("id");RequestJob job=new RequestJob();connections.put(id,job);
+        getActivity().runOnUiThread(()->new AtelierBrowserRequest(getContext(),call,job,()->connections.remove(id,job)).start());
+    }
     @PluginMethod public void http(PluginCall call) {
       String id=call.getString("id");RequestJob job=new RequestJob();connections.put(id,job);
       boolean background=call.getBoolean("background",false);if(background){backgroundTasks.incrementAndGet();taskHandler.removeCallbacks(stopTask);try{getContext().startForegroundService(new Intent(getContext(),AtelierTaskService.class));}catch(RuntimeException e){android.util.Log.w("NAIAtelier","系统未允许后台任务保活");}}
