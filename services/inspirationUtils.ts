@@ -10,6 +10,19 @@ export const normalizeInspirationTags = (tags: string[]) => Array.from(new Set(
   tags.map(tag => tag.trim().replace(/^#/, '')).filter(Boolean)
 )).slice(0, 80);
 
+const RECENT_FOLDERS_KEY = 'nai-collection-recent-folders';
+export const getRecentCollectionFolders = (): string[] => {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(RECENT_FOLDERS_KEY) || '[]');
+    return Array.isArray(value) ? Array.from(new Set(value.filter((id): id is string => typeof id === 'string' && Boolean(id)))).slice(0, 5) : [];
+  } catch { return []; }
+};
+export const rememberCollectionFolder = (id?: string) => {
+  if (!id) return;
+  try { localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify([id, ...getRecentCollectionFolders().filter(previous => previous !== id)].slice(0, 5))); }
+  catch { /* 浏览器偏好不可写不影响收藏保存。 */ }
+};
+
 export const sourceLabel = (source?: InspirationSourceType) => ({
   history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', other: '其他来源',
 }[source || 'other']);

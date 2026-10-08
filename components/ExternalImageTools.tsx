@@ -6,6 +6,8 @@ import { db } from '../services/dbService';
 import { copyTagText, externalImageDrafts, readExternalImageTags, type ExternalImageTags } from '../services/externalImageTags';
 import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { ToolbarButton } from './DesignSystem';
+import { CollectionFolderSelect } from './inspiration/CollectionControls';
+import { rememberCollectionFolder } from '../services/inspirationUtils';
 
 interface ExternalImageToolsProps {
   source: 'danbooru' | 'pixiv';
@@ -15,7 +17,7 @@ interface ExternalImageToolsProps {
   sourcePrompt: string;
   sourceCopy?: string;
   onImport: (prompt: string) => void;
-  onSave: (reverse: ExternalImageTags | undefined, existing: Inspiration | undefined) => Promise<Inspiration>;
+  onSave: (reverse: ExternalImageTags | undefined, existing: Inspiration | undefined, boardId: string) => Promise<Inspiration>;
   notify: (message: string, type?: 'success' | 'error') => void;
   /** 当前图片的站内状态操作；来源导航由详情标题栏承载。 */
   trailingAction?: React.ReactNode;
@@ -28,6 +30,7 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
   const key = `${source}:${sourceId}:${page}`;
   const [reverse, setReverse] = useState<ExternalImageTags | undefined>(() => externalImageDrafts.get(key));
   const [existing, setExisting] = useState<Inspiration>();
+  const [folderId, setFolderId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [loadToken, setLoadToken] = useState(0);
@@ -44,6 +47,7 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
       // 旧 Pixiv 条目没有页码时无法判定是哪张图，保留原件，不把它误当当前页更新。
       const saved = items.find(item => source === 'danbooru' || item.analysis?.externalSourcePage === page);
       setExisting(saved);
+      setFolderId(saved?.boardId || '');
       setReverse(current => current || readExternalImageTags(saved));
     }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -56,24 +60,25 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
   const save = async () => {
     if (savingRef.current || loading || loadError) return;
     savingRef.current = true; setSaving(true);
-    try { const saved = await onSave(reverse, existing); setExisting(saved); }
+    try { const saved = await onSave(reverse, existing, folderId); setExisting(saved); rememberCollectionFolder(folderId); }
     catch (error) { notify(error instanceof Error ? error.message : '保存图片与 Tag 失败', 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   };
   const savedReverse = readExternalImageTags(existing);
   const saved = Boolean(reverse && savedReverse && reverse.prompt === savedReverse.prompt && reverse.createdAt === savedReverse.createdAt);
-  const saveLabel = saving ? '保存中…' : existing ? '更新灵感库' : '加入灵感库';
+  const saveLabel = saving ? '保存中…' : existing ? '更新收藏库' : '加入收藏库';
   return <>
     <div className="@container space-y-2">
       <div role="group" aria-label={t("图片操作")} className="flex items-center gap-2">
         <ToolbarButton tone="primary" className="whitespace-nowrap" disabled={loading} onClick={() => { initial.current = reverse; setTaggerOpen(true); }}><ImagePlus />{t("图片反推")}</ToolbarButton>
         <ToolbarButton aria-label={t(saveLabel)} title={t(saveLabel)} className="whitespace-nowrap" disabled={loading || loadError || saving} onClick={() => void save()}><Bookmark /><span className="hidden @[20rem]:inline">{t(saveLabel)}</span></ToolbarButton>
+        <CollectionFolderSelect value={folderId} onChange={setFolderId} disabled={loading || loadError || saving} notify={notify} className="mobile-touch h-10 min-w-0 max-w-36 flex-1 rounded-xl border border-gray-300 bg-white px-2 text-xs dark:border-gray-700 dark:bg-gray-950" />
         {trailingAction && <div className="ml-auto flex flex-none items-center">{trailingAction}</div>}
       </div>
       {loadError && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{t("无法读取已保存的 Tag")}</span><ToolbarButton onClick={() => setLoadToken(value => value + 1)}>{t("重试读取")}</ToolbarButton></div>}
     </div>
     {reverse && <section className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
-      <div className="flex items-center justify-between gap-2"><h3 className="text-xs font-black">{t("反推 Tag")}</h3><span className="text-micro text-gray-500">{t("{0} · 模型预测", [saved ? t("已保存到灵感库") : t("尚未保存")])}</span></div>
+      <div className="flex items-center justify-between gap-2"><h3 className="text-xs font-black">{t("反推 Tag")}</h3><span className="text-micro text-gray-500">{t("{0} · 模型预测", [saved ? t("已保存到收藏库") : t("尚未保存")])}</span></div>
       <textarea aria-label={t("反推 Tag")} value={reverse.prompt} onChange={event => retain({ ...reverse, prompt: event.target.value })} className="min-h-24 w-full rounded-lg border border-gray-200 bg-white p-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-950" />
       <div className="flex flex-wrap gap-2">
         <ToolbarButton disabled={!reverse.prompt.trim()} onClick={() => void copy(reverse.prompt, '反推 Tag')}><Copy />{t("复制反推 Tag")}</ToolbarButton>

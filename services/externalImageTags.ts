@@ -36,7 +36,7 @@ export const readExternalImageTags = (inspiration?: Inspiration): ExternalImageT
   return saved;
 };
 
-// 未保存结果只保留在当前浏览会话；长期资产由用户明确保存到灵感库。
+// 未保存结果只保留在当前浏览会话；长期资产由用户明确保存到收藏库。
 const drafts = new Map<string, ExternalImageTags>();
 export const externalImageDrafts = {
   get: (key: string) => drafts.get(key),

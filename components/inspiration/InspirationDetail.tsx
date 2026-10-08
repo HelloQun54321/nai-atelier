@@ -21,7 +21,8 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataSe
 import { createUuid } from '../../services/id';
 import { characterReferenceService } from '../../services/characterReferenceService';
 import { vibeService } from '../../services/vibeService';
-import { inspirationSimilarity, normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
+import { inspirationSimilarity, normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
+import { CollectionTagInput } from './CollectionControls';
 import { CloseButton, ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
 import { SmartImage } from '../SmartImage';
@@ -70,6 +71,7 @@ export const InspirationDetail: React.FC<Props> = ({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
+  const tagSuggestions = useMemo(() => Array.from(new Set(items.flatMap(candidate => candidate.tags || []))).sort((a, b) => a.localeCompare(b)), [items]);
   const reverseTags = readExternalImageTags(draft);
   const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
 
@@ -109,6 +111,7 @@ export const InspirationDetail: React.FC<Props> = ({
     update(key, value);
     try {
       await db.updateInspiration(item.id, { [key]: value });
+      if (key === 'boardId') rememberCollectionFolder(value as string);
       await onRefresh();
       if (successMsg) notify(successMsg);
     } catch (error: any) {
@@ -198,8 +201,8 @@ export const InspirationDetail: React.FC<Props> = ({
         userId: currentUser.id,
         username: currentUser.username,
         type: 'style',
-        name: draft.title || '灵感风格串',
-        description: draft.notes || `由灵感库“${draft.title}”创建`,
+        name: draft.title || '收藏风格串',
+        description: draft.notes || `由收藏库“${draft.title}”创建`,
         tags: [],
         previewImage: draft.imageUrl,
         basePrompt: draft.prompt || '',
@@ -224,8 +227,8 @@ export const InspirationDetail: React.FC<Props> = ({
     setBusy(kind);
     try {
       const file = await fetchImageFile(draft);
-      if (kind === 'character') await characterReferenceService.create(file, draft.title || '灵感角色参考');
-      else await vibeService.create(file, draft.title || '灵感 Vibe');
+      if (kind === 'character') await characterReferenceService.create(file, draft.title || '收藏角色参考');
+      else await vibeService.create(file, draft.title || '收藏 Vibe');
       await db.markInspirationUsed(draft.id);
       notify(kind === 'character' ? '已创建角色参考' : '已创建 Vibe 资产');
       setAssetMenuOpen(false);
@@ -241,7 +244,7 @@ export const InspirationDetail: React.FC<Props> = ({
   return (
     <ImagePreviewPortal>
     <div className="ui-backdrop-enter fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 p-0 backdrop-blur-sm md:p-6" onClick={closeLayer}>
-      <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={t("灵感详情：{0} · #{1}", [draft.title || '未命名灵感', draft.id])} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
+      <div data-safe-mode-work="true" data-agent-page-scope="detail" data-agent-page-title={t("收藏详情：{0} · #{1}", [draft.title || '未命名收藏', draft.id])} className="appearance-panel ui-modal-enter flex h-[100dvh] w-full max-w-7xl flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-950 md:h-[92vh] md:rounded-2xl md:border md:border-gray-800 lg:flex-row" onClick={event => event.stopPropagation()}>
         {/* 左侧大图展示舞台 */}
         <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative flex min-h-[36vh] flex-1 items-center justify-center overflow-hidden bg-gray-100 dark:bg-black/60 lg:min-h-0">
           <ViewableImage src={draft.imageUrl} alt={draft.title} filename={`${draft.title || 'inspiration'}.png`} notify={notify} generationData={draft.params ? {prompt:draft.prompt,negativePrompt:draft.negativePrompt,params:draft.params} : undefined} className="max-h-full max-w-full object-contain" data-safe-mode-ignore="true" />
@@ -260,7 +263,7 @@ export const InspirationDetail: React.FC<Props> = ({
           </div>
         </PressRevealSurface>
 
-        {/* 右侧清爽灵感工作台 */}
+        {/* 右侧清爽收藏工作台 */}
         <section className="flex min-h-0 w-full flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:w-[520px]">
           {/* 顶栏：轻量去噪，只留标题、来源时间、画板切换与关闭 */}
           <header className="flex flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
@@ -276,9 +279,9 @@ export const InspirationDetail: React.FC<Props> = ({
                 <select
                   disabled={!editable}
                   value={draft.boardId || ''}
-                  onChange={e => void updateAndPersist('boardId', e.target.value, e.target.value ? '已移入灵感板' : '已移至未整理')}
+                  onChange={e => void updateAndPersist('boardId', e.target.value, e.target.value ? '已移入收藏夹' : '已移至未整理')}
                   className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-0.5 text-micro font-semibold text-gray-700 outline-none transition hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-                  title={t("切换所属灵感板")}
+                  title={t("切换所属收藏夹")}
                 >
                   <option value="">{t("📁 未整理")}</option>
                   {boards.map(board => (
@@ -289,8 +292,8 @@ export const InspirationDetail: React.FC<Props> = ({
                   type="button"
                   disabled={!editable}
                   onClick={() => void updateAndPersist('isPinned', !draft.isPinned, draft.isPinned ? '已取消置顶' : '已置顶')}
-                  title={draft.isPinned ? t("已置顶（点击取消）") : t("置顶灵感")}
-                  aria-label={draft.isPinned ? t("已置顶") : t("置顶灵感")}
+                  title={draft.isPinned ? t("已置顶（点击取消）") : t("置顶收藏")}
+                  aria-label={draft.isPinned ? t("已置顶") : t("置顶收藏")}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-micro font-bold transition ${
                     draft.isPinned
                       ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/70 dark:text-amber-300'
@@ -304,7 +307,7 @@ export const InspirationDetail: React.FC<Props> = ({
 
               <input
                 data-safe-mode-title="true"
-                aria-label={t("灵感标题")}
+                aria-label={t("收藏标题")}
                 disabled={!editable}
                 value={draft.title}
                 onChange={e => update('title', e.target.value)}
@@ -313,7 +316,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     void updateAndPersist('title', draft.title.trim());
                   }
                 }}
-                placeholder={t("灵感标题...")}
+                placeholder={t("收藏标题...")}
                 className="h-8 w-full rounded-lg border border-transparent bg-transparent px-1 text-base font-bold text-gray-950 transition hover:border-gray-200 focus:border-indigo-400 focus:bg-white dark:text-white dark:hover:border-gray-800 dark:focus:bg-gray-900 sm:text-lg"
               />
               <div role="group" aria-label={t("评分")}>
@@ -398,7 +401,7 @@ export const InspirationDetail: React.FC<Props> = ({
                     <span className="ml-1 text-micro font-normal text-gray-400">（{(draft.tags || []).length}）</span>
                   )}
                 </span>
-                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到灵感标签")} className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
+                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -421,14 +424,15 @@ export const InspirationDetail: React.FC<Props> = ({
                   </span>
                 ))}
                 {isAddingTag ? (
-                  <input
+                  <CollectionTagInput
+                    suggestions={tagSuggestions.filter(tag => !(draft.tags || []).includes(tag))}
                     autoFocus
                     type="text"
                     placeholder={t("输入标签回车保存...")}
                     value={newTagInput}
                     onChange={e => setNewTagInput(e.target.value)}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                         e.preventDefault();
                         handleAddTag(newTagInput);
                         setIsAddingTag(false);
@@ -521,12 +525,12 @@ export const InspirationDetail: React.FC<Props> = ({
               </div>
             </details>
 
-            {/* 相似灵感推荐 */}
+            {/* 相似收藏推荐 */}
             {similar.length > 0 && (
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
                   <Sparkles className="h-3.5 w-3.5 text-violet-500" />
-                  {t("相似灵感")}</h3>
+                  {t("相似收藏")}</h3>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                   {similar.map(entry => (
                     <button
@@ -674,7 +678,7 @@ export const InspirationDetail: React.FC<Props> = ({
           onClose={() => setTaggerOpen(false)}
           imageUrl={draft.imageUrl}
           notify={notify}
-          actionLabel={t("追加 {count} 个 Tag 到灵感标签")}
+          actionLabel={t("追加 {count} 个 Tag 到收藏标签")}
           onInsert={(newTags) => {
             const combined = normalizeInspirationTags([...(draft.tags || []), ...splitTags(newTags)]);
             void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);

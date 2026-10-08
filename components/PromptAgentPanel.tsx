@@ -53,7 +53,7 @@ const toolLabels: Record<string, string> = {
   set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置角色参考', request_generation: '准备生图',
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', get_chain: '读取完整资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', reuse_generation_history: '复用历史生成配置', create_chain: '新建资料', update_chain: '更新资料',
-  create_inspiration: '保存灵感', update_inspiration: '更新灵感', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图', create_vibe_from_history: '从历史创建 Vibe', import_aitag_image: '导入 AITag 图片',
+  create_inspiration: '保存收藏', update_inspiration: '更新收藏', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存角色参考图', create_vibe_from_history: '从历史创建 Vibe', import_aitag_image: '导入 AITag 图片',
   request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品',
   update_vibe: '更新 Vibe', update_character_reference: '更新角色参考', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',

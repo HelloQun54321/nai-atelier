@@ -689,7 +689,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的创作助手。你的职责不�
 
 规则：
 1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考跟随本次交流语言，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
-2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、灵感、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
+2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、收藏、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
@@ -2311,7 +2311,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、灵感、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
+        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、收藏、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const directory = await writableLocalFolder(args.directory);
@@ -2366,7 +2366,7 @@ export class PromptAgentService {
         execute: async (_id, args) => { if (!project?.enableToolGroup) throw new Error('当前运行不支持动态加载工具'); return { content: jsonText(project.enableToolGroup(args.groups)) }; },
       },
       {
-        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（灵感）、vibe、reference（角色参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
+        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（收藏）、vibe、reference（角色参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String() }),
         execute: async (_id, args) => {
           const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
@@ -2381,7 +2381,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'inspect_project_image', label: '观察项目图片', description: '把已有历史、灵感、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
+        name: 'inspect_project_image', label: '观察项目图片', description: '把已有历史、收藏、Vibe、参考图或风格串封面直接交给当前模型观察；需要当前模型支持图片，展示图片请用 show_project_image。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), focus: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           if (!modelInfo?.imageInput) throw new Error(imageCapabilityError(modelInfo));
@@ -2531,7 +2531,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_project_overview', label: '读取项目概况', description: '读取风格串、角色、灵感、历史、画师资料、Vibe、角色参考及组合的数量与最近项目。',
+        name: 'get_project_overview', label: '读取项目概况', description: '读取风格串、角色、收藏、历史、画师资料、Vibe、角色参考及组合的数量与最近项目。',
         parameters: Type.Object({}),
         execute: async () => {
           const result = await readProject('/api/agent/project-overview');
@@ -2539,7 +2539,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_project_library', label: '搜索项目资料', description: '按关键词分页搜索风格串、自定义角色、灵感和画师摘要；需要完整内容时按返回 id 读取详情。page 从 0 开始。',
+        name: 'search_project_library', label: '搜索项目资料', description: '按关键词分页搜索风格串、自定义角色、收藏和画师摘要；需要完整内容时按返回 id 读取详情。page 从 0 开始。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()), page: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const params = new URLSearchParams({ q: text(args.query).trim().slice(0, 300), kind: ['chains', 'inspirations', 'artists'].includes(args.kind) ? args.kind : 'all', limit: String(Math.floor(clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 30))), page: String(Math.floor(clamp(args.page, 0, 100000, 0))) });
@@ -2557,7 +2557,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_inspiration', label: '读取完整灵感', description: '按搜索结果 id 读取单条灵感详情，包括完整提示词、参数和分析。',
+        name: 'get_inspiration', label: '读取完整收藏', description: '按搜索结果 id 读取单条收藏详情，包括完整提示词、参数和分析。',
         parameters: Type.Object({ id: Type.String() }),
         execute: async (_id, args) => {
           const value = await readProject(`/api/inspirations/${encodeURIComponent(text(args.id).slice(0, 200))}`);
@@ -2658,7 +2658,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入灵感、角色参考、Vibe，或设为指定风格串封面。不会访问任意网址。',
+        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入收藏、角色参考、Vibe，或设为指定风格串封面。不会访问任意网址。',
         parameters: Type.Object({ workId: Type.Number(), imageIndex: Type.Optional(Type.Number()), target: Type.Union([Type.Literal('inspiration'), Type.Literal('character_reference'), Type.Literal('vibe'), Type.Literal('chain_cover')]), name: Type.Optional(Type.String()), chainId: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const source = await getAitagImage(args.workId, args.imageIndex);
@@ -2719,12 +2719,12 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_inspiration', label: '新建并整理灵感', description: '把生成历史保存到精选灵感库，并可同时填写灵感板、备注、标签和评分。historyId必须来自list_generation_history。',
+        name: 'create_inspiration', label: '新建并整理收藏', description: '把生成历史保存到精选收藏库，并可同时填写收藏夹、备注、标签和评分。historyId必须来自list_generation_history。',
         parameters: Type.Object({ title: Type.String(), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), historyId: Type.String(), params: Type.Optional(Type.Any()), boardId: Type.Optional(Type.String()), notes: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), rating: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const now = Date.now();
           const item = await findHistory(args.historyId);
-          if (!item) throw new Error('找不到用于灵感封面的历史图片');
+          if (!item) throw new Error('找不到用于收藏封面的历史图片');
           const body = { id: operationId(['create_inspiration', args]), title: text(args.title).slice(0, 160), prompt: typeof args.prompt === 'string' ? text(args.prompt) : text(item.prompt), negativePrompt: typeof args.negativePrompt === 'string' ? text(args.negativePrompt) : text(item.negativePrompt), params: args.params && typeof args.params === 'object' ? args.params : item.params, boardId: text(args.boardId).slice(0, 200) || undefined, notes: text(args.notes), tags: Array.isArray(args.tags) ? args.tags.slice(0, 80).map(value => text(value).slice(0, 80)) : ['生成历史'], rating: Math.floor(clamp(args.rating, 0, 5, 0)), sourceType: 'history', sourceId: String(item.id), createdAt: now, updatedAt: now };
           const result = await readProject('/api/inspirations', { method: 'POST', body });
           changed('inspirations');
@@ -2732,7 +2732,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_inspiration', label: '整理灵感', description: '更新灵感的内容、灵感板、备注、标签、评分、置顶或归档状态。',
+        name: 'update_inspiration', label: '整理收藏', description: '更新收藏的内容、收藏夹、备注、标签、评分、置顶或归档状态。',
         parameters: Type.Object({ id: Type.String(), title: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), boardId: Type.Optional(Type.String()), notes: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), rating: Type.Optional(Type.Number()), isPinned: Type.Optional(Type.Boolean()), archived: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const body = {};
@@ -2836,7 +2836,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、灵感、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
+        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、收藏、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
         parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist'), Type.Literal('character_reference')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => pending(`delete_${args.resourceType}`, text(args.id).slice(0, 200), `删除${text(args.name || '这个项目').slice(0, 100)}？`, text(args.reason || '确认后将执行删除；历史原图删除后无法恢复。').slice(0, 500)),
       },
@@ -2937,7 +2937,7 @@ export class PromptAgentService {
       {
         name: 'request_clear_mobile_cache', label: '准备清空手机缓存', description: '请求清空当前设备可再生成的手机缩略图缓存，不影响电脑原图和历史。必须确认。',
         parameters: Type.Object({}),
-        execute: async () => pending('clear_mobile_cache', '', '清空当前设备的小图缓存？', '只会删除可重新生成的缩略图，不影响历史、灵感、风格串、角色或任何电脑原图。'),
+        execute: async () => pending('clear_mobile_cache', '', '清空当前设备的小图缓存？', '只会删除可重新生成的缩略图，不影响历史、收藏、风格串、角色或任何电脑原图。'),
       },
       {
         name: 'reuse_generation_history', label: '复用历史生成配置', description: '一次性将历史图的完整配置带入当前工作草稿：模型、Seed、尺寸、采样、角色正负词及定位、模块、Vibe 和参考图均保留。historyId 来自历史回执；省略则读取当前最新一条。仅暂存草稿，不自动生成、不声称已显示在实验室。之后用业务工具修改指定字段，get_lab_state 核对，出图通过 request_generation。',

@@ -14,7 +14,7 @@
 
 NAI Atelier is a personal NovelAI workspace for Windows and Android. It connects the steps of finding references, composing prompts, generating one image, reviewing and refining it, and saving useful results as reusable assets.
 
-Style chains, characters, Vibe encodings, inspirations and original generation history belong to your local workspace. Image generation and the AI assistant use online services with your own credentials; the app does not run a local NovelAI generation model. It is designed for individual use and a trusted home network.
+Style chains, characters, Vibe encodings, saved collections and original generation history belong to your local workspace. Image generation and the AI assistant use online services with your own credentials; the app does not run a local NovelAI generation model. It is designed for individual use and a trusted home network.
 
 This project is independently maintained and based on [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager).
 
@@ -113,7 +113,8 @@ The lab offers recommended steps and an optional free-step lock. You retain cont
 ### History, libraries and sharing
 
 - Generation history stores original images and actual prompts, seeds and parameters locally. Reuse a result by importing it back into the lab. Browse full images, favorites and randomized results without changing the originals.
-- AITag indexes public generation examples and parameters; Pixiv provides rankings, search and artist works; Danbooru provides image/tag references. Artist and character libraries support discovery and reuse, while inspirations hold deliberately saved materials.
+- AITag indexes public generation examples and parameters; Pixiv provides rankings, search and artist works; Danbooru provides image/tag references. Artist and character libraries support discovery and reuse, while Collections hold deliberately saved materials.
+- **Collections** organize saved images into folders with reusable tags. Combine folders, sources and multiple tags when filtering. Save to a chosen folder or Unorganized; desktop users can drag one or several selected images into a folder, while touch and keyboard users can use the move controls.
 - Image download and copy actions appear on hover or keyboard focus, and on long-press for touch. When **remove generation information when sharing images** is enabled, sharing produces a cleaned copy while preserving the original and its metadata. A cleaning failure is reported.
 - Tag completion supports Chinese/English lookup, weighted prompt groups and `Shift`-click fine adjustments. Dictionary and directory sizes depend on the installed dataset. Optional AI translation of missing tags uses your configured LLM service and its billing rules.
 - WD ViT V3, WD SwinV2 V3 and WD EVA02-Large V3 run local CPU tagging after an explicit model download. Manage them in **Global settings → Generation preferences and lab**. Tagging does not consume Anlas or require a cloud inference upload; speed and memory usage depend on the model and device.

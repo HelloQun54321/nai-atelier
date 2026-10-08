@@ -10,14 +10,14 @@ vi.mock('../../services/imageSharing', async original => ({ ...await original<ty
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
-  masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), saveInspiration: vi.fn(),
+  masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), saveInspiration: vi.fn(), getInspirationBoards: vi.fn(),
   realMasonry: false,
 }));
 vi.mock('../../services/aitagService', async original => ({
   ...await original<typeof import('../../services/aitagService')>(),
   aitagService: { ...mocks },
 }));
-vi.mock('../../services/dbService', () => ({ db: { saveInspiration: mocks.saveInspiration } }));
+vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: mocks.getInspirationBoards, saveInspiration: mocks.saveInspiration } }));
 vi.mock('../../components/ShortestColumnMasonry', async original => {
   const actual = await original<typeof import('../../components/ShortestColumnMasonry')>();
   return { ...actual, useMasonryColumnCount: () => 3,
@@ -60,6 +60,7 @@ beforeEach(() => {
   mocks.setFavorite.mockResolvedValue({});
   mocks.createChain.mockResolvedValue(undefined);
   mocks.saveInspiration.mockResolvedValue(undefined);
+  mocks.getInspirationBoards.mockResolvedValue([]);
   mocks.getWork.mockImplementation(async id => ({ work: works.find(work => work.id === id), images: [works[id - 1].firstImage] }));
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
@@ -418,18 +419,21 @@ it('失败只显示错误并恢复按钮，重试可以保存，其他复用入�
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
 });
 
-it('相邻的加入灵感库同样显示进度并拦截连点，保持原本不跳转的行为', async () => {
+it('相邻的加入收藏库同样显示进度并拦截连点，保持原本不跳转的行为', async () => {
   let resolve!: () => void;
   mocks.saveInspiration.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
+  mocks.getInspirationBoards.mockResolvedValue([{ id: 'composition', name: '构图参考', userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
   const { notify } = await setup(); fireEvent.click(card(1));
-  const button = await screen.findByRole('button', { name: '加入灵感库' });
+  await screen.findByRole('option', { name: '构图参考' });
+  fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
+  const button = await screen.findByRole('button', { name: '加入收藏库' });
   fireEvent.click(button); fireEvent.click(button);
   expect(mocks.saveInspiration).toHaveBeenCalledTimes(1);
   expect(button.getAttribute('aria-busy')).toBe('true');
   expect((screen.getByRole('button', { name: '保存到风格串' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(mocks.saveInspiration.mock.calls[0][0]).toMatchObject({ imageUrl: '/api/assets/aitag/1.png', prompt: 'synthetic prompt 1', sourceType: 'aitag' });
+  expect(mocks.saveInspiration.mock.calls[0][0]).toMatchObject({ boardId: 'composition', imageUrl: '/api/assets/aitag/1.png', prompt: 'synthetic prompt 1', sourceType: 'aitag' });
   await act(async () => resolve());
-  await waitFor(() => expect(notify).toHaveBeenCalledWith('已加入灵感库'));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已加入收藏库'));
   expect(mocks.navigate).not.toHaveBeenCalled(); expect(mocks.createChain).not.toHaveBeenCalled();
   expect(mocks.getWork).toHaveBeenCalledTimes(1);
 });

@@ -13,7 +13,7 @@ import { api } from '../../services/api';
 import { galleryHistoryService } from '../../services/galleryHistoryService';
 import type { User } from '../../types';
 vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), startPixivLogin: vi.fn(), getPixivLoginStatus: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
-vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
+vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
@@ -110,10 +110,13 @@ it('Pixiv 当前页保存原图与原站标签，不把原站标签假装成生�
   expect(source.closest('header')).toBeTruthy();
   expect(source.getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
   expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
+  vi.mocked(db.getInspirationBoards).mockResolvedValueOnce([{ id: 'composition', name: '构图参考', userId: 'owner', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '加入灵感库' }).hasAttribute('disabled')).toBe(false));
-  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
-  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ prompt: '', imageUrl: '/api/assets/uploaded', title: 'synthetic artwork · 第 2 页', analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1 }, sourceId: '100' })));
+  await waitFor(() => expect(screen.getByRole('button', { name: '加入收藏库' }).hasAttribute('disabled')).toBe(false));
+  await screen.findByRole('option', { name: '构图参考' });
+  fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ boardId: 'composition', prompt: '', imageUrl: '/api/assets/uploaded', title: 'synthetic artwork · 第 2 页', analysis: { externalSourceTags: ['原站标签'], externalSourcePage: 1 }, sourceId: '100' })));
   expect(importPixivImageAsFile).toHaveBeenCalledWith('https://i.pximg.net/p1.png');
 });
 
@@ -121,7 +124,7 @@ it('作者名直接进入全集，站内心形收藏与本地灵感保存区分�
   const notify = vi.fn();
   render(<PixivGallery active currentUser={{ id: 'owner', username: 'test' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '加入灵感库' }).hasAttribute('disabled')).toBe(false));
+  await waitFor(() => expect(screen.getByRole('button', { name: '加入收藏库' }).hasAttribute('disabled')).toBe(false));
   expect(screen.queryByRole('button', { name: '作者全集' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看 artist 的作者全集' }));
   await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('user', expect.objectContaining({ params: { user_id: '10' } })));

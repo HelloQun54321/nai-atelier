@@ -5,7 +5,7 @@ import { Inspiration, InspirationSourceType, NAIParams, User } from '../../types
 import { normalizeInspirationTags } from '../../services/inspirationUtils';
 import { DanbooruIcon, PixivIcon } from '../PlatformIcons';
 
-export type SmartCollection = 'all' | 'unorganized' | 'pinned' | 'recent' | 'archived' | `source:${InspirationSourceType}`;
+export type SmartCollection = 'all' | 'unorganized' | 'pinned' | 'recent' | 'archived';
 export type SortMode = 'created' | 'used' | 'popular' | 'rating';
 
 export const DEFAULT_PARAMS: NAIParams = {

@@ -208,7 +208,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
       <LabModuleSection moduleId="baseImage" label={t("底图与导入")} order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')} className={mobileTab === 'canvas' ? 'block' : 'hidden lg:block'}>
         <section className="space-y-3">
-          <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100" title={draft.baseImageSource ? ({ history: t("历史图片"), inspiration: t("灵感库"), generated: t("文生图结果"), upload: t("本地上传"), clipboard: t("剪贴板图片") }[draft.baseImageSource]) : undefined}>{t("底图来源")}</label></div>
+          <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100" title={draft.baseImageSource ? ({ history: t("历史图片"), inspiration: t("收藏库"), generated: t("文生图结果"), upload: t("本地上传"), clipboard: t("剪贴板图片") }[draft.baseImageSource]) : undefined}>{t("底图来源")}</label></div>
           <div className="grid grid-cols-3 gap-2">
             <input aria-label={t("上传当前模式底图")} ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} />
             <button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />{t("上传图片")}</button>

@@ -9,7 +9,7 @@ import {
   Clock3,
   FlaskConical,
   FolderOpen,
-  Lightbulb,
+  Bookmark,
   Layers,
   Palette,
   Settings,
@@ -63,7 +63,7 @@ const icons = {
   pixiv: PixivIcon,
   resources: FolderOpen,
   lab: FlaskConical,
-  inspiration: Lightbulb,
+  inspiration: Bookmark,
   history: Clock3,
   safe: ShieldCheck,
   settings: Settings,
@@ -122,7 +122,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'aitag', label: 'AITag', icon: icons.tag },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
       { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
-      { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
+      { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
     ] },
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
@@ -162,7 +162,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'aitag', label: 'AITag', icon: icons.tag },
     { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
     { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
-    { id: 'inspiration', label: '灵感库', icon: icons.inspiration },
+    { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];
   const resourceActive = resourceItems.some(item => item.id === activeView);
   const navigateMobile = (id: string) => {

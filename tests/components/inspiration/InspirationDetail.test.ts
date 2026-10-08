@@ -20,7 +20,7 @@ vi.mock('../../../services/dbService', () => ({
 
 vi.mock('../../../components/SmartImage', () => ({
   OriginalImage: (props: any) => React.createElement('img', props),
-  SmartImage: (props: any) => React.createElement('img', props),
+  SmartImage: ({ eager: _eager, thumbnailVariant: _thumbnailVariant, ...props }: any) => React.createElement('img', props),
 }));
 
 vi.mock('../../../components/ParamsViewer', () => ({
@@ -56,6 +56,19 @@ afterEach(() => {
   cleanup();
   setLanguage('zh-CN');
   vi.clearAllMocks();
+});
+
+it('添加标签可复用其他作品的原名，回车后不重复生成标签，并保留已有标签', async () => {
+  const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光'] }];
+  render(React.createElement(InspirationDetail, { item: mockItem, items, boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  const input = screen.getByPlaceholderText('输入标签回车保存...');
+  expect(document.getElementById(input.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeTruthy();
+  fireEvent.change(input, { target: { value: '逆光' } }); fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: [...(mockItem.tags || []), '逆光'] }));
+  fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  const next = screen.getByPlaceholderText('输入标签回车保存...');
+  expect(document.getElementById(next.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeNull();
 });
 
 it('评分可即时保存，再点当前星级可清零，状态与手机触控区域明确', async () => {
@@ -108,7 +121,7 @@ it('提示词保存失败显示错误并保留草稿，重新失焦可重试', a
 it('修改后恢复原文字仍会保存，标题、备注和正负词遵循同一失焦规则', async () => {
   render(React.createElement(InspirationDetail, { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
   const fields = [
-    ['title', screen.getByLabelText('灵感标题'), mockItem.title],
+    ['title', screen.getByLabelText('收藏标题'), mockItem.title],
     ['prompt', screen.getByLabelText('提示词'), mockItem.prompt],
     ['negativePrompt', screen.getByLabelText('负面提示词'), mockItem.negativePrompt!],
     ['notes', screen.getByDisplayValue(mockItem.notes!), mockItem.notes!],
@@ -131,7 +144,7 @@ it('非所有者的评分禁用、提示词只读，失焦不写入', () => {
   expect(db.updateInspiration).not.toHaveBeenCalled();
 });
 
-it('无参数的灵感显示未记录，导入时才使用默认参数；已有参数保持原样展示和导入', async () => {
+it('无参数的收藏显示未记录，导入时才使用默认参数；已有参数保持原样展示和导入', async () => {
   const props = { item: mockItem, items: [mockItem], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() };
   const view = render(React.createElement(InspirationDetail, props));
   expect(screen.queryByTestId('params-viewer')).toBeNull();
@@ -187,14 +200,14 @@ const mockItem: Inspiration = {
 };
 
 describe('InspirationDetail 全新重构界面走查', () => {
-  it('Agent 优先读取当前灵感详情身份，换作品更新、关闭后恢复列表', () => {
+  it('Agent 优先读取当前收藏详情身份，换作品更新、关闭后恢复列表', () => {
     const draw = (item?: Inspiration) => React.createElement('main', { 'data-agent-view': 'inspiration' },
-      React.createElement('p', null, '灵感列表摘要 '.repeat(400)), item && React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
+      React.createElement('p', null, '收藏列表摘要 '.repeat(400)), item && React.createElement(InspirationDetail, { item, items: [item], boards: mockBoards, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onOpenItem: vi.fn() }));
     const view = render(draw(mockItem));
-    const first = readAgentPage(); expect(first).toMatchObject({ foreground: 'detail', view: 'inspiration' }); expect(first.title).toBe('灵感库 · 灵感详情：海边少女 · #insp-1'); expect(first.text).not.toContain('灵感列表摘要');
+    const first = readAgentPage(); expect(first).toMatchObject({ foreground: 'detail', view: 'inspiration' }); expect(first.title).toBe('收藏库 · 收藏详情：海边少女 · #insp-1'); expect(first.text).not.toContain('收藏列表摘要');
     view.rerender(draw({ ...mockItem, id: 'insp-2', title: '合成夜景' }));
-    const next = readAgentPage(); expect(next.title).toBe('灵感库 · 灵感详情：合成夜景 · #insp-2'); expect(next.snapshotId).not.toBe(first.snapshotId);
-    view.rerender(draw()); expect(readAgentPage().title).toBe('灵感库'); expect(readAgentPage().text).toContain('灵感列表摘要');
+    const next = readAgentPage(); expect(next.title).toBe('收藏库 · 收藏详情：合成夜景 · #insp-2'); expect(next.snapshotId).not.toBe(first.snapshotId);
+    view.rerender(draw()); expect(readAgentPage().title).toBe('收藏库'); expect(readAgentPage().text).toContain('收藏列表摘要');
   });
   it('外部作品原站与反推标签分别可查和复制，分类标签保持原样', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => {}) } });
@@ -226,7 +239,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
 
     // 标题可直接点击编辑（失焦自动保存），画板在顶栏快捷切换
     expect(screen.getByDisplayValue('海边少女')).toBeTruthy();
-    const boardSelect = screen.getByTitle('切换所属灵感板') as HTMLSelectElement;
+    const boardSelect = screen.getByTitle('切换所属收藏夹') as HTMLSelectElement;
     expect(boardSelect.value).toBe('');
 
     // 独立复制按钮
@@ -262,7 +275,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 
-  it('标签区识别当前图片，结果追加到灵感标签', () => {
+  it('标签区识别当前图片，结果追加到收藏标签', () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,
@@ -280,7 +293,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     fireEvent.click(taggerBtn);
     const panel = screen.getByTestId('image-tagger-panel');
     expect(panel.dataset.imageUrl).toBe(mockItem.imageUrl);
-    expect(panel.dataset.actionLabel).toBe('追加 {count} 个 Tag 到灵感标签');
+    expect(panel.dataset.actionLabel).toBe('追加 {count} 个 Tag 到收藏标签');
     expect(taggerBtn.closest('footer')).toBeNull();
   });
 
@@ -299,7 +312,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    const boardSelect = screen.getByTitle('切换所属灵感板');
+    const boardSelect = screen.getByTitle('切换所属收藏夹');
     fireEvent.change(boardSelect, { target: { value: 'board-1' } });
 
     expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { boardId: 'board-1' });
@@ -321,7 +334,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
       })
     );
 
-    const pinBtn = screen.getByRole('button', { name: '置顶灵感' });
+    const pinBtn = screen.getByRole('button', { name: '置顶收藏' });
     fireEvent.click(pinBtn);
     expect(db.updateInspiration).toHaveBeenCalledWith('insp-1', { isPinned: true });
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());

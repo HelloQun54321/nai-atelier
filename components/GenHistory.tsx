@@ -27,6 +27,8 @@ import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { type HistoryBrowseOrder, type HistoryBrowseQuery } from '../services/historyBrowse';
 import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
+import { CollectionFolderSelect } from './inspiration/CollectionControls';
+import { rememberCollectionFolder } from '../services/inspirationUtils';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -207,6 +209,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
     };
     const [isPublishing, setIsPublishing] = useState(false);
     const [publishTitle, setPublishTitle] = useState('');
+    const [collectionFolderId, setCollectionFolderId] = useState('');
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -551,7 +554,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 if (page > currentPageRef.current) { currentPageRef.current = page; setCurrentPage(page); }
             }
             returnItemRef.current = target.id;
-            setPublishTitle('');
+            setPublishTitle(''); setCollectionFolderId('');
             setLightbox(target);
             const pages = Math.ceil(order.length / PAGE_SIZE);
             if (page < pages) void preloadPage(page + 1, pages, currentPageRef.current);
@@ -937,6 +940,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
             await db.saveInspiration({
                 id: createUuid(),
                 title: publishTitle,
+                boardId: collectionFolderId || undefined,
                 imageUrl: lightbox.imageUrl,
                 prompt: importData.prompt,
                 negativePrompt: importData.negativePrompt,
@@ -949,14 +953,15 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
             });
-            notify('已加入灵感库，稍后可继续分类整理');
+            notify('已加入收藏库，稍后可继续分类整理');
+            rememberCollectionFolder(collectionFolderId);
             setIsPublishing(false);
             if (lightboxRef.current?.id === lightbox.id) {
                 setPublishTitle(''); setLightbox(null); setShowSuccessModal(true);
             }
             onRefreshInspiration?.();
         } catch (e: any) {
-            notify('加入灵感库失败: ' + e.message, 'error');
+            notify('加入收藏库失败: ' + e.message, 'error');
             setIsPublishing(false);
         }
     };
@@ -1026,7 +1031,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
     const handleOpenHistoryItem = useCallback((item: LocalGenItem) => {
         returnItemRef.current = item.id;
-        setPublishTitle('');
+        setPublishTitle(''); setCollectionFolderId('');
         setLightbox(item);
     }, []);
 
@@ -1241,7 +1246,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                     {isPreparingImport ? t("正在读取元数据...") : t("导入到实验室")}
                                 </ToolbarButton>
                                 <div className="rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/20">
-                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">{t("加入灵感库")}</label>
+                                    <label htmlFor="history-inspiration-title" className="mb-2 block text-sm font-semibold">{t("加入收藏库")}</label>
                                     <div className="flex gap-2">
                                         <input
                                             id="history-inspiration-title"
@@ -1256,6 +1261,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
                                             {isPublishing ? t("整理中") : t("加入")}
                                         </ToolbarButton>
                                     </div>
+                                    <div className="mt-2"><CollectionFolderSelect value={collectionFolderId} onChange={setCollectionFolderId} disabled={isPublishing || isPreparingImport} notify={notify} className="mobile-touch h-10 w-full rounded-lg border border-indigo-200 bg-white px-2 text-sm dark:border-indigo-800 dark:bg-gray-800" /></div>
                                 </div>
                             </div>
                             <div className="space-y-4">
@@ -1345,12 +1351,12 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ currentUser, chains, not
 
             {/* Success Modal */}
             {showSuccessModal && (<ImagePreviewPortal>
-                <div role="dialog" aria-modal="true" aria-label={t("已加入灵感库")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div role="dialog" aria-modal="true" aria-label={t("已加入收藏库")} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="appearance-panel bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col items-center text-center animate-bounce-in">
                         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center text-3xl mb-4">
                             ✨
                         </div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t("已加入灵感库")}</h3>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t("已加入收藏库")}</h3>
                         <button
                             onClick={() => setShowSuccessModal(false)}
                             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold shadow-lg transition-all"

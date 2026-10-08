@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { createUuid } from '../services/id';
-import { normalizeInspirationTags, sourceLabel } from '../services/inspirationUtils';
+import { normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover } from './ToolbarPopover';
@@ -18,6 +18,7 @@ import { ImageShareOverlay } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { InspirationDetail } from './inspiration/InspirationDetail';
+import { CollectionFolderSelect, CollectionTagInput } from './inspiration/CollectionControls';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, SortMode, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
@@ -47,7 +48,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [collection, setCollection] = useState<SmartCollection>('all');
   const [boardId, setBoardId] = useState('');
   const [search, setSearch] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<InspirationSourceType | ''>('');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState('');
+  const draggedIdsRef = useRef<string[]>([]);
+  const movingRef = useRef(false);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState(0);
   const [sort, setSort] = useState<SortMode>('created');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -77,7 +83,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   const loadBoards = async () => {
     try { setBoards(await db.getInspirationBoards()); }
-    catch (error: any) { notify(error.message || '灵感板加载失败', 'error'); }
+    catch (error: any) { notify(error.message || '收藏夹加载失败', 'error'); }
   };
   useEffect(() => { void loadBoards(); }, []);
   useEffect(() => () => { if (uploadPreview.startsWith('blob:')) URL.revokeObjectURL(uploadPreview); }, [uploadPreview]);
@@ -93,7 +99,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const allTags = useMemo(() => {
     const tagCounts = new Map<string, number>();
     items.forEach(item => (item.tags || []).forEach(tag => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)));
-    return Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 80);
+    return Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [items]);
 
   // 搜索防抖：击键不再即时触发对全量 items 的过滤重算
@@ -103,20 +109,20 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  // 侧栏来源计数与板名查找：避免每次渲染 O(来源数×items) 与每卡 O(boards)
+  // 侧栏来源计数与收藏夹名称查找：避免每次渲染 O(来源数×items) 与每卡 O(boards)
   const sourceCounts = useMemo(() => {
     const result: Record<string, number> = {};
     items.forEach(item => {
-      if (item.archived) return;
+      if (Boolean(item.archived) !== (collection === 'archived')) return;
       const key = item.sourceType || 'other';
       result[key] = (result[key] || 0) + 1;
     });
     return result;
-  }, [items]);
+  }, [items, collection]);
   const availableSources = useMemo(() => {
     return (['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'other'] as InspirationSourceType[])
-      .filter(source => (sourceCounts[source] || 0) > 0);
-  }, [sourceCounts]);
+      .filter(source => (sourceCounts[source] || 0) > 0 || source === sourceFilter);
+  }, [sourceCounts, sourceFilter]);
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
 
   const filtered = useMemo(() => {
@@ -126,9 +132,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (collection === 'unorganized' && item.boardId) return false;
       if (collection === 'pinned' && !item.isPinned) return false;
       if (collection === 'recent' && !item.lastUsedAt) return false;
-      if (collection.startsWith('source:') && (item.sourceType || 'other') !== collection.slice(7)) return false;
+      if (sourceFilter && (item.sourceType || 'other') !== sourceFilter) return false;
       if (boardId && item.boardId !== boardId) return false;
-      if (tagFilter && !(item.tags || []).includes(tagFilter)) return false;
+      if (!tagFilter.every(tag => (item.tags || []).includes(tag))) return false;
       if (ratingFilter && (item.rating || 0) < ratingFilter) return false;
       if (query && ![item.title, item.prompt, item.negativePrompt, item.notes, ...(item.tags || [])].join('\n').toLowerCase().includes(query)) return false;
       return true;
@@ -139,7 +145,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (sort === 'rating') return (b.rating || 0) - (a.rating || 0);
       return b.createdAt - a.createdAt;
     });
-  }, [items, collection, boardId, tagFilter, ratingFilter, debouncedSearch, sort]);
+  }, [items, collection, boardId, sourceFilter, tagFilter, ratingFilter, debouncedSearch, sort]);
 
   const setUploadValue = <K extends keyof UploadDraft>(key: K, value: UploadDraft[K]) => setUploadDraft(previous => ({ ...previous, [key]: value }));
 
@@ -149,21 +155,21 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     try {
       if (boardEditor.id) await db.updateInspirationBoard(boardEditor.id, { name: boardEditor.name.trim(), color: boardEditor.color });
       else await db.createInspirationBoard({ id: createUuid(), userId: currentUser.id, name: boardEditor.name.trim(), color: boardEditor.color, sortOrder: boards.length, createdAt: Date.now(), updatedAt: Date.now() });
-      const wasEdit = Boolean(boardEditor.id); setBoardEditor(null); await loadBoards(); notify(wasEdit ? '灵感板已更新' : '灵感板已创建');
-    } catch (error: any) { notify(error.message || '灵感板保存失败', 'error'); }
+      const wasEdit = Boolean(boardEditor.id); setBoardEditor(null); await loadBoards(); notify(wasEdit ? '收藏夹已更新' : '收藏夹已创建');
+    } catch (error: any) { notify(error.message || '收藏夹保存失败', 'error'); }
     finally { setBusy(''); }
   };
 
   const deleteBoard = async (board: InspirationBoard) => {
-    if (!await confirmAction({ title: `删除“${board.name}”？`, message: '板内灵感不会删除，它们会回到“未整理”。', confirmLabel: '删除灵感板', tone: 'danger' })) return;
-    try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('灵感板已删除'); }
+    if (!await confirmAction({ title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，它们会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
+    try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('收藏夹已删除'); }
     catch (error: any) { notify(error.message || '删除失败', 'error'); }
   };
 
   const chooseFile = async (file?: File) => {
     if (!file) return;
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) return notify('只支持 PNG、JPEG 或 WebP 图片', 'error');
-    if (!file.size || file.size > 12 * 1024 * 1024) return notify('灵感图片不能超过 12 MB', 'error');
+    if (!file.size || file.size > 12 * 1024 * 1024) return notify('收藏图片不能超过 12 MB', 'error');
     if (uploadPreview.startsWith('blob:')) URL.revokeObjectURL(uploadPreview);
     const readId = ++uploadReadRef.current;
     setBusy('metadata'); setUploadFile(file); setUploadPreview(URL.createObjectURL(file));
@@ -186,12 +192,43 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     try {
       const uploaded = await api.uploadFile(uploadFile, 'inspirations');
       await db.saveInspiration({ id: createUuid(), userId: currentUser.id, username: currentUser.username, title: uploadDraft.title.trim(), imageUrl: uploaded.url, prompt: uploadDraft.prompt, negativePrompt: uploadDraft.negativePrompt, params: uploadDraft.params, notes: uploadDraft.notes, tags: splitTags(uploadDraft.tags), boardId: uploadDraft.boardId || undefined, sourceType: 'upload', createdAt: Date.now(), updatedAt: Date.now() });
-      setUploadOpen(false); setUploadFile(null); setUploadPreview(''); setUploadDraft(EMPTY_UPLOAD); await onRefresh(); notify('已加入灵感库');
+      rememberCollectionFolder(uploadDraft.boardId);
+      setUploadOpen(false); setUploadFile(null); setUploadPreview(''); setUploadDraft(EMPTY_UPLOAD); await onRefresh(); notify('已加入收藏库');
     } catch (error: any) { notify(error.message || '上传失败', 'error'); }
     finally { setBusy(''); }
   };
 
-  const toggleSelected = (id: string) => setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const toggleSelected = (id: string) => {
+    const item = items.find(candidate => candidate.id === id);
+    if (!item || !canEditItem(item, currentUser)) return;
+    setSelectedIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+  const moveToFolder = async (ids: string[], target: string) => {
+    if (movingRef.current || busy || (target && !boardNameById.has(target))) return;
+    const movable = items.filter(item => ids.includes(item.id) && canEditItem(item, currentUser) && (item.boardId || '') !== target).map(item => item.id);
+    if (!movable.length) return;
+    movingRef.current = true; setBusy('bulk');
+    try {
+      await db.bulkUpdateInspirations(movable, { boardId: target });
+      rememberCollectionFolder(target); setSelectedIds(new Set()); await onRefresh();
+      notify(target ? '已移动到收藏夹' : '已移至未整理');
+    } catch (error: any) { notify(error.message || '移动失败', 'error'); }
+    finally { movingRef.current = false; setBusy(''); }
+  };
+  const folderDropProps = (target: string): React.HTMLAttributes<HTMLElement> => ({
+    onDragOver: event => {
+      event.preventDefault();
+      if (!draggedIdsRef.current.length || busy) { event.dataTransfer.dropEffect = 'none'; return; }
+      event.dataTransfer.dropEffect = 'move'; setDropTarget(target);
+    },
+    onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); },
+    onDrop: event => {
+      event.preventDefault(); event.stopPropagation();
+      if (!draggedIdsRef.current.length) return;
+      const ids = draggedIdsRef.current; draggedIdsRef.current = []; setDropTarget(null);
+      void moveToFolder(ids, target);
+    },
+  });
   const runBulkUpdate = async (updates: Partial<Inspiration>, success: string) => {
     if (!selectedIds.size) return; setBusy('bulk');
     try { await db.bulkUpdateInspirations(Array.from(selectedIds), updates); setSelectedIds(new Set()); await onRefresh(); notify(success); }
@@ -205,50 +242,64 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     finally { setBusy(''); }
   };
   const deleteSelected = async () => {
-    if (!selectedIds.size || !await confirmAction({ title: `删除 ${selectedIds.size} 条灵感？`, message: '此操作不可撤销。被其他资料引用的原图会安全保留。', confirmLabel: '删除', tone: 'danger' })) return;
-    setBusy('bulk'); try { await db.bulkDeleteInspirations(Array.from(selectedIds)); setSelectedIds(new Set()); await onRefresh(); notify('已删除选中灵感'); }
+    if (!selectedIds.size || !await confirmAction({ title: `删除 ${selectedIds.size} 条收藏？`, message: '此操作不可撤销。被其他资料引用的原图会安全保留。', confirmLabel: '删除', tone: 'danger' })) return;
+    setBusy('bulk'); try { await db.bulkDeleteInspirations(Array.from(selectedIds)); setSelectedIds(new Set()); await onRefresh(); notify('已删除选中收藏'); }
     catch (error: any) { notify(error.message || '删除失败', 'error'); } finally { setBusy(''); }
   };
 
   const selectedItems = items.filter(item => selectedIds.has(item.id));
   const allSelectedPinned = selectedItems.length > 0 && selectedItems.every(item => item.isPinned);
   const allSelectedArchived = selectedItems.length > 0 && selectedItems.every(item => item.archived);
-  const activeTitle = boardId ? boards.find(board => board.id === boardId)?.name : collection === 'all' ? '全部灵感' : collection === 'unorganized' ? '未整理' : collection === 'pinned' ? '已置顶' : collection === 'recent' ? '最近使用' : collection === 'archived' ? '已归档' : sourceLabel(collection.slice(7) as InspirationSourceType);
-  const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(tagFilter)) + Number(ratingFilter > 0) + Number(sort !== 'created');
-  const resetFilters = () => { setBoardId(''); setTagFilter(''); setRatingFilter(0); setSort('created'); setCollection('all'); };
+  const activeTitle = boardId ? boards.find(board => board.id === boardId)?.name : collection === 'unorganized' ? '未整理' : collection === 'pinned' ? '已置顶' : collection === 'recent' ? '最近使用' : collection === 'archived' ? '已归档' : '全部收藏';
+  const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length + Number(ratingFilter > 0) + Number(sort !== 'created');
+  const resetFilters = () => { setBoardId(''); setTagFilter([]); setTagQuery(''); setSourceFilter(''); setRatingFilter(0); setSort('created'); setCollection('all'); };
+  const addFilterTag = () => {
+    const tag = tagQuery.trim();
+    if (allTags.some(([existing]) => existing === tag)) { setTagFilter(previous => Array.from(new Set([...previous, tag]))); setTagQuery(''); }
+  };
+  const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
   const renderBoardActions = (board: InspirationBoard) => <div data-card-action="true" className="hover-reveal-md flex flex-none items-center gap-1">
-    <button type="button" aria-label={t("编辑灵感板：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
-    <button type="button" aria-label={t("删除灵感板：{0}", [board.name])} title={t("删除灵感板")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
+    <button type="button" aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
+    <button type="button" aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
   </div>;
-  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} className={`group flex items-center rounded-xl border ${boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
-    <button type="button" aria-label={t("选择灵感板：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
+  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} {...folderDropProps(board.id)} className={`group flex items-center rounded-xl border ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
+    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); if (collection === 'unorganized') setCollection('all'); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
   </PressRevealSurface>;
   const renderFilterControls = (mobile: boolean) => <div className="grid grid-cols-2 gap-3">
     {mobile && <>
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("分类")}<select value={collection} onChange={event => { setCollection(event.target.value as SmartCollection); setBoardId(''); }} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="all">{t("全部灵感")}</option><option value="unorganized">{t("未整理")}</option>{counts.pinned > 0 && <option value="pinned">{t("已置顶")}</option>}{(counts.archived > 0 || collection === 'archived') && <option value="archived">{t("已归档")}</option>}{availableSources.map(source => <option key={source} value={`source:${source}`}>{t("来源：{0}", [sourceLabel(source)])}</option>)}</select></label>
-    <div className="col-span-2" role="group" aria-label={t("灵感板")}><div className="flex items-center justify-between text-sm font-bold text-gray-600 dark:text-gray-300"><span>{t("灵感板")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-xl text-indigo-600" aria-label={t("新建灵感板")}><FolderPlus className="h-4 w-4" /></button></div><div className="max-h-40 space-y-1 overflow-y-auto"><button type="button" aria-pressed={!boardId} onClick={() => setBoardId('')} className={`mobile-touch flex w-full items-center rounded-xl px-3 text-left text-sm ${!boardId ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}>{t("全部灵感板")}</button>{boards.map(renderBoardRow)}</div></div>
+    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("分类")}<select value={collection} onChange={event => { setCollection(event.target.value as SmartCollection); if (event.target.value === 'unorganized') setBoardId(''); }} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="all">{t("全部收藏")}</option><option value="unorganized">{t("未整理")}</option>{counts.pinned > 0 && <option value="pinned">{t("已置顶")}</option>}{(counts.archived > 0 || collection === 'archived') && <option value="archived">{t("已归档")}</option>}</select></label>
+    <label className="text-sm font-bold text-gray-600 dark:text-gray-300">{t('来源')}<select aria-label={t('来源')} value={sourceFilter} onChange={event => setSourceFilter(event.target.value as InspirationSourceType | '')} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950"><option value="">{t('全部来源')}</option>{availableSources.map(source => <option key={source} value={source}>{t(sourceLabel(source))}</option>)}</select></label>
+    <div className="col-span-2" role="group" aria-label={t("收藏夹")}><div className="flex items-center justify-between text-sm font-bold text-gray-600 dark:text-gray-300"><span>{t("收藏夹")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-xl text-indigo-600" aria-label={t("新建收藏夹")}><FolderPlus className="h-4 w-4" /></button></div><div className="max-h-40 space-y-1 overflow-y-auto"><button type="button" aria-pressed={!boardId} onClick={() => setBoardId('')} className={`mobile-touch flex w-full items-center rounded-xl px-3 text-left text-sm ${!boardId ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}>{t("全部收藏夹")}</button>{boards.map(renderBoardRow)}</div></div>
     </>}
-    <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("标签")}<select value={tagFilter} onChange={event => setTagFilter(event.target.value)} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="">{t("全部标签")}</option>{allTags.map(([tag, count]) => <option key={tag} value={tag}>{tag} ({count})</option>)}</select></label>
+    <div className="col-span-2"><label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t('标签（同时满足）')}<div className="mt-1.5 flex gap-2"><CollectionTagInput aria-label={t('标签')} value={tagQuery} suggestions={allTags.map(([tag]) => tag).filter(tag => !tagFilter.includes(tag))} onChange={event => setTagQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addFilterTag(); } }} onBlur={addFilterTag} placeholder={t('搜索已有标签')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><button type="button" aria-label={t('添加筛选标签')} disabled={!allTags.some(([tag]) => tag === tagQuery.trim()) || tagFilter.includes(tagQuery.trim())} onClick={addFilterTag} className="mobile-touch rounded-xl px-3 text-indigo-600 disabled:opacity-40"><Plus className="h-4 w-4" /></button></div></label></div>
     <label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("最低评分")}<select value={ratingFilter} onChange={event => setRatingFilter(Number(event.target.value))} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="0">{t("全部评分")}</option><option value="1">{t("1 星以上")}</option><option value="2">{t("2 星以上")}</option><option value="3">{t("3 星以上")}</option><option value="4">{t("4 星以上")}</option><option value="5">{t("5 星")}</option></select></label>
     <label className="col-span-2 text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t("排序")}<select value={sort} onChange={event => setSort(event.target.value as SortMode)} className="mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal text-gray-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"><option value="created">{t("最近收藏")}</option><option value="used">{t("最近使用")}</option><option value="popular">{t("使用最多")}</option><option value="rating">{t("评分最高")}</option></select></label>
+    {tagFilter.length > 0 && <div className="col-span-2 flex flex-wrap gap-1">{tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}</div>}
   </div>;
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索标题、提示词、备注或标签")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
-      <ToolbarPopover title={t("筛选灵感")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
-        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter(''); setRatingFilter(0); setSort('created'); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
+      <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
+        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); setRatingFilter(0); setSort('created'); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
       </ToolbarPopover>
       <ToolbarButton aria-label={selectedIds.size ? t("取消全部选择") : t("全选筛选结果")} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3" tone={selectedIds.size ? 'primary' : 'neutral'}><CheckSquare /><span className="hidden sm:inline">{selectedIds.size ? t("取消已选 ") + selectedIds.size : t("全选筛选结果")}</span></ToolbarButton>
-      <ToolbarButton tone="primary" aria-label={t("加入灵感库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入灵感库")}</span></ToolbarButton>
+      <ToolbarButton tone="primary" aria-label={t("加入收藏库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
     </WorkspaceToolbar>
+    {(collection !== 'all' || boardId || sourceFilter || tagFilter.length > 0 || ratingFilter > 0) && <div role="group" aria-label={t('当前筛选')} className="flex flex-none flex-wrap gap-1 border-b border-gray-200 px-3 py-1 dark:border-gray-800 md:px-5">
+      {collection !== 'all' && filterChip(t(collection === 'unorganized' ? '未整理' : collection === 'pinned' ? '已置顶' : collection === 'archived' ? '已归档' : '最近使用'), () => setCollection('all'))}
+      {boardId && filterChip(t('收藏夹：{0}', [boardNameById.get(boardId) || '']), () => setBoardId(''))}
+      {sourceFilter && filterChip(t('来源：{0}', [t(sourceLabel(sourceFilter))]), () => setSourceFilter(''))}
+      {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
+      {ratingFilter > 0 && filterChip(t('最低评分：{0}', [ratingFilter]), () => setRatingFilter(0))}
+    </div>}
 
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-56 flex-none overflow-y-auto border-r border-gray-200 bg-gray-50/70 p-3 dark:border-gray-800 dark:bg-gray-900/60 md:block">
         <div className="mb-2 px-2 text-meta font-black uppercase tracking-widest text-gray-400">{t("视图")}</div>
         <div className="space-y-1">
-          <CollectionButton active={collection === 'all' && !boardId} count={counts.all} icon={<Library />} label={t("全部灵感")} onClick={() => { setCollection('all'); setBoardId(''); }} />
-          <CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Sparkles />} label={t("未整理")} onClick={() => { setCollection('unorganized'); setBoardId(''); }} />
+          <CollectionButton active={collection === 'all' && !boardId} count={counts.all} icon={<Library />} label={t("全部收藏")} onClick={() => { setCollection('all'); setBoardId(''); }} />
+          <div {...folderDropProps('')} className={dropTarget === '' ? 'rounded-xl ring-2 ring-indigo-500' : ''}><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Sparkles />} label={t("未整理")} onClick={() => { setCollection('unorganized'); setBoardId(''); }} /></div>
           {(counts.pinned > 0 || collection === 'pinned') && (
             <CollectionButton active={collection === 'pinned'} count={counts.pinned} icon={<Pin />} label={t("已置顶")} onClick={() => { setCollection('pinned'); setBoardId(''); }} />
           )}
@@ -257,44 +308,40 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           )}
         </div>
 
-        <div className="mb-2 mt-6 flex items-center justify-between px-2"><span className="text-meta font-black uppercase tracking-widest text-gray-400">{t("灵感板")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="text-indigo-600" aria-label={t("新建灵感板")}><FolderPlus className="h-4 w-4" /></button></div>
+        <div className="mb-2 mt-6 flex items-center justify-between px-2"><span className="text-meta font-black uppercase tracking-widest text-gray-400">{t("收藏夹")}</span><button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="text-indigo-600" aria-label={t("新建收藏夹")}><FolderPlus className="h-4 w-4" /></button></div>
         <div className="space-y-1">
           {boards.map(renderBoardRow)}
-          {!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-400 dark:border-gray-700">{t("创建第一个灵感板")}</button>}
+          {!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="w-full rounded-xl border border-dashed border-gray-300 px-3 py-4 text-xs text-gray-400 dark:border-gray-700">{t("创建第一个收藏夹")}</button>}
         </div>
       </aside>
 
       <main ref={mainScrollRef} onScroll={onMainScrollRestore} className="min-w-0 flex-1 overflow-y-auto">
         {selectedIds.size > 0 && <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/70 md:px-5">
           <b className="mr-1 text-sm text-indigo-800 dark:text-indigo-200">{t("已选 {0} 项", [selectedIds.size])}</b>
-          <select defaultValue="" onChange={event => { if (event.target.value) void runBulkUpdate({ boardId: event.target.value === '__none' ? '' : event.target.value }, '已移动到灵感板'); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
-          <div className="flex h-9 overflow-hidden rounded-lg border border-indigo-200 bg-white dark:border-indigo-800 dark:bg-gray-900"><input value={bulkTag} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" onClick={() => void addBulkTags()} className="border-l border-indigo-200 px-2 text-xs font-bold text-indigo-600 dark:border-indigo-800">{t("添加")}</button></div>
+          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
+          <div className="flex h-9 overflow-hidden rounded-lg border border-indigo-200 bg-white dark:border-indigo-800 dark:bg-gray-900"><CollectionTagInput value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" onClick={() => void addBulkTags()} className="border-l border-indigo-200 px-2 text-xs font-bold text-indigo-600 dark:border-indigo-800">{t("添加")}</button></div>
           <button type="button" onClick={() => void runBulkUpdate({ isPinned: !allSelectedPinned }, allSelectedPinned ? '已取消置顶' : '已置顶')} className="h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-bold dark:border-indigo-800 dark:bg-gray-900">{allSelectedPinned ? t("取消置顶") : t("置顶")}</button>
           <button type="button" disabled={Boolean(busy)} onClick={() => void runBulkUpdate({ archived: !allSelectedArchived }, allSelectedArchived ? '已恢复' : '已归档')} className="mobile-touch h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-bold disabled:opacity-40 dark:border-indigo-800 dark:bg-gray-900">{allSelectedArchived ? t("恢复到资料库") : t("归档")}</button>
           <button type="button" onClick={() => void deleteSelected()} className="ml-auto h-9 rounded-lg bg-red-600 px-3 text-xs font-bold text-white"><Trash2 className="mr-1 inline h-3.5 w-3.5" />{t("删除")}</button>
         </div>}
 
-        <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{t("{0} 条灵感 · {1}", [filtered.length, sort === 'created' ? t("最近收藏") : sort === 'used' ? t("最近使用") : sort === 'popular' ? t("使用最多") : t("评分最高")])}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">{t("清除条件")}</button>}</div>
+        <div className="flex items-center justify-between border-b border-gray-200 bg-white/60 px-3 py-3 dark:border-gray-800 dark:bg-gray-900/40 md:px-5"><div><h1 className="text-base font-black text-gray-950 dark:text-white">{activeTitle}</h1><p className="mt-0.5 text-xs text-gray-400">{t("{0} 条收藏 · {1}", [filtered.length, sort === 'created' ? t("最近收藏") : sort === 'used' ? t("最近使用") : sort === 'popular' ? t("使用最多") : t("评分最高")])}</p></div>{(search || activeFilterCount > 0) && <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mobile-touch rounded-lg px-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">{t("清除条件")}</button>}</div>
 
         {availableSources.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200/80 bg-white/40 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-900/20 md:px-5">
             <span className="mr-1 text-micro font-bold text-gray-400">{t("来源")}</span>
             {availableSources.map(source => {
               const SourceIcon = sourceIcon(source);
-              const isSelected = collection === `source:${source}`;
+              const isSelected = sourceFilter === source;
               const count = sourceCounts[source] || 0;
               return (
                 <button
                   key={source}
                   type="button"
                   onClick={() => {
-                    if (isSelected) {
-                      setCollection('all');
-                    } else {
-                      setCollection(`source:${source}`);
-                      setBoardId('');
-                    }
+                    setSourceFilter(isSelected ? '' : source);
                   }}
+                  aria-pressed={isSelected}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                     isSelected
                       ? 'bg-indigo-50 text-indigo-600 font-semibold ring-1 ring-indigo-500/20 dark:bg-indigo-950/60 dark:text-indigo-300'
@@ -315,11 +362,18 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
           {filtered.map(item => {
             const SourceIcon = sourceIcon(item.sourceType); const selected = selectedIds.has(item.id);
-            return <MediaCardShell pressReveal key={item.id} data-safe-mode-work="true" selected={selected} className="group relative flex flex-col">
+            return <MediaCardShell pressReveal key={item.id} data-safe-mode-work="true" selected={selected} className="group relative flex flex-col"
+              draggable={canEditItem(item, currentUser) && !busy}
+              onDragStart={event => {
+                if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
+                draggedIdsRef.current = selected ? items.filter(candidate => selectedIds.has(candidate.id) && canEditItem(candidate, currentUser)).map(candidate => candidate.id) : [item.id];
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
+              }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
               <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
-                <button type="button" onClick={() => selectedIds.size ? toggleSelected(item.id) : setDetail(item)} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={item.title} thumbnailVariant="thumb-320" /></button>
+                <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} onClick={() => selectedIds.size ? toggleSelected(item.id) : setDetail(item)} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={item.title} thumbnailVariant="thumb-320" /></button>
                 <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-2"><span className="inline-flex items-center gap-1 rounded-full border border-white/70 bg-white/90 px-2 py-1 text-micro font-bold text-gray-700 shadow-sm backdrop-blur dark:border-white/15 dark:bg-black/60 dark:text-white"><SourceIcon className="h-3 w-3" />{sourceLabel(item.sourceType)}</span>{item.isPinned && <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-white shadow"><Pin className="h-3.5 w-3.5 fill-current" /></span>}</div>
-                <button data-card-action="true" type="button" onClick={() => toggleSelected(item.id)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择灵感")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
+                <button data-card-action="true" type="button" onClick={() => toggleSelected(item.id)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
                 <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${item.title || 'inspiration'}.png`} notify={notify} />
               </div>
               <button type="button" onClick={() => setDetail(item)} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{item.title}</h3>{(item.rating || 0) > 0 && <span className="inline-flex items-center gap-0.5 text-meta font-bold text-amber-500"><Star className="h-3 w-3 fill-current" />{item.rating}</span>}</div>{item.notes ? <p className="mt-1 line-clamp-2 text-meta leading-4 text-gray-500 dark:text-gray-400">{item.notes}</p> : <p className="mt-1 truncate font-mono text-micro text-gray-400">{item.prompt || t("尚未填写提示词")}</p>}{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}<div className="mt-2 flex items-center justify-between text-micro text-gray-400"><span>{boardNameById.get(item.boardId || '') || t("未整理")}</span><span>{t("使用 {0} 次", [item.useCount || 0])}</span></div></button>
@@ -329,9 +383,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           <EmptyState
             className="min-h-[45vh] px-6"
             icon={<Sparkles className="h-8 w-8" />}
-            title={t("这里还没有匹配的灵感")}
+            title={t("这里还没有匹配的收藏")}
             hint={t("从生成历史快速收藏，再在这里补充板、标签和备注；也可以直接上传参考图。")}
-            action={<button type="button" onClick={() => setUploadOpen(true)} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">{t("加入第一条灵感")}</button>}
+            action={<button type="button" onClick={() => setUploadOpen(true)} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">{t("加入第一条收藏")}</button>}
           />
         )}
       </main>
@@ -339,9 +393,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
 
 
-    {boardEditor && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-4" onClick={() => setBoardEditor(null)}><div ref={boardDialogRef} role="dialog" aria-modal="true" aria-label={boardEditor.id ? t("编辑灵感板") : t("新建灵感板")} className="appearance-panel ui-sheet-enter mobile-safe-bottom w-full max-w-sm rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}><h2 className="text-lg font-black">{boardEditor.id ? t("编辑灵感板") : t("新建灵感板")}</h2><input autoFocus value={boardEditor.name} onChange={event => setBoardEditor({ ...boardEditor, name: event.target.value })} placeholder={t("例如：电影感光影")} className="mt-4 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /><div className="mt-4 flex gap-2">{BOARD_COLORS.map(color => <button key={color} type="button" aria-pressed={boardEditor.color === color} onClick={() => setBoardEditor({ ...boardEditor, color })} className={`mobile-size-locked h-8 w-8 rounded-full transition ${boardEditor.color === color ? 'ring-2 ring-offset-2 dark:ring-offset-gray-900' : ''}`} style={{ backgroundColor: color }} aria-label={t("颜色 {0}", [color])} />)}</div><div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end"><button type="button" onClick={() => setBoardEditor(null)} className="mobile-touch rounded-xl border border-gray-200 px-4 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!boardEditor.name.trim() || busy === 'board'} onClick={() => void saveBoard()} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'board' ? t("正在保存…") : t("保存")}</button></div></div></div></ImagePreviewPortal>}
+    {boardEditor && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-4" onClick={() => setBoardEditor(null)}><div ref={boardDialogRef} role="dialog" aria-modal="true" aria-label={boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")} className="appearance-panel ui-sheet-enter mobile-safe-bottom w-full max-w-sm rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}><h2 className="text-lg font-black">{boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")}</h2><input autoFocus value={boardEditor.name} onChange={event => setBoardEditor({ ...boardEditor, name: event.target.value })} placeholder={t("例如：电影感光影")} className="mt-4 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /><div className="mt-4 flex gap-2">{BOARD_COLORS.map(color => <button key={color} type="button" aria-pressed={boardEditor.color === color} onClick={() => setBoardEditor({ ...boardEditor, color })} className={`mobile-size-locked h-8 w-8 rounded-full transition ${boardEditor.color === color ? 'ring-2 ring-offset-2 dark:ring-offset-gray-900' : ''}`} style={{ backgroundColor: color }} aria-label={t("颜色 {0}", [color])} />)}</div><div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end"><button type="button" onClick={() => setBoardEditor(null)} className="mobile-touch rounded-xl border border-gray-200 px-4 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!boardEditor.name.trim() || busy === 'board'} onClick={() => void saveBoard()} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'board' ? t("正在保存…") : t("保存")}</button></div></div></div></ImagePreviewPortal>}
 
-    {uploadOpen && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-5" onClick={() => setUploadOpen(false)}><div ref={uploadDialogRef} role="dialog" aria-modal="true" aria-label={t("加入灵感库")} className="operation-dialog ui-modal-enter flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><header className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-500">{t("手动收录")}</p><h2 className="text-xl font-black">{t("加入灵感库")}</h2></div><IconButton label={t("关闭")} onClick={() => setUploadOpen(false)}><X /></IconButton></header><div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 md:grid-cols-[260px_1fr]"><button type="button" disabled={busy === 'upload'} onClick={() => fileInputRef.current?.click()} className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950">{uploadPreview ? <img src={uploadPreview} alt={t("上传预览")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-sm font-bold text-gray-400"><Upload className="h-7 w-7" />{t("选择图片")}<span className="text-micro font-normal">{t("PNG / JPEG / WebP，最多 12 MB")}</span></span>}</button><input aria-label={t("上传灵感图片")} disabled={busy === 'upload'} ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void chooseFile(event.target.files?.[0])} /><fieldset disabled={busy === 'metadata' || busy === 'upload'} className="space-y-3"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("标题")}</span><input data-safe-mode-title="true" value={uploadDraft.title} onChange={event => setUploadValue('title', event.target.value)} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label><div className="grid grid-cols-2 gap-3"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("灵感板")}</span><select value={uploadDraft.boardId} onChange={event => setUploadValue('boardId', event.target.value)} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950"><option value="">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("标签")}</span><input value={uploadDraft.tags} onChange={event => setUploadValue('tags', event.target.value)} placeholder={t("构图, 光影")} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label></div><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("备注")}</span><textarea value={uploadDraft.notes} onChange={event => setUploadValue('notes', event.target.value)} className="min-h-20 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("提示词")}</span><textarea value={uploadDraft.prompt} onChange={event => setUploadValue('prompt', event.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 bg-white p-3 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("负面提示词")}</span><textarea value={uploadDraft.negativePrompt} onChange={event => setUploadValue('negativePrompt', event.target.value)} className="min-h-16 w-full rounded-xl border border-gray-200 bg-white p-3 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" /></label></fieldset></div><footer className="operation-footer grid flex-none grid-cols-2 gap-3 border-t border-gray-200 dark:border-gray-800 md:flex md:justify-end"><button type="button" onClick={() => setUploadOpen(false)} className="mobile-touch rounded-xl border border-gray-200 px-5 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!uploadFile || !uploadDraft.title.trim() || Boolean(busy)} onClick={() => void upload()} className="mobile-touch rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'metadata' ? t("正在读取图片…") : busy === 'upload' ? t("正在保存…") : t("加入灵感库")}</button></footer></div></div></ImagePreviewPortal>}
+    {uploadOpen && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-5" onClick={() => setUploadOpen(false)}><div ref={uploadDialogRef} role="dialog" aria-modal="true" aria-label={t("加入收藏库")} className="operation-dialog ui-modal-enter flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><header className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800"><div><p className="text-xs font-black uppercase tracking-wider text-indigo-500">{t("手动收录")}</p><h2 className="text-xl font-black">{t("加入收藏库")}</h2></div><IconButton label={t("关闭")} onClick={() => setUploadOpen(false)}><X /></IconButton></header><div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 md:grid-cols-[260px_1fr]"><button type="button" disabled={busy === 'upload'} onClick={() => fileInputRef.current?.click()} className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950">{uploadPreview ? <img src={uploadPreview} alt={t("上传预览")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-sm font-bold text-gray-400"><Upload className="h-7 w-7" />{t("选择图片")}<span className="text-micro font-normal">{t("PNG / JPEG / WebP，最多 12 MB")}</span></span>}</button><input aria-label={t("上传收藏图片")} disabled={busy === 'upload'} ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void chooseFile(event.target.files?.[0])} /><fieldset disabled={busy === 'metadata' || busy === 'upload'} className="space-y-3"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("标题")}</span><input data-safe-mode-title="true" value={uploadDraft.title} onChange={event => setUploadValue('title', event.target.value)} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label><div className="grid grid-cols-2 gap-3"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("收藏夹")}</span><CollectionFolderSelect value={uploadDraft.boardId} onChange={id => setUploadValue('boardId', id)} boards={boards} notify={notify} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("标签")}</span><CollectionTagInput suggestions={allTags.map(([tag]) => tag)} value={uploadDraft.tags} onChange={event => setUploadValue('tags', event.target.value)} placeholder={t("构图, 光影")} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label></div><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("备注")}</span><textarea value={uploadDraft.notes} onChange={event => setUploadValue('notes', event.target.value)} className="min-h-20 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm dark:border-gray-800 dark:bg-gray-950" /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("提示词")}</span><textarea value={uploadDraft.prompt} onChange={event => setUploadValue('prompt', event.target.value)} className="min-h-24 w-full rounded-xl border border-gray-200 bg-white p-3 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t("负面提示词")}</span><textarea value={uploadDraft.negativePrompt} onChange={event => setUploadValue('negativePrompt', event.target.value)} className="min-h-16 w-full rounded-xl border border-gray-200 bg-white p-3 font-mono text-xs dark:border-gray-800 dark:bg-gray-950" /></label></fieldset></div><footer className="operation-footer grid flex-none grid-cols-2 gap-3 border-t border-gray-200 dark:border-gray-800 md:flex md:justify-end"><button type="button" onClick={() => setUploadOpen(false)} className="mobile-touch rounded-xl border border-gray-200 px-5 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!uploadFile || !uploadDraft.title.trim() || Boolean(busy)} onClick={() => void upload()} className="mobile-touch rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'metadata' ? t("正在读取图片…") : busy === 'upload' ? t("正在保存…") : t("加入收藏库")}</button></footer></div></div></ImagePreviewPortal>}
 
     {detail && <InspirationDetail item={detail} items={items} boards={boards} currentUser={currentUser} notify={notify} onClose={() => setDetail(null)} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} onCreateArtistChain={onCreateArtistChain} onOpenItem={setDetail} />}
   </div>;

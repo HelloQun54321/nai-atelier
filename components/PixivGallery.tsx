@@ -645,12 +645,12 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (illust: PixivIllust, page: number, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+  const saveToInspiration = async (illust: PixivIllust, page: number, reverse?: ExternalImageTags, existing?: Inspiration, boardId = ''): Promise<Inspiration> => {
     const analysis = externalImageAnalysis(illust.tags, page, reverse, existing);
     if (existing) {
-      const updates = { analysis, ...(reverse ? { prompt: reverse.prompt } : {}) };
+      const updates = { analysis, ...(boardId !== (existing.boardId || '') ? { boardId } : {}), ...(reverse ? { prompt: reverse.prompt } : {}) };
       await db.updateInspiration(existing.id, updates);
-      onRefreshInspiration?.(); notify('已更新灵感库，原站与反推 Tag 分别保留');
+      onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
       return { ...existing, ...updates };
     }
     const pageUrl = getPixivCurrentPageUrl(illust, page);
@@ -665,6 +665,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       imageUrl: uploaded.url,
       prompt: reverse?.prompt ?? '',
       analysis,
+      boardId: boardId || undefined,
       tags: ['Pixiv', ...illust.tags.slice(0, 8)],
       sourceType: 'pixiv',
       sourceId: illust.id,
@@ -673,7 +674,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
       updatedAt: Date.now(),
     });
     onRefreshInspiration?.();
-    notify('已加入灵感库');
+    notify('已加入收藏库');
     return response.item;
   };
 
@@ -1120,7 +1121,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, currentUser,
                 <button type="button" aria-label={t("查看 {0} 的作者全集", [selected.user.name])} title={t("查看 {0} 的作者全集", [selected.user.name])} onClick={() => openAuthorWorks(selected.user.id, selected.user.name)} className="ml-auto min-h-10 min-w-0 truncate rounded text-right font-semibold text-indigo-600 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 lg:min-h-0">{selected.user.name}</button>
               </div>
               <ExternalImageTools key={`pixiv:${selected.id}:${selectedPage}`} source="pixiv" sourceId={selected.id} page={selectedPage} imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')}
-                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, selectedPage, reverse, existing)} notify={notify}
+                sourcePrompt={selected.tags.join(', ')} onImport={importToPlayground} onSave={(reverse, existing, boardId) => saveToInspiration(selected, selectedPage, reverse, existing, boardId)} notify={notify}
                 trailingAction={<IconButton
                   label={bookmarking ? t("正在同步 Pixiv 收藏") : selected.isBookmarked ? t("取消 Pixiv 收藏") : t("收藏到 Pixiv")}
                   aria-pressed={Boolean(selected.isBookmarked)}

@@ -17,6 +17,8 @@ import {
   getAitagType,
 } from '../services/aitagService';
 import { db } from '../services/dbService';
+import { CollectionFolderSelect } from './inspiration/CollectionControls';
+import { rememberCollectionFolder } from '../services/inspirationUtils';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
 import { NAIParams, PromptChain, User } from '../types';
 import { SmartImage } from './SmartImage';
@@ -316,6 +318,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const savingImageRef = useRef<string | null>(null);
   const [savingImage, setSavingImage] = useState<string | null>(null);
+  const [collectionFolderId, setCollectionFolderId] = useState('');
   const [error, setError] = useState<string | null>(() => aitagPageCache.error);
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
@@ -1057,7 +1060,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       }
     } catch (e: any) {
       loadWorks(page, { silent: true });
-      notify(e.message || '加入灵感库失败', 'error');
+      notify(e.message || '加入收藏库失败', 'error');
     }
   };
 
@@ -1214,6 +1217,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         userId: currentUser.id,
         username: currentUser.username,
         title: getImageTitle(image, index),
+        boardId: collectionFolderId || undefined,
         imageUrl: buildAitagImageUrl(image),
         prompt: importData.prompt,
         negativePrompt: importData.negativePrompt,
@@ -1226,9 +1230,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         updatedAt: Date.now(),
       });
       onRefreshInspiration?.();
-      notify('已加入灵感库');
+      rememberCollectionFolder(collectionFolderId); notify('已加入收藏库');
     } catch (e: any) {
-      notify(e.message || '加入灵感库失败', 'error');
+      notify(e.message || '加入收藏库失败', 'error');
     } finally {
       savingImageRef.current = null;
       setSavingImage(null);
@@ -1400,6 +1404,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("aitag 原页")}</ToolbarLink>
                 <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("Pixiv 原页")}</ToolbarLink>
               </div>
+              <label className="flex items-center justify-end gap-2 text-xs text-gray-500">{t("收藏夹")}<CollectionFolderSelect value={collectionFolderId} onChange={setCollectionFolderId} disabled={savingImage !== null} notify={notify} /></label>
               {selectedDetail.images
                 .slice()
                 .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
@@ -1432,7 +1437,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                             </div>
                             <div className="flex flex-none gap-2">
                               <IconButton label={t("保存到风格串")} disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
-                              <IconButton label={t("加入灵感库")} tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
+                              <IconButton label={t("加入收藏库")} tone="favorite" disabled={savingImage !== null} aria-busy={savingImage === `inspiration-${image.work_id}-${image.file_name}`} onClick={() => saveToInspiration(image, index)}>{savingImage === `inspiration-${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Star />}</IconButton>
                               <IconButton label={t("导入实验室")} tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
                               {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}

@@ -22,7 +22,7 @@ vi.mock('../../components/ShortestColumnMasonry', () => ({
   ShortestColumnMasonry: ({ items, renderItem }: { items: DanbooruPost[]; renderItem: (post: DanbooruPost) => React.ReactNode }) => <div>{items.map(renderItem)}</div>,
 }));
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
-vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn(async () => []), updateInspiration: vi.fn() } }));
+vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn(async () => []), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { post: vi.fn() } }));
 vi.mock('../../services/danbooruCoverImport', () => ({ importDanbooruCoverAsDataUrl: vi.fn() }));
 
@@ -112,7 +112,7 @@ it('详情主操作是图片反推，原站复制／使用独立，保存实际�
   expect(screen.getByRole('group', { name: '图片操作' }).contains(source)).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '原站 Tag 送往实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'solo', mode: 'append-prompt' });
-  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
   await waitFor(() => expect(api.post).toHaveBeenCalledWith('/inspirations', expect.objectContaining({ imageUrl: 'data:image/png;base64,c3ludGhldGlj', prompt: 'solo', analysis: { externalSourceTags: ['synthetic_artist', 'solo'], externalSourcePage: 0 } })));
 });
 it('同一作品更新已存反推，不重复下载或创建，保留原分类与备注', async () => {
@@ -122,7 +122,7 @@ it('同一作品更新已存反推，不重复下载或创建，保留原分类�
   await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
   await screen.findByRole('textbox', { name: '反推 Tag' });
   fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited hair' } });
-  fireEvent.click(screen.getByRole('button', { name: '更新灵感库' }));
+  fireEvent.click(screen.getByRole('button', { name: '更新收藏库' }));
   await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith('saved', { prompt: 'edited hair', analysis: { extra: 'keep', externalSourcePage: 0, externalSourceTags: ['synthetic_artist', 'solo'], imageTagger: { ...stored.analysis.imageTagger, prompt: 'edited hair' } } }));
   expect(importDanbooruCoverAsDataUrl).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });

@@ -217,7 +217,7 @@ const PIXIV_IMAGE_TIMEOUT_MS = 20_000;
 
 /**
  * 与 danbooruCoverImport 同款链路：经本机 /api/media 读取原图，返回可直接上传的 File，
- * 用于灵感库持久保存（浏览器直连 i.pximg.net 会因缺少官方 Referer 返回 403）。
+ * 用于收藏库持久保存（浏览器直连 i.pximg.net 会因缺少官方 Referer 返回 403）。
  * 返回 File 而非 data URL：交由 /api/upload 转存为 R2 资产 URL，
  * 避免多 MB 的 base64 原图随灵感缓存常驻内存。
  */

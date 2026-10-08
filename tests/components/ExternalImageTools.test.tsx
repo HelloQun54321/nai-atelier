@@ -8,7 +8,7 @@ import { imageTaggerService, type ImageTaggerResult } from '../../services/image
 import { externalImageAnalysis, type ExternalImageTags } from '../../services/externalImageTags';
 import type { Inspiration } from '../../types';
 
-vi.mock('../../services/dbService', () => ({ db: { getInspirationsBySource: vi.fn() } }));
+vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn() } }));
 vi.mock('../../services/imageTaggerService', () => ({ imageTaggerService: {
   getStatus: vi.fn(async () => ({ downloaded: true })), tagFile: vi.fn(),
 } }));
@@ -21,7 +21,7 @@ let serial = 0;
 const props = () => ({ source: 'danbooru' as const, sourceId: String(++serial), imageUrl: '/api/media/current.png', sourcePrompt: 'solo, original tag', onImport: vi.fn(),
   onSave: vi.fn(async (draft: ExternalImageTags | undefined) => ({ ...saved(), analysis: externalImageAnalysis(['original tag'], 0, draft) })), notify: vi.fn(), sourceTags: <span>原始分类</span> });
 beforeEach(() => {
-  vi.clearAllMocks(); vi.mocked(db.getInspirationsBySource).mockResolvedValue([]); vi.mocked(imageTaggerService.tagFile).mockResolvedValue(result);
+  vi.clearAllMocks(); localStorage.clear(); vi.mocked(db.getInspirationsBySource).mockResolvedValue([]); vi.mocked(imageTaggerService.tagFile).mockResolvedValue(result);
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => new Blob(['synthetic'], { type: 'image/png' }) })));
   vi.stubGlobal('URL', class extends URL { static createObjectURL = () => 'blob:synthetic'; static revokeObjectURL = vi.fn(); });
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => {}) } });
@@ -33,7 +33,7 @@ it('图片处理与保存共享内容宽度的单行，站内状态在同一行�
   const view = render(<ExternalImageTools {...props()} trailingAction={<button aria-label="收藏到 Pixiv">♡</button>} />); await ready();
   const row = screen.getByRole('group', { name: '图片操作' });
   expect(row.contains(screen.getByRole('button', { name: '图片反推' }))).toBe(true);
-  const save = screen.getByRole('button', { name: '加入灵感库' });
+  const save = screen.getByRole('button', { name: '加入收藏库' });
   expect(row.contains(save)).toBe(true);
   expect(row.contains(screen.getByRole('button', { name: '收藏到 Pixiv' }))).toBe(true);
   expect(row.classList.contains('flex')).toBe(true);
@@ -43,7 +43,7 @@ it('图片处理与保存共享内容宽度的单行，站内状态在同一行�
   expect(row.parentElement?.classList.contains('@container')).toBe(true);
   expect(screen.queryByRole('link', { name: '查看原帖' })).toBeNull();
   view.unmount(); render(<ExternalImageTools {...props()} />); await ready();
-  expect(screen.getByRole('group', { name: '图片操作' }).childElementCount).toBe(2);
+  expect(screen.getByRole('group', { name: '图片操作' }).childElementCount).toBe(3);
 });
 
 it('反推直接可达，原站和预测分别复制／导入，保存前允许编辑并保留模型结果', async () => {
@@ -62,9 +62,9 @@ it('反推直接可达，原站和预测分别复制／导入，保存前允许�
   fireEvent.click(screen.getByRole('button', { name: '复制反推 Tag' }));
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('blue hair, edited'));
   fireEvent.click(screen.getByRole('button', { name: '反推 Tag 送往实验室' })); expect(p.onImport).toHaveBeenLastCalledWith('blue hair, edited');
-  fireEvent.click(screen.getByRole('button', { name: '加入灵感库' }));
-  await waitFor(() => expect(p.onSave).toHaveBeenCalledWith(expect.objectContaining({ result, prompt: 'blue hair, edited' }), undefined));
-  expect(await screen.findByText('已保存到灵感库 · 模型预测')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  await waitFor(() => expect(p.onSave).toHaveBeenCalledWith(expect.objectContaining({ result, prompt: 'blue hair, edited' }), undefined, ''));
+  expect(await screen.findByText('已保存到收藏库 · 模型预测')).toBeTruthy();
 });
 
 it('保存结果按作品与页恢复，重新打开不重复推理或吞掉自定义文字，Pixiv 标签不直接送生图', async () => {
@@ -79,8 +79,8 @@ it('保存结果按作品与页恢复，重新打开不重复推理或吞掉自�
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(imageTaggerService.tagFile).not.toHaveBeenCalled();
   expect((screen.getByRole('textbox', { name: '反推 Tag' }) as HTMLTextAreaElement).value).toBe(reverse.prompt);
-  fireEvent.click(screen.getByRole('button', { name: '更新灵感库' }));
-  await waitFor(() => expect(p.onSave).toHaveBeenCalledWith(reverse, saved(1)));
+  fireEvent.click(screen.getByRole('button', { name: '更新收藏库' }));
+  await waitFor(() => expect(p.onSave).toHaveBeenCalledWith(reverse, saved(1), 'board'));
 });
 
 it('关闭或送往实验室也保留反推草稿，返回同一作品不丢失', async () => {
@@ -98,10 +98,10 @@ it('读取失败不能重复创建已保存图片，重试后恢复；保存失�
   const p = props(); p.onSave.mockRejectedValueOnce(new Error('保存失败'));
   render(<ExternalImageTools {...p} />);
   await screen.findByText('无法读取已保存的 Tag');
-  expect(screen.getByRole('button', { name: '加入灵感库' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: '加入收藏库' }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '重试读取' })); await ready();
   fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited' } });
-  fireEvent.click(screen.getByRole('button', { name: '更新灵感库' }));
+  fireEvent.click(screen.getByRole('button', { name: '更新收藏库' }));
   await waitFor(() => expect(p.notify).toHaveBeenCalledWith('保存失败', 'error'));
   expect(screen.getByText('尚未保存 · 模型预测')).toBeTruthy();
 });
@@ -124,4 +124,20 @@ it('局域网无 Clipboard API 时仍可主动复制，失败不报告成功', a
   expect(copy).toHaveBeenCalledWith('copy'); expect(document.querySelector('textarea')).toBeNull();
   copy.mockReturnValue(false); fireEvent.click(screen.getByRole('button', { name: '复制 Danbooru Tag' }));
   await waitFor(() => expect(p.notify).toHaveBeenLastCalledWith('复制失败，请重试', 'error'));
+});
+
+it('收藏夹是可选项，保存失败不记最近使用，成功后记住目的收藏夹', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValueOnce([{ id: 'chosen', name: '构图参考', userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
+  const p = props(); p.onSave.mockRejectedValueOnce(new Error('合成保存失败'));
+  render(<ExternalImageTools {...p} />); await ready();
+  const select = screen.getByRole('combobox', { name: '收藏夹' }) as HTMLSelectElement;
+  await waitFor(() => expect(select.disabled).toBe(false)); expect(select.value).toBe('');
+  fireEvent.change(select, { target: { value: 'chosen' } }); fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  await waitFor(() => expect(p.notify).toHaveBeenCalledWith('合成保存失败', 'error'));
+  expect(localStorage.getItem('nai-collection-recent-folders')).toBeNull();
+  expect(select.value).toBe('chosen');
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  await screen.findByRole('button', { name: '更新收藏库' });
+  expect(p.onSave).toHaveBeenLastCalledWith(undefined, undefined, 'chosen');
+  expect(JSON.parse(localStorage.getItem('nai-collection-recent-folders')!)).toEqual(['chosen']);
 });

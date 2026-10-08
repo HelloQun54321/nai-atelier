@@ -218,8 +218,8 @@ const App = () => {
       setInspirationsCache(data);
       setLastInspirationFetch(Date.now());
     } catch (e) {
-      console.error('加载灵感库失败', e);
-      notify('灵感库加载失败，请稍后重试', 'error');
+      console.error('加载收藏库失败', e);
+      notify('收藏库加载失败，请稍后重试', 'error');
     }
   };
 

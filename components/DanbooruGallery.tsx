@@ -387,12 +387,12 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
     onNavigateToPlayground();
   };
 
-  const saveToInspiration = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration): Promise<Inspiration> => {
+  const saveToInspiration = async (post: DanbooruPost, reverse?: ExternalImageTags, existing?: Inspiration, boardId = ''): Promise<Inspiration> => {
     const analysis = externalImageAnalysis(danbooruAllTags(post), 0, reverse, existing);
     if (existing) {
-      const updates = { analysis, ...(reverse ? { prompt: reverse.prompt } : {}) };
+      const updates = { analysis, ...(boardId !== (existing.boardId || '') ? { boardId } : {}), ...(reverse ? { prompt: reverse.prompt } : {}) };
       await db.updateInspiration(existing.id, updates);
-      onRefreshInspiration?.(); notify('已更新灵感库，原站与反推 Tag 分别保留');
+      onRefreshInspiration?.(); notify('已更新收藏库，原站与反推 Tag 分别保留');
       return { ...existing, ...updates };
     }
     const character = post.tags.character[0]?.replaceAll('_', ' ');
@@ -406,6 +406,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       imageUrl,
       prompt: reverse?.prompt ?? danbooruPromptTags(post),
       analysis,
+      boardId: boardId || undefined,
       tags: ['Danbooru', ...post.tags.character.slice(0, 3), ...post.tags.artist.slice(0, 2)],
       sourceType: 'danbooru',
       sourceId: String(post.id),
@@ -414,7 +415,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
       updatedAt: Date.now(),
     });
     onRefreshInspiration?.();
-    notify('已加入灵感库');
+    notify('已加入收藏库');
     return response.item;
   };
 
@@ -640,7 +641,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, curren
               {selected.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(selected.sampleUrl)} filename={`danbooru-${selected.id}.${selected.fileExt}`} notify={notify} />}
             </DetailImageStage>
             <ExternalImageTools key={`danbooru:${selected.id}`} source="danbooru" sourceId={String(selected.id)} imageUrl={buildMediaUrl(selected.sampleUrl, 'original')}
-              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing) => saveToInspiration(selected, reverse, existing)} notify={notify}
+              sourcePrompt={danbooruPromptTags(selected)} sourceCopy={danbooruAllTags(selected).join(', ')} onImport={importToPlayground} onSave={(reverse, existing, boardId) => saveToInspiration(selected, reverse, existing, boardId)} notify={notify}
               sourceTags={<>
                 {(Object.keys(categoryLabels) as DanbooruTagCategory[]).map(category => selected.tags[category].length > 0 && <section key={category}>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-black text-gray-700 dark:text-gray-200">{categoryLabels[category]} · {selected.tags[category].length}</h3><button type="button" onClick={() => void copyText(selected.tags[category].join(', ')).then(() => notify(`已复制${categoryLabels[category]} Tag`))} className="text-micro text-gray-500 hover:text-indigo-500">{t("复制")}</button></div>

@@ -37,7 +37,7 @@ export interface AgentPageOperation extends AgentPageReadOptions {
   delta?: { x: number; y: number };
   exportId?: string; sessionId?: string;
 }
-const pages: Record<string, string> = { list: '风格串', characters: '角色库', library: '画师库', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', inspiration: '灵感库', history: '生成历史', playground: '生图实验室', edit: '风格串编辑器' };
+const pages: Record<string, string> = { list: '风格串', characters: '角色库', library: '画师库', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', inspiration: '收藏库', history: '生成历史', playground: '生图实验室', edit: '风格串编辑器' };
 const privateSelector = '[data-agent-private],.agent-overlay,[data-agent-surface],script,style,[type="password"],[type="hidden"]';
 const controlSelector = 'button,input,textarea,select,summary,img,a[href],[data-agent-interaction],[role="button"],[role="checkbox"],[role="radio"],[role="switch"],[role="tab"],[role="option"],[role="menuitem"],[role="slider"],[contenteditable="true"]';
 const bootId = Math.random().toString(36).slice(2, 10);

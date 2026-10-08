@@ -19,7 +19,7 @@ vi.mock('../../services/localHistory', () => ({ localHistory: {
     getPage: vi.fn(), getBrowseOrder: vi.fn(), setFavorite: vi.fn(async () => 1), delete: vi.fn(),
     countOlderThan: vi.fn(async () => 0), getCount: vi.fn(async () => 2), deleteOlderThan: vi.fn(), keepOnly: vi.fn(),
 } }));
-vi.mock('../../services/dbService', () => ({ db: { saveInspiration: vi.fn(async () => {}) } }));
+vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), saveInspiration: vi.fn(async () => {}) } }));
 vi.mock('../../services/imageSharing', async importOriginal => ({
     ...await importOriginal<typeof import('../../services/imageSharing')>(),
     copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}),
@@ -98,17 +98,21 @@ describe('历史缩略图就地操作', () => {
         expect(localHistory.keepOnly).not.toHaveBeenCalled();
     });
 
-    it('加入灵感后的提示挂到根层，关闭提示不重复保存', async () => {
+    it('收藏到所选收藏夹后的提示挂到根层，关闭提示不重复保存', async () => {
+        vi.mocked(db.getInspirationBoards).mockResolvedValueOnce([{ id: 'composition', name: '构图参考', userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }]);
         const { container, cards } = await setup();
         fireEvent.click(cards[0]);
+        await screen.findByRole('option', { name: '构图参考' });
+        fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'composition' } });
         fireEvent.change(screen.getByPlaceholderText('为这张图取个标题...'), { target: { value: '合成标题' } });
         fireEvent.click(screen.getByRole('button', { name: '加入' }));
-        const dialog = await screen.findByRole('dialog', { name: '已加入灵感库' });
+        const dialog = await screen.findByRole('dialog', { name: '已加入收藏库' });
         expect(dialog.parentElement).toBe(container.firstElementChild);
         expect(dialog.closest('main')).toBeNull();
         fireEvent.click(within(dialog).getByRole('button', { name: '确定' }));
-        expect(screen.queryByRole('dialog', { name: '已加入灵感库' })).toBeNull();
+        expect(screen.queryByRole('dialog', { name: '已加入收藏库' })).toBeNull();
         expect(db.saveInspiration).toHaveBeenCalledOnce();
+        expect(db.saveInspiration).toHaveBeenCalledWith(expect.objectContaining({ boardId: 'composition', imageUrl: items[0].imageUrl, prompt: items[0].prompt }));
     });
 
     it.each([1280, 390])('宽度 %s 删除在左上，右上依次收藏、下载、复制，所有按钮无文字', async width => {
@@ -199,7 +203,7 @@ describe('历史详情导入实验室', () => {
         const actions = within(panel).getByRole('group', { name: '历史图片操作' });
         const params = within(panel).getByText('提示词与生成参数');
         expect(actions.compareDocumentPosition(params) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(screen.getByLabelText('加入灵感库').closest('details')).toBeNull();
+        expect(screen.getByLabelText('加入收藏库').closest('details')).toBeNull();
         const select = screen.getByRole('combobox', { name: '实验室导入模式' }) as HTMLSelectElement;
         expect(select.value).toBe('text-to-image');
         expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['文生图', '图生图', '局部重绘', '扩图']);
@@ -346,7 +350,7 @@ describe('历史连续浏览会话', () => {
         });
         const { container } = await setup(1280, 20);
         fireEvent.click(cardById(container, 'browse-19'));
-        fireEvent.click(screen.getByText('加入灵感库'));
+        fireEvent.click(screen.getByText('加入收藏库'));
         const input = screen.getByPlaceholderText('为这张图取个标题...');
         fireEvent.keyDown(input, { key: 'ArrowRight' });
         expect(screen.getByText('20 / 25')).toBeTruthy();
