@@ -59,7 +59,7 @@ vi.mock('../../services/naiService', () => ({ generateImage: state.generate, gen
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
 vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, InlineCloudQueueStatus: () => null }));
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
-vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; onValueChange: (value: string) => void }) => <textarea value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
+vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; disabled?: boolean; onValueChange: (value: string) => void }) => <textarea disabled={props.disabled} value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
@@ -144,6 +144,24 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('Medium 全局负面词禁用，生成和历史用有效参数，保存的工作台仍保留 High 草稿', async () => {
+  sessionStorage.setItem('nai_api_key', 'medium-test-key');
+  state.subscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 0 } };
+  state.generate.mockImplementation(async (_key, _prompt, _negative, generatedParams) => ({ image: 'data:image/png;base64,AQID', blob: new Blob(['image']), params: generatedParams, seed: 123 }));
+  setup({ ...chain, id: 'playground', params: { ...chain.params, model: 'nai-diffusion-5-full-medium', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light' } });
+  const negative = screen.getByDisplayValue('saved negative') as HTMLTextAreaElement;
+  expect(negative.disabled).toBe(true);
+  expect(negative.closest('.nai-model-locked')).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+  await waitFor(() => expect(state.addHistory).toHaveBeenCalledOnce());
+  expect(state.generate.mock.calls[0][2]).toBe('');
+  expect(state.addHistory.mock.calls[0][2]).toMatchObject({ steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPresetId: 'heavy' });
+  expect(state.addHistory.mock.calls[0][3]).toBe('');
+  const saved = loadLabWorkspaceSession('playground', fallback()).textToImage;
+  expect(saved.negativePrompt).toBe('saved negative');
+  expect(saved.params).toMatchObject({ steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light' });
+});
 
 it.each(['style', 'character'] as const)('%s 离开前保存复用当前最新草稿，返回成功并清除未保存标记', async type => {
   const { props } = setup({ ...chain, type });

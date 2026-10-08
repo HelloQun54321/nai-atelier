@@ -30,7 +30,7 @@ import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEdit
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
-import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
@@ -1475,8 +1475,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         generationInFlightRef.current = true;
         const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
-        const generationNegativePrompt = override?.negativePrompt ?? negativePrompt;
-        const generationParams = override?.params ?? params;
+        const generationParams = applyNaiModelSettings(override?.params ?? params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
+        const generationNegativePrompt = isNaiMediumModel(generationParams.model) ? '' : (override?.negativePrompt ?? negativePrompt);
         const previousGeneratedImage = generatedImage;
         const previousPreviewMode = previewMode;
         previewSelectionRevisionRef.current += 1;
@@ -1528,6 +1528,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             // Use actual seed returned from generation
             const finalParams = { ...result.params, seed: result.seed };
+            const persistedNegativePrompt = isNaiMediumModel(finalParams.model) ? '' : generationNegativePrompt;
             // Agent generation can use a draft that has not been applied to
             // the editor.  Persist that exact draft so re-importing history
             // reconstructs the image that was actually generated.
@@ -1549,7 +1550,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
             // 用户在生成途中离开了编辑页：历史落库必须继续完成（产物不丢），UI 状态不再触碰。
             if (!mountedRef.current) {
-                await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource)
+                await localHistory.add(result.blob, generationPrompt, finalParams, persistedNegativePrompt, persistSource)
                     .then(item => { if (override) agentGenerationReceiptRef.current = item.id; })
                     .catch((historyError: unknown) => console.error('离开后保存生成历史失败:', historyError));
                 checkAndRemoveUntestedTag();
@@ -1569,7 +1570,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             await new Promise<void>(resolve => window.setTimeout(resolve, 0));
 
             try {
-                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, generationNegativePrompt, persistSource);
+                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, persistedNegativePrompt, persistSource);
                 if (override) agentGenerationReceiptRef.current = historyItem.id;
                 setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
                 setPreviewIndex(0);
@@ -1759,7 +1760,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 keyHash,
                 promptSource: request.promptSource,
             };
-            const historyItem = await localHistory.add(result.blob, request.prompt, { ...result.params, seed: result.seed }, request.negativePrompt, {
+            const historyItem = await localHistory.add(result.blob, request.prompt, { ...result.params, seed: result.seed }, isNaiMediumModel(result.params.model) ? '' : request.negativePrompt, {
                 sourceChainId,
                 sourceChainName: chainName,
                 sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
@@ -2133,7 +2134,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
                             className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
                         >
-                        <section>
+                        <section className={isNaiMediumModel(params.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(params.model) ? t('Medium 不支持负面提示词') : undefined}>
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
@@ -2141,8 +2142,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} />
                             </div>
                             <TagAutocompleteTextarea
-                                tagAssistEnabled={tagAssistEnabled}
-                                disabled={!canEdit}
+                                tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
+                                disabled={!canEdit || isNaiMediumModel(params.model)}
                                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50'}`}
                                 value={negativePrompt}
                                 onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}

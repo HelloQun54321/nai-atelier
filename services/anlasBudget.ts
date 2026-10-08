@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
-import { DEFAULT_NAI_MODEL } from './naiModels';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
 import { DEFAULT_NAI_RUNTIME, NaiRuntimeConfig } from './naiRuntime';
 import { imageEditRequestDimensions } from './imageEdit';
 import type { NovelaiSubscriptionInfo, NovelaiUsageState } from './naiUsage';
@@ -75,6 +75,7 @@ export const formatGenerationCostLabel = (cost: number, model?: string): string 
  * 按官方同步规则估算，不将本地预算扣减冒充官方实际结算。
  */
 export const estimateV45GenerationCost = (params: NAIParams, opus = true, opusUsageExhausted = false) => {
+  params = applyNaiModelSettings(params, estimatorRuntime);
   return estimateNaiBilling({
     width: params.width, height: params.height, steps: params.steps,
     vibeCount: params.vibes?.enabled ? params.vibes.slots.length : 0,
@@ -91,6 +92,7 @@ export const estimateImageEditCost = (
   opusUsageExhausted = false,
   dimensions?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number },
 ) => {
+  params = applyNaiModelSettings(params, estimatorRuntime);
   const sourceWidth = Math.max(1, Number(dimensions?.width ?? params.width) || 1);
   const sourceHeight = Math.max(1, Number(dimensions?.height ?? params.height) || 1);
   const requestDimensions = imageEditRequestDimensions(sourceWidth, sourceHeight, operation, focused, dimensions?.focusedRect, dimensions?.minimumContextArea);

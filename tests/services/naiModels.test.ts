@@ -1,8 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
-import { getDefaultStepsForModel, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../../services/naiModels';
+import { applyNaiModelSettings, getDefaultStepsForModel, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../../services/naiModels';
 
 describe('runtime NovelAI model capabilities', () => {
+  it.each(['nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting'])('%s 继承 V5 能力，固定设置不覆盖 High 草稿', model => {
+    const draft = { model, width: 832, height: 1216, scale: 5, steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light',
+      characters: [{ id: 'c', prompt: 'blue hair', negativePrompt: 'red hair', x: 0.2, y: 0.7 }] };
+    const snapshot = structuredClone(draft);
+    const effective = applyNaiModelSettings(draft, DEFAULT_NAI_RUNTIME);
+    expect(effective).toMatchObject({ steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPresetId: 'heavy', characters: [{ negativePrompt: '', prompt: 'blue hair' }] });
+    expect(draft).toEqual(snapshot);
+    const high = { ...draft, model: 'nai-diffusion-5-full' };
+    expect(applyNaiModelSettings(high, DEFAULT_NAI_RUNTIME)).toBe(high);
+    expect(getRuntimeNaiModelInfo(model, DEFAULT_NAI_RUNTIME)).toMatchObject({ maxCharacters: 32, opusUsageLimit: true, supportsStreamedResponses: true, supportsTransparentBackground: true, supportsVibes: false, supportsCharacterReferences: false });
+    expect(getDefaultStepsForModel(model)).toBe(14);
+    expect(getSelectableNaiModels(DEFAULT_NAI_RUNTIME).some(item => item.id === model)).toBe(false);
+  });
+
+  it('固定设置跟随官方运行时，旧缓存缺少字段仍使用 Medium 限制', () => {
+    const model = 'nai-diffusion-5-full-medium';
+    const draft = { model, width: 832, height: 1216, steps: 35, scale: 5, sampler: 'k_euler' };
+    const runtime = { ...DEFAULT_NAI_RUNTIME, modelCapabilities: { ...DEFAULT_NAI_RUNTIME.modelCapabilities,
+      [model]: { ...DEFAULT_NAI_RUNTIME.modelCapabilities[model], fixedSettings: { steps: 16, sampler: 'k_euler', ucPresetId: 'light' } },
+    } };
+    expect(applyNaiModelSettings(draft, runtime)).toMatchObject({ steps: 16, sampler: 'k_euler', ucPresetId: 'light' });
+    expect(applyNaiModelSettings(draft, { ...runtime, modelCapabilities: {} }).steps).toBe(14);
+  });
+
   it('uses the official current limits for V5 and V4.5 Curated', () => {
     const v5 = getRuntimeNaiModelInfo('nai-diffusion-5-full', DEFAULT_NAI_RUNTIME);
     expect(v5.maxCharacters).toBe(32);

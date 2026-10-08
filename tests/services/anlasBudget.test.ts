@@ -116,10 +116,10 @@ describe('image edit cost estimation', () => {
       applyEstimatorRuntime({ ...DEFAULT_NAI_RUNTIME, billing: { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {
         [medium.model]: 1 / 1.06521739, [`${medium.model}-inpainting`]: 1 / 1.06521739,
       } } });
-      expect(estimateV45GenerationCost(medium, false)).toBe(29);
+      expect(estimateV45GenerationCost(medium, false)).toBe(17);
       expect(estimateV45GenerationCost(params, false)).toBe(30);
-      expect(estimateImageEditCost(medium, 'image-to-image', 0.7, false, 0, false)).toBe(20);
-      expect(estimateImageEditCost(medium, 'inpaint', 0.7, false, 0, false)).toBe(20);
+      expect(estimateImageEditCost(medium, 'image-to-image', 0.7, false, 0, false)).toBe(12);
+      expect(estimateImageEditCost(medium, 'inpaint', 0.7, false, 0, false)).toBe(12);
     } finally { applyEstimatorRuntime(DEFAULT_NAI_RUNTIME); }
   });
 

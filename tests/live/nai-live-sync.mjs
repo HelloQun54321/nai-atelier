@@ -146,6 +146,13 @@ try {
     console.error(`\n✖ 部分提取失效（${health.missed.join('、')}），同步将保留最近完整快照，需要修复提取器`);
     process.exit(1);
   }
+  for (const model of ['nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting']) {
+    const capability = runtime.modelCapabilities[model];
+    assert.ok(capability?.fixedSettings?.steps > 0 && capability.fixedSettings.steps <= 50, `${model} 未提取固定步数`);
+    assert.ok(capability.fixedSettings.sampler, `${model} 未提取固定采样器`);
+    assert.ok(capability.ucPresets.some(preset => preset.id === capability.fixedSettings.ucPresetId), `${model} 未提取固定 UC 预设`);
+    console.log(`  ✔ ${model} 固定设置: ${JSON.stringify(capability.fixedSettings)}`);
+  }
   console.log(`\n✔ 全部提取命中，${await compareOfficialBilling(bundle, runtime)} 组计价与官方实际费用调用一致`);
 } catch (error) {
   console.error('✖ 自检失败：', error.message || error);

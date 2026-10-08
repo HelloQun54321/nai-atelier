@@ -15,9 +15,9 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
   { id: 'b', prompt: 'red hair', negativePrompt: 'blue hair', x: 0.7, y: 0.3 },
 ] };
 const mark = vi.fn();
-const Harness = ({ freeform = false, canEdit = true }: { freeform?: boolean; canEdit?: boolean }) => {
+const Harness = ({ freeform = false, canEdit = true, model }: { freeform?: boolean; canEdit?: boolean; model?: string }) => {
   const [params, setParams] = useState(initial);
-  return <><ChainEditorCharacters params={params} setParams={setParams} characters={params.characters || []}
+  return <><ChainEditorCharacters params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
     canEdit={canEdit} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
     addCharacter={vi.fn()} removeCharacter={index => setParams(current => ({ ...current, characters: current.characters?.filter((_, i) => i !== index) }))}
     updateCharacter={(index, patch, useCoords) => { setParams(current => ({ ...current, ...(useCoords === undefined ? {} : { useCoords }), characters: current.characters?.map((character, i) => i === index ? { ...character, ...patch } : character) })); mark(); }}
@@ -28,6 +28,22 @@ const draft = (): NAIParams => JSON.parse(screen.getByTestId('draft').textConten
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('Medium 角色负面词灰白禁用，正向词可编辑，切回 High 恢复原负面词', () => {
+    const { rerender } = render(<Harness model="nai-diffusion-5-full-medium" />);
+    for (const node of screen.getAllByPlaceholderText('选填')) {
+      expect((node as HTMLTextAreaElement).disabled).toBe(true);
+      expect(node.closest('.nai-model-locked')).not.toBeNull();
+    }
+    const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
+    expect(positive.disabled).toBe(false);
+    fireEvent.change(positive, { target: { value: 'green hair' } });
+    expect(draft().characters?.[0]).toMatchObject({ prompt: 'green hair', negativePrompt: 'red hair' });
+    rerender(<Harness model="nai-diffusion-5-full" />);
+    const negative = screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(false);
+    expect(negative.value).toBe('red hair');
+  });
+
   it('旧资料默认自动构图，坐标真正禁用；开启手动后清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
     expect((screen.getByRole('checkbox', { name: 'AI 自动构图' }) as HTMLInputElement).checked).toBe(true);

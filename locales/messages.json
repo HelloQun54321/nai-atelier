@@ -18244,5 +18244,29 @@
     "Favorite images with the heart and drag them into folders.",
     "ハートで画像を保存し、フォルダーにドラッグして整理できます。",
     "하트로 이미지를 저장하고 폴더로 끌어 정리하세요。"
+  ],
+  "生成档位": [
+    "生成檔位",
+    "Generation effort",
+    "生成 Effort",
+    "생성 Effort"
+  ],
+  "Medium 固定此设置": [
+    "Medium 固定此設定",
+    "Fixed by Medium effort",
+    "Medium では固定されています",
+    "Medium에서 고정된 설정입니다"
+  ],
+  "Medium 不支持负面提示词": [
+    "Medium 不支援負面提示詞",
+    "Medium does not support custom negative prompts",
+    "Medium はカスタムネガティブプロンプトに非対応です",
+    "Medium은 사용자 지정 네거티브 프롬프트를 지원하지 않습니다"
+  ],
+  "Medium 不支持 CFG Rescale": [
+    "Medium 不支援 CFG Rescale",
+    "Medium does not support CFG Rescale",
+    "Medium は CFG Rescale に非対応です",
+    "Medium은 CFG Rescale을 지원하지 않습니다"
   ]
 }

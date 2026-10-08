@@ -16,7 +16,8 @@ vi.mock('../../services/naiRuntime', () => ({
   }),
 }));
 
-vi.mock('../../services/naiModels', () => ({
+vi.mock('../../services/naiModels', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/naiModels')>(),
   DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full',
   getDefaultStepsForModel: (model: string) => (model?.startsWith('nai-diffusion-5-') ? 23 : 28),
   getModelFollowDefaultSteps: (model: string, steps: number | undefined) => {
@@ -61,6 +62,47 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); });
 
 describe('ChainEditorParams', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 Medium 锁定灰白控件，切回 High 恢复草稿', mode => {
+    let draft!: NAIParams;
+    const Harness = () => {
+      const [value, setValue] = React.useState<NAIParams>({ ...params, model: 'nai-diffusion-5-full', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light' });
+      draft = value;
+      return React.createElement(ChainEditorParams, { params: value, setParams: setValue, canEdit: true, markChange: vi.fn(), enforceFreeStepLimit: false, mode });
+    };
+    render(React.createElement(Harness));
+    fireEvent.change(screen.getByRole('combobox', { name: '生成档位' }), { target: { value: 'medium' } });
+    expect(draft.model).toBe('nai-diffusion-5-full-medium');
+    const checks = [
+      [screen.getByRole('spinbutton', { name: '生成步数' }), '14'],
+      [screen.getByRole('combobox', { name: '采样器' }), 'k_euler_ancestral'],
+      [screen.getByRole('combobox', { name: '负面预设' }), 'heavy'],
+      [screen.getByRole('spinbutton', { name: 'CFG Rescale 数值' }), '0'],
+      [screen.getByRole('slider', { name: 'CFG Rescale' }), '0'],
+    ] as const;
+    for (const [node, value] of checks) {
+      expect((node as HTMLInputElement).disabled).toBe(true);
+      expect((node as HTMLInputElement).value).toBe(value);
+      expect(node.closest('.nai-model-locked')).not.toBeNull();
+    }
+    expect((screen.getByRole('slider', { name: 'CFG Scale' }) as HTMLInputElement).disabled).toBe(false);
+    expect(draft).toMatchObject({ steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light' });
+    fireEvent.change(screen.getByRole('combobox', { name: '生成档位' }), { target: { value: 'high' } });
+    for (const [node] of checks) expect((node as HTMLInputElement).disabled).toBe(false);
+    expect((checks[0][0] as HTMLInputElement).value).toBe('35');
+    expect((checks[1][0] as HTMLInputElement).value).toBe('k_euler');
+    expect((checks[2][0] as HTMLInputElement).value).toBe('light');
+    expect((checks[3][0] as HTMLInputElement).value).toBe('0.6');
+    expect(draft.model).toBe('nai-diffusion-5-full');
+  });
+
+  it('导入 Medium 显示 V5 Full 与正确档位，只读时禁用档位切换', () => {
+    renderParams({ params: { ...params, model: 'nai-diffusion-5-full-medium' }, canEdit: false });
+    expect((screen.getByRole('combobox', { name: '生成模型' }) as HTMLSelectElement).value).toBe('nai-diffusion-5-full');
+    const effort = screen.getByRole('combobox', { name: '生成档位' }) as HTMLSelectElement;
+    expect(effort.value).toBe('medium');
+    expect(effort.disabled).toBe(true);
+  });
+
   it('重要提示可点按读取，保留完整预设来源、原种子及收费含义，不改写参数', () => {
     const changed = vi.fn();
     const name = '很长的预设名称'.repeat(10);

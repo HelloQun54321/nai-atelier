@@ -2,7 +2,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useState } from 'react';
 import { InfoPopover } from './InfoPopover';
 import { ImageEditOperation, NAIParams } from '../types';
-import { DEFAULT_NAI_MODEL, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels } from '../services/naiModels';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getNaiModelFixedSettings, getModelFollowDefaultSteps, getRuntimeNaiModelInfo, getSelectableNaiModels, isNaiMediumModel } from '../services/naiModels';
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 import { getActiveCharacters } from '../services/characterPrompts';
 import { normalizeTransparentWeight, resolveTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX, TRANSPARENT_WEIGHT_STEP } from '../services/transparentBackground.mjs';
@@ -90,6 +90,10 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     };
 
     const resolvedModelId = params.model?.trim() || DEFAULT_NAI_MODEL;
+    const fixedSettings = getNaiModelFixedSettings(resolvedModelId, runtime);
+    const effectiveParams = applyNaiModelSettings(params, runtime);
+    const displayedModelId = resolvedModelId.replace(/-medium(?=-inpainting|$)/, '');
+    const supportsEffort = /^nai-diffusion-5-full(?:-medium)?(?:-inpainting)?$/.test(resolvedModelId);
     const currentModelInfo = getRuntimeNaiModelInfo(resolvedModelId, runtime);
     const transparentWeight = resolveTransparentWeight(params.transparentWeight, prompt);
     const [transparentWeightInput, setTransparentWeightInput] = useState<string | null>(null);
@@ -108,7 +112,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     const requestedQualityId = params.qualityPresetId || legacyQualityId;
     const qualityPresetId = qualityOptions.some(item => item.id === requestedQualityId) ? requestedQualityId : qualityOptions[0].id;
     const legacyUcId = Number.isInteger(params.ucPreset) ? ['heavy', 'light', 'furryFocus', 'humanFocus', 'none'][Math.max(0, Math.min(4, params.ucPreset as number))] : 'heavy';
-    const requestedUcId = params.ucPresetId || legacyUcId;
+    const requestedUcId = effectiveParams.ucPresetId || legacyUcId;
     const ucPresetId = ucOptions.some(item => item.id === requestedUcId) ? requestedUcId : ucOptions[0].id;
     const updatePreset = (patch: Partial<NAIParams>) => {
         const { qualityToggle: _qualityToggle, ucPreset: _ucPreset, ...rest } = params;
@@ -144,11 +148,11 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         {qualityOptions.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
                     </select>
                 </div>
-                <div>
+                <div className={fixedSettings ? 'nai-model-locked' : undefined} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block mb-1">{t("负面预设")}</label>
                     <select
                         aria-label={t("负面预设")}
-                        disabled={!canEdit}
+                        disabled={!canEdit || Boolean(fixedSettings)}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-sm outline-none"
                         value={ucPresetId}
                         onChange={e => updatePreset({ ucPresetId: e.target.value })}
@@ -166,7 +170,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         aria-label={t("生成模型")}
                         disabled={!canEdit}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                        value={resolvedModelId}
+                        value={displayedModelId}
                         onChange={(e) => {
                             const nextModelId = e.target.value;
                             setTransparentWeightInput(null);
@@ -198,10 +202,20 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                         {selectableModels.map(model => (
                             <option key={model.id} value={model.id}>NovelAI {t(model.label)}</option>
                         ))}
-                        {params.model && !selectableModels.some(model => model.id === params.model) && (
-                            <option value={params.model}>{t("未知模型（{0}）", [params.model])}</option>
+                        {params.model && !selectableModels.some(model => model.id === displayedModelId) && (
+                            <option value={displayedModelId}>{t("未知模型（{0}）", [displayedModelId])}</option>
                         )}
                     </select>
+                    {supportsEffort && <select aria-label={t('生成档位')} disabled={!canEdit}
+                        value={isNaiMediumModel(resolvedModelId) ? 'medium' : 'high'}
+                        onChange={event => {
+                            setParams({ ...params, model: event.target.value === 'medium'
+                                ? displayedModelId.replace(/(-inpainting)?$/, '-medium$1') : displayedModelId });
+                            markChange();
+                        }}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 md:text-sm">
+                        <option value="high">High</option><option value="medium">Medium</option>
+                    </select>}
                 </div>
 
                 {!hideResolution && (
@@ -286,13 +300,13 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {/* Generation parameters: Sampler, Steps, Seed (3 columns) */}
             <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
-                <div className="flex flex-col gap-1">
+                <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("采样器")}</label>
                     <select
                         aria-label={t("采样器")}
-                        disabled={!canEdit}
+                        disabled={!canEdit || Boolean(fixedSettings)}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                        value={params.sampler || 'k_euler_ancestral'}
+                        value={effectiveParams.sampler || 'k_euler_ancestral'}
                         onChange={(e) => {
                             setParams({ ...params, sampler: e.target.value });
                             markChange();
@@ -307,15 +321,15 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     </select>
                 </div>
 
-                <div className="flex flex-col gap-1">
+                <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
                         <span className="flex items-center justify-between">
-                            {t("生成步数")}{!enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
+                            {t("生成步数")}{!fixedSettings && !enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
                         </span>
                     </label>
-                    <input type="number" className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
-                        disabled={!canEdit}
-                        value={params.steps ?? Math.min(maxSteps, 28)}
+                    <input type="number" aria-label={t("生成步数")} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        disabled={!canEdit || Boolean(fixedSettings)}
+                        value={effectiveParams.steps ?? Math.min(maxSteps, 28)}
                         max={maxSteps}
                         onChange={(e) => {
                             const val = Math.min(maxSteps, Math.max(1, parseInt(e.target.value) || 0));
@@ -452,7 +466,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             className="w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                     </div>
-                    <div>
+                    <div className={fixedSettings ? 'nai-model-locked' : undefined} title={fixedSettings ? t('Medium 不支持 CFG Rescale') : undefined}>
                         <div className="mb-1 flex items-center justify-between">
                             <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">CFG Rescale</label>
                             <input
@@ -461,8 +475,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 max="1"
                                 step="0.01"
                                 aria-label={t("CFG Rescale 数值")}
-                                disabled={!canEdit}
-                                value={params.cfgRescale ?? 0}
+                                disabled={!canEdit || Boolean(fixedSettings)}
+                                value={effectiveParams.cfgRescale ?? 0}
                                 onChange={(e) => {
                                     const val = Math.min(1, Math.max(0, parseFloat(e.target.value) || 0));
                                     setParams({ ...params, cfgRescale: val });
@@ -477,8 +491,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             max="1"
                             step="0.01"
                             aria-label="CFG Rescale"
-                            disabled={!canEdit}
-                            value={params.cfgRescale ?? 0}
+                            disabled={!canEdit || Boolean(fixedSettings)}
+                            value={effectiveParams.cfgRescale ?? 0}
                             onChange={(e) => {
                                 setParams({ ...params, cfgRescale: parseFloat(e.target.value) });
                                 markChange();

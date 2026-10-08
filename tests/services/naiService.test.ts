@@ -68,13 +68,29 @@ const characters = [
 ];
 type CharacterPayload = { parameters: {
   v4_prompt: { caption: { char_captions: { char_caption: string; centers: { x: number; y: number }[] }[] }; use_coords: boolean };
-  v4_negative_prompt: { caption: { char_captions: { char_caption: string; centers: { x: number; y: number }[] }[] } };
+  v4_negative_prompt: { caption: { base_caption: string; char_captions: { char_caption: string; centers: { x: number; y: number }[] }[] } };
 } };
 const lastCharacterPayload = (stream: boolean) => (stream
   ? vi.mocked(api.postSse).mock.calls.at(-1)![1]
   : (vi.mocked(api.postBinaryDetailed).mock.calls.at(-1) || vi.mocked(api.postBinary).mock.calls.at(-1))![1]) as CharacterPayload;
 
 describe('编辑模式完整角色请求与历史坐标', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Medium %s 普通／流式结果记录实际固定参数，不污染草稿', async operation => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
+    const original = { ...params, model: 'nai-diffusion-5-full-medium', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light', characters };
+    const snapshot = structuredClone(original);
+    for (const stream of [false, true]) {
+      const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
+      const result = operation === 'text-to-image'
+        ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', 'custom global negative', original)
+        : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', 'custom global negative', original, edit);
+      expect(result.params).toMatchObject({ model: original.model, steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPresetId: 'heavy' });
+      expect(result.params.characters?.map(character => character.negativePrompt)).toEqual(['', '']);
+      expect(lastCharacterPayload(stream).parameters.v4_negative_prompt.caption.base_caption).not.toContain('custom global negative');
+    }
+    expect(original).toEqual(snapshot);
+  });
+
   it.each([
     ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
     ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],

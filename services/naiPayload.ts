@@ -1,5 +1,5 @@
 import { ImageEditOperation, NAIParams } from '../types';
-import { DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from './naiModels';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getNaiModelFixedSettings, getRuntimeNaiModelInfo } from './naiModels';
 import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
 import { withGenerationCharacters } from './characterPrompts';
@@ -52,6 +52,7 @@ const resolvePresetId = (params: NAIParams, field: 'quality' | 'uc') => {
 };
 
 export const resolveNaiPromptPresets = (params: NAIParams, runtime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME) => {
+  params = applyNaiModelSettings(params, runtime);
   const modelId = params.model?.trim() || DEFAULT_NAI_MODEL;
   const capability = getNaiRuntimeModelCapability(runtime, modelId);
   const requestedQualityId = resolvePresetId(params, 'quality');
@@ -75,6 +76,7 @@ export const buildNaiGenerationPayload = (
   params: NAIParams,
   options: NaiPayloadOptions = {},
 ) => {
+  params = applyNaiModelSettings(params, options.runtime);
   const seed = params.seed !== undefined && params.seed !== null && params.seed !== -1
     ? params.seed
     : undefined;
@@ -90,7 +92,7 @@ export const buildNaiGenerationPayload = (
     finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.suffix, 'suffix');
   }
 
-  let finalNegative = negative;
+  let finalNegative = getNaiModelFixedSettings(modelId, runtime) ? '' : negative;
   if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
 
   const characters = withGenerationCharacters(params, modelInfo.freeformCharacterPosition).characters || [];
@@ -157,6 +159,7 @@ export const buildNaiImageEditPayload = (
   params: NAIParams,
   options: NaiImageEditPayloadOptions,
 ) => {
+  params = applyNaiModelSettings(params, options.runtime);
   validateImageEditSampler(params.sampler);
   // 编辑模式与文生图一致：seed=-1（固定 seed）由服务端随机，不强制本地随机化，
   // 否则用户复制固定 seed 的编辑结果无法复现同一张图。

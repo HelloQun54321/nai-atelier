@@ -2,7 +2,7 @@
 import JSZip from 'jszip';
 import { ImageEditCanvasExpansion, ImageEditOperation, NAIParams } from '../types';
 import { api, isQueueCancelledError } from './api';
-import { getRuntimeNaiModelInfo } from './naiModels';
+import { applyNaiModelSettings, getRuntimeNaiModelInfo } from './naiModels';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { hashNaiApiKey } from './anlasBudget';
 import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, watchCloudQueueTask } from './cloudQueue';
@@ -81,6 +81,7 @@ const blobFromDataUri = (uri: string): Blob => {
 
 export const generateImage = async (apiKey: string, prompt: string, negative: string, params: NAIParams) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyNaiModelSettings(params, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const payload = buildNaiGenerationPayload(prompt, negative, params, { runtime });
   const seed = typeof payload.parameters.seed === 'number' ? payload.parameters.seed : undefined;
@@ -202,6 +203,7 @@ export const generateImageEdit = async (
   },
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyNaiModelSettings(params, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const prepared = await prepareImageEdit(edit);
   const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);
@@ -276,6 +278,7 @@ export const generateImageStream = async (
   runtimeStreamSupported = false,
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyNaiModelSettings(params, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const modelInfo = validateGenerationCapabilities(params, runtime);
   if (!modelInfo.supportsStreamedResponses && !runtimeStreamSupported) throw new Error(`NovelAI ${modelInfo.label} 暂不支持生成过程预览`);
@@ -362,6 +365,7 @@ export const generateImageEditStream = async (
   runtimeStreamSupported = false,
 ) => {
   const runtime = await getNaiRuntimeConfig();
+  params = applyNaiModelSettings(params, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, prompt) };
   const prepared = await prepareImageEdit(edit);
   const requestParams = buildImageEditRequestParams(params, prepared, edit.operation, edit.expansion);

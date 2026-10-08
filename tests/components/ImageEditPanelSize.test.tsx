@@ -6,7 +6,7 @@ import { ImageEditPanel, ImageEditRequest } from '../../components/ImageEditPane
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../services/appearancePreferences';
 import { createLabImageEditDraft } from '../../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
-import type { LabImageEditDraft, NAIParams, PromptAgentDraft } from '../../types';
+import type { ImageEditOperation, LabImageEditDraft, NAIParams, PromptAgentDraft } from '../../types';
 
 const state = vi.hoisted(() => ({ freeMaxArea: 1048576, width: 1664, height: 2432 }));
 vi.mock('../../services/naiRuntime', async importOriginal => {
@@ -33,12 +33,12 @@ const onGenerate = vi.fn(async (_request: ImageEditRequest, _options?: { params:
 const onCanvasChange = vi.fn();
 const onAgentGenerateReady = vi.fn();
 const drawImage = vi.fn();
-const Harness = ({ patch = {} }: { patch?: Partial<LabImageEditDraft> }) => {
-  const [draft, setDraft] = useState(() => createLabImageEditDraft('image-to-image', 'scene', 'negative', params, patch));
+const Harness = ({ patch = {}, operation = 'image-to-image' }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation }) => {
+  const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'scene', 'negative', params, patch));
   const [bar, setBar] = useState({ costLabel: '', unavailableLabel: '' });
   return <><output data-testid="mobile-cost">{bar.costLabel}</output><output data-testid="mobile-status">{bar.unavailableLabel || '生成'}</output>
-    <ImageEditPanel baseImage="original-image" previewImage={null} operation="image-to-image" draft={draft}
-      layout={DEFAULT_LAB_PAGE_LAYOUTS['image-to-image']} tagAssistEnabled={false} apiKey="" notify={vi.fn()}
+    <ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft}
+      layout={DEFAULT_LAB_PAGE_LAYOUTS[operation]} tagAssistEnabled={false} apiKey="" notify={vi.fn()}
       generationCostLabel={(_operation, _focused, context) => `${context?.width}×${context?.height}`}
       onPromptChange={vi.fn()} onNegativePromptChange={vi.fn()} onPromptSource={vi.fn()}
       onDraftChange={value => setDraft(previous => ({ ...previous, ...value }))}
@@ -70,6 +70,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('图生图输出尺寸与提交副本', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 Medium 全局负面词保持原文且灰白禁用，正向词仍可用', async operation => {
+    render(<Harness operation={operation} patch={{ params: { ...params, model: 'nai-diffusion-5-full-medium' } }} />);
+    const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true);
+    expect(negative.value).toBe('negative');
+    expect(negative.closest('.nai-model-locked')).not.toBeNull();
+    await waitFor(() => expect((screen.getByDisplayValue('scene') as HTMLTextAreaElement).disabled).toBe(false));
+  });
+
   it('原尺寸默认不变，选择免费范围后两端提示和真实请求缩小，原图及草稿不改', async () => {
     const view = render(<Harness />); await ready();
     expect(screen.getByRole('combobox', { name: '图生图输出尺寸' })).toHaveProperty('value', 'original');

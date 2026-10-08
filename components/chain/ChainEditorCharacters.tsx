@@ -10,6 +10,7 @@ import { mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
 import { moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
 import { CharacterPositionStage } from './CharacterPositionStage';
+import { isNaiMediumModel } from '../../services/naiModels';
 
 const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: boolean; label: string; onCommit: (value: number) => void }> = ({ value, freeform, disabled, label, onCommit }) => {
   useLanguage();
@@ -71,6 +72,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
 }) => {
   useLanguage();
     const [positionOpen, setPositionOpen] = useState(false);
+    const negativeLocked = isNaiMediumModel(params.model);
     const reorder = (index: number, direction: -1 | 1) => {
         if (!canEdit) return;
         setParams({ ...params, characters: moveCharacter(characters, index, direction) });
@@ -154,11 +156,11 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         placeholder={t("角色提示词")}
                                     />
                                 </div>
-                                <div>
+                                <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色负面提示词")}</label>
                                     <TagAutocompleteTextarea
-                                        tagAssistEnabled={tagAssistEnabled}
-                                        disabled={!canEdit}
+                                        tagAssistEnabled={tagAssistEnabled && !negativeLocked}
+                                        disabled={!canEdit || negativeLocked}
                                         value={char.negativePrompt || ''}
                                         onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"

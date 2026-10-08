@@ -7,7 +7,7 @@ export const DEFAULT_NAI_BILLING = {
   // 官方费用调用没有传入重试判定用的 characterRef；参考另收附加费。
   freeWithCharacterReference: true,
   modelMultipliers: { v5: 1.5 },
-  modelStepMultipliers: {},
+  modelStepMultipliers: { 'nai-diffusion-5-full-medium': 1 / 1.06521739, 'nai-diffusion-5-full-medium-inpainting': 1 / 1.06521739 },
   smeaMultiplier: 1.2,
   smeaDynamicMultiplier: 1.4,
   freeVibeCount: 4,

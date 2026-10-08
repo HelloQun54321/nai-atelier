@@ -9,6 +9,17 @@ const V5_RELEASE_URL = 'https://journal.novelai.net/image-generation-novelai-dif
  */
 export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
   {
+    id: 'v5-full-effort', title: 'V5 Full 的 High／Medium 档位', topic: 'models', appliesTo: ['v5'],
+    sourceKind: 'official-release', authorityRank: 390, reviewedAt: '2026-10-09',
+    sourceUrl: 'https://journal.novelai.net/novelai-diffusion-v5-full-effort-toggle/',
+    summary: 'V5 Full 的 Medium 蒸馏档节省额度，High 保留原来的参数自由度。',
+    facts: ['Medium 同时支持生成与重绘，使用 nai-diffusion-5-full-medium 及其 -inpainting 变体。',
+      'Medium 固定 14 步、Euler Ancestral 和 heavy UC 预设；CFG 可调，CFG Rescale 不支持。',
+      'Medium 不接受自定义全局或角色负面词；排除元素可在正向词使用负权重，如 -3::hat::。',
+      '官方称默认设置的额度消耗约少 42%，不是任意参数下的固定费用折扣。'],
+    caveats: ['仅适用于 V5 Full；V5 Curated 没有这个档位。', '保留 High 草稿，不能为切换档位删除用户原负面词。'],
+  },
+  {
     id: 'v5-release-capabilities',
     title: 'NovelAI Diffusion V5 发布能力',
     topic: 'models',
@@ -241,7 +252,8 @@ export const getNovelAiModelProfile = modelId => {
   const family = resolveNovelAiModelFamily(id);
   const promptStrategy = getPromptWritingStrategy(family);
   if (family === 'v5') return {
-    id, family, label: /curated/.test(id) ? 'V5 Curated' : 'V5 Full',
+    id, family, label: /medium/.test(id) ? 'V5 Full Medium' : /curated/.test(id) ? 'V5 Curated' : 'V5 Full',
+    ...(/medium/.test(id) ? { fixedSettings: { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' }, supportsCustomNegativePrompt: false, supportsCfgRescale: false } : {}),
     officialPrompting: 'Tag 与自然语言均完整支持；官方语言为英语、日语，中文可用但效果可能波动。',
     officialPromptCapacity: '长于 V4.5；官方发布公告未给出精确 Token 上限。',
     officialCharacterCapability: '高于 V4.5，官方测试最高展示 22 个角色；不是稳定保证。',

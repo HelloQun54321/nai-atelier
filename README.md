@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.53.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.54.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -198,6 +198,7 @@ flowchart LR
 - **多角色独立控制**：各角色拥有专属提示词与画面占比，可直接从角色库导入；
 - **透明通道生成**：在支持该能力的模型（如 V5）下一键开启透明背景生成，适配立绘、表情包与贴纸制作；
 - **推荐参数与免费步数锁**：按模型提供推荐步数，可在生图偏好中启用或关闭免费步数锁；尺寸、步数与参考仍由创作者决定，最终费用按当前同步规则和实际请求估算，默认参数不保证每次都零 Anlas。
+- **V5 Full 生成档位**：模型下方选择 High／Medium，默认 High。Medium 固定 14 步、Euler Ancestral 和 heavy 负面预设，相关控件及不支持的全局／角色负面词、CFG Rescale 灰白禁用；CFG、尺寸、种子和正向词可调整。四模式共用，切回 High 恢复原设置和负面词；历史记录实际生成参数，费用依官方动态规则估算。
 
 #### 2. 图生图（Image to Image）：底图继承与变化
 - **底图与提示词独立**：上传、拖入图片、点击「文生图最新」或通过 `Ctrl+V`／「粘贴」换底图，保留图生图当前的提示词、负面词、角色配置与参数；

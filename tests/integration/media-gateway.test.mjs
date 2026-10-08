@@ -276,6 +276,17 @@ test('prompt agent official knowledge is model-aware and release-first', () => {
   assert.equal(readNovelAiOfficialKnowledge('prompt-emphasis').sourceUrl, 'https://docs.novelai.net/en/image/strengthening-weakening/');
 });
 
+test('Medium 官方知识说明固定设置、负面词限制与原草稿保留', () => {
+  const profile = getNovelAiModelProfile('nai-diffusion-5-full-medium');
+  assert.deepEqual(profile.fixedSettings, { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' });
+  assert.equal(profile.supportsCustomNegativePrompt, false);
+  assert.equal(profile.supportsCfgRescale, false);
+  assert.equal(searchNovelAiOfficialKnowledge({ modelId: profile.id, query: 'Medium' })[0].id, 'v5-full-effort');
+  const entry = readNovelAiOfficialKnowledge('v5-full-effort');
+  assert.match(entry.facts.join(' '), /自定义全局或角色负面词/);
+  assert.match(entry.caveats.join(' '), /保留 High 草稿/);
+});
+
 test('prompt authoring distinguishes V5 mixed writing from older Tag defaults without changing official capabilities', () => {
   for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-3', 'nai-diffusion-6-unknown']) {
     const profile = getNovelAiModelProfile(model), strategy = profile.project.promptStrategy;
@@ -1165,14 +1176,18 @@ test('模型能力只读取返回对象，Medium 继承额度、流式和角色�
   assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium'].maxCharacters, 32);
   assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium-inpainting'].supportsTransparentBackground, true);
   assert.equal(result.modelCapabilities['nai-diffusion-5-full-medium'].freeformCharacterPosition, true);
+  const medium = 'nai-diffusion-5-full-medium';
+  assert.deepEqual(result.modelCapabilities[medium].fixedSettings, { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' });
+  assert.deepEqual(extractNaiModelCapabilities(source.replace('steps:14', 'steps:16')).modelCapabilities[medium].fixedSettings.steps, 16);
+  assert.equal(extractNaiModelCapabilities(source.replace('steps:14', 'steps:computeSteps()')).modelCapabilities[medium], undefined);
 });
 
 test('官方计费提取覆盖免费资格、模型倍率与附加费，结构失配必须告警', () => {
-  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), DEFAULT_NAI_RUNTIME.billing);
+  assert.deepEqual(extractNaiBillingRules(NAI_BILLING_BUNDLE), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {} });
   const changed = NAI_BILLING_BUNDLE.replace('!e.characterRef&&', '!e.characterRef&&!e.image&&!e.mask&&')
     .replace('w*=1.5', 'w*=2').replace('v-=1', 'v-=2').replace('e-4', 'e-3')
     .replace(',p=2;', ',p=4;').replace('g+=5', 'g+=7').replace('price:2', 'price:6');
-  assert.deepEqual(extractNaiBillingRules(changed), { ...DEFAULT_NAI_RUNTIME.billing,
+  assert.deepEqual(extractNaiBillingRules(changed), { ...DEFAULT_NAI_RUNTIME.billing, modelStepMultipliers: {},
     freeImageToImage: false, freeInpainting: false, freeSamples: 2, modelMultipliers: { v5: 2 },
     freeVibeCount: 3, extraVibeCost: 4, characterReferenceCost: 7, vibeEncodingCost: 6 });
   for (const broken of [NAI_BILLING_BUNDLE.replace('w*=1.5', 'w*=getPrice(a)'),

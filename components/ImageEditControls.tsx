@@ -3,7 +3,7 @@ import React from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
-import { getRuntimeNaiModelInfo } from '../services/naiModels';
+import { isNaiMediumModel, getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { getImageToImageOutputDimensions, IMAGE_EDIT_MAX_DIMENSION, IMAGE_EDIT_MIN_DIMENSION, ImageEditNormalizationMode, isSameOutpaintExpansion, validateImageEditDimensions } from '../services/imageEdit';
 import { ChainEditorParams } from './ChainEditorParams';
@@ -171,7 +171,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               }
             />
           </div>
-          <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled} disabled={isBusy} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></label>
+          <label className={`block text-sm font-semibold text-gray-800 dark:text-gray-100 ${isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : ''}`} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}>{t("全局负面提示词")}<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></label>
         </section>
       </LabModuleSection>
 

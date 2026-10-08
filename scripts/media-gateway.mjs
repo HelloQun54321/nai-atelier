@@ -1025,6 +1025,7 @@ const V4_CURATED_CAPABILITY = makeNaiRuntimeCapability({ supportsVibes: true, qu
 const pairNaiRuntimeCapability = (id, capability) => ({ [id]: capability, [`${id}-inpainting`]: capability });
 const DEFAULT_NAI_MODEL_CAPABILITIES = {
   ...pairNaiRuntimeCapability('nai-diffusion-5-full', V5_CAPABILITY),
+  ...pairNaiRuntimeCapability('nai-diffusion-5-full-medium', { ...V5_CAPABILITY, fixedSettings: { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' } }),
   ...pairNaiRuntimeCapability('nai-diffusion-5-curated', V5_CAPABILITY),
   ...pairNaiRuntimeCapability('nai-diffusion-4-5-full', V45_FULL_CAPABILITY),
   ...pairNaiRuntimeCapability('nai-diffusion-4-5-curated', V45_CURATED_CAPABILITY),
@@ -1043,6 +1044,7 @@ export const DEFAULT_NAI_RUNTIME = {
   freeMaxSteps: 28,
   billing: DEFAULT_NAI_BILLING,
   models: [
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
     'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting',
@@ -1052,11 +1054,13 @@ export const DEFAULT_NAI_RUNTIME = {
   ],
   /** 受 Opus 免费限额约束的模型（官方仅对高于 V4.5 的模型启用）。 */
   usageLimitedModels: [
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
   ],
   /** 支持 SSE 中间帧的模型，由官方 streamedResponses 能力位同步。 */
   streamedModels: [
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
     'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
     'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting', 'nai-diffusion-4-curated-preview',
@@ -1221,6 +1225,8 @@ export const extractNaiModelCapabilities = text => {
     return match ? Number(match[1]) : fallback;
   };
   const addGroup = (cases, source, base = {}, limited = false) => {
+    const fixed = source.match(/fixedSettings:\{steps:(\d+),sampler:"([^"]+)",ucPresetId:"([^"]+)"\}/);
+    if (source.includes('fixedSettings:') && (!fixed || Number(fixed[1]) < 1 || Number(fixed[1]) > 50)) return;
     const streamed = readBoolean(source, 'streamedResponses', base.supportsStreamedResponses);
     for (const match of cases.matchAll(/case"(nai-diffusion-[^"]+)":/g)) {
       const label = match[1];
@@ -1228,6 +1234,7 @@ export const extractNaiModelCapabilities = text => {
       if (readBoolean(source, 'opusUsageLimit', limited) && !usageLimitedModels.includes(label)) usageLimitedModels.push(label);
       if (streamed && !streamedModels.includes(label)) streamedModels.push(label);
       modelCapabilities[label] = {
+        ...(fixed ? { fixedSettings: { steps: Number(fixed[1]), sampler: fixed[2], ucPresetId: fixed[3] } } : {}),
         supportsVibes: readBoolean(source, 'vibetransfer', base.supportsVibes),
         supportsCharacterReferences: readBoolean(source, 'characterReferences', base.supportsCharacterReferences),
         supportsCharacterReferenceInpainting: readBoolean(source, 'charRefInpainting', base.supportsCharacterReferenceInpainting),

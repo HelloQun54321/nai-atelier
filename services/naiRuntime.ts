@@ -37,6 +37,7 @@ export interface NaiModelRuntimeCapability {
   freeformCharacterPosition: boolean;
   qualityPresets: NaiPromptPreset[];
   ucPresets: NaiPromptPreset[];
+  fixedSettings?: { steps: number; sampler: string; ucPresetId: string };
 }
 
 export interface NaiRuntimeConfig {
@@ -161,6 +162,7 @@ const pairCapability = (id: string, capability: NaiModelRuntimeCapability) => ({
 
 export const DEFAULT_NAI_MODEL_CAPABILITIES: Record<string, NaiModelRuntimeCapability> = {
   ...pairCapability('nai-diffusion-5-full', V5_CAPABILITY),
+  ...pairCapability('nai-diffusion-5-full-medium', { ...V5_CAPABILITY, fixedSettings: { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' } }),
   ...pairCapability('nai-diffusion-5-curated', V5_CAPABILITY),
   ...pairCapability('nai-diffusion-4-5-full', V45_FULL_CAPABILITY),
   ...pairCapability('nai-diffusion-4-5-curated', V45_CURATED_CAPABILITY),
@@ -178,6 +180,7 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
   billing: DEFAULT_NAI_BILLING,
   models: [
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
     'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting',
     'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
@@ -185,10 +188,12 @@ export const DEFAULT_NAI_RUNTIME: NaiRuntimeConfig = {
     'nai-diffusion-4-curated-preview',
   ],
   usageLimitedModels: [
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting',
     'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
   ],
   streamedModels: [
+    'nai-diffusion-5-full-medium', 'nai-diffusion-5-full-medium-inpainting',
     'nai-diffusion-5-full', 'nai-diffusion-5-full-inpainting', 'nai-diffusion-5-curated', 'nai-diffusion-5-curated-inpainting',
     'nai-diffusion-4-5-full', 'nai-diffusion-4-5-full-inpainting', 'nai-diffusion-4-5-curated', 'nai-diffusion-4-5-curated-inpainting',
     'nai-diffusion-4-full', 'nai-diffusion-4-full-inpainting', 'nai-diffusion-4-curated-preview',

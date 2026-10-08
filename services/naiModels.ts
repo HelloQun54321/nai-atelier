@@ -1,4 +1,5 @@
 import type { NaiModelRuntimeCapability, NaiRuntimeConfig } from './naiRuntime';
+import type { NAIParams } from '../types';
 
 /**
  * NovelAI 生成模型注册表。
@@ -45,9 +46,24 @@ export const NAI_MODELS: NaiModelInfo[] = [
 
 export const DEFAULT_NAI_MODEL = 'nai-diffusion-4-5-full';
 
+export const isNaiMediumModel = (model?: string) => /^nai-diffusion-5-full-medium(?:-inpainting)?$/.test(model || '');
+
+export const getNaiModelFixedSettings = (model?: string, runtime?: NaiRuntimeConfig) =>
+  runtime?.modelCapabilities?.[model || '']?.fixedSettings
+  || (isNaiMediumModel(model) ? { steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy' } : undefined);
+
+/** 固定值只应用于显示／请求副本，草稿保留 High 参数和角色负面词。 */
+export const applyNaiModelSettings = (params: NAIParams, runtime?: NaiRuntimeConfig): NAIParams => {
+  const fixed = getNaiModelFixedSettings(params.model, runtime);
+  return fixed ? { ...params, ...fixed, cfgRescale: 0,
+    characters: params.characters?.map(character => ({ ...character, negativePrompt: '' })),
+  } : params;
+};
+
 /** 获取模型的推荐默认采样步数：V5 系列为作者实测推荐的 23 步，其他版本跟随官方 28 步。 */
 export const getDefaultStepsForModel = (modelId?: string): number => {
   if (!modelId) return 28;
+  if (isNaiMediumModel(modelId)) return 14;
   return /^nai-diffusion-5(?:-|$)/i.test(modelId) ? 23 : 28;
 };
 
@@ -167,6 +183,10 @@ const applyRuntimeCapability = (model: NaiModelInfo, capability?: NaiModelRuntim
 } : model;
 
 export const getRuntimeNaiModelInfo = (model: string | undefined, runtime?: NaiRuntimeConfig): NaiModelInfo => {
+  if (isNaiMediumModel(model)) return applyRuntimeCapability(
+    { ...getRuntimeNaiModelInfo('nai-diffusion-5-full', runtime), id: model!, label: 'V5 Full Medium' },
+    runtime?.modelCapabilities?.[model!],
+  );
   const unknown = Boolean(model && !findNaiModelInfo(model));
   const base = unknown ? {
     ...getNaiModelInfo(),

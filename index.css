@@ -1238,6 +1238,16 @@ html[data-motion='full'] .queue-status-spinner {
   to { background-position: -220% 0; }
 }
 
+/* 模型限制保持控件原位，用中性灰白表达不可修改；不淡化仍可用的参数。 */
+.nai-model-locked, .nai-model-locked :is(label, input, select, textarea) { color: #9ca3af; }
+.nai-model-locked :is(input, select, textarea) {
+  background-color: #f3f4f6;
+  border-color: #e5e7eb;
+  accent-color: #9ca3af;
+  cursor: not-allowed;
+}
+.dark .nai-model-locked :is(input, select, textarea) { background-color: #1f2937; border-color: #374151; color: #6b7280; }
+
 /* 减少／关闭动效停止装饰性循环及卡片位移，功能性加载指示保持稳定速度。 */
 html[data-motion='reduced'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer),
 html[data-motion='off'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
