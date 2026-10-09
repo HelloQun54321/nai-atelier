@@ -1,6 +1,7 @@
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspirationGallery } from '../../components/InspirationGallery';
@@ -50,6 +51,7 @@ vi.mock('../../components/useKeepAliveScrollRestore', () => ({
 }));
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.clearAllMocks(); localStorage.clear(); confirmAction.mockResolvedValue(true);
   vi.mocked(extractMetadata).mockReset().mockResolvedValue(null);
   vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); static revokeObjectURL = vi.fn(); });
@@ -542,6 +544,26 @@ it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开�
   fireEvent.click(within(panel).getByRole('button', { name: width < 1024 ? '返回' : '关闭' }));
   expect(screen.queryByRole('complementary', { name: '我的作品组' })).toBeNull();
   expect(container.querySelector('main')!.classList.contains('hidden')).toBe(false);
+});
+
+it('收藏单张和多图组沿用 AITag 聚焦居中，切换及关闭保留位置，不写整理数据', () => {
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages, mockInspirations[0]], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  const cards = Array.from(container.querySelectorAll('article'));
+  const { root } = mockGalleryGeometry(cards);
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  fireEvent.click(within(cards[0]).getByRole('img').closest('button')!);
+  expect(root.scrollTop).toBe(1650);
+  expect(cards[0].className).not.toContain('brightness-');
+  expect(cards[1].className).toContain('brightness-[.7]');
+  fireEvent.click(within(cards[1]).getByRole('img').closest('button')!);
+  expect(root.scrollTop).toBe(2450);
+  expect(cards[0].className).toContain('brightness-[.7]');
+  expect(cards[1].className).not.toContain('brightness-');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(root.scrollTop).toBe(2450);
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
 });
 
 it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不带走其他夹的组员，展开仍能看全组', async () => {

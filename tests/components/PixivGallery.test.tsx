@@ -1,6 +1,7 @@
 import { toggleCollectionTarget } from '../../services/collectionFavorites';
 // @vitest-environment jsdom
 import React from 'react';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { within } from '@testing-library/react';
@@ -20,6 +21,7 @@ vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: 
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
 const illust: PixivIllust = { id: '100', title: 'synthetic artwork', type: 'illust', caption: '', restrict: 0, xRestrict: 0, tags: ['原站标签'], pageCount: 2, width: 800, height: 1200, totalBookmarks: 10, totalViews: 20, createDate: '', user: { id: '10', name: 'artist', account: '' }, urls: { thumb: '', medium: '', large: '', original: 'https://i.pximg.net/p0.png' }, metaPages: ['https://i.pximg.net/p0.png', 'https://i.pximg.net/p1.png'] };
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
@@ -75,7 +77,7 @@ it('相关推荐沿用首图取用，复制图片不切换当前详情', async (
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(related.metaPages[0]) + '&variant=original', false));
   expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
 });
-it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
+it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AITag 聚焦居中，切换和关闭详情同步恢复', async layout => {
   const works = [illust, { ...illust, id: '101', title: 'second artwork' }];
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
   vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: works, nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
@@ -89,15 +91,19 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AIT
   const first = screen.getByRole('button', { name: /synthetic artwork.*artist/ });
   const second = screen.getByRole('button', { name: /second artwork.*artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
+  const { root } = mockGalleryGeometry(cards);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   fireEvent.click(first);
+  expect(root.scrollTop).toBe(1650);
   expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');
   fireEvent.click(second);
+  expect(root.scrollTop).toBe(2450);
   expect(cards[0].className).toContain('brightness-[.7]');
   expect(cards[1].className).not.toContain('brightness-');
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(root.scrollTop).toBe(2450);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
 });
 

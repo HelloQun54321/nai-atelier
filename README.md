@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.54.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.54.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -255,7 +255,7 @@ flowchart LR
 
 ## 📚 Tag 与资源资料库
 
-AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗；关闭详情或清空选择后恢复，方便辨认当前查看的作品与已选素材。
+收藏库、AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗，并将最近点击的卡片在列表可视区域垂直居中；图片加载或详情展开导致重排时保留定位，主动滚动后保持新位置，关闭详情或清空选择后恢复亮度。画师／角色目录保留多选，已选项都保持明亮，抽卡、返回目录或切换筛选释放旧定位。
 
 ### 🏷️ 智能 Tag 补全与连续权重胶囊
 
@@ -271,7 +271,7 @@ AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其�
 
 ### 🌐 外部素材发现：Pixiv · Danbooru · AITag
 
-- **AITag 索引**：聚合公网 NovelAI 生成案例与元数据索引，方便创作者横向对比不同画风的实际渲染表现，直观查阅作品的 Prompt 组织与参数结构，作为构图与角色设计的灵感参考；
+- **AITag 索引**：本地图片缓存文件缺失时，按已有元数据只读回退到同一张远程原图，卡片、详情、下载与复制共用，不需重新收藏；原图仍不可用时保留失败反馈。聚合公网 NovelAI 生成案例与元数据索引，方便创作者横向对比不同画风的实际渲染表现，直观查阅作品的 Prompt 组织与参数结构，作为构图与角色设计的灵感参考；
 - **Pixiv 图库**：直连官方 App API，支持日/周/月榜、Tag 搜索与画师作品，详情图片一键反推 Tag 并收入收藏库；Windows 在默认浏览器登录并允许外部应用回调，安全保存成功后自动打开「Pixiv 已连接」完成页；
 - **收藏库**：全局图片收藏页。各页面点爱心的图片自动汇集并标明来源，作品组可一次收藏，也可逐张取舍，列表默认折叠为首图与张数；单张、多张统一在详情侧栏浏览和整理。卡片图下只显示名称与标签，图片不叠加来源标记；详情名称末尾的铅笔可改名，标签在前，其余模块跟随文生图自定义顺序；收藏库不提供备注功能。左侧按全局（全部／未整理）、来源、自定义收藏夹分组。可将单张或已选多张图片拖入收藏夹，手机与键盘可用移动控件；取消收藏保留原图与原有分类。Pixiv 账号收藏使用右下角带 P 的心形，与本地收藏区分。
 - **Danbooru 素材库**：通用级构图与标签参考，具备本地智能调度与防限流保护。

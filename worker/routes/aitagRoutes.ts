@@ -110,6 +110,42 @@ export function getAitagImageCacheKeys(value: string) {
   return [`aitag-images/${workId}/${workId}_p${index}.webp`, ...(Number(index) === 0 ? [`aitag-covers/${workId}.webp`] : [])];
 }
 
+/** 本地文件缺失时只读解析原图，不修改旧缓存记录或私人资产。 */
+export async function recoverAitagAsset(key: string, env: Env): Promise<Response | null> {
+  const match = key.match(/^aitag-(?:covers\/(\d+)\.webp|images\/(\d+)\/([\w.-]+)\.webp)$/);
+  if (!match || !env.DB) return null;
+  const workId = Number(match[1] || match[2]);
+  const row = await env.DB.prepare(`SELECT w.first_image_json, d.detail_json FROM aitag_works w
+    LEFT JOIN aitag_work_details d ON d.work_id = w.id WHERE w.id = ? LIMIT 1`).bind(workId)
+    .first<{ first_image_json?: string; detail_json?: string }>().catch((cause: unknown) => {
+      if (/no such table: aitag_(works|work_details)\b/i.test(String(cause))) return null;
+      throw cause;
+    });
+  if (!row) return null;
+  let detail: any, first: any;
+  try { detail = JSON.parse(row.detail_json || 'null'); } catch { /* 旧详情损坏时仍可读取首图。 */ }
+  try { first = JSON.parse(row.first_image_json || 'null'); } catch { /* 使用完整详情。 */ }
+  const images = getAitagDetailImages(detail);
+  const image = match[1] ? first || pickFirstAitagImage(detail) : [...images, first].find(image => image && (
+    image.local_image_url === `/api/assets/${key}` || String(image.file_name || image.fileName || '').replace(/\.(png|jpe?g|webp)$/i, '') === match[3]
+  ));
+  if (!image) return null;
+  const remote = buildAitagImageUrlFromImage({ ...image, local_image_url: undefined });
+  try { if (!getAitagImageCacheKeys(remote).length) return null; } catch { return null; }
+  const source = buildAitagImageFetch(remote, env);
+  const response = await fetch(source.url, { headers: source.headers, signal: AbortSignal.timeout(15000) });
+  const contentType = response.headers.get('Content-Type') || '';
+  if (!response.ok || !/^image\/(?:webp|png|jpeg)(?:;|$)/i.test(contentType)) {
+    await response.body?.cancel();
+    return null;
+  }
+  return new Response(response.body, { headers: {
+    'Content-Type': contentType,
+    'Cache-Control': 'private, max-age=31536000, immutable',
+    'X-Content-Type-Options': 'nosniff',
+  } });
+}
+
 function normalizeAitagSearchPayload(payload: any, fallbackPage: number, fallbackPageSize: number) {
   const items = Array.isArray(payload?.items)
     ? payload.items

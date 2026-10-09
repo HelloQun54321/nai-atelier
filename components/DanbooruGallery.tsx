@@ -30,6 +30,7 @@ import { buildMediaUrl, getMobileOriginalUrl, selectThumbnailVariant } from '../
 import { createMediaPrewarmSession } from '../services/mediaPrewarm';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
 import { Clock } from 'lucide-react';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { matchesDanbooruImageFilters } from '../services/danbooruQuery';
 
@@ -80,6 +81,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const galleryContentRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('order:rank');
   const [sort, setSort] = useState<DanbooruSort>('rank');
@@ -90,7 +92,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { trigger: selectedId });
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { skipRestore: selectionAnchor.hasAnchor });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -135,7 +138,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   };
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
-  const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'danbooru-detail');
+  const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => { selectionAnchor.preserveOnClose(); setSelectedId(null); }, 'danbooru-detail');
 
   // 只预热下一页的前两行；当前屏幕由 SmartImage 的显示请求优先加载。
   const prewarmSources = (sources: string[], seq: number) => {
@@ -350,7 +353,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
     const ratio = `${post.width || 3} / ${post.height || 4}`;
     return (
       <PressRevealSurface as="article"
-        key={post.id}
+        key={post.id} data-gallery-work-id={post.id}
         data-safe-mode-work="true"
         className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
@@ -470,7 +473,8 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
       </WorkspaceToolbar>
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+          <div ref={galleryContentRef}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span className="font-bold text-gray-700 dark:text-gray-200">{t("本地浏览足迹 ({0} 条)", [historyItems.length])}</span>
@@ -505,7 +509,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <PressRevealSurface as="article" key={item.id} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+                  <PressRevealSurface as="article" key={item.id} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
                     <button
                       type="button"
                       onClick={() => {
@@ -598,6 +602,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
               </form>
             </div>
           )}
+          </div>
         </main>
 
         <DetailSidePanel
@@ -607,7 +612,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
           subInfo={selected ? `${selected.width}×${selected.height} · ${selected.fileExt.toUpperCase()}` : undefined}
           sourceUrl={selected?.postUrl}
           onBack={closeMobileDetail}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { selectionAnchor.preserveOnClose(); setSelectedId(null); }}
         >
           {selected ? <div className="space-y-4">
             <DetailImageStage pressResetKey={selected.id}>

@@ -17,7 +17,7 @@ import {
   searchCharacterDictionary,
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
@@ -31,6 +31,7 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
@@ -100,7 +101,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     const renderCharacterCard = (card: CharacterCard) => {
             const selected = selectedKeys.has(card.key);
             return (
-              <PressRevealSurface as="article" key={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
+              <PressRevealSurface as="article" key={card.key} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
@@ -190,6 +191,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     catch { return {}; }
   });
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
     return saved === 'catalog' || saved === 'custom' ? saved : 'mixed';
@@ -217,6 +219,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const gachaGenerationRef = useRef(0);
   const leaveGacha = useCallback(() => {
       gachaGenerationRef.current++;
+      setFocusedKey(null);
       setGachaCards(null);
       setIsGachaLoading(false);
   }, []);
@@ -437,7 +440,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return cards;
   }, [catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters');
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext));
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor });
 
   useEffect(() => {
     const sync = () => setFavorites(previous => {
@@ -516,6 +520,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   }, [customChains, persistedCatalog, selectedKeys]);
 
   const toggleSelect = (card: CharacterCard) => {
+    if (!selectedKeys.has(card.key)) setFocusedKey(card.key);
     setSelectedKeys(previous => {
       const next = new Set(previous);
       if (next.has(card.key)) next.delete(card.key); else next.add(card.key);
@@ -571,6 +576,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       return;
     }
     const generation = ++gachaGenerationRef.current;
+    setFocusedKey(null);
     setIsGachaLoading(true);
     setSearchTerm('');
     setShowFavOnly(false);
@@ -665,7 +671,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
        {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
-      <div ref={scrollRef} onScroll={onScrollRestore} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+      <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>
             stableColumns

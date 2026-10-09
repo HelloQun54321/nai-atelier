@@ -1,6 +1,6 @@
 import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, CheckSquare, FolderPlus, Heart, Library, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
@@ -14,7 +14,7 @@ import { ToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
-import { SmartImage } from './SmartImage';
+import { ImageActivityContext, SmartImage } from './SmartImage';
 import { ImageShareOverlay } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -22,6 +22,7 @@ import { InspirationDetail } from './inspiration/InspirationDetail';
 import { DetailSidePanel } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { CollectionFolderSelect, CollectionTagInput } from './inspiration/CollectionControls';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
@@ -47,7 +48,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadReadRef = useRef(0);
   const mainScrollRef = useRef<HTMLDivElement>(null);
-  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration');
+  const galleryContentRef = useRef<HTMLDivElement>(null);
+  const active = useContext(ImageActivityContext);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [collection, setCollection] = useState<SmartCollection>('all');
   const [boardId, setBoardId] = useState('');
@@ -60,7 +62,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workGroup, setWorkGroup] = useState<string | null>(null);
-  const closeGroup = useMobileHistoryLayer(Boolean(workGroup), () => setWorkGroup(null), 'collection-work');
+  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, workGroup, active);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration', { skipRestore: selectionAnchor.hasAnchor });
+  const closeGroup = useMobileHistoryLayer(Boolean(workGroup), () => { selectionAnchor.preserveOnClose(); setWorkGroup(null); }, 'collection-work');
   const [uploadOpen, setUploadOpen] = useState(false);
   const uploadDialogRef = useModalA11y<HTMLDivElement>(uploadOpen);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -298,7 +302,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       </aside>
 
       <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${openedGroup ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-      <main ref={mainScrollRef} onScroll={onMainScrollRestore} className={`${openedGroup ? 'hidden lg:block' : 'block'} min-w-0 overflow-y-auto`}>
+      <main ref={mainScrollRef} onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }} className={`${openedGroup ? 'hidden lg:block' : 'block'} min-w-0 overflow-y-auto`}>
         {selectedIds.size > 0 && <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/70 md:px-5">
           <b className="mr-1 text-sm text-indigo-800 dark:text-indigo-200">{t("已选 {0} 项", [selectedIds.size])}</b>
           <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
@@ -307,13 +311,14 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>}
 
 
+        <div ref={galleryContentRef}>
         {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
           {groups.map(group => {
             const item = group[0]; const ids = group.map(image => image.id);
             const isGroup = group.length > 1 || Boolean(item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv') && Number(item.analysis?.collectionGroupSize) > 1);
             const title = isGroup ? item.title.replace(/ · \d+$/, '') : item.title;
             const selected = ids.every(id => selectedIds.has(id));
-            return <MediaCardShell pressReveal key={item.id} data-safe-mode-work="true" selected={selected} className="group relative flex flex-col"
+            return <MediaCardShell pressReveal key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || workGroup === collectionGroupKey(item)} className={`group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
               draggable={canEditItem(item, currentUser) && !busy}
               onDragStart={event => {
                 if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
@@ -339,6 +344,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             action={<button type="button" onClick={() => setUploadOpen(true)} className="mobile-touch rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white">{t("加入第一条收藏")}</button>}
           />
         )}
+        </div>
       </main>
       {openedGroup && <DetailSidePanel key={workGroup} open title={openedGroup.length > 1 || Number(openedGroup[0].analysis?.collectionGroupSize) > 1 ? openedGroup[0].title.replace(/ · \d+$/, '') : openedGroup[0].title} sensitiveTitle subInfo={t('{0} 张图片', [openedGroup.length])} sourceUrl={openedGroup[0].sourceUrl} onBack={closeGroup} onClose={closeGroup}>
         <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} items={items} labModuleOrder={labModuleOrder} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>

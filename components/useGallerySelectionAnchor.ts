@@ -1,7 +1,7 @@
 import { RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 
 interface SelectionAnchor {
-  id: number;
+  id: string | number;
   /** null 表示居中；主动滚动或关闭详情后保留当前屏幕高度。 */
   offset: number | null;
 }
@@ -10,18 +10,19 @@ interface SelectionAnchor {
 export const useGallerySelectionAnchor = (
   rootRef: RefObject<HTMLElement | null>,
   contentRef: RefObject<HTMLDivElement | null>,
-  selectedId: number | null,
+  selectedId: string | number | null,
   active: boolean,
 ) => {
   const anchorRef = useRef<SelectionAnchor | null>(null);
-  const previousRef = useRef({ selectedId: null as number | null, active: false });
+  const previousRef = useRef({ selectedId: null as string | number | null, active: false });
   const closingRef = useRef(false);
   const suspendedRef = useRef(false);
   const writtenScrollRef = useRef<number | null>(null);
 
   const getCard = () => {
     const anchor = anchorRef.current;
-    return anchor ? rootRef.current?.querySelector<HTMLElement>(`[data-gallery-work-id="${anchor.id}"]`) : null;
+    return anchor ? Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-gallery-work-id]') || [])
+      .find(card => card.dataset.galleryWorkId === String(anchor.id)) : null;
   };
   const readOffset = () => {
     const root = rootRef.current;

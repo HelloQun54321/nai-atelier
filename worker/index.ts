@@ -4,7 +4,7 @@ import {
   json, error, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
 } from './routes/types';
 import { handleDanbooruRoute } from './routes/danbooruRoutes';
-import { handleAitagRoute, ensureAitagCacheSchema } from './routes/aitagRoutes';
+import { handleAitagRoute, ensureAitagCacheSchema, recoverAitagAsset } from './routes/aitagRoutes';
 import { handleHistoryRoute, handleAgentRoute } from './routes/historyRoutes';
 import { handleStBridgeRoute } from './routes/stBridgeRoutes';
 import { handleVibeRoute } from './routes/vibeRoutes';
@@ -48,7 +48,7 @@ export default {
           const rawKey = path.replace('/api/assets/', '');
           const key = decodeURIComponent(rawKey);
           const object = await env.BUCKET.get(key);
-          if (!object) return error('File not found', 404);
+          if (!object) return await recoverAitagAsset(key, env) || error('File not found', 404);
           const headers = new Headers();
           object.writeHttpMetadata(headers);
           headers.set('etag', object.httpEtag);

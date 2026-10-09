@@ -1,6 +1,7 @@
 import { toggleCollectionTarget } from '../../services/collectionFavorites';
 // @vitest-environment jsdom
 import React from 'react';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DanbooruGallery } from '../../components/DanbooruGallery';
@@ -35,6 +36,7 @@ const post: DanbooruPost = { id: 1, rating: 'g', score: 10, favCount: 10, width:
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([]);
@@ -73,7 +75,7 @@ it.each([false, true])('足迹=%s：列表和详情使用同一图片，图片�
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
   await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith(sampleUrl, expect.stringMatching(/^danbooru-1\./), false));
 });
-it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 AITag 暗度，切换和关闭详情同步恢复', async layout => {
+it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 AITag 聚焦居中，切换和关闭详情同步恢复', async layout => {
   const posts = [post, { ...post, id: 2, tags: { ...post.tags, artist: ['second_artist'] } }]
     .map(item => ({ ...item, sampleUrl: 'data:image/png;base64,c3ludGhldGlj' }));
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
@@ -87,15 +89,19 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
   const first = screen.getByRole('button', { name: /synthetic[ _]artist/ });
   const second = screen.getByRole('button', { name: /second[ _]artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
+  const { root } = mockGalleryGeometry(cards);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   fireEvent.click(first);
+  expect(root.scrollTop).toBe(1650);
   expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');
   fireEvent.click(second);
+  expect(root.scrollTop).toBe(2450);
   expect(cards[0].className).toContain('brightness-[.7]');
   expect(cards[1].className).not.toContain('brightness-');
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(root.scrollTop).toBe(2450);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
 });
 

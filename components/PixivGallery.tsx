@@ -32,6 +32,7 @@ import { ImageShareOverlay } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ImageLightbox } from './ImageLightbox';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import {
   PixivConnectionStatus,
@@ -106,6 +107,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const galleryContentRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<PixivConnectionStatus | null>(null);
   const [statusError, setStatusError] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -122,7 +124,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { trigger: selectedId });
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active);
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { skipRestore: selectionAnchor.hasAnchor });
   const [selectedPage, setSelectedPage] = useState(0);
   const [zoomPage, setZoomPage] = useState<number | null>(null);
   useEffect(() => setZoomPage(null), [selectedId]);
@@ -149,7 +152,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   const loginPollRef = useRef<number | null>(null);
 
   const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
-  const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => setSelectedId(null), 'pixiv-detail');
+  const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => { selectionAnchor.preserveOnClose(); setSelectedId(null); }, 'pixiv-detail');
   const connected = Boolean(status?.connected);
 
   const refreshStatus = async () => {
@@ -566,7 +569,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell pressReveal key={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
+    return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
@@ -941,7 +944,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
       )}
 
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} onScroll={onScrollRestore} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+          <div ref={galleryContentRef}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
               <span className="font-bold text-gray-700 dark:text-gray-200">{t("本地 Pixiv 浏览足迹 ({0} 条)", [historyItems.length])}</span>
@@ -969,7 +973,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
             historyItems.length ? (
               <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
                 {historyItems.map(item => (
-                  <MediaCardShell pressReveal key={item.id} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
+                  <MediaCardShell pressReveal key={item.id} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
                     <button
                       type="button"
                       onClick={() => {
@@ -1053,6 +1057,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
               <div ref={autoLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
             </div>
           )}
+          </div>
         </main>
 
         <DetailSidePanel
@@ -1062,7 +1067,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
           subInfo={selected ? t("Pixiv #{0} · {1}×{2} · {3} 页", [selected.id, selected.width, selected.height, currentPageCount]) : undefined}
           sourceUrl={selected ? pixivArtworkUrl(selected) : undefined}
           onBack={closeMobileDetail}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { selectionAnchor.preserveOnClose(); setSelectedId(null); }}
         >
           {selected ? (
             <div className="space-y-4">

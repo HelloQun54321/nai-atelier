@@ -10,8 +10,8 @@ const resizeCallbacks = new Set<() => void>();
 let controls: ReturnType<typeof useGallerySelectionAnchor>;
 let viewNumber = 0;
 const rect = (top: number, height: number) => ({ top, height, bottom: top + height, left: 0, right: 800, width: 800 } as DOMRect);
-interface Geometry { height: number; total: number; tops: Record<number, number>; cardHeight: number }
-const Harness = ({ selectedId, active = true, geometry, viewKey }: { selectedId: number | null; active?: boolean; geometry: Geometry; viewKey: string }) => {
+interface Geometry { height: number; total: number; tops: Record<string | number, number>; cardHeight: number }
+const Harness = ({ selectedId, active = true, geometry, viewKey, ids = [1, 2] }: { selectedId: string | number | null; active?: boolean; geometry: Geometry; viewKey: string; ids?: (string | number)[] }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   controls = useGallerySelectionAnchor(rootRef, contentRef, selectedId, active);
@@ -25,7 +25,7 @@ const Harness = ({ selectedId, active = true, geometry, viewKey }: { selectedId:
     });
     node.getBoundingClientRect = () => rect(100, geometry.height);
   }} onScroll={() => { controls.onScroll(); saveScroll(); }}>
-    <div ref={contentRef}>{[1, 2].map(id => <div key={id} data-gallery-work-id={id} ref={node => {
+    <div ref={contentRef}>{ids.map(id => <div key={id} data-gallery-work-id={id} ref={node => {
       if (node) node.getBoundingClientRect = () => rect(100 + geometry.tops[id] - (rootRef.current?.scrollTop ?? 0), geometry.cardHeight);
     }} />)}</div>
   </div>;
@@ -53,6 +53,13 @@ const setup = (selectedId: number | null = 1) => {
 };
 
 describe('作品选择定位', () => {
+  it('收藏组 JSON 标识与带引号的资源名也能准确定位，不解释为 CSS 选择器', () => {
+    const id = '["aitag","sample\\name",null]';
+    const geometry: Geometry = { height: 600, total: 4000, tops: { [id]: 1800 }, cardHeight: 300 };
+    const view = render(<Harness selectedId={id} geometry={geometry} ids={[id]} viewKey={`string-selection-${viewNumber++}`} />);
+    expect(view.getByTestId('root').scrollTop).toBe(1650);
+  });
+
   it('以列表可视高度居中，详情展开后按新卡片位置而非旧 scrollTop 补偿', () => {
     const { root, geometry } = setup();
     expect(root.scrollTop).toBe(1650);

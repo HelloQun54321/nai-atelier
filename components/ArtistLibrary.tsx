@@ -4,7 +4,7 @@ import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Artist } from '../types';
 import { compareLibraryTags } from '../services/tagLibrary';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
@@ -17,6 +17,8 @@ import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
+import { ImageActivityContext } from './SmartImage';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 
 interface CartItem {
@@ -49,6 +51,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                             return (
                                 <PressRevealSurface
                                     key={artist.id}
+                                    data-gallery-work-id={artist.name}
                                     data-safe-mode-work="true"
                                     role="button"
                                     data-agent-action="select"
@@ -89,6 +92,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
 
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
+    const [focusedName, setFocusedName] = useState<string | null>(null);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
     // 收藏画师的展示快照（中文名/作品数）：词库画师是无限分页加载的，"只看收藏"若只在
     // 已加载子集里过滤，未加载页的收藏将永远不可见。收藏时落一份快照，筛选时按收藏清单渲染。
@@ -99,7 +103,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
-    const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library');
+    const active = useContext(ImageActivityContext);
+    const selectionAnchor = useGallerySelectionAnchor(scrollContainerRef, scrollContainerRef, cart.some(item => item.name === focusedName) ? focusedName : null, active);
+    const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor });
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
     const [artistCatalogCount, setArtistCatalogCount] = useState(0);
@@ -134,6 +140,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const gachaGenerationRef = useRef(0);
     const leaveGacha = useCallback(() => {
         gachaGenerationRef.current++;
+        setFocusedName(null);
         setGachaArtists(null);
         setIsGachaLoading(false);
     }, []);
@@ -316,6 +323,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         if (cart.find(i => i.name === name)) {
             setCart(cart.filter(i => i.name !== name));
         } else {
+            setFocusedName(name);
             setCart([...cart, { name }]);
         }
     };
@@ -480,6 +488,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         if (!gachaArtists) catalogScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
 
         const generation = ++gachaGenerationRef.current;
+        setFocusedName(null);
         setIsGachaLoading(true);
         setSearchTerm('');
         setShowFavOnly(false);
@@ -564,7 +573,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             )}
 
             {/* --- Main Content Area --- */}
-            <div ref={scrollContainerRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
+            <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<Artist>
                         stableColumns

@@ -1,8 +1,10 @@
 import { longPress } from '../support/touchEvents';
 // @vitest-environment jsdom
 import React from 'react';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ImageShareOverlay } from '../../components/ImageShareActions';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import type { PromptChain } from '../../types';
@@ -17,6 +19,7 @@ import {
 } from '../../services/tagDictionary';
 
 const fixtures = vi.hoisted(() => ({
+  favorites: new Map<string, any>(), revision: 0, listeners: new Set<() => void>(),
   artists: [
     { name: 'sample_artist_a', chinese: '画师甲', postCount: 80 },
     { name: 'sample_artist_z', chinese: '画师乙', postCount: 20 },
@@ -27,12 +30,26 @@ const fixtures = vi.hoisted(() => ({
   ],
 }));
 
+vi.mock('../../services/collectionFavorites', async original => ({
+  ...await original<typeof import('../../services/collectionFavorites')>(),
+  ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
+  collectionSnapshot: () => Array.from(fixtures.favorites.values()),
+  collectionRevision: () => fixtures.revision,
+  subscribeCollection: (listener: () => void) => { fixtures.listeners.add(listener); return () => { fixtures.listeners.delete(listener); }; },
+  collectionTargetActive: (target: any) => fixtures.favorites.has(target.sourceType + ':' + target.sourceId),
+  toggleCollectionTarget: vi.fn(async (target: any) => {
+    const key = target.sourceType + ':' + target.sourceId, active = !fixtures.favorites.has(key);
+    if (active) fixtures.favorites.set(key, { ...target, archived: false }); else fixtures.favorites.delete(key);
+    fixtures.revision++; fixtures.listeners.forEach(listener => listener()); return active;
+  }),
+}));
+
 // 只用合成目录和浏览器内存存储；禁止真实生图或网络图片读取。
 vi.mock('../../services/naiService', () => ({ generateImage: vi.fn() }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
-vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc }: { tag: string; fixedSrc?: string }) =>
-  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc}>{tag}</div>,
+vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange }: any) =>
+  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
 }));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 6, ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
@@ -76,7 +93,7 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   fireEvent.click(card.querySelector('button.h-full.w-full')!);
   expect(screen.getByRole('button', { name: '复制角色提示词' })).toBeTruthy();
   const imageCopies = screen.getAllByRole('button', { name: '复制图片' });
-  expect(imageCopies).toHaveLength(3);
+  expect(imageCopies).toHaveLength(5);
   imageCopies.forEach(button => expect(button.closest('.right-2')!.className).toContain('absolute right-2 top-2'));
   const desktop = screen.getByRole('button', { name: '关闭角色大图' }).closest('[role="dialog"]')!;
   fireEvent.click(desktop.querySelector('.press-reveal-surface')!);
@@ -110,20 +127,20 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
   expect(left.classList.contains('hover-reveal-md')).toBe(true);
   expect(within(left).getAllByRole('button')).toEqual([remove]);
   expect(right.className).toContain('absolute right-2 top-2');
-  for (const token of ['hover-reveal-md', 'flex', 'flex-col', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
+  for (const token of ['flex', 'flex-col', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
   expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label')))
-    .toEqual(hasPreview ? ['下载图片', '复制图片', '编辑自定义角色信息'] : ['编辑自定义角色信息']);
+    .toEqual(hasPreview ? ['收藏', '下载图片', '复制图片', '编辑自定义角色信息'] : ['编辑自定义角色信息']);
   for (const button of within(right).getAllByRole('button')) {
     for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'rounded-full', 'border-white/60', 'bg-black/45']) expect(button.classList.contains(token)).toBe(true);
   }
-  const favorite = within(card).getByRole('button', { name: '收藏' });
-  expect(card.querySelector('.mobile-gallery-frame')!.contains(favorite)).toBe(false);
-  expect(within(card).getByRole('heading').parentElement!.contains(favorite)).toBe(true);
-  expect(favorite.classList.contains('hover-reveal-touch')).toBe(true);
+  const favorite = within(card).queryByRole('button', { name: '收藏' });
+  if (hasPreview) { expect(right.contains(favorite)).toBe(true); expect(favorite!.classList.contains('hover-reveal-md')).toBe(false); }
+  else expect(favorite).toBeNull();
+  expect(edit.classList.contains('hover-reveal-md')).toBe(true);
 }
 
 beforeEach(() => {
-  localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
+  localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); fixtures.favorites.clear(); fixtures.revision++;
   confirmAction.mockResolvedValue(true);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('本测试禁止联网'); }));
@@ -183,6 +200,33 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     fireEvent.click(first);
     fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
     expectNormal();
+  });
+
+  it.each([false, true])('抽卡=%s：点击居中但保留多选；切换筛选释放旧定位', async gacha => {
+    renderLibrary(kind);
+    const entries = entriesFor(kind);
+    await screen.findByTestId(`cover-${entries[0].name}`);
+    if (gacha) {
+      fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+      await screen.findByRole('button', { name: '再抽一批' });
+    }
+    const cards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
+    const { root } = mockGalleryGeometry(cards);
+    fireEvent.click(cards[0]);
+    expect(root.scrollTop).toBe(1650);
+    fireEvent.click(cards[1]);
+    expect(root.scrollTop).toBe(2450);
+    cards.forEach(card => { expect(card.getAttribute('aria-pressed')).toBe('true'); expect(card.className).not.toContain('brightness-'); });
+    fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: kind === 'artist' ? '画师排序' : '角色排序' }), { target: { value: 'name-asc' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByTestId(`cover-${entries[0].name}`);
+    const currentCards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
+    const currentGeometry = mockGalleryGeometry(currentCards);
+    currentGeometry.tops[1] = 3000; root.scrollTop = 400;
+    await act(async () => { root.style.paddingTop = '1px'; await new Promise(resolve => setTimeout(resolve, 40)); });
+    expect(root.scrollTop).toBe(400);
+    expect(cards[0].getAttribute('aria-pressed')).toBe('true');
   });
 
   it.each([1280, 390])('Agent 在宽度 %s 选择卡片并读取真实状态，重复 check 不取消选择', async width => {
@@ -375,16 +419,16 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   expect(generateImage).not.toHaveBeenCalled();
 });
 
-it.each<Kind>(['artist', 'character'])('%s 手机卡片长按显露收藏，松手不选择 Tag；收藏不改变所选', async kind => {
+it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，长按或收藏不改变所选 Tag', async kind => {
   renderLibrary(kind, 390);
   const entry = entriesFor(kind)[0];
   const card = await screen.findByRole('button', { name: `选择${kind === 'artist' ? '画师' : '角色'}：${kind === 'artist' ? entry.name : entry.chinese}` });
   longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
   const favorite = within(card).getByRole('button', { name: '收藏' });
-  expect(favorite.parentElement!.className).toContain('absolute left-2 top-2');
-  for (const token of ['mobile-size-locked', '!h-11', '!w-11', 'md:!h-8', 'md:!w-8', 'border-white/60', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
-  expect(favorite.classList.contains('hover-reveal-touch')).toBe(true); fireEvent.click(favorite);
-  expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
+  expect(favorite.parentElement!.className).toContain('absolute right-2 top-2');
+  for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'border-white/60', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
+  expect(favorite.classList.contains('hover-reveal-touch')).toBe(false); fireEvent.click(favorite);
+  await waitFor(() => expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');
 });
 it('自定义角色长按显露编辑和收藏，松手不打开图或选择；编辑只走信息窗口', () => {
   renderLibrary('character', 390, [custom]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
@@ -403,8 +447,10 @@ it.each([
   const remove = within(card).getByRole('button', { name: '删除这个自定义角色' });
   expectCustomCardLayout(card, Boolean(previewImage));
   for (const token of ['bg-red-500', 'text-white', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(remove.classList.contains(token)).toBe(true);
-  fireEvent.click(within(card).getByRole('button', { name: '收藏' }));
-  expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true');
+  if (previewImage) {
+    fireEvent.click(within(card).getByRole('button', { name: '收藏' }));
+    await waitFor(() => expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true'));
+  }
   expect(card.getAttribute('aria-pressed')).toBe('false');
   const catalog = await screen.findByRole('button', { name: '选择角色：角色甲' });
   expect(within(catalog).queryByRole('button', { name: '删除这个自定义角色' })).toBeNull();
