@@ -5,7 +5,7 @@ import { aitagService, buildAitagImageUrl, extractAitagPrompt, getAitagMetadataT
 import { parseNovelAIMetadata } from './metadataService';
 import { importPixivImageAsFile } from './pixivService';
 import { importDanbooruCoverAsDataUrl } from './danbooruCoverImport';
-import { normalizeInspirationTags, sourceLabel } from './inspirationUtils';
+import { getCollectionTags } from './inspirationUtils';
 import { externalImageDrafts } from './externalImageTags';
 import { createUuid } from './id';
 
@@ -46,7 +46,7 @@ export function historyFavorite(item: LocalGenItem, user: User): Inspiration {
     id: favoriteId('history', user.id, item.id), userId: user.id, username: user.username,
     title: item.sourceChainName || new Date(item.createdAt).toLocaleString(), imageUrl: item.imageUrl,
     prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params,
-    sourceType: 'history', sourceId: item.id, tags: ['生成历史'],
+    sourceType: 'history', sourceId: item.id, tags: [],
     createdAt: item.favoriteAt || item.createdAt, updatedAt: item.favoriteAt || item.createdAt,
   };
 }
@@ -68,7 +68,7 @@ export function aitagCollectionImages(detail: AitagWorkDetail): CollectionImage[
 export function aitagFavorites(detail: AitagWorkDetail, user: User): Inspiration[] {
   return aitagCollectionImages(detail).map(image => ({
     ...image, id: favoriteId('aitag', user.id, `${detail.work.id}:${image.imageId}`), userId: user.id, username: user.username,
-    title: image.title!, prompt: image.prompt || '', tags: ['AITag'], sourceType: 'aitag',
+    title: image.title!, prompt: image.prompt || '', tags: [], sourceType: 'aitag',
     createdAt: detail.work.favoriteAt || detail.work.favorite_at || 0, updatedAt: detail.work.favoriteAt || detail.work.favorite_at || 0,
   }));
 }
@@ -109,7 +109,7 @@ export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspi
     if (!existing) { result.push(favorite); index(favorite, result.length - 1); }
     else if (favorite.sourceType === 'history') existing.archived = false;
   }
-  return result.map(item => ({ ...item, tags: normalizeInspirationTags([sourceLabel(item.sourceType), ...(item.tags || [])]) }));
+  return result.map(item => ({ ...item, tags: getCollectionTags(item) }));
 }
 
 async function loadImageFavorites(user: User): Promise<Inspiration[]> {
@@ -234,7 +234,7 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
         title: image.title || target.title || '未命名收藏', imageUrl,
         prompt: reverse?.prompt || image.prompt || '', negativePrompt: image.negativePrompt || '', params: image.params,
         sourceType: image.sourceType || target.sourceType || 'other', sourceId: image.sourceId || target.sourceId,
-        sourceUrl: image.sourceUrl || target.sourceUrl, tags: [sourceLabel(image.sourceType || target.sourceType)],
+        sourceUrl: image.sourceUrl || target.sourceUrl, tags: [],
         analysis: { ...image.analysis, ...(reverse ? { imageTagger: reverse } : {}), ...(!image.imageUrl.startsWith('data:') ? { collectionOriginalUrl: image.imageUrl } : {}), ...(image.imageId === undefined ? {} : { collectionImageId: image.imageId }), ...(target.getGroup ? { collectionGroupSize: images.length } : {}) },
         createdAt: now, updatedAt: now,
       };

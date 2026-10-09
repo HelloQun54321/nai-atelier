@@ -7,7 +7,7 @@ import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { createUuid } from '../services/id';
-import { collectionGroupKey, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../services/inspirationUtils';
+import { collectionGroupKey, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover } from './ToolbarPopover';
@@ -88,7 +88,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [uploadOpen, busy]);
-  const items = inspirationsData || [];
+  const items = useMemo(() => (inspirationsData || []).map(item => ({ ...item, tags: getCollectionTags(item) })), [inspirationsData]);
 
   const loadBoards = async () => {
     try { setBoards(await db.getInspirationBoards()); }
@@ -240,7 +240,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   });
   const addBulkTags = async () => {
     const additions = splitTags(bulkTag); if (!additions.length || !selectedIds.size) return; setBusy('bulk');
-    try { await Promise.all(items.filter(item => selectedIds.has(item.id)).map(item => db.updateInspiration(item.id, { tags: normalizeInspirationTags([...(item.tags || []), ...additions]) }))); setBulkTag(''); setSelectedIds(new Set()); await onRefresh(); notify('标签已添加'); }
+    try { await Promise.all(items.filter(item => selectedIds.has(item.id)).map(item => db.updateInspiration(item.id, { tags: getCollectionTags({ ...item, tags: [...(item.tags || []), ...additions] }) }))); setBulkTag(''); setSelectedIds(new Set()); await onRefresh(); notify('标签已添加'); }
     catch (error: any) { notify(error.message || '标签添加失败', 'error'); }
     finally { setBusy(''); }
   };

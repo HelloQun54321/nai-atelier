@@ -27,6 +27,10 @@ export const sourceLabel = (source?: InspirationSourceType) => ({
   history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
 }[source || 'other'] || '其他来源');
 
+// 旧版自动来源 Tag 只在读取时隐藏，来源字段与私人存储保持原样。
+export const getCollectionTags = (item: Pick<Inspiration, 'tags' | 'sourceType'>) =>
+  normalizeInspirationTags(item.tags || []).filter(tag => tag !== sourceLabel(item.sourceType));
+
 export const collectionGroupKey = (item: Inspiration) => JSON.stringify(
   item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv')
     ? [item.userId, item.sourceType, item.sourceId] : ['image', item.id]
@@ -53,8 +57,7 @@ export const suggestInspirationTags = (item: Pick<Inspiration, 'prompt' | 'param
   const width = Number(item.params?.width || 0);
   const height = Number(item.params?.height || 0);
   const orientation = width && height ? (width > height ? '横图' : width < height ? '竖图' : '方图') : '';
-  const source = item.sourceType ? sourceLabel(item.sourceType) : '';
-  return normalizeInspirationTags([...(item.tags || []), source, orientation, ...artists.slice(0, 8), ...keywords.slice(0, 8)]);
+  return normalizeInspirationTags([...getCollectionTags(item), orientation, ...artists.slice(0, 8), ...keywords.slice(0, 8)]);
 };
 
 const tokenSet = (value: string) => new Set(value.toLowerCase().split(/[,\s:(){}\[\]]+/).map(token => token.trim()).filter(token => token.length > 2));

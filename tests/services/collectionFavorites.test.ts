@@ -33,10 +33,11 @@ it('只读汇总全部旧历史收藏与 AITag 组内图片，不复制原图或
   const { loadCollection } = await import('../../services/collectionFavorites');
   const result = await loadCollection(user);
   expect(result).toHaveLength(204);
+  expect(result.every(item => item.tags?.length === 0)).toBe(true);
   expect(mocks.historyPage).toHaveBeenCalledTimes(2);
   expect(mocks.historyPage).toHaveBeenNthCalledWith(1, 0, 200, { favoriteOnly: true }, true);
   expect(mocks.historyPage).toHaveBeenNthCalledWith(2, 1, 200, { favoriteOnly: true }, false);
-  expect(result.find(item => item.sourceType === 'aitag')).toEqual(expect.objectContaining({ prompt: 'AITag 原词', tags: ['AITag'], analysis: { collectionImageId: '3_p1.png', collectionGroupSize: 2 }, params: expect.objectContaining({ seed: 1 }) }));
+  expect(result.find(item => item.sourceType === 'aitag')).toEqual(expect.objectContaining({ prompt: 'AITag 原词', tags: [], analysis: { collectionImageId: '3_p1.png', collectionGroupSize: 2 }, params: expect.objectContaining({ seed: 1 }) }));
   expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.uploadFile).not.toHaveBeenCalled();
 });
 
@@ -44,9 +45,10 @@ it('旧收藏与历史爱心按来源去重，保留收藏夹、备注、完整�
   const { historyFavorite, mergeCollectionFavorites } = await import('../../services/collectionFavorites');
   const history = { id: 'h', imageUrl: '/api/local-history/h/image', prompt: 'original', negativePrompt: '', params: { seed: 12 }, createdAt: 1 } as LocalGenItem;
   const favorite = historyFavorite(history, user);
-  const existing = { ...favorite, id: 'existing', title: '我的标题', boardId: 'folder', notes: '笔记', tags: ['自定义'], rating: 5, isPinned: true, archived: true };
+  const existing = { ...favorite, id: 'existing', title: '我的标题', boardId: 'folder', notes: '笔记', tags: ['生成历史', '自定义'], rating: 5, isPinned: true, archived: true };
   const result = mergeCollectionFavorites([existing], [favorite]);
-  expect(result).toEqual([{ ...existing, archived: false, tags: ['生成历史', '自定义'] }]);
+  expect(result).toEqual([{ ...existing, archived: false, tags: ['自定义'] }]);
+  expect(existing.tags).toEqual(['生成历史', '自定义']);
   expect(existing.archived).toBe(true);
 });
 
@@ -108,12 +110,12 @@ it('AITag 整组收藏沿用作品级标记，移除一张不会取消其余图�
   expect(mocks.workFavorite).toHaveBeenLastCalledWith('5', false);
 });
 
-it('外站图片收藏沿用原图导入校验和持久上传，保持页码身份及来源标签', async () => {
+it('外站图片收藏沿用原图导入校验和持久上传，保持页码身份与独立来源，不自动添加来源标签', async () => {
   mocks.pixivImport.mockResolvedValue(new File(['synthetic'], 'original.png', { type: 'image/png' }));
   const service = await import('../../services/collectionFavorites');
   await service.toggleCollectionTarget({ imageUrl: 'https://i.pximg.net/original.png', sourceType: 'pixiv', sourceId: '88', imageId: '2', sourceUrl: 'https://www.pixiv.net/artworks/88' });
   expect(mocks.pixivImport).toHaveBeenCalledWith('https://i.pximg.net/original.png');
-  expect(stored[0]).toEqual(expect.objectContaining({ imageUrl: '/api/assets/inspirations/saved.png', sourceType: 'pixiv', sourceId: '88', tags: ['Pixiv'], analysis: { collectionImageId: '2', collectionOriginalUrl: 'https://i.pximg.net/original.png' } }));
+  expect(stored[0]).toEqual(expect.objectContaining({ imageUrl: '/api/assets/inspirations/saved.png', sourceType: 'pixiv', sourceId: '88', tags: [], analysis: { collectionImageId: '2', collectionOriginalUrl: 'https://i.pximg.net/original.png' } }));
   expect(service.collectionTargetActive({ imageUrl: 'https://i.pximg.net/original.png', sourceType: 'pixiv', sourceId: '88', imageId: '2' })).toBe(true);
 });
 
@@ -155,7 +157,7 @@ it('慢刷新不会覆盖刚完成的收藏，同一原图在角色列表与详�
 it('未知旧来源安全归入其他来源，访客收藏失败前不写入任何资料', async () => {
   const service = await import('../../services/collectionFavorites');
   const item = { id: 'unknown', userId: user.id, title: '旧资料', prompt: '', imageUrl: '/old.png', createdAt: 1, sourceType: 'old-source' } as unknown as Inspiration;
-  expect(service.mergeCollectionFavorites([item], [])[0].tags).toEqual(['其他来源']);
+  expect(service.mergeCollectionFavorites([item], [])[0].tags).toEqual([]);
   await service.loadCollection({ ...user, role: 'guest' });
   await expect(service.toggleCollectionTarget({ imageUrl: '/synthetic.png' })).rejects.toThrow('访客');
   expect(mocks.post).not.toHaveBeenCalled();

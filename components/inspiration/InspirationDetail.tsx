@@ -15,7 +15,7 @@ import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../../services/appear
 import { ImageEditOperation, Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
-import { normalizeInspirationTags, sourceLabel } from '../../services/inspirationUtils';
+import { getCollectionTags, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionTagInput } from './CollectionControls';
 import { ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
@@ -59,7 +59,8 @@ export const InspirationDetail: React.FC<Props> = ({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
-  const tagSuggestions = useMemo(() => Array.from(new Set(items.flatMap(candidate => candidate.tags || []))).sort((a, b) => a.localeCompare(b)), [items]);
+  const tagSuggestions = useMemo(() => Array.from(new Set(items.flatMap(getCollectionTags))).sort((a, b) => a.localeCompare(b)), [items]);
+  const tags = getCollectionTags(draft);
   const reverseTags = readExternalImageTags(draft);
   const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
 
@@ -115,19 +116,19 @@ export const InspirationDetail: React.FC<Props> = ({
   const handleAddTag = (tagToAdd: string) => {
     const trimmed = tagToAdd.trim().replace(/^#/, '');
     if (!trimmed) return;
-    const currentTags = draft.tags || [];
+    const currentTags = tags;
     if (currentTags.includes(trimmed)) {
       setNewTagInput('');
       return;
     }
-    const nextTags = normalizeInspirationTags([...currentTags, trimmed]);
+    const nextTags = getCollectionTags({ ...draft, tags: [...currentTags, trimmed] });
+    if (nextTags.length === currentTags.length) { setNewTagInput(''); return; }
     void updateAndPersist('tags', nextTags, `已添加标签 #${trimmed}`);
     setNewTagInput('');
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    if (tagToRemove === sourceLabel(draft.sourceType)) return;
-    const nextTags = (draft.tags || []).filter(t => t !== tagToRemove);
+    const nextTags = tags.filter(t => t !== tagToRemove);
     void updateAndPersist('tags', nextTags);
   };
 
@@ -325,21 +326,21 @@ export const InspirationDetail: React.FC<Props> = ({
             <div data-collection-section="tags">
               <div className="mb-1.5 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                  {t("标签")}{(draft.tags || []).length > 0 && (
-                    <span className="ml-1 text-micro font-normal text-gray-400">（{(draft.tags || []).length}）</span>
+                  {t("标签")}{tags.length > 0 && (
+                    <span className="ml-1 text-micro font-normal text-gray-400">（{tags.length}）</span>
                   )}
                 </span>
                 <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
-                {(draft.tags || []).map(tag => (
+                {tags.map(tag => (
                   <span
                     key={tag}
                     className="group inline-flex items-center gap-1 rounded-lg bg-indigo-50/80 px-2.5 py-1 text-meta font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
                   >
                     #{tag}
-                    {editable && tag !== sourceLabel(draft.sourceType) && (
+                    {editable && (
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(tag)}
@@ -353,7 +354,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 ))}
                 {isAddingTag ? (
                   <CollectionTagInput
-                    suggestions={tagSuggestions.filter(tag => !(draft.tags || []).includes(tag))}
+                    suggestions={tagSuggestions.filter(tag => !tags.includes(tag))}
                     autoFocus
                     type="text"
                     placeholder={t("输入标签回车保存...")}
@@ -477,7 +478,7 @@ export const InspirationDetail: React.FC<Props> = ({
           notify={notify}
           actionLabel={t("追加 {count} 个 Tag 到收藏标签")}
           onInsert={(newTags) => {
-            const combined = normalizeInspirationTags([...(draft.tags || []), ...splitTags(newTags)]);
+            const combined = getCollectionTags({ ...draft, tags: [...tags, ...splitTags(newTags)] });
             void updateAndPersist('tags', combined, `已追加 ${splitTags(newTags).length} 个反推 Tag`);
           }}
         />

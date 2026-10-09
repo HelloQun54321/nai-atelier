@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeInspirationTags,
+  getCollectionTags,
   sourceLabel,
   suggestInspirationTags,
   inspirationSimilarity,
@@ -18,6 +19,16 @@ describe('normalizeInspirationTags', () => {
     const tags = Array.from({ length: 100 }, (_, i) => `tag${i}`);
     expect(normalizeInspirationTags(tags)).toHaveLength(80);
     expect(normalizeInspirationTags(tags)[0]).toBe('tag0');
+  });
+});
+
+describe('getCollectionTags', () => {
+  it.each(['history', 'aitag', 'danbooru', 'pixiv', 'upload', 'agent', 'artist', 'character', 'chain', 'other'] as const)('%s：只读过滤自身旧来源标签，保留正常标签与其他来源同名标签', sourceType => {
+    const label = sourceLabel(sourceType);
+    const item = { sourceType, tags: [label, ' #' + label + ' ', '内容', '内容', sourceType === 'aitag' ? 'Pixiv' : 'AITag'] };
+    const original = [...item.tags];
+    expect(getCollectionTags(item)).toEqual(['内容', sourceType === 'aitag' ? 'Pixiv' : 'AITag']);
+    expect(item.tags).toEqual(original);
   });
 });
 
@@ -40,7 +51,7 @@ describe('sourceLabel', () => {
 });
 
 describe('suggestInspirationTags', () => {
-  it('从 prompt 提取画师 tag、按宽高判方向、附带来源标签', () => {
+  it('从 prompt 提取画师 tag、按宽高判方向、不再附带来源标签', () => {
     const tags = suggestInspirationTags({
       prompt: 'artist:alice, artist:bob, close-up, bokeh',
       params: { width: 832, height: 1216 } as any,
@@ -53,7 +64,7 @@ describe('suggestInspirationTags', () => {
     expect(tags).toContain('close-up');
     expect(tags).toContain('bokeh');
     expect(tags).toContain('竖图');
-    expect(tags).toContain('Pixiv');
+    expect(tags).not.toContain('Pixiv');
   });
 
   it('等宽高产方图、缺参时不产生方向标签', () => {

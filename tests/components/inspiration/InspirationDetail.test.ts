@@ -288,11 +288,13 @@ describe('InspirationDetail 全新重构界面走查', () => {
   });
 
 
-  it('自动来源标签保持固定，自定义标签仍可移除', async () => {
+  it('详情只读隐藏旧来源标签，自定义标签仍可移除', async () => {
   render(React.createElement(InspirationDetail, { item: { ...mockItem, sourceType: 'history', tags: ['生成历史', '自定义'] }, items: [mockItem], currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn() }));
+  expect(screen.queryByText('#生成历史')).toBeNull();
   expect(screen.queryByTitle('删除 #生成历史')).toBeNull();
+  expect(db.updateInspiration).not.toHaveBeenCalled();
   fireEvent.click(screen.getByTitle('删除 #自定义'));
-  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: ['生成历史'] }));
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: [] }));
 });
 
   it('底部工具条可展开底图模式，不再提供资产提取', () => {

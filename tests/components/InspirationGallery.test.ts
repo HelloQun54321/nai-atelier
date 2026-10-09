@@ -124,7 +124,7 @@ const mockInspirations: Inspiration[] = [
     prompt: 'pixiv illustration',
     boardId: undefined, // 未整理
     sourceType: 'pixiv',
-    tags: ['Pixiv'],
+    tags: ['Pixiv', '风景'],
     createdAt: 3000,
   },
 ];
@@ -159,7 +159,7 @@ it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签�
   expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:block')).toBe(true);
   for (const item of mockInspirations) {
     const card = screen.getByText(item.title).closest('article')!;
-    expect(within(card).getByText('#' + item.tags![0])).toBeTruthy();
+    expect(within(card).getByText('#' + item.tags![1])).toBeTruthy();
     expect(within(card).queryByText(item.prompt)).toBeNull();
     expect(within(card).queryByText('未整理')).toBeNull();
     expect(card.querySelector('.bottom-2.left-2')).toBeNull();
@@ -167,6 +167,30 @@ it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签�
   expect(screen.queryByText('自动收录')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
   expect(within(screen.getByRole('dialog', { name: '加入收藏库' })).queryByText('备注')).toBeNull();
+});
+
+it.each([390, 1280])('宽度 %s：旧来源 Tag 不进入卡片、搜索或标签筛选，独立来源分类仍可用', async width => {
+  vi.stubGlobal('innerWidth', width);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  expect(screen.queryByText('#生成历史')).toBeNull();
+  expect(screen.queryByText('#Danbooru')).toBeNull();
+  expect(screen.queryByText('#Pixiv')).toBeNull();
+  expect(screen.getByText('#原创')).toBeTruthy();
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+  expect(mockInspirations[0].tags).toEqual(['生成历史', '原创']);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  const tagInput = within(filter).getByRole('combobox', { name: '标签' });
+  const options = document.getElementById(tagInput.getAttribute('list')!)!;
+  expect(options.querySelector('option[value="Pixiv"]')).toBeNull();
+  expect(options.querySelector('option[value="生成历史"]')).toBeNull();
+  expect(options.querySelector('option[value="风景"]')).toBeTruthy();
+  fireEvent.click(within(width < 768 ? filter : document.querySelector('aside')!).getByRole('button', { name: /生成历史\s+1/ }));
+  expect(screen.getByText('已整理角色图')).toBeTruthy();
+  expect(screen.queryByText('Pixiv 收藏图')).toBeNull();
+  fireEvent.click(within(filter).getByRole('button', { name: /查看 .* 条结果/ }));
+  fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '生成历史' } });
+  await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());
 });
 
 it('收藏搜索不再匹配备注；详情接收文生图排序，调整后即时生效', async () => {
@@ -245,7 +269,7 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     const filter = screen.getByRole('dialog', { name: '筛选收藏' });
     expect(within(filter).queryByRole('combobox', { name: '分类' })).toBeNull();
     expect(within(filter).queryByRole('combobox', { name: '收藏夹' })).toBeNull();
-    fireEvent.change(within(filter).getByRole('combobox', { name: '标签' }), { target: { value: 'Pixiv' } });
+    fireEvent.change(within(filter).getByRole('combobox', { name: '标签' }), { target: { value: '风景' } });
     fireEvent.keyDown(within(filter).getByRole('combobox', { name: '标签' }), { key: 'Enter' });
     expect(screen.queryByText('未整理带有标签的图')).toBeNull();
     expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
