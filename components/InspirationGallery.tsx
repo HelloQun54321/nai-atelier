@@ -9,7 +9,7 @@ import { extractMetadata, parseNovelAIMetadata } from '../services/metadataServi
 import { createUuid } from '../services/id';
 import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -135,6 +135,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     items.forEach(item => (item.tags || []).forEach(tag => tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)));
     return Array.from(tagCounts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [items, tagNames]);
+  const matchingTags = useMemo(() => allTags.filter(([tag]) => tag.toLowerCase().includes(tagQuery.trim().toLowerCase())), [allTags, tagQuery]);
 
   // 搜索防抖：击键不再即时触发对全量 items 的过滤重算
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -343,10 +344,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length;
-  const addFilterTag = () => {
-    const tag = tagQuery.trim();
-    if (allTags.some(([existing]) => existing === tag)) { setTagFilter(previous => Array.from(new Set([...previous, tag]))); setTagQuery(''); }
-  };
   const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
   const renderBoardActions = (board: InspirationBoard) => <div data-card-action="true" className="hover-reveal-md absolute right-1 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-900">
     <button type="button" disabled={busy === 'board-order'} aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
@@ -398,8 +395,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const renderFilterControls = (mobile: boolean) => <div className="grid grid-cols-2 gap-3">
     {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}
     {mobile && <label className="col-span-2 text-sm font-bold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('收藏排序')} value={sort} onChange={event => setSort(event.target.value as CollectionSort)} className={TOOLBAR_FIELD_CLASS}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</select></label>}
-    <div className="col-span-2"><label className="text-sm font-bold text-gray-600 dark:text-gray-300 md:text-xs md:font-medium">{t('标签（同时满足）')}<div className="mt-1.5 flex gap-2"><CollectionTagInput aria-label={t('标签')} onPick={value => { setTagFilter(previous => Array.from(new Set([...previous, value]))); setTagQuery(''); }} value={tagQuery} suggestions={allTags.map(([tag]) => tag).filter(tag => !tagFilter.includes(tag))} onChange={event => setTagQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addFilterTag(); } }} onBlur={addFilterTag} placeholder={t('搜索已有标签')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-normal dark:border-gray-700 dark:bg-gray-950" /><button type="button" aria-label={t('添加筛选标签')} disabled={!allTags.some(([tag]) => tag === tagQuery.trim()) || tagFilter.includes(tagQuery.trim())} onClick={addFilterTag} className="mobile-touch rounded-xl px-3 text-indigo-600 disabled:opacity-40"><Plus className="h-4 w-4" /></button></div></label></div>
-    {tagFilter.length > 0 && <div className="col-span-2 flex flex-wrap gap-1">{tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}</div>}
+    <section className="col-span-2 min-w-0 space-y-3">
+      <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('标签（同时满足）')}</h3>
+      <ToolbarSearch aria-label={t('搜索标签')} placeholder={t('搜索已有标签')} value={tagQuery} onChange={event => setTagQuery(event.target.value)} containerClassName="md:max-w-none!" />
+      <div role="group" aria-label={t('标签')} className="custom-scrollbar flex max-h-52 flex-wrap content-start gap-1.5 overflow-y-auto overscroll-contain">
+        {matchingTags.map(([tag]) => {
+          const selected = tagFilter.includes(tag);
+          return <button type="button" key={tag} aria-pressed={selected} title={tag} onClick={() => setTagFilter(previous => previous.includes(tag) ? previous.filter(value => value !== tag) : [...previous, tag])} className={`mobile-touch inline-flex max-w-full items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-gray-800 dark:bg-gray-950/40 dark:text-gray-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300'}`}><span className="min-w-0 truncate">#{tag}</span></button>;
+        })}
+        {!matchingTags.length && <p className="py-3 text-xs text-gray-400">{t('没有匹配的标签')}</p>}
+      </div>
+    </section>
   </div>;
 
   const estimateCollectionCardHeight = React.useCallback((group: Inspiration[], columnWidth: number) => {
@@ -452,10 +458,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
         </div>}
       </ToolbarSearch>
-      <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
-        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
+      <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
+        {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("确认")}</button></div></div>}
       </ToolbarPopover>
-      <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="hidden w-36 md:inline-flex" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
+      <ToolbarSelect label="收藏排序" icon={<ArrowDownUp />} value={sort} containerClassName="hidden md:inline-flex" className="w-auto!" onChange={event => setSort(event.target.value as CollectionSort)}>{Object.entries(COLLECTION_SORT_LABELS).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}</ToolbarSelect>
       <ToolbarPopover label="管理" title={t("收藏管理")} icon={<ListChecks />} width={256}>
         {close => <>
           <button type="button" disabled={Boolean(busy)} onClick={() => { close(); setTagManagerOpen(true); }} className={TOOLBAR_MENU_CLASS + ' disabled:opacity-40'}><Tags />{t("管理标签")}</button>
@@ -474,7 +480,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${openedGroup ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <main ref={mainScrollRef} onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }} className={`${openedGroup ? 'hidden lg:block' : 'block'} min-w-0 overflow-y-auto`}>
         <div ref={galleryContentRef}>
-        {filtered.length > 0 ? <div className="p-3 md:p-5">
+        {inspirationsData === null ? <PageSpinner className="min-h-[45vh]" /> : filtered.length > 0 ? <div className="p-3 md:p-5">
           {imageDisplay.layout === 'masonry' ? (
             <ShortestColumnMasonry
               stableColumns

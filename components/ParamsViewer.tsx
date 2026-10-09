@@ -1,8 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
 
 import React from 'react';
+import { ChevronDown, Copy } from 'lucide-react';
 import { ImageEditMetadata, NAIParams } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
+import { copyTagText } from '../services/externalImageTags';
 import { InfoPopover } from './InfoPopover';
 
 /**
@@ -66,8 +68,8 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
 }) => {
   useLanguage();
     const handleCopy = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        notify?.(`${label} 已复制`);
+        if (!text) return;
+        void copyTagText(text).then(() => notify?.(`${label} 已复制`), () => notify?.(t("复制失败")));
     };
 
     return (
@@ -226,14 +228,17 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
 
             {/* 多角色列表 */}
             {(!section || section === 'characters') && params.characters && params.characters.length > 0 && (
-                <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <details open={section !== 'characters'} className={section === 'characters' ? 'group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30' : 'group'}>
+                    <summary className="flex cursor-pointer items-center justify-between gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider select-none">
+                        <span className="flex items-center gap-1">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
                         {t("多角色定义 (")}{params.characters.length})
-                    </label>
-                    <div className="space-y-2">
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
+                    </summary>
+                    <div className="mt-2 space-y-2">
                         {params.characters.map((char, idx) => (
                             <div
                                 key={char.id || idx}
@@ -245,19 +250,26 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                                         {params.useCoords ? `(${Number.isFinite(char.x) ? char.x.toFixed(2) : '0.50'}, ${Number.isFinite(char.y) ? char.y.toFixed(2) : '0.50'})` : t("AI 自动构图")}
                                     </span>
                                 </div>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                    <span className="text-micro font-bold text-gray-500">{t("提示词")}</span>
+                                    <button type="button" disabled={!char.prompt} aria-label={`${t("复制")}${t("角色 {0}{1}", [idx + 1, ''])}${t("提示词")}`} onClick={() => handleCopy(char.prompt, `${t("角色 {0}{1}", [idx + 1, ''])}${t("提示词")}`)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950/50"><Copy className="h-3 w-3" />{t("复制")}</button>
+                                </div>
                                 <p className="text-xs text-gray-700 dark:text-gray-300 font-mono break-words leading-relaxed">
                                     {char.prompt || <span className="text-gray-400 italic">{t("（空）")}</span>}
                                 </p>
                                 {char.negativePrompt && (
-                                    <p className="text-xs text-red-400 font-mono break-words leading-relaxed mt-1 border-t border-gray-200 dark:border-gray-700 pt-1">
-                                        <span className="text-mini font-bold">{t("角色专属负面:")}</span>{' '}
-                                        {char.negativePrompt}
-                                    </p>
+                                    <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-700">
+                                        <div className="mb-1 flex items-center justify-between gap-2">
+                                            <span className="text-mini font-bold text-red-400">{t("角色专属负面:")}</span>
+                                            <button type="button" aria-label={`${t("复制")}${t("角色 {0}{1}", [idx + 1, ''])}${t("负面提示词")}`} onClick={() => handleCopy(char.negativePrompt!, `${t("角色 {0}{1}", [idx + 1, ''])}${t("负面提示词")}`)} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50"><Copy className="h-3 w-3" />{t("复制")}</button>
+                                        </div>
+                                        <p className="text-xs text-red-400 font-mono break-words leading-relaxed">{char.negativePrompt}</p>
+                                    </div>
                                 )}
                             </div>
                         ))}
                     </div>
-                </div>
+                </details>
             )}
         </div>
     );

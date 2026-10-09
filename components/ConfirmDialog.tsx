@@ -151,7 +151,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 data-agent-action="business"
                                 onClick={() => closeDialog(true)}
                                 className={`mobile-touch rounded-xl px-4 py-2 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 dark:focus:ring-offset-gray-850 ${options.onSave
-                                    ? 'order-2 min-h-11 border border-red-200 text-red-600 hover:bg-red-50 focus:ring-red-500 dark:border-red-900/70 dark:text-red-400 dark:hover:bg-red-950/30 md:order-1 md:mr-auto'
+                                    ? 'order-2 min-h-11 bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500 focus:ring-red-500 md:order-1 md:mr-auto'
                                     : isDanger
                                     ? 'bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500 focus:ring-red-500'
                                     : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 focus:ring-indigo-500'

@@ -60,16 +60,19 @@ afterEach(() => {
 });
 
 it('添加标签可复用其他作品的原名，回车后不重复生成标签，并保留已有标签', async () => {
-  const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光'] }];
+  const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光', '雨天'] }];
   render(React.createElement(InspirationDetail, { item: mockItem, items, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
   fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
   const input = screen.getByPlaceholderText('输入标签回车保存...');
-  expect(document.getElementById(input.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeTruthy();
+  expect(input.hasAttribute('list')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(within(screen.getByRole('dialog', { name: '选择已有标签' })).getByRole('button', { name: '#逆光' })).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.change(input, { target: { value: '逆光' } }); fireEvent.keyDown(input, { key: 'Enter' });
   await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockItem.id, { tags: [...(mockItem.tags || []), '逆光'] }));
   fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
-  const next = screen.getByPlaceholderText('输入标签回车保存...');
-  expect(document.getElementById(next.getAttribute('list')!)?.querySelector('option[value="逆光"]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(within(screen.getByRole('dialog', { name: '选择已有标签' })).queryByRole('button', { name: '#逆光' })).toBeNull();
 });
 
 it('收藏详情去除评分、置顶、相似推荐和资产菜单，保留已有资料', () => {
@@ -267,7 +270,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
   });
 
-  it('标签区识别当前图片，结果追加到收藏标签', () => {
+  it('作品名称行识别当前图片，结果追加到收藏标签', () => {
     render(
       React.createElement(InspirationDetail, {
         item: mockItem,

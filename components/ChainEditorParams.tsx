@@ -164,12 +164,12 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {/* Model and Resolution row (2 columns symmetric) */}
             <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="flex min-w-0 flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("生成模型")}</label>
+                <div className={supportsEffort ? 'grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1' : 'flex min-w-0 flex-col gap-1'}>
+                    <label className="col-span-2 text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("生成模型")}</label>
                     <select
                         aria-label={t("生成模型")}
                         disabled={!canEdit}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        className="min-w-0 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={displayedModelId}
                         onChange={(e) => {
                             const nextModelId = e.target.value;
@@ -213,7 +213,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                                 ? displayedModelId.replace(/(-inpainting)?$/, '-medium$1') : displayedModelId });
                             markChange();
                         }}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 md:text-sm">
+                        className="w-auto rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 md:text-sm">
                         <option value="high">High</option><option value="medium">Medium</option>
                     </select>}
                 </div>

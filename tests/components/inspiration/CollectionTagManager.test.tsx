@@ -37,7 +37,7 @@ const setup = (data = fixture(), currentUser = user, catalog: string[] | null = 
 };
 const rename = (from: string, to: string) => {
   fireEvent.click(screen.getByRole('button', { name: '重命名标签：' + from }));
-  fireEvent.change(screen.getByRole('combobox', { name: '标签名称' }), { target: { value: to } });
+  fireEvent.change(screen.getByRole('textbox', { name: '标签名称' }), { target: { value: to } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
 };
 
@@ -94,7 +94,7 @@ it('部分保存失败回读实际结果、保留编辑输入，重试仅处理�
   const { notify, onTagChanged } = setup(); rename('逆光', '日落');
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成保存失败', 'error'));
   expect(stored[0].tags).toEqual(['日落', '原创']); expect(stored[1].tags).toContain('逆光');
-  expect((screen.getByRole('combobox', { name: '标签名称' }) as HTMLInputElement).value).toBe('日落');
+  expect((screen.getByRole('textbox', { name: '标签名称' }) as HTMLInputElement).value).toBe('日落');
   expect(onTagChanged).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(onTagChanged).toHaveBeenCalledWith('逆光', '日落'));
@@ -104,7 +104,7 @@ it('部分保存失败回读实际结果、保留编辑输入，重试仅处理�
 it('空名、同名与来源同名不保存；访客只能查看，Esc 可关闭空闲窗口', async () => {
   const { notify, onClose } = setup();
   fireEvent.click(screen.getByRole('button', { name: '重命名标签：逆光' }));
-  const input = screen.getByRole('combobox', { name: '标签名称' });
+  const input = screen.getByRole('textbox', { name: '标签名称' });
   for (const value of [' # ', '#逆光']) {
     fireEvent.change(input, { target: { value } });
     expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);

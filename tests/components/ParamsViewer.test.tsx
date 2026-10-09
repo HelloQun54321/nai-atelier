@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
 import { ParamsViewer } from '../../components/ParamsViewer';
+import { copyTagText } from '../../services/externalImageTags';
 
-afterEach(cleanup);
+vi.mock('../../services/externalImageTags', () => ({ copyTagText: vi.fn(async () => undefined) }));
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it('历史参考参数不把当前估算价格冒充当时的实际扣费', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
   render(<ParamsViewer params={params} />);
@@ -38,4 +40,18 @@ it('收藏详情可分别展示角色、参数及参考信息，历史默认仍�
     labels.forEach((label, labelIndex) => expect(Boolean(screen.queryByText(label))).toBe(labelIndex === index));
   });
   expect(JSON.stringify(params)).toBe(original);
+});
+
+it('收藏角色 Tag 默认折叠，角色正负提示词分别复制，历史入口仍默认展开', async () => {
+  const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characters: [{ id: 'char', prompt: 'blue hair', negativePrompt: 'red hair', x: 0.5, y: 0.5 }] };
+  const view = render(<ParamsViewer params={params} section="characters" />);
+  const group = view.container.querySelector('details')!;
+  expect(group.open).toBe(false);
+  group.open = true;
+  fireEvent.click(screen.getByRole('button', { name: '复制角色 1提示词' }));
+  await waitFor(() => expect(copyTagText).toHaveBeenLastCalledWith('blue hair'));
+  fireEvent.click(screen.getByRole('button', { name: '复制角色 1负面提示词' }));
+  await waitFor(() => expect(copyTagText).toHaveBeenLastCalledWith('red hair'));
+  view.rerender(<ParamsViewer params={params} />);
+  expect(view.container.querySelector('details')!.open).toBe(true);
 });

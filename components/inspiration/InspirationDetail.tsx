@@ -192,21 +192,23 @@ export const InspirationDetail: React.FC<Props> = ({
 
 
   const detailSections: Partial<Record<LabPageModuleId, React.ReactNode>> = {
-    prompt: (<div data-collection-section="prompt">
-      <div className="mb-1.5 flex items-center justify-between">
+    prompt: (<details data-collection-section="prompt" className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
+      <summary className="flex cursor-pointer items-center justify-between select-none">
         <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-          {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} 个词元）", [promptTagCount])}</span>}
+          {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} token）", [promptTagCount])}</span>}
         </span>
-        {draft.prompt && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => handleCopy(draft.prompt, '提示词')}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+            disabled={!draft.prompt}
+            onClick={event => { event.preventDefault(); event.stopPropagation(); handleCopy(draft.prompt, '提示词'); }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
           >
             <Copy className="h-3 w-3" />
             {t("复制")}</button>
-        )}
-      </div>
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
+        </div>
+      </summary>
       <textarea
         aria-label={t("提示词")}
         readOnly={!editable}
@@ -214,16 +216,16 @@ export const InspirationDetail: React.FC<Props> = ({
         onChange={event => update('prompt', event.target.value)}
         onBlur={() => void updateAndPersist('prompt', draft.prompt)}
         placeholder={t("（无提示词）")}
-        className="custom-scrollbar min-h-24 max-h-44 w-full resize-y overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200"
+        className="custom-scrollbar mt-2 min-h-24 max-h-44 w-full resize-y overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/80 p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-200"
       />
-    </div>),
+    </details>),
     negative: ((draft.negativePrompt || editable) ? (
       <details data-collection-section="negative" className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
         <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
             <span>{t("负面提示词")}</span>
-            {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">{t("（{0} 个词元）", [negativeTagCount])}</span>}
+            {negativeTagCount > 0 && <span className="text-micro font-normal text-gray-400">{t("（{0} token）", [negativeTagCount])}</span>}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -320,26 +322,18 @@ export const InspirationDetail: React.FC<Props> = ({
               className="h-8 min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-1 text-base font-bold text-gray-950 outline-none dark:bg-gray-900 dark:text-white sm:text-lg"
             /> : <h2 data-safe-mode-title="true" className="min-w-0 truncate text-base font-bold text-gray-950 dark:text-white sm:text-lg">{draft.title}</h2>}
             {editable && <button type="button" aria-label={t("修改收藏标题")} title={t("修改收藏标题")} onClick={() => { setEditingTitle(true); titleInputRef.current?.focus(); titleInputRef.current?.select(); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>}
+            <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch ml-auto flex flex-none items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
           </header>
 
           {/* 详情随作品组侧栏统一滚动 */}
           <div className="space-y-4 p-4">
             {/* 标签区：胶囊化展示 + 轻量添加 */}
             <div data-collection-section="tags">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
-                  {t("标签")}{tags.length > 0 && (
-                    <span className="ml-1 text-micro font-normal text-gray-400">（{tags.length}）</span>
-                  )}
-                </span>
-                <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch flex items-center gap-1 rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="custom-scrollbar flex items-center gap-1.5 overflow-x-auto">
                 {tags.map(tag => (
                   <span
                     key={tag}
-                    className="group inline-flex items-center gap-1 rounded-lg bg-indigo-50/80 px-2.5 py-1 text-meta font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+                    className="group inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-indigo-50/80 px-2.5 py-1 text-meta font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
                   >
                     #{tag}
                     {editable && (
@@ -377,13 +371,13 @@ export const InspirationDetail: React.FC<Props> = ({
                       if (newTagInput.trim()) handleAddTag(newTagInput);
                       setIsAddingTag(false);
                     }}
-                    className="mobile-touch h-10 w-44 rounded-lg border border-indigo-400 bg-white px-2 text-xs outline-none dark:bg-gray-900"
+                    className="mobile-touch h-10 w-44 shrink-0 rounded-lg border border-indigo-400 bg-white px-2 text-xs outline-none dark:bg-gray-900"
                   />
                 ) : editable && (
                   <button
                     type="button"
                     onClick={() => setIsAddingTag(true)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
+                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
                   >
                     <Plus className="h-3 w-3" />
                     {t("添加标签")}</button>

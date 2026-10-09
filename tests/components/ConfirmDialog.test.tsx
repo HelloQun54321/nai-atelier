@@ -38,7 +38,8 @@ it.each(LANGUAGES)('$name 三按钮文案完整，桌面顺序与手机纵排准
   expect(save.className).toContain('order-1'); expect(save.className).toContain('md:order-3');
   expect(save.className).toContain('bg-emerald-600');
   expect(discard.className).toContain('order-2'); expect(discard.className).toContain('md:order-1');
-  expect(discard.className).toContain('md:mr-auto'); expect(discard.className).not.toContain('bg-red-600');
+  expect(discard.className).toContain('md:mr-auto'); expect(discard.className).toContain('bg-red-600');
+  expect(discard.className).toContain('text-white');
   expect(cancel.className).toContain('order-3'); expect(cancel.className).toContain('md:order-2');
   expect(document.activeElement).not.toBe(discard);
   fireEvent.click(save);

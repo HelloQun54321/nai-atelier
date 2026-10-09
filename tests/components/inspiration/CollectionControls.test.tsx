@@ -12,15 +12,21 @@ vi.mock('../../../services/dbService', () => ({ db: { getInspirationBoards: vi.f
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); vi.mocked(db.getInspirationBoards).mockResolvedValue(folders); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('标签候选包含冷门标签，逗号补全保留之前的标签，不重复推荐已输入项', () => {
+it('标签候选包含冷门标签，选择保留逗号前的标签，不重复推荐已输入项，也不使用原生补全', () => {
   const suggestions = Array.from({ length: 100 }, (_, index) => `tag-${index}`);
-  const view = render(<CollectionTagInput aria-label="标签" value="tag-0， " suggestions={suggestions} readOnly />);
-  const input = screen.getByRole('combobox', { name: '标签' });
-  const list = document.getElementById(input.getAttribute('list')!)!;
-  expect(list.querySelector('option[value="tag-0， tag-99"]')).toBeTruthy();
-  expect(list.querySelector('option[value="tag-0， tag-0"]')).toBeNull();
-  view.rerender(<CollectionTagInput aria-label="标签" value="" suggestions={suggestions} readOnly />);
-  expect(list.querySelectorAll('option')).toHaveLength(100);
+  const onPick = vi.fn();
+  const view = render(<CollectionTagInput aria-label="标签" value="tag-0， " suggestions={suggestions} onPick={onPick} onChange={vi.fn()} />);
+  const input = screen.getByRole('textbox', { name: '标签' });
+  expect(input.hasAttribute('list')).toBe(false);
+  expect(view.container.querySelector('datalist')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  const panel = screen.getByRole('dialog', { name: '选择已有标签' });
+  expect(within(panel).queryByRole('button', { name: '#tag-0' })).toBeNull();
+  fireEvent.click(within(panel).getByRole('button', { name: '#tag-99' }));
+  expect(onPick).toHaveBeenCalledWith('tag-0， tag-99');
+  view.rerender(<CollectionTagInput aria-label="标签" value="" suggestions={suggestions} onPick={onPick} onChange={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(within(screen.getByRole('dialog', { name: '选择已有标签' })).getAllByRole('button')).toHaveLength(100);
 });
 
 it('默认未整理，最近使用的真实收藏夹优先，过期 ID 不出现，不重复选项', async () => {
@@ -63,7 +69,7 @@ it.each([390, 1280])('宽度 %s：紧凑标签选择器可搜索、点选，保�
   vi.stubGlobal('innerWidth', width);
   const onPick = vi.fn(), onBlur = vi.fn();
   render(<CollectionTagInput aria-label="标签" value="构图， " suggestions={['构图', '光影', '夜景']} onPick={onPick} onBlur={onBlur} onChange={vi.fn()} className="h-10 w-44" />);
-  const input = screen.getByRole('combobox', { name: '标签' });
+  const input = screen.getByRole('textbox', { name: '标签' });
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
   fireEvent.blur(input);
   expect(onBlur).not.toHaveBeenCalled();
@@ -82,7 +88,7 @@ it('从筛选面板打开标签选择器，Tab 到箭头不提前保存，Esc �
   const onBlur = vi.fn();
   render(<ToolbarPopover title="外层筛选"><CollectionTagInput aria-label="标签" value="未完成" suggestions={['光影']} onPick={vi.fn()} onBlur={onBlur} onChange={vi.fn()} /></ToolbarPopover>);
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const input = screen.getByRole('combobox', { name: '标签' });
+  const input = screen.getByRole('textbox', { name: '标签' });
   const trigger = screen.getByRole('button', { name: '选择已有标签' });
   fireEvent.blur(input, { relatedTarget: trigger });
   expect(onBlur).not.toHaveBeenCalled();
