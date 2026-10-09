@@ -385,6 +385,15 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
+      {selectedIds.size > 0 ? <>
+        <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <b className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} 项", [selectedIds.size])}</b>
+          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="mobile-touch h-10 w-32 flex-none rounded-xl border border-gray-200 bg-white px-2 text-xs dark:border-gray-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
+          <div className="flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} disabled={Boolean(busy)} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
+          <ToolbarButton tone="danger" aria-label={t("取消收藏")} disabled={Boolean(busy)} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t("取消收藏")}</span></ToolbarButton>
+        </div>
+        <ToolbarButton aria-label={t("取消全部选择")} title={t("退出多选")} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
+      </> : <>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
         {tagFilter.length > 0 && <div role="group" aria-label={t('标签（同时满足）')} className="flex min-w-0 max-w-[50%] flex-none items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
@@ -393,8 +402,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
       </ToolbarPopover>
-      <ToolbarButton aria-label={selectedIds.size ? t("取消全部选择") : t("全选筛选结果")} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3" tone={selectedIds.size ? 'primary' : 'neutral'}><CheckSquare /><span className="hidden sm:inline">{selectedIds.size ? t("取消已选 ") + selectedIds.size : t("全选筛选结果")}</span></ToolbarButton>
+      <ToolbarButton aria-label={t("全选筛选结果")} onClick={() => setSelectedIds(new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3"><CheckSquare /><span className="hidden sm:inline">{t("全选筛选结果")}</span></ToolbarButton>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
+      </>}
     </WorkspaceToolbar>
 
     <div className="flex min-h-0 flex-1">
@@ -404,14 +414,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
       <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${openedGroup ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <main ref={mainScrollRef} onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }} className={`${openedGroup ? 'hidden lg:block' : 'block'} min-w-0 overflow-y-auto`}>
-        {selectedIds.size > 0 && <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/70 md:px-5">
-          <b className="mr-1 text-sm text-indigo-800 dark:text-indigo-200">{t("已选 {0} 项", [selectedIds.size])}</b>
-          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="h-9 rounded-lg border border-indigo-200 bg-white px-2 text-xs dark:border-indigo-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
-          <div className="flex h-9 overflow-hidden rounded-lg border border-indigo-200 bg-white dark:border-indigo-800 dark:bg-gray-900"><CollectionTagInput value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" onClick={() => void addBulkTags()} className="border-l border-indigo-200 px-2 text-xs font-bold text-indigo-600 dark:border-indigo-800">{t("添加")}</button></div>
-          <button type="button" onClick={() => void deleteSelected()} className="ml-auto h-9 rounded-lg bg-red-600 px-3 text-xs font-bold text-white"><Trash2 className="mr-1 inline h-3.5 w-3.5" />{t("取消收藏")}</button>
-        </div>}
-
-
         <div ref={galleryContentRef}>
         {filtered.length > 0 ? <div className="p-3 md:p-5">
           {imageDisplay.layout === 'masonry' ? (
