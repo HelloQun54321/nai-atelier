@@ -18,11 +18,24 @@ vi.mock('../../services/pixivService', async original => ({ ...await original<ty
 vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
-vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
+const masonryRender = vi.hoisted(() => vi.fn());
+vi.mock('../../components/ShortestColumnMasonry', async original => {
+  const actual = await original<typeof import('../../components/ShortestColumnMasonry')>();
+  return { ...actual, ShortestColumnMasonry: (props: Parameters<typeof actual.ShortestColumnMasonry>[0]) => {
+    masonryRender(props);
+    return <actual.ShortestColumnMasonry {...props} />;
+  } };
+});
 const illust: PixivIllust = { id: '100', title: 'synthetic artwork', type: 'illust', caption: '', restrict: 0, xRestrict: 0, tags: ['原站标签'], pageCount: 2, width: 800, height: 1200, totalBookmarks: 10, totalViews: 20, createDate: '', user: { id: '10', name: 'artist', account: '' }, urls: { thumb: '', medium: '', large: '', original: 'https://i.pximg.net/p0.png' }, metaPages: ['https://i.pximg.net/p0.png', 'https://i.pximg.net/p1.png'] };
 beforeEach(() => {
   document.documentElement.dataset.motion = 'full';
-  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      if (target.classList.contains('chain-masonry')) this.callback([{ contentRect: { width: 1000 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    unobserve() {} disconnect() {}
+  });
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
@@ -36,6 +49,33 @@ beforeEach(() => {
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
+it.each(['masonry', 'portrait', 'square'])('Pixiv 足迹 %s 布局关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async layout => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue(Array.from({ length: 4 }, (_, index) => ({
+    id: 'pixiv:' + (index + 1), source: 'pixiv', sourceId: String(index + 1),
+    title: '足迹作品 ' + index, artistName: 'synthetic artist', previewUrl: '', sampleUrl: '', tags: [], viewedAt: 1,
+  })));
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  expect(container.querySelector('article')!.style.contentVisibility).toBe('');
+  fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
+  const cards = Array.from(container.querySelectorAll<HTMLElement>('article'));
+  expect(cards).toHaveLength(4);
+  cards.forEach(card => {
+    expect(card.style.contentVisibility).toBe('visible');
+    expect((card.querySelector('.mobile-gallery-frame') as HTMLElement).style.getPropertyValue('--mobile-image-ratio')).toBe('');
+  });
+  expect(container.querySelector('.mobile-gallery--masonry')).toBeNull();
+  expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(layout === 'masonry' ? 2 : 0);
+  if (layout === 'masonry') {
+    const props = masonryRender.mock.lastCall![0];
+    expect(props.stableColumns).toBe(true);
+    expect(props.items.map(props.getItemKey)).toEqual(['pixiv:1', 'pixiv:2', 'pixiv:3', 'pixiv:4']);
+    expect(props.estimateItemHeight(props.items[0], 200)).toBe(352);
+    expect(cards[0].parentElement).toBe(cards[1].parentElement);
+  }
+});
+
 it.each([false, true])('自动回调=%s：登录提示显示真实后台阶段，不覆盖为继续账号教程', async automaticCallback => {
   vi.mocked(pixivService.status).mockResolvedValue({ connected: false });
   const session = { id: 'test-login-session', state: 'exchanging' as const, automaticCallback, expiresAt: Date.now() + 300000, message: '正在完成连接…' };

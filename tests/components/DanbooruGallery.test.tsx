@@ -19,10 +19,14 @@ vi.mock('../../services/danbooruService', async original => ({
   ...await original<typeof import('../../services/danbooruService')>(),
   danbooruService: { search: vi.fn() }, resolveDanbooruQuery: vi.fn(),
 }));
-vi.mock('../../components/ShortestColumnMasonry', () => ({
-  useMasonryColumnCount: () => 3,
-  ShortestColumnMasonry: ({ items, renderItem }: { items: DanbooruPost[]; renderItem: (post: DanbooruPost) => React.ReactNode }) => <div>{items.map(renderItem)}</div>,
-}));
+const masonryRender = vi.hoisted(() => vi.fn());
+vi.mock('../../components/ShortestColumnMasonry', async original => {
+  const actual = await original<typeof import('../../components/ShortestColumnMasonry')>();
+  return { ...actual, ShortestColumnMasonry: (props: Parameters<typeof actual.ShortestColumnMasonry>[0]) => {
+    masonryRender(props);
+    return <actual.ShortestColumnMasonry {...props} />;
+  } };
+});
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
 vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn(async () => []), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { post: vi.fn() } }));
@@ -37,7 +41,13 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = n
 
 beforeEach(() => {
   document.documentElement.dataset.motion = 'full';
-  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      if (target.classList.contains('chain-masonry')) this.callback([{ contentRect: { width: 1000 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    unobserve() {} disconnect() {}
+  });
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([]);
@@ -60,13 +70,38 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
+it.each(['masonry', 'portrait', 'square'])('Danbooru 足迹 %s 布局关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async layout => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));
+  vi.mocked(galleryHistoryService.getHistory).mockReturnValue(Array.from({ length: 4 }, (_, index) => ({
+    id: 'danbooru:' + (index + 1), source: 'danbooru', sourceId: index + 1,
+    title: '足迹作品 ' + index, artistName: 'synthetic artist', previewUrl: '', sampleUrl: '', tags: [], viewedAt: 1,
+  })));
+  const { container } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
+  const cards = Array.from(container.querySelectorAll<HTMLElement>('article'));
+  expect(cards).toHaveLength(4);
+  cards.forEach(card => {
+    expect(card.style.contentVisibility).toBe('visible');
+    expect((card.querySelector('.mobile-gallery-frame') as HTMLElement).style.getPropertyValue('--mobile-image-ratio')).toBe('');
+  });
+  expect(container.querySelector('.mobile-gallery--masonry')).toBeNull();
+  expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(layout === 'masonry' ? 2 : 0);
+  if (layout === 'masonry') {
+    const props = masonryRender.mock.lastCall![0];
+    expect(props.stableColumns).toBe(true);
+    expect(props.items.map(props.getItemKey)).toEqual(['danbooru:1', 'danbooru:2', 'danbooru:3', 'danbooru:4']);
+    expect(props.estimateItemHeight(props.items[0], 200)).toBe(352);
+    expect(cards[0].parentElement).toBe(cards[1].parentElement);
+  }
+});
+
 it.each([false, true])('足迹=%s：列表和详情使用同一图片，图片操作不打开详情或记浏览足迹', async history => {
   const sampleUrl = 'data:image/png;base64,c3ludGhldGlj';
   search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl }]));
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([{ id: 'danbooru:1', source: 'danbooru', sourceId: 1, title: 'synthetic_artist', previewUrl: '', sampleUrl, tags: [], viewedAt: 1 }]);
   await setup();
   if (history) fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
-  const open = screen.getByRole('button', { name: /synthetic[ _]artist/ });
+  const open = await screen.findByRole('button', { name: /synthetic[ _]artist/ });
   const card = open.closest('article')!;
   fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(sampleUrl, false));

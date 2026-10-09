@@ -590,6 +590,61 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
     </MediaCardShell>;
   };
 
+  const renderHistoryCard = (item: GalleryHistoryItem) => (
+    <MediaCardShell pressReveal key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
+      <button
+        type="button"
+        onClick={() => {
+          const existing = items.find(p => p.id === String(item.sourceId));
+          if (existing) {
+            openDetail(existing);
+          } else {
+            const dummyIllust: PixivIllust = {
+              id: String(item.sourceId),
+              title: item.title,
+              type: 'illust',
+              caption: '',
+              restrict: 0,
+              xRestrict: 0,
+              isBookmarked: false,
+              tags: item.tags,
+              pageCount: 1, // 修复 H1：足迹中仅记录单张预览图，页数对齐为 1 避免翻页器静默失效
+              width: item.width || 800,
+              height: item.height || 1200,
+              totalBookmarks: item.bookmarks || 0,
+              totalViews: 0,
+              createDate: new Date(item.viewedAt).toISOString(),
+              user: {
+                id: item.artistId || '',
+                name: item.artistName || '',
+                account: '',
+              },
+              urls: {
+                thumb: item.previewUrl,
+                medium: item.previewUrl,
+                large: item.previewUrl,
+                original: item.sampleUrl,
+              },
+              metaPages: item.sampleUrl ? [item.sampleUrl] : [],
+            };
+            setItems(prev => [dummyIllust, ...prev]);
+            openDetail(dummyIllust);
+          }
+        }}
+        className="block w-full text-left"
+      >
+        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+          <SmartImage src={item.previewUrl} alt={item.title} />
+        </div>
+        <div className="p-2.5">
+          <p className="truncate text-xs font-bold">{item.title}</p>
+          <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
+        </div>
+      </button>
+      {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'pixiv', sourceId: String(item.sourceId), imageId: '0', sourceUrl: 'https://www.pixiv.net/artworks/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
+    </MediaCardShell>
+  );
+
   const handleConnect = async (event: FormEvent) => {
     event.preventDefault();
     if (!refreshToken.trim()) {
@@ -971,62 +1026,20 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
 
           {showHistory ? (
             historyItems.length ? (
-              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-                {historyItems.map(item => (
-                  <MediaCardShell pressReveal key={item.id} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const existing = items.find(p => p.id === String(item.sourceId));
-                        if (existing) {
-                          openDetail(existing);
-                        } else {
-                          const dummyIllust: PixivIllust = {
-                            id: String(item.sourceId),
-                            title: item.title,
-                            type: 'illust',
-                            caption: '',
-                            restrict: 0,
-                            xRestrict: 0,
-                            isBookmarked: false,
-                            tags: item.tags,
-                            pageCount: 1, // 修复 H1：足迹中仅记录单张预览图，页数对齐为 1 避免翻页器静默失效
-                            width: item.width || 800,
-                            height: item.height || 1200,
-                            totalBookmarks: item.bookmarks || 0,
-                            totalViews: 0,
-                            createDate: new Date(item.viewedAt).toISOString(),
-                            user: {
-                              id: item.artistId || '',
-                              name: item.artistName || '',
-                              account: '',
-                            },
-                            urls: {
-                              thumb: item.previewUrl,
-                              medium: item.previewUrl,
-                              large: item.previewUrl,
-                              original: item.sampleUrl,
-                            },
-                            metaPages: item.sampleUrl ? [item.sampleUrl] : [],
-                          };
-                          setItems(prev => [dummyIllust, ...prev]);
-                          openDetail(dummyIllust);
-                        }
-                      }}
-                      className="block w-full text-left"
-                    >
-                      <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
-                        <SmartImage src={item.previewUrl} alt={item.title} />
-                      </div>
-                      <div className="p-2.5">
-                        <p className="truncate text-xs font-bold">{item.title}</p>
-                        <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
-                      </div>
-                    </button>
-                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'pixiv', sourceId: String(item.sourceId), imageId: '0', sourceUrl: 'https://www.pixiv.net/artworks/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
-                  </MediaCardShell>
-                ))}
-              </div>
+              imageDisplay.layout === 'masonry' ? (
+                <ShortestColumnMasonry
+                  stableColumns
+                  items={historyItems}
+                  columns={masonryColumns}
+                  getItemKey={item => item.id}
+                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + 52}
+                  renderItem={renderHistoryCard}
+                />
+              ) : (
+                <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                  {historyItems.map(renderHistoryCard)}
+                </div>
+              )
             ) : (
               <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Pixiv 浏览足迹")} />
             )

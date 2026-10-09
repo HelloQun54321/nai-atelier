@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.54.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.54.5-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -256,6 +256,8 @@ flowchart LR
 ## 📚 Tag 与资源资料库
 
 收藏库、AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗，并通过平滑滚动将最近点击的卡片在列表可视区域垂直居中，遵循项目与系统减少动画设置；图片加载或详情展开导致重排时保留定位，主动滚动立即打断居中动画、保持新位置，关闭详情或清空选择后恢复亮度。画师／角色目录保留多选，已选项都保持明亮，抽卡、返回目录或切换筛选释放旧定位。
+
+收藏库、Pixiv 与 Danbooru 的浏览足迹在瀑布流模式下使用稳定分列，已显示卡片不会因异步加载重新换列；这三处按真实卡片高度排版，缩略图仍按可见范围加载。
 
 ### 🏷️ 智能 Tag 补全与连续权重胶囊
 

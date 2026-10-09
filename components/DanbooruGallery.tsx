@@ -348,6 +348,54 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
     return imageHeight + 52; // 标题 + 作者文本区
   }, []);
 
+  const renderHistoryCard = (item: GalleryHistoryItem) => (
+    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+      <button
+        type="button"
+        onClick={() => {
+          const existing = items.find(p => p.id === Number(item.sourceId));
+          if (existing) {
+            setSelectedId(existing.id);
+          } else {
+            // 临时包装一个 post 以便在侧栏查看与操作
+            const dummyPost: DanbooruPost = {
+              id: Number(item.sourceId),
+              score: item.score || 0,
+              favCount: item.bookmarks || 0,
+              rating: 's',
+              fileExt: 'jpg',
+              previewUrl: item.previewUrl,
+              sampleUrl: item.sampleUrl,
+              sourceUrl: item.sampleUrl,
+              postUrl: `https://danbooru.donmai.us/posts/${item.sourceId}`,
+              tags: {
+                artist: item.artistName ? [item.artistName] : [],
+                copyright: [],
+                character: [item.title],
+                general: item.tags,
+                meta: [],
+              },
+              width: item.width || 800,
+              height: item.height || 1200,
+            };
+            setItems(prev => [dummyPost, ...prev]);
+            setSelectedId(dummyPost.id);
+          }
+        }}
+        className="block w-full text-left"
+      >
+        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+          <SmartImage src={item.sampleUrl} alt={item.title} />
+        </div>
+        <div className="p-2.5">
+          <p className="truncate text-xs font-bold">{item.title}</p>
+          <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
+        </div>
+      </button>
+      {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'danbooru', sourceId: String(item.sourceId), sourceUrl: 'https://danbooru.donmai.us/posts/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
+    </PressRevealSurface>
+  );
+
   const renderDanbooruCard = (post: DanbooruPost) => {
     const title = post.tags.character[0] || post.tags.artist[0] || `#${post.id}`;
     const ratio = `${post.width || 3} / ${post.height || 4}`;
@@ -507,55 +555,20 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
 
           {showHistory ? (
             historyItems.length ? (
-              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
-                {historyItems.map(item => (
-                  <PressRevealSurface as="article" key={item.id} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const existing = items.find(p => p.id === Number(item.sourceId));
-                        if (existing) {
-                          setSelectedId(existing.id);
-                        } else {
-                          // 临时包装一个 post 以便在侧栏查看与操作
-                          const dummyPost: DanbooruPost = {
-                            id: Number(item.sourceId),
-                            score: item.score || 0,
-                            favCount: item.bookmarks || 0,
-                            rating: 's',
-                            fileExt: 'jpg',
-                            previewUrl: item.previewUrl,
-                            sampleUrl: item.sampleUrl,
-                            sourceUrl: item.sampleUrl,
-                            postUrl: `https://danbooru.donmai.us/posts/${item.sourceId}`,
-                            tags: {
-                              artist: item.artistName ? [item.artistName] : [],
-                              copyright: [],
-                              character: [item.title],
-                              general: item.tags,
-                              meta: [],
-                            },
-                            width: item.width || 800,
-                            height: item.height || 1200,
-                          };
-                          setItems(prev => [dummyPost, ...prev]);
-                          setSelectedId(dummyPost.id);
-                        }
-                      }}
-                      className="block w-full text-left"
-                    >
-                      <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
-                        <SmartImage src={item.sampleUrl} alt={item.title} />
-                      </div>
-                      <div className="p-2.5">
-                        <p className="truncate text-xs font-bold">{item.title}</p>
-                        <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
-                      </div>
-                    </button>
-                    {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'danbooru', sourceId: String(item.sourceId), sourceUrl: 'https://danbooru.donmai.us/posts/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
-                  </PressRevealSurface>
-                ))}
-              </div>
+              imageDisplay.layout === 'masonry' ? (
+                <ShortestColumnMasonry
+                  stableColumns
+                  items={historyItems}
+                  columns={masonryColumns}
+                  getItemKey={item => item.id}
+                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + 52}
+                  renderItem={renderHistoryCard}
+                />
+              ) : (
+                <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                  {historyItems.map(renderHistoryCard)}
+                </div>
+              )
             ) : (
               <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Danbooru 浏览足迹")} />
             )

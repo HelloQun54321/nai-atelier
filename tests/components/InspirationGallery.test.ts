@@ -52,7 +52,13 @@ vi.mock('../../components/useKeepAliveScrollRestore', () => ({
 
 beforeEach(() => {
   document.documentElement.dataset.motion = 'full';
-  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      if (target.classList.contains('chain-masonry')) this.callback([{ contentRect: { width: 1000 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    unobserve() {} disconnect() {}
+  });
   vi.clearAllMocks(); localStorage.clear(); confirmAction.mockResolvedValue(true);
   vi.mocked(extractMetadata).mockReset().mockResolvedValue(null);
   vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); static revokeObjectURL = vi.fn(); });
@@ -122,6 +128,28 @@ const mockInspirations: Inspiration[] = [
     createdAt: 3000,
   },
 ];
+
+it.each(['masonry', 'portrait', 'square'])('收藏 %s 布局保留真实高度，图片加载与参数更新不重建卡片或换列', layout => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));
+  const items = Array.from({ length: 4 }, (_, index) => ({
+    ...mockInspirations[0], id: 'stable-' + index, title: '稳定作品 ' + index, createdAt: 10 - index,
+    params: { width: 400, height: 400 },
+  } as Inspiration));
+  const props = { currentUser: mockUser, inspirationsData: items, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const { container, rerender } = render(React.createElement(InspirationGallery, props));
+  const cards = items.map(item => screen.getByText(item.title).closest('article')!);
+  const columns = cards.map(card => card.parentElement);
+  expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(layout === 'masonry' ? 2 : 0);
+  expect(container.querySelector('.mobile-gallery--masonry')).toBeNull();
+  cards.forEach(card => expect(card.style.contentVisibility).toBe('visible'));
+  fireEvent.load(within(cards[0]).getByRole('img'));
+  rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: items.map((item, index) => index === 0 ? { ...item, params: { ...item.params!, height: 1600 } } : item) }));
+  items.forEach((item, index) => {
+    expect(screen.getByText(item.title).closest('article')).toBe(cards[index]);
+    expect(cards[index].parentElement).toBe(columns[index]);
+  });
+  if (layout === 'masonry') expect(cards[0].parentElement).toBe(cards[2].parentElement);
+});
 
 it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签，图片左下不遮挡', () => {
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));

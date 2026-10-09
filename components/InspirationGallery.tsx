@@ -24,6 +24,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { CollectionFolderSelect, CollectionTagInput } from './inspiration/CollectionControls';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
 interface InspirationGalleryProps {
@@ -45,6 +46,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
+  const masonryColumns = useMasonryColumnCount(imageDisplay);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadReadRef = useRef(0);
   const mainScrollRef = useRef<HTMLDivElement>(null);
@@ -280,6 +282,34 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     {tagFilter.length > 0 && <div className="col-span-2 flex flex-wrap gap-1">{tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}</div>}
   </div>;
 
+  const estimateCollectionCardHeight = React.useCallback((group: Inspiration[], columnWidth: number) => {
+    const item = group[0];
+    return Math.max(1, columnWidth) * (item.params?.height || 1216) / Math.max(1, item.params?.width || 832)
+      + (item.tags?.length ? 72 : 48);
+  }, []);
+  const renderCollectionCard = (group: Inspiration[]) => {
+    const item = group[0]; const ids = group.map(image => image.id);
+    const isGroup = group.length > 1 || Boolean(item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv') && Number(item.analysis?.collectionGroupSize) > 1);
+    const title = isGroup ? item.title.replace(/ · \d+$/, '') : item.title;
+    const selected = ids.every(id => selectedIds.has(id));
+    return <MediaCardShell pressReveal style={{ contentVisibility: 'visible' }} key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || workGroup === collectionGroupKey(item)} className={`group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
+      draggable={canEditItem(item, currentUser) && !busy}
+      onDragStart={event => {
+        if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
+        draggedIdsRef.current = selected ? items.filter(candidate => selectedIds.has(candidate.id) && canEditItem(candidate, currentUser)).map(candidate => candidate.id) : ids;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
+      }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
+      <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
+        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} onClick={() => selectedIds.size ? toggleSelected(ids) : setWorkGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" /></button>
+        <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-black/65 px-2 py-1 text-xs font-bold text-white">{t('{0} 张图片', [group.length])}</span>
+        <button data-card-action="true" type="button" onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
+        <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${title || 'inspiration'}.png`} favorite={{ imageUrl: item.imageUrl, collectionId: item.id, ...(isGroup ? { sourceType: item.sourceType, sourceId: item.sourceId, groupSize: group.length, getGroup: async () => group.map(image => ({ ...image, collectionId: image.id })) } : {}) }} notify={notify} />
+      </div>
+      <button type="button" onClick={() => setWorkGroup(collectionGroupKey(item))} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{title}</h3></div>{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}</button>
+    </MediaCardShell>;
+  };
+
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
@@ -312,29 +342,21 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
 
         <div ref={galleryContentRef}>
-        {filtered.length > 0 ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid p-3 md:p-5`} style={mobileGalleryStyle(imageDisplay)}>
-          {groups.map(group => {
-            const item = group[0]; const ids = group.map(image => image.id);
-            const isGroup = group.length > 1 || Boolean(item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv') && Number(item.analysis?.collectionGroupSize) > 1);
-            const title = isGroup ? item.title.replace(/ · \d+$/, '') : item.title;
-            const selected = ids.every(id => selectedIds.has(id));
-            return <MediaCardShell pressReveal key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || workGroup === collectionGroupKey(item)} className={`group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
-              draggable={canEditItem(item, currentUser) && !busy}
-              onDragStart={event => {
-                if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
-                draggedIdsRef.current = selected ? items.filter(candidate => selectedIds.has(candidate.id) && canEditItem(candidate, currentUser)).map(candidate => candidate.id) : ids;
-                event.dataTransfer.effectAllowed = 'move';
-                event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
-              }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
-              <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
-                <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} onClick={() => selectedIds.size ? toggleSelected(ids) : setWorkGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" /></button>
-                <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-black/65 px-2 py-1 text-xs font-bold text-white">{t('{0} 张图片', [group.length])}</span>
-                <button data-card-action="true" type="button" onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
-                <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${title || 'inspiration'}.png`} favorite={{ imageUrl: item.imageUrl, collectionId: item.id, ...(isGroup ? { sourceType: item.sourceType, sourceId: item.sourceId, groupSize: group.length, getGroup: async () => group.map(image => ({ ...image, collectionId: image.id })) } : {}) }} notify={notify} />
-              </div>
-              <button type="button" onClick={() => setWorkGroup(collectionGroupKey(item))} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{title}</h3></div>{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}</button>
-            </MediaCardShell>;
-          })}
+        {filtered.length > 0 ? <div className="p-3 md:p-5">
+          {imageDisplay.layout === 'masonry' ? (
+            <ShortestColumnMasonry
+              stableColumns
+              items={groups}
+              columns={masonryColumns}
+              getItemKey={group => collectionGroupKey(group[0])}
+              estimateItemHeight={estimateCollectionCardHeight}
+              renderItem={renderCollectionCard}
+            />
+          ) : (
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+              {groups.map(renderCollectionCard)}
+            </div>
+          )}
         </div> : (
           <EmptyState
             className="min-h-[45vh] px-6"
