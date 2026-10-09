@@ -60,6 +60,14 @@ beforeEach(() => {
     unobserve() {} disconnect() {}
   });
   vi.clearAllMocks(); localStorage.clear(); confirmAction.mockResolvedValue(true);
+  vi.mocked(db.getInspirationBoards).mockReset().mockResolvedValue([{ id: 'board-1', name: '角色设计', color: '#6366f1', sortOrder: 0, userId: 'user-1', createdAt: 1, updatedAt: 1 }]);
+  vi.mocked(db.updateInspirationBoard).mockReset().mockResolvedValue(undefined);
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number; pointerType: string; isPrimary: boolean;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init); this.pointerId = init.pointerId ?? 1; this.pointerType = init.pointerType ?? 'mouse'; this.isPrimary = init.isPrimary ?? true;
+    }
+  });
   vi.mocked(extractMetadata).mockReset().mockResolvedValue(null);
   vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); static revokeObjectURL = vi.fn(); });
   vi.stubGlobal('innerWidth', 1280);
@@ -552,6 +560,104 @@ it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组�
   expect(container.querySelectorAll('article')).toHaveLength(2);
   fireEvent.change(search, { target: { value: '' } });
   await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(3));
+});
+
+const sortableBoards = () => ['角色设计', '背景', '构图'].map((name, index) => ({ id: 'board-' + (index + 1), name, userId: mockUser.id, sortOrder: index, createdAt: index + 1, updatedAt: 1 }));
+const folderOrder = (root: HTMLElement) => Array.from(root.querySelectorAll('[data-collection-folder]'), element => element.getAttribute('data-collection-folder'));
+const prepareFolderPointers = (root: HTMLElement) => {
+  const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-collection-folder]'));
+  rows.forEach((row, index) => {
+    row.getBoundingClientRect = () => ({ top: 100 + index * 44, bottom: 140 + index * 44, left: 0, right: 176, width: 176, height: 40 }) as DOMRect;
+    const handle = within(row).getByRole('button', { name: /排序收藏夹/ });
+    handle.setPointerCapture = vi.fn(); handle.releasePointerCapture = vi.fn();
+  });
+};
+
+it.each([[1280, 'mouse'], [390, 'touch']] as const)('宽度 %s：%s 拖动收藏夹保存顺序，重进页面仍保留，不移动作品或切换当前收藏夹', async (width, pointerType) => {
+  vi.stubGlobal('innerWidth', width);
+  let storedBoards = sortableBoards();
+  vi.mocked(db.getInspirationBoards).mockImplementation(async () => [...storedBoards].sort((a, b) => a.sortOrder - b.sortOrder));
+  vi.mocked(db.updateInspirationBoard).mockImplementation(async (id, updates) => { storedBoards = storedBoards.map(board => board.id === id ? { ...board, ...updates } : board); });
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, notify: vi.fn(), onRefresh: vi.fn(async () => {}) };
+  const view = render(React.createElement(InspirationGallery, props));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : view.container.querySelector('aside')!;
+  prepareFolderPointers(root);
+  fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
+  const handle = within(root).getByRole('button', { name: '排序收藏夹：角色设计' });
+  fireEvent.pointerDown(handle, { pointerType, pointerId: 3, clientX: 12, clientY: 120, button: 0 });
+  fireEvent.pointerMove(handle, { pointerType, pointerId: 3, clientX: 12, clientY: 208 });
+  expect(root.querySelector('[data-collection-folder="board-3"]')!.classList.contains('ring-2')).toBe(true);
+  fireEvent.pointerUp(handle, { pointerType, pointerId: 3, clientX: 12, clientY: 208 });
+  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(handle.getAttribute('aria-disabled')).toBe('false'));
+  expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-1', { sortOrder: 2 });
+  expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-2', { sortOrder: 0 });
+  expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-3', { sortOrder: 1 });
+  expect(folderOrder(root)).toEqual(['board-2', 'board-3', 'board-1']);
+  expect(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(props.onRefresh).not.toHaveBeenCalled();
+  view.unmount();
+  const next = render(React.createElement(InspirationGallery, props));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  expect(folderOrder(next.container.querySelector('aside')!)).toEqual(['board-2', 'board-3', 'board-1']);
+});
+
+it('收藏夹排序支持方向键，只保存变化项，边界、自身和取消的拖动不保存', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(sortableBoards());
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  const handle = await screen.findByRole('button', { name: '排序收藏夹：角色设计' });
+  const root = view.container.querySelector('aside')!; prepareFolderPointers(root);
+  fireEvent.keyDown(handle, { key: 'ArrowUp' });
+  fireEvent.keyDown(screen.getByRole('button', { name: '排序收藏夹：构图' }), { key: 'ArrowDown' });
+  fireEvent.pointerDown(handle, { clientX: 12, clientY: 120 }); fireEvent.pointerUp(handle, { clientX: 12, clientY: 120 });
+  fireEvent.pointerDown(handle, { clientX: 12, clientY: 120 }); fireEvent.pointerMove(handle, { clientX: 12, clientY: 208 }); fireEvent.pointerCancel(handle);
+  fireEvent.pointerDown(handle, { clientX: 12, clientY: 120 }); fireEvent.pointerMove(handle, { clientX: 999, clientY: 208 }); fireEvent.pointerUp(handle);
+  expect(db.updateInspirationBoard).not.toHaveBeenCalled();
+  fireEvent.keyDown(handle, { key: 'ArrowDown' });
+  await waitFor(() => expect(handle.getAttribute('aria-disabled')).toBe('false'));
+  expect(folderOrder(root)).toEqual(['board-2', 'board-1', 'board-3']);
+  expect(db.updateInspirationBoard).toHaveBeenCalledTimes(2);
+  expect(db.updateInspirationBoard).not.toHaveBeenCalledWith('board-3', expect.anything());
+  expect(document.activeElement).toBe(handle);
+});
+
+it('收藏夹顺序部分保存失败后重新读取实际顺序，作品与分类保留，可再次排序', async () => {
+  let storedBoards = sortableBoards(); let calls = 0;
+  vi.mocked(db.getInspirationBoards).mockImplementation(async () => [...storedBoards].sort((a, b) => a.sortOrder - b.sortOrder));
+  vi.mocked(db.updateInspirationBoard).mockImplementation(async (id, updates) => {
+    if (++calls === 2) throw new Error('保存中断');
+    storedBoards = storedBoards.map(board => board.id === id ? { ...board, ...updates } : board);
+  });
+  const notify = vi.fn();
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify }));
+  const handle = await screen.findByRole('button', { name: '排序收藏夹：角色设计' });
+  const root = view.container.querySelector('aside')!; prepareFolderPointers(root);
+  fireEvent.pointerDown(handle, { clientX: 12, clientY: 120 }); fireEvent.pointerMove(handle, { clientX: 12, clientY: 208 }); fireEvent.pointerUp(handle);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('保存中断', 'error'));
+  expect(folderOrder(root)).toEqual(['board-2', 'board-1', 'board-3']);
+  expect(screen.getByText('已整理角色图')).toBeTruthy(); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+  fireEvent.keyDown(handle, { key: 'ArrowDown' });
+  await waitFor(() => expect(handle.getAttribute('aria-disabled')).toBe('false'));
+  expect(folderOrder(root)).toEqual(['board-2', 'board-3', 'board-1']);
+  expect([...storedBoards].sort((a, b) => a.sortOrder - b.sortOrder).map(board => board.id)).toEqual(['board-2', 'board-3', 'board-1']);
+});
+
+it('收藏夹顺序保存期间禁止重复提交，访客的排序把手不可操作', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(sortableBoards());
+  let finish!: () => void;
+  vi.mocked(db.updateInspirationBoard).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  const handle = await screen.findByRole('button', { name: '排序收藏夹：角色设计' });
+  fireEvent.keyDown(handle, { key: 'ArrowDown' }); fireEvent.keyDown(handle, { key: 'ArrowDown' });
+  expect(db.updateInspirationBoard).toHaveBeenCalledOnce(); expect(handle.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => finish());
+  await waitFor(() => expect(handle.getAttribute('aria-disabled')).toBe('false'));
+  expect(db.updateInspirationBoard).toHaveBeenCalledTimes(2);
+  view.rerender(React.createElement(InspirationGallery, { ...props, currentUser: { ...mockUser, role: 'guest' } }));
+  expect((screen.getByRole('button', { name: '排序收藏夹：背景' }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 const dragData = () => ({ setData: vi.fn(), effectAllowed: 'all', dropEffect: 'none' }) as unknown as DataTransfer;

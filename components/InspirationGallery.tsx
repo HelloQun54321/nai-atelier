@@ -1,7 +1,7 @@
 import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckSquare, FolderPlus, Heart, Library, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { Check, CheckSquare, FolderPlus, GripVertical, Heart, Library, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
@@ -61,6 +61,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [tagQuery, setTagQuery] = useState('');
   const draggedIdsRef = useRef<string[]>([]);
   const movingRef = useRef(false);
+  const boardOrderSavingRef = useRef(false);
+  const boardDragRef = useRef<{ id: string; pointerId: number; targetId: string } | null>(null);
+  const [boardDrag, setBoardDrag] = useState<{ id: string; targetId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workGroup, setWorkGroup] = useState<string | null>(null);
@@ -166,6 +169,49 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     finally { setBusy(''); }
   };
 
+  const reorderBoard = async (id: string, targetId: string) => {
+    if (boardOrderSavingRef.current || busy || currentUser.role === 'guest') return;
+    const from = boards.findIndex(board => board.id === id);
+    const to = boards.findIndex(board => board.id === targetId);
+    if (from < 0 || to < 0 || from === to) return;
+    const previous = boards;
+    const reordered = [...boards];
+    reordered.splice(to, 0, ...reordered.splice(from, 1));
+    const next = reordered.map((board, sortOrder) => ({ ...board, sortOrder }));
+    const positions = new Map(next.map(board => [board.id, board.sortOrder]));
+    boardOrderSavingRef.current = true; setBusy('board-order'); setBoards(next);
+    try {
+      for (const board of previous) {
+        const sortOrder = positions.get(board.id)!;
+        if (sortOrder !== board.sortOrder) await db.updateInspirationBoard(board.id, { sortOrder });
+      }
+    } catch (error: any) {
+      setBoards(previous);
+      await loadBoards();
+      notify(error.message || '收藏夹排序保存失败', 'error');
+    } finally { boardOrderSavingRef.current = false; setBusy(''); }
+  };
+  const cancelBoardDrag = () => { boardDragRef.current = null; setBoardDrag(null); };
+  const moveBoardDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = boardDragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const list = event.currentTarget.closest<HTMLElement>('[data-collection-folders]');
+    if (!list) return;
+    const scroller = list.closest<HTMLElement>('.overflow-y-auto');
+    if (scroller) {
+      const bounds = scroller.getBoundingClientRect();
+      if (event.clientY < bounds.top + 24) scroller.scrollTop -= 12;
+      else if (event.clientY > bounds.bottom - 24) scroller.scrollTop += 12;
+    }
+    const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-collection-folder]'));
+    const target = rows.find(row => {
+      const rect = row.getBoundingClientRect();
+      return event.clientY >= rect.top && event.clientY <= rect.bottom && event.clientX >= rect.left && event.clientX <= rect.right;
+    });
+    const targetId = target?.dataset.collectionFolder || '';
+    if (drag.targetId !== targetId) { drag.targetId = targetId; setBoardDrag({ id: drag.id, targetId }); }
+  };
+
   const deleteBoard = async (board: InspirationBoard) => {
     if (!await confirmAction({ title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，它们会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
     try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('收藏夹已删除'); }
@@ -257,11 +303,38 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
   const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
   const renderBoardActions = (board: InspirationBoard) => <div data-card-action="true" className="hover-reveal-md absolute right-1 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-900">
-    <button type="button" aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
-    <button type="button" aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
+    <button type="button" disabled={busy === 'board-order'} aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
+    <button type="button" disabled={busy === 'board-order'} aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
   </div>;
-  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} {...folderDropProps(board.id)} className={`group relative flex items-center rounded-xl border ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
-    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
+  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} data-collection-folder={board.id} {...folderDropProps(board.id)} className={`group relative flex items-center rounded-xl border ${boardDrag?.id === board.id ? 'opacity-50' : ''} ${boardDrag?.targetId === board.id && boardDrag.id !== board.id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
+    <button type="button" data-card-action="true" data-agent-interaction="drag" aria-label={t("排序收藏夹：{0}", [board.name])} title={t("拖动排序；上下方向键调整")}
+      disabled={boards.length < 2 || currentUser.role === 'guest'} aria-disabled={Boolean(busy) || boards.length < 2 || currentUser.role === 'guest'}
+      className="mobile-touch flex h-10 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-gray-400 hover:text-indigo-600 active:cursor-grabbing disabled:opacity-20 aria-disabled:opacity-20 cursor-grab dark:hover:text-indigo-300"
+      onClick={event => event.stopPropagation()}
+      onPointerDown={event => {
+        if (event.button !== 0 || event.isPrimary === false || busy || boardOrderSavingRef.current) return;
+        event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+        boardDragRef.current = { id: board.id, pointerId: event.pointerId, targetId: board.id };
+        setBoardDrag({ id: board.id, targetId: board.id });
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={moveBoardDrag}
+      onPointerUp={event => {
+        const drag = boardDragRef.current;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        cancelBoardDrag();
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        if (drag.targetId) void reorderBoard(drag.id, drag.targetId);
+      }}
+      onPointerCancel={cancelBoardDrag} onLostPointerCapture={cancelBoardDrag}
+      onKeyDown={event => {
+        if (event.key === 'Escape') { cancelBoardDrag(); return; }
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        const target = boards[boards.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
+        if (target) void reorderBoard(board.id, target.id);
+      }}><GripVertical className="h-3.5 w-3.5" /></button>
+    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
   </PressRevealSurface>;
   const renderNavigation = () => <div>
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>
@@ -273,8 +346,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p>
     <div className="space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div>
     <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
-    <div className="mb-2 flex items-center justify-between px-2"><span className="text-meta font-bold text-gray-400">{t('自定义收藏夹')}</span><button type="button" aria-label={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-8 w-8 items-center justify-center text-indigo-600"><FolderPlus className="h-4 w-4" /></button></div>
-    <div className="space-y-1">{boards.map(renderBoardRow)}{!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="mobile-touch w-full rounded-xl border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-400 dark:border-gray-700">{t('创建第一个收藏夹')}</button>}</div>
+    <div className="mb-2 flex items-center justify-between px-2"><span className="text-meta font-bold text-gray-400">{t('自定义收藏夹')}</span><button type="button" disabled={busy === 'board-order'} aria-label={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-8 w-8 items-center justify-center text-indigo-600"><FolderPlus className="h-4 w-4" /></button></div>
+    <div data-collection-folders="true" className="space-y-1">{boards.map(renderBoardRow)}{!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="mobile-touch w-full rounded-xl border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-400 dark:border-gray-700">{t('创建第一个收藏夹')}</button>}</div>
   </div>;
   const renderFilterControls = (mobile: boolean) => <div className="grid grid-cols-2 gap-3">
     {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}

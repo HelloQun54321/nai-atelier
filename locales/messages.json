@@ -18286,5 +18286,23 @@
     "Medium does not support CFG Rescale",
     "Medium は CFG Rescale に非対応です",
     "Medium은 CFG Rescale을 지원하지 않습니다"
+  ],
+  "排序收藏夹：{0}": [
+    "排序收藏夾：{0}",
+    "Reorder folder: {0}",
+    "フォルダーを並べ替え：{0}",
+    "폴더 순서 변경: {0}"
+  ],
+  "拖动排序；上下方向键调整": [
+    "拖動排序；上下方向鍵調整",
+    "Drag to reorder; use the up and down arrow keys",
+    "ドラッグ、または上下矢印キーで並べ替え",
+    "드래그하거나 위아래 방향키로 순서 변경"
+  ],
+  "收藏夹排序保存失败": [
+    "收藏夾排序儲存失敗",
+    "Failed to save folder order",
+    "フォルダーの順序を保存できませんでした",
+    "폴더 순서를 저장하지 못했습니다"
   ]
 }
