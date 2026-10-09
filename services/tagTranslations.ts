@@ -44,9 +44,8 @@ const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) =>
 };
 
 const parseSegment = (prompt: string, rawStart: number, rawEnd: number, group?: Partial<PromptTagToken>): Array<Omit<PromptTagToken, 'id'>> =>
-  prompt.slice(rawStart, rawEnd).split(/[,，\n|]+/).flatMap((raw, index, parts) => {
-    const offset = parts.slice(0, index).reduce((sum, part) => sum + part.length + 1, 0);
-    const token = unwrapToken(raw, rawStart + offset, group);
+  [...prompt.slice(rawStart, rawEnd).matchAll(/[^,，\n|]+/g)].flatMap(match => {
+    const token = unwrapToken(match[0], rawStart + match.index, group);
     return token.lookupTag && /[\p{L}\p{N}]/u.test(token.lookupTag) ? [token] : [];
   });
 
@@ -78,16 +77,25 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
       start = numericStart + 2;
       finalEnd = groupEnd - 2;
     } else {
-      // 内容组必须懒惰匹配：贪婪会把多花括号的一个闭合符吞进内容，导致开口/闭合数量不等而整组失配。
-      const braceMatch = raw.match(/^(\{+)([\s\S]*?)(\}+)$|^(\[+)([\s\S]*?)(\]+)$/);
-      if (braceMatch) {
-        const opening = braceMatch[1] || braceMatch[4];
-        const closing = braceMatch[3] || braceMatch[6];
-        if (opening.length === closing.length) {
-          groupKind = braceMatch[1] ? 'brace' : 'bracket';
-          groupLevel = opening.length;
-          start = groupStart + opening.length;
-          finalEnd = groupEnd - closing.length;
+      // 只计算确实包住整段的层级，不能把首尾两个不同子组的括号算成共同权重。
+      if (raw[0] === '{' || raw[0] === '[') {
+        const close = raw[0] === '{' ? '}' : ']';
+        let level = 0;
+        while (raw[level] === raw[0] && raw[raw.length - level - 1] === close) {
+          let depth = 0, complete = true;
+          for (let index = level; index < raw.length - level; index++) {
+            if (raw[index] === raw[0]) depth++;
+            if (raw[index] === close) depth--;
+            if (depth === 0 && index < raw.length - level - 1) { complete = false; break; }
+          }
+          if (!complete || depth !== 0) break;
+          level++;
+        }
+        if (level) {
+          groupKind = raw[0] === '{' ? 'brace' : 'bracket';
+          groupLevel = level;
+          start = groupStart + level;
+          finalEnd = groupEnd - level;
         }
       }
     }
@@ -131,10 +139,50 @@ export const parsePromptTags = (prompt: string): PromptTagToken[] => {
   return tokens.map((item, index) => ({ ...item, id: `${index}:${item.lookupTag}` }));
 };
 
+const removePromptSpan = (prompt: string, start: number, end: number): string => {
+  const before = prompt.slice(0, start), after = prompt.slice(end);
+  const following = after.match(/^\s*[,，|\n][\s,，|\n]*/);
+  if (following) return before + after.slice(following[0].length);
+  const preceding = before.match(/[\s,，|\n]*[,，|\n]\s*$/);
+  return (preceding ? before.slice(0, -preceding[0].length) : before) + after;
+};
+
+/** 按位置删除所选词，递归保留剩余词的权重包装，只清理变空的组。 */
+export const removePromptTagTokens = (prompt: string, selectedTokens: PromptTagToken[]): string => {
+  if (!selectedTokens.length) return prompt;
+  const selected = new Set(selectedTokens.map(token => `${token.start}:${token.end}`));
+  const groups = new Map<string, PromptTagToken[]>();
+  parsePromptTags(prompt).forEach(token => {
+    const key = token.groupId || token.id;
+    groups.set(key, [...(groups.get(key) || []), token]);
+  });
+  const replacements = [...groups.values()].flatMap(members => {
+    const chosen = members.map(token => selected.has(`${token.start}:${token.end}`));
+    if (!chosen.some(Boolean)) return [];
+    const first = members[0], start = first.groupStart ?? first.start!, end = first.groupEnd ?? first.end!;
+    let replacement = '';
+    if (!chosen.every(Boolean) && first.groupKind) {
+      const raw = prompt.slice(start, end);
+      const opening = first.groupKind === 'numeric' ? raw.indexOf('::') + 2 : first.groupLevel || 1;
+      const closing = first.groupKind === 'numeric' ? 2 : first.groupLevel || 1;
+      const inner = raw.slice(opening, -closing);
+      const remaining = removePromptTagTokens(inner, parsePromptTags(inner).filter((_, index) => chosen[index]));
+      if (remaining.trim()) replacement = raw.slice(0, opening) + remaining + raw.slice(-closing);
+    }
+    return [{ start, end, replacement }];
+  }).sort((a, b) => b.start - a.start);
+  if (!replacements.length) return prompt;
+  let result = prompt;
+  replacements.forEach(({ start, end, replacement }) => {
+    result = replacement ? result.slice(0, start) + replacement + result.slice(end) : removePromptSpan(result, start, end);
+  });
+  return /^[\s,，|\n]*$/.test(result) ? '' : result;
+};
+
 export type PromptWeightAction = 'up' | 'down' | 'remove' | 'numeric';
 export type PromptWeightKind = 'brace' | 'bracket' | 'numeric';
 
-export const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(2)));
+export const formatNumericWeight = (value: number) => String(Number(Math.max(0.1, value).toFixed(12)));
 
 export const cleanTagContent = (raw: string): string => {
   let val = raw.trim();
@@ -270,8 +318,7 @@ export const transformPromptWeight = (
 ): string => {
   if (action === 'remove') {
     if (token.groupKind === 'numeric') return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, '').replace(/::$/, '');
-    if (token.groupKind === 'brace') return raw.replace(/^\{+/, '').replace(/\}+$/, '');
-    if (token.groupKind === 'bracket') return raw.replace(/^\[+/, '').replace(/\]+$/, '');
+    if (token.groupKind === 'brace' || token.groupKind === 'bracket') return raw.slice(token.groupLevel || 1, -(token.groupLevel || 1));
     return raw;
   }
 
@@ -282,11 +329,7 @@ export const transformPromptWeight = (
     return raw.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::/, `${formatNumericWeight(next)}::`);
   }
 
-  const plain = token.groupKind === 'brace'
-    ? raw.replace(/^\{+/, '').replace(/\}+$/, '')
-    : token.groupKind === 'bracket'
-      ? raw.replace(/^\[+/, '').replace(/\]+$/, '')
-      : raw;
+  const plain = token.groupKind === 'brace' || token.groupKind === 'bracket' ? raw.slice(token.groupLevel || 1, -(token.groupLevel || 1)) : raw;
   const level = token.groupLevel || 1;
   if (action === 'up') {
     if (token.groupKind === 'bracket' && level > 1) return `${'['.repeat(level - 1)}${plain}${']'.repeat(level - 1)}`;
@@ -294,7 +337,7 @@ export const transformPromptWeight = (
     return `${'{'.repeat(token.groupKind === 'brace' ? level + 1 : 1)}${plain}${'}'.repeat(token.groupKind === 'brace' ? level + 1 : 1)}`;
   }
   if (token.groupKind === 'brace' && level > 1) return `${'{'.repeat(level - 1)}${plain}${'}'.repeat(level - 1)}`;
-  if (token.groupKind === 'brace') return `[${plain}]`;
+  if (token.groupKind === 'brace') return plain;
   return `${'['.repeat(token.groupKind === 'bracket' ? level + 1 : 1)}${plain}${']'.repeat(token.groupKind === 'bracket' ? level + 1 : 1)}`;
 };
 

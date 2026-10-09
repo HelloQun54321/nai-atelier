@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { parsePromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
+import { parsePromptTags, removePromptTagTokens, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
+
+describe('removePromptTagTokens', () => {
+  it.each([
+    ['a, b, c', [1], 'a, c'],
+    ['a, b, c', [0, 2], 'b'],
+    ['a, a, a', [1], 'a, a'],
+    ['1.4::a, b, c::, d', [0, 2], '1.4::b::, d'],
+    ['1.4::a, b::, c', [0, 1], 'c'],
+    ['{{a, b}}, c', [0], '{{b}}, c'],
+    ['[[a, b]], c', [1], '[[a]], c'],
+    ['{1.4::a, b::}, c', [0], '{1.4::b::}, c'],
+    ['1.4::{a, b}::, c', [1], '1.4::{a}::, c'],
+    ['{{a, b}, c}, d', [1], '{{a}, c}, d'],
+    ['{{a, b}, c}, d', [0, 1], '{c}, d'],
+    ['{{a}, {b, c}}, d', [1], '{{a}, {c}}, d'],
+    ['{[a, b], c}, d', [0], '{[b], c}, d'],
+    ['1.4::a,, b::, c', [1], '1.4::a::, c'],
+    ['1.4::artist:foo, b::, c', [1], '1.4::artist:foo::, c'],
+    ['a，b\nc|d', [0, 2], 'b\nd'],
+    [' {{a, b}} ', [0, 1], ''],
+  ] as Array<[string, number[], string]>)('从 %s 删除所选词，保留其他权重与位置', (prompt, indices, expected) => {
+    const tokens = parsePromptTags(prompt);
+    expect(removePromptTagTokens(prompt, tokens.filter((_, index) => indices.includes(index)))).toBe(expected);
+  });
+
+  it('没有选中项不改写原文，连续分隔符后的词保留准确位置', () => {
+    const prompt = 'a,, b，\nc';
+    const tokens = parsePromptTags(prompt);
+    expect(tokens.map(token => prompt.slice(token.start, token.end))).toEqual(['a', 'b', 'c']);
+    expect(removePromptTagTokens(prompt, [])).toBe(prompt);
+  });
+});
 
 describe('parsePromptTags', () => {
   it('英文与中文逗号都作为 Tag 分隔符', () => {
@@ -46,17 +78,43 @@ describe('parsePromptTags', () => {
     expect(tags[1].groupEdge).toBeUndefined();
   });
 
+  it('首尾各自带权重的子组不误判为两层共同权重，调整时保留子组', () => {
+    const prompt = '{{a}, {b, c}}';
+    const token = parsePromptTags(prompt)[0];
+    expect(token.groupLevel).toBe(1);
+    expect(transformPromptWeight(prompt, token, 'remove')).toBe('{a}, {b, c}');
+    expect(transformPromptWeight(prompt, token, 'up')).toBe('{{{a}, {b, c}}}');
+    expect(transformPromptWeight(prompt, token, 'down')).toBe('{a}, {b, c}');
+  });
+
   it('按最简原则调整括号权重', () => {
     expect(transformPromptWeight('{{tag}}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 2 }, 'down')).toBe('{tag}');
-    expect(transformPromptWeight('{tag}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 1 }, 'down')).toBe('[tag]');
+    expect(transformPromptWeight('{tag}', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'brace', groupLevel: 1 }, 'down')).toBe('tag');
     expect(transformPromptWeight('[tag]', { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'bracket', groupLevel: 1 }, 'up')).toBe('tag');
     expect(transformPromptWeight('tag', { id: '1', displayTag: 'tag', lookupTag: 'tag' }, 'up')).toBe('{tag}');
+  });
+
+  it('括号加减每次走一层，两个方向都经过无权重', () => {
+    const stages = ['[[tag]]', '[tag]', 'tag', '{tag}', '{{tag}}'];
+    for (let index = 0; index < stages.length - 1; index++) {
+      expect(transformPromptWeight(stages[index], parsePromptTags(stages[index])[0], 'up')).toBe(stages[index + 1]);
+      expect(transformPromptWeight(stages[index + 1], parsePromptTags(stages[index + 1])[0], 'down')).toBe(stages[index]);
+    }
   });
 
   it('数值权重支持自定义步进与直接赋值', () => {
     const token = { id: '1', displayTag: 'tag', lookupTag: 'tag', groupKind: 'numeric' as const, groupWeight: '1.2' };
     expect(transformPromptWeight('1.2::tag::', token, 'up', undefined, 0.01)).toBe('1.21::tag::');
     expect(transformPromptWeight('1.2::tag::', token, 'numeric', 0.95)).toBe('0.95::tag::');
+  });
+
+  it('明确应用括号换算值时保留精度，后续数值微调不截为两位小数', () => {
+    const plain = parsePromptTags('tag')[0];
+    expect(wrapPromptTag('tag', plain, 'numeric', 1.05 ** 2)).toBe('1.1025::tag::');
+    expect(wrapPromptTagTokens('tag', [plain], 'numeric', 1.05 ** -2)).toBe('0.907029478458::tag::');
+    const raw = '1.1025::tag::';
+    expect(transformPromptWeight(raw, parsePromptTags(raw)[0], 'up')).toBe('1.2025::tag::');
+    expect(transformPromptWeight(raw, parsePromptTags(raw)[0], 'down', undefined, 0.01)).toBe('1.0925::tag::');
   });
 
   it('添加权重按类型设定包装并可互相转换', () => {

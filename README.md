@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.57.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.58.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -265,7 +265,10 @@ flowchart LR
 
 - **本地中英词库**：整合 Danbooru 中英对照与 NovelAI 专属 Tag，支持前缀联想与热度排序；条目数量以当前安装的词库为准；
 - **一体式连续权重胶囊**：同一对花括号或方括号包裹的多个 Tag 自动合并为一个无缝胶囊视觉组件，整洁优雅；
-- **内联高精度调权**：直出 `{}`、`[]` 与数值权重转换；常规点击按 `±0.1` 调节，**按住 Shift 点击支持 `±0.01` 极高精度微调**；
+- **内联调权**：「权重类型」在括号／数值间二选一，切换不改原文，点击「添加权重」才转换；中间统一显示倍率，括号按每层 ×1.05／÷1.05 换算，加减仍每次一层并经过无权重，数值按 `±0.1` 调节、Shift 为 `±0.01`；多选按倍率比较，等价写法显示同一数值，不同倍率显示「不同权重」，加减各自调整、不统一倍率；显示取舍不自动写回原文；
+- **连续整组调权**：已有多词组经过无权重时保持本次整组选中，继续加减仍整段包裹，如 `{a, b} → a, b → [a, b]`；取消选择或改原文后释放临时组范围；
+- **翻译区直接编辑**：末尾输入新提示词，回车或离开输入位置后追加；红色垃圾桶开启删除模式，隐藏权重显示，逐词多选标红，点击「删除 n 个 Tag」确认，组内其他词的权重保留；
+- **撤销与快捷键**：旋转箭头撤销输入、权重调整或删除，支持 Ctrl/Cmd+Z 撤销、Ctrl+Y 或 Ctrl/Cmd+Shift+Z 重做；选中 Tag 后可复制、剪切原文或粘贴追加，文字输入框保持原生快捷键；
 - **AI 补译**：遇到未收录的 Tag，可调用已配置的 LLM 补齐中文含义并保存到本地翻译缓存；模型服务按自己的计费规则收费。
 
 ### 🎨 画师库与 👤 角色库

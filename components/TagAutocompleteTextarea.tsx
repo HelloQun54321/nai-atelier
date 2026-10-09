@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Languages, LoaderCircle } from 'lucide-react';
+import { Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { InfoPopover } from './InfoPopover';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
@@ -10,9 +10,11 @@ import {
   PromptTagTranslation,
   PromptWeightKind,
   resolvePromptTranslations,
+  removePromptTagTokens,
   subscribeTagTranslations,
   transformPromptWeight,
   translateMissingPromptTags,
+  wrapPromptTag,
   wrapPromptTagTokens,
 } from '../services/tagTranslations';
 
@@ -82,6 +84,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   showTranslations = true,
   allowAiTranslation = true,
   disabled,
+  readOnly,
   onFocus,
   onBlur,
   onKeyDown,
@@ -110,30 +113,98 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [translationError, setTranslationError] = useState('');
   const [translationRevision, setTranslationRevision] = useState(0);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const historyRef = useRef({ value, past: [] as string[], future: [] as string[], typedAt: 0 });
+  const neutralGroupsRef = useRef({ value, groups: [] as Array<{ start: number; end: number }> });
+  const [, refreshHistory] = useState(0);
+  const editable = !disabled && !readOnly;
   const listboxId = useId();
-  const promptTokens = useMemo(() => tagAssistEnabled ? parsePromptTags(value) : [], [tagAssistEnabled, value]);
+  const parsedTokens = useMemo(() => tagAssistEnabled ? parsePromptTags(value) : [], [tagAssistEnabled, value]);
+  const promptTokens = useMemo(() => {
+    if (neutralGroupsRef.current.value !== value || !neutralGroupsRef.current.groups.length) return parsedTokens;
+    const tokens = parsedTokens.map(token => ({ ...token }));
+    // 无权重原文无法记录组界限，只在本次整组选择期间保留范围，供连续加减使用。
+    neutralGroupsRef.current.groups.forEach(({ start, end }) => {
+      const members = tokens.filter(token => token.start !== undefined && token.start >= start && token.end !== undefined && token.end <= end);
+      if (members.length < 2 || !members.every(token => selectedTagIds.has(token.id))) return;
+      members.forEach((token, index) => Object.assign(token, {
+        groupId: `neutral:${start}:${end}`, groupStart: start, groupEnd: end,
+        groupKind: undefined, groupWeight: undefined, groupLevel: undefined,
+        groupEdge: index === 0 ? 'open' : index === members.length - 1 ? 'close' : undefined,
+      }));
+    });
+    return tokens;
+  }, [parsedTokens, value, selectedTagIds]);
+  // 翻译异步返回，但标签位置始终来自当前原文，避免旧结果指向其他词。
+  const currentTranslations = useMemo(() => {
+    const cached = new Map(translations.map(item => [item.lookupTag, item]));
+    return promptTokens.map(token => ({ ...token, chinese: cached.get(token.lookupTag)?.chinese, source: cached.get(token.lookupTag)?.source || 'missing' as const }));
+  }, [promptTokens, translations]);
+
+  useEffect(() => {
+    if (historyRef.current.value === value) return;
+    historyRef.current = { value, past: [], future: [], typedAt: 0 };
+    neutralGroupsRef.current = { value, groups: [] };
+    setSelectedTagIds(new Set());
+    setDeleteMode(false);
+    setTagInput('');
+    refreshHistory(revision => revision + 1);
+  }, [value]);
+
+  const commitValue = (next: string, typing = false) => {
+    if (!editable || next === value) return;
+    if (neutralGroupsRef.current.value !== next) neutralGroupsRef.current = { value: next, groups: [] };
+    const history = historyRef.current;
+    const now = Date.now();
+    if (!typing || now - history.typedAt > 800 || !history.past.length || history.future.length) {
+      history.past.push(value);
+      if (history.past.length > 100) history.past.shift();
+    }
+    history.future = [];
+    history.value = next;
+    history.typedAt = typing ? now : 0;
+    onValueChange(next);
+    refreshHistory(revision => revision + 1);
+  };
+
+  const moveHistory = (redo = false) => {
+    if (!editable) return false;
+    const history = historyRef.current;
+    const next = (redo ? history.future : history.past).pop();
+    if (next === undefined) return false;
+    (redo ? history.past : history.future).push(value);
+    history.value = next;
+    history.typedAt = 0;
+    neutralGroupsRef.current = { value: next, groups: [] };
+    setSelectedTagIds(new Set());
+    setDeleteMode(false);
+    onValueChange(next);
+    refreshHistory(revision => revision + 1);
+    return true;
+  };
 
   useEffect(() => subscribeTagTranslations(() => setTranslationRevision(revision => revision + 1)), []);
 
   useEffect(() => {
-    if (!tagAssistEnabled || !showTranslations || promptTokens.length === 0) {
+    if (!tagAssistEnabled || !showTranslations || parsedTokens.length === 0) {
       setTranslations([]);
       return;
     }
     let active = true;
     const timer = window.setTimeout(() => {
-      void resolvePromptTranslations(promptTokens).then(items => {
+      void resolvePromptTranslations(parsedTokens).then(items => {
         if (active) setTranslations(items);
       }).catch(error => {
         if (active) console.warn('Prompt translation lookup failed:', error);
       });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [promptTokens, showTranslations, tagAssistEnabled, translationRevision]);
+  }, [parsedTokens, showTranslations, tagAssistEnabled, translationRevision]);
 
-  const missingTags = useMemo(() => [...new Set(translations
+  const missingTags = useMemo(() => [...new Set(currentTranslations
     .filter(item => item.source === 'missing')
-    .map(item => item.lookupTag))], [translations]);
+    .map(item => item.lookupTag))], [currentTranslations]);
 
   const translateMissing = async () => {
     if (!tagAssistEnabled || !missingTags.length || translationLoading) return;
@@ -149,24 +220,70 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   };
 
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
-  const firstSelectedWeight = selectedTokens[0]?.groupWeight || '';
+  const clearSelection = () => {
+    neutralGroupsRef.current.groups = [];
+    setSelectedTagIds(new Set());
+  };
+  const deleteSelected = () => {
+    if (!editable || !selectedTokens.length) return;
+    commitValue(removePromptTagTokens(value, selectedTokens));
+    clearSelection();
+    setDeleteMode(false);
+  };
+  const appendTags = (text: string) => {
+    const addition = text.trim();
+    if (!editable || !addition) return;
+    const prefix = !value.trim() ? '' : /[,，|\n]\s*$/.test(value) ? value + (/\s$/.test(value) ? '' : ' ') : `${value.trimEnd()}, `;
+    commitValue(prefix + addition);
+    setTagInput('');
+    clearSelection();
+    setDeleteMode(false);
+  };
+  const copySelection = (event: React.ClipboardEvent, cut = false) => {
+    if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') || window.getSelection()?.toString() || !selectedTokens.length || cut && !editable) return;
+    event.clipboardData.setData('text/plain', removePromptTagTokens(value, promptTokens.filter(token => !selectedTagIds.has(token.id))));
+    event.preventDefault();
+    if (cut) deleteSelected();
+  };
+  const selectedWeightKinds = new Set<'brace' | 'numeric'>(selectedTokens.map(token => token.groupKind === 'numeric' ? 'numeric' : 'brace'));
+  const selectedWeightKind = selectedWeightKinds.size === 1 ? [...selectedWeightKinds][0] : undefined;
+  const hasSelectedWeight = selectedTokens.some(token => token.groupKind);
+  const selectedWeightValues = selectedTokens.map(token => token.groupKind === 'numeric'
+    ? Number(token.groupWeight || 1)
+    : 1.05 ** (token.groupKind === 'brace' ? token.groupLevel || 1 : token.groupKind === 'bracket' ? -(token.groupLevel || 1) : 0));
+  const selectedWeightValue = selectedWeightValues[0] ?? 1;
+  // 比较实际倍率，仅容忍浮点计算误差，不把显示时的小数取舍用于判断。
+  const differentWeights = selectedWeightValues.some(weight => Math.abs(weight - selectedWeightValue) > 1e-12 * Math.max(1, Math.abs(weight), Math.abs(selectedWeightValue)));
+  const displayedWeight = selectedWeightValues.length && !differentWeights && Number.isFinite(selectedWeightValue) ? String(Number(selectedWeightValue.toFixed(6))) : '';
+  const selectionKey = selectedTokens.map(token => token.id).join('|');
   const [weightInput, setWeightInput] = useState('');
-  const [weightKind, setWeightKind] = useState<PromptWeightKind | null>(null);
+  const [weightInputEdited, setWeightInputEdited] = useState(false);
+  const [weightKind, setWeightKind] = useState<'brace' | 'numeric'>('brace');
   useEffect(() => {
-    setWeightInput(firstSelectedWeight);
-  }, [firstSelectedWeight]);
+    setWeightInput(displayedWeight);
+    setWeightInputEdited(false);
+  }, [displayedWeight, selectionKey, weightKind]);
+  useEffect(() => {
+    if (hasSelectedWeight && selectedWeightKind) setWeightKind(selectedWeightKind);
+  }, [hasSelectedWeight, selectedWeightKind, selectionKey]);
   useEffect(() => {
     const validIds = new Set(promptTokens.map(token => token.id));
+    neutralGroupsRef.current.groups = neutralGroupsRef.current.groups.filter(({ start, end }) => {
+      const members = promptTokens.filter(token => token.start !== undefined && token.start >= start && token.end !== undefined && token.end <= end);
+      return members.length > 1 && members.every(token => selectedTagIds.has(token.id));
+    });
     setSelectedTagIds(current => {
       const next = new Set([...current].filter(id => validIds.has(id)));
       return next.size === current.size ? current : next;
     });
-  }, [promptTokens]);
+  }, [promptTokens, selectedTagIds]);
 
   const commitWeightInput = () => {
+    if (!editable || deleteMode || weightKind !== 'numeric' || !weightInputEdited) return;
     const next = Number(weightInput);
     if (!weightInput.trim() || !Number.isFinite(next) || !selectedTokens.length) {
-      setWeightInput(firstSelectedWeight);
+      setWeightInput(displayedWeight);
+      setWeightInputEdited(false);
       return;
     }
     const uniqueGroupIds = new Set(selectedTokens.map(t => t.groupId).filter(Boolean));
@@ -176,33 +293,46 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     } else {
       applyWeightWrap('numeric', next);
     }
+    setWeightInputEdited(false);
   };
 
   const replaceSelectedGroups = (transform: (raw: string, token: PromptTagToken) => string) => {
-    if (!selectedTokens.length) return;
+    if (!editable || !selectedTokens.length) return;
     const groups = new Map<string, PromptTagToken[]>();
     selectedTokens.forEach(token => groups.set(token.groupId || token.id, [...(groups.get(token.groupId || token.id) || []), token]));
     const replacements = [...groups.values()].map(tokens => {
       const first = tokens[0];
       const start = first.groupStart ?? first.start ?? 0;
       const end = first.groupEnd ?? first.end ?? start;
-      const next = transform(value.slice(start, end), first);
-      return { start, end, value: next };
-    }).filter((item): item is { start: number; end: number; value: string } => Boolean(item.value)).sort((a, b) => b.start - a.start);
+      const raw = value.slice(start, end);
+      const next = transform(raw, first);
+      const neutral = Boolean(first.groupId) && tokens.length > 1 && (!first.groupKind && next === raw
+        || next !== raw && next === transformPromptWeight(raw, first, 'remove'));
+      return { start, end, value: next, neutral };
+    }).filter(item => Boolean(item.value)).sort((a, b) => b.start - a.start);
     let nextValue = value;
     replacements.forEach(item => { nextValue = nextValue.slice(0, item.start) + item.value + nextValue.slice(item.end); });
-    onValueChange(nextValue);
+    let offset = 0;
+    const neutralGroups = [...replacements].reverse().flatMap(item => {
+      const start = item.start + offset;
+      offset += item.value.length - (item.end - item.start);
+      return item.neutral ? [{ start, end: start + item.value.length }] : [];
+    });
+    neutralGroupsRef.current = { value: nextValue, groups: neutralGroups };
+    commitValue(nextValue);
   };
 
   const applyWeight = (mode: 'up' | 'down' | 'remove' | 'numeric', numericWeight?: number, step = 0.1) => {
     if (mode === 'numeric' && !Number.isFinite(numericWeight)) return;
-    replaceSelectedGroups((raw, token) => transformPromptWeight(raw, token, mode, numericWeight, step));
+    replaceSelectedGroups((raw, token) => !token.groupKind && weightKind === 'numeric' && (mode === 'up' || mode === 'down')
+      ? wrapPromptTag(raw, token, 'numeric', 1 + (mode === 'up' ? step : -step))
+      : transformPromptWeight(raw, token, mode, numericWeight, step));
   };
 
   const applyWeightWrap = (kind: PromptWeightKind, numericWeight?: number) => {
     if (!selectedTokens.length) return;
     const nextValue = wrapPromptTagTokens(value, selectedTokens, kind, numericWeight);
-    if (nextValue !== value) onValueChange(nextValue);
+    if (nextValue !== value) commitValue(nextValue);
   };
 
   useEffect(() => () => {
@@ -224,10 +354,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setIsLoading(false);
     setTranslations([]);
     setTranslationError('');
+    setDeleteMode(false);
+    clearSelection();
   }, [tagAssistEnabled]);
 
   const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0) => {
-    if (!tagAssistEnabled || disabled || composingRef.current) return;
+    if (!tagAssistEnabled || !editable || composingRef.current) return;
     if (searchTimerRef.current !== null) {
       window.clearTimeout(searchTimerRef.current);
       searchTimerRef.current = null;
@@ -255,7 +387,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         if (requestId === requestIdRef.current) setIsLoading(false);
       });
     }, 80);
-  }, [disabled, tagAssistEnabled, value]);
+  }, [editable, tagAssistEnabled, value]);
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
     if (!target) return;
@@ -263,7 +395,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       + suggestion.name
       + value.slice(target.replaceEnd);
     const nextCaret = target.replaceStart + suggestion.name.length + target.closingLength;
-    onValueChange(nextValue);
+    commitValue(nextValue);
     setSuggestions([]);
     setTarget(null);
     setActiveIndex(-1);
@@ -324,11 +456,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   }, [isOpen]);
 
   return (
-    <div className={`relative ${containerClassName}`}>
+    <div className={`relative ${containerClassName}`} onKeyDownCapture={event => {
+      if (!tagAssistEnabled || !showTranslations || event.nativeEvent.isComposing) return;
+      const field = (event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]');
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && (!field || field === textareaRef.current)) {
+        if ((key === 'z' || key === 'y') && moveHistory(key === 'y' || event.shiftKey)) { event.preventDefault(); event.stopPropagation(); }
+        if (key === 'a' && !field) { event.preventDefault(); setSelectedTagIds(new Set(promptTokens.map(token => token.id))); }
+      }
+      if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
+    }}>
       <textarea
         {...textareaProps}
         ref={textareaRef}
         disabled={disabled}
+        readOnly={readOnly}
         value={value}
         className={className}
         role={tagAssistEnabled ? 'combobox' : undefined}
@@ -337,7 +479,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         aria-controls={tagAssistEnabled && isOpen ? listboxId : undefined}
         aria-activedescendant={tagAssistEnabled && isOpen && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onChange={(event) => {
-          onValueChange(event.target.value);
+          commitValue(event.target.value, true);
+          clearSelection();
           if (tagAssistEnabled) refreshSuggestions(event.target.value, event.target.selectionStart);
         }}
         onFocus={(event) => {
@@ -410,16 +553,22 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
       />
 
-      {tagAssistEnabled && showTranslations && translations.length > 0 && (
-        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")}>
+      {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || editable) && (
+        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
+          onCopy={event => copySelection(event)} onCut={event => copySelection(event, true)}
+          onPaste={event => {
+            if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') || !editable) return;
+            const text = event.clipboardData.getData('text/plain');
+            if (text.trim()) { event.preventDefault(); appendTags(text); }
+          }}>
           <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
               let cursor = 0;
-              while (cursor < translations.length) {
-                const item = translations[cursor];
-                if (!item.groupId) {
+              while (cursor < currentTranslations.length) {
+                const item = currentTranslations[cursor];
+                if (deleteMode || !item.groupId) {
                   const selected = selectedTagIds.has(item.id);
                   nodes.push(
                     <button
@@ -430,21 +579,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         return next;
                       })}
                       key={item.id}
-                      className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors hover:border-[var(--nai-accent)] ${selected
-                        ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
+                      className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
+                        ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                         : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`max-w-52 truncate font-mono text-micro ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
-                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
+                      <span className={`max-w-52 truncate font-mono text-micro ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
+                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
                     </button>,
                   );
                   cursor += 1;
                   continue;
                 }
                 const members: PromptTagTranslation[] = [];
-                while (cursor < translations.length && translations[cursor].groupId === item.groupId) {
-                  members.push(translations[cursor]);
+                while (cursor < currentTranslations.length && currentTranslations[cursor].groupId === item.groupId) {
+                  members.push(currentTranslations[cursor]);
                   cursor += 1;
                 }
                 const first = members[0];
@@ -487,41 +636,43 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               }
               return nodes;
             })()}
+            {!deleteMode && editable && <input aria-label={t("添加提示词")} placeholder={t("添加提示词")} value={tagInput} onChange={event => setTagInput(event.target.value)} onBlur={event => appendTags(event.currentTarget.value)} onKeyDown={event => {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); appendTags(tagInput); }
+            }} className="min-h-10 min-w-28 flex-1 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white/70 focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200 dark:focus:bg-gray-900/60" />}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <InfoPopover label={t("Tag 权重说明")} preserveSelection content={t("先点选 Tag 或整组，再调整权重。\n{ }：花括号增强；[ ]：方括号减弱；数值：1.1::tag::。\n“添加权重”将所选项转换成当前类型；“移除权重”保留 Tag 并去掉权重。\n数值权重时 − / + 每次调整 0.1，Shift + 点击调整 0.01；括号权重调整括号层级。手机可直接输入数值权重，回车或离开输入框后应用于所选整组。\n“翻译缺失项”使用当前助手模型，可能产生模型调用费用。")} />
-            <InfoPopover label={t("Tag 完整对照")} preserveSelection content={translations.map(item => `${item.displayTag}\n${item.chinese || '词库暂无翻译'}`).join('\n\n')} className="mobile-touch whitespace-nowrap rounded-md px-1 text-micro text-gray-500 underline decoration-dotted underline-offset-2 dark:text-gray-400">{t("完整对照")}</InfoPopover>
-            <div className="flex shrink-0 items-stretch overflow-hidden whitespace-nowrap rounded-md border border-gray-300 dark:border-gray-600 [&>button]:shrink-0">
+            <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
+            {deleteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={() => { setDeleteMode(false); clearSelection(); }} className="mobile-touch rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
+              <button type="button" disabled={!editable || !selectedTokens.length} onClick={deleteSelected} className="mobile-touch inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-meta font-bold text-white hover:bg-red-500 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{t("删除 {0} 个 Tag", [selectedTokens.length])}</button>
+            </div> : <>
+            <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+              <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
+              <div role="group" aria-label={t("权重类型")} className="flex items-stretch overflow-hidden rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-800">
               <button
                 type="button"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
-                className={`px-2 py-1 font-mono text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title={t("花括号增强类型：{tag}")}
-              >{'{ }'}</button>
-              <button
-                type="button"
-                onClick={() => setWeightKind('bracket')}
-                aria-pressed={weightKind === 'bracket'}
-                className={`border-x border-gray-200 px-2 py-1 font-mono text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'bracket' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title={t("方括号减弱类型：[tag]")}
-              >{'[ ]'}</button>
+                className={`rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+              >{t("括号")}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
-                className={`border-r border-gray-200 px-2 py-1 text-meta font-bold transition-colors dark:border-gray-700 ${weightKind === 'numeric' ? 'bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)] text-[var(--nai-accent)]' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
-                title={t("数值权重类型：1.1::tag::")}
+                className={`rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  if (!weightKind) return;
                   const parsed = Number(weightInput);
-                  applyWeightWrap(weightKind, weightKind === 'numeric' && weightInput.trim() && Number.isFinite(parsed) ? parsed : undefined);
+                  const numericWeight = weightInputEdited && weightInput.trim() && Number.isFinite(parsed) ? parsed
+                    : hasSelectedWeight && !differentWeights && Number.isFinite(selectedWeightValue) ? selectedWeightValue : undefined;
+                  applyWeightWrap(weightKind, weightKind === 'numeric' ? numericWeight : undefined);
+                  setWeightInputEdited(false);
                 }}
-                disabled={!weightKind || !selectedTokens.length}
-                className="px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
+                disabled={!editable || !selectedTokens.length}
+                className="rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
                 title={t("把选中的 Tag 按当前选择的类型添加/转换权重")}
               >{t("添加权重")}</button>
             </div>
@@ -529,48 +680,53 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               <button
                 type="button"
                 onClick={event => applyWeight('down', undefined, event.shiftKey ? 0.01 : 0.1)}
-                disabled={!selectedTokens.length}
+                disabled={!editable || !selectedTokens.length}
                 className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
-                title={t("减弱权重 0.1（Shift+点击为 ±0.01）")}
+                title={t("减弱权重：括号减一层，数值减 0.1（Shift 为 0.01）")}
               >−</button>
-              <input
+              {weightKind === 'numeric' ? <input
                 value={weightInput}
-                onChange={event => setWeightInput(event.target.value.replace(/[^\d.]/g, ''))}
+                onChange={event => { setWeightInput(event.target.value.replace(/[^\d.]/g, '')); setWeightInputEdited(true); }}
                 onBlur={commitWeightInput}
                 onKeyDown={event => { if (event.key === 'Enter') commitWeightInput(); }}
-                disabled={!selectedTokens.length}
+                disabled={!editable || !selectedTokens.length}
                 inputMode="decimal"
-                placeholder={t("权重")}
+                aria-label={t("数值权重")}
+                placeholder={t(differentWeights ? "不同权重" : "权重")}
                 title={t("输入数值权重后回车，作用于选中的整组")}
-                className="w-14 shrink-0 border-x border-gray-200 bg-transparent px-1 py-1 text-center font-mono text-meta text-gray-600 placeholder:text-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500"
-              />
+                className={`${differentWeights ? 'w-36' : 'w-20'} shrink-0 border-x border-gray-200 bg-transparent px-1 py-1 text-center font-mono text-meta text-gray-600 placeholder:text-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500`}
+              /> : <output aria-label={t("权重倍率")} className="flex min-w-20 shrink-0 items-center justify-center border-x border-gray-200 px-2 py-1 font-mono text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                {differentWeights ? t("不同权重") : displayedWeight || '—'}
+              </output>}
               <button
                 type="button"
                 onClick={event => applyWeight('up', undefined, event.shiftKey ? 0.01 : 0.1)}
-                disabled={!selectedTokens.length}
+                disabled={!editable || !selectedTokens.length}
                 className="px-2 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none"
-                title={t("增强权重 0.1（Shift+点击为 ±0.01）")}
+                title={t("增强权重：括号加一层，数值加 0.1（Shift 为 0.01）")}
               >+</button>
             </div>
             <button
               type="button"
               onClick={() => applyWeight('remove')}
-              disabled={!selectedTokens.length}
+              disabled={!editable || !selectedTokens.length}
               className="shrink-0 whitespace-nowrap rounded-md border border-[var(--nai-accent)] px-2 py-1 text-meta font-bold text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:pointer-events-none disabled:opacity-40"
             >{t("移除权重")}</button>
             {translationError && <InfoPopover label={t("翻译失败详情")} preserveSelection content={translationError} className="min-w-0 flex-1 truncate text-left text-micro text-red-500 underline decoration-dotted underline-offset-2">{translationError}</InfoPopover>}
-            {allowAiTranslation && !disabled && missingTags.length > 0 && (
+            {allowAiTranslation && editable && missingTags.length > 0 && (
               <button
                 type="button"
                 onClick={() => void translateMissing()}
                 disabled={translationLoading}
-                className="ml-auto inline-flex min-h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
+                className="inline-flex min-h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-meta font-medium text-[var(--nai-accent)] transition-colors hover:bg-[color-mix(in_srgb,var(--nai-accent)_10%,transparent)] disabled:opacity-60"
                 title={t("使用当前助手模型翻译 {0} 个词库缺失项", [missingTags.length])}
               >
                 {translationLoading ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Languages className="h-3.5 w-3.5" />}
                 {translationLoading ? t("翻译中") : t("翻译缺失项 {0}", [missingTags.length])}
               </button>
             )}
+            <button type="button" aria-label={t("删除模式")} title={t("删除模式")} disabled={!editable || !promptTokens.length} onClick={() => { clearSelection(); setDeleteMode(true); }} className="mobile-touch ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"><Trash2 className="h-4 w-4" /></button>
+            </>}
           </div>
         </div>
       )}

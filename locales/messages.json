@@ -1,4 +1,22 @@
 {
+  "删除模式": [
+    "刪除模式",
+    "Delete mode",
+    "削除モード",
+    "삭제 모드"
+  ],
+  "删除 {0} 个 Tag": [
+    "刪除 {0} 個 Tag",
+    "Delete {0} tags",
+    "{0} 個の Tag を削除",
+    "Tag {0}개 삭제"
+  ],
+  "添加提示词": [
+    "新增提示詞",
+    "Add prompt tags",
+    "プロンプトを追加",
+    "프롬프트 추가"
+  ],
   "NAI Atelier · NovelAI 创作工坊": [
     "NAI Atelier · NovelAI 創作工坊",
     "NAI Atelier · NovelAI Creative Studio",
@@ -3640,6 +3658,48 @@
     "Numeric weight: 1.1::tag::",
     "数値の重み：1.1::tag::",
     "숫자 가중치: 1.1::tag::"
+  ],
+  "权重类型": [
+    "權重類型",
+    "Weight type",
+    "重みの種類",
+    "가중치 유형"
+  ],
+  "括号": [
+    "括號",
+    "Brackets",
+    "括弧",
+    "괄호"
+  ],
+  "数值权重": [
+    "數值權重",
+    "Numeric weight",
+    "数値の重み",
+    "숫자 가중치"
+  ],
+  "权重倍率": [
+    "權重倍率",
+    "Weight multiplier",
+    "重み倍率",
+    "가중치 배율"
+  ],
+  "不同权重": [
+    "不同權重",
+    "Different weights",
+    "重みが異なる",
+    "서로 다른 가중치"
+  ],
+  "减弱权重：括号减一层，数值减 0.1（Shift 为 0.01）": [
+    "減弱權重：括號減一層，數值減 0.1（Shift 為 0.01）",
+    "Decrease weight: one bracket level or 0.1 numerically (Shift: 0.01)",
+    "重みを減少：括弧は1段、数値は0.1（Shiftで0.01）",
+    "가중치 감소: 괄호 1단계 또는 숫자 0.1(Shift: 0.01)"
+  ],
+  "增强权重：括号加一层，数值加 0.1（Shift 为 0.01）": [
+    "增強權重：括號加一層，數值加 0.1（Shift 為 0.01）",
+    "Increase weight: one bracket level or 0.1 numerically (Shift: 0.01)",
+    "重みを増加：括弧は1段、数値は0.1（Shiftで0.01）",
+    "가중치 증가: 괄호 1단계 또는 숫자 0.1(Shift: 0.01)"
   ],
   "数值": [
     "數值",
