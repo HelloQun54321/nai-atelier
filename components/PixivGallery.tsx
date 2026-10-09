@@ -578,7 +578,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
             <span>♥ {formatCount(illust.totalBookmarks)}</span>
-            {illust.pageCount > 1 && <span>{t("{0} 页", [illust.pageCount])}</span>}
+            {illust.pageCount > 1 && <span>{t("{0}页", [illust.pageCount])}</span>}
           </div>
         </div>
         <div className="p-2.5">
@@ -1077,7 +1077,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
           open={Boolean(selected)}
           title={selected ? selected.title : t("作品详情")}
           sensitiveTitle
-          subInfo={selected ? t("Pixiv #{0} · {1}×{2} · {3} 页", [selected.id, selected.width, selected.height, currentPageCount]) : undefined}
+          subInfo={selected ? t("Pixiv #{0} · {1}×{2} · {3}页", [selected.id, selected.width, selected.height, currentPageCount]) : undefined}
           sourceUrl={selected ? pixivArtworkUrl(selected) : undefined}
           onBack={closeMobileDetail}
           onClose={() => { selectionAnchor.preserveOnClose(); setSelectedId(null); }}

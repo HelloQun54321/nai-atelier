@@ -221,6 +221,7 @@ it('Agent 读取实际打开的 AITag 详情和作品编号，切换或关闭后
 
 it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其余压暗，主题与安全模式保留原规则', async layout => {
   const { main } = await setup(layout);
+  works.forEach(work => expect(within(card(work.id)).getByText('2页')).toBeTruthy());
   fireEvent.click(card(1));
   await waitFor(() => selected(1));
   expect(main.scrollTop).toBe(1650);

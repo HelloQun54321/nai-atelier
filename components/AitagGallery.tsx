@@ -434,7 +434,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             {type || 'AI'}
           </div>
           <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
-            {imageCount}P
+            {t('{0}页', [imageCount])}
           </div>
         </div>
         <div className="p-3 flex-1">

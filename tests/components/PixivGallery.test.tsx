@@ -132,11 +132,13 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AIT
   const first = screen.getByRole('button', { name: /synthetic artwork.*artist/ });
   const second = screen.getByRole('button', { name: /second artwork.*artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
+  if (layout !== 'history') cards.forEach(card => expect(within(card).getByText('2页')).toBeTruthy());
   const { root, scrollCalls } = mockGalleryGeometry(cards);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   fireEvent.click(first);
   expect(root.scrollTop).toBe(1650);
   expect(scrollCalls).toContainEqual({ top: 1650, behavior: 'smooth' });
+  expect(screen.getByText('Pixiv #100 · 800×1200 · 2页')).toBeTruthy();
   expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');

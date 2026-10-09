@@ -555,10 +555,11 @@ it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开�
   const card = screen.getByText('我的作品组').closest('article')!;
   expect(container.querySelectorAll('article')).toHaveLength(2);
   expect(within(card).getByRole('img').getAttribute('src')).toBe('/synthetic/group-0.png');
-  expect(within(card).getByText('3 张图片')).toBeTruthy();
+  expect(within(card).getByText('3页')).toBeTruthy();
   expect(screen.queryByRole('img', { name: groupedImages[0].title })).toBeNull();
   fireEvent.click(within(card).getByRole('img').closest('button')!);
   const panel = screen.getByRole('complementary', { name: '我的作品组' });
+  expect(within(panel).getByText('3页')).toBeTruthy();
   expect(panel.classList.contains('fixed')).toBe(true); expect(panel.classList.contains('lg:static')).toBe(true);
   expect(container.querySelector('main')!.classList.contains('hidden')).toBe(true); expect(container.querySelector('main')!.classList.contains('lg:block')).toBe(true);
   const images = within(panel).getAllByRole('img');
@@ -610,6 +611,7 @@ it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不�
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: splitGroup, onRefresh, notify: vi.fn() }));
   fireEvent.click(screen.getByRole('button', { name: /未整理\s+2/ }));
   const filteredCard = screen.getByText('我的作品组').closest('article')!;
+  expect(within(filteredCard).getByText('2页')).toBeTruthy();
   const target = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
   fireEvent.dragStart(filteredCard, { dataTransfer: dragData() }); fireEvent.drop(target, { dataTransfer: dragData() });
   await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(expect.arrayContaining(['group-1', 'group-2']), { boardId: 'board-1' }));
@@ -624,11 +626,11 @@ it.each([390, 1280])('宽度 %s：各来源单张收藏也使用作品组侧栏�
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   for (const item of mockInspirations) {
     const card = screen.getByText(item.title).closest('article')!;
-    expect(within(card).getByText('1 张图片')).toBeTruthy();
+    expect(within(card).getByText('1页')).toBeTruthy();
     fireEvent.click(within(card).getByRole('img').closest('button')!);
     const panel = screen.getByRole('complementary', { name: item.title });
     expect(within(panel).getAllByRole('img')).toHaveLength(1);
-    expect(within(panel).getByText('1 张图片')).toBeTruthy();
+    expect(within(panel).getByText('1页')).toBeTruthy();
     expect((within(panel).getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe(item.prompt);
     expect(within(panel).queryByRole('combobox', { name: '切换所属收藏夹' })).toBeNull();
     expect(document.querySelector('.ui-modal-enter')).toBeNull();
