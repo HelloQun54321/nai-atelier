@@ -21,6 +21,7 @@ vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: 
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: { items: PixivIllust[]; renderItem: (item: PixivIllust) => React.ReactNode }) => <div>{items.map(renderItem)}</div> }));
 const illust: PixivIllust = { id: '100', title: 'synthetic artwork', type: 'illust', caption: '', restrict: 0, xRestrict: 0, tags: ['原站标签'], pageCount: 2, width: 800, height: 1200, totalBookmarks: 10, totalViews: 20, createDate: '', user: { id: '10', name: 'artist', account: '' }, urls: { thumb: '', medium: '', large: '', original: 'https://i.pximg.net/p0.png' }, metaPages: ['https://i.pximg.net/p0.png', 'https://i.pximg.net/p1.png'] };
 beforeEach(() => {
+  document.documentElement.dataset.motion = 'full';
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
@@ -34,7 +35,7 @@ beforeEach(() => {
   vi.mocked(api.uploadFile).mockResolvedValue({ url: '/api/assets/uploaded' });
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
 it.each([false, true])('自动回调=%s：登录提示显示真实后台阶段，不覆盖为继续账号教程', async automaticCallback => {
   vi.mocked(pixivService.status).mockResolvedValue({ connected: false });
   const session = { id: 'test-login-session', state: 'exchanging' as const, automaticCallback, expiresAt: Date.now() + 300000, message: '正在完成连接…' };
@@ -91,10 +92,11 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AIT
   const first = screen.getByRole('button', { name: /synthetic artwork.*artist/ });
   const second = screen.getByRole('button', { name: /second artwork.*artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
-  const { root } = mockGalleryGeometry(cards);
+  const { root, scrollCalls } = mockGalleryGeometry(cards);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   fireEvent.click(first);
   expect(root.scrollTop).toBe(1650);
+  expect(scrollCalls).toContainEqual({ top: 1650, behavior: 'smooth' });
   expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');

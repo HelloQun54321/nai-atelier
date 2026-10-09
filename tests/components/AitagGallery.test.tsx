@@ -46,10 +46,14 @@ const works: AitagWorkSummary[] = [1, 2].map(id => ({
   firstImage: { id, work_id: id, author_id: 1, image_type: 'nai', file_name: `${id}.png`, local_image_url: `/api/assets/aitag/${id}.png`, model: id === 1 ? 'NovelAI Diffusion V4.5' : 'NovelAI Diffusion V5', prompt_text: 'synthetic prompt', ai_json: { prompt: `synthetic prompt ${id}`, uc: 'synthetic negative', width: 832, height: 1216, steps: 23, seed: 123, model: id === 1 ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full' } },
 }));
 const callbacks = new Set<() => void>();
+const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+const scrollTo = vi.fn(function (this: HTMLElement, options: ScrollToOptions) { this.scrollTop = options.top ?? this.scrollTop; });
 const tops: Record<number, number> = { 1: 1800, 2: 2500 };
 const rect = (top: number, height: number) => ({ top, height, bottom: top + height, left: 0, right: 800, width: 800 } as DOMRect);
 
 beforeEach(() => {
+  document.documentElement.dataset.motion = 'full';
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollTo });
   vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); callbacks.clear();
   mocks.realMasonry = false;
   document.documentElement.className = ''; delete document.documentElement.dataset.safeMode;
@@ -76,7 +80,11 @@ beforeEach(() => {
     return id ? rect(100 + tops[id] - (this.closest('main')?.scrollTop ?? 0), 300) : rect(100, 600);
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.className = ''; delete document.documentElement.dataset.safeMode; });
+afterEach(() => {
+  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.className = ''; delete document.documentElement.dataset.safeMode; delete document.documentElement.dataset.motion;
+  if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
+  else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
+});
 const setup = async (layout = 'masonry') => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
   const { AitagGallery } = await import('../../components/AitagGallery');
@@ -216,6 +224,7 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其
   fireEvent.click(card(1));
   await waitFor(() => selected(1));
   expect(main.scrollTop).toBe(1650);
+  expect(scrollTo).toHaveBeenCalledWith({ top: 1650, behavior: 'smooth' });
   expect(card(1).className).toContain('ring-2');
   expect(card(1).className).not.toContain('brightness-');
   expect(card(2).className).toContain('brightness-[.7]');

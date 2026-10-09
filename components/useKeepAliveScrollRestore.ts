@@ -131,7 +131,8 @@ export const useKeepAliveScrollRestore = (
     const root = scrollRef.current;
     if (!root || !activeRef.current || root.clientHeight === 0) return;
     const saved = scrollCache.get(viewKey) ?? 0;
-    if (root.scrollTop === 0 && saved > 0 && (isRestoringRef.current || Date.now() - lastActivatedAtRef.current < 250)) {
+    // 作品定位接管时，显式清零是筛选重置，不能恢复动画中间的位置。
+    if (!options?.skipRestore && root.scrollTop === 0 && saved > 0 && (isRestoringRef.current || Date.now() - lastActivatedAtRef.current < 250)) {
       return;
     }
     scrollCache.set(viewKey, root.scrollTop);

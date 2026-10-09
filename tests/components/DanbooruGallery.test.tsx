@@ -36,6 +36,7 @@ const post: DanbooruPost = { id: 1, rating: 'g', score: 10, favCount: 10, width:
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
 
 beforeEach(() => {
+  document.documentElement.dataset.motion = 'full';
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); observers.length = 0;
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
@@ -49,7 +50,7 @@ beforeEach(() => {
   search.mockImplementation(async options => result(options?.query, [], options?.page));
   resolve.mockImplementation(async value => value);
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
 const setup = async () => {
   const notify = vi.fn();
   const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
@@ -89,10 +90,11 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
   const first = screen.getByRole('button', { name: /synthetic[ _]artist/ });
   const second = screen.getByRole('button', { name: /second[ _]artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
-  const { root } = mockGalleryGeometry(cards);
+  const { root, scrollCalls } = mockGalleryGeometry(cards);
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   fireEvent.click(first);
   expect(root.scrollTop).toBe(1650);
+  expect(scrollCalls).toContainEqual({ top: 1650, behavior: 'smooth' });
   expect(cards[0].className).toContain('ring-2');
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');

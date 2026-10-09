@@ -140,6 +140,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
 }
 
 beforeEach(() => {
+  document.documentElement.dataset.motion = 'full';
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); fixtures.favorites.clear(); fixtures.revision++;
   confirmAction.mockResolvedValue(true);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
@@ -155,7 +156,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion;
   if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
   else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo;
   if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
@@ -211,9 +212,10 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
       await screen.findByRole('button', { name: '再抽一批' });
     }
     const cards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
-    const { root } = mockGalleryGeometry(cards);
+    const { root, scrollCalls } = mockGalleryGeometry(cards);
     fireEvent.click(cards[0]);
     expect(root.scrollTop).toBe(1650);
+    expect(scrollCalls).toContainEqual({ top: 1650, behavior: 'smooth' });
     fireEvent.click(cards[1]);
     expect(root.scrollTop).toBe(2450);
     cards.forEach(card => { expect(card.getAttribute('aria-pressed')).toBe('true'); expect(card.className).not.toContain('brightness-'); });
