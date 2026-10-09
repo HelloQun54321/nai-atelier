@@ -163,11 +163,17 @@ async function persistFavorites(ids: string[]): Promise<void> {
 }
 
 export async function updateCollection(ids: string[], updates: Partial<Inspiration>): Promise<void> {
+  if (!ids.length) return;
   await persistFavorites(ids);
-  if (ids.length === 1) await api.put(`/inspirations/${encodeURIComponent(ids[0])}`, updates);
-  else await api.post('/inspirations/bulk-update', { ids, updates });
-  items = items.map(item => ids.includes(item.id) ? { ...item, ...updates } : item);
-  changed();
+  // 批量入口最多接收 500 项；每批成功后同步快照，失败不误报剩余项已保存。
+  for (let index = 0; index < ids.length; index += 500) {
+    const chunk = ids.slice(index, index + 500);
+    if (chunk.length === 1) await api.put(`/inspirations/${encodeURIComponent(chunk[0])}`, updates);
+    else await api.post('/inspirations/bulk-update', { ids: chunk, updates });
+    const updatedIds = new Set(chunk);
+    items = items.map(item => updatedIds.has(item.id) ? { ...item, ...updates } : item);
+    changed();
+  }
 }
 
 export async function removeCollection(ids: string[]): Promise<void> {

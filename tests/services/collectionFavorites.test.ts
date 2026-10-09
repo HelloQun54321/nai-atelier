@@ -17,7 +17,7 @@ beforeEach(() => {
   mocks.get.mockImplementation(async path => path === '/auth/me' ? user : path === '/inspirations' ? stored.map(item => ({ ...item })) : path === '/aitag/favorites' ? details : []);
   mocks.post.mockImplementation(async (path, body) => {
     if (path === '/inspirations') { stored.push({ ...body }); return { item: { ...body } }; }
-    if (path === '/inspirations/bulk-update') stored = stored.map(item => body.ids.includes(item.id) ? { ...item, ...body.updates } : item);
+    if (path === '/inspirations/bulk-update') stored = stored.map(item => body.ids.slice(0, 500).includes(item.id) ? { ...item, ...body.updates } : item);
     return { success: true };
   });
   mocks.put.mockImplementation(async (path, updates) => { stored = stored.map(item => path === '/inspirations/' + encodeURIComponent(item.id) ? { ...item, ...updates } : item); return { success: true }; });
@@ -201,4 +201,41 @@ it('大量旧收藏按索引汇总，不对每张图片反复扫描整份列表�
   const bySource = { ...stored[0], imageUrl: '/source-match.png' };
   const byUrl = { ...stored[0], id: 'later', sourceId: 'different', imageUrl: favorites[0].imageUrl };
   expect(mergeCollectionFavorites([bySource, byUrl], [favorites[0]])).toHaveLength(2);
+});
+
+
+it.each([500, 501, 1201])('批量保存 %s 页完整分批，服务端限制 500 项时分类与快照都保持一致', async count => {
+  stored = Array.from({ length: count }, (_, index) => ({ id: 'bulk-' + index, userId: user.id, sourceType: 'upload', imageUrl: '/image-' + index + '.png', title: '合成图片', prompt: '', tags: ['内容'], createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  await service.updateCollection(stored.map(item => item.id), { boardId: 'folder' });
+  expect(stored.every(item => item.boardId === 'folder')).toBe(true);
+  expect(service.collectionSnapshot().every(item => item.boardId === 'folder')).toBe(true);
+  const calls = mocks.post.mock.calls.filter(([path]) => path === '/inspirations/bulk-update');
+  expect(calls.every(([, body]) => body.ids.length <= 500)).toBe(true);
+  expect(calls.reduce((sum, [, body]) => sum + body.ids.length, 0) + mocks.put.mock.calls.length).toBe(count);
+  expect(stored.every(item => item.tags?.[0] === '内容' && !item.archived)).toBe(true);
+});
+
+it('超过 500 页取消收藏完整保存引用状态，原图和分类保留', async () => {
+  stored = Array.from({ length: 601 }, (_, index) => ({ id: 'remove-' + index, userId: user.id, sourceType: 'upload', imageUrl: '/image-' + index + '.png', title: '合成图片', prompt: '', boardId: 'folder', createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  await service.removeCollection(stored.map(item => item.id));
+  expect(stored.every(item => item.archived && item.boardId === 'folder' && item.imageUrl.startsWith('/image-'))).toBe(true);
+  expect(service.collectionSnapshot().every(item => item.archived)).toBe(true);
+});
+
+it('批量保存第二批失败只更新成功批次快照，后续可重试；空选择不发请求', async () => {
+  stored = Array.from({ length: 1001 }, (_, index) => ({ id: 'partial-' + index, userId: user.id, sourceType: 'upload', imageUrl: '/image-' + index + '.png', title: '合成图片', prompt: '', tags: ['旧'], createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const originalPost = mocks.post.getMockImplementation()!;
+  let calls = 0;
+  mocks.post.mockImplementation(async (path, body) => { if (++calls === 2) throw new Error('第二批失败'); return originalPost(path, body); });
+  await expect(service.updateCollection(stored.map(item => item.id), { tags: ['新'] })).rejects.toThrow('第二批失败');
+  expect(stored.filter(item => item.tags?.[0] === '新')).toHaveLength(500);
+  expect(service.collectionSnapshot().filter(item => item.tags?.[0] === '新')).toHaveLength(500);
+  await service.updateCollection(service.collectionSnapshot().filter(item => item.tags?.[0] === '旧').map(item => item.id), { tags: ['新'] });
+  expect(stored.every(item => item.tags?.[0] === '新')).toBe(true);
+  const requestCount = mocks.post.mock.calls.length + mocks.put.mock.calls.length;
+  await service.updateCollection([], { tags: [] });
+  expect(mocks.post.mock.calls.length + mocks.put.mock.calls.length).toBe(requestCount);
 });

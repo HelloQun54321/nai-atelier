@@ -323,10 +323,10 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '图' } });
     enterCollectionSelection();
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
-    expect(screen.getByText('已选 3 项')).toBeTruthy();
-    expect(within(screen.getByRole('banner')).getByRole('button', { name: '取消全部选择' }).textContent).toContain('退出多选');
-    fireEvent.click(screen.getByRole('button', { name: '取消全部选择' }));
-    expect(screen.queryByText('已选 3 项')).toBeNull();
+    expect(screen.getByText('已选 3 个作品，共 3 页')).toBeTruthy();
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: '退出多选' }).textContent).toContain('退出多选');
+    fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+    expect(screen.queryByText('已选 3 个作品，共 3 页')).toBeNull();
     expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
   });
 
@@ -394,9 +394,9 @@ it('手机长按只显露删除，松手不打开详情；批量选择必须从�
   expect(fireEvent.dragStart(card, { dataTransfer: dragData() })).toBe(false);
   expect(within(card).getByRole('button', { name: '删除收藏' })).toBeTruthy();
   expect(within(card).queryByRole('button', { name: '选择收藏' })).toBeNull();
-  expect(screen.queryByText('已选 0 项')).toBeNull();
+  expect(screen.queryByText('已选 0 个作品，共 0 页')).toBeNull();
   selectCollectionCard(card);
-  expect(screen.getByText('已选 1 项')).toBeTruthy();
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
 });
 
 it.each(['moonlight', ''])('手动上传保留全局词「%s」的完整参数与角色，修改文字不丢参数', async initialPrompt => {
@@ -497,7 +497,7 @@ it('取消收藏失败保留条目和选择，显示错误供重试', async () =
   selectCollectionCard(screen.getByText(mockInspirations[0].title).closest('article')!);
   fireEvent.click(screen.getByRole('button', { name: '取消收藏' }));
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成取消失败', 'error'));
-  expect(screen.getByText(mockInspirations[0].title)).toBeTruthy(); expect(screen.getByText('已选 1 项')).toBeTruthy();
+  expect(screen.getByText(mockInspirations[0].title)).toBeTruthy(); expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
   expect(refresh).not.toHaveBeenCalled();
 });
 
@@ -599,11 +599,11 @@ it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入�
   expect(within(header).getByRole('combobox', { name: '移动到收藏夹' })).toBeTruthy();
   expect(within(header).getByRole('combobox', { name: '添加标签' })).toBeTruthy();
   expect(within(header).getByRole('button', { name: '取消收藏' }).classList.contains('mobile-touch')).toBe(true);
-  expect(within(header).getByRole('button', { name: '取消全部选择' }).classList.contains('mobile-touch')).toBe(true);
+  expect(within(header).getByRole('button', { name: '退出多选' }).classList.contains('mobile-touch')).toBe(true);
   expect(within(header).queryByRole('searchbox')).toBeNull(); expect(within(header).queryByRole('button', { name: '筛选' })).toBeNull();
   expect(main.firstElementChild).toBe(content); expect(main.querySelector('.sticky')).toBeNull(); expect(main.scrollTop).toBe(420);
   expect(screen.getByText('已整理角色图').closest('article')).toBe(card);
-  fireEvent.click(within(header).getByRole('button', { name: '取消全部选择' }));
+  fireEvent.click(within(header).getByRole('button', { name: '退出多选' }));
   expect((within(header).getByRole('searchbox') as HTMLInputElement).value).toBe('图');
   expect(within(header).getByRole('button', { name: '取消筛选：#原创' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');
@@ -620,12 +620,12 @@ it('顶栏批量加标签失败保留选择与输入，重试成功保留空多�
   const header = screen.getByRole('banner'); const input = within(header).getByRole('combobox', { name: '添加标签' }) as HTMLInputElement;
   fireEvent.change(input, { target: { value: '逆光' } }); fireEvent.click(within(header).getByRole('button', { name: '添加' }));
   await waitFor(() => expect(notify).toHaveBeenCalledWith('标签写入失败', 'error'));
-  expect(within(header).getByText('已选 1 项')).toBeTruthy(); expect(input.value).toBe('逆光'); expect(onRefresh).not.toHaveBeenCalled();
+  expect(within(header).getByText('已选 1 个作品，共 1 页')).toBeTruthy(); expect(input.value).toBe('逆光'); expect(onRefresh).not.toHaveBeenCalled();
   await waitFor(() => expect((within(header).getByRole('button', { name: '添加' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(within(header).getByRole('button', { name: '添加' }));
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
-  expect(within(header).getByText('已选 0 项')).toBeTruthy();
-  fireEvent.click(within(header).getByRole('button', { name: '取消全部选择' }));
+  expect(within(header).getByText('已选 0 个作品，共 0 页')).toBeTruthy();
+  fireEvent.click(within(header).getByRole('button', { name: '退出多选' }));
   expect(within(header).getByRole('searchbox')).toBeTruthy();
   expect(db.updateInspiration).toHaveBeenLastCalledWith('insp-3', { tags: ['风景', '逆光'] });
   expect(onRefresh).toHaveBeenCalledOnce(); expect(within(header).queryByRole('group', { name: '收藏批量操作' })).toBeNull();
@@ -744,7 +744,7 @@ it('拖拽选中的多张作品到收藏夹，一次移动；可拖回未整理�
   fireEvent.drop(folder, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
   expect(db.bulkUpdateInspirations).toHaveBeenCalledExactlyOnceWith(['insp-2', 'insp-3'], { boardId: 'board-1' });
-  expect(screen.queryByText('已选 2 项')).toBeNull();
+  expect(screen.queryByText('已选 2 个作品，共 2 页')).toBeNull();
   const unorganized = screen.getByRole('button', { name: /未整理\s+2/ });
   fireEvent.dragStart(card(0), { dataTransfer }); fireEvent.drop(unorganized, { dataTransfer });
   await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(2));
@@ -766,10 +766,10 @@ it('取消拖拽、只读作品不能移动；保存失败保留作品与选择�
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
   selectCollectionCard(card);
   fireEvent.click(within(locked).getByRole('img').closest('button')!);
-  expect(screen.getByText('已选 1 项')).toBeTruthy();
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
   fireEvent.dragStart(card, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成移动失败', 'error'));
-  expect(screen.getByText('已选 1 项')).toBeTruthy(); expect(screen.getByText(mockInspirations[1].title)).toBeTruthy(); expect(onRefresh).not.toHaveBeenCalled();
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy(); expect(screen.getByText(mockInspirations[1].title)).toBeTruthy(); expect(onRefresh).not.toHaveBeenCalled();
   fireEvent.change(screen.getByRole('combobox', { name: '移动到收藏夹' }), { target: { value: 'board-1' } });
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
   expect(db.bulkUpdateInspirations).toHaveBeenLastCalledWith(['insp-2'], { boardId: 'board-1' });
@@ -843,8 +843,8 @@ it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不�
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: groupedImages, onRefresh, notify: vi.fn() }));
   const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
   const card = screen.getByText('我的作品组').closest('article')!;
-  selectCollectionCard(card); expect(screen.getByText('已选 3 项')).toBeTruthy();
-  selectCollectionCard(card); expect(screen.queryByText('已选 3 项')).toBeNull();
+  selectCollectionCard(card); expect(screen.getByText('已选 1 个作品，共 3 页')).toBeTruthy();
+  selectCollectionCard(card); expect(screen.queryByText('已选 1 个作品，共 3 页')).toBeNull();
   const dataTransfer = dragData(); fireEvent.dragStart(card, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
   await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(expect.arrayContaining(['group-0', 'group-1', 'group-2']), { boardId: 'board-1' }));
   cleanup(); vi.clearAllMocks();
@@ -894,12 +894,14 @@ it.each([390, 1280])('宽度 %s：管理面板显式进入多选，空选择保�
   expect(panel.classList.contains('fixed')).toBe(width >= 768);
   fireEvent.click(within(panel).getByRole('button', { name: '批量选择图片' }));
   expect(screen.queryByRole('dialog', { name: '收藏管理' })).toBeNull();
-  expect(screen.getByText('已选 0 项')).toBeTruthy();
+  expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
   expect((screen.getByRole('button', { name: '取消收藏' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('combobox', { name: '移动到收藏夹' }) as HTMLSelectElement).disabled).toBe(true);
   const checkbox = within(card).getByRole('button', { name: '选择收藏' });
   expect(checkbox.classList.contains('hover-reveal-md')).toBe(false);
   expect(checkbox.getAttribute('aria-pressed')).toBe('false');
+  expect(checkbox.textContent).toBe(''); expect(checkbox.querySelector('svg')).toBeNull();
+  expect(checkbox.classList.contains('left-1.5')).toBe(true); expect(checkbox.classList.contains('shadow')).toBe(true);
   expect(within(card).queryByRole('button', { name: '删除收藏' })).toBeNull();
   expect(within(card).queryByRole('button', { name: '复制图片' })).toBeNull();
   expect(card.querySelector('[data-card-action]')!.nextElementSibling).toBeNull();
@@ -913,13 +915,13 @@ it.each([390, 1280])('宽度 %s：管理面板显式进入多选，空选择保�
   fireEvent.pointerCancel(imageButton, { pointerType: 'touch', pointerId: 9 });
   vi.useRealTimers();
   fireEvent.click(imageButton);
-  expect(checkbox.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText('已选 1 项')).toBeTruthy();
+  expect(checkbox.getAttribute('aria-pressed')).toBe('true'); expect(checkbox.textContent).toBe('✓');
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
   expect(screen.queryByRole('complementary', { name: mockInspirations[0].title })).toBeNull();
   fireEvent.click(screen.getByText(mockInspirations[0].title).closest('button')!);
-  expect(screen.getByText('已选 0 项')).toBeTruthy();
+  expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '取消全部选择' }));
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
   expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
   expect(screen.getByText(mockInspirations[0].title).closest('article')).toBe(card);
   expect(within(card).getByRole('img')).toBe(image);
@@ -940,7 +942,7 @@ it('普通卡片删除需确认，取消与重复点击不写入，确认后只�
   fireEvent.click(remove); fireEvent.click(remove);
   expect(confirmAction).toHaveBeenCalledOnce();
   expect(screen.queryByRole('complementary', { name: mockInspirations[0].title })).toBeNull();
-  expect(screen.queryByText('已选 0 项')).toBeNull();
+  expect(screen.queryByText('已选 0 个作品，共 0 页')).toBeNull();
   await act(async () => { resolveConfirm(false); });
   expect(db.bulkDeleteInspirations).not.toHaveBeenCalled();
   expect(onRefresh).not.toHaveBeenCalled();
@@ -973,9 +975,9 @@ it('普通卡片删除失败保持浏览与原图可重试，只读卡片不提�
   enterCollectionSelection();
   expect(within(locked).queryByRole('button', { name: '选择收藏' })).toBeNull();
   fireEvent.click(within(locked).getByRole('img').closest('button')!);
-  expect(screen.getByText('已选 0 项')).toBeTruthy();
+  expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
-  expect(screen.getByText('已选 3 项')).toBeTruthy();
+  expect(screen.getByText('已选 3 个作品，共 3 页')).toBeTruthy();
 });
 
 it('作品组卡片删除仅取消当前筛选命中的页，不带走其他收藏夹组员', async () => {
@@ -991,4 +993,85 @@ it('作品组卡片删除仅取消当前筛选命中的页，不带走其他收�
   expect(vi.mocked(db.bulkDeleteInspirations).mock.lastCall![0]).toHaveLength(2);
   expect(db.bulkDeleteInspirations).not.toHaveBeenCalledWith(expect.arrayContaining(['group-0']));
   expect(splitGroup.find(image => image.id === 'group-0')!.boardId).toBe('board-1');
+});
+
+
+it.each([390, 1280])('宽度 %s：管理标签排第一项，没有失效检查或重复收藏夹管理', width => {
+  vi.stubGlobal('innerWidth', width);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  const menu = screen.getByRole('dialog', { name: '收藏管理' });
+  expect(within(menu).getAllByRole('button').filter(button => button.textContent !== '').map(button => button.textContent)).toEqual(['管理标签', '批量选择图片']);
+  fireEvent.click(within(menu).getByRole('button', { name: '管理标签' }));
+  expect(screen.queryByRole('dialog', { name: '收藏管理' })).toBeNull();
+  const manager = screen.getByRole('dialog', { name: '管理标签' });
+  expect(within(manager).getByText('#原创')).toBeTruthy();
+  expect(within(manager).queryByText('#生成历史')).toBeNull();
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  expect(screen.getByRole('searchbox').getAttribute('placeholder')).toBe('搜索标题、提示词或标签…');
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+});
+
+it('全选与反选当前结果保留其他分类选择，清空选择不退出，计数区分作品与页', async () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages, mockInspirations[0]], onRefresh: vi.fn(), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  selectCollectionCard(screen.getByText(mockInspirations[0].title).closest('article')!);
+  fireEvent.click(screen.getByRole('button', { name: /未整理\s+3/ }));
+  fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+  expect(screen.getByText('已选 2 个作品，共 4 页')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '反选筛选结果' }));
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '选择收藏' }).getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: '反选筛选结果' }));
+  expect(screen.getByText('已选 2 个作品，共 4 页')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '清空选择' }));
+  expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
+  expect((screen.getByRole('button', { name: '清空选择' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+});
+
+it('作品组部分选中显示短横与边框，反选以当前作品组为单位，刷新移除失效选择', async () => {
+  const data = groupedImages.map(image => image.id === 'group-0' ? { ...image, boardId: 'board-1' } : image);
+  const props = { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  selectCollectionCard(screen.getByText('我的作品组').closest('article')!);
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /全部\s+3/ }));
+  const checkbox = screen.getByRole('button', { name: '选择收藏' });
+  expect(checkbox.getAttribute('aria-pressed')).toBe('mixed'); expect(checkbox.textContent).toBe('−');
+  expect(checkbox.title).toBe('部分选中'); expect(checkbox.closest('article')!.classList.contains('ring-2')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '反选筛选结果' }));
+  expect(checkbox.getAttribute('aria-pressed')).toBe('true'); expect(checkbox.textContent).toBe('✓');
+  expect(screen.getByText('已选 1 个作品，共 3 页')).toBeTruthy();
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: data.map(item => ({ ...item, archived: true })) }));
+  await waitFor(() => expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy());
+  expect((screen.getByRole('button', { name: '取消收藏' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it('全库标签重命名同步已选标签筛选，管理期间保留原关键词与收藏夹', async () => {
+  let data = mockInspirations.map(item => ({ ...item, tags: [...(item.tags || [])] }));
+  vi.mocked(db.bulkUpdateInspirations).mockImplementationOnce(async (ids, updates) => { data = data.map(item => ids.includes(item.id) ? { ...item, ...updates } : item); });
+  const onRefresh = vi.fn(async () => view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: data })));
+  const props = { currentUser: mockUser, inspirationsData: data, onRefresh, notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  const tagInput = within(filter).getByRole('combobox', { name: '标签' });
+  fireEvent.change(tagInput, { target: { value: '原创' } }); fireEvent.keyDown(tagInput, { key: 'Enter' });
+  fireEvent.click(within(filter).getByRole('button', { name: '查看 1 条结果' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  const manager = screen.getByRole('dialog', { name: '管理标签' });
+  fireEvent.click(within(manager).getByRole('button', { name: '重命名标签：原创' }));
+  fireEvent.change(within(manager).getByRole('combobox', { name: '标签名称' }), { target: { value: '我的标签' } });
+  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+  await waitFor(() => expect(within(view.container.querySelector('header')!).getByRole('button', { name: '取消筛选：#我的标签' })).toBeTruthy());
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  expect(screen.getByText('已整理角色图')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');
 });
