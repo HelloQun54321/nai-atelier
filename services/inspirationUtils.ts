@@ -10,6 +10,23 @@ export const normalizeInspirationTags = (tags: string[]) => Array.from(new Set(
   tags.map(tag => tag.trim().replace(/^#/, '')).filter(Boolean)
 )).slice(0, 80);
 
+// 独立标签目录不受单张图片的 80 个标签上限约束。
+export const normalizeCollectionTagNames = (value: unknown): string[] => Array.isArray(value)
+  ? [...new Set(value.filter((tag): tag is string => typeof tag === 'string').map(tag => tag.trim().replace(/^#/, '')).filter(Boolean))] : [];
+
+export const COLLECTION_SORT_LABELS = { newest: '最新收藏', oldest: '最早收藏', name: '名称 A → Z', nameDesc: '名称 Z → A' } as const;
+export type CollectionSort = keyof typeof COLLECTION_SORT_LABELS;
+
+export const sortCollectionGroups = (groups: Inspiration[][], sort: CollectionSort): Inspiration[][] => {
+  const time = (group: Inspiration[]) => Math.max(...group.map(item => item.createdAt));
+  return [...groups].sort((a, b) => {
+    const order = sort === 'name' || sort === 'nameDesc'
+      ? a[0].title.replace(/ · \d+$/, '').localeCompare(b[0].title.replace(/ · \d+$/, ''), undefined, { numeric: true }) * (sort === 'nameDesc' ? -1 : 1)
+      : (time(a) - time(b)) * (sort === 'newest' ? -1 : 1);
+    return order || collectionGroupKey(a[0]).localeCompare(collectionGroupKey(b[0]));
+  });
+};
+
 const RECENT_FOLDERS_KEY = 'nai-collection-recent-folders';
 export const getRecentCollectionFolders = (): string[] => {
   try {

@@ -6,6 +6,7 @@ import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema,
 import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
+import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
 // 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
@@ -691,6 +692,22 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
   }
 
   // Inspiration boards and curated inspiration library
+  // 未使用的标签落既有 settings 表，读取不创建记录，也不改图片或数据库结构。
+  if (path === '/api/collection-tags') {
+    const key = `collection_tags_v1:${currentUser.id}`;
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      return json({ tags: normalizeCollectionTagNames(parseStoredJson(row?.value, [])) });
+    }
+    if (method !== 'PUT') return error('Method not allowed', 405);
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    const body = await request.json().catch(() => null) as { tags?: unknown } | null;
+    if (!Array.isArray(body?.tags) || body.tags.length > 1000 || body.tags.some(tag => typeof tag !== 'string' || tag.length > 200)) return error('标签目录无效', 400);
+    const tags = normalizeCollectionTagNames(body.tags);
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, JSON.stringify(tags)).run();
+    return json({ tags });
+  }
+
   if (path.startsWith('/api/inspiration-boards') || path.startsWith('/api/inspirations')) {
     await ensureInspirationSchema(db);
   }

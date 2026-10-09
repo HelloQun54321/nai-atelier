@@ -2,6 +2,7 @@
 import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
 import { normalizeChainTags } from './chainTags';
+import { normalizeCollectionTagNames } from './inspirationUtils';
 import { loadCollection, updateCollection, removeCollection, markCollectionUsed } from './collectionFavorites';
 
 /**
@@ -92,6 +93,18 @@ class DBService {
   }
 
   // --- Inspirations ---
+  async getCollectionTagNames(): Promise<string[]> {
+    const result = await api.get('/collection-tags');
+    if (!Array.isArray(result?.tags) || result.tags.some((tag: unknown) => typeof tag !== 'string')) throw new Error('标签目录响应无效');
+    return normalizeCollectionTagNames(result.tags);
+  }
+
+  async saveCollectionTagNames(tags: string[]): Promise<string[]> {
+    const result = await api.put('/collection-tags', { tags: normalizeCollectionTagNames(tags) });
+    if (!Array.isArray(result?.tags) || result.tags.some((tag: unknown) => typeof tag !== 'string')) throw new Error('标签目录响应无效');
+    return normalizeCollectionTagNames(result.tags);
+  }
+
   async getAllInspirations(user?: User): Promise<Inspiration[]> {
     return user ? loadCollection(user) : api.get('/inspirations');
   }

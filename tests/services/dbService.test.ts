@@ -12,6 +12,18 @@ vi.mock('../../services/api', () => ({ api: apiMock }));
 
 import { db } from '../../services/dbService';
 
+it('收藏独立标签使用同一持久接口，规范化候选，不接受无效响应或吞掉保存失败', async () => {
+  apiMock.get.mockResolvedValue({ tags: [' #构图 ', '构图', '光影'] });
+  expect(await db.getCollectionTagNames()).toEqual(['构图', '光影']);
+  expect(apiMock.get).toHaveBeenLastCalledWith('/collection-tags');
+  apiMock.put.mockResolvedValue({ tags: ['构图'] });
+  expect(await db.saveCollectionTagNames([' #构图 ', '构图'])).toEqual(['构图']);
+  expect(apiMock.put).toHaveBeenLastCalledWith('/collection-tags', { tags: ['构图'] });
+  apiMock.get.mockResolvedValue({}); await expect(db.getCollectionTagNames()).rejects.toThrow('标签目录响应无效');
+  apiMock.put.mockResolvedValue({ tags: [9] }); await expect(db.saveCollectionTagNames(['夜景'])).rejects.toThrow('标签目录响应无效');
+  apiMock.put.mockRejectedValue(new Error('合成保存失败')); await expect(db.saveCollectionTagNames(['夜景'])).rejects.toThrow('合成保存失败');
+});
+
 const makeChain = (overrides: Partial<PromptChain> = {}): PromptChain => ({
   id: 'c1',
   name: '测试串',

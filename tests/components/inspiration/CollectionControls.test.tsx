@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CollectionFolderSelect, CollectionTagInput } from '../../../components/inspiration/CollectionControls';
 import { db } from '../../../services/dbService';
+import { ToolbarPopover } from '../../../components/ToolbarPopover';
 import { getRecentCollectionFolders, rememberCollectionFolder } from '../../../services/inspirationUtils';
 
 const folders = ['one', 'two', 'three'].map(id => ({ id, name: id, userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }));
 vi.mock('../../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn() } }));
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); vi.mocked(db.getInspirationBoards).mockResolvedValue(folders); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it('标签候选包含冷门标签，逗号补全保留之前的标签，不重复推荐已输入项', () => {
   const suggestions = Array.from({ length: 100 }, (_, index) => `tag-${index}`);
@@ -56,4 +57,41 @@ it('最近使用去重且有界，损坏的偏好不会影响收藏', () => {
   rememberCollectionFolder('4'); rememberCollectionFolder('');
   expect(getRecentCollectionFolders()).toEqual(['4', '7', '6', '5', '3']);
   localStorage.setItem('nai-collection-recent-folders', 'broken'); expect(getRecentCollectionFolders()).toEqual([]);
+});
+
+it.each([390, 1280])('宽度 %s：紧凑标签选择器可搜索、点选，保留逗号前内容，不在打开时触发失焦保存', width => {
+  vi.stubGlobal('innerWidth', width);
+  const onPick = vi.fn(), onBlur = vi.fn();
+  render(<CollectionTagInput aria-label="标签" value="构图， " suggestions={['构图', '光影', '夜景']} onPick={onPick} onBlur={onBlur} onChange={vi.fn()} className="h-10 w-44" />);
+  const input = screen.getByRole('combobox', { name: '标签' });
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.blur(input);
+  expect(onBlur).not.toHaveBeenCalled();
+  const panel = screen.getByRole('dialog', { name: '选择已有标签' });
+  expect(within(panel).queryByRole('button', { name: '#构图' })).toBeNull();
+  fireEvent.change(within(panel).getByRole('searchbox', { name: '搜索标签' }), { target: { value: '夜' } });
+  expect(within(panel).queryByRole('button', { name: '#光影' })).toBeNull();
+  fireEvent.click(within(panel).getByRole('button', { name: '#夜景' }));
+  expect(onPick).toHaveBeenCalledWith('构图， 夜景');
+  expect(screen.queryByRole('dialog', { name: '选择已有标签' })).toBeNull();
+  fireEvent.blur(input); expect(onBlur).toHaveBeenCalledOnce();
+});
+
+it('从筛选面板打开标签选择器，Tab 到箭头不提前保存，Esc 只关闭最上层并归还焦点', () => {
+  vi.stubGlobal('innerWidth', 1280);
+  const onBlur = vi.fn();
+  render(<ToolbarPopover title="外层筛选"><CollectionTagInput aria-label="标签" value="未完成" suggestions={['光影']} onPick={vi.fn()} onBlur={onBlur} onChange={vi.fn()} /></ToolbarPopover>);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const input = screen.getByRole('combobox', { name: '标签' });
+  const trigger = screen.getByRole('button', { name: '选择已有标签' });
+  fireEvent.blur(input, { relatedTarget: trigger });
+  expect(onBlur).not.toHaveBeenCalled();
+  trigger.focus(); fireEvent.click(trigger);
+  expect(screen.getByRole('dialog', { name: '选择已有标签' })).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: '选择已有标签' })).toBeNull();
+  expect(screen.getByRole('dialog', { name: '外层筛选' })).toBeTruthy();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: '外层筛选' })).toBeNull();
 });

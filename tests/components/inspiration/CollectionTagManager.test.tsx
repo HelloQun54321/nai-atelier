@@ -16,19 +16,24 @@ const fixture = (): Inspiration[] => [
   { id: 'readonly', userId: 'another', title: '只读', imageUrl: '/readonly.png', prompt: '', tags: ['只读标签', '逆光'], createdAt: 4 },
 ];
 let stored: Inspiration[];
+let tagNames: string[];
+let saveTagNames: ReturnType<typeof vi.fn>;
 const save = async (ids: string[], updates: Partial<Inspiration>) => { stored = stored.map(item => ids.includes(item.id) ? { ...item, ...updates } : item); };
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear();
   mocks.confirm.mockResolvedValue(true); mocks.save.mockImplementation(save);
 });
 afterEach(() => cleanup());
-const setup = (data = fixture(), currentUser = user) => {
+const setup = (data = fixture(), currentUser = user, catalog: string[] | null = []) => {
+  tagNames = catalog || [];
   stored = data.map(item => ({ ...item, tags: [...(item.tags || [])] }));
   const onClose = vi.fn(), notify = vi.fn(), onTagChanged = vi.fn();
-  const onRefresh = vi.fn(async () => view.rerender(<CollectionTagManager {...props} items={[...stored]} />));
-  const props = { items: stored, currentUser, onClose, notify, onTagChanged, onRefresh };
+  const onRefresh = vi.fn(async (): Promise<void> => { view.rerender(<CollectionTagManager {...props} items={[...stored]} tagNames={tagNames} />); });
+  saveTagNames = vi.fn(async (tags: string[]): Promise<void> => { tagNames = [...new Set(tags)]; await onRefresh(); });
+  const onReloadTagNames = vi.fn(async (): Promise<void> => {});
+  const props = { items: stored, tagNames: catalog, onSaveTagNames: saveTagNames, onReloadTagNames, currentUser, onClose, notify, onTagChanged, onRefresh };
   const view = render(<CollectionTagManager {...props} />);
-  return { ...view, onRefresh, onClose, notify, onTagChanged };
+  return { ...view, onRefresh, onClose, notify, onTagChanged, onReloadTagNames };
 };
 const rename = (from: string, to: string) => {
   fireEvent.click(screen.getByRole('button', { name: '重命名标签：' + from }));
@@ -119,4 +124,48 @@ it('相同标签组合复用一次批量保存，由共用服务处理接口批�
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   expect(mocks.save.mock.calls[0][0]).toHaveLength(601);
   expect(mocks.save.mock.calls[0][1]).toEqual({ tags: ['原创'] });
+});
+
+it('创建独立标签显示 0 页，规范化名称、拒绝同名，保留未成功输入，不给图片自动打标签', async () => {
+  const { notify, onReloadTagNames } = setup();
+  const input = screen.getByRole('textbox', { name: '新标签名称' });
+  expect((screen.getByRole('button', { name: '添加标签' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(input, { target: { value: ' #构图 ' } });
+  fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  await waitFor(() => expect(screen.getByText('#构图').closest('li')!.textContent).toContain('0页'));
+  expect(tagNames).toEqual(['构图']); expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.confirm).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: ' #构图 ' } }); fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('标签已存在', 'error'));
+  expect(saveTagNames).toHaveBeenCalledOnce();
+  saveTagNames.mockRejectedValueOnce(new Error('合成目录写入失败'));
+  fireEvent.change(input, { target: { value: '夜景' } }); fireEvent.click(screen.getByRole('button', { name: '添加标签' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成目录写入失败', 'error'));
+  expect(onReloadTagNames).toHaveBeenCalledOnce(); expect((input as HTMLInputElement).value).toBe('夜景');
+  expect(screen.queryByText('#夜景')).toBeNull();
+});
+
+it('0 页标签可以改名、显式合并和移除，已使用的目录标签同时更新图片，重开保留结果', async () => {
+  const { unmount, onTagChanged } = setup(fixture(), user, ['构图', '光影', '逆光']);
+  rename('构图', '光影');
+  await waitFor(() => expect(onTagChanged).toHaveBeenCalledWith('构图', '光影'));
+  expect(tagNames).toEqual(['光影', '逆光']); expect(mocks.save).not.toHaveBeenCalled();
+  expect(mocks.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: '将「构图」合并到「光影」？', message: expect.stringContaining('0 页') }));
+  rename('逆光', '日落');
+  await waitFor(() => expect(tagNames).toEqual(['光影', '日落']));
+  expect(stored[0].tags).toEqual(['日落', '原创']);
+  fireEvent.click(screen.getByRole('button', { name: '移除标签：光影' }));
+  await waitFor(() => expect(tagNames).toEqual(['日落']));
+  unmount(); setup(stored, user, tagNames);
+  expect(screen.getByText('#日落')).toBeTruthy(); expect(screen.queryByText('#光影')).toBeNull();
+});
+
+it('目录未读取成功或访客时不可创建，读取失败提供原位重试，不覆盖未知目录', async () => {
+  const { onReloadTagNames } = setup(fixture(), user, null);
+  expect((screen.getByRole('textbox', { name: '新标签名称' }) as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '重命名标签：逆光' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重新加载标签' }));
+  expect(onReloadTagNames).toHaveBeenCalledOnce(); expect(saveTagNames).not.toHaveBeenCalled();
+  cleanup(); setup(fixture(), { ...user, role: 'guest' }, ['构图']);
+  expect((screen.getByRole('button', { name: '添加标签' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '移除标签：构图' }) as HTMLButtonElement).disabled).toBe(true);
 });

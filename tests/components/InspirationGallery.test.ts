@@ -26,6 +26,8 @@ vi.mock('../../services/dbService', () => ({
       { id: 'board-1', name: '角色设计', color: '#6366f1', sortOrder: 0, userId: 'user-1', createdAt: 1, updatedAt: 1 },
     ]),
     getAllInspirations: vi.fn(async () => []),
+    getCollectionTagNames: vi.fn(async () => []),
+    saveCollectionTagNames: vi.fn(async (tags: string[]) => tags),
     updateInspiration: vi.fn(),
     updateInspirationBoard: vi.fn(),
     deleteInspirationBoard: vi.fn(),
@@ -60,6 +62,8 @@ beforeEach(() => {
     unobserve() {} disconnect() {}
   });
   vi.clearAllMocks(); localStorage.clear(); confirmAction.mockResolvedValue(true);
+  vi.mocked(db.getCollectionTagNames).mockReset().mockResolvedValue([]);
+  vi.mocked(db.saveCollectionTagNames).mockReset().mockImplementation(async tags => tags);
   vi.mocked(db.getInspirationBoards).mockReset().mockResolvedValue([{ id: 'board-1', name: '角色设计', color: '#6366f1', sortOrder: 0, userId: 'user-1', createdAt: 1, updatedAt: 1 }]);
   vi.mocked(db.updateInspirationBoard).mockReset().mockResolvedValue(undefined);
   vi.stubGlobal('PointerEvent', class extends MouseEvent {
@@ -81,6 +85,95 @@ const mockUser: User = {
   role: 'user',
   createdAt: 1,
 };
+
+it.each(['masonry', 'portrait', 'square'])('%s 布局按作品组排序，保持首图页码与组展开，记住排序且不改资料', async layout => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 1, desktopColumns: 1 }));
+  const make = (id: string, title: string, createdAt: number): Inspiration => ({ id, userId: mockUser.id, title, createdAt, prompt: '', imageUrl: '/' + id });
+  const data = [make('single', '作品10', 20), { ...make('p0', '作品2 · 1', 1), sourceType: 'pixiv' as const, sourceId: 'group', analysis: { externalSourcePage: 0 } }, { ...make('p1', '作品2 · 2', 30), sourceType: 'pixiv' as const, sourceId: 'group', analysis: { externalSourcePage: 1 } }, make('old', '作品1', 10)];
+  const props = { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  const order = () => [...view.container.querySelectorAll('article h3')].map(element => element.textContent);
+  expect(order()).toEqual(['作品2', '作品10', '作品1']);
+  const sorter = screen.getByRole('combobox', { name: '收藏排序' });
+  expect(sorter.parentElement!.className).toContain('hidden w-36 md:inline-flex');
+  fireEvent.change(sorter, { target: { value: 'oldest' } }); expect(order()).toEqual(['作品1', '作品10', '作品2']);
+  fireEvent.change(sorter, { target: { value: 'name' } }); expect(order()).toEqual(['作品1', '作品2', '作品10']);
+  const card = within(view.container).getByText('作品2').closest('article')!;
+  expect(within(card).getByRole('img').getAttribute('src')).toBe('/p0');
+  fireEvent.click(within(card).getByRole('img').closest('button')!);
+  const detail = screen.getByRole('complementary', { name: '作品2' });
+  expect(within(detail).getAllByRole('img').map(image => image.getAttribute('src'))).toEqual(['/p0', '/p1']);
+  fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
+  fireEvent.change(sorter, { target: { value: 'nameDesc' } }); expect(order()).toEqual(['作品10', '作品2', '作品1']);
+  enterCollectionSelection(); expect(screen.queryByRole('combobox', { name: '收藏排序' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
+  view.unmount(); render(React.createElement(InspirationGallery, props));
+  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('nameDesc');
+  expect(db.updateInspiration).not.toHaveBeenCalled(); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+});
+
+it('手机排序收在现有筛选面板，重置筛选与跨分类不重置排序，坏偏好回退默认', async () => {
+  vi.stubGlobal('innerWidth', 390); localStorage.setItem('nai-collection-sort', 'constructor');
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  expect((screen.getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('newest');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const panel = screen.getByRole('dialog', { name: '筛选收藏' });
+  fireEvent.change(within(panel).getByRole('combobox', { name: '收藏排序' }), { target: { value: 'oldest' } });
+  fireEvent.click(within(panel).getByRole('button', { name: '重置筛选' }));
+  expect((within(panel).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('oldest');
+  fireEvent.click(within(panel).getByRole('button', { name: /^生成历史/ }));
+  expect((within(panel).getByRole('combobox', { name: '收藏排序' }) as HTMLSelectElement).value).toBe('oldest');
+  expect(localStorage.getItem('nai-collection-sort')).toBe('oldest');
+});
+
+it('新建的 0 页标签立即进入详情、批量添加及手动收录选择器，重开仍保留，加载失败不覆盖目录', async () => {
+  let catalog: string[] = [];
+  vi.mocked(db.getCollectionTagNames).mockImplementation(async () => catalog);
+  vi.mocked(db.saveCollectionTagNames).mockImplementation(async tags => { catalog = [...tags]; return catalog; });
+  const notify = vi.fn();
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify };
+  const view = render(React.createElement(InspirationGallery, props));
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  const manager = screen.getByRole('dialog', { name: '管理标签' });
+  await waitFor(() => expect((within(manager).getByRole('textbox', { name: '新标签名称' }) as HTMLInputElement).disabled).toBe(false));
+  fireEvent.change(within(manager).getByRole('textbox', { name: '新标签名称' }), { target: { value: '构图分类' } });
+  fireEvent.click(within(manager).getByRole('button', { name: '添加标签' }));
+  await within(manager).findByText('#构图分类');
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(db.updateInspiration).not.toHaveBeenCalled();
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  fireEvent.click(within(view.container).getByText(mockInspirations[0].title).closest('article')!.querySelector('img')!.closest('button')!);
+  const detail = document.querySelector<HTMLElement>('[data-agent-page-scope="detail"]')!;
+  fireEvent.click(within(detail).getByRole('button', { name: '添加标签' }));
+  fireEvent.click(within(detail).getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '选择已有标签' })).getByRole('button', { name: '#构图分类' }));
+  await waitFor(() => expect(db.updateInspiration).toHaveBeenCalledWith(mockInspirations[0].id, { tags: [...mockInspirations[0].tags!.filter(tag => tag !== '生成历史'), '构图分类'] }));
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  enterCollectionSelection();
+  fireEvent.click(within(view.container).getAllByRole('button', { name: '选择收藏' })[0]);
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '选择已有标签' })).getByRole('button', { name: '#构图分类' }));
+  expect((screen.getByRole('combobox', { name: '添加标签' }) as HTMLInputElement).value).toBe('构图分类');
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  const upload = screen.getByRole('dialog', { name: '加入收藏库' });
+  fireEvent.click(within(upload).getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '选择已有标签' })).getByRole('button', { name: '#构图分类' }));
+  expect((upload.querySelector('input[list]') as HTMLInputElement).value).toBe('构图分类');
+  view.unmount(); render(React.createElement(InspirationGallery, props));
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  await screen.findByText('#构图分类');
+  cleanup(); vi.mocked(db.getCollectionTagNames).mockRejectedValueOnce(new Error('合成加载失败'));
+  render(React.createElement(InspirationGallery, props));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成加载失败', 'error'));
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  expect((screen.getByRole('button', { name: '添加标签' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重新加载标签' }));
+  await screen.findByText('#构图分类'); expect(db.saveCollectionTagNames).toHaveBeenCalledOnce();
+});
 const enterCollectionSelection = () => {
   fireEvent.click(screen.getByRole('button', { name: '管理' }));
   fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '批量选择图片' }));

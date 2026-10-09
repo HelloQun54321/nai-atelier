@@ -1,10 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Filter } from 'lucide-react';
 import { ToolbarButton } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { MobileBottomSheet } from './MobileUI';
-import { useModalA11y } from './useModalA11y';
+import { isTopmostModal, useModalA11y } from './useModalA11y';
 
 export const TOOLBAR_FIELD_CLASS = 'mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-normal text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
 export const TOOLBAR_MENU_CLASS = 'mobile-touch flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:flex-none';
@@ -16,9 +16,16 @@ export function getToolbarPopoverPosition(anchor: { left: number; width: number;
   return { left, top, width, maxHeight: Math.max(0, viewportHeight - top - 12) };
 }
 
-const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; children: React.ReactNode }> = ({ title, position, children }) => {
+const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; onClose: () => void; children: React.ReactNode }> = ({ title, position, onClose, children }) => {
   useLanguage();
   const panelRef = useModalA11y<HTMLDivElement>(true);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isTopmostModal(panelRef.current)) { event.preventDefault(); event.stopPropagation(); onClose(); }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose, panelRef]);
   return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className="appearance-panel fixed z-[1801] -translate-x-1/2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{children}</div>;
 };
 
@@ -40,11 +47,9 @@ export const AnchoredToolbarPopover: React.FC<{
       const next = getToolbarPopoverPosition(anchor.getBoundingClientRect(), width, window.innerWidth, window.innerHeight);
       setPosition(previous => Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
-    window.addEventListener('keydown', onKey, true);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
     if (anchorRef.current) {
       observer?.observe(anchorRef.current);
@@ -54,12 +59,11 @@ export const AnchoredToolbarPopover: React.FC<{
       observer?.disconnect();
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
-      window.removeEventListener('keydown', onKey, true);
     };
   }, [anchorRef, width, onClose]);
   return <ImagePreviewPortal>
     <div className="fixed inset-0 z-[1800]" onClick={onClose} />
-    <PopoverSurface title={title} position={position}>{children}</PopoverSurface>
+    <PopoverSurface title={title} position={position} onClose={onClose}>{children}</PopoverSurface>
   </ImagePreviewPortal>;
 };
 

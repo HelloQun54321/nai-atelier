@@ -5,6 +5,8 @@ import {
   sourceLabel,
   suggestInspirationTags,
   inspirationSimilarity,
+  normalizeCollectionTagNames,
+  sortCollectionGroups,
 } from '../../services/inspirationUtils';
 
 describe('normalizeInspirationTags', () => {
@@ -20,6 +22,26 @@ describe('normalizeInspirationTags', () => {
     expect(normalizeInspirationTags(tags)).toHaveLength(80);
     expect(normalizeInspirationTags(tags)[0]).toBe('tag0');
   });
+});
+
+it('独立标签目录校验旧值并去重，不被单图 80 标签限制截断', () => {
+  expect(normalizeCollectionTagNames(null)).toEqual([]);
+  expect(normalizeCollectionTagNames([' #构图 ', '构图', 9, '', '光影'])).toEqual(['构图', '光影']);
+  expect(normalizeCollectionTagNames(Array.from({ length: 100 }, (_, index) => 'tag-' + index))).toHaveLength(100);
+});
+
+it('排序按作品组最新收藏时间或名称，页码与原数组保持，时间同值稳定', () => {
+  const make = (id: string, title: string, createdAt: number) => ({ id, title, createdAt, userId: 'owner', prompt: '', imageUrl: '/' + id });
+  const group = [make('p0', '作品2 · 1', 1), make('p1', '作品2 · 2', 30)];
+  const groups = [[make('single', '作品10', 20)], group, [make('old', '作品1', 10)]];
+  expect(sortCollectionGroups(groups, 'newest').map(group => group[0].id)).toEqual(['p0', 'single', 'old']);
+  expect(sortCollectionGroups(groups, 'oldest').map(group => group[0].id)).toEqual(['old', 'single', 'p0']);
+  expect(sortCollectionGroups(groups, 'name').map(group => group[0].id)).toEqual(['old', 'p0', 'single']);
+  expect(sortCollectionGroups(groups, 'nameDesc').map(group => group[0].id)).toEqual(['single', 'p0', 'old']);
+  expect(group.map(item => item.id)).toEqual(['p0', 'p1']);
+  expect(groups[0][0].id).toBe('single');
+  const tied = [[make('b', '同名', 2)], [make('a', '同名', 2)]];
+  expect(sortCollectionGroups(tied, 'newest').map(group => group[0].id)).toEqual(['a', 'b']);
 });
 
 describe('getCollectionTags', () => {

@@ -30,6 +30,7 @@ import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from '
 interface Props {
   item: Inspiration;
   items: Inspiration[];
+  tagNames?: string[];
   labModuleOrder?: LabPageModuleId[];
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
@@ -41,6 +42,7 @@ interface Props {
 export const InspirationDetail: React.FC<Props> = ({
   item,
   items,
+  tagNames = [],
   labModuleOrder = DEFAULT_LAB_MODULE_ORDER,
   currentUser,
   notify,
@@ -59,7 +61,7 @@ export const InspirationDetail: React.FC<Props> = ({
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const editable = canEditItem(item, currentUser);
-  const tagSuggestions = useMemo(() => Array.from(new Set(items.flatMap(getCollectionTags))).sort((a, b) => a.localeCompare(b)), [items]);
+  const tagSuggestions = useMemo(() => Array.from(new Set([...tagNames, ...items.flatMap(getCollectionTags)])).filter(tag => tag !== sourceLabel(item.sourceType)).sort((a, b) => a.localeCompare(b)), [items, tagNames, item.sourceType]);
   const tags = getCollectionTags(draft);
   const reverseTags = readExternalImageTags(draft);
   const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
@@ -355,6 +357,8 @@ export const InspirationDetail: React.FC<Props> = ({
                 {isAddingTag ? (
                   <CollectionTagInput
                     suggestions={tagSuggestions.filter(tag => !tags.includes(tag))}
+                    onPick={value => { handleAddTag(value); setIsAddingTag(false); }}
+                    disabled={Boolean(busy)}
                     autoFocus
                     type="text"
                     placeholder={t("输入标签回车保存...")}
@@ -373,7 +377,7 @@ export const InspirationDetail: React.FC<Props> = ({
                       if (newTagInput.trim()) handleAddTag(newTagInput);
                       setIsAddingTag(false);
                     }}
-                    className="h-6 w-36 rounded-lg border border-indigo-400 bg-white px-2 text-xs outline-none dark:bg-gray-900"
+                    className="mobile-touch h-10 w-44 rounded-lg border border-indigo-400 bg-white px-2 text-xs outline-none dark:bg-gray-900"
                   />
                 ) : editable && (
                   <button
