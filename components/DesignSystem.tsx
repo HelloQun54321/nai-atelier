@@ -63,9 +63,12 @@ export const WorkspaceToolbar: React.FC<{
 
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
-}> = ({ containerClassName = '', className = '', type = 'search', ...props }) => (
-  <label className={`relative block min-w-0 flex-1 md:max-w-md ${containerClassName}`}>
+}> = ({ containerClassName = '', className = '', type = 'search', children, ...props }) => {
+  const hasLeadingContent = children !== undefined;
+  const Container = hasLeadingContent ? 'div' : 'label';
+  return <Container className={`relative min-w-0 flex-1 md:max-w-md ${hasLeadingContent ? 'flex items-center rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900' : 'block'} ${containerClassName}`}>
     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+    {children}
     <input
       type={type}
       autoComplete="off"
@@ -73,10 +76,10 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
       data-1p-ignore="true"
       data-form-type="other"
       {...props}
-      className={`h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:text-gray-100 dark:focus:border-indigo-500/80 dark:focus:bg-gray-900 ${className}`}
+      className={`h-10 text-sm text-gray-900 outline-none transition dark:text-gray-100 ${hasLeadingContent ? 'min-w-0 flex-1 border-0 bg-transparent px-2 dark:bg-transparent' : 'w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus:border-indigo-500/80 dark:focus:bg-gray-900'} ${className}`}
     />
-  </label>
-);
+  </Container>;
+};
 
 const ICON_CONTROL_CLASS = 'inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0';
 const ICON_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';

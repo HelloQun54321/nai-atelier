@@ -488,6 +488,48 @@ it.each([390, 1280])('宽度 %s 来源和收藏夹直接切换，多个标签仍
   expect(screen.queryByRole('button', { name: '取消筛选：来源：Pixiv' })).toBeNull();
 });
 
+it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组合筛选，取消最后一个标签仍保留输入与焦点', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const items = [
+    { ...mockInspirations[0], id: 'match', title: '匹配晚霞', tags: ['逆光', '雨天'] },
+    { ...mockInspirations[0], id: 'partial', title: '同名晚霞', tags: ['逆光'] },
+    { ...mockInspirations[0], id: 'other', title: '匹配夜景', tags: ['逆光', '雨天'] },
+  ];
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: items, onRefresh: vi.fn(), notify: vi.fn() }));
+  const search = screen.getByRole('searchbox', { name: '搜索标题、提示词或标签…' }) as HTMLInputElement;
+  const field = search.parentElement!;
+  expect(field.closest('header')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  const input = within(filter).getByRole('combobox', { name: '标签' });
+  for (const tag of ['逆光', '雨天']) { fireEvent.change(input, { target: { value: tag } }); fireEvent.keyDown(input, { key: 'Enter' }); }
+  fireEvent.click(within(filter).getByRole('button', { name: '查看 2 条结果' }));
+  expect(search.parentElement).toBe(field);
+  const tags = within(field).getByRole('group', { name: '标签（同时满足）' });
+  expect(within(tags).getAllByRole('button')).toHaveLength(2);
+  expect(tags.classList.contains('max-w-[50%]')).toBe(true);
+  expect(tags.classList.contains('overflow-x-auto')).toBe(true);
+  expect(tags.classList.contains('flex-wrap')).toBe(false);
+  expect(screen.queryByRole('group', { name: '当前筛选' })).toBeNull();
+  expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
+  expect(container.querySelectorAll('article')).toHaveLength(2);
+  search.focus(); fireEvent.change(search, { target: { value: '晚霞' } });
+  await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(1));
+  expect(screen.getByText('匹配晚霞')).toBeTruthy();
+  fireEvent.click(within(tags).getByRole('button', { name: '取消筛选：#雨天' }));
+  expect(container.querySelectorAll('article')).toHaveLength(2);
+  expect(search.value).toBe('晚霞');
+  expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
+  fireEvent.click(within(tags).getByRole('button', { name: '取消筛选：#逆光' }));
+  expect(screen.getByRole('searchbox')).toBe(search);
+  expect(search.parentElement).toBe(field); expect(document.activeElement).toBe(search);
+  expect(search.value).toBe('晚霞');
+  expect(within(field).queryByRole('group')).toBeNull();
+  expect(container.querySelectorAll('article')).toHaveLength(2);
+  fireEvent.change(search, { target: { value: '' } });
+  await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(3));
+});
+
 const dragData = () => ({ setData: vi.fn(), effectAllowed: 'all', dropEffect: 'none' }) as unknown as DataTransfer;
 it('拖拽选中的多张作品到收藏夹，一次移动；可拖回未整理，同夹不发请求，外部拖入被忽略', async () => {
   const onRefresh = vi.fn(async () => {});

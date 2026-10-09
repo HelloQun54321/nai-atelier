@@ -255,7 +255,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     const tag = tagQuery.trim();
     if (allTags.some(([existing]) => existing === tag)) { setTagFilter(previous => Array.from(new Set([...previous, tag]))); setTagQuery(''); }
   };
-  const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
+  const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
   const renderBoardActions = (board: InspirationBoard) => <div data-card-action="true" className="hover-reveal-md absolute right-1 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-900">
     <button type="button" aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
     <button type="button" aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
@@ -312,19 +312,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!" />
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
+        {tagFilter.length > 0 && <div role="group" aria-label={t('标签（同时满足）')} className="flex min-w-0 max-w-[50%] flex-none items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
+        </div>}
+      </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
       </ToolbarPopover>
       <ToolbarButton aria-label={selectedIds.size ? t("取消全部选择") : t("全选筛选结果")} onClick={() => setSelectedIds(selectedIds.size ? new Set() : new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3" tone={selectedIds.size ? 'primary' : 'neutral'}><CheckSquare /><span className="hidden sm:inline">{selectedIds.size ? t("取消已选 ") + selectedIds.size : t("全选筛选结果")}</span></ToolbarButton>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
     </WorkspaceToolbar>
-    {(collection !== 'all' || boardId || sourceFilter || tagFilter.length > 0) && <div role="group" aria-label={t('当前筛选')} className="flex flex-none flex-wrap gap-1 border-b border-gray-200 px-3 py-1 dark:border-gray-800 md:px-5">
-      {collection !== 'all' && filterChip(t('未整理'), () => setCollection('all'))}
-      {boardId && filterChip(t('收藏夹：{0}', [boardNameById.get(boardId) || '']), () => setBoardId(''))}
-      {sourceFilter && filterChip(t('来源：{0}', [t(sourceLabel(sourceFilter))]), () => setSourceFilter(''))}
-      {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
-    </div>}
 
     <div className="flex min-h-0 flex-1">
       <aside className="hidden w-44 flex-none overflow-y-auto border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block">
