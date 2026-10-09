@@ -164,11 +164,12 @@ export const MediaCardShell: React.FC<React.HTMLAttributes<HTMLElement> & {
   as?: 'article' | 'div';
   selected?: boolean;
   pressReveal?: boolean;
-}> = ({ as = 'article', selected = false, pressReveal = false, className = '', children, ...props }) => {
+  pressDisabled?: boolean;
+}> = ({ as = 'article', selected = false, pressReveal = false, pressDisabled = false, className = '', children, ...props }) => {
   useLanguage();
   const Element = pressReveal ? PressRevealSurface : as;
   return (
-    <Element {...(pressReveal ? { as } : {})} className={`media-card overflow-hidden rounded-2xl border bg-white transition dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800/80 dark:hover:border-gray-700'} ${className}`} {...props}>
+    <Element {...(pressReveal ? { as, pressDisabled } : {})} className={`media-card overflow-hidden rounded-2xl border bg-white transition dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800/80 dark:hover:border-gray-700'} ${className}`} {...props}>
       {children}
     </Element>
   );

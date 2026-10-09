@@ -1,7 +1,7 @@
 import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckSquare, FolderPlus, GripVertical, Heart, Library, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { Check, CheckSquare, FolderPlus, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { api } from '../services/api';
 import { Inspiration, InspirationBoard, InspirationSourceType, NAIParams, PromptChain, User } from '../types';
@@ -10,7 +10,7 @@ import { createUuid } from '../services/id';
 import { collectionGroupKey, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
-import { ToolbarPopover } from './ToolbarPopover';
+import { TOOLBAR_MENU_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
@@ -65,6 +65,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const boardDragRef = useRef<{ id: string; pointerId: number; targetId: string } | null>(null);
   const [boardDrag, setBoardDrag] = useState<{ id: string; targetId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const deletingRef = useRef(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workGroup, setWorkGroup] = useState<string | null>(null);
   const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, workGroup, active);
@@ -251,6 +253,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const toggleSelected = (ids: string[]) => {
+    if (!selectionMode || busy) return;
     const editableIds = ids.filter(id => items.some(item => item.id === id && canEditItem(item, currentUser)));
     setSelectedIds(previous => {
       const next = new Set(previous); const remove = editableIds.every(id => next.has(id));
@@ -290,10 +293,18 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     catch (error: any) { notify(error.message || '标签添加失败', 'error'); }
     finally { setBusy(''); }
   };
-  const deleteSelected = async () => {
-    if (!selectedIds.size || !await confirmAction({ title: `取消 ${selectedIds.size} 张图片的收藏？`, message: '原图与已有分类信息会保留。', confirmLabel: '取消收藏', tone: 'danger' })) return;
-    setBusy('bulk'); try { await db.bulkDeleteInspirations(Array.from(selectedIds)); setSelectedIds(new Set()); await onRefresh(); notify('已取消选中收藏'); }
-    catch (error: any) { notify(error.message || '取消收藏失败', 'error'); } finally { setBusy(''); }
+  const deleteCollected = async (ids: string[]) => {
+    if (busy || deletingRef.current) return;
+    const editableIds = items.filter(item => ids.includes(item.id) && !item.archived && canEditItem(item, currentUser)).map(item => item.id);
+    if (!editableIds.length) return;
+    deletingRef.current = true;
+    try {
+      if (!await confirmAction({ title: '取消 ' + editableIds.length + ' 张图片的收藏？', message: '原图与已有分类信息会保留。', confirmLabel: '取消收藏', tone: 'danger' })) return;
+      setBusy('bulk'); await db.bulkDeleteInspirations(editableIds);
+      setSelectedIds(previous => new Set([...previous].filter(id => !editableIds.includes(id))));
+      await onRefresh(); notify('已取消收藏');
+    } catch (error: any) { notify(error.message || '取消收藏失败', 'error'); }
+    finally { deletingRef.current = false; setBusy(''); }
   };
 
   const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length;
@@ -365,7 +376,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     const isGroup = group.length > 1 || Boolean(item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv') && Number(item.analysis?.collectionGroupSize) > 1);
     const title = isGroup ? item.title.replace(/ · \d+$/, '') : item.title;
     const selected = ids.every(id => selectedIds.has(id));
-    return <MediaCardShell pressReveal style={{ contentVisibility: 'visible' }} key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || workGroup === collectionGroupKey(item)} className={`group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
+    return <MediaCardShell pressReveal pressDisabled={selectionMode} style={{ contentVisibility: 'visible' }} key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || workGroup === collectionGroupKey(item)} className={`group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
       draggable={canEditItem(item, currentUser) && !busy}
       onDragStart={event => {
         if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
@@ -374,25 +385,27 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
       }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
       <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
-        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} onClick={() => selectedIds.size ? toggleSelected(ids) : setWorkGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" /></button>
+        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : setWorkGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" /></button>
         <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-black/65 px-2 py-1 text-xs font-bold text-white">{t('{0}页', [group.length])}</span>
-        <button data-card-action="true" type="button" onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'hover-reveal-md border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>
-        <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${title || 'inspiration'}.png`} favorite={{ imageUrl: item.imageUrl, collectionId: item.id, ...(isGroup ? { sourceType: item.sourceType, sourceId: item.sourceId, groupSize: group.length, getGroup: async () => group.map(image => ({ ...image, collectionId: image.id })) } : {}) }} notify={notify} />
+        {selectionMode && canEditItem(item, currentUser) && <button data-card-action="true" type="button" aria-pressed={selected} disabled={Boolean(busy)} onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border backdrop-blur ${selected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/50 bg-black/35 text-white'}`} aria-label={t("选择收藏")}>{selected ? <Check className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}</button>}
+        {!selectionMode && canEditItem(item, currentUser) && <button data-card-action="true" type="button" aria-label={t("删除收藏")} title={t("删除")} disabled={Boolean(busy)} onClick={event => { event.stopPropagation(); void deleteCollected(ids); }} className="hover-reveal-md mobile-size-locked absolute left-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40 md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>}
+        {!selectionMode && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.imageUrl)} generationData={item.params ? { prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params } : undefined} filename={`${title || 'inspiration'}.png`} favorite={{ imageUrl: item.imageUrl, collectionId: item.id, ...(isGroup ? { sourceType: item.sourceType, sourceId: item.sourceId, groupSize: group.length, getGroup: async () => group.map(image => ({ ...image, collectionId: image.id })) } : {}) }} notify={notify} />}
       </div>
-      <button type="button" onClick={() => setWorkGroup(collectionGroupKey(item))} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{title}</h3></div>{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}</button>
+      <button type="button" disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : setWorkGroup(collectionGroupKey(item))} className="min-w-0 flex-1 p-3 text-left"><div className="flex items-start gap-2"><h3 data-safe-mode-title="true" className="min-w-0 flex-1 truncate text-sm font-black text-gray-950 dark:text-white">{title}</h3></div>{(item.tags || []).length > 0 && <div className="mt-2 flex gap-1 overflow-hidden">{item.tags?.slice(0, 3).map(tag => <span key={tag} className="max-w-24 truncate rounded-md bg-gray-100 px-1.5 py-0.5 text-mini font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">#{tag}</span>)}{(item.tags?.length || 0) > 3 && <span className="text-mini text-gray-400">+{(item.tags?.length || 0) - 3}</span>}</div>}</button>
     </MediaCardShell>;
   };
 
   return <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceToolbar>
-      {selectedIds.size > 0 ? <>
+      {selectionMode ? <>
         <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <b className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} 项", [selectedIds.size])}</b>
-          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy)} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="mobile-touch h-10 w-32 flex-none rounded-xl border border-gray-200 bg-white px-2 text-xs dark:border-gray-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
-          <div className="flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} disabled={Boolean(busy)} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
-          <ToolbarButton tone="danger" aria-label={t("取消收藏")} disabled={Boolean(busy)} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t("取消收藏")}</span></ToolbarButton>
+          <ToolbarButton aria-label={t("全选筛选结果")} disabled={Boolean(busy)} onClick={() => setSelectedIds(new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5"><CheckSquare /><span>{t("全选筛选结果")}</span></ToolbarButton>
+          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy) || !selectedIds.size} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="mobile-touch h-10 w-32 flex-none rounded-xl border border-gray-200 bg-white px-2 text-xs dark:border-gray-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
+          <div className="flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
+          <ToolbarButton tone="danger" aria-label={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t("取消收藏")}</span></ToolbarButton>
         </div>
-        <ToolbarButton aria-label={t("取消全部选择")} title={t("退出多选")} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
+        <ToolbarButton aria-label={t("取消全部选择")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
       <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
         {tagFilter.length > 0 && <div role="group" aria-label={t('标签（同时满足）')} className="flex min-w-0 max-w-[50%] flex-none items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -402,7 +415,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={512}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile)}<div className="flex items-center justify-between"><button type="button" onClick={() => { setTagFilter([]); setTagQuery(''); setSourceFilter(''); if (mobile) { setBoardId(''); setCollection('all'); } }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={close} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t("查看 {0} 条结果", [filtered.length])}</button></div></div>}
       </ToolbarPopover>
-      <ToolbarButton aria-label={t("全选筛选结果")} onClick={() => setSelectedIds(new Set(filtered.filter(item => canEditItem(item, currentUser)).map(item => item.id)))} className="mobile-touch !px-2.5 md:!px-3"><CheckSquare /><span className="hidden sm:inline">{t("全选筛选结果")}</span></ToolbarButton>
+      <ToolbarPopover label="管理" title={t("收藏管理")} icon={<ListChecks />} width={256}>
+        {close => <button type="button" disabled={Boolean(busy) || !filtered.some(item => canEditItem(item, currentUser))} onClick={() => { close(); if (workGroup) closeGroup(); setSelectedIds(new Set()); setSelectionMode(true); }} className={TOOLBAR_MENU_CLASS + ' disabled:opacity-40'}><ListChecks className="h-4 w-4" />{t("批量选择图片")}</button>}
+      </ToolbarPopover>
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} onClick={() => setUploadOpen(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
       </>}
     </WorkspaceToolbar>
