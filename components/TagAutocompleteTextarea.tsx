@@ -96,6 +96,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 }) => {
   useLanguage();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
   const blurTimerRef = useRef<number | null>(null);
@@ -105,6 +106,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
+  const [completionSource, setCompletionSource] = useState<'prompt' | 'tag'>('prompt');
   const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const [isLoading, setIsLoading] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -120,6 +122,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [, refreshHistory] = useState(0);
   const editable = !disabled && !readOnly;
   const listboxId = useId();
+  const closeSuggestions = useCallback(() => {
+    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+    if (searchTimerRef.current !== null) window.clearTimeout(searchTimerRef.current);
+    blurTimerRef.current = null;
+    searchTimerRef.current = null;
+    requestIdRef.current++;
+    setSuggestions([]);
+    setTarget(null);
+    setActiveIndex(-1);
+    setIsLoading(false);
+  }, []);
   const parsedTokens = useMemo(() => tagAssistEnabled ? parsePromptTags(value) : [], [tagAssistEnabled, value]);
   const promptTokens = useMemo(() => {
     if (neutralGroupsRef.current.value !== value || !neutralGroupsRef.current.groups.length) return parsedTokens;
@@ -149,8 +162,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setSelectedTagIds(new Set());
     setDeleteMode(false);
     setTagInput('');
+    closeSuggestions();
     refreshHistory(revision => revision + 1);
-  }, [value]);
+  }, [value, closeSuggestions]);
 
   const commitValue = (next: string, typing = false) => {
     if (!editable || next === value) return;
@@ -236,6 +250,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     const prefix = !value.trim() ? '' : /[,，|\n]\s*$/.test(value) ? value + (/\s$/.test(value) ? '' : ' ') : `${value.trimEnd()}, `;
     commitValue(prefix + addition);
     setTagInput('');
+    closeSuggestions();
     clearSelection();
     setDeleteMode(false);
   };
@@ -343,27 +358,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   useEffect(() => {
     if (tagAssistEnabled) return;
-    if (searchTimerRef.current !== null) {
-      window.clearTimeout(searchTimerRef.current);
-      searchTimerRef.current = null;
-    }
-    requestIdRef.current++;
-    setSuggestions([]);
-    setTarget(null);
-    setActiveIndex(-1);
-    setIsLoading(false);
+    closeSuggestions();
     setTranslations([]);
     setTranslationError('');
     setDeleteMode(false);
     clearSelection();
-  }, [tagAssistEnabled]);
+  }, [tagAssistEnabled, closeSuggestions]);
 
-  const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0) => {
+  useEffect(() => {
+    if (!editable || completionSource === 'tag' && (!showTranslations || deleteMode)) closeSuggestions();
+  }, [editable, completionSource, showTranslations, deleteMode, closeSuggestions]);
+
+  const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0, source: 'prompt' | 'tag' = 'prompt') => {
     if (!tagAssistEnabled || !editable || composingRef.current) return;
-    if (searchTimerRef.current !== null) {
-      window.clearTimeout(searchTimerRef.current);
-      searchTimerRef.current = null;
-    }
+    closeSuggestions();
+    setCompletionSource(source);
     const nextTarget = findCompletionTarget(nextValue, caret);
     setTarget(nextTarget);
     setActiveIndex(-1);
@@ -387,25 +396,51 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         if (requestId === requestIdRef.current) setIsLoading(false);
       });
     }, 80);
-  }, [editable, tagAssistEnabled, value]);
+  }, [editable, tagAssistEnabled, value, closeSuggestions]);
 
   const selectSuggestion = (suggestion: TagSuggestion) => {
-    if (!target) return;
-    const nextValue = value.slice(0, target.replaceStart)
+    if (!target || !editable) return;
+    const input = completionSource === 'tag' ? tagInputRef.current : textareaRef.current;
+    const sourceValue = completionSource === 'tag' ? tagInput : value;
+    const nextValue = sourceValue.slice(0, target.replaceStart)
       + suggestion.name
-      + value.slice(target.replaceEnd);
+      + sourceValue.slice(target.replaceEnd);
     const nextCaret = target.replaceStart + suggestion.name.length + target.closingLength;
-    commitValue(nextValue);
-    setSuggestions([]);
-    setTarget(null);
-    setActiveIndex(-1);
+    if (completionSource === 'tag') setTagInput(nextValue);
+    else commitValue(nextValue);
+    closeSuggestions();
     requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+      input?.focus();
+      input?.setSelectionRange(nextCaret, nextCaret);
+      closeSuggestions();
     });
   };
 
-  const isOpen = tagAssistEnabled && Boolean(target && (suggestions.length > 0 || isLoading));
+  const isOpen = tagAssistEnabled && editable && (completionSource === 'prompt' || showTranslations && !deleteMode) && Boolean(target && (suggestions.length > 0 || isLoading));
+  const handleCompletionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    if (composingRef.current || event.nativeEvent.isComposing || !isOpen
+      || event.currentTarget !== (completionSource === 'tag' ? tagInputRef.current : textareaRef.current)) return false;
+    if (suggestions.length > 0) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveIndex(index => event.key === 'ArrowDown'
+          ? index < 0 ? 0 : (index + 1) % suggestions.length
+          : index < 0 ? suggestions.length - 1 : (index - 1 + suggestions.length) % suggestions.length);
+        return true;
+      }
+      if (event.key === 'Enter' && activeIndex >= 0) {
+        event.preventDefault();
+        selectSuggestion(suggestions[activeIndex]);
+        return true;
+      }
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeSuggestions();
+      return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -425,17 +460,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   useEffect(() => {
     if (!isOpen) return;
     const updatePosition = () => {
-      const rect = textareaRef.current?.getBoundingClientRect();
+      const rect = (completionSource === 'tag' ? tagInputRef.current : textareaRef.current)?.getBoundingClientRect();
       if (!rect) return;
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
       const below = viewportHeight - rect.bottom;
       const showUp = below < 240 && rect.top > below;
       setDropUp(showUp);
       const width = Math.min(560, Math.max(280, rect.width));
-      // 弹窗以固定定位渲染到 body 顶层，随 textarea 位置绝对对齐，宽度与输入框一致
+      // 浮层跟随当前输入位置，限制在视口内，避免末尾输入框的候选溢出右侧。
       setPopupStyle({
         position: 'fixed',
-        left: Math.max(8, rect.left),
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
         top: showUp ? undefined : rect.bottom + 4,
         bottom: showUp ? viewportHeight - rect.top + 4 : undefined,
         width,
@@ -444,16 +479,20 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       });
     };
     updatePosition();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    if (textareaRef.current) observer?.observe(textareaRef.current);
+    if (completionSource === 'tag' && tagInputRef.current?.parentElement) observer?.observe(tagInputRef.current.parentElement);
     window.visualViewport?.addEventListener('resize', updatePosition);
     window.addEventListener('resize', updatePosition);
     // 捕获阶段监听滚动：容器滚动时弹窗跟随输入框移动，不被裁切
     window.addEventListener('scroll', updatePosition, true);
     return () => {
+      observer?.disconnect();
       window.visualViewport?.removeEventListener('resize', updatePosition);
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [isOpen]);
+  }, [isOpen, completionSource]);
 
   return (
     <div className={`relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -475,15 +514,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         className={className}
         role={tagAssistEnabled ? 'combobox' : undefined}
         aria-autocomplete={tagAssistEnabled ? 'list' : undefined}
-        aria-expanded={tagAssistEnabled ? isOpen : undefined}
-        aria-controls={tagAssistEnabled && isOpen ? listboxId : undefined}
-        aria-activedescendant={tagAssistEnabled && isOpen && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
+        aria-expanded={tagAssistEnabled ? isOpen && completionSource === 'prompt' : undefined}
+        aria-controls={tagAssistEnabled && isOpen && completionSource === 'prompt' ? listboxId : undefined}
+        aria-activedescendant={tagAssistEnabled && isOpen && completionSource === 'prompt' && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onChange={(event) => {
           commitValue(event.target.value, true);
           clearSelection();
           if (tagAssistEnabled) refreshSuggestions(event.target.value, event.target.selectionStart);
         }}
         onFocus={(event) => {
+          composingRef.current = false;
           if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
           if (tagAssistEnabled) {
             preloadTagDictionary();
@@ -492,10 +532,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           onFocus?.(event);
         }}
         onBlur={(event) => {
-          blurTimerRef.current = window.setTimeout(() => {
-            setSuggestions([]);
-            setTarget(null);
-          }, 120);
+          if (!listboxRef.current?.contains(event.relatedTarget as Node)) {
+            blurTimerRef.current = window.setTimeout(closeSuggestions, 120);
+          }
           onBlur?.(event);
         }}
         onClick={(event) => {
@@ -504,46 +543,12 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
         onKeyUp={onKeyUp}
         onKeyDown={(event) => {
-          if (composingRef.current || event.nativeEvent.isComposing) {
-            onKeyDown?.(event);
-            return;
-          }
-          if (isOpen && suggestions.length > 0) {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setActiveIndex(index => index < 0 ? 0 : (index + 1) % suggestions.length);
-              return;
-            }
-            if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActiveIndex(index => index < 0 ? suggestions.length - 1 : (index - 1 + suggestions.length) % suggestions.length);
-              return;
-            }
-            if (event.key === 'Enter' && activeIndex >= 0) {
-              event.preventDefault();
-              selectSuggestion(suggestions[activeIndex]);
-              return;
-            }
-          }
-          if (event.key === 'Escape' && isOpen) {
-            event.preventDefault();
-            setSuggestions([]);
-            setTarget(null);
-            return;
-          }
+          if (handleCompletionKeyDown(event)) return;
           onKeyDown?.(event);
         }}
         onCompositionStart={(event) => {
           composingRef.current = true;
-          if (searchTimerRef.current !== null) {
-            window.clearTimeout(searchTimerRef.current);
-            searchTimerRef.current = null;
-          }
-          requestIdRef.current++;
-          setSuggestions([]);
-          setTarget(null);
-          setActiveIndex(-1);
-          setIsLoading(false);
+          closeSuggestions();
           onCompositionStart?.(event);
         }}
         onCompositionEnd={(event) => {
@@ -561,7 +566,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             const text = event.clipboardData.getData('text/plain');
             if (text.trim()) { event.preventDefault(); appendTags(text); }
           }}>
-          <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto overscroll-contain pr-0.5">
+          <div className="flex h-36 min-h-10 resize-y flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1.5 pb-1.5">
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -636,9 +641,35 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               }
               return nodes;
             })()}
-            {!deleteMode && editable && <input aria-label={t("添加提示词")} placeholder={t("添加提示词")} value={tagInput} onChange={event => setTagInput(event.target.value)} onBlur={event => appendTags(event.currentTarget.value)} onKeyDown={event => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); appendTags(tagInput); }
-            }} className="min-h-10 min-w-28 flex-1 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white/70 focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200 dark:focus:bg-gray-900/60" />}
+            {!deleteMode && editable && <input ref={tagInputRef} role="combobox" aria-label={t("添加提示词")} placeholder={t("添加提示词")} value={tagInput}
+              aria-autocomplete="list" aria-expanded={isOpen && completionSource === 'tag'}
+              aria-controls={isOpen && completionSource === 'tag' ? listboxId : undefined}
+              aria-activedescendant={isOpen && completionSource === 'tag' && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
+              onChange={event => {
+                setTagInput(event.target.value);
+                refreshSuggestions(event.target.value, event.target.selectionStart ?? event.target.value.length, 'tag');
+              }}
+              onFocus={event => {
+                composingRef.current = false;
+                preloadTagDictionary();
+                refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? 0, 'tag');
+              }}
+              onClick={event => refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? 0, 'tag')}
+              onBlur={event => {
+                if (listboxRef.current?.contains(event.relatedTarget as Node)) return;
+                appendTags(event.currentTarget.value);
+                closeSuggestions();
+              }}
+              onKeyDown={event => {
+                if (handleCompletionKeyDown(event) || composingRef.current || event.nativeEvent.isComposing) return;
+                if (event.key === 'Enter') { event.preventDefault(); appendTags(tagInput); }
+              }}
+              onCompositionStart={() => { composingRef.current = true; closeSuggestions(); }}
+              onCompositionEnd={event => {
+                composingRef.current = false;
+                refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, 'tag');
+              }}
+              className="min-h-10 min-w-28 flex-1 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white/70 focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200 dark:focus:bg-gray-900/60" />}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
             <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
@@ -754,6 +785,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200'
               }`}
               onClick={() => selectSuggestion(suggestion)}
+              onMouseDown={event => event.preventDefault()}
               onPointerMove={() => setActiveIndex(index)}
             >
               <span className="min-w-0 flex-1">
