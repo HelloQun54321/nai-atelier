@@ -13,10 +13,13 @@ import {
   Heart,
   Layers,
   Palette,
+  PersonStanding,
   Settings,
   ShieldCheck,
+  Shirt,
   Sparkles,
   Tag,
+  UserRound,
   X,
   XCircle,
 } from 'lucide-react';
@@ -30,7 +33,7 @@ import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
+type AppView = 'list' | 'characters' | 'appearance' | 'wardrobe' | 'pose' | 'scene' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -58,6 +61,10 @@ interface LayoutProps {
 const icons = {
   list: Layers,
   character: CircleUserRound,
+  appearance: UserRound,
+  prompts: Sparkles,
+  wardrobe: Shirt,
+  pose: PersonStanding,
   artist: Brush,
   tag: Tag,
   codex: BookOpen,
@@ -121,6 +128,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
+      { id: 'prompts', label: '图片提示词库', icon: icons.prompts },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
       { id: 'codex', label: '法典', icon: icons.codex },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
@@ -162,6 +170,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const resourceItems = [
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
+    { id: 'prompts', label: '图片提示词库', icon: icons.prompts },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
     { id: 'codex', label: '法典', icon: icons.codex },
     { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },

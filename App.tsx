@@ -29,12 +29,26 @@ const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(m
 const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
 const CodexGallery = lazy(() => import('./components/CodexGallery').then(module => ({ default: module.CodexGallery })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
+const PromptLibraryHub = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PromptLibraryHub })));
+const SceneLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.SceneLibrary })));
+const AppearanceLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.AppearanceLibrary })));
+const WardrobeLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.WardrobeLibrary })));
+const PoseLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PoseLibrary })));
 
-type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
+type ViewState = 'list' | 'characters' | 'appearance' | 'wardrobe' | 'pose' | 'scene' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history'];
+/** chain.type → 所属库视图；未登记的类型回落到风格串列表。 */
+const LIBRARY_VIEW_BY_TYPE: Partial<Record<ChainType, ViewState>> = {
+  character: 'characters',
+  appearance: 'prompts',
+  wardrobe: 'prompts',
+  pose: 'prompts',
+  scene: 'prompts',
+};
+
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history'];
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -143,13 +157,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) {
+      if (['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -420,11 +434,11 @@ const App = () => {
     if (work) work.dataset.safeWorkRevealed = 'true';
   };
 
-  // keep-alive 视图按最近使用保留：桌面端上限 9 = 全部可保留页面常驻，任何切页往返
+  // keep-alive 视图按最近使用保留：桌面端上限 12 = 全部可保留页面常驻，任何切页往返
   // 都不再触发整页卸载重建——配合 SmartImage 隐藏时保留图片，切回任意图库瞬时完整呈现。
   // 手机浏览器内存管理激进（iOS Safari 内存紧张时会整页刷新），维持 4；手机端另有
   // Cache API 持久图片缓存兜底，页面重建时图片仍能从本地缓存秒出。访问时提升到队尾。
-  const keepAliveLimit = () => (window.matchMedia('(max-width: 767px)').matches ? 4 : 9);
+  const keepAliveLimit = () => (window.matchMedia('(max-width: 767px)').matches ? 4 : 12);
   const keepViewMounted = (targetView: ViewState) => {
     if (!isKeepAliveView(targetView)) return;
     setMountedViews(prev => {
@@ -506,7 +520,7 @@ const App = () => {
     if (newView === 'playground') ensurePlayground();
 
     // Auto-load data based on view, respecting cache
-    if ((newView === 'list' || newView === 'characters') && options.refreshData !== false) refreshData();
+    if ((newView === 'list' || newView === 'characters' || newView === 'appearance' || newView === 'wardrobe' || newView === 'pose' || newView === 'scene' || newView === 'prompts') && options.refreshData !== false) refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
@@ -526,6 +540,23 @@ const App = () => {
     } catch (e) {
       console.error('创建风格串失败', e);
       notify('创建失败，请稍后重试', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 人物形象 / 服饰 / 姿势三个库共用同一份 chains 数据：创建后留在库内、由库自己打开详情，
+  // 因此不复用会跳进编辑器的 handleCreateChain，改为返回新 id 供库内部选中。
+  const createLibraryChain = async (name: string, desc: string, type: ChainType): Promise<string | undefined> => {
+    setLoading(true);
+    try {
+      const newId = await db.createChain(name, desc, undefined, type);
+      await refreshData(true);
+      return newId;
+    } catch (e) {
+      console.error('创建库条目失败', e);
+      notify('创建失败，请稍后重试', 'error');
+      return undefined;
     } finally {
       setLoading(false);
     }
@@ -595,11 +626,12 @@ const App = () => {
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
+    const returnView = (selectedChain?.type && LIBRARY_VIEW_BY_TYPE[selectedChain.type]) || 'list';
     // 传 id 作为 returnTargetId：
     // 1. 确保列表渲染批次（visibleCount）包含该卡片及之前的所有卡片，保证容器拥有足够的高度恢复原滚动位置；
     // 2. useKeepAliveScrollRestore 精确恢复离开前的像素级滚动位置；
     // 3. 若目标卡片仍在视口内则不强制居中，若因排序变动离开视口则由 useRestoreListAnchor 兜底滚回可见范围。
-    void handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
+    void handleNavigate(returnView, selectedChain?.id || selectedId, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {
@@ -680,6 +712,61 @@ const App = () => {
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+        />;
+      case 'prompts':
+        return <PromptLibraryHub
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'prompts' ? selectedId : undefined}
+        />;
+      case 'scene':
+        return <SceneLibrary
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'scene' ? selectedId : undefined}
+        />;
+      case 'appearance':
+        return <AppearanceLibrary
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'appearance' ? selectedId : undefined}
+        />;
+      case 'wardrobe':
+        return <WardrobeLibrary
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'wardrobe' ? selectedId : undefined}
+        />;
+      case 'pose':
+        return <PoseLibrary
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'pose' ? selectedId : undefined}
         />;
       case 'aitag':
         return <AitagGallery
@@ -783,9 +870,10 @@ const App = () => {
 
   const getActiveView = (): ViewState => {
     if (view === 'edit') {
-      return getSelectedChain()?.type === 'character' ? 'characters' : 'list';
+      const type = getSelectedChain()?.type;
+      return (type && LIBRARY_VIEW_BY_TYPE[type]) || 'list';
     }
-    return view;
+    return ['appearance','wardrobe','pose','scene'].includes(view) ? 'prompts' : view;
   };
 
   return (

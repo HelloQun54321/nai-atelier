@@ -28,6 +28,16 @@ const draft = (): NAIParams => JSON.parse(screen.getByTestId('draft').textConten
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('清空一个角色正向词时保留负面与其它角色，模型锁定的负面不可清空', () => {
+    const {rerender}=render(<Harness />);
+    fireEvent.click(screen.getByRole('button',{name:'清空角色 1 提示词'}));
+    expect(draft().characters?.[0]).toMatchObject({prompt:'',negativePrompt:'red hair'});
+    expect(draft().characters?.[1].prompt).toBe('red hair');
+    rerender(<Harness model="nai-diffusion-5-full-medium" />);
+    expect((screen.getByRole('button',{name:'清空角色 1 负面提示词'}) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button',{name:'清空角色 1 负面提示词'}));
+    expect(draft().characters?.[0].negativePrompt).toBe('red hair');
+  });
   it('Medium 角色负面词灰白禁用，正向词可编辑，切回 High 恢复原负面词', () => {
     const { rerender } = render(<Harness model="nai-diffusion-5-full-medium" />);
     for (const node of screen.getAllByPlaceholderText('选填')) {

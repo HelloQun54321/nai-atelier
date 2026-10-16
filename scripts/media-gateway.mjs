@@ -13,7 +13,7 @@ import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { PromptAgentService } from './prompt-agent.mjs';
+import { PromptAgentService, readLibraryPrompts, writeLibraryPrompts, buildLibrarySystemPrompt, isLibraryKind } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, CODEX_MEDIA_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
@@ -3483,6 +3483,32 @@ const serveDistFile = async (req, res, url) => {
             requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
             tagDictionary: method => requestTagDictionaryControl(method),
           }));
+        }
+        if (url.pathname === '/api/prompt-agent/library-prompts/preview') {
+          // 预览某个库最终使用的 system prompt；带上当前输入框内容即可在保存前预览
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+          const kind = isLibraryKind(body.kind) ? String(body.kind) : 'wardrobe';
+          const systemPrompt = buildLibrarySystemPrompt(kind, { spec: body.spec, extra: body.extra });
+          return sendJson(res, 200, { kind, length: systemPrompt.length, systemPrompt });
+        }
+        if (url.pathname === '/api/prompt-agent/library-prompts') {
+          // 三个库生成用的自定义提示词（规范提示词 / 附加指令），存文本文件、即时生效
+          if (req.method === 'GET') return sendJson(res, 200, readLibraryPrompts());
+          if (req.method === 'PUT' || req.method === 'POST') {
+            const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+            return sendJson(res, 200, writeLibraryPrompts(body));
+          }
+          return sendJson(res, 405, { error: 'Method not allowed' });
+        }
+        if (url.pathname === '/api/prompt-agent/library' || url.pathname === '/api/prompt-agent/wardrobe') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+          // 三个库统一走 /library?kind=...；旧的 /wardrobe 路由保留兼容。
+          const result = url.pathname === '/api/prompt-agent/wardrobe'
+            ? await promptAgent.generateWardrobePrompt(body)
+            : await promptAgent.generateLibraryPrompt(body);
+          return sendJson(res, 200, result);
         }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });

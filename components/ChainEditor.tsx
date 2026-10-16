@@ -46,7 +46,7 @@ import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
-import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
+import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptClearButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
 
 export interface ChainEditorSaveHandle {
     canSave: boolean;
@@ -2045,6 +2045,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
+                            sections={params._promptSections || null}
+                            setSections={(nextSections) => setParams(previous => ({ ...previous, _promptSections: nextSections }))}
+                            supplementPrompt={subjectPrompt}
+                            setSupplementPrompt={setSubjectPrompt}
                             presetSources={presetSources}
                             tagAssistEnabled={tagAssistEnabled}
                             canEdit={true}
@@ -2123,7 +2127,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>
-                                <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} />
+                                <div className="flex items-center gap-1"><PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} /><PromptClearButton title={t('清空全局负面提示词')} disabled={isNaiMediumModel(params.model) || !negativePrompt.trim()} onClick={() => {setNegativePrompt(''); markPresetSectionModified('negative'); markChange();}} /></div>
                             </div>
                             <TagAutocompleteTextarea
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}

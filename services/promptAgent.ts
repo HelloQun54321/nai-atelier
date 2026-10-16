@@ -247,6 +247,43 @@ export const formatModelOptionTitle = (
   return duplicate ? `${base} (${model.providerName || model.provider})` : base;
 };
 
+
+/* ---------- 提示词库（人物形象 / 服饰 / 姿势） ---------- */
+export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'scene';
+
+/** 一次生成产出的单条方案。 */
+export interface PromptLibraryItem {
+  name: string;
+  prompt: string;
+  bilingual: string;
+  tags: string[];
+  note?: string;
+  filtered?: string[];
+  filteredWarning?: boolean;
+}
+
+export interface PromptLibraryResult {
+  items: PromptLibraryItem[];
+  provider: string;
+  model: string;
+  count: number;
+  kind: PromptLibraryKind;
+  filteredCount?: number;
+}
+
+/** 库生成时置顶追加的两段自定义提示词。 */
+export interface PromptLibraryPrompts {
+  spec: string;
+  extra: string;
+}
+
+export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
+  appearance: '人物形象',
+  wardrobe: '服饰',
+  pose: '姿势',
+  scene: '场景',
+};
+
 export const promptAgentService = {
   setPermissionMode: async (mode: AgentPermissionMode): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
@@ -272,6 +309,48 @@ export const promptAgentService = {
   },
   getConfig: async (): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/config', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  /* ---------- 提示词库：与创作助手共用模型，做一次性非流式补全 ---------- */
+  generateLibraryPrompt: async (input: {
+    kind: PromptLibraryKind;
+    brief: string;
+    count?: number;
+    [facet: string]: unknown;
+  }): Promise<PromptLibraryResult> => {
+    const response = await fetch('/api/prompt-agent/library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  getLibraryPrompts: async (): Promise<PromptLibraryPrompts> => {
+    const response = await fetch('/api/prompt-agent/library-prompts', { cache: 'no-store' });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  saveLibraryPrompts: async (input: { spec?: string; extra?: string }): Promise<PromptLibraryPrompts> => {
+    const response = await fetch('/api/prompt-agent/library-prompts', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec: input.spec ?? '', extra: input.extra ?? '' }),
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  previewLibrarySystemPrompt: async (input: {
+    kind: PromptLibraryKind;
+    spec: string;
+    extra: string;
+  }): Promise<{ kind: PromptLibraryKind; length: number; systemPrompt: string }> => {
+    const response = await fetch('/api/prompt-agent/library-prompts/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
     if (!response.ok) return readError(response) as never;
     return response.json();
   },

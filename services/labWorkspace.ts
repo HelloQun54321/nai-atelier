@@ -1,4 +1,4 @@
-import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams } from '../types';
+import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate } from './characterPrompts';
@@ -30,6 +30,26 @@ export const getLabModeLabel = (mode: GenerationMode): string => (
     mode === 'text-to-image' ? '文生图' : mode === 'image-to-image' ? '图生图' : mode === 'inpaint' ? '局部重绘' : '扩图'
 );
 
+/** 只保留四栏的字符串原文；缺省或四栏全为空时返回 undefined（视为尚未使用分栏的旧数据）。 */
+export const normalizePromptSections = (sections?: Partial<PromptSections> | null): PromptSections | undefined => {
+    if (!sections || typeof sections !== 'object') return undefined;
+    const next: PromptSections = {
+        appearance: String(sections.appearance ?? ''),
+        wardrobe: String(sections.wardrobe ?? ''),
+        pose: String(sections.pose ?? ''),
+        extra: String(sections.extra ?? ''),
+    };
+    return Object.values(next).some(value => String(value).trim()) ? next : undefined;
+};
+
+/** 四栏合并顺序固定为 人物 → 服饰 → 姿势 → 补充，非空栏用「, 」连接；合并值写入 variableValues.subject。 */
+export const mergePromptSections = (sections?: Partial<PromptSections> | null): string => [
+    sections?.appearance,
+    sections?.wardrobe,
+    sections?.pose,
+    sections?.extra,
+].map(value => String(value || '').trim()).filter(Boolean).join(', ');
+
 export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams => {
   const safe = params && typeof params === 'object' ? params : {};
   return {
@@ -53,6 +73,9 @@ export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams =
       ...safe.characterReferences,
       slots: Array.isArray(safe.characterReferences.slots) ? safe.characterReferences.slots.map(slot => ({ ...slot })) : [],
     } : undefined,
+    // 提示词分栏原文必须跟着 params 一起走：导入、创作助手草稿与工作区会话都会整包替换 params，
+    // 这里兜底保留，避免四栏内容在一次 setParams 后丢失。
+    _promptSections: normalizePromptSections(safe._promptSections),
   };
 };
 

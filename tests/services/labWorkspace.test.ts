@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLabImageEditDraft, createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, normalizeParams, openLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
+import { createLabImageEditDraft, createLabWorkspaceSession, getLabModeLabel, getLabWorkspaceAssetId, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, mergePromptSections, normalizeParams, normalizePromptSections, openLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 
 const params = {
   model: 'nai-diffusion-4-5-full',
@@ -198,5 +198,41 @@ describe('lab workspace session', () => {
     expect(getLabModeLabel('image-to-image')).toBe('图生图');
     expect(getLabModeLabel('inpaint')).toBe('局部重绘');
     expect(getLabModeLabel('outpaint')).toBe('扩图');
+  });
+});
+
+describe('prompt sections（全局提示词五栏）', () => {
+  it('按 人物 → 服饰 → 姿势 → 补充 的顺序合并，空栏跳过', () => {
+    expect(mergePromptSections({ appearance: 'silver_hair', wardrobe: '', pose: 'standing', extra: 'outdoors' }))
+      .toBe('silver_hair, standing, outdoors');
+    expect(mergePromptSections({ wardrobe: 'white_sundress', pose: 'sitting' }))
+      .toBe('white_sundress, sitting');
+  });
+
+  it('各栏内容会 trim，且全空时合并为空串', () => {
+    expect(mergePromptSections({ appearance: ' a ', wardrobe: ' b ' })).toBe('a, b');
+    expect(mergePromptSections({ appearance: '   ', wardrobe: '', pose: '', extra: '' })).toBe('');
+    expect(mergePromptSections(null)).toBe('');
+    expect(mergePromptSections(undefined)).toBe('');
+  });
+
+  it('画师串不参与合并（它独立保存在 basePrompt）', () => {
+    const merged = mergePromptSections({ appearance: 'a', wardrobe: 'b', pose: 'c', extra: 'd' } as never);
+    expect(merged).toBe('a, b, c, d');
+    expect(merged).not.toContain('artist');
+  });
+
+  it('normalizePromptSections 全空归一为 undefined，避免凭空产生空分栏', () => {
+    expect(normalizePromptSections({ appearance: '', wardrobe: '', pose: '', extra: '' })).toBeUndefined();
+    expect(normalizePromptSections(null)).toBeUndefined();
+    expect(normalizePromptSections(undefined)).toBeUndefined();
+    expect(normalizePromptSections({ appearance: 'x' })).toEqual({ appearance: 'x', wardrobe: '', pose: '', extra: '' });
+  });
+
+  it('normalizeParams 保留 _promptSections（整包 setParams 时不会丢分栏）', () => {
+    const sections = { appearance: 'a', wardrobe: 'b', pose: '', extra: '' };
+    expect(normalizeParams({ ...params, _promptSections: sections })._promptSections).toEqual(sections);
+    // 不带该字段时不应凭空生成
+    expect(normalizeParams({ ...params })._promptSections).toBeUndefined();
   });
 });

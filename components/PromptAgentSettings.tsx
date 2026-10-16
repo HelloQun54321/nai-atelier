@@ -9,6 +9,7 @@ import { PromptAgentConfig, PromptAgentCustomProvider, PromptAgentModel, PromptA
 import { useConfirmDialog } from './ConfirmDialog';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
+import { PromptLibrarySettings } from './PromptLibrarySettings';
 
 interface PromptAgentSettingsProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -198,6 +199,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("生图协作")}</h3>
         <AgentGenerationOptions />
       </section>
+      <PromptLibrarySettings />
     </div>
     )}
 

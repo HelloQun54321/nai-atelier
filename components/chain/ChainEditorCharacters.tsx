@@ -1,3 +1,4 @@
+import { PromptClearButton } from './PresetSourceBadges';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, MapPin, Save, Trash2, UserRound } from 'lucide-react';
@@ -187,7 +188,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         <div className="flex flex-wrap gap-3 items-start sm:flex-nowrap">
                             <div className="min-w-0 flex-1 space-y-2">
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
+                                    <div className="mb-1 flex items-center justify-between gap-1"><label className="text-micro font-bold text-gray-500">{t('角色提示词')}</label><PromptClearButton title={t('清空角色 {0} 提示词', [idx+1])} disabled={!canEdit || !char.prompt.trim()} onClick={() => updateCharacter(idx,{prompt:''})} /></div>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
@@ -198,7 +199,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                                 <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色负面提示词")}</label>
+                                    <div className="mb-1 flex items-center justify-between gap-1"><label className="text-micro font-bold text-gray-500">{t('角色负面提示词')}</label><PromptClearButton title={t('清空角色 {0} 负面提示词', [idx+1])} disabled={!canEdit || negativeLocked || !char.negativePrompt?.trim()} onClick={() => updateCharacter(idx,{negativePrompt:''})} /></div>
                                     <TagAutocompleteTextarea
                                         tagAssistEnabled={tagAssistEnabled && !negativeLocked}
                                         disabled={!canEdit || negativeLocked}

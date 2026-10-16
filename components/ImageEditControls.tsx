@@ -1,3 +1,4 @@
+import { PromptClearButton } from './chain/PresetSourceBadges';
 import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
@@ -157,7 +158,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               <div className="flex items-center gap-2">
                 <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-meta font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {draft.promptSource === 'history' ? t("底图原提示词") : draft.promptSource === 'current' ? t("文生图提示词") : t("自定义编辑提示词")}
-                </span>
+                </span><PromptClearButton title={t('清空编辑提示词')} disabled={isBusy || !draft.prompt.trim()} onClick={() => onPromptChange('')} />
 
               </div>
             </div>
@@ -176,7 +177,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               }
             />
           </div>
-          <label className={`block text-sm font-semibold text-gray-800 dark:text-gray-100 ${isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : ''}`} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}>{t("全局负面提示词")}<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></label>
+          <label className={`block text-sm font-semibold text-gray-800 dark:text-gray-100 ${isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : ''}`} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><span className="flex items-center justify-between gap-2">{t('全局负面提示词')}<PromptClearButton title={t('清空全局负面提示词')} disabled={isBusy || isNaiMediumModel(selectableParams.model) || !draft.negativePrompt.trim()} onClick={() => onNegativePromptChange('')} /></span><TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></label>
         </section>
       </LabModuleSection>
 

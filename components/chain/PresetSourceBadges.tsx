@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
-import { Copy } from 'lucide-react';
+import { Copy, Trash2 } from 'lucide-react';
 import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
 
 const PromptAgentPanel = React.lazy(() => import('../PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
@@ -101,3 +101,11 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
         /></React.Suspense>
     );
 };
+
+/** 清空只修改当前文本草稿；锁定模型、只读模式与空文本禁用。 */
+export const PromptClearButton: React.FC<{onClick: () => void; title: string; disabled?: boolean}> = ({onClick,title,disabled}) => (
+  <button type="button" onClick={onClick} title={title} aria-label={title} disabled={disabled}
+    className="mobile-touch flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200">
+    <Trash2 className="h-4 w-4" />{t('清空')}
+  </button>
+);

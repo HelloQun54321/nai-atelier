@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.71.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.73.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -262,6 +262,13 @@ flowchart LR
 ---
 
 ## 📚 Tag 与资源资料库
+
+资源库中的「图片提示词库」统一管理人物形象、服饰、姿势和场景及补充，支持全部／分类浏览、搜索筛选、卡片名称直接修改，以及封面和参考图。选择分类后可用一句话生成候选，部分限定条件支持多选；生成调用已配置的助手模型，可能产生模型服务费用，不消耗生图额度。
+
+实验室全局提示词分为画师串、人物、服饰、姿势、补充五栏，各栏可复制或清空；后四栏合并为主体提示词，画师串独立保留顺序。人物／服饰／姿势／补充可分别从对应库导入。旧主体文本显示在补充栏，首次编辑时保留。
+
+「全局设置 → 创作助手 → 库生成提示词」可自定义输出规范和附加指令，预览四类最终系统提示词。越界词过滤属于补充校验；若过滤后不足三个词，后端保留原文并返回警告，仍需检查生成内容。
+
 
 收藏库、AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗，并通过平滑滚动将最近点击的卡片在列表可视区域垂直居中，遵循项目与系统减少动画设置；图片加载或详情展开导致重排时保留定位，主动滚动立即打断居中动画、保持新位置，关闭详情或清空选择后恢复亮度。画师／角色目录保留多选，已选项都保持明亮，抽卡、返回目录或切换筛选释放旧定位。
 
