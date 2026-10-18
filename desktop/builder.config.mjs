@@ -2,7 +2,8 @@ export default {
   appId: 'com.naiatelier.desktop',
   productName: 'NAI Atelier',
   directories: { app: '.desktop-build/app', output: 'release', buildResources: 'desktop' },
-  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'services/appReleases.mjs', 'locales/**/*', 'package.json', '!node_modules{,/**/*}'],
+  // 主进程静态导入的脚本必须全部列入，缺一个 app.asar 就无法启动（与 build-desktop.mjs 的 DESKTOP_SCRIPT_FILES 一致）。
+  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'scripts/storage-locations.mjs', 'scripts/export-locations.mjs', 'services/appReleases.mjs', 'locales/**/*', 'package.json', '!node_modules{,/**/*}'],
   // extraResources 的根 node_modules 会被打包器默认跳过，需要独立映射。
   extraResources: [
     { from: '.desktop-build/runtime', to: 'runtime', filter: ['**/*'] },

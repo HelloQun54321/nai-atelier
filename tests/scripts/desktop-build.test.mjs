@@ -55,8 +55,11 @@ test('Electron 主进程的脚本依赖同时放入 app 包，迁移后台使用
   try {
     await copyDesktopScripts(root);
     assert.deepEqual(DESKTOP_SCRIPT_FILES, ['desktop-runtime.mjs', 'storage-locations.mjs', 'export-locations.mjs']);
-    for (const name of DESKTOP_SCRIPT_FILES) assert.ok((await readFile(join(root, 'scripts', name), 'utf8')).length > 0);
     const source = await readFile(new URL('../../desktop/main.mjs', import.meta.url), 'utf8');
+    for (const name of DESKTOP_SCRIPT_FILES) assert.ok((await readFile(join(root, 'scripts', name), 'utf8')).length > 0);
+    // 复制到 app 目录还不够，打包白名单漏列会让 app.asar 缺模块、主进程无法启动。
+    for (const name of DESKTOP_SCRIPT_FILES) assert.ok(builder.files.includes(`scripts/${name}`), `打包清单缺少 scripts/${name}`);
+    for (const [, name] of source.matchAll(/from '\.\.\/scripts\/([^']+)'/g)) assert.ok(DESKTOP_SCRIPT_FILES.includes(name), `主进程导入的 ${name} 未进入 app 包`);
     assert.match(source, /join\(runtimeRoot, 'scripts', 'storage-locations\.mjs'\)/);
   } finally { removeWorkspace(root); }
 });

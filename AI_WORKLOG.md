@@ -4,6 +4,10 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-10-19
+
+- **Claude Code (Claude Opus 5.5)**：修复桌面打包清单漏列主进程导入的存储位置与导出脚本，补测试核对主进程导入均进入 app.asar（fix: ship main-process scripts in the desktop app bundle）。
+
 ## 2026-10-18
 
 - **DeepSeek Harness（deepseek-flash）**：按界面反馈把 Roll 串卡片的丢弃／恢复按钮从图片左下角移到左上角编号下方，避免遮挡底部画师与权重标签；补位置断言并重建前端产物（style: move roll discard action under the card number）。
