@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { open, stat, readFile, writeFile, mkdir, rename } from 'node:fs/promises';
-import { basename, join, isAbsolute } from 'node:path';
+import { basename, dirname, join, isAbsolute } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -259,11 +259,22 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
 }
 
 let picking = false;
-export async function pickArtistSampleFile(initialPath = '', execute = promisify(execFile)) {
-  if (process.platform !== 'win32') throw failure('图包管理仅支持 Windows 电脑本机');
+// macOS 用 osascript 弹出系统「选择文件」面板；取消（-128）视为未选择，初始路径经环境变量传入。
+const MAC_FILE_SCRIPT = ['on run', 'activate', 'set initialPath to system attribute "NAI_ARTIST_PICK_INITIAL"', 'try',
+  'if initialPath is "" then', 'set picked to choose file with prompt "选择画师图包"', 'else', 'set picked to choose file with prompt "选择画师图包" default location (POSIX file initialPath)', 'end if',
+  'on error number -128', 'return ""', 'end try', 'return POSIX path of picked', 'end run'];
+
+export async function pickArtistSampleFile(initialPath = '', execute = promisify(execFile), platform = process.platform) {
+  if (!['win32', 'darwin'].includes(platform)) throw failure('图包管理仅支持 Windows 或 macOS 电脑本机');
   if (picking) throw failure('已有文件选择窗口打开');
   picking = true;
   try {
+    if (platform === 'darwin') {
+      // 初始路径若是文件，面板定位到它所在的文件夹。
+      const folder = initialPath && !initialPath.endsWith('/') ? dirname(initialPath) : initialPath;
+      const { stdout } = await execute('/usr/bin/osascript', MAC_FILE_SCRIPT.flatMap(line => ['-e', line]), { timeout: 300000, maxBuffer: 32768, encoding: 'utf8', env: { ...process.env, NAI_ARTIST_PICK_INITIAL: folder } });
+      const path = stdout.trim(); return { path, cancelled: !path };
+    }
     // 隐藏控制台，透明置顶 owner 保持系统文件窗口可见；路径通过环境传入。
     const script = '[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding; Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.Opacity=0; $owner.ShowInTaskbar=$false; $owner.StartPosition="CenterScreen"; $picker=New-Object System.Windows.Forms.OpenFileDialog; $picker.Title="选择画师图包"; $picker.Filter="所有文件 (*.*)|*.*"; $picker.FileName=$env:NAI_ARTIST_PICK_INITIAL; try { $owner.Show(); $owner.Activate(); if($picker.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Write($picker.FileName)} } finally { $picker.Dispose(); $owner.Dispose() }';
     const { stdout } = await execute('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 300000, maxBuffer: 32768, encoding: 'utf8', env: { ...process.env, NAI_ARTIST_PICK_INITIAL: initialPath } });

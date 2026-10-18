@@ -6,6 +6,7 @@
 
 ## 2026-10-19
 
+- **Claude Code (Claude Opus 5.5)**：新增 macOS 版并做 mac 专属适配：构建脚本按本机平台选择 darwin 原生 Node／ONNX、生成 Retina 图标与 dmg／zip；原生标题栏、菜单与 ⌘ 快捷键、程序坞进度／角标、关窗驻留；系统代理、文件选择、剪贴板收集与 Pixiv 协议的 mac 实现；修复主进程顶层异步等待在 macOS 卡死启动；补对应测试与 `docs/MACOS_DESKTOP.md`（feat: add macOS desktop build and native mac experience）。
 - **Claude Code (Claude Opus 5.5)**：修复桌面打包清单漏列主进程导入的存储位置与导出脚本，补测试核对主进程导入均进入 app.asar（fix: ship main-process scripts in the desktop app bundle）。
 
 ## 2026-10-18

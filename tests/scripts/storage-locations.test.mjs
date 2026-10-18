@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { executeStorageSwitch, validateStorageSwitch, resolveStorageDataRoot, storageControlFile, getStoragePreferences, updateStoragePreferences, storageResourcePaths, launchStorageSwitch, pickStorageDirectory, requestDesktopStorageDirectory } from '../../scripts/storage-locations.mjs';
+import { executeStorageSwitch, validateStorageSwitch, resolveStorageDataRoot, storageControlFile, getStoragePreferences, updateStoragePreferences, storageResourcePaths, launchStorageSwitch, pickStorageDirectory, requestDesktopStorageDirectory, canPickStorageDirectory, resolveStorageDataRootSync } from '../../scripts/storage-locations.mjs';
 
 test('源码目录选择等待真实回执，取消不返回路径，超时明确报错并释放并发锁', { skip: process.platform !== 'win32' }, async () => {
   let finish, settled = false;
@@ -23,6 +23,25 @@ test('源码目录选择等待真实回执，取消不返回路径，超时明�
   finish({ stdout: '' }); assert.deepEqual(await pending, { path: '', cancelled: true });
   await assert.rejects(pickStorageDirectory('', async () => { throw Object.assign(new Error('timeout'), { killed: true }); }), /等待超时/);
   assert.deepEqual(await pickStorageDirectory('', async () => ({ stdout: 'C:\\合成\n' })), { path: 'C:\\合成', cancelled: false });
+});
+
+test('macOS 源码版用系统选择文件夹面板，路径经环境变量传入，取消与超时不返回路径', async () => {
+  const calls = [];
+  const fake = result => async (command, args, options) => { calls.push({ command, args, options }); if (result instanceof Error) throw result; return { stdout: result }; };
+  assert.deepEqual(await pickStorageDirectory('/Users/合成/旧目录', fake('/Volumes/外置 盘/工坊/\n'), 'darwin'), { path: '/Volumes/外置 盘/工坊', cancelled: false });
+  const script = calls[0].args.filter((_, index) => index % 2).join('\n');
+  assert.equal(calls[0].command, '/usr/bin/osascript');
+  assert.ok(calls[0].args.every((value, index) => index % 2 || value === '-e'));
+  assert.match(script, /choose folder/); assert.match(script, /error number -128/); assert.match(script, /^activate$/m);
+  assert.doesNotMatch(script, /旧目录/, '初始路径不能拼进脚本');
+  assert.equal(calls[0].options.env.NAI_PICK_INITIAL, '/Users/合成/旧目录');
+  assert.deepEqual(await pickStorageDirectory('', fake('\n'), 'darwin'), { path: '', cancelled: true });
+  await assert.rejects(pickStorageDirectory('', fake(Object.assign(new Error('timeout'), { killed: true })), 'darwin'), /等待超时/);
+  await assert.rejects(pickStorageDirectory('', fake('relative/path\n'), 'darwin'), /普通文件系统目录/);
+  await assert.rejects(pickStorageDirectory('', fake('/never'), 'linux'), /没有可用的文件夹选择器/);
+  assert.equal(canPickStorageDirectory('desktop', 'linux'), true);
+  for (const os of ['win32', 'darwin']) assert.equal(canPickStorageDirectory('source', os), true);
+  assert.equal(canPickStorageDirectory('source', 'linux'), false);
 });
 
 test('安装版选择请求只接受对应IPC回执，取消与失败清理监听器', async () => {
@@ -71,6 +90,7 @@ for (const mode of ['source', 'desktop']) test(`${mode} 复制核验后切入口
   try {
     const states = []; const result = await executeStorageSwitch(job, { progress: async state => states.push(state) });
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.target);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.target);
     for (const name of ['local-data/v3/d1/database.sqlite', 'local-data/v3/r2/image.bin', 'local-data/prompt-agent-sessions/chat.json', 'local-cache/models/model.onnx', 'local-cache/artist-samples/packs/artist_thumbnail_nai', 'local-cache/artist-samples/packs/NAID5-33000-55000-Curated.download', 'public/tag-data/manifest.json', 'wrangler.toml']) assert.equal(await readFile(join(job.workspace, name), 'utf8'), await readFile(join(result.workspaceDir, name), 'utf8'));
     assert.equal(await readFile(join(result.workspaceDir, 'wrangler.toml'), 'utf8'), config);
     assert.equal(states.at(-1).phase, 'switching');
@@ -82,8 +102,10 @@ test('复制错误或哈希不匹配不切入口，原目录保留，暂存失�
   try {
     await assert.rejects(executeStorageSwitch(job, { copy: async () => { throw new Error('synthetic copy failure'); } }), /copy failure/);
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.source);
     await assert.rejects(executeStorageSwitch(job, { copy: async (_from, to) => writeFile(to, 'wrong') }), /核验失败/);
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.source);
     assert.equal(await readFile(join(job.workspace, 'local-data/v3/r2/image.bin'), 'utf8'), 'synthetic-original');
   } finally { removeWorkspace(root); }
 });
@@ -107,6 +129,7 @@ test('安装目录整个边界受保护，runtime旁的个人资料文件夹同�
     await mkdir(runtime, { recursive: true });
     await assert.rejects(validateStorageSwitch({ ...job, runtime, installRoot, target: join(installRoot, '个人资料') }), /程序安装目录/);
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.source);
   } finally { removeWorkspace(root); }
 });
 test('打开已有工坊只切指针，拒绝未知及存储键不匹配', async () => {
@@ -157,8 +180,10 @@ test('已选数据目录丢失或标记损坏时启动停止，不静默建立�
     await executeStorageSwitch(job);
     await writeFile(join(job.target, 'atelier-storage-workspace.json'), '{broken');
     await assert.rejects(resolveStorageDataRoot(job.anchor, job.source), /未创建空库/);
+    assert.throws(() => resolveStorageDataRootSync(job.anchor, job.source), /未创建空库/);
     await writeFile(storageControlFile(job.anchor), JSON.stringify({ dataDir: join(root, 'missing-disk') }));
     await assert.rejects(resolveStorageDataRoot(job.anchor, job.source), /未创建空库/);
+    assert.throws(() => resolveStorageDataRootSync(job.anchor, job.source), /未创建空库/);
     await assert.rejects(access(join(root, 'missing-disk')), /ENOENT/);
     assert.equal(await readFile(join(job.workspace, 'local-data/v3/r2/image.bin'), 'utf8'), 'synthetic-original');
   } finally { removeWorkspace(root); }
@@ -177,6 +202,7 @@ test('缓存单独迁移包含图包及续传副本，不带原图/会话/付费
     assert.equal(storageResourcePaths(job.workspace, job.target).tagData, join(job.target, 'tag-data'));
     assert.equal(storageResourcePaths(job.workspace, job.target).artistSamples, join(job.target, 'artist-samples'));
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.source);
   } finally { removeWorkspace(root); }
 });
 test('并发切换锁与启动帮助进程失败均不改变原入口', async () => {
@@ -191,6 +217,7 @@ test('并发切换锁与启动帮助进程失败均不改变原入口', async ()
     assert.match(output, /存储正在切换/);
     assert.ok(!(await readdir(job.anchor)).includes('local-data'));
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
+    assert.equal(resolveStorageDataRootSync(job.anchor, job.source), job.source);
     await assert.rejects(readFile(storageControlFile(job.anchor)), /ENOENT/);
     await rmdir(join(job.anchor, '.atelier-storage-switch.lock'));
     await assert.rejects(launchStorageSwitch(job, join(root, 'missing-node.exe')), /ENOENT/);

@@ -19,6 +19,25 @@ export default {
     icon: 'public/nai-atelier.ico',
     artifactName: 'NAI-Atelier-Setup-${version}-${arch}.${ext}',
   },
+  // macOS 不做 Developer ID 签名与公证：identity '-' 只做 ad-hoc 签名，首次打开需右键「打开」或在系统设置中放行。
+  mac: {
+    target: [{ target: 'dmg', arch: ['arm64'] }, { target: 'zip', arch: ['arm64'] }],
+    category: 'public.app-category.graphics-design',
+    identity: '-',
+    hardenedRuntime: false,
+    gatekeeperAssess: false,
+    darkModeSupport: true,
+    minimumSystemVersion: '12.0',
+    artifactName: 'NAI-Atelier-${version}-mac-${arch}.${ext}',
+    protocols: [{ name: 'Pixiv Login', schemes: ['pixiv'] }],
+    extendInfo: { NSHighResolutionCapable: true, NSQuitAlwaysKeepsWindows: false, LSApplicationCategoryType: 'public.app-category.graphics-design' },
+  },
+  dmg: {
+    title: 'NAI Atelier ${version}',
+    artifactName: 'NAI-Atelier-${version}-mac-${arch}.${ext}',
+    window: { width: 540, height: 380 },
+    contents: [{ x: 140, y: 190, type: 'file' }, { x: 400, y: 190, type: 'link', path: '/Applications' }],
+  },
   nsis: {
     useZip: true,
     differentialPackage: false,

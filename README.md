@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.83.3-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.84.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -95,11 +95,12 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 
 ## 🚀 快速上手
 
-工坊提供 **Windows EXE 安装版**、**源码本地部署** 与 **Android 独立 APK**：
+工坊提供 **Windows EXE 安装版**、**macOS App**、**源码本地部署** 与 **Android 独立 APK**：
 
 | 使用方式 | 适合人群 | 运行准备 | 开启入口 |
 | :--- | :--- | :--- | :--- |
 | **EXE 安装版** | 普通使用者（推荐） | Windows 10/11 x64，无需配置 Node.js/Git | [下载已发布安装包](https://github.com/HelloQun54321/nai-atelier/releases)，双击安装向导 |
+| **macOS App** | Mac 使用者 | macOS 12+，Apple Silicon 原生（Intel 可自行构建），无需配置 Node.js/Git | 下载 DMG 拖入「应用程序」，首次打开右键「打开」放行；说明见 [macOS 版文档](./docs/MACOS_DESKTOP.md) |
 | **源码本地部署** | 开发者 / 自由定制者 | Node.js 22+ (推荐 24.x) 与 Git | 克隆仓库并执行本地启动命令 |
 | **Android 独立 APK** | 希望手机独立创作的使用者 | Android 8.0+、64 位 ARM、手机自身网络 | 安装本地构建的 APK；使用和构建见 [Android 说明](./docs/ANDROID_STANDALONE.md) |
 
@@ -112,6 +113,14 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 3. 安装完成后从桌面图标打开 **NAI Atelier**，按下方引导开启创作。
 
 > 💡 个人数据保存在 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，独立于程序安装目录，卸载时默认安全保留。详细说明见 [Windows 安装版文档](./docs/WINDOWS_DESKTOP.md)。
+
+### 方式一（Mac）：macOS App
+
+1. 下载 `NAI-Atelier-<版本>-mac-arm64.dmg`，打开后把 **NAI Atelier** 拖入「应用程序」；
+2. 应用未做 Apple 签名与公证：首次在「应用程序」中**右键 → 打开**并确认（macOS 15 起可在「系统设置 → 隐私与安全性」点「仍要打开」），或执行 `xattr -cr "/Applications/NAI Atelier.app"`；
+3. 之后从启动台或程序坞打开。关闭窗口后工坊留在程序坞继续服务手机，⌘Q 退出。
+
+> 💡 个人数据保存在 `~/Library/Application Support/NAI Atelier/workspace/local-data`，与应用本体分离。自行构建：`npm ci && npm run build:desktop`（详见 [macOS 版文档](./docs/MACOS_DESKTOP.md)）。
 
 ### 方式二：源码本地部署
 
@@ -127,6 +136,7 @@ npm run dev:local
 ### 更新工坊
 
 - **EXE 安装版**：在「全局设置 → 数据与维护 → 应用更新」检查并下载新版，再选择「重启并安装」。只检查 GitHub 已发布版本，尚未发布的本地构建不会出现在更新列表。启动时会安静检查，普通退出不会自动安装。安装前完成生成、助手、收集、备份与词库任务；个人数据保留，手机连接暂时中断。当前默认接收预发布，可关闭该选项。
+- **macOS App**：设置页「应用更新」检查新版本并打开下载页，下载后拖入「应用程序」覆盖旧版；个人数据保留。
 - **源码本地部署**：完成任务并关闭源码服务窗口，双击项目根目录的 `更新 NAI Atelier.bat`。入口检查已发布版本、安装锁定依赖、构建并启动；本地修改、定制分支或分叉会停止更新。macOS／Linux 可运行 `sh scripts/update-local.sh`。ZIP 源码没有 Git 更新环境，需从下载页取得新版并按备份说明保留个人数据。
 - **旧版首次升级**：没有更新入口的旧 EXE 需手动运行一次新版安装包；旧源码部署需先取得包含更新入口的新版代码。之后即可使用上述入口。主要版本或数据结构变化需要完整备份并按发行说明手动升级。
 

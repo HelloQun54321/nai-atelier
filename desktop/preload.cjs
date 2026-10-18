@@ -13,7 +13,19 @@ contextBridge.exposeInMainWorld('atelierDesktop', {
   quit: () => ipcRenderer.invoke('atelier-desktop', 'quit'),
   onStatus: callback => ipcRenderer.on('atelier-status', (_event, status) => callback(status)),
 });
-contextBridge.exposeInMainWorld('atelierUpdate', {
+// 桌面外壳：平台标识（标题栏与快捷键提示）、菜单命令（设置、查找）和程序坞／任务栏进度。
+contextBridge.exposeInMainWorld('atelierShell', {
+  platform: process.platform,
+  setProgress: value => ipcRenderer.invoke('atelier-progress', value),
+  setTheme: mode => ipcRenderer.invoke('atelier-theme', mode),
+  onCommand: callback => {
+    const listener = (_event, command) => callback(command);
+    ipcRenderer.on('atelier-command', listener);
+    return () => ipcRenderer.removeListener('atelier-command', listener);
+  },
+});
+// macOS 版未签名，不提供应用内安装，设置页改走网页检查与下载页。
+if (process.platform === 'win32') contextBridge.exposeInMainWorld('atelierUpdate', {
   status: () => ipcRenderer.invoke('atelier-update', 'status'),
   check: () => ipcRenderer.invoke('atelier-update', 'check'),
   download: () => ipcRenderer.invoke('atelier-update', 'download'),

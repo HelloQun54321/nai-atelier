@@ -8,6 +8,8 @@ import { collectorIsLocal } from '../services/collectorAppearance';
 export interface CollectorState {
   available: boolean; enabled: boolean; paused: boolean; session: string; stage: string;
   pending: number; saved: number; skipped: number; failed: number; error: string; detail?: string;
+  /** Windows 有桌面置顶状态窗；macOS 没有，进度就地显示在按钮（安装版另有程序坞角标）。 */
+  statusWindow?: boolean;
 }
 
 export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void; notify: (message: string, type?: 'success' | 'error') => void }) {
@@ -49,7 +51,8 @@ export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void
   if (!state?.available) return null;
   const label = state.enabled ? (state.paused ? '收集已暂停' : '收集中') : '收集模式';
   const detail = [t(state.error), t(state.detail)].filter(Boolean).join(' · ');
-  return <ToolbarButton role="switch" aria-label={t(label)} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || t("开启后自动收集新复制的图片直链，进度在桌面置顶窗显示")} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-600 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
+  return <ToolbarButton role="switch" aria-label={t(label)} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || (state.statusWindow === false ? t("开启后自动收集新复制的图片直链，进度显示在此按钮上") : t("开启后自动收集新复制的图片直链，进度在桌面置顶窗显示"))} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-600 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
     <ClipboardList className="h-4 w-4" /><span className="hidden xl:inline">{t(label)}</span>
+    {state.enabled && state.statusWindow === false && state.saved + state.pending > 0 && <span className="rounded-full bg-emerald-500/15 px-1.5 text-micro font-semibold tabular-nums">{state.pending ? `${state.saved}+${state.pending}` : state.saved}</span>}
   </ToolbarButton>;
 }

@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync, lstatSync, readFileSync } from 'node:fs';
 import { access, copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -43,6 +43,25 @@ export async function resolveStorageDataRoot(anchor, fallback) {
     return data;
   } catch { throw new Error('所选工坊数据目录不可用，请恢复原目录或磁盘连接后再打开；未创建空库'); }
 }
+// Electron 主进程入口在 macOS 上不能顶层等待异步文件操作（事件循环要在入口执行完后才开始），
+// 启动前的数据位置判断使用与上方一致的同步版本。
+const readJsonSync = (path, missing) => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return missing; throw new Error('存储配置损坏，请保留文件并检查目录'); } };
+export function assertStorageNotSwitchingSync(anchor) {
+  if (existsSync(join(anchor, '.atelier-storage-switch.lock'))) throw new Error('工坊存储正在切换，请等待复制与核验完成后再打开');
+}
+export function resolveStorageDataRootSync(anchor, fallback) {
+  const value = readJsonSync(storageControlFile(anchor), {});
+  if (value.dataDir && !isAbsolute(value.dataDir)) throw new Error('工坊数据位置配置不是绝对路径');
+  if (!value.dataDir) return resolve(fallback);
+  const data = resolve(value.dataDir);
+  try {
+    if (!lstatSync(data).isDirectory()) throw new Error('不是文件夹');
+    const source = readJsonSync(join(data, markerName), null), desktop = readJsonSync(join(data, 'workspace', markerName), null);
+    const workspace = source?.app === marker.app ? data : desktop?.app === marker.app ? join(data, 'workspace') : null;
+    if (!workspace || !existsSync(join(workspace, 'wrangler.toml'))) throw new Error('工坊标记缺失');
+    return data;
+  } catch { throw new Error('所选工坊数据目录不可用，请恢复原目录或磁盘连接后再打开；未创建空库'); }
+}
 export const getStoragePreferences = async (workspace = process.cwd()) => readJson(join(workspace, 'local-data', 'storage-preferences.json'), {});
 let preferenceWrite = Promise.resolve();
 export function updateStoragePreferences(patch, workspace = process.cwd(), { signal } = {}) {
@@ -69,16 +88,35 @@ export const storageResourcePaths = (workspace, cacheDir = '', unified = false) 
 export async function storageLocationStatus({ anchor, dataDir, workspace, mode, canManage }) {
   const preferences = await getStoragePreferences(workspace);
   const cacheDir = preferences.cacheDir || '';
-  return { available: process.platform === 'win32', mode, canManage, dataDir, workspaceDir: workspace,
+  return { available: canPickStorageDirectory(mode), mode, canManage, dataDir, workspaceDir: workspace,
     cacheDir: cacheDir || join(workspace, 'local-cache'), cacheFollowsData: !cacheDir,
     resourcePaths: storageResourcePaths(workspace, cacheDir, preferences.resourceLayout === 'unified'), state: await readJson(storageProgressFile(anchor), { phase: 'idle' }) };
 }
 
+/** 安装版由 Electron 主窗口提供选择器；源码版使用 Windows 或 macOS 的系统选择器。 */
+export const canPickStorageDirectory = (mode = 'source', os = process.platform) => mode === 'desktop' || ['win32', 'darwin'].includes(os);
+
+// macOS 由 osascript 弹出系统「选择文件夹」面板并置前；取消（-128）视为未选择，路径经环境变量传入避免拼接脚本。
+const MAC_FOLDER_SCRIPT = ['on run', 'activate', 'set initialPath to system attribute "NAI_PICK_INITIAL"', 'try',
+  'if initialPath is "" then', 'set picked to choose folder with prompt "NAI Atelier"', 'else', 'set picked to choose folder with prompt "NAI Atelier" default location (POSIX file initialPath)', 'end if',
+  'on error number -128', 'return ""', 'end try', 'return POSIX path of picked', 'end run'];
+
 let pickingDirectory = false;
-export async function pickStorageDirectory(initialPath = '', run = execute) {
-  if (process.platform !== 'win32') throw new Error('系统目录选择当前仅支持 Windows');
+export async function pickStorageDirectory(initialPath = '', run = execute, os = process.platform) {
+  if (!['win32', 'darwin'].includes(os)) throw new Error('当前系统没有可用的文件夹选择器');
   if (pickingDirectory) throw new Error('已有文件夹选择窗口，请先完成或取消选择');
   pickingDirectory = true;
+  if (os === 'darwin') {
+    try {
+      const { stdout } = await run('/usr/bin/osascript', MAC_FOLDER_SCRIPT.flatMap(line => ['-e', line]), { timeout: 300_000, env: { ...process.env, NAI_PICK_INITIAL: initialPath }, encoding: 'utf8' });
+      const path = stdout.trim().replace(/(.)\/$/, '$1');
+      if (path && !isAbsolute(path)) throw new Error('请选择普通文件系统目录');
+      return { path, cancelled: !path };
+    } catch (error) {
+      if (error.killed) throw new Error('文件夹选择等待超时，请重新选择文件夹');
+      throw error;
+    } finally { pickingDirectory = false; }
+  }
   // 隐藏的是 PowerShell 控制台；透明置顶 owner 让系统对话框保持可见、可操作。
   const script = "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding; Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.Opacity=0; $owner.ShowInTaskbar=$false; $owner.StartPosition='CenterScreen'; $picker=New-Object System.Windows.Forms.FolderBrowserDialog; $picker.Description='NAI Atelier'; $picker.SelectedPath=$env:NAI_PICK_INITIAL; try { $owner.Show(); $owner.Activate(); if($picker.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK){[Console]::WriteLine($picker.SelectedPath)} } finally { $picker.Dispose(); $owner.Dispose() }";
   try {

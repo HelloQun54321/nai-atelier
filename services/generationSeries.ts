@@ -77,6 +77,16 @@ const installWatchers = () => {
 
 export const getGenerationSeriesSession = (scope: string) => (groups.get(scope) || []).find(entry => !entry.session.queued)?.session || null;
 export const getQueuedGenerationSeries = (scope: string) => (groups.get(scope) || []).filter(entry => entry.session.queued).map(entry => entry.session);
+/** 所有 Key 未结束任务的合计进度（程序坞／任务栏进度条用）；没有进行中的任务时为 null。 */
+export const getActiveGenerationProgress = () => {
+    let current = 0, total = 0;
+    for (const list of groups.values()) for (const { session } of list) {
+        if (isGenerationJobTerminal(session.state)) continue;
+        current += Math.max(0, session.progress.current);
+        total += Math.max(session.progress.total, session.progress.current, 1);
+    }
+    return total ? { current, total } : null;
+};
 export const subscribeGenerationSeries = (listener: () => void) => {
     listeners.add(listener);
     return () => { listeners.delete(listener); };

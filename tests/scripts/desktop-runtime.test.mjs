@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { DESKTOP_APP_ID, prepareDesktopWorkspace, findDesktopPorts, desktopServerOptions, isDesktopNavigation, isExternalWebLink, pickDesktopDirectory } from '../../scripts/desktop-runtime.mjs';
+import { DESKTOP_APP_ID, prepareDesktopWorkspace, findDesktopPorts, desktopServerOptions, isDesktopNavigation, isExternalWebLink, pickDesktopDirectory, runtimeNodeName } from '../../scripts/desktop-runtime.mjs';
 
 test('安装版目录选择归属可见工坊窗口，等待真实选择后回执且取消为空', async () => {
   const calls = []; let finish;
@@ -22,7 +22,7 @@ const fixture = async () => {
   const root = createWorkspace('desktop-runtime-');
   const runtime = join(root, '程序 中文 空格'), data = join(root, '个人数据');
   for (const folder of ['dist', 'public', 'sillytavern-extension/npm-bridge']) await mkdir(join(runtime, folder), { recursive: true });
-  for (const [name, content] of Object.entries({ 'node.exe': 'synthetic', 'dist/_worker.js': 'synthetic', 'package.json': JSON.stringify({ version: 'synthetic' }), 'public/nai-atelier.ico': 'synthetic', 'sillytavern-extension/npm-bridge/index.js': 'synthetic', 'wrangler.toml': 'database_name = "nai-db"\ndatabase_id = "synthetic-storage-key"\nbucket_name = "nai-assets"\n' })) await writeFile(join(runtime, name), content);
+  for (const [name, content] of Object.entries({ [runtimeNodeName()]: 'synthetic', 'dist/_worker.js': 'synthetic', 'package.json': JSON.stringify({ version: 'synthetic' }), 'public/nai-atelier.ico': 'synthetic', 'sillytavern-extension/npm-bridge/index.js': 'synthetic', 'wrangler.toml': 'database_name = "nai-db"\ndatabase_id = "synthetic-storage-key"\nbucket_name = "nai-assets"\n' })) await writeFile(join(runtime, name), content);
   return { root, runtime, data };
 };
 
@@ -72,7 +72,7 @@ test('端口冲突重新选择一组端口，所有端口不可用时报告错�
 
 test('启动使用内置 Node 与绝对路径，清理继承的旧项目变量，动态端口一致', () => {
   const ports = { gateway: 3010, worker: 3011, tagUpdate: 3012, launcher: 3013 };
-  const spec = desktopServerOptions({ runtimeRoot: 'D:\\安装 中文', workspace: 'D:\\数据 空格', executable: 'D:\\安装 中文\\NAI Atelier.exe', documents: 'D:\\文档', downloads: 'E:\\实际下载目录', ports, env: { PATH: 'Windows-only', NAI_KEY: 'must-not-inherit', NODE_OPTIONS: 'bad', ELECTRON_RUN_AS_NODE: '1' } });
+  const spec = desktopServerOptions({ runtimeRoot: 'D:\\安装 中文', workspace: 'D:\\数据 空格', executable: 'D:\\安装 中文\\NAI Atelier.exe', documents: 'D:\\文档', downloads: 'E:\\实际下载目录', ports, platform: 'win32', env: { PATH: 'Windows-only', NAI_KEY: 'must-not-inherit', NODE_OPTIONS: 'bad', ELECTRON_RUN_AS_NODE: '1' } });
   assert.equal(spec.options.env.NAI_EXPORT_SYSTEM_DIR, 'E:\\实际下载目录');
   assert.equal(spec.command, join('D:\\安装 中文', 'node.exe'));
   assert.deepEqual(spec.args, ['--no-warnings', join('D:\\安装 中文', 'scripts/local-server.mjs')]);
@@ -83,6 +83,11 @@ test('启动使用内置 Node 与绝对路径，清理继承的旧项目变量�
   assert.equal(spec.options.env.NAI_GATEWAY_URL, 'http://127.0.0.1:3010');
   assert.equal(spec.options.env.NAI_PACKAGED, '1');
   assert.equal(spec.options.env.PATH, 'Windows-only');
+  // macOS 安装版的内置 Node 是 runtime 根目录下无扩展名的原生 arm64／x64 可执行文件。
+  const mac = desktopServerOptions({ runtimeRoot: '/Applications/NAI Atelier.app/Contents/Resources/runtime', workspace: '/Users/合成/数据', executable: '/Applications/NAI Atelier.app/Contents/MacOS/NAI Atelier', documents: '/Users/合成/Documents', ports, platform: 'darwin', env: {} });
+  assert.equal(mac.command, join('/Applications/NAI Atelier.app/Contents/Resources/runtime', 'node'));
+  assert.equal(runtimeNodeName('win32'), 'node.exe');
+  assert.equal(runtimeNodeName('darwin'), 'node');
 });
 
 test('桌面导航限制同源，外部打开只允许无凭据的网页地址', () => {

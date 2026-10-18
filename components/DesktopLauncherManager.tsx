@@ -66,6 +66,9 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
     }
   };
 
+  // 非 Windows 的安装版（macOS App）从程序坞／启动台打开，没有快捷方式可管理，不显示这一节；源码版仍提示命令行启动。
+  if (status && !status.supported && status.launcherKind === 'exe') return null;
+
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">

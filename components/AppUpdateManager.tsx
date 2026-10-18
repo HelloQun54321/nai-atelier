@@ -5,6 +5,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { InfoPopover } from './InfoPopover';
 import { AppUpdateState, desktopUpdateBridge, preserveUpdateDrafts, clearUpdateDrafts } from '../services/appUpdate';
 import { compareReleaseVersions, fetchPublishedRelease, RELEASE_PAGE } from '../services/appReleases.mjs';
+import { isMacDesktop } from '../services/desktopShell';
 
 export const AppUpdateManager: React.FC = () => {
   useLanguage();
@@ -43,7 +44,7 @@ export const AppUpdateManager: React.FC = () => {
       <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
         <h4 className="whitespace-nowrap font-semibold text-gray-900 dark:text-white">{t("应用更新")}</h4>
         <span className="text-xs text-gray-500 dark:text-gray-400">v{state.currentVersion}</span>
-        {!bridge && <InfoPopover label={t("更新方式")} content={t("请在电脑更新工坊：安装版使用应用内入口；源码版退出服务后，双击项目中的「更新 NAI Atelier.bat」。")} />}
+        {!bridge && <InfoPopover label={t("更新方式")} content={isMacDesktop() ? t("macOS 版从下载页获取新版本，拖入「应用程序」覆盖旧版即可；个人数据保留。") : t("请在电脑更新工坊：安装版使用应用内入口；源码版退出服务后，双击项目中的「更新 NAI Atelier.bat」。")} />}
       </div>
       {status && <span role="status" className="text-xs text-gray-500 dark:text-gray-400">{t(status)}</span>}
       <label title={t("仅检查已发布版本，勾选后包含预发布")} className="flex items-center gap-2 whitespace-nowrap text-xs text-gray-600 dark:text-gray-300"><input type="checkbox" checked={state.allowPrerelease} disabled={busy || state.phase === 'downloaded'} onChange={async event => {

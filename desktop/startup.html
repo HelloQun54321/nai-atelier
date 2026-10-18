@@ -17,6 +17,8 @@
     [data-phase=error] .dot { background: #ef8686; animation: none; }
     button { border: 1px solid #384256; background: #202633; color: inherit; border-radius: 7px; padding: 10px 16px; margin: 14px 8px 0 0; cursor: pointer; }
     button:hover { background: #2b3547; } button:focus-visible { outline: 2px solid #5bbfe8; outline-offset: 3px; }
+    /* 无边框标题栏（macOS）下整页可拖动窗口，按钮保持可点。 */
+    body { -webkit-app-region: drag; } button { -webkit-app-region: no-drag; }
     [hidden] { display: none; }
     @keyframes breathe { 50% { opacity: .3; } }
     @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }

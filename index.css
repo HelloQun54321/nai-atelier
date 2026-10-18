@@ -1337,3 +1337,48 @@ html[data-motion='off'] .media-card:hover { transform: none; }
   html[data-motion='full'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
   html[data-motion='full'] .animate-spin { animation-duration: 1s !important; }
 }
+
+/* macOS 桌面版：内容延伸到标题栏（原生红绿灯悬浮在侧栏左上），侧栏顶部让出标题栏高度并可拖动窗口；
+   页面顶栏空白处同样可拖动，按钮与输入保持可点。全屏时系统隐藏红绿灯，不再保留留白。 */
+html.mac-titlebar {
+  --mac-titlebar-height: 36px;
+}
+html.mac-titlebar .app-sidebar {
+  padding-top: var(--mac-titlebar-height);
+}
+html.mac-titlebar .app-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--mac-titlebar-height);
+  -webkit-app-region: drag;
+}
+html.mac-titlebar .app-sidebar > :first-child,
+html.mac-titlebar .workspace-command-bar {
+  -webkit-app-region: drag;
+}
+html.mac-titlebar :is(.app-sidebar, .workspace-command-bar) :is(button, a, input, textarea, select, label, summary, [role='button'], [role='switch'], [role='tab'], [role='menu'], [role='listbox'], [contenteditable='true']) {
+  -webkit-app-region: no-drag;
+}
+/* Electron 的拖拽区不受层叠遮挡影响：弹窗、菜单打开时整体停用标题区拖拽，避免压在其下的按钮点不到。 */
+html.mac-titlebar:has(:is([aria-modal='true'], [role='dialog'], [role='menu'], [role='listbox'])) :is(.app-sidebar > :first-child, .workspace-command-bar),
+html.mac-titlebar:has(:is([aria-modal='true'], [role='dialog'], [role='menu'], [role='listbox'])) .app-sidebar::before,
+html.mac-titlebar:has(:is([aria-modal='true'], [role='dialog'], [role='menu'], [role='listbox'])) .app-workspace::before {
+  -webkit-app-region: no-drag;
+}
+html.mac-titlebar.mac-fullscreen {
+  --mac-titlebar-height: 0px;
+}
+@media (max-width: 767px) {
+  /* 窄窗口隐藏侧栏，改为工作区顶部让出红绿灯位置。 */
+  html.mac-titlebar .app-workspace {
+    padding-top: var(--mac-titlebar-height);
+  }
+  html.mac-titlebar .app-workspace::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: var(--mac-titlebar-height);
+    -webkit-app-region: drag;
+  }
+}

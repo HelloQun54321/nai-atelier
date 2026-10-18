@@ -68,8 +68,66 @@ export async function windowsCollector({ session, position, onEvent, selfTest = 
   return { update: state => send({ command: 'state', state: { ...state, rawStage: state.stage, stage: translate(state.appearance.language, state.stage), detail: translate(state.appearance.language, state.detail), error: translate(state.appearance.language, state.error) } }), command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
 }
 
+// macOS 没有剪贴板变化通知 API；一个常驻 JXA 进程只比对 changeCount（不读取内容），变化时才取纯文本，
+// 带图片／文件的复制直接忽略，写出失败（父进程退出）即随管道关闭结束。
+export const MAC_CLIPBOARD_WATCHER = `const framework = 'AppKit';
+ObjC.import(framework);
+const board = $.NSPasteboard.generalPasteboard, output = $.NSFileHandle.fileHandleWithStandardOutput;
+const emit = value => output.writeData($(JSON.stringify(value) + '\\n').dataUsingEncoding($.NSUTF8StringEncoding));
+let count = board.changeCount, ticks = 0;
+emit({ type: 'ready' });
+while (true) {
+  delay(0.25);
+  const current = board.changeCount;
+  if (current !== count) {
+    count = current;
+    const types = ObjC.deepUnwrap(board.types) || [];
+    if (!types.some(type => /^public\\.(?:png|tiff|jpeg|heic|file-url)$|^NSFilenamesPboardType$/.test(type))) {
+      const text = ObjC.unwrap(board.stringForType($.NSPasteboardTypeString));
+      if (typeof text === 'string' && text.length <= 8192) emit({ type: 'text', text });
+    }
+  }
+  if (++ticks % 8 === 0) emit({ type: 'pulse' });
+}`;
+
+/** macOS 剪贴板监听：只把通过图片直链过滤的候选交给收集器，同样不建立剪贴板历史；进度由主界面与程序坞显示。 */
+export async function macCollector({ onEvent, spawnProcess = spawn, badge = text => { if (process.connected) process.send?.({ type: 'atelier-dock-badge', text }); } }) {
+  const child = spawnProcess('/usr/bin/osascript', ['-l', 'JavaScript', '-e', MAC_CLIPBOARD_WATCHER], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const lines = createInterface({ input: child.stdout });
+  let alive = true, receiving = true, lastPulse = Date.now(), errorText = '';
+  let resolveReady, rejectReady;
+  const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastPulse > 15_000) { rejectReady(new Error('剪贴板监听无响应')); onEvent({ type: 'lost', error: '剪贴板监听无响应' }); child.kill(); }
+  }, 2000); watchdog.unref?.();
+  const startup = setTimeout(() => { rejectReady(new Error(errorText || '剪贴板监听启动超时')); child.kill(); }, 30_000); startup.unref?.();
+  lines.on('line', line => {
+    let event; try { event = JSON.parse(line); } catch { return; }
+    lastPulse = Date.now();
+    if (event.type === 'ready') { clearTimeout(startup); resolveReady(); onEvent({ type: 'listening' }); return; }
+    if (event.type === 'text' && receiving) { const url = imageLink(event.text); if (url) onEvent({ type: 'link', url }); }
+  });
+  child.stderr.on('data', data => { errorText = `${errorText}${data}`.slice(-1200); });
+  const ended = () => {
+    if (!alive) return; alive = false;
+    clearInterval(watchdog); clearTimeout(startup); lines.close(); badge('');
+    const error = new Error(errorText.trim() || '剪贴板监听已停止');
+    rejectReady(error); onEvent({ type: 'lost', error: error.message });
+  };
+  child.on('error', ended); child.on('exit', ended);
+  try { await ready; } catch (error) { child.kill(); throw error; }
+  return {
+    update: state => badge(state.enabled ? String(state.saved || '') : ''),
+    async command(action) { if (!alive) throw new Error('剪贴板监听已停止'); receiving = action !== 'pause'; },
+    close() { alive = false; clearInterval(watchdog); clearTimeout(startup); lines.close(); badge(''); child.kill(); },
+  };
+}
+
+export const COLLECTOR_PLATFORMS = ['win32', 'darwin'];
+const platformCollector = platform => platform === 'darwin' ? macCollector : windowsCollector;
+
 export class StyleCollector extends EventEmitter {
-  constructor({ worker, download = downloadCollectorImage, listener = windowsCollector, platform = process.platform, proxyUrl = '', modelMappings = () => ({}) }) {
+  constructor({ worker, download = downloadCollectorImage, platform = process.platform, listener = platformCollector(platform), proxyUrl = '', modelMappings = () => ({}) }) {
     super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
     this.appearance = { themeMode: 'system', isDark: true, accentColor: '#0ea5e9', motion: 'full' };
@@ -77,7 +135,8 @@ export class StyleCollector extends EventEmitter {
   }
   state() {
     const state = this.run?.state || this.stopped;
-    return { ...state, appearance: { ...this.appearance }, available: this.platform === 'win32' };
+    // statusWindow：Windows 有置顶状态窗；macOS 进度显示在按钮与程序坞角标。
+    return { ...state, appearance: { ...this.appearance }, available: COLLECTOR_PLATFORMS.includes(this.platform), statusWindow: this.platform === 'win32' };
   }
   publish(run) {
     if (this.run !== run) return;
@@ -110,7 +169,7 @@ export class StyleCollector extends EventEmitter {
   async start() {
     if (this.disposed) throw new Error('本机服务已退出');
     if (this.run) return this.state();
-    if (this.platform !== 'win32') throw new Error('收集模式仅支持 Windows 电脑本机');
+    if (!COLLECTOR_PLATFORMS.includes(this.platform)) throw new Error('收集模式仅支持 Windows 或 macOS 电脑本机');
     const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
     this.run = run; this.publish(run);
     try {
@@ -122,7 +181,7 @@ export class StyleCollector extends EventEmitter {
         if (event.type === 'link') this.accept(run, event.url);
         if (event.type === 'pause' || event.type === 'resume') void this.command(event.type).catch(error => this.failListener(run, error));
         if (event.type === 'stop' || event.type === 'lost') {
-          if (event.type === 'lost') run.state.error = event.error || 'Windows 监听已失效';
+          if (event.type === 'lost') run.state.error = event.error || (this.platform === 'darwin' ? '剪贴板监听已停止' : 'Windows 监听已失效');
           void this.command('stop').catch(() => {});
         }
         if (event.type === 'position') void this.worker('position', { x: event.x, y: event.y, collapsed: event.collapsed }).catch(() => {});

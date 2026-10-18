@@ -49,7 +49,7 @@ export async function handleExportLocationRequest(req, res, { workspace, canMana
   req.once('aborted', cancelled); res.once?.('close', cancelled);
   let timer;
   try {
-    const canPick = typeof pickDirectory === 'function' && process.platform === 'win32';
+    const canPick = typeof pickDirectory === 'function' && (Boolean(systemDirectory) || ['win32', 'darwin'].includes(process.platform));
     if (req.method === 'GET') { reply(200, state(await getStoragePreferences(workspace), canPick, systemDirectory)); return true; }
     if (req.method !== 'POST') { reply(405, { error: '不支持的请求方法' }); return true; }
     if (req.headers?.['x-nai-local-control'] !== 'true') { reply(403, { error: '导出操作缺少本机维护授权' }); return true; }

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { getLanUrls, inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy } from '../../scripts/local-server-runtime.mjs';
+import { getLanUrls, inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy, parseMacSystemProxy, readMacSystemProxy } from '../../scripts/local-server-runtime.mjs';
 
 test('手机地址排除虚拟网卡与无效地址、去重并使用实际端口', () => {
   const entry = (address, extra = {}) => ({ address, family: 'IPv4', internal: false, ...extra });
@@ -277,4 +277,24 @@ test('真实构建期间可快速合并第二次启动，构建失败释放占�
     assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep + 'nai-launcher-build-'));
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('macOS 系统代理按 HTTPS→HTTP 读取已启用条目，SOCKS／PAC／失败均回落直连', () => {
+  const scutil = `<dictionary> {
+  HTTPEnable : 1
+  HTTPPort : 8080
+  HTTPProxy : proxy.lan
+  HTTPSEnable : 1
+  HTTPSPort : 7897
+  HTTPSProxy : 127.0.0.1
+  SOCKSEnable : 1
+  SOCKSPort : 1080
+  SOCKSProxy : 127.0.0.1
+}`;
+  assert.equal(parseMacSystemProxy(scutil), 'http://127.0.0.1:7897');
+  assert.equal(parseMacSystemProxy(scutil.replace('HTTPSEnable : 1', 'HTTPSEnable : 0')), 'http://proxy.lan:8080');
+  assert.equal(parseMacSystemProxy('HTTPSEnable : 1\n  HTTPSPort : 3128\n  HTTPSProxy : ::1'), 'http://[::1]:3128');
+  for (const output of ['SOCKSEnable : 1\n  SOCKSPort : 1080\n  SOCKSProxy : 127.0.0.1', 'ProxyAutoConfigEnable : 1', 'HTTPEnable : 1\n  HTTPProxy : host\n  HTTPPort : 0', '', undefined]) assert.equal(parseMacSystemProxy(output), '');
+  assert.equal(readMacSystemProxy(() => { throw new Error('scutil 不可用'); }), '');
+  assert.equal(readMacSystemProxy((command, args) => { assert.deepEqual([command, args], ['/usr/sbin/scutil', ['--proxy']]); return scutil; }), 'http://127.0.0.1:7897');
 });
