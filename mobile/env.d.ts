@@ -29,6 +29,7 @@ declare module 'mobile:gateway' {
   export const fetchNovelAiSubscription: (authorization: string, signal?: AbortSignal) => Promise<Response>;
   /** 与电脑网关同一份计费函数：payload、额度是否透支、是否活跃 Opus。 */
   export const estimateNovelAiGenerationCost: (payload: unknown, opusUsageExhausted?: boolean, opusSubscriber?: boolean) => number;
+  export const isSubscriptionUnsupported: (gatewayUrl: string, status: number | string) => boolean;
 }
 /** 手机后台任务的成图解析与历史表单：与电脑共用同一份纯实现，不含 Node 图像库。 */
 declare module 'mobile:generation-output' {

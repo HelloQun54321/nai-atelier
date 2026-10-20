@@ -4,13 +4,41 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-10-20
+
+- **Codex（GPT-6）**：按用户授权提交并合并 PR #3 的完整修正版，版本由 1.89.0 递增至 1.89.1；保留原作者提交与当前主线足迹功能，复用已通过的 646 项 Node、226 项 Worker、9 项 Android 共享提取及 17 项手机后台定向验证，提交门禁统一执行密钥扫描、ESLint 与 TypeScript 检查。同步主线和原 PR 分支后完成 GitHub 合并，不删除贡献者分支或触碰私人资料。
+
+- **Codex（GPT-6）**：评审并在独立工作区整合 PR #3（kcgoofee-jpg）：处理与当前主线的文档／版本冲突，保留角色参考缓存格式转换；复现并修正旧 Opus 快照导致零费用任务直接执行的问题，补齐独立 Android 降级与共享构建导出，增加模拟网关后台三张生成、再次确认、失败停止和未知计费的回归。后端回归 646 项 Node＋226 项 Worker、Android 共用提取 9 项及手机后台 17 项定向检查通过；同步产品意图、决策与说明。仅使用隔离合成资料，无真实付费请求，提交与远端更新待用户通知。
+
+- **Codex（GPT-6）**：按用户要求将 Key 使用量统计、旧记录展示及足迹页加载优化整理为同一功能提交批次，版本由 1.88.1 递增至 1.89.0，同步版本清单与说明；复用本批次已通过的后端 846 项、前端 24 项及 Android 共用逻辑 8 项验证，密钥扫描、ESLint 和类型检查由提交钩子统一执行。
+
+- **Codex（GPT-6）**：优化整个足迹页：历史参数统计由 12 组查询收敛为 6 组，角色排行只读取所需 JSON 字段；新增只读 Roll／Vibe／分组摘要，取消完整配置传输及资产、助手、收藏的统一等待，补齐摘要分组失败占位与离页取消。后端回归 620+226 项、前端组件与服务 24 项通过；本机只读接口测量年度约 2.28s→0.85s、月度约 0.55s→0.22s，相关资产响应约 65.6KB→6.4KB，前后端产物已更新。同步说明与决策，不修改私人资料或结构，不提交，版本待最终提交批次递增。
+
+- **Codex（GPT-6）**：排查 Key 用量加载慢，实测本地单独请求约 100ms、与历史／资产并发约 2.5s；前端改为优先完成用量读取再发起重查询，保留独立错误反馈与取消语义，同步检查周期切换、失败和离开页面，相关组件 19 项通过。更新说明与前端产物，不修改私人数据或后端统计口径，继续不提交。
+
+- **Codex（GPT-6）**：按截图反馈修正 Key 用量的旧记录语义：保管箱主列表与未关联旧指纹折叠分开，全部年份提升已有 Anlas／Opus 累计，缺失的旧模型／图片明细显示「—」，CSV 单列旧累计并避免导出伪零；同步五语、说明及决策，相关组件 16 项通过，更新前端产物，不改写或清理私人记录，继续不提交。
+
+- **Codex（GPT-6）**：按确认的排版实现创作足迹 Key 用量：复用轻量事件账本，在桌面／Android 共用成功结算处记录真实模型、图片张数、估算 Anlas 与 Opus 用量；新增通栏响应式列表、原位明细、周期联动、旧累计区分及 CSV，保留独立全工坊失败统计，并补齐删光历史后的用量时间选择。网关回归 620 项、Worker 223 项、组件 14 项、Android 共用逻辑 8 项通过，前端 Vite 产物已更新；同步五语、说明与决策。不触碰私人数据，不提交，版本待最终提交批次递增。
+
 ## 2026-10-19
 
+- **Claude Code (Claude Opus 5.5)**：第三方生图网关兼容：成员网关的角色参考改写为附原图的 `director_reference_images_cached`，网关缺少额度接口（404／405／501）时后台连续生成按保守价降级继续而非中止；补单元与 HTTP 集成测试并更新 README／决策记录（PR #3 原始贡献）。
 - **Claude Code (Claude Opus 5.5)**：新增 macOS 版并做 mac 专属适配：构建脚本按本机平台选择 darwin 原生 Node／ONNX、生成 Retina 图标与 dmg／zip；原生标题栏、菜单与 ⌘ 快捷键、程序坞进度／角标、关窗驻留；系统代理、文件选择、剪贴板收集与 Pixiv 协议的 mac 实现；修复主进程顶层异步等待在 macOS 卡死启动；补对应测试与 `docs/MACOS_DESKTOP.md`（feat: add macOS desktop build and native mac experience）。
 - **Claude Code (Claude Opus 5.5)**：修复桌面打包清单漏列主进程导入的存储位置与导出脚本，补测试核对主进程导入均进入 app.asar（fix: ship main-process scripts in the desktop app bundle）。
 
 ## 2026-10-18
 
+- **DeepSeek Harness（deepseek-flash）**：按反馈去掉 Roll 色带段间的 1px 缝隙。4px 高度里切缝会变成梳齿状断口，而 12 个色相本身已能分段；缝隙还会先占固定像素再分配宽度，让段宽偏离真实权重比。保留暗槽（压暗插画、保证色带在亮画面上可见）。同步 PRODUCT_DECISIONS 与 CHANGELOG 的说法。
+- **DeepSeek Harness（deepseek-flash）**：修复 Roll 命名统一后没同步的组件测试：画师库与角色库的抽卡入口、收藏筛选已分别改叫「随机选画师／再选一批／只看收藏画师」和「随机抽卡／再抽一批／只看收藏」，测试改为按目录取文案；补齐角色编辑器在 Medium 模型下正负词清空按钮的可用性断言（每个角色两个按钮，负词那半随区域锁定）；修正「更多操作」里第二次点击翻译需计两次调用的断言。另把单测超时放宽到 15 秒，修掉整套并发跑满时重测试被默认 5 秒误杀的偶发失败。`npm run test -- tests/components/` 连续两次 1637 项全绿。
+- **DeepSeek Harness（deepseek-flash）**：按设计讨论重做 Roll 候选卡片的画师占比色带：低饱和 12 色（等色相间隔、等明度）、按权重降序铺开、段间 1px 缝隙并垫暗槽，颜色锚定画师原串位置以便和详情面板对号，超过 12 位画师时尾部合并为中性灰；抽出 `components/roll/rollPalette.ts` 统一色带与详情面板配色，修掉两处第 6 色不一致；新增 `tests/components/rollPalette.test.ts` 覆盖排序、颜色归属与溢出合并。
+- **DeepSeek Harness（deepseek-flash）**：按需求把 Roll 每串画师上限从 16 位提升到 64 位，统一校验、候选、固定画师、配置弹层、从风格串开始与提示文案；现有记录无需迁移。此前同一轮已给 Roll 串增加「从已有风格串开始」，并修复有画师 Tag 却不可用：兼容裸画师名、`@`／`by` 署名、`artist:`／`Artists:` 大小写与复数、异常括号／权重、缺失模型与 32 位 Seed；列表显示封面、画师数量与不可用原因。同步服务、弹层、页面、五语文案、决策文档、README、CHANGELOG 与回归测试。
+- **DeepSeek Harness（deepseek-flash）**：按产品／UI 体验审视结论重整 Roll 串与画师库：Roll 顶栏记录名、主操作固定、张数／人数／费用摘要、本轮设置分组、容量与轮次角标、未出图禁存、永久清理已归档候选、中文名搜索、详情样张与画师库互跳；画师库无样张回退全目录、样张筛选记忆、收藏画师标记、图包入口、随机选画师与窄屏工具栏滚动；统一「画风记录／候选／选择固定画师／随机选择」命名并补齐五语文案、决策文档、README、CHANGELOG 与定向测试。
+- **DeepSeek Harness（deepseek-flash）**：按反馈把抽取方式分成两层：新建/编辑记录的配置弹层里设「默认抽取方式」，本轮设置里改的是临时覆盖，只写入轮次快照、不再改写记录默认；同时让「本轮设置」按钮显示文字（原来只有一个箭头，找不到入口）（feat: separate default and per-round draw modes）。
+- **DeepSeek Harness（deepseek-flash）**：按需求给 Roll 候选加「新建记录 · 只抽权重」：复制当前模板、固定 Seed、画师覆盖项与权重范围，新记录的抽取方式设为固定该候选的画师集合，后续每轮只随机权重；补译文与页面断言（feat: create a weights-only record from a roll candidate）。
+- **DeepSeek Harness（deepseek-flash）**：按反馈把 Roll 模板的角色描述拆成独立「角色提示词」字段，自动接在画师串之后并支持 `{character}` 占位，避免在公共提示词里手动找位置；补校验、译文与定向测试（feat: add a dedicated character prompt to roll templates）。
+- **DeepSeek Harness（deepseek-flash）**：按反馈把 Roll 卡片画师标签扩到两行（最多 6 个），底栏留出第二行间距，非磨砂布局同步调整瀑布流高度估算（style: show two rows of artist badges on roll cards）。
+- **DeepSeek Harness（deepseek-flash）**：按现场反馈补 Roll 串的生成与文案体验：生成时在本轮第一张未出图封面显示流式步骤预览（受既有「生成过程预览」设置控制）；统计本地 898 条风格串后，把新建记录的默认提示词换成常用的质量词 + 标准负面组合，并在「提示词与生成设置」加「套用常用质量词」；卡片画师标签缩小为 text-micro 并接入现有磨砂徽章样式。同步译文、CHANGELOG 与定向测试（feat: add roll streaming preview, quality defaults and compact frosted badges）。
+- **DeepSeek Harness（deepseek-flash）**：按用户要求给 Roll 串补上系统化的抽取控制：三种抽取方式（全随机／固定画师／固定权重）、组队弹层（抽卡、重抽、踢出、补抽、从画师库添加、手填）、全局屏蔽名单（独立私人设置，跨记录生效）、轮次条件快照与「沿用这轮条件」、记录概览；同步抽取逻辑、Worker 校验、五语文案与文档，补服务／Worker／组件定向测试；随后按反馈给组队弹层补上图包样张封面，并新增「只抽有样张的画师」开关（图包与自建样张都算，显式锁定项保留），同步记录字段、轮次条件与文案；再按现场反馈把抽卡池统一到「实际可显示样张」并接上画师库的保守裁边预览，卡片改为竖版大图（feat: add draw modes, artist party and global blocklist to style roll）。
 - **DeepSeek Harness（deepseek-flash）**：按界面反馈把 Roll 串卡片的丢弃／恢复按钮从图片左下角移到左上角编号下方，避免遮挡底部画师与权重标签；补位置断言并重建前端产物（style: move roll discard action under the card number）。
 - **DeepSeek Harness（deepseek-flash）**：按用户要求把 Roll 串收敛为基本抽取与出图并清理照抄上游带来的育种设定：候选字段 `genes／parents／generation／method` 改为 `tags`，删除手动调权新变体、「纯新探索／微调变体」筛选、记录导出与参考已保存组合的抽取偏置，抽取改为每轮纯随机；界面「画师基因配方」「来源候选」「变异」徽章全部移除，顶栏去掉重复的轮次／数量摘要与清除筛选胶囊。随后按用户确认清空本地 Roll 数据：删除唯一一条记录（18 个候选）与它生成的 50 张历史图片（经本地服务逐张删除，同时清理 R2 原图），删除旧字段兼容代码与迁移说明，不保留恢复逻辑。同步产品宪法、模块决策、Roll 说明、五语 README、CHANGELOG 与译文词条。
 - **DeepSeek Harness（deepseek-flash）**：按用户确认修订版本规则：只有不兼容或需人工干预的 schema 变更才升 major，新增表／列／索引等向后兼容变更按功能类型递增；把创作足迹提交从 2.0.0 修正为 1.83.0 并重新提交。

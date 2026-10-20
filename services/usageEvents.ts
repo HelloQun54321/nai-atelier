@@ -25,7 +25,22 @@ export interface UsageEventDay extends UsageEventTotal {
 export interface UsageEventStats {
   totals: UsageEventTotal[];
   daily: UsageEventDay[];
+  keys: KeyUsageRow[];
+  keyUsageFirstAt: number | null;
   generatedAt: number;
+}
+
+export interface KeyUsageRow {
+  keyHash: string;
+  name: string | null;
+  images: number;
+  models: { model: string; images: number }[];
+  generationAnlas: number;
+  encodingAnlas: number;
+  opusImages: number;
+  unknownBillingImages: number;
+  /** 原有累计计数包含旧版本，不能与本周期明细相加。 */
+  lifetime: { anlasSpent: number; opusImages: number } | null;
 }
 
 /** 失败、取消、编码等没有进入历史的事件只写轻量账本；不记录 Prompt 或聊天内容。 */
@@ -56,6 +71,8 @@ export const getUsageEventStats = async (range: UsageRange, signal?: AbortSignal
   return {
     totals: Array.isArray(payload?.totals) ? payload.totals.map(normalize) as UsageEventTotal[] : [],
     daily: Array.isArray(payload?.daily) ? payload.daily.map(normalize) as UsageEventDay[] : [],
+    keys: Array.isArray(payload?.keys) ? payload.keys : [],
+    keyUsageFirstAt: count(payload?.keyUsageFirstAt) || null,
     generatedAt: count(payload?.generatedAt),
   };
 };

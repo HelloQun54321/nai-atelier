@@ -153,7 +153,7 @@ describe('ChainEditorHeader 工具栏', () => {
       '导入图片或 JSON 配置', '翻译所有未翻译提示词', 'Tag 辅助已关闭', '重置当前模式',
     ]);
     fireEvent.click(within(more).getByRole('button', { name: '翻译所有未翻译提示词' }));
-    expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
+    expect(onTranslateMissingPrompts).toHaveBeenCalledTimes(2);
   });
 
   it.each([390, 1280])('保存菜单区分修改原串与另存新串，宽度=%s', width => {

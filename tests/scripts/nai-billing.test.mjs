@@ -26,11 +26,12 @@ const request = (key = 'handler-key', body = payload(), maximum) => {
 };
 const idleQueue = () => new CloudQueueCoordinator(() => assert.fail('不能调用公共队列'), 'https://queue.invalid');
 test('Vibe 编码：成员 Key 走绑定网关，失败不重试，官方 Key 保持原接口；并发不同接入分别计费', async () => {
-  const spends = [], saves = [], calls = [];
+  const spends = [], saves = [], calls = [], usage = [];
   const worker = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
     res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/local-usage/events') { usage.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"inserted":1}'); }
     if (req.url.endsWith('/encoding-result')) { saves.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"item":{"id":"gateway-encoding"}}'); }
     if (req.url === '/api/anlas-budget') { spends.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"remaining":1664}'); }
     res.end('{"item":{"id":"gateway-vibe","encodings":[]}}');
@@ -52,22 +53,25 @@ test('Vibe 编码：成员 Key 走绑定网关，失败不重试，官方 Key �
     assert.equal(gateway.statusCode, 200, gateway.body()); assert.equal(official.statusCode, 200, official.body());
     assert.deepEqual(calls.map(call => call.url).sort(), ['https://gateway.example/v1/ai/encode-vibe', 'https://image.novelai.net/ai/encode-vibe']);
     assert.equal(saves.length, 2); assert.equal(spends.length, 2);
+    assert.equal(usage.length, 2);
+    assert.deepEqual(usage.map(row => [row.action, row.amount, row.value, row.meta.opusImages]), [['encoding', 0, 2, 0], ['encoding', 0, 2, 0]]);
     assert.equal(new Set(spends.map(item => item.keyHash)).size, 2);
     const denied = new Output(); let rejected = 0;
     await handleVibeEncodeRequest(request('STA1N-denied', { informationExtracted: 1 }), denied, '', worker.address().port, 'gateway-denied-vibe', async url => {
       rejected++; assert.equal(url, 'https://gateway.example/v1/ai/encode-vibe'); return new Response('member disabled', { status: 403 });
     }, 'https://gateway.example/v1');
     assert.equal(denied.statusCode, 403); assert.match(denied.body(), /member disabled/);
-    assert.equal(rejected, 1); assert.equal(spends.length, 2); assert.equal(saves.length, 2);
+    assert.equal(rejected, 1); assert.equal(spends.length, 2); assert.equal(saves.length, 2); assert.equal(usage.length, 2);
   } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
 });
 test('Vibe 编码无额外费用上限拦截、重复复用与生成前单价一致，记账失败仍保存编码', async () => {
   let scenario, encoded = 0, saved = 0;
-  const spends = [];
+  const spends = [], usage = [];
   const worker = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/local-usage/events') { usage.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"inserted":1}'); }
     if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
     if (req.url.endsWith('/encoding-result')) { saved++; return res.end(JSON.stringify({ item: { id: 'fixture' } })); }
     if (req.url === '/api/anlas-budget') {
@@ -93,6 +97,7 @@ test('Vibe 编码无额外费用上限拦截、重复复用与生成前单价一
       if (scenario === 'cached') assert.equal(result.duplicate, true);
     }
     assert.equal(encoded, 2); assert.equal(saved, 2);
+    assert.equal(usage.length, 2, '已有编码和恢复保存不能再次记消费');
     assert.deepEqual(spends.map(item => item.amount), [2, 2]);
   } finally { applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing }); await new Promise(resolve => worker.close(resolve)); }
 });
@@ -101,6 +106,55 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   const success = () => new Response(handler === handleGenerateRequest ? 'zip' : 'event: final\ndata: {"image":"fake"}\n\n');
   const settleGeneration = async () => ({ estimatedCost: 0, anlasBudget: null });
   const prepareBilling = async () => ({ runtime: DEFAULT_NAI_RUNTIME });
+  test(`${label}：成功图片独立记 Key、真实模型、费用和额度，未知费用不冒充零且失败不计数`, async () => {
+    const usage = [], spends = [];
+    let rejectRecord = false, generations = 0;
+    const worker = createServer(async (req, res) => {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks));
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/api/local-usage/events') {
+        usage.push(body);
+        if (rejectRecord) { res.statusCode = 500; return res.end('{"error":"synthetic ledger error"}'); }
+        return res.end('{"inserted":1}');
+      }
+      spends.push(body); res.end('{"remaining":1666}');
+    });
+    worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+    try {
+      for (const [suffix, model, known, status] of [
+        ['v45', 'nai-diffusion-4-5-full', true, 200], ['v5', 'nai-diffusion-5-full-medium', true, 200],
+        ['unknown', 'nai-diffusion-5-full', false, 200], ['denied', 'nai-diffusion-5-full', true, 403],
+      ]) {
+        const key = `ledger-${label}-${suffix}`;
+        if (known) cacheNovelAiSubscription(`Bearer ${key}`, subscription);
+        const res = new Output();
+        await handler(request(key, payload({}, { model })), res, '', worker.address().port, idleQueue(), { enabled: false }, async () => {
+          generations++;
+          return status === 200 ? success() : new Response('{"error":"denied"}', { status });
+        }, {});
+        assert.equal(res.statusCode, status);
+        if (status === 200) {
+          const record = usage.at(-1);
+          assert.equal(record.target, createHash('sha256').update(key).digest('hex'));
+          assert.equal(record.amount, 1); assert.equal(record.meta.model, model);
+          assert.equal(record.meta.billingKnown, known);
+          if (known) assert.equal(record.value, 0);
+          else { assert.equal(record.value, undefined); assert.equal(record.meta.opusImages, undefined); }
+        }
+      }
+      assert.equal(usage.length, 3); assert.equal(generations, 4);
+      assert.equal(spends.length, 1, '只有受限模型免费档需要原有 Opus 计数');
+      rejectRecord = true;
+      const key = `ledger-error-${label}`;
+      cacheNovelAiSubscription(`Bearer ${key}`, subscription);
+      const res = new Output();
+      await handler(request(key), res, '', worker.address().port, idleQueue(), { enabled: false }, async () => { generations++; return success(); }, {});
+      assert.equal(res.statusCode, 200); assert.equal(generations, 5); assert.equal(spends.length, 2);
+      if (handler === handleGenerateRequest) { assert.equal(res.body(), 'zip'); assert.equal(res.headers['X-Nai-Anlas-Accounting-Failed'], '1'); }
+      else { assert.match(res.body(), /event: final/); assert.match(res.body(), /event: nai_usage_error/); }
+    } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+  });
   test(`${label}：上游成功后本地记账失败仍交付成品，并单独提示费用异常，不重试`, async () => {
     let generations = 0;
     const res = new Output();
@@ -137,6 +191,7 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     const worker = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
+      if (req.url === '/api/local-usage/events') return res.end('{"inserted":1}');
       spends.push(JSON.parse(Buffer.concat(chunks).toString()));
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ remaining: 1666 }));
@@ -174,6 +229,7 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     const worker = createServer(async (req, res) => {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
+      if (req.url === '/api/local-usage/events') return res.end('{"inserted":1}');
       spends.push(JSON.parse(Buffer.concat(chunks).toString()));
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ remaining: 1666 }));
@@ -200,6 +256,7 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     test(`${label} ${model}：普通模式允许过期订阅请求，成功按当前 Key 记付费点数，不记 Opus 用量`, async () => {
       const spends = [], calls = [];
       const worker = createServer(async (req, res) => {
+        if (req.url === '/api/local-usage/events') { for await (const _chunk of req) { /* 读完合成请求体。 */ } return res.end('{"inserted":1}'); }
         assert.equal(req.url, '/api/anlas-budget');
         assert.equal(req.method, 'POST');
         const chunks = [];

@@ -51,7 +51,9 @@ describe('共用角色编辑器', () => {
       expect(node.closest('.nai-model-locked')).not.toBeNull();
     }
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
-    expect(screen.getAllByRole('button', { name: '清空当前提示词' })).toHaveLength(2);
+    // 每个角色正负词各有一个清空按钮；Medium 下负词那一半跟着锁定，只有正向可点
+    const clearButtons = screen.getAllByRole('button', { name: '清空当前提示词' }).map(button => (button as HTMLButtonElement).disabled);
+    expect(clearButtons).toEqual([false, true, false, true]);
     expect(positive.disabled).toBe(false);
     fireEvent.change(positive, { target: { value: 'green hair' } });
     expect(draft().characters?.[0]).toMatchObject({ prompt: 'green hair', negativePrompt: 'red hair' });

@@ -43,6 +43,24 @@ export interface UsageStats {
   generatedAt: number;
 }
 
+/** 足迹只需要计数和日期，不加载配方、参考编码或图片配置。 */
+export interface UsageAssets {
+  roll?: { id: string; name: string; archived?: boolean; updatedAt: number;
+    candidates: { createdAt: number; savedChainId?: string; archived?: boolean }[];
+    rounds: { createdAt: number }[] }[];
+  vibes?: { createdAt: number; encodings: { model: string; createdAt: number }[] }[];
+  vibeGroups?: { createdAt: number }[];
+}
+
+export const getUsageAssets = async (signal?: AbortSignal): Promise<UsageAssets> => {
+  const payload = await api.get('/local-usage/assets', { cache: 'no-store', signal }) as UsageAssets | null;
+  return {
+    roll: Array.isArray(payload?.roll) ? payload.roll : undefined,
+    vibes: Array.isArray(payload?.vibes) ? payload.vibes : undefined,
+    vibeGroups: Array.isArray(payload?.vibeGroups) ? payload.vibeGroups : undefined,
+  };
+};
+
 const count = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;

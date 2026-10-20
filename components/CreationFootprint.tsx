@@ -8,15 +8,12 @@ import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { getLanguage, t, useLanguage } from '../services/i18n';
-import { getUsageStats, type UsageChainRow, type UsageRange, type UsageStats } from '../services/usageStats';
+import { getUsageAssets, getUsageStats, type UsageAssets, type UsageChainRow, type UsageRange, type UsageStats } from '../services/usageStats';
 import { getUsageEventStats, type UsageEventStats } from '../services/usageEvents';
-import { useAnlasBudget } from '../services/anlasBudget';
-import { loadRollExperiments } from '../services/styleRollApi';
-import { vibeService } from '../services/vibeService';
+import { KeyUsageSection } from './KeyUsageSection';
 import { promptAgentService, type PromptAgentSession } from '../services/promptAgent';
 import { sourceLabel } from '../services/inspirationUtils';
-import type { RollExperiment } from '../services/styleRoll';
-import type { PromptChain, VibeAsset, VibeGroup } from '../types';
+import type { PromptChain } from '../types';
 import type { HistoryBrowseQuery } from '../services/historyBrowse';
 import type { InspirationSourceType } from '../types';
 
@@ -142,9 +139,12 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
-  const [assets, setAssets] = useState<{ roll?: RollExperiment[]; vibes?: VibeAsset[]; vibeGroups?: VibeGroup[]; agent?: PromptAgentSession[] }>({});
-  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [assets, setAssets] = useState<UsageAssets & { agent?: PromptAgentSession[] }>({});
+  const [agentLoading, setAgentLoading] = useState(true);
   const [eventStats, setEventStats] = useState<UsageEventStats | null>(null);
+  const [keyUsageFirstAt, setKeyUsageFirstAt] = useState<number | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState('');
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem('nai_footprint_year');
     const current = String(new Date().getFullYear());
@@ -157,58 +157,64 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     return saved && /^\d{4}-\d{2}$/.test(saved) && saved <= currentMonthKey() ? saved : currentMonthKey();
   });
   const requestRef = useRef(0);
+  const eventsRequestRef = useRef<Promise<void>>(Promise.resolve());
   const scrollRef = useRef<HTMLDivElement>(null);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'footprint');
   const collectionRevisionValue = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
-  const budget = useAnlasBudget();
 
   useEffect(() => { localStorage.setItem('nai_footprint_granularity_v2', granularity); }, [granularity]);
   useEffect(() => { localStorage.setItem('nai_footprint_month', selectedMonth); }, [selectedMonth]);
   useEffect(() => { localStorage.setItem('nai_footprint_year', selectedYear); }, [selectedYear]);
-  useEffect(() => { void ensureCollection().catch(() => { /* 收藏读取失败不阻断足迹统计。 */ }); }, []);
+
+  // 先交付轻量 Key 用量，避免历史聚合与资产查询占满本地后端后才返回。
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    setEventsLoading(true); setEventsError(''); setEventStats(null);
+    eventsRequestRef.current = getUsageEventStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined)
+      .then(data => { if (!controller.signal.aborted) { setEventStats(data); setKeyUsageFirstAt(data.keyUsageFirstAt ?? null); } })
+      .catch(() => { if (!controller.signal.aborted) setEventsError(t('用量读取失败，请重试')); })
+      .finally(() => { if (!controller.signal.aborted) setEventsLoading(false); });
+    return () => controller.abort();
+  }, [active, range, selectedMonth, selectedYear, weekStart, reload]);
 
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
     const request = ++requestRef.current;
     setLoading(true); setError('');
-    void getUsageStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined)
-      .then(data => { if (request === requestRef.current) setStats(data); })
+    void eventsRequestRef.current.then(() => {
+      if (controller.signal.aborted) return;
+      return getUsageStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined);
+    })
+      .then(data => { if (data && !controller.signal.aborted && request === requestRef.current) setStats(data); })
       .catch(cause => {
         if (request !== requestRef.current || controller.signal.aborted) return;
         setError(cause instanceof Error ? cause.message : t('统计加载失败，请稍后重试'));
       })
-      .finally(() => { if (request === requestRef.current) setLoading(false); });
+      .finally(() => { if (!controller.signal.aborted && request === requestRef.current) setLoading(false); });
     return () => controller.abort();
   }, [active, range, selectedMonth, selectedYear, weekStart, reload]);
 
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    setAssetsLoading(true);
-    void Promise.allSettled([
-      loadRollExperiments(),
-      vibeService.list('', false),
-      vibeService.listGroups(),
-      promptAgentService.listSessions(),
-    ]).then(([roll, vibes, groups, agent]) => {
-      if (cancelled) return;
-      setAssets({
-        roll: roll.status === 'fulfilled' ? roll.value : undefined,
-        vibes: vibes.status === 'fulfilled' ? vibes.value : undefined,
-        vibeGroups: groups.status === 'fulfilled' ? groups.value : undefined,
-        agent: agent.status === 'fulfilled' ? agent.value : undefined,
-      });
-    }).finally(() => { if (!cancelled) setAssetsLoading(false); });
-    return () => { cancelled = true; };
-  }, [active, reload]);
-
-  useEffect(() => {
-    if (!active) return;
     const controller = new AbortController();
-    void getUsageEventStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined).then(setEventStats).catch(() => { /* 事件账本缺失不影响主统计。 */ });
-    return () => controller.abort();
-  }, [active, range, selectedMonth, selectedYear, weekStart, reload]);
+    setAgentLoading(true);
+    void eventsRequestRef.current.then(() => {
+      if (cancelled) return;
+      return Promise.allSettled([
+        getUsageAssets(controller.signal).catch(() => ({})).then(summary => {
+          if (!cancelled) setAssets(previous => ({ ...summary, agent: previous.agent }));
+        }),
+        promptAgentService.listSessions().catch(() => undefined).then(agent => {
+          if (!cancelled) setAssets(previous => ({ ...previous, agent }));
+        }).finally(() => { if (!cancelled) setAgentLoading(false); }),
+        ensureCollection(),
+      ]);
+    });
+    return () => { cancelled = true; controller.abort(); };
+  }, [active, reload]);
 
   const monthBounds = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -275,7 +281,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   }, [assets.roll, inRange]);
 
   const vibeStats = useMemo(() => {
-    const vibeAssets = (assets.vibes || []).filter(asset => !asset.archived && inRange(asset.createdAt));
+    const vibeAssets = (assets.vibes || []).filter(asset => inRange(asset.createdAt));
     const encodings = vibeAssets.flatMap(asset => asset.encodings).filter(encoding => inRange(encoding.createdAt));
     const models = new Map<string, number>();
     for (const encoding of encodings) models.set(encoding.model, (models.get(encoding.model) || 0) + 1);
@@ -317,7 +323,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   }, [stats?.chains]);
 
   const availableYears = useMemo(() => [...new Set((stats?.daily || []).map(point => point.date.slice(0, 4)))].filter(year => Number(year) <= new Date().getFullYear()).sort().reverse(), [stats?.daily]);
-  const activeYear = availableYears.includes(selectedYear) ? selectedYear : availableYears[0] || String(new Date().getFullYear());
+  const activeYear = selectedYear || availableYears[0] || String(new Date().getFullYear());
 
   const compactDays = useMemo(() => {
     const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
@@ -452,6 +458,23 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     rollStats.top.forEach(row => push('roll', row.name, row.candidates));
     vibeStats.models.forEach(([model, count]) => push('vibe_model', getNaiModelDisplayLabel(model), count));
     agentStats.models.forEach(([model, count]) => push('agent_model', model, count));
+    eventStats?.keys?.forEach((row, index) => {
+      const name = row.name || t('历史用量 {0}', [index + 1]);
+      if (row.models.length) push('key_images', name, row.images);
+      if (row.models.length || row.encodingAnlas > 0) {
+        push('key_generation_anlas_estimate', name, row.generationAnlas);
+        push('key_encoding_anlas_estimate', name, row.encodingAnlas);
+        push('key_opus_images', name, row.opusImages);
+        push('key_unknown_billing_images', name, row.unknownBillingImages);
+      }
+      if (row.lifetime) {
+        push('key_cumulative_anlas_estimate', name, row.lifetime.anlasSpent);
+        push('key_cumulative_opus_images', name, row.lifetime.opusImages);
+      }
+      row.models.forEach(model => push('key_model', `${name} · ${model.model}`, model.images));
+    });
+    rows[0].push('period');
+    rows.slice(1).forEach(row => row.push(row[0].startsWith('key_cumulative_') ? t('累计（含旧版）') : row[0].startsWith('key_') ? usagePeriod : ''));
     const csv = '\uFEFF' + rows.map(row => row.map(cell => `"${cell.replaceAll('"', '""')}"`).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
@@ -462,19 +485,21 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   };
 
   const weekLabel = `${formatDay(weekStart)}–${formatDay(endOfWeek(weekStart))}`;
+  const usagePeriod = granularity === 'week' ? weekLabel : granularity === 'month' ? formatYearMonth(selectedMonth) : selectedYear || t('全部年份');
   const weekOptions = useMemo(() => {
     const current = startOfWeek(Date.now());
     const earliest = stats?.daily?.[0]?.date ? dayKeyToTime(stats.daily[0].date) : current;
-    const first = Math.min(startOfWeek(earliest), current - 11 * 7 * 86400000);
+    const first = Math.min(startOfWeek(earliest), startOfWeek(keyUsageFirstAt || current), current - 11 * 7 * 86400000);
     const values: number[] = [];
     for (let time = current; time >= first; time -= 7 * 86400000) values.push(time);
     if (weekStart <= current && !values.includes(weekStart)) values.push(weekStart);
     return [...new Set(values)].sort((left, right) => right - left);
-  }, [stats?.daily, weekStart]);
+  }, [stats?.daily, weekStart, keyUsageFirstAt]);
   const monthOptions = useMemo(() => {
     const now = new Date();
     const current = new Date(now.getFullYear(), now.getMonth(), 1);
-    const earliest = stats?.daily?.[0]?.date ? new Date(dayKeyToTime(stats.daily[0].date)) : current;
+    const historyFirst = stats?.daily?.[0]?.date ? dayKeyToTime(stats.daily[0].date) : current.getTime();
+    const earliest = new Date(Math.min(historyFirst, keyUsageFirstAt || current.getTime()));
     const fallback = new Date(current.getFullYear(), current.getMonth() - 11, 1);
     const first = new Date(Math.min(new Date(earliest.getFullYear(), earliest.getMonth(), 1).getTime(), fallback.getTime()));
     const values: string[] = [];
@@ -483,14 +508,31 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     }
     if (selectedMonth <= currentMonthKey() && !values.includes(selectedMonth)) values.push(selectedMonth);
     return [...new Set(values)].sort().reverse();
-  }, [stats?.daily, selectedMonth]);
+  }, [stats?.daily, selectedMonth, keyUsageFirstAt]);
   const yearOptions = useMemo(() => {
     const current = new Date().getFullYear();
     const years = new Set(availableYears.map(Number));
     years.add(current);
     if (selectedYear) years.add(Number(selectedYear));
+    if (keyUsageFirstAt) {
+      for (let year = new Date(keyUsageFirstAt).getFullYear(); year <= current; year++) years.add(year);
+    }
     return [...years].filter(year => year <= current).sort((left, right) => right - left);
-  }, [availableYears, selectedYear]);
+  }, [availableYears, selectedYear, keyUsageFirstAt]);
+  const pickerClassName = 'mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300';
+  const periodPicker = granularity === 'week'
+    ? <select aria-label={t('选择周')} value={String(weekStart)} onChange={event => setWeekStart(Number(event.target.value))} className={pickerClassName}>
+      {weekOptions.map(time => <option key={time} value={time}>{formatDay(time)}–{formatDay(endOfWeek(time))}</option>)}
+    </select>
+    : granularity === 'month'
+      ? <select aria-label={t('选择月份')} value={selectedMonth} onChange={event => { if (event.target.value) setSelectedMonth(event.target.value); }} className={pickerClassName}>
+        {monthOptions.map(month => <option key={month} value={month}>{formatYearMonth(month)}</option>)}
+      </select>
+      : <select aria-label={t('选择年份')} value={selectedYear} onChange={event => setSelectedYear(event.target.value)} className={pickerClassName}>
+        <option value="">{t('全部年份')}</option>
+        {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+      </select>;
+  const keyUsage = <KeyUsageSection rows={eventStats?.keys || []} period={usagePeriod} includeLifetime={range === 'all' && !selectedYear} periodPicker={!hasData ? periodPicker : undefined} loading={eventsLoading} error={eventsError} onRetry={() => setReload(value => value + 1)} />;
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
@@ -508,7 +550,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
         <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="!px-2.5">
           {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}<span className="hidden lg:inline">{t('刷新')}</span>
         </ToolbarButton>
-        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats} className="!px-2.5">
+        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats || eventsLoading || Boolean(eventsError)} className="!px-2.5">
           <Download /><span className="hidden xl:inline">CSV</span>
         </ToolbarButton>
         <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="!px-2.5">
@@ -527,6 +569,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
           {!error && !loading && !hasData && <div className="rounded-2xl border border-gray-200 bg-white py-14 dark:border-gray-800 dark:bg-gray-900">
             <EmptyState icon={<Footprints className="h-8 w-8" />} title={t('还没有创作记录')} hint={t('生成并保存作品后，这里会记录你的创作节奏、常用画师与风格串。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" onClick={onOpenLab}>{t('去实验室创作')}</ToolbarButton><ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })}>{t('打开历史')}</ToolbarButton></div>} />
           </div>}
+          {!hasData && keyUsage}
 
           {!error && hasData && totals && stats && <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -546,16 +589,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   ? t('所选月份每天生成的作品数；点击某天查看当天作品')
                   : (selectedYear ? t('所选年份每天生成的作品数；点击某天查看当天作品') : t('全部年份统计；热力图显示最近一年'))}
               action={<div className="flex flex-wrap items-center gap-2">
-                {granularity === 'week' && <select aria-label={t('选择周')} value={String(weekStart)} onChange={event => setWeekStart(Number(event.target.value))} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                  {weekOptions.map(time => <option key={time} value={time}>{formatDay(time)}–{formatDay(endOfWeek(time))}</option>)}
-                </select>}
-                {granularity === 'month' && <select aria-label={t('选择月份')} value={selectedMonth} onChange={event => { if (event.target.value) setSelectedMonth(event.target.value); }} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                  {monthOptions.map(month => <option key={month} value={month}>{formatYearMonth(month)}</option>)}
-                </select>}
-                {granularity === 'year' && <select aria-label={t('选择年份')} value={selectedYear} onChange={event => setSelectedYear(event.target.value)} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                  <option value="">{t('全部年份')}</option>
-                  {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
-                </select>}
+                {periodPicker}
                 <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-[2px] bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-500 dark:bg-indigo-600" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-600 dark:bg-indigo-500" />{t('多')}</span>
               </div>}
             >
@@ -581,6 +615,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               </>}
             </SectionCard>
 
+            {keyUsage}
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard title={t('风格串使用排行')} hint={t('按由该风格串生成的作品数排序')} action={<button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开历史')}</button>}>
                 {groupedChains.length ? <div className="space-y-0.5">{groupedChains.slice(0, 8).map(chain => <RankingRow key={chain.name || chain.id} name={chainLabel(chain)} images={chain.images} lastAt={chain.lastAt} onClick={() => openChain(chain)} />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
@@ -646,11 +681,11 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
                 <SmallMetric label={t('风格串')} value={formatNumber(chainStats.style)} />
                 <SmallMetric label={t('角色库')} value={formatNumber(chainStats.character)} />
-                <SmallMetric label={t('Vibe 资产')} value={formatNumber(vibeStats.assets)} detail={t('编码 {0}', [formatNumber(vibeStats.encodings)])} />
-                <SmallMetric label={t('Vibe 分组')} value={formatNumber(vibeStats.groups)} />
-                <SmallMetric label={t('Roll 实验')} value={formatNumber(rollStats.experiments)} />
-                <SmallMetric label={t('Roll 候选')} value={formatNumber(rollStats.candidates)} />
-                <SmallMetric label={t('已保存组合')} value={formatNumber(rollStats.saved)} />
+                <SmallMetric label={t('Vibe 资产')} value={assets.vibes ? formatNumber(vibeStats.assets) : '—'} detail={assets.vibes ? t('编码 {0}', [formatNumber(vibeStats.encodings)]) : undefined} />
+                <SmallMetric label={t('Vibe 分组')} value={assets.vibeGroups ? formatNumber(vibeStats.groups) : '—'} />
+                <SmallMetric label={t('Roll 实验')} value={assets.roll ? formatNumber(rollStats.experiments) : '—'} />
+                <SmallMetric label={t('Roll 候选')} value={assets.roll ? formatNumber(rollStats.candidates) : '—'} />
+                <SmallMetric label={t('已保存组合')} value={assets.roll ? formatNumber(rollStats.saved) : '—'} />
                 <SmallMetric label={t('收藏夹')} value={formatNumber(collectionStats.boards)} detail={t('收藏 {0}', [formatNumber(collectionStats.total)])} />
               </div>
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -667,24 +702,18 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
 
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard title={t('创作助手')} hint={t('会话与消息元数据，不读取聊天内容')}>
-                {assetsLoading && !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('正在读取…')}</p> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
+                {agentLoading && !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('正在读取…')}</p> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
                   <SmallMetric label={t('会话')} value={formatNumber(agentStats.sessions)} />
                   <SmallMetric label={t('消息')} value={formatNumber(agentStats.messages)} />
                 </div>}
                 {agentStats.models.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{agentStats.models.map(([model, count]) => <span key={model} className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{model} · {formatNumber(count)}</span>)}</div>}
               </SectionCard>
-              <SectionCard title={t('成本与边界')} hint={t('本地估算，不代表官方结算')}>
-                <div className="grid grid-cols-3 gap-2">
-                  <SmallMetric label={t('本地预算剩余')} value={formatNumber(budget.remaining)} />
-                  <SmallMetric label={t('本机累计 Anlas')} value={formatNumber(budget.personal?.anlasSpent || 0)} />
-                  <SmallMetric label={t('本机 Opus 图片')} value={formatNumber(budget.personal?.opusImages || 0)} />
-                </div>
+              <SectionCard title={t('生成结果')} hint={t('所选周期内的全工坊事件')}>
                 <div className="mt-3 grid grid-cols-3 gap-2">
-                  <SmallMetric label={t('失败')} value={formatNumber(generationOutcomes.failed)} />
-                  <SmallMetric label={t('取消')} value={formatNumber(generationOutcomes.cancelled)} />
-                  <SmallMetric label={t('受阻')} value={formatNumber(generationOutcomes.blocked)} />
+                  <SmallMetric label={t('失败')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.failed)} />
+                  <SmallMetric label={t('取消')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.cancelled)} />
+                  <SmallMetric label={t('受阻')} value={eventsLoading || eventsError ? '—' : formatNumber(generationOutcomes.blocked)} />
                 </div>
-                <p className="mt-3 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('预算与用量按当前 Key 的本地记录汇总；官方余额与结算仍以 NovelAI 为准。')}</p>
                 <p className="mt-1 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('失败、取消与受阻自本版本起记录；历史只保留成功保存的作品。')}</p>
               </SectionCard>
             </div>

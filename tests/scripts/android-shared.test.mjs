@@ -123,3 +123,41 @@ test('Android 共用间隔设置与校验，旧公共队列设置更新不丢间
   assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 0.5 }).generationIntervalSeconds, 0.5);
   assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 0.55 }).generationIntervalSeconds, 2);
 });
+
+test('Android 复用成功消费记录，免费 V4.5 也计张数，未知费用不扣预算', async () => {
+  const billing = new URL('../../worker/naiBilling.mjs', import.meta.url).href;
+  const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['settleSuccessfulNovelAiGeneration', 'DEFAULT_NAI_RUNTIME'], `
+    import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '${billing}';
+    const writes = [];
+    const requestWorkerJson = async (path, req, port, options) => { writes.push({ path, ...options }); return { inserted: 1, remaining: 99 }; };
+  `, { requestWorkerJson: '' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(source + '\nexport { writes };').toString('base64'));
+  assert.doesNotMatch(source, /httpRequest|node:fs/);
+  const options = { payload: { model: 'nai-diffusion-4-5-full', parameters: { width: 832, height: 1216, steps: 23, n_samples: 1 } }, keyHash: 'a'.repeat(64), req: {}, workerPort: 0,
+    billing: { runtime: mobile.DEFAULT_NAI_RUNTIME, subscription: { active: true, tier: 3 }, opusSubscriber: true, exhausted: false } };
+  const result = await mobile.settleSuccessfulNovelAiGeneration(options);
+  assert.equal(result.estimatedCost, 0); assert.equal(result.accountingFailed, false);
+  assert.equal(mobile.writes.length, 1); assert.equal(mobile.writes[0].path, '/api/local-usage/events');
+  assert.deepEqual(mobile.writes[0].body, { category: 'nai', action: 'generation', target: 'a'.repeat(64), amount: 1, value: 0,
+    meta: { model: options.payload.model, billingKnown: true, opusImages: 0 } });
+  await mobile.settleSuccessfulNovelAiGeneration({ ...options, billing: { runtime: mobile.DEFAULT_NAI_RUNTIME } });
+  assert.equal(mobile.writes.length, 2);
+  assert.equal(mobile.writes[1].body.value, undefined);
+  assert.equal(mobile.writes[1].body.meta.billingKnown, false);
+});
+
+test('Android 提取后的角色参考与额度降级共用桌面实现，构建显式导出判定函数', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['toCachedPreciseReferenceParameters', 'isSubscriptionUnsupported'],
+    "import { createHmac, randomBytes } from 'node:crypto';");
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const converted = mobile.toCachedPreciseReferenceParameters({ director_reference_images: ['synthetic-image-data'], director_reference_strength_values: [0.6] });
+  assert.equal(converted.director_reference_images, undefined);
+  assert.equal(converted.director_reference_images_cached[0].data, 'synthetic-image-data');
+  assert.match(converted.director_reference_images_cached[0].cache_secret_key, /^[a-f0-9]{64}$/);
+  assert.deepEqual(converted.director_reference_strength_values, [0.6]);
+  for (const status of [404, 405, 501]) assert.equal(mobile.isSubscriptionUnsupported('https://gateway.example', status), true);
+  assert.equal(mobile.isSubscriptionUnsupported('', 404), false);
+  const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
+  assert.match(build, /'isSubscriptionUnsupported'/);
+});

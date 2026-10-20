@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Dice5, LockKeyhole, Plus, Search, X } from 'lucide-react';
+import { Dice5, LockKeyhole, Plus, Search, Sparkles, Users, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
-import { mergeRollArtists, parseRollArtists, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
+import { mergeRollArtists, parseRollArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, ROLL_MAX_ARTISTS, type RollDrawMode, type RollExperiment } from '../../services/styleRoll';
+import { StyleRollPartyDialog } from './StyleRollPartyDialog';
 import { compilePrompt } from '../../services/promptUtils';
 import { parsePromptTags, removePromptTagTokens } from '../../services/tagTranslations';
 import { searchArtistDictionary, type ArtistDictionaryEntry } from '../../services/tagDictionary';
@@ -15,17 +16,29 @@ import { useMobileHistoryLayer } from '../MobileUI';
 
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-interface Props { initial: RollExperiment; chains: PromptChain[]; libraryCount?: number; libraryLoading?: boolean; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
+interface Props { initial: RollExperiment; chains: PromptChain[]; library?: string[]; libraryCount?: number; libraryLoading?: boolean; blockedTags?: string[]; onBlock?: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
 
 export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><SetupForm {...props} /></ImagePreviewPortal>;
 
-const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, libraryLoading = false, enforceFreeStepLimit, onSave, onClose }) => {
+const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCount = 0, libraryLoading = false, blockedTags = [], onBlock, enforceFreeStepLimit, onSave, onClose }) => {
   useLanguage();
-  const [draft, setDraft] = useState(() => structuredClone(initial));
+  const legacyUpgraded = !initial.candidates.length && LEGACY_ROLL_PROMPTS.includes(initial.template.prompt) && !initial.template.negativePrompt.trim();
+  const [draft, setDraft] = useState(() => {
+    const value = structuredClone(initial);
+    if (legacyUpgraded) { value.template.prompt = DEFAULT_ROLL_PROMPT; value.template.negativePrompt = DEFAULT_ROLL_NEGATIVE; }
+    return value;
+  });
   const [section, setSection] = useState<'pool' | 'template'>('pool');
   const [text, setText] = useState(''), [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState<ArtistDictionaryEntry[]>([]);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
+  const plan = draft.drawPlan ?? { mode: 'random' as const };
+  const changeMode = (mode: RollDrawMode) => {
+    if (mode === 'fixedWeight') setDraft(current => ({ ...current, drawPlan: { mode }, rules: { ...current.rules, maxWeight: current.rules.minWeight } }));
+    else if (mode === 'pinnedArtists') setDraft(current => ({ ...current, drawPlan: { mode, pinnedArtists: current.drawPlan?.pinnedArtists ?? [] } }));
+    else setDraft(current => ({ ...current, drawPlan: { mode } }));
+  };
   const dialog = useModalA11y<HTMLDivElement>(true);
   const close = useMobileHistoryLayer(true, () => { if (busy) return false; onClose(); }, 'roll-setup');
   const frozen = draft.candidates.length > 0;
@@ -78,8 +91,23 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {section === 'pool' ? <div className="space-y-4">
           <p role="status" className="text-sm text-gray-500">{libraryLoading ? t('正在读取画师词库…') : t('从画师库自动抽取 · {0} 位画师', [libraryCount])}</p>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold">{t('默认抽取方式')}</p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['random', 'pinnedArtists', 'fixedWeight'] as const).map(mode => <ToolbarButton key={mode} active={plan.mode === mode} onClick={() => changeMode(mode)} className="!px-1 !text-xs">{t(mode === 'random' ? '全随机' : mode === 'pinnedArtists' ? '固定画师' : '固定权重')}</ToolbarButton>)}
+            </div>
+            {plan.mode === 'pinnedArtists' && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-2 dark:bg-gray-800/50">
+              <span className="min-w-0 flex-1 text-xs text-gray-500">{plan.pinnedArtists?.length ? t('已固定 {0} 位画师', [plan.pinnedArtists.length]) : t('尚未固定画师，先选择固定画师再随机权重')}</span>
+              <ToolbarButton disabled={busy} onClick={() => setPartyOpen(true)}><Users />{t('选择固定画师')}</ToolbarButton>
+            </div>}
+            {plan.mode === 'fixedWeight' && <p className="text-xs text-gray-500">{t('所有权重固定为 {0}', [draft.rules.minWeight.toFixed(1)])}</p>}
+            <p className="text-xs text-gray-400">{t('之后每轮默认使用；在「本轮设置」里可以临时改。')}</p>
+          </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {([['minArtists', '最少画师'], ['maxArtists', '最多画师'], ['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={key.includes('Artists') ? 1 : 0.1} max={key.includes('Artists') ? 16 : 3} step={key.includes('Artists') ? 1 : 0.1} disabled={busy} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
+            {([['minArtists', '最少画师'], ['maxArtists', '最多画师']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={1} max={ROLL_MAX_ARTISTS} step={1} disabled={busy || plan.mode === 'pinnedArtists'} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
+            {plan.mode === 'fixedWeight'
+              ? <label className="text-xs font-semibold">{t('固定权重')}<input aria-label={t('固定权重')} type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules.minWeight} min={0.1} max={3} step={0.1} disabled={busy} onChange={event => { const value = Number(event.target.value); setDraft({ ...draft, rules: { ...draft.rules, minWeight: value, maxWeight: value } }); }} /></label>
+              : ([['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={0.1} max={3} step={0.1} disabled={busy} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
           </div>
           <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-700"><summary className="mobile-touch cursor-pointer text-sm font-semibold">{t('锁定／排除画师（可选）')}</summary><div className="mt-3 space-y-4">
           <div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs font-semibold">{t('指定画师（逗号或换行分隔）')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={text} onChange={event => setText(event.target.value)} placeholder="artist:..." disabled={busy} /></label><IconButton label="添加画师" disabled={busy || !text.trim()} onClick={() => add(text)}><Plus /></IconButton></div>
@@ -98,12 +126,17 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
           </div>
           </div></details>
         </div> : <div className="space-y-4">
-          {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建实验。')}</p>}
+          {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}
           {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入生成配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
+          {legacyUpgraded && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">{t('已把旧的默认提示词换成质量词模板，保存后生效。')}</p>}
+          {!frozen && <div className="flex flex-wrap gap-2"><ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE } })}><Sparkles />{t('套用常用质量词')}</ToolbarButton></div>}
           <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<textarea className={`${field} mt-1 min-h-28 resize-y font-mono`} value={draft.template.prompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, prompt: event.target.value } })} /></label>
+          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<textarea aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.characterPrompt || ''} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, characterPrompt: event.target.value } })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t('自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
           <label className="block text-xs font-semibold">{t('负面提示词')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.negativePrompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, negativePrompt: event.target.value } })} /></label>
           <ChainEditorParams params={draft.template.params} prompt={draft.template.prompt} setParams={params => setDraft({ ...draft, template: { ...draft.template, params } })} canEdit={!busy && !frozen} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
-          {!frozen && <ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, params: { ...draft.template.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>}
+          {!frozen && <div className="flex flex-wrap gap-2">
+            <ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, params: { ...draft.template.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>
+          </div>}
           {!!draft.template.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [draft.template.params.characters.length])}</p>}
         </div>}
       </div>
@@ -112,6 +145,10 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
         <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
         <ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
       </footer>
+      {partyOpen && <StyleRollPartyDialog library={library} count={draft.rules.maxArtists} initial={plan.pinnedArtists ?? []} blocked={blockedTags}
+        onBlock={onBlock ?? (async () => {})}
+        onSave={tags => setDraft(current => ({ ...current, drawPlan: { mode: 'pinnedArtists', pinnedArtists: tags } }))}
+        onClose={() => setPartyOpen(false)} />}
     </div>
   </div>;
 };

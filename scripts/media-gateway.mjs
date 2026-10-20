@@ -750,6 +750,22 @@ export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
   };
 };
 
+/**
+ * 第三方生图网关（中转站）通常只接受与官方网页端一致的缓存形式 `director_reference_images_cached`，
+ * 拒收原始 `director_reference_images`。改写为缓存形式并且每张都附带原图数据，不依赖网关侧缓存命中；
+ * 缓存键沿用 Vibe 的本机 HMAC，不暴露图片内容。官方直连保持原始字段不变。
+ */
+export const toCachedPreciseReferenceParameters = parameters => {
+  const images = parameters?.director_reference_images;
+  if (!Array.isArray(images) || !images.length) return parameters;
+  parameters.director_reference_images_cached = images.map(data => ({ cache_secret_key: getVibeCacheSecretKey(data), data }));
+  delete parameters.director_reference_images;
+  return parameters;
+};
+
+/** 第三方生图网关可能没有 `/user/subscription`：仅把明确的“接口不存在”视为额度未知，鉴权失败、网络错误仍按失败处理。 */
+export const isSubscriptionUnsupported = (gatewayUrl, status) => Boolean(gatewayUrl) && [404, 405, 501].includes(Number(status));
+
 /** Remove every browser-controlled Precise Reference field before rebuilding it. */
 export const clearPreciseReferenceParameters = parameters => {
   for (const key of [
@@ -822,6 +838,17 @@ const spendAnlasBudget = async (req, workerPort, amount, reason, personal = null
   });
   if (!Number.isFinite(budget?.remaining) || budget.remaining < 0) throw new Error('本地用量记账回执无效');
   return budget;
+};
+
+/** 成功消费在后端记一次；不依赖前台观察、历史保存或之后是否删图。 */
+const recordNaiUsage = async (req, workerPort, keyHash, action, model, images, cost, opusImages) => {
+  const result = await requestWorkerJson('/api/local-usage/events', req, workerPort, {
+    method: 'POST', body: {
+      category: 'nai', action, target: keyHash, amount: images, value: cost,
+      meta: { model, billingKnown: Number.isFinite(cost), opusImages },
+    },
+  });
+  if (result?.inserted !== 1) throw new Error('本地 Key 用量记录回执无效');
 };
 
 export class VibeEncodingMemoryCache {
@@ -986,7 +1013,8 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
 
 // 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
 const novelAiSubscriptions = new Map();
-export const cacheNovelAiSubscription = (authorization, subscription) => novelAiSubscriptions.set(authorization, subscription);
+export const cacheNovelAiSubscription = (authorization, subscription) => subscription
+  ? novelAiSubscriptions.set(authorization, subscription) : novelAiSubscriptions.delete(authorization);
 const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => {
   const subscription = novelAiSubscriptions.get(authorization);
   return { runtime, subscription, opusSubscriber: subscription?.active === true && subscription.tier >= 3,
@@ -996,14 +1024,19 @@ const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => 
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, workerPort, billing }) => {
   // 未取得订阅时不猜测本地扣费，官方仍直接处理生成和实际扣费。
-  if (!billing.subscription) return { anlasBudget: null };
   const { runtime, exhausted, opusSubscriber } = billing;
-  const estimatedCost = billingForPayload(payload, runtime, opusSubscriber, exhausted).cost;
-  const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber);
-  const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
-    ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
-    : null;
-  return { estimatedCost, personalUsage, anlasBudget };
+  const estimatedCost = billing.subscription ? billingForPayload(payload, runtime, opusSubscriber, exhausted).cost : undefined;
+  const personalUsage = billing.subscription
+    ? computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber) : undefined;
+  const images = Math.max(1, Math.floor(Number(payload.parameters?.n_samples) || 1));
+  // 两份本地记录分别落下；一处故障不能阻止另一处，也不能重发生图。
+  const [recorded, budget] = await Promise.allSettled([
+    recordNaiUsage(req, workerPort, keyHash, 'generation', payload.model, images, estimatedCost, personalUsage?.opusImagesDelta),
+    estimatedCost > 0 || personalUsage?.opusImagesDelta > 0
+      ? spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage }) : null,
+  ]);
+  return { estimatedCost, personalUsage, anlasBudget: budget.status === 'fulfilled' ? budget.value : null,
+    accountingFailed: recorded.status === 'rejected' || budget.status === 'rejected' };
 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
@@ -1900,6 +1933,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
         }));
         try {
           Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
+          if (gatewayUrl) toCachedPreciseReferenceParameters(payload.parameters);
         } catch (error) {
           return sendJson(res, 400, { error: error?.message || '角色参考参数无效' });
         }
@@ -1945,7 +1979,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     let estimatedCost, anlasBudget, accountingFailed = false;
     if (response.ok) {
       try {
-        ({ estimatedCost, anlasBudget } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
+        ({ estimatedCost, anlasBudget, accountingFailed = false } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
       } catch {
         // 已收到成品，记账失败不能变成生图失败并诱发重复付费；ZIP 与 SSE 语义相同。
         accountingFailed = true;
@@ -2163,7 +2197,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     }
 
     try {
-      const { estimatedCost, anlasBudget } = await settleGeneration({
+      const { estimatedCost, anlasBudget, accountingFailed } = await settleGeneration({
         payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing,
       });
       res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
@@ -2172,6 +2206,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
         estimatedSpent: estimatedCost,
         refreshPersonal: true,
       })}\n\n`);
+      if (accountingFailed) res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: '本地用量记录未完整保存' })}\n\n`);
     } catch (accountingError) {
       // 图片已经由 NovelAI 成功生成，结算异常单独上报，绝不能触发前端再次生图。
       res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
@@ -2268,13 +2303,13 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           throw error;
         }
         const encodeKeyHash = createHash('sha256').update(authorization.slice(7)).digest('hex');
-        let anlasBudget, anlasAccountingFailed = false;
-        try {
-          anlasBudget = await spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 });
-        } catch {
-          // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
-          anlasAccountingFailed = true;
-        }
+        const [recorded, budget] = await Promise.allSettled([
+          recordNaiUsage(req, workerPort, encodeKeyHash, 'encoding', 'nai-diffusion-4-5-full', 0, cost, 0),
+          spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 }),
+        ]);
+        // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
+        const anlasBudget = budget.status === 'fulfilled' ? budget.value : undefined;
+        const anlasAccountingFailed = recorded.status === 'rejected' || budget.status === 'rejected';
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
@@ -3074,24 +3109,31 @@ const serveDistFile = async (req, res, url) => {
     readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined,
     estimate: async (job, fresh) => {
       const authorization = job.context.authorization;
+      let subscriptionUnsupported = false;
       if (fresh) {
         try {
           const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
           const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl);
-          if (!response.ok) throw new Error('账号额度刷新失败');
-          cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
+          if (isSubscriptionUnsupported(gatewayUrl, response.status)) {
+            subscriptionUnsupported = true;
+            // 接口明确缺失后，旧免费权益不能继续当成当前额度，也不能用于本次结算。
+            cacheNovelAiSubscription(authorization, null);
+          } else if (!response.ok) throw new Error('账号额度刷新失败');
+          else cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
         } catch {
           throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
         }
       }
       const subscription = novelAiSubscriptions.get(authorization);
       if (!subscription && !fresh) return job.approvedCost;
-      if (!subscription) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
+      if (!subscription && !subscriptionUnsupported) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
       const payload = job.descriptor.payload, p = payload.parameters;
       const priced = { ...payload, parameters: { ...p,
         ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
         ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
       } };
+      // 网关不提供额度接口时降级而不中止：按“无 Opus 免费档”的保守价估算，超过已确认费用仍会请求确认。
+      if (!subscription) return estimateNovelAiGenerationCost(priced, false, false);
       return estimateNovelAiGenerationCost(priced, subscription.usage?.isNegative === true, subscription.active === true && subscription.tier >= 3);
     },
   });

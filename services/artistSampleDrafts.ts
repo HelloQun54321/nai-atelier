@@ -4,13 +4,27 @@ import { IMPORT_SESSION_KEY } from './metadataService';
 import { compilePrompt } from './promptUtils';
 import { parsePromptTags } from './tagTranslations';
 import { createUuid } from './id';
-import { broadcastArtistSamplesChanged, normalizeArtistSampleTag, type ArtistSamplePack, type ArtistSampleTemplate, type ArtistOwnSample } from './artistSamples';
+import { broadcastArtistSamplesChanged, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag, type ArtistSamplePack, type ArtistSampleTemplate, type ArtistOwnSample } from './artistSamples';
 
 export type { ArtistSampleTemplate, ArtistOwnSample } from './artistSamples';
 export interface ArtistSampleData { templates: Partial<Record<ArtistSamplePack, ArtistSampleTemplate>>; samples: ArtistOwnSample[] }
 export interface ArtistSampleTarget { id: string; tag: string; pack: ArtistSamplePack; historyIds: string[] }
 
 export const getArtistSampleData = (): Promise<ArtistSampleData> => api.get('/artist-sample-data');
+
+/** 有可用样张的画师集合（图包 + 自建样张），归一化后用于抽取过滤。 */
+export async function getSampledArtistTags(): Promise<Set<string>> {
+  const [status, data] = await Promise.all([
+    getArtistSampleStatus().catch(() => null),
+    getArtistSampleData().catch(() => ({ templates: {}, samples: [] } as ArtistSampleData)),
+  ]);
+  const tags = new Set<string>();
+  for (const sample of data.samples) tags.add(normalizeArtistSampleTag(sample.tag));
+  const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready'));
+  const catalogs = await Promise.all(ready.map(pack => getArtistSampleCatalog(pack).catch(() => null)));
+  for (const catalog of catalogs) for (const tag of catalog?.tags || []) tags.add(normalizeArtistSampleTag(tag));
+  return tags;
+}
 
 /** 自建起点，绝不声称是外部图包的原始配方。 */
 export const getDefaultArtistSampleTemplate = (pack: ArtistSamplePack): ArtistSampleTemplate => ({

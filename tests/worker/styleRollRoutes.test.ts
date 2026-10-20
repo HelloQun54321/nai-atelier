@@ -12,8 +12,8 @@ const fixture = () => {
   const db = { prepare(query: string) { let values: any[] = []; return { bind(...next: any[]) { values = next; return this; },
     async first() { return sqlite.prepare(query).get(...values) || null; }, async all() { return { results: sqlite.prepare(query).all(...values) }; },
     async run() { return { success: true, meta: sqlite.prepare(query).run(...values) }; } }; } } as unknown as D1Database;
-  const invoke = (body?: unknown, id = 'owner', role = 'admin', method = body === undefined ? 'GET' : 'PUT') => {
-    const path = '/api/style-roll', request = new Request('http://localhost' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const invoke = (body?: unknown, id = 'owner', role = 'admin', method = body === undefined ? 'GET' : 'PUT', path = '/api/style-roll') => {
+    const request = new Request('http://localhost' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return handleStyleRollRoute({ path, method, request, db, currentUser: { id, role } } as RouteContext);
   };
   return { sqlite, invoke };
@@ -88,8 +88,7 @@ it('当前记录可继续追加普通批次，原配方和轮次保留', async (
   expect(restored.rounds.slice(0, e.rounds.length)).toEqual(e.rounds); expect(restored.rounds.at(-1).candidateIds).toHaveLength(4);
 });
 
-it('整条记录可移入和恢复回收站，候选、轮次和原存储键完整保留，坏标记拒绝写入', async () => {
-  const f = fixture(), e = { ...rollFixture(), revision: 0, candidates: [candidateFixture('a')] };
+it('整条记录可移入和恢复回收站，候选、轮次和原存储键完整保留，坏标记拒绝写入', async () => {  const f = fixture(), e = { ...rollFixture(), revision: 0, candidates: [candidateFixture('a')] };
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   const { experiment: archived } = await (await f.invoke({ ...saved, archived: true }))!.json() as any;
   expect(archived.archived).toBe(true); expect(archived.candidates).toEqual(e.candidates);
@@ -97,4 +96,23 @@ it('整条记录可移入和恢复回收站，候选、轮次和原存储键完�
   const { experiment: restored } = await (await f.invoke({ ...archived, archived: false }))!.json() as any;
   expect(restored.archived).toBe(false); expect(restored.candidates).toEqual(e.candidates);
   expect(f.sqlite.prepare('SELECT count(*) AS n FROM settings').get()?.n).toBe(1);
+});
+
+it('全局屏蔽名单独立保存，按用户隔离且坏数据拒绝', async () => {
+  const f = fixture();
+  expect((await f.invoke({ tags: ['deg', 'zill'] }, 'owner', 'admin', 'PUT', '/api/style-roll/blocklist'))!.status).toBe(200);
+  expect(await (await f.invoke(undefined, 'owner', 'admin', 'GET', '/api/style-roll/blocklist'))!.json()).toEqual({ tags: ['deg', 'zill'] });
+  expect(await (await f.invoke(undefined, 'other', 'admin', 'GET', '/api/style-roll/blocklist'))!.json()).toEqual({ tags: [] });
+  expect((await f.invoke({ tags: ['bad,tag'] }, 'owner', 'admin', 'PUT', '/api/style-roll/blocklist'))!.status).toBe(400);
+  expect((await f.invoke({ tags: ['deg'] }, 'owner', 'admin', 'PUT', '/api/style-roll/blocklist'))!.status).toBe(200);
+  expect(await (await f.invoke(undefined, 'owner', 'admin', 'GET', '/api/style-roll/blocklist'))!.json()).toEqual({ tags: ['deg'] });
+  expect((await f.invoke(undefined, 'owner', 'guest', 'GET', '/api/style-roll/blocklist'))!.status).toBe(403);
+});
+
+it('轮次快照随轮次一起不可改写', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.candidates = [candidateFixture('one')];
+  e.rounds = [{ id: 'round', candidateIds: ['one'], createdAt: 1, snapshot: { rules: e.rules, mode: 'random' } }];
+  const { experiment: saved } = await (await f.invoke(e))!.json() as any;
+  expect((await f.invoke({ ...saved, rounds: [{ ...saved.rounds[0], snapshot: { ...saved.rounds[0].snapshot, rules: { ...saved.rounds[0].snapshot.rules, minArtists: 5 } } }] }))!.status).toBe(400);
 });

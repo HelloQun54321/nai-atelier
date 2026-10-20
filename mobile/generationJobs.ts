@@ -6,7 +6,7 @@ import type { GenerationTasks } from '../worker/generationTasks.mjs';
 import type { CloudQueueCoordinator } from 'mobile:gateway';
 import {
   cacheNovelAiSubscription, estimateNovelAiGenerationCost,
-  keyHashFromAuthorization, sanitizeNovelAiSubscription,
+  keyHashFromAuthorization, sanitizeNovelAiSubscription, isSubscriptionUnsupported,
 } from 'mobile:gateway';
 import { generationHistoryForm, generationImageBytes, readGenerationResponse } from 'mobile:generation-output';
 import { bytesToBase64, native } from './native';
@@ -23,8 +23,9 @@ interface NaiSubscriptionSnapshot { tier?: number; active?: boolean; usage?: { i
 const subscriptions = new Map<string, NaiSubscriptionSnapshot>();
 
 /** 前台额度刷新与后台额度核实共用同一快照，结算与估算不会各用一套数值。 */
-export const rememberNaiSubscription = (authorization: string, subscription: NaiSubscriptionSnapshot) => {
-  subscriptions.set(authorization, subscription);
+export const rememberNaiSubscription = (authorization: string, subscription: NaiSubscriptionSnapshot | null) => {
+  if (subscription) subscriptions.set(authorization, subscription);
+  else subscriptions.delete(authorization);
   cacheNovelAiSubscription(authorization, subscription);
 };
 
@@ -49,7 +50,9 @@ const composeMobileEditResult = async (output: MobileGenerationOutput, compositi
   return new Uint8Array(await composed.arrayBuffer());
 };
 
-export function createMobileGenerationJobs({ tasks, queue }: { tasks: GenerationTasks; queue: CloudQueueCoordinator }) {
+export function createMobileGenerationJobs({ tasks, queue, readGatewayUrl }: {
+  tasks: GenerationTasks; queue: CloudQueueCoordinator; readGatewayUrl: (authorization: string) => Promise<string>;
+}) {
   const jobs = new GenerationJobs<MobileGenerationContext, MobileGenerationOutput>({
     tasks,
     readQueue: job => job.lastQueueTaskId ? queue.get(job.key, job.lastQueueTaskId) : null,
@@ -105,11 +108,16 @@ export function createMobileGenerationJobs({ tasks, queue }: { tasks: Generation
     },
     estimate: async (job, fresh) => {
       const authorization = job.context.authorization;
+      let subscriptionUnsupported = false;
       if (fresh) {
         try {
+          const gatewayUrl = await readGatewayUrl(authorization);
           const response = await fetch('/api/novelai-subscription', { headers: { Authorization: authorization }, signal: AbortSignal.timeout(30_000) });
-          if (!response.ok) throw new Error('账号额度刷新失败');
-          rememberNaiSubscription(authorization, sanitizeNovelAiSubscription(await response.json()));
+          if (isSubscriptionUnsupported(gatewayUrl, response.status)) {
+            subscriptionUnsupported = true;
+            rememberNaiSubscription(authorization, null);
+          } else if (!response.ok) throw new Error('账号额度刷新失败');
+          else rememberNaiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
         } catch {
           throw historyError('无法核实当前额度，已停止后续生成', 'quota_refresh_failed', 503);
         }
@@ -117,11 +125,11 @@ export function createMobileGenerationJobs({ tasks, queue }: { tasks: Generation
       const subscription = subscriptions.get(authorization);
       // 普通单张没有近期快照时沿用用户已确认的费用，不附加联网门禁。
       if (!subscription && !fresh) return job.approvedCost;
-      if (!subscription) throw historyError('无法核实当前额度，已停止后续生成', 'quota_refresh_failed', 503);
+      if (!subscription && !subscriptionUnsupported) throw historyError('无法核实当前额度，已停止后续生成', 'quota_refresh_failed', 503);
       return estimateNovelAiGenerationCost(
         normalizedBillingPayload(job.descriptor.payload),
-        subscription.usage?.isNegative === true,
-        subscription.active === true && Number(subscription.tier) >= 3,
+        subscription?.usage?.isNegative === true,
+        subscription?.active === true && Number(subscription.tier) >= 3,
       );
     },
   });

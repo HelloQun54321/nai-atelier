@@ -8,6 +8,8 @@ import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
 import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
+import { readNaiKeyUsage } from './naiUsageStats';
+import { readCreationFootprintAssets } from './creationFootprintAssets';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
 // 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
@@ -319,6 +321,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     return json({ enabled });
   }
 
+  if (path === '/api/local-usage/assets' && method === 'GET') {
+    await ensureVibeSchema(db);
+    return json(await readCreationFootprintAssets(db, currentUser.id));
+  }
+
   if (path === '/api/local-usage/events' && method === 'POST') {
     await ensureLocalHistorySchema(db);
     const body = await request.json().catch(() => null) as any;
@@ -332,9 +339,21 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       if (!category || !action) return error('Invalid usage event category', 400);
       const amount = Math.max(0, Math.min(1_000_000, Math.trunc(Number(item?.amount) || 0)));
       const parsedValue = Number(item?.value);
-      const value = Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : null;
+      const value = category === 'nai' && !item.meta?.billingKnown ? null : Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : null;
       const target = item?.target ? String(item.target).slice(0, 200) : null;
-      const meta = item?.meta && typeof item.meta === 'object' ? JSON.stringify(item.meta).slice(0, 2000) : '{}';
+      if (category === 'nai' && (!/^[a-f0-9]{64}$/.test(target || '')
+        || !['generation', 'encoding'].includes(action)
+        || !Number.isSafeInteger(item.amount) || item.amount < 0 || item.amount > 1_000_000
+        || (action === 'generation' ? item.amount < 1 : item.amount !== 0)
+        || typeof item.meta?.model !== 'string' || !item.meta.model || item.meta.model.length > 160
+        || typeof item.meta?.billingKnown !== 'boolean'
+        || (item.meta.billingKnown && (!Number.isFinite(item.value) || item.value < 0
+          || !Number.isSafeInteger(item.meta.opusImages) || item.meta.opusImages < 0 || item.meta.opusImages > amount)))) {
+        return error('Invalid Key usage event', 400);
+      }
+      const meta = category === 'nai'
+        ? JSON.stringify({ model: item.meta.model, billingKnown: item.meta.billingKnown, opusImages: item.meta.billingKnown ? item.meta.opusImages : null })
+        : item?.meta && typeof item.meta === 'object' ? JSON.stringify(item.meta).slice(0, 2000) : '{}';
       statements.push(db.prepare(`INSERT INTO local_usage_events
         (id, user_id, category, action, target, amount, value, meta, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -380,7 +399,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       from = Number.isFinite(parsedFrom) ? Math.max(0, Math.trunc(parsedFrom)) : 0;
       to = Number.isFinite(parsedTo) && parsedTo > 0 ? Math.trunc(parsedTo) : now;
     }
-    const [totals, daily] = await Promise.all([
+    const [totals, daily, keyUsage] = await Promise.all([
       db.prepare(`SELECT category, action, COUNT(*) AS count,
         COALESCE(SUM(amount), 0) AS amount, COALESCE(SUM(value), 0) AS value
         FROM local_usage_events WHERE ${where}
@@ -391,10 +410,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         FROM local_usage_events WHERE ${where}
         GROUP BY day, category, action ORDER BY day`)
         .bind(offsetSeconds, currentUser.id, from, to).all<{ day: string; category: string; action: string; count: number; amount: number; value: number }>(),
+      readNaiKeyUsage(db, currentUser.id, from, to),
     ]);
     return json({
       totals: totals.results.map(row => ({ category: row.category, action: row.action, count: Number(row.count) || 0, amount: Number(row.amount) || 0, value: Number(row.value) || 0 })),
       daily: daily.results.map(row => ({ date: row.day, category: row.category, action: row.action, count: Number(row.count) || 0, amount: Number(row.amount) || 0, value: Number(row.value) || 0 })),
+      keys: keyUsage.keys,
+      keyUsageFirstAt: keyUsage.firstAt,
       generatedAt: now,
     });
   }
@@ -484,16 +506,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         AND COALESCE(source_chain_name, '') NOT LIKE '%.webp'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.gif'`;
       const rangeValues = [currentUser.id, from, to];
-      const modelExpr = "CASE WHEN json_valid(params) THEN json_extract(params, '$.model') END";
-      const widthExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.width') AS INTEGER) END";
-      const heightExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.height') AS INTEGER) END";
-      const stepsExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.steps') AS INTEGER) END";
-      const operationExpr = "COALESCE(CASE WHEN json_valid(params) THEN json_extract(params, '$._local_edit.operation') END, 'text-to-image')";
-      const characterCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.characters') ELSE 0 END";
-      const vibeCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.vibes.slots') ELSE 0 END";
-      const referenceCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.characterReferences.slots') ELSE 0 END";
 
-      const [totals, dailyResult, chainsResult, uniqueChains, models, sizes, steps, operations, characterUsage, vibeUsage, referenceUsage, artistRows] = await Promise.all([
+      const [totals, dailyResult, chainsResult, uniqueChains, parameterGroups, artistRows] = await Promise.all([
         db.prepare(`SELECT COUNT(*) AS images,
           COUNT(DISTINCT ${dayExpr}) AS activeDays,
           COALESCE(SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END), 0) AS favoriteImages,
@@ -516,39 +530,54 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         db.prepare(`SELECT COUNT(DISTINCT COALESCE(NULLIF(source_chain_name, ''), COALESCE(NULLIF(source_chain_id, ''), 'playground'))) AS count
           FROM local_generation_history WHERE ${chainWhere}`)
           .bind(...rangeValues).first<{ count: number }>(),
-        db.prepare(`SELECT ${modelExpr} AS model, COUNT(*) AS images
-          FROM local_generation_history WHERE ${creativeWhere} AND ${modelExpr} IS NOT NULL
-          GROUP BY model ORDER BY images DESC LIMIT 8`)
-          .bind(...rangeValues).all<{ model: string; images: number }>(),
-        db.prepare(`SELECT ${widthExpr} AS width, ${heightExpr} AS height, COUNT(*) AS images
-          FROM local_generation_history WHERE ${creativeWhere} AND ${widthExpr} IS NOT NULL AND ${heightExpr} IS NOT NULL
-          GROUP BY width, height ORDER BY images DESC LIMIT 8`)
-          .bind(...rangeValues).all<{ width: number; height: number; images: number }>(),
-        db.prepare(`SELECT ${stepsExpr} AS steps, COUNT(*) AS images
-          FROM local_generation_history WHERE ${creativeWhere} AND ${stepsExpr} IS NOT NULL
-          GROUP BY steps ORDER BY images DESC LIMIT 8`)
-          .bind(...rangeValues).all<{ steps: number; images: number }>(),
-        db.prepare(`SELECT ${operationExpr} AS operation, COUNT(*) AS images
+        // 参数只扫描一遍，按组合聚合后在内存累加，避免每项指标重复解析整份 JSON。
+        db.prepare(`SELECT CASE WHEN json_valid(params) THEN json_array(
+          json_extract(params, '$.model'), CAST(json_extract(params, '$.width') AS INTEGER),
+          CAST(json_extract(params, '$.height') AS INTEGER), CAST(json_extract(params, '$.steps') AS INTEGER),
+          COALESCE(json_extract(params, '$._local_edit.operation'), 'text-to-image'),
+          COALESCE(json_array_length(params, '$.characters'), 0),
+          json_extract(params, '$.vibes.enabled') = 1, COALESCE(json_array_length(params, '$.vibes.slots'), 0),
+          json_extract(params, '$.characterReferences.enabled') = 1, COALESCE(json_array_length(params, '$.characterReferences.slots'), 0)
+          ) ELSE '[null,null,null,null,"text-to-image",0,0,0,0,0]' END AS attributes, COUNT(*) AS images
           FROM local_generation_history WHERE ${creativeWhere}
-          GROUP BY operation ORDER BY images DESC`)
-          .bind(...rangeValues).all<{ operation: string; images: number }>(),
-        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${characterCountExpr}), 0) AS slots
-          FROM local_generation_history WHERE ${creativeWhere} AND ${characterCountExpr} > 0`)
-          .bind(...rangeValues).first<{ images: number; slots: number }>(),
-        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${vibeCountExpr}), 0) AS slots
-          FROM local_generation_history WHERE ${creativeWhere} AND json_valid(params)
-          AND json_extract(params, '$.vibes.enabled') = 1`)
-          .bind(...rangeValues).first<{ images: number; slots: number }>(),
-        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${referenceCountExpr}), 0) AS slots
-          FROM local_generation_history WHERE ${creativeWhere} AND json_valid(params)
-          AND json_extract(params, '$.characterReferences.enabled') = 1`)
-          .bind(...rangeValues).first<{ images: number; slots: number }>(),
+          GROUP BY attributes`)
+          .bind(...rangeValues).all<{ attributes: string; images: number }>(),
         // 画师使用量从完整 Prompt 派生；限制扫描最近 4000 张，避免一次性拉取整段历史。
-        db.prepare(`SELECT prompt, base_prompt, subject_prompt, params, created_at
+        db.prepare(`SELECT prompt, base_prompt, subject_prompt,
+          CASE WHEN json_valid(params) THEN json_extract(params, '$.characters') END AS characters, created_at
           FROM local_generation_history WHERE ${creativeWhere}
           ORDER BY created_at DESC LIMIT 4000`)
-          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; params: string | null; created_at: number }>(),
+          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; characters: string | null; created_at: number }>(),
       ]);
+
+      const modelMap = new Map<string, { model: string; images: number }>();
+      const sizeMap = new Map<string, { width: number; height: number; images: number }>();
+      const stepsMap = new Map<number, { steps: number; images: number }>();
+      const operationMap = new Map<string, { operation: string; images: number }>();
+      const characterUsage = { images: 0, slots: 0 }, vibeUsage = { images: 0, slots: 0 }, referenceUsage = { images: 0, slots: 0 };
+      for (const group of parameterGroups.results) {
+        const [model, width, height, steps, operation, characterSlots, vibeEnabled, vibeSlots, referenceEnabled, referenceSlots] = JSON.parse(group.attributes) as
+          [string | null, number | null, number | null, number | null, string, number, number, number, number, number];
+        const row = { model, width, height, steps, operation, characterSlots, vibeEnabled, vibeSlots, referenceEnabled, referenceSlots, images: group.images };
+        if (row.model !== null) {
+          const current = modelMap.get(row.model) || { model: row.model, images: 0 };
+          current.images += row.images; modelMap.set(row.model, current);
+        }
+        if (row.width !== null && row.height !== null) {
+          const key = `${row.width}x${row.height}`;
+          const current = sizeMap.get(key) || { width: row.width, height: row.height, images: 0 };
+          current.images += row.images; sizeMap.set(key, current);
+        }
+        if (row.steps !== null) {
+          const current = stepsMap.get(row.steps) || { steps: row.steps, images: 0 };
+          current.images += row.images; stepsMap.set(row.steps, current);
+        }
+        const operationUsage = operationMap.get(row.operation) || { operation: row.operation, images: 0 };
+        operationUsage.images += row.images; operationMap.set(row.operation, operationUsage);
+        if (row.characterSlots > 0) { characterUsage.images += row.images; characterUsage.slots += row.images * row.characterSlots; }
+        if (row.vibeEnabled === 1) { vibeUsage.images += row.images; vibeUsage.slots += row.images * row.vibeSlots; }
+        if (row.referenceEnabled === 1) { referenceUsage.images += row.images; referenceUsage.slots += row.images * row.referenceSlots; }
+      }
 
       const artistPattern = /(?:^|[\s,])artist:([^\s,}]+)/gi;
       const artistMap = new Map<string, { name: string; images: number; lastAt: number }>();
@@ -592,9 +621,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       // 结构化角色存在 params.characters；按角色提示词派生，不依赖历史来源是否为角色库。
       const characterMap = new Map<string, { id: string; name: string; images: number; lastAt: number }>();
       for (const row of artistRows.results) {
-        let params: any = null;
-        try { params = JSON.parse(row.params || '{}'); } catch { params = null; }
-        const characters = Array.isArray(params?.characters) ? params.characters : [];
+        const parsed = parseStoredJson(row.characters, []);
+        const characters = Array.isArray(parsed) ? parsed : [];
         const seen = new Set<string>();
         for (const character of characters) {
           if (!character || character.enabled === false) continue;
@@ -648,10 +676,10 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         vibeUsage: { images: Number(vibeUsage?.images || 0), slots: Number(vibeUsage?.slots || 0) },
         referenceUsage: { images: Number(referenceUsage?.images || 0), slots: Number(referenceUsage?.slots || 0) },
         uniqueCharacters: characterMap.size,
-        models: models.results.map(row => ({ model: row.model, images: Number(row.images) || 0 })),
-        sizes: sizes.results.map(row => ({ width: Number(row.width), height: Number(row.height), images: Number(row.images) || 0 })),
-        steps: steps.results.map(row => ({ steps: Number(row.steps), images: Number(row.images) || 0 })),
-        operations: operations.results.map(row => ({ operation: row.operation, images: Number(row.images) || 0 })),
+        models: [...modelMap.values()].sort((a, b) => b.images - a.images || String(a.model).localeCompare(String(b.model))).slice(0, 8),
+        sizes: [...sizeMap.values()].sort((a, b) => b.images - a.images || a.width - b.width || a.height - b.height).slice(0, 8),
+        steps: [...stepsMap.values()].sort((a, b) => b.images - a.images || a.steps - b.steps).slice(0, 8),
+        operations: [...operationMap.values()].sort((a, b) => b.images - a.images || String(a.operation).localeCompare(String(b.operation))),
         uniqueChains: Number(uniqueChains?.count || 0),
         uniqueArtists: artistMap.size,
         artistScan: { scanned: artistRows.results.length, truncated: artistRows.results.length >= 4000 },

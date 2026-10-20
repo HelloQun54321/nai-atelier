@@ -3,7 +3,8 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { normalizeNaiGatewayUrl, resolveNaiGatewayUrl, validateNaiApiKey } from '../../worker/naiConnection.mjs';
-import { fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, createMediaGateway } from '../../scripts/media-gateway.mjs';
+import { fetchNovelAiSubscription, readNaiGatewayUrl, sanitizeNovelAiSubscription, createMediaGateway, toCachedPreciseReferenceParameters, isSubscriptionUnsupported, getVibeCacheSecretKey, cacheNovelAiSubscription, estimateNovelAiGenerationCost } from '../../scripts/media-gateway.mjs';
+import sharp from 'sharp';
 import { MockAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 
 test('成员网关地址保留部署前缀，兼容根地址与完整接口地址', () => {
@@ -116,4 +117,70 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
     await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
     setGlobalDispatcher(originalDispatcher); await mock.close();
   }
+});
+
+test('第三方网关的精确参考改写为附原图的缓存形式，官方直连保持原始字段', async () => {
+  const parameters = { director_reference_images: ['aGVsbG8=', 'd29ybGQ='], director_reference_strength_values: [0.6, 0.6] };
+  toCachedPreciseReferenceParameters(parameters);
+  assert.equal(parameters.director_reference_images, undefined);
+  assert.deepEqual(parameters.director_reference_images_cached, ['aGVsbG8=', 'd29ybGQ='].map(data => ({ cache_secret_key: getVibeCacheSecretKey(data), data })));
+  assert.deepEqual(parameters.director_reference_strength_values, [0.6, 0.6]);
+  for (const empty of [{}, { director_reference_images: [] }]) assert.deepEqual(toCachedPreciseReferenceParameters({ ...empty }), empty);
+
+  const originalDispatcher = getGlobalDispatcher(), mock = new MockAgent();
+  mock.disableNetConnect(); mock.enableNetConnect(host => host.startsWith('127.0.0.1:'));
+  setGlobalDispatcher(mock);
+  const bodies = {};
+  const events = [];
+  mock.get('https://gateway.example').intercept({ path: '/v1/ai/generate-image', method: 'POST' }).reply(200, options => { bodies.gateway = JSON.parse(options.body).parameters; return 'synthetic-zip'; }, { headers: { 'content-type': 'application/zip' } });
+  mock.get('https://image.novelai.net').intercept({ path: '/ai/generate-image', method: 'POST' }).reply(200, options => { bodies.official = JSON.parse(options.body).parameters; return 'synthetic-zip'; }, { headers: { 'content-type': 'application/zip' } });
+  const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#38bdf8' } }).png().toBuffer();
+  const worker = createServer(async (req, res) => {
+    if (req.url === '/api/nai-key-vault/connection') return res.end(req.headers.authorization === 'Bearer STA1N-ref' ? '{"gatewayUrl":"https://gateway.example/v1"}' : '{"gatewayUrl":""}');
+    if (req.url === '/api/character-references/ref-1/image') { res.setHeader('etag', '"synthetic"'); return res.end(reference); }
+    if (req.url === '/api/local-usage/events') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      events.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"inserted":1}');
+    }
+    res.setHeader('content-type', 'application/json'); res.end('{"remaining":1666}');
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  let server;
+  try {
+    server = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    for (const key of ['STA1N-ref', 'pst-ref']) {
+      cacheNovelAiSubscription('Bearer ' + key, { active: true, tier: 3 });
+      await fetch(base + '/api/generation-queue/preferences', { method: 'PUT', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: '{"generationIntervalSeconds":0}' });
+      const response = await fetch(base + '/api/generate', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'nai-diffusion-4-5-full', action: 'generate', parameters: { width: 832, height: 1216, steps: 23,
+        _local_character_references: { enabled: true, slots: [{ assetId: 'ref-1', type: 'character', strength: 0.6, fidelity: 0.6 }] } } }) });
+      assert.equal(response.status, 200, await response.clone().text());
+      assert.equal(response.headers.get('x-nai-anlas-accounting-failed'), null);
+      const expectedCost = estimateNovelAiGenerationCost({ model: 'nai-diffusion-4-5-full',
+        parameters: { width: 832, height: 1216, steps: 23, director_reference_images_cached: [{}] } }, false, true);
+      assert.equal(Number(response.headers.get('x-nai-anlas-estimated-spent')), expectedCost);
+    }
+    assert.equal(bodies.gateway.director_reference_images, undefined);
+    assert.equal(bodies.gateway.director_reference_images_cached.length, 1);
+    assert.match(bodies.gateway.director_reference_images_cached[0].cache_secret_key, /^[a-f0-9]{64}$/);
+    assert.ok(bodies.gateway.director_reference_images_cached[0].data.length > 100, '网关请求必须附带原图数据');
+    assert.equal(bodies.gateway.director_reference_descriptions.length, 1);
+    assert.equal(bodies.official.director_reference_images_cached, undefined);
+    assert.equal(bodies.official.director_reference_images.length, 1);
+    assert.equal(bodies.official.director_reference_images[0], bodies.gateway.director_reference_images_cached[0].data);
+    assert.equal(events.length, 2);
+    assert.ok(events.every(event => event.meta.billingKnown && event.value > 0 && event.amount === 1));
+    mock.assertNoPendingInterceptors();
+  } finally {
+    server?.closeAllConnections(); worker.closeAllConnections();
+    await Promise.all([server && new Promise(resolve => server.close(resolve)), new Promise(resolve => worker.close(resolve))]);
+    setGlobalDispatcher(originalDispatcher); await mock.close();
+    for (const key of ['STA1N-ref', 'pst-ref']) cacheNovelAiSubscription('Bearer ' + key, null);
+  }
+});
+
+test('只有第三方网关明确没有额度接口时才视为额度未知，官方与鉴权／服务错误仍按失败处理', () => {
+  for (const status of [404, 405, 501, '404']) assert.equal(isSubscriptionUnsupported('https://gateway.example/v1', status), true);
+  for (const status of [200, 401, 403, 429, 500, 502, 503]) assert.equal(isSubscriptionUnsupported('https://gateway.example/v1', status), false);
+  assert.equal(isSubscriptionUnsupported('', 404), false);
 });

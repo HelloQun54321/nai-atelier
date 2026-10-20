@@ -74,6 +74,10 @@ const App = () => {
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
   const [historyEntry, setHistoryEntry] = useState<{ query: HistoryBrowseQuery; token: number } | null>(null);
   const historyEntryTokenRef = useRef(0);
+  const [libraryEntry, setLibraryEntry] = useState<{ query: string; token: number } | null>(null);
+  const libraryEntryTokenRef = useRef(0);
+  const [rollPinnedEntry, setRollPinnedEntry] = useState<{ tags: string[]; token: number } | null>(null);
+  const rollPinnedTokenRef = useRef(0);
 
   // Cache Timestamps
   const [lastChainFetch, setLastChainFetch] = useState(0);
@@ -514,6 +518,14 @@ const App = () => {
     setHistoryEntry({ query: query || { sort: 'newest' }, token: ++historyEntryTokenRef.current });
     void handleNavigate('history');
   };
+  const openArtistLibrary = (name?: string) => {
+    setLibraryEntry({ query: name || '', token: ++libraryEntryTokenRef.current });
+    void handleNavigate('library');
+  };
+  const openRollWithArtists = (tags: string[]) => {
+    setRollPinnedEntry({ tags, token: ++rollPinnedTokenRef.current });
+    void handleNavigate('roll');
+  };
 
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
@@ -700,6 +712,8 @@ const App = () => {
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onOpenRoll={openRollWithArtists}
+          initialSearch={libraryEntry}
         />;
       case 'aitag':
         return <AitagGallery
@@ -769,6 +783,8 @@ const App = () => {
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onOpenArtistLibrary={openArtistLibrary}
+          initialPinned={rollPinnedEntry}
           onOpenChain={id => { void handleNavigate('edit', id); }}
           onSaveChain={async chain => {
             const saved = await db.createChainWithData(chain.name, chain.description, chain, 'style');

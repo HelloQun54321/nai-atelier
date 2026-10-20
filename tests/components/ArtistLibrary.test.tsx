@@ -220,7 +220,7 @@ it('单卡切换复用按版本记录的真实比例，抽卡范围不跟单卡�
   switchCard('alpha artist', 'v45');
   expect((screen.getByTestId('cover-alpha artist').parentElement as HTMLElement).style.getPropertyValue('--mobile-image-ratio')).toBe('750 / 1000');
   switchCard('beta artist', 'v5');
-  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   expect(sampleCards()).toHaveLength(2);
   expect(screen.getByTestId('cover-beta artist').getAttribute('data-packed')).toBe('false');
   expect(screen.getByRole('button', { name: '返回完整目录' })).toBeTruthy();
@@ -240,7 +240,7 @@ it('收藏只筛选真实词库，未展示页的收藏仍可找到；旧收藏�
   ];
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' })); fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' })); fireEvent.keyDown(window, { key: 'Escape' });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：late artist']);
   expect(screen.getByText('后页画师')).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '后页' } });
@@ -324,7 +324,7 @@ it.each([390, 1280])('宽度%s时图包样张和自建样张点击都选择画�
   const beta = screen.getByRole('button', { name: '选择画师：beta artist' });
   fireEvent.keyDown(beta, { key: 'Enter' }); expect(beta.getAttribute('aria-pressed')).toBe('true');
   fireEvent.keyDown(beta, { key: ' ' }); expect(beta.getAttribute('aria-pressed')).toBe('false');
-  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   const gachaCard = sampleCards()[0];
   const gachaImage = within(gachaCard).queryByRole('img');
   const wasSelected = gachaCard.getAttribute('aria-pressed');
@@ -364,11 +364,19 @@ it('未配置图包仍可显示当前pack自建样张，变更事件重新读取
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('beta');
 });
 
-it.each(['indexing', 'error', 'unconfigured'])('来源%s状态清楚且不读未就绪图包目录', async phase => {
+it.each(['indexing', 'error'])('来源%s状态清楚且不读未就绪图包目录', async phase => {
   mocks.status.mockResolvedValue(status(phase, phase === 'error' ? '合成索引损坏' : undefined));
   setup();
-  await screen.findByText(phase === 'indexing' ? '样张索引中：25%' : phase === 'error' ? '合成索引损坏' : '该模型尚未配置样张图包');
+  await screen.findByText(phase === 'indexing' ? '样张索引中：25%' : '合成索引损坏');
   expect(mocks.catalog).not.toHaveBeenCalled(); expect(sampleCards()).toHaveLength(0);
+});
+
+it('来源unconfigured时展示完整目录但不读未就绪图包目录', async () => {
+  mocks.status.mockResolvedValue(status('unconfigured'));
+  setup();
+  await waitFor(() => expect(sampleCards()).toHaveLength(3));
+  expect(mocks.catalog).not.toHaveBeenCalled();
+  expect(screen.queryByText('该模型尚未配置样张图包')).toBeNull();
 });
 
 it('超过100个样张时复用轻量分页，搜索和收藏可命中未展示的后续页，抽卡不发词库位置请求', async () => {
@@ -379,7 +387,7 @@ it('超过100个样张时复用轻量分页，搜索和收藏可命中未展示�
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'artist-149' } }); expect(sampleCards()).toHaveLength(1);
   expect(screen.getByTestId('cover-artist-149')).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } }); disableSampleFilter();
-  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   expect(sampleCards()).toHaveLength(12);
   expect(sampleCards().every(card => full.some(entry => card.getAttribute('aria-label') === '选择画师：' + entry.name))).toBe(true);
   expect(mocks.page).toHaveBeenCalledOnce();
@@ -450,11 +458,11 @@ it.each([390, 1280])('宽度%s顶栏仅一个画师库设置齿轮，两版模�
   const gear = screen.getByRole('button', { name: '画师库设置' });
   expect(within(gear).getByText('画师库设置')).toBeTruthy();
   expect(gear.parentElement?.className).toContain('[&_button>span]:!inline');
-  expect(gear.parentElement).not.toBe(screen.getByRole('button', { name: '随机抽卡' }).parentElement);
+  expect(gear.parentElement).not.toBe(screen.getByRole('button', { name: '随机选画师' }).parentElement);
   for (const version of ['V4.5', 'V5']) {
     gear.focus(); fireEvent.click(gear);
     const settings = await screen.findByRole('dialog', { name: '画师库设置' });
-    expect(within(settings).getByRole('combobox', { name: '抽卡方式' })).toBeTruthy();
+    expect(within(settings).getByRole('combobox', { name: '随机方式' })).toBeTruthy();
     expect(within(settings).getByRole('combobox', { name: '数量' })).toBeTruthy();
     fireEvent.click(within(settings).getByRole('button', { name: version + ' 补图生成设置' }));
     const dialog = await screen.findByRole('dialog', { name: '补图生成设置' });
@@ -558,4 +566,15 @@ it('搜索结果超过展示上限时明确提示，不静默截断', async () =
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
   expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
   expect(sampleCards()).toHaveLength(200);
+});
+
+it('当前样张包未配置时默认展示完整目录，用户关闭样张筛选后记住选择', async () => {
+  mocks.status.mockResolvedValue({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, label: id, filename: id + '.tar', phase: 'unconfigured', progress: 0, count: 0, revision: '' })) });
+  setup();
+  await screen.findByTestId('cover-missing artist');
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const checkbox = screen.getByRole('checkbox', { name: '只看有样张' }) as HTMLInputElement;
+  expect(checkbox.checked).toBe(false);
+  fireEvent.click(checkbox);
+  expect(localStorage.getItem('nai_artist_only_samples')).toBe('true');
 });

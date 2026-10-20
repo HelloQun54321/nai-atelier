@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -80,12 +80,84 @@ describe('Roll 抽取', () => {
   });
 });
 
+describe('抽取方式', () => {
+  it('固定权重时每个画师都用同一权重', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minWeight: 1.1, maxWeight: 1.1 };
+    const result = rollCandidates(e, 4, { plan: { mode: 'fixedWeight' } });
+    expect(result).toHaveLength(4);
+    expect(result.every(candidate => candidate.tags.every(tag => tag.weight === 1.1))).toBe(true);
+    expect(() => validateRollExperiment({ ...e, drawPlan: { mode: 'fixedWeight' } })).not.toThrow();
+  });
+  it('固定画师时集合不变，只随机权重', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+    const plan = { mode: 'pinnedArtists' as const, pinnedArtists: ['alpha', 'beta'] };
+    const result = rollCandidates(e, 4, { plan, random: seededRandom() });
+    expect(result).toHaveLength(4);
+    for (const candidate of result) expect(candidate.tags.map(tag => tag.tag).sort()).toEqual(['alpha', 'beta']);
+    expect(new Set(result.map(candidate => JSON.stringify(candidate.tags))).size).toBe(4);
+  });
+  it('固定画师必须包含锁定画师，且不能是被排除或屏蔽的画师', () => {
+    const e = rollFixture(); e.artists[0].locked = true;
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['beta'] } })).toThrow('需要包含已锁定的画师');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'missing'] } })).toThrow('固定画师不可用');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha'] }, blockedTags: ['alpha'] })).toThrow('固定画师不可用');
+  });
+  it('全局屏蔽从随机池移除画师，屏蔽后不足最少人数时明确失败', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 8, minWeight: 1, maxWeight: 1 };
+    const blocked = e.artists.slice(1).map(artist => artist.tag);
+    expect(rollCandidates(e, 1, { blockedTags: blocked })[0].tags.map(tag => tag.tag)).toEqual(['alpha']);
+    e.rules = { ...e.rules, minArtists: 3 };
+    expect(() => rollCandidates(e, 1, { blockedTags: blocked })).toThrow('可用画师不足');
+  });
+  it('固定权重要求最低与最高权重相同，固定画师要求 1～64 个不重复 Tag', () => {
+    const e = rollFixture();
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'fixedWeight' } })).toThrow('固定权重需要最低与最高权重相同');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: [] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'alpha'] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
+  });
+});
+
 describe('风格串保存', () => {
+  it('角色提示词跟随画师串，并支持模板内 {character} 占位', () => {
+    const e = rollFixture(); e.candidates = [candidateFixture('a')];
+    const style = formatRollStyle(e.candidates[0].tags);
+    expect(rollPrompt({ ...e.template, characterPrompt: 'miku, twintails' }, e.candidates[0].tags)).toBe(`${style}, miku, twintails, synthetic subject`);
+    expect(rollPrompt({ ...e.template, prompt: '{style}, {character}, landscape', characterPrompt: 'miku' }, e.candidates[0].tags)).toBe(`${style}, miku, landscape`);
+    expect(rollPrompt({ ...e.template, characterPrompt: '  ' }, e.candidates[0].tags)).toBe(`${style}, synthetic subject`);
+    expect(() => validateRollTemplate({ ...e.template, prompt: '{style} {character} {character}' })).toThrow();
+  });
   it('风格串保存保留完整配置和真实 Seed，独立深拷贝角色参数', () => {
     const e = rollFixture(); e.template.params.characters = [{ id: 'role', prompt: 'subject', negativePrompt: 'negative role', x: 0.5, y: 0.5 }];
     e.candidates = [candidateFixture('alpha')]; const saved = rollCandidateToChain(e, e.candidates[0], '/api/assets/synthetic.png');
     expect(saved.basePrompt).toBe(`${formatRollStyle(e.candidates[0].tags)}, synthetic subject`); expect(saved.params.seed).toBe(0);
     expect(saved.params.characters).toEqual(e.template.params.characters); expect(saved.params.characters).not.toBe(e.template.params.characters);
     expect(saved.modules).toEqual([]); expect(saved.variableValues).toEqual({ subject: '' }); expect(saved.tags).toEqual([]);
+  });
+  it('保存名带候序号与主权重画师，便于在风格串列表辨认', () => {
+    const e = rollFixture();
+    e.candidates = [{ id: 'mixed', tags: [{ tag: 'alpha', weight: 1.2 }, { tag: 'beta', weight: 2 }, { tag: 'gamma', weight: 0.8 }], createdAt: 1, archived: false }];
+    expect(rollCandidateToChain(e, e.candidates[0]).name).toBe('合成实验 · 1 · beta / alpha');
+  });
+});
+
+describe('候选容量与永久清理', () => {
+  const candidate = (id: string, archived = false) => ({ ...candidateFixture(id), archived });
+  it('容量按全部候选计算，已归档项仍占位', () => {
+    const e = rollFixture();
+    e.candidates = Array.from({ length: 238 }, (_, index) => candidate(`c${index}`));
+    expect(rollCandidateCapacity(e)).toBe(2);
+    expect(() => rollCandidates(e, 3)).toThrow('还可 Roll 2 串');
+  });
+  it('永久清理只接受已归档候选，并同步移除轮次引用、删除空轮', () => {
+    const e = rollFixture();
+    e.candidates = [candidate('keep'), candidate('drop', true)];
+    e.rounds = [{ id: 'r1', candidateIds: ['drop'], createdAt: 1 }, { id: 'r2', candidateIds: ['keep', 'drop'], createdAt: 2 }];
+    const next = removeRollCandidates(e, ['drop']);
+    expect(next.candidates.map(item => item.id)).toEqual(['keep']);
+    expect(next.rounds.map(round => round.id)).toEqual(['r2']);
+    expect(next.rounds[0].candidateIds).toEqual(['keep']);
+    expect(() => validateRollExperiment(next)).not.toThrow();
+    expect(() => removeRollCandidates(e, ['keep'])).toThrow('只能永久清理已归档的候选');
+    expect(removeRollCandidates(e, [])).toBe(e);
   });
 });

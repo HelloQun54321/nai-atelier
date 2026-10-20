@@ -19,7 +19,7 @@ import {
 const tasks = new GenerationTasks();
 const queue = new CloudQueueCoordinator((...args: any[]) => fetch(args[0], args[1]));
 // 后台有限任务与手动／助手入口共用同一份单并发、暂停与间隔状态；这里只持有任务，不建持久表。
-const generationJobs = createMobileGenerationJobs({ tasks, queue });
+const generationJobs = createMobileGenerationJobs({ tasks, queue, readGatewayUrl: authorization => mobileNaiGatewayUrl(authorization) });
 export async function readSetting<T>(key: string, fallback: T): Promise<T> {
   const row = await db.prepare('SELECT value FROM settings WHERE key=?').bind(key).first<{ value: string }>();
   try { return row ? JSON.parse(row.value) : fallback; } catch { return fallback; }

@@ -37,8 +37,8 @@ const unwrapToken = (raw: string, start = 0, group?: Partial<PromptTagToken>) =>
   value = value.replace(/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*/, '').replace(/\s*::$/, '').trim();
   value = value.replace(/^\(([\s\S]*?)(?::\s*[+-]?(?:\d+(?:\.\d+)?|\.\d+))\)$/, '$1').trim();
   value = value.replace(/^\(([\s\S]*)\)$/, '$1').trim();
-  const artistPrefix = /^artist\s*:\s*/i.test(value);
-  if (artistPrefix) value = value.replace(/^artist\s*:\s*/i, '').trim();
+  const artistPrefix = /^artists?\s*:\s*/i.test(value);
+  if (artistPrefix) value = value.replace(/^artists?\s*:\s*/i, '').trim();
   const { id: _id, ...metadata } = group || {};
   return { displayTag: value, lookupTag: normalizeTagQuery(value), start: tokenStart, end: tokenEnd, ...metadata };
 };

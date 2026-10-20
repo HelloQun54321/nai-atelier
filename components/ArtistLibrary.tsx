@@ -13,7 +13,7 @@ import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
+import { Check, Dice5, Heart, LoaderCircle, Settings2 } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ArtistSampleSettingsDialog } from './ArtistSampleSettingsDialog';
@@ -43,12 +43,17 @@ interface ArtistLibraryProps {
     selectionFocusEnabled?: boolean;
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
+    onOpenRoll?: (tags: string[]) => void;
+    /** 从 Roll 详情跳转时带入画师名，复用现有搜索。 */
+    initialSearch?: { query: string; token: number } | null;
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 type SampleSettingsTarget = { tag?: string; pack: ArtistSamplePack; generateAfterSave: false } | { tag: string; pack: ArtistSamplePack; generateAfterSave: true; regenerate?: boolean };
 const SAMPLE_PACKS = ['v45', 'v5'] as const;
 const SEARCH_RESULT_LIMIT = 200;
+const ONLY_SAMPLES_KEY = 'nai_artist_only_samples';
+const readOnlySamples = () => localStorage.getItem(ONLY_SAMPLES_KEY) !== 'false';
 /** 画师名与词库 Tag 使用下划线，输入框里常出现空格；搜索统一按空格形式比较。 */
 const normalizeArtistSearch = (value: string) => {
     const lower = value.toLowerCase();
@@ -56,7 +61,7 @@ const normalizeArtistSearch = (value: string) => {
     return lower.replaceAll('_', ' ').replace(/\s+/g, ' ').trim();
 };
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, onOpenRoll, initialSearch, selectionFocusEnabled = true }) => {
   useLanguage();
     const confirm = useConfirmDialog();
     const budget = useAnlasBudget(), subscription = useNovelaiUsage();
@@ -67,7 +72,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [samplePack, setSamplePack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
     const [cardPacks, setCardPacks] = useState<Partial<Record<string, ArtistSamplePack>>>({});
     const [sampleSettings, setSampleSettings] = useState<SampleSettingsTarget | null>(null);
-    const [onlySamples, setOnlySamples] = useState(true);
+    const [onlySamples, setOnlySamples] = useState(readOnlySamples);
+    const updateOnlySamples = (value: boolean) => { setOnlySamples(value); try { localStorage.setItem(ONLY_SAMPLES_KEY, String(value)); } catch { /* 存储不可用时仍保留本次选择。 */ } };
     const [sampleStatus, setSampleStatus] = useState<ArtistSampleStatus | null>(null);
     const [sampleCatalogs, setSampleCatalogs] = useState<Partial<Record<ArtistSamplePack, ArtistSampleCatalog>>>({});
     const [catalogErrors, setCatalogErrors] = useState<Partial<Record<ArtistSamplePack, string>>>({});
@@ -150,7 +156,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                             onPackChange={pack => setCardPacks(previous => ({ ...previous, [artist.name]: pack }))}
                                             revision={sampleCatalogs[effectivePack]?.revision || ''}
                                             hasPackSample={samples.packedNames.has(artist.name)}
-                                            sampleStatusText={!sampleCatalogs[effectivePack] ? getSampleStatusText(effectivePack) : undefined}
+                                            sampleStatusText={onlySamples && !sampleCatalogs[effectivePack] ? getSampleStatusText(effectivePack) : undefined}
                                             ownSamples={artistOwnSamples}
                                             alt={artist.chinese || artist.name}
                                             onSupplement={() => supplementSample(artist.name, effectivePack)}
@@ -164,7 +170,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                         )}
                                     </div>
                                     <div className="gallery-card-caption p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div data-safe-mode-title="true" title={artist.name} className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
+                                        <div data-safe-mode-title="true" title={artist.name} className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{favorites.has(artist.name) && <Heart aria-label={t('已收藏画师')} className="mr-1 inline h-3 w-3 fill-current text-rose-500" />}{artist.name}</div>
                                         {artist.chinese && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
                                         {typeof artist.postCount === 'number' && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                     </div>
@@ -204,6 +210,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         };
         if (returned) void returned.then(open); else open();
     };
+    const openSampleSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'maintenance' } }));
     useEffect(() => {
         const changed = () => setSampleRefresh(current => current + 1);
         window.addEventListener(ARTIST_SAMPLES_CHANGED, changed);
@@ -216,6 +223,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         void Promise.all([getArtistSampleStatus(), getArtistSampleData(), getArtistSampleDictionary()]).then(async ([status, data, dictionary]) => {
             if (cancelled) return;
             setSampleStatus(status); setSampleData(data); setSampleDictionary(dictionary);
+            // 当前包尚未配置、也没有任何自建样张时先展示完整目录；下载／索引进行中仍保留样张视图和真实进度。
+            if (localStorage.getItem(ONLY_SAMPLES_KEY) === null && data.samples.length === 0 && status.packs.every(pack => pack.phase === 'unconfigured' && (!pack.download || pack.download.stage === 'missing'))) setOnlySamples(false);
             // 新状态确认失效时立即清掉旧目录；两包独立就绪，不让另一包失败阻塞当前卡片。
             setSampleCatalogs(previous => Object.fromEntries(Object.entries(previous).filter(([id, catalog]) => status.packs.some(pack => pack.id === id && pack.phase === 'ready' && pack.revision === catalog.revision))));
             await Promise.all(SAMPLE_PACKS.map(async pack => {
@@ -320,6 +329,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         setGachaArtists(null);
         setIsGachaLoading(false);
     }, []);
+    // 从 Roll 详情带回画师名：沿用现有搜索，不额外维护第二套筛选状态。
+    useEffect(() => {
+        if (!initialSearch) return;
+        setSearchTerm(initialSearch.query);
+        setShowFavOnly(false);
+        leaveGacha();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialSearch?.token]);
     useEffect(() => () => { gachaGenerationRef.current++; }, []);
 
     // View Settings
@@ -537,7 +554,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         } catch (error) {
             if (generation !== gachaGenerationRef.current) return;
             console.warn('Artist gacha failed:', error);
-            notify('抽卡失败，请稍后重试', 'error');
+            notify('随机选择画师失败，请稍后重试', 'error');
         } finally {
             if (generation === gachaGenerationRef.current) setIsGachaLoading(false);
         }
@@ -554,34 +571,37 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
-                <div role="group" aria-label={t('画师样张模型')} className="flex flex-none rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950">
+                <div className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div role="group" aria-label={t('画师样张模型')} className="flex flex-none items-center rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950">
+                    <span className="hidden px-1.5 text-micro font-semibold text-gray-500 dark:text-gray-400 sm:inline">{t('样张')}</span>
                     {(['v45', 'v5'] as const).map(pack => <button type="button" key={pack} aria-pressed={samplePack === pack} onClick={() => { setCardPacks({}); if (pack === samplePack) return; setSamplePack(pack); localStorage.setItem('nai_artist_sample_pack', pack); recentGachaIndicesRef.current = []; leaveGacha(true); }} className={`mobile-touch rounded-lg px-2 py-1.5 text-xs font-bold ${samplePack === pack ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>{pack === 'v45' ? 'V4.5' : 'V5'}</button>)}
                 </div>
-                <div className="relative min-w-0 flex-1">
+                <div className="relative min-w-[140px] flex-1">
                     <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师名称或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
                     {isCatalogLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
                 <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(showFavOnly) + Number(!onlySamples)}>
                     <div className="space-y-3">
                         <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}</p>
-                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { setOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
+                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { updateOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
                         <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
                             <option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option>
                         </select></label>
-                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏")}</label>
-                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); setOnlySamples(true); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+                        <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏画师")}</label>
+                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); updateOnlySamples(true); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
-                <ToolbarButton aria-label={gachaArtists ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || sampledArtists.length <= 0} className="mobile-touch" tone="neutral">
-                        {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再抽一批") : t("随机抽卡")}</span>
+                <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={sampledArtists.length ? undefined : t('先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || sampledArtists.length <= 0} className="mobile-touch" tone="neutral">
+                        {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再选一批") : t("随机选画师")}</span>
                 </ToolbarButton>
                 <div ref={librarySettingsRef} className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
                     <ToolbarPopover label={t('画师库设置')} title={t('画师库设置')} icon={<Settings2 />} className="[&_button>span]:!inline" width={320}>
                       {close => <div className="space-y-4"><div className="grid grid-cols-2 gap-3">
-                            <label className="text-sm font-semibold dark:text-white">{t("抽卡方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>
+                            <label className="text-sm font-semibold dark:text-white">{t("随机方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>
                             <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
                         </div><div className="border-t border-gray-200 pt-3 dark:border-gray-700"><p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('补图生成设置')}</p><div className="grid grid-cols-2 gap-2">{SAMPLE_PACKS.map(pack => <button key={pack} type="button" aria-label={t('{0} 补图生成设置', [pack === 'v45' ? 'V4.5' : 'V5'])} onClick={() => openTemplateSettings(pack, close)} className="mobile-touch min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300">{pack === 'v45' ? 'V4.5' : 'V5'}</button>)}</div></div></div>}
                     </ToolbarPopover>
+                </div>
                 </div>
             </WorkspaceToolbar>
 
@@ -598,12 +618,22 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
-                {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                {showFavOnly && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                    <p>{t('还没有收藏画师')}</p>
+                    <p className="mt-1 text-xs">{t('收藏画师样张后，这里会按画师汇总。')}</p>
+                    <button type="button" className="mobile-touch mt-3 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setShowFavOnly(false)}>{t('关闭只看收藏')}</button>
+                    {onlySamples && <button type="button" className="mobile-touch mt-3 ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}
+                </div>}
+                {!showFavOnly && onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">
                     {!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
-                    {searchTerm.trim() && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
+                    {searchTerm.trim() && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
+                    {!searchTerm.trim() && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                        <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={openSampleSettings}>{t('下载样张图包')}</button>
+                        <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>
+                    </div>}
                 </div>}
-                {!onlySamples && !showFavOnly && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                {!showFavOnly && !onlySamples && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
                     {searchError || catalogError ? <>
                         {searchError || catalogError}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button>
@@ -655,7 +685,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 if (target.generateAfterSave) void generateSample(target.tag, target.pack, template, target.regenerate);
             }} />}
 
-            <TagSelectionBar count={cart.length} unit={t("位画师")} onClear={() => setCart([])} onCopy={copyCart} onImport={onNavigateToPlayground ? importCartToPlayground : undefined} />
+            <TagSelectionBar count={cart.length} unit={t("位画师")} onClear={() => setCart([])} onCopy={copyCart} onImport={onNavigateToPlayground ? importCartToPlayground : undefined} onSendToRoll={onOpenRoll ? () => { const tags = cart.map(item => item.name); setCart([]); onOpenRoll(tags); } : undefined} />
 
         </div>
     );

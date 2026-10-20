@@ -37,7 +37,7 @@ const readJsonBody = async (request: Request): Promise<Record<string, unknown>> 
  * settings 表值可能因备份恢复/手工编辑而损坏，逐条校验后规范化，
  * 损毁条目丢弃、缺省字段补默认值，避免端点 500 且保证写回内容可预期。
  */
-const readVault = async (db: D1Database): Promise<NaiKeyEntry[]> => {
+export const readVault = async (db: D1Database): Promise<NaiKeyEntry[]> => {
   const row = await db.prepare('SELECT value FROM settings WHERE key = ?')
     .bind(VAULT_SETTINGS_KEY)
     .first<{ value: string }>();

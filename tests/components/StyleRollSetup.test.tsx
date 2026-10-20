@@ -51,6 +51,41 @@ it('保存失败保留输入和窗口，空白 Seed 或无效规则不投递', a
   fireEvent.change(screen.getByLabelText('最少画师'), { target: { value: '0' } }); fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await screen.findByText('请检查画师数量和权重范围'); expect(save).toHaveBeenCalledOnce();
 });
+it('新建配置可先定默认抽取方式，固定权重随记录保存', async () => {
+  const initial = rollFixture(); initial.artists = [];
+  const save = vi.fn(async (_value: RollExperiment) => {});
+  render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '固定权重' }));
+  fireEvent.change(screen.getByRole('spinbutton', { name: '固定权重' }), { target: { value: '1.3' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].drawPlan).toEqual({ mode: 'fixedWeight' });
+  expect(save.mock.calls[0][0].rules).toMatchObject({ minWeight: 1.3, maxWeight: 1.3 });
+});
+
+it('打开仍有历史默认模板的记录时自动换成质量词模板并提示', async () => {
+  const initial = rollFixture(); initial.artists = [];
+  initial.template.prompt = '{style}, 1girl, solo, upper body, simple background, looking at viewer';
+  initial.template.negativePrompt = '';
+  const save = vi.fn(async (_value: RollExperiment) => {});
+  render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  expect(screen.getByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeTruthy();
+  expect((screen.getByLabelText('公共提示词（{style} 为画风位置）') as HTMLTextAreaElement).value).toContain('masterpiece');
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].template.prompt).toContain('cinematic lighting');
+});
+
+it('角色提示词独立于公共提示词保存', async () => {
+  const initial = rollFixture(); initial.artists = []; const save = vi.fn(async (_value: RollExperiment) => {});
+  render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '角色提示词（可选）' }), { target: { value: 'miku, twintails' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].template.characterPrompt).toBe('miku, twintails');
+  expect(save.mock.calls[0][0].template.prompt).not.toContain('miku');
+});
+
 it('默认只需设置抽取数量，无需建画师池或从旧画师表导入', async () => {
   const initial = rollFixture(); initial.artists = []; const save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup initial={initial} chains={[]} libraryCount={1205} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);

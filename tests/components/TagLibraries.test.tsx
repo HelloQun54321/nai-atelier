@@ -118,6 +118,10 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
 });
 const entriesFor = (kind: Kind) => kind === 'artist' ? fixtures.artists : fixtures.characters;
 const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEntriesAt : getCharacterDictionaryEntriesAt;
+/** 两个目录的抽卡入口与收藏筛选叫法不同：画师库用「选画师／只看收藏画师」，角色库仍是「抽卡／只看收藏」。 */
+const kindLabels = (kind: Kind) => kind === 'artist'
+  ? { draw: '随机选画师', redraw: '再选一批', favorite: '只看收藏画师' }
+  : { draw: '随机抽卡', redraw: '再抽一批', favorite: '只看收藏' };
 const seedFavorites = (kind: Kind, names: string[]) => {
   if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
   else names.forEach(name => fixtures.favorites.set(`artist:${name}`, { sourceType: 'artist', sourceId: name, archived: false }));
@@ -277,12 +281,13 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
   });
 
   it.each([false, true])('抽卡=%s：点击居中但保留多选；切换筛选释放旧定位', async gacha => {
+    const labels = kindLabels(kind);
     renderLibrary(kind);
     const entries = entriesFor(kind);
     await screen.findByTestId(`cover-${entries[0].name}`);
     if (gacha) {
-      fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
-      await screen.findByRole('button', { name: '再抽一批' });
+      fireEvent.click(screen.getByRole('button', { name: labels.draw }));
+      await screen.findByRole('button', { name: labels.redraw });
     }
     const cards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
     const { root, scrollCalls } = mockGalleryGeometry(cards);
@@ -313,10 +318,10 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const { root } = mockGalleryGeometry(cards);
     root.scrollTop = 1600;
     fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
     expect(root.scrollTop).toBe(0);
     root.scrollTop = 800;
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
     expect(root.scrollTop).toBe(0);
     fireEvent.keyDown(window, { key: 'Escape' });
     root.scrollTop = 900;
@@ -359,10 +364,10 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const toolbar = within(container.querySelector('header')!);
     expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
       ...(kind === 'artist' ? [null, null] : []),
-      '筛选', '随机抽卡', kind === 'artist' ? '画师库设置' : '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
+      '筛选', kindLabels(kind).draw, kind === 'artist' ? '画师库设置' : '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
     ]);
     expect(toolbar.getByRole('searchbox')).toBeTruthy();
-    const draw = toolbar.getByRole('button', { name: '随机抽卡' });
+    const draw = toolbar.getByRole('button', { name: kindLabels(kind).draw });
     expect(draw.className).toContain('bg-white');
     expect(draw.className).not.toContain('bg-indigo-600');
     for (const name of ['更多', '画师配置', '任务队列', '复制历史', '批量导入画师', '生成预览', '重新生成', '设为固定封面']) {
@@ -389,14 +394,14 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     seedFavorites(kind, [entry.name]);
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entry.name}`);
-    fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+    fireEvent.click(screen.getByRole('button', { name: kindLabels(kind).draw }));
     await screen.findByText(/正在浏览随机抽取的 2 位/);
-    expect(screen.getByRole('button', { name: '再抽一批' }).className).toContain('bg-white');
-    expect(screen.getByRole('button', { name: '再抽一批' }).className).not.toContain('bg-indigo-600');
+    expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).className).toContain('bg-white');
+    expect(screen.getByRole('button', { name: kindLabels(kind).redraw }).className).not.toContain('bg-indigo-600');
     if (kind === 'artist') expect(getArtistDictionaryEntriesAt).not.toHaveBeenCalled();
     else expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
     expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1);
     expect(screen.getByTestId(`cover-${entry.name}`)).toBeTruthy();
@@ -410,7 +415,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entries[0].name}`);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
     const sort = screen.getByRole('combobox', { name: kind === 'artist' ? '画师排序' : '角色排序' });
     for (const value of ['name-desc', 'least']) {
       fireEvent.change(sort, { target: { value } });
@@ -425,13 +430,13 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     if (kind === 'character') vi.mocked(getEntriesFor(kind)).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
-    fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+    fireEvent.click(screen.getByRole('button', { name: kindLabels(kind).draw }));
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: entriesFor(kind)[1].name } });
     if (kind === 'character') await act(async () => { resolve([entriesFor(kind)[0]]); });
     await waitFor(() => expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1));
     expect(screen.getByTestId(`cover-${entriesFor(kind)[1].name}`)).toBeTruthy();
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
-    expect(screen.getByRole('button', { name: '随机抽卡' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: kindLabels(kind).draw })).toBeTruthy();
   });
 });
 

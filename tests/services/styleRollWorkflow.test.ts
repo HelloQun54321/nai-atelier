@@ -27,3 +27,13 @@ it('无效轮次引用或缺失轮次列表不会被默认为合法记录', () =
   expect(() => validateRollExperiment(e)).toThrow('画风轮次资料无效');
   expect(() => validateRollExperiment({ ...e, rounds: undefined })).toThrow('画风轮次资料无效');
 });
+
+it('新轮次保存抽取条件快照，固定画师与固定权重都能回看', () => {
+  const e = rollFixture(); e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+  const plan = { mode: 'pinnedArtists' as const, pinnedArtists: ['alpha', 'beta'] };
+  const next = beginRollRound(e, e.artists.map(artist => artist.tag), 2, { plan });
+  expect(currentRollRound(next)!.snapshot).toEqual({ rules: expect.objectContaining({ minArtists: 2, maxArtists: 2 }), mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] });
+  expect(() => validateRollExperiment(next)).not.toThrow();
+  const fixed = beginRollRound({ ...e, rules: { ...e.rules, minWeight: 1.2, maxWeight: 1.2 } }, e.artists.map(artist => artist.tag), 2, { plan: { mode: 'fixedWeight' } });
+  expect(currentRollRound(fixed)!.snapshot).toMatchObject({ mode: 'fixedWeight', rules: { minWeight: 1.2, maxWeight: 1.2 } });
+});

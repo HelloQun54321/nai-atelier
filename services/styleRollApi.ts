@@ -1,7 +1,7 @@
 import type { LocalGenItem } from '../types';
 import { api } from './api';
 import { localHistory } from './localHistory';
-import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollExperiment, type RollExperiment } from './styleRoll';
+import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollBlocklist, validateRollExperiment, type RollExperiment } from './styleRoll';
 
 export async function loadRollExperiments(): Promise<RollExperiment[]> {
   const result = await api.get('/style-roll', { cache: 'no-store' });
@@ -14,6 +14,21 @@ export async function saveRollExperiment(experiment: RollExperiment): Promise<Ro
   const result = await api.put('/style-roll', experiment);
   validateRollExperiment(result.experiment);
   return result.experiment;
+}
+
+export async function loadRollBlocklist(): Promise<string[]> {
+  const result = await api.get('/style-roll/blocklist', { cache: 'no-store' });
+  if (!Array.isArray(result.tags)) throw new Error('屏蔽画师列表读取失败');
+  validateRollBlocklist(result.tags);
+  return result.tags;
+}
+
+export async function saveRollBlocklist(tags: string[]): Promise<string[]> {
+  validateRollBlocklist(tags);
+  const result = await api.put('/style-roll/blocklist', { tags });
+  if (!Array.isArray(result.tags)) throw new Error('屏蔽画师列表读取失败');
+  validateRollBlocklist(result.tags);
+  return result.tags;
 }
 
 export async function loadRollHistory(experimentId: string): Promise<LocalGenItem[]> {

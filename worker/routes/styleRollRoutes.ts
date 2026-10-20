@@ -1,10 +1,31 @@
-import { validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
+import { validateRollBlocklist, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
+
+const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
 
 /** 复用私人 settings，无表结构变更；版本比较避免两端静默覆盖同一次实验。 */
 export async function handleStyleRollRoute({ path, method, request, db, currentUser }: RouteContext): Promise<Response | null> {
-  if (path !== '/api/style-roll') return null;
+  if (path !== '/api/style-roll' && path !== '/api/style-roll/blocklist') return null;
   if (currentUser.role === 'guest') return error('访客无法访问 Roll 串实验', 403);
+
+  if (path === '/api/style-roll/blocklist') {
+    const key = blocklistKey(currentUser.id);
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      let tags: string[] = [];
+      if (row) { try { const value: unknown = JSON.parse(row.value); validateRollBlocklist(value); tags = value; } catch { return error('屏蔽画师列表读取失败', 500); } }
+      return json({ tags });
+    }
+    if (method !== 'PUT') return error('Method not allowed', 405);
+    const raw = await request.text();
+    if (raw.length > 200_000) return error('屏蔽画师列表过大', 413);
+    let tags: string[];
+    try { const value: unknown = JSON.parse(raw)?.tags; validateRollBlocklist(value); tags = value; }
+    catch (cause) { return error(cause instanceof Error ? cause.message : '屏蔽画师列表无效', 400); }
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, JSON.stringify(tags)).run();
+    return json({ tags });
+  }
+
   const prefix = `style_roll_v1:${currentUser.id}:`;
   if (method === 'GET') {
     const rows = await db.prepare('SELECT value FROM settings WHERE key >= ? AND key < ?').bind(prefix, prefix + '\uffff').all<{ value: string }>();
