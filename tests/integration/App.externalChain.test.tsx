@@ -7,6 +7,7 @@ import type { PromptChain } from '../../types';
 import { api, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 import { localHistory } from '../../services/localHistory';
 import { consumeEditorSessionDiscarded } from '../../services/labWorkspace';
+import { contentSnapshotOf } from '../../services/contentRoll';
 import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 
 const mocks = vi.hoisted(() => ({
@@ -96,8 +97,10 @@ it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销�
   await act(async () => { await mocks.updatePlayground!('playground', { variableValues: { subject: 'legacy_subject' }, params: { ...source.params, seed: 42 } }); });
   fireEvent.click(screen.getByRole('button', { name: 'content-roll' }));
   fireEvent.click(await screen.findByRole('button', { name: '抽一次' }));
+  expect(screen.getByRole('dialog', { name: 'Roll 组合' })).toBeTruthy();
+  expect(screen.getAllByRole('tab')).toHaveLength(2);
   fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
-  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
   fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
   await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toBe('night, legacy_subject'));
@@ -109,6 +112,23 @@ it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销�
   fireEvent.click(screen.getByRole('button', { name: 'playground' }));
   fireEvent.click(await screen.findByRole('button', { name: '返回资料库' }));
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('content-library'));
+});
+
+it('旧组合库入口映射到组合库，载入打开面板，关闭保留原库和已载入组合', async () => {
+  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'combo', type: 'preset', name: '已存夜景', params: {
+    _rollContentSnapshot: contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21'),
+  } }]);
+  await setup('prompts');
+  fireEvent.click(screen.getByRole('button', { name: 'content-roll-library' }));
+  fireEvent.click(await screen.findByRole('button', { name: '载入组合' }));
+  expect(await screen.findByRole('dialog', { name: 'Roll 组合' })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: '组合库' }).getAttribute('aria-selected')).toBe('true');
+  expect(document.querySelector('[data-content-roll-row="scene"]')?.textContent).toContain('night');
+  fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
+  expect(screen.queryByRole('dialog', { name: 'Roll 组合' })).toBeNull();
+  expect(screen.getByRole('button', { name: '载入组合' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Roll 组合' }));
+  expect(document.querySelector('[data-content-roll-row="scene"]')?.textContent).toContain('night');
 });
 
 it('提示词库创建使用完整回执并留在当前库，不重新下载整库或打开实验室', async () => {

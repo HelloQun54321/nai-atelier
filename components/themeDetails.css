@@ -50,6 +50,8 @@ html[data-theme-details='true'][data-theme-material='frosted'] :is(.app-sidebar,
 html[data-surfaces='translucent'] .workspace-chrome { margin-bottom: calc(-1 * var(--workspace-chrome-height, 0px)); }
 /* 内容库不是普通滚动页：叠在悬浮顶栏下时自行留出同等高度，分类侧栏不被盖住。 */
 html[data-surfaces='translucent'] .content-library-body { padding-top: var(--workspace-chrome-height, 0px); }
+/* 父容器已避让顶栏，嵌入分区不能再次累加同一份高度。 */
+.content-library-body > [data-content-library-pane] { --workspace-chrome-height: 0px; }
 .workspace-scroll-viewport.p-3 { --workspace-scroll-gutter: calc(var(--spacing) * 3); }
 .workspace-scroll-viewport.p-4 { --workspace-scroll-gutter: calc(var(--spacing) * 4); }
 .workspace-scroll-viewport.p-6 { --workspace-scroll-gutter: calc(var(--spacing) * 6); }

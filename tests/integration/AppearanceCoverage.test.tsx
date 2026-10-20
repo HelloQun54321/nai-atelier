@@ -612,6 +612,18 @@ describe('全局外观覆盖审计', () => {
     const solid = "html[data-theme-details='true'][data-theme-material='solid'] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
     expect(declarations(solid, undefined, detailCss)['backdrop-filter']).toBe('none');
   });
+  it('内容库主操作使用深色强调底和配套前景，蓝色主题明暗模式均为白字', () => {
+    const selector = "html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='control'][data-tone='primary']";
+    expect(declarations(selector)).toMatchObject({
+      'background-color': 'var(--nai-action-deep)', 'border-color': 'var(--nai-action-deep)', color: 'var(--nai-on-action)',
+    });
+    for (const dark of [false, true]) {
+      applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#0ea5e9' }, dark);
+      const foreground = document.documentElement.style.getPropertyValue('--nai-on-action');
+      expect(foreground).toBe('#ffffff');
+      expect(themeContrast(foreground, mixThemeColor('#0ea5e9', dark ? '#0d0f14' : '#000000', dark ? .55 : .68))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
   it('强调色控件和文字使用可读前景色，自定义面板接管白底但不改语义色与图片遮罩', () => {
     expect(declarations("html[data-design-theme='nai-atelier'] :is(.bg-indigo-600, .bg-violet-600).text-white").color).toBe('var(--nai-on-accent-600)');
     expect(declarations("html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-500'], [class~='hover:bg-violet-500']).text-white:hover:not(:disabled)").color).toBe('var(--nai-on-accent-500)');

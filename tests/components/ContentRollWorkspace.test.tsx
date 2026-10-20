@@ -12,6 +12,23 @@ const chains: PromptChain[] = KINDS.map(kind => ({ id: kind, type: kind as Promp
   params: LAB_DEFAULT_PARAMS, modules: [], tags: [], variableValues: {}, createdAt: 1, updatedAt: 1 }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 
+it('首次抽取之前可选全局范围，锁定项不能单栏重抽，填入前显示旧值和新值', async () => {
+  const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
+  render(<ContentRollWorkspace active chains={chains} notify={vi.fn()} playgroundParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'old_scene' } }} onApplyRoll={onApplyRoll} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  expect(document.querySelector('[data-content-roll-name="appearance"]')).toBeNull();
+  const scene = document.querySelector('[data-content-roll-row="scene"]')!;
+  fireEvent.click(scene.querySelector('[title="固定这一条"]')!);
+  expect((Array.from(scene.querySelectorAll('button')).find(button => button.textContent === '换一个') as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('combobox', { name: '选择写入的目标角色' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  expect(screen.getByText('old_scene → scene_tag')).toBeTruthy();
+  expect(onApplyRoll).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
+  await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
+});
+
 it('范围与参与开关一致，切范围后可抽取、保存和应用对应内容，历史恢复原范围', async () => {
   const onSaveRoll = vi.fn(async (_name: string, _picks: Record<string, unknown>) => 'saved');
   const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
@@ -22,8 +39,8 @@ it('范围与参与开关一致，切范围后可抽取、保存和应用对应�
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
   fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
   expect(scene.checked).toBe(true); expect(scene.disabled).toBe(false);
-  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
-  fireEvent.click(screen.getByRole('button', { name: '存为 Roll 内容…' }));
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存组合' }));
   fireEvent.change(screen.getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '场景搭配' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(onSaveRoll).toHaveBeenCalledOnce());

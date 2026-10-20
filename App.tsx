@@ -74,8 +74,9 @@ const App = () => {
   const [contentRollRevision, setContentRollRevision] = useState(0);
   /* 实验室就地发起一键 Roll 的范围/目标请求（工作区消费一次） */
   const [contentRollScopeRequest, setContentRollScopeRequest] = useState<{ scope: 'all' | 'character' | 'global'; targetId?: string; key: number } | null>(null);
-  /* 内容库当前分区：条目库／一键 Roll／已存组合 */
+  /* 内容库资源分区与临时搭配面板独立，打开面板不切换原列表。 */
   const [contentLibrarySection, setContentLibrarySection] = useState<ContentLibrarySection>('items');
+  const [contentRollOpen, setContentRollOpen] = useState(false);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -516,9 +517,10 @@ const App = () => {
     }
 
     // 旧入口统一收进「内容库」；一键 Roll 仍需要实验室参数作为应用目标。
+    setContentRollOpen(newView === 'content-roll');
     if (newView === 'content-roll') { ensurePlayground(); keepViewMounted('playground'); }
     if (newView === 'prompts' || newView === 'content-roll' || newView === 'content-roll-library') {
-      setContentLibrarySection(newView === 'prompts' ? 'items' : newView === 'content-roll' ? 'roll' : 'saved');
+      if (newView !== 'content-roll') setContentLibrarySection(newView === 'prompts' ? 'items' : 'saved');
       newView = 'content-library';
     }
 
@@ -633,13 +635,13 @@ const App = () => {
   const handleContentRollForRole = (index: number) => {
     const character = (playgroundChain?.params?.characters || [])[index];
     setContentRollScopeRequest({ scope: 'character', targetId: character ? String(character.id) : undefined, key: Date.now() });
-    setContentLibrarySection('roll');
+    setContentRollOpen(true);
     keepViewMounted('content-library');
     setView('content-library');
   };
   const handleContentRollForGlobal = () => {
     setContentRollScopeRequest({ scope: 'global', key: Date.now() });
-    setContentLibrarySection('roll');
+    setContentRollOpen(true);
     keepViewMounted('content-library');
     setView('content-library');
   };
@@ -809,9 +811,15 @@ const App = () => {
         return <ContentLibraryPage
           section={contentLibrarySection}
           onSectionChange={setContentLibrarySection}
+          active={view === 'content-library'}
+          rollOpen={contentRollOpen}
+          onRollOpenChange={open => {
+            if (open) { ensurePlayground(); keepViewMounted('playground'); }
+            setContentRollOpen(open);
+          }}
           items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
             onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
-          roll={() => <ContentRollWorkspace active={contentLibrarySection === 'roll'} chains={chains} notify={notify}
+          roll={toolbarSlot => <ContentRollWorkspace active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
             canUndo={!!contentRollUndo}
@@ -823,7 +831,7 @@ const App = () => {
             seedRecord={contentRollSeed}
             onSeedConsumed={() => setContentRollSeed(null)}
             embedded />}
-          saved={() => <ContentRollLibrary active={contentLibrarySection === 'saved'} chains={chains} notify={notify}
+          saved={toolbarSlot => <ContentRollLibrary active={contentLibrarySection === 'saved'} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
             onLoad={handleLoadContentRoll}
             onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
             onDelete={async chain => { await handleDelete(chain.id); }}

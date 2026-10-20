@@ -17,14 +17,14 @@
  * 组件自身不直接 fetch /api/chains，避免与 App 的刷新与乐观更新逻辑分叉。
  */
 import { t, useLanguage } from '../services/i18n';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Copy,
-  Heart,
+  Library,
   ImagePlus,
   LoaderCircle,
   PersonStanding,
@@ -167,6 +167,16 @@ interface PromptLibraryInternalProps extends PromptLibraryProps {
   config: PromptLibraryKindConfig;
   categoryNavigation?: React.ReactNode;
   registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void;
+  browsing?: LibraryBrowsing;
+  rememberBrowsing?: (state: LibraryBrowsing) => void;
+}
+
+interface LibraryBrowsing {
+  query: string;
+  tags: string[];
+  sort: 'updated' | 'name';
+  view: 'content' | 'cover';
+  scrollTop: number;
 }
 
 const DETAIL_FIELD_CLASS = 'mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
@@ -186,6 +196,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   notify,
   embedded = false,
   toolbarSlot = null,
+  browsing,
+  rememberBrowsing,
 }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
@@ -193,8 +205,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const Icon = KIND_ICONS[config.kind];
   const generatorTitle = config.generateLabel.replace('✦ ', '');
 
-  const [query, setQuery] = useState('');
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState(browsing?.query || '');
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set(browsing?.tags));
+  const [sort, setSort] = useState<LibraryBrowsing['sort']>(browsing?.sort || 'updated');
+  const [view, setView] = useState<LibraryBrowsing['view']>(browsing?.view || 'content');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const browsingRef = useRef<LibraryBrowsing>({ query, tags: [...selectedTags], sort, view, scrollTop: browsing?.scrollTop || 0 });
+  browsingRef.current = { ...browsingRef.current, query, tags: [...selectedTags], sort, view };
+  const rememberRef = useRef(rememberBrowsing);
+  rememberRef.current = rememberBrowsing;
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = browsingRef.current.scrollTop;
+    return () => { rememberRef.current?.(browsingRef.current); };
+  }, []);
+  const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; browsingRef.current.scrollTop = 0; };
   const [tagQuery, setTagQuery] = useState('');
 
   const [detail, setDetail] = useState<LibraryDraft | null>(null);
@@ -263,8 +287,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           .toLowerCase()
           .includes(keyword);
       })
-      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
-  }, [items, query, selectedTags]);
+      .sort((left, right) => sort === 'name' ? left.name.localeCompare(right.name) : Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+  }, [items, query, selectedTags, sort]);
 
   /* ---------------- 提示与复制 ---------------- */
 
@@ -278,11 +302,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     }
   }, [notify]);
 
-  const toggleTag = (value: string) => setSelectedTags(previous => {
+  const toggleTag = (value: string) => { resetScroll(); setSelectedTags(previous => {
     const next = new Set(previous);
     if (next.has(value)) next.delete(value); else next.add(value);
     return next;
-  });
+  }); };
 
   /* ---------------- 详情态 ---------------- */
 
@@ -598,6 +622,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     const prompt = chainPrompt(chain);
     const tags = chainTags(chain);
     const references = chainReferences(chain);
+    const CardIcon = KIND_ICONS[chain.type as PromptLibraryKind] || Icon;
+    const compact = view === 'content';
     return (
       <PressRevealSurface
         as="article"
@@ -617,15 +643,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           event.preventDefault();
           setDetail(draftFromChain(chain));
         }}
-        className="appearance-group gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600"
+        className={`appearance-group group relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer hover:border-indigo-400 focus-visible:outline-2 focus-visible:outline-indigo-500 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600 ${compact ? 'flex flex-row items-start p-3 gap-3' : 'gallery-image-card gallery-card-visual flex-col'}`}
       >
-        <div className="appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900">
+        <div className={compact ? 'appearance-media relative h-28 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800' : 'appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900'}>
           {chain.previewImage ? (
             <SmartImage src={chain.previewImage} alt={name} className="h-full w-full object-cover" />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
-              <Icon className="h-8 w-8" />
-              <span className="mt-2 line-clamp-3 text-meta break-words">{prompt || t('还没有提示词')}</span>
+              <CardIcon className="h-8 w-8" />
+              {!compact && <span className="mt-2 line-clamp-3 text-meta break-words">{prompt || t('还没有提示词')}</span>}
             </div>
           )}
           {references.length > 0 && (
@@ -652,7 +678,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             </button>
           </div>
         </div>
-        <div className="gallery-card-caption p-3">
+        <div className={compact ? 'min-w-0 flex-1 py-0.5' : 'gallery-card-caption p-3'}>
           <div className="flex items-center justify-between gap-1.5">
             {renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
               className="w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100"
@@ -668,35 +694,47 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               onKeyDown={event => event.stopPropagation()}>{name}</button>}
             {config.hideActions && <span className="shrink-0 text-micro text-gray-500">{t(PROMPT_LIBRARY_KINDS[chain.type as PromptLibraryKind]?.itemNoun || '')}</span>}
           </div>
+          {compact && <p className="mt-2 line-clamp-3 break-words text-xs leading-5 text-gray-600 dark:text-gray-300" title={prompt}>{chainBilingual(chain) || prompt || t('还没有提示词')}</p>}
           <div className="gallery-card-meta mt-1 flex flex-wrap items-center gap-1">
             {tags.slice(0, 3).map(tag => (
               <span key={tag} className="gallery-card-badge max-w-full truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={tag}>{tag}</span>
             ))}
-            {!tags.length && <span className="truncate font-mono text-micro text-gray-400 dark:text-gray-500" title={prompt}>{prompt || t('还没有提示词')}</span>}
+            {!tags.length && !compact && <span className="truncate font-mono text-micro text-gray-400 dark:text-gray-500" title={prompt}>{prompt || t('还没有提示词')}</span>}
           </div>
         </div>
       </PressRevealSurface>
     );
   };
 
+  const itemActions = !config.hideActions && <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t(config.title)} <span className="ml-1 text-xs font-normal tabular-nums text-gray-400">{shown.length}</span></span>
+        <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
+          <Sparkles /><span className="content-library-action-label hidden sm:inline">{t(generatorTitle)}</span>
+        </ToolbarButton>
+        <ToolbarButton tone="primary" onClick={() => void createBlank()} disabled={creating} aria-label={t(config.createLabel)} title={t(config.createLabel)} className="mobile-touch !px-2.5 md:!px-3">
+          {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}<span className="content-library-action-label hidden sm:inline">{t(config.createLabel)}</span>
+        </ToolbarButton>
+      </div>;
+
   const listToolbarContent = (
     <>
-      <div className="relative min-w-0 flex-1">
-        <ToolbarSearch
-          value={query}
-          onChange={event => setQuery(event.target.value)}
-          placeholder={t('搜索{0}名称、标签或提示词', [t(config.itemNoun)])}
-          containerClassName="md:max-w-none!"
-        />
-      </div>
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320}>
         <div className="space-y-3">
+          <label className="block text-xs font-semibold text-gray-500">{t('排序')}
+            <select aria-label={t('排序')} className={TOOLBAR_FIELD_CLASS} value={sort} onChange={event => { setSort(event.target.value as LibraryBrowsing['sort']); resetScroll(); }}>
+              <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
+            </select>
+          </label>
+          <div role="group" aria-label={t('显示方式')} className="flex gap-2">
+            <ToolbarButton active={view === 'content'} aria-pressed={view === 'content'} onClick={() => setView('content')} className="flex-1">{t('内容视图')}</ToolbarButton>
+            <ToolbarButton active={view === 'cover'} aria-pressed={view === 'cover'} onClick={() => setView('cover')} className="flex-1">{t('封面视图')}</ToolbarButton>
+          </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {selectedTags.size > 0 ? t('已启用 {0} 项标签筛选', [selectedTags.size]) : t('全部标签')}
             </span>
             {selectedTags.size > 0 && (
-              <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('清除标签筛选')}</button>
+              <button type="button" onClick={() => { setSelectedTags(new Set()); resetScroll(); }} className="mobile-touch px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('清除标签筛选')}</button>
             )}
           </div>
           {tagOptions.length > 12 && (
@@ -731,20 +769,22 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {selectedTags.size > 1 && <p className="text-xs text-gray-400">{t('只显示同时包含全部所选标签的{0}', [t(config.itemNoun)])}</p>}
         </div>
       </ToolbarPopover>
-      {!config.hideActions && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700">
-        <ToolbarButton onClick={config.hideActions ? undefined : openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
-          <Sparkles /><span className="hidden sm:inline">{t(generatorTitle)}</span>
-        </ToolbarButton>
-        <ToolbarButton tone="primary" onClick={() => void createBlank()} disabled={creating} aria-label={t(config.createLabel)} title={t(config.createLabel)} className="mobile-touch !px-2.5 md:!px-3">
-          {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}<span className="hidden sm:inline">{t(config.createLabel)}</span>
-        </ToolbarButton>
-      </div>}
+      <div className="relative min-w-0 flex-1">
+        <ToolbarSearch
+          value={query}
+          onChange={event => { setQuery(event.target.value); resetScroll(); }}
+          aria-label={t('搜索名称、标签或提示词')}
+          placeholder={t('搜索{0}名称、标签或提示词', [t(config.itemNoun)])}
+          containerClassName="md:max-w-none!"
+        />
+      </div>
+
     </>
   );
   const listToolbar = <WorkspaceToolbar>{listToolbarContent}</WorkspaceToolbar>;
 
   const listBody = shown.length ? (
-    <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={mobileGalleryStyle(imageDisplay)}>
+    <div className={view === 'content' ? 'content-library-grid' : `${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={view === 'cover' ? mobileGalleryStyle(imageDisplay) : undefined}>
       {shown.map(renderCard)}
     </div>
   ) : (
@@ -753,9 +793,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       icon={<Icon className="h-8 w-8" aria-hidden="true" />}
       title={items.length ? t('没有找到符合条件的{0}', [t(config.itemNoun)]) : t(config.emptyTitle)}
       hint={items.length ? t('换个关键词，或清除标签筛选。') : t(config.emptyHint)}
-      action={!items.length ? (
-        !config.hideActions ? <ToolbarButton tone="primary" onClick={openGenerator}><Sparkles /><span>{t(generatorTitle)}</span></ToolbarButton> : undefined
-      ) : undefined}
+      action={items.length ? <ToolbarButton onClick={() => { setQuery(''); setSelectedTags(new Set()); resetScroll(); }}>{t('清除筛选')}</ToolbarButton> : undefined}
     />
   );
 
@@ -1159,8 +1197,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
 
   const body = <>
-    <div className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
-      {detail ? detailBody : listBody}
+    <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+      {detail ? detailBody : <>{itemActions}{listBody}</>}
     </div>
     {generator}
     <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} />
@@ -1175,8 +1213,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   return (
     <div className="workspace-canvas relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>{categoryNavigation}{detail ? detailToolbar : listToolbar}</WorkspaceChrome>
-      <div className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
-        {detail ? detailBody : listBody}
+      <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+        {detail ? detailBody : <>{itemActions}{listBody}</>}
       </div>
       {generator}
       <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} />
@@ -1191,6 +1229,7 @@ type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();
   const leaveGuards = useRef<Partial<Record<LibraryCategory, () => Promise<boolean>>>>({});
+  const browsing = useRef<Partial<Record<LibraryCategory, LibraryBrowsing>>>({});
   const [kind, setKind] = useState<LibraryCategory>(() => {
     try { const saved=localStorage.getItem('nai-prompt-library-kind'); return LIBRARY_CATEGORIES.includes(saved as LibraryCategory) ? saved as LibraryCategory : 'all'; }
     catch { return 'all'; }
@@ -1202,14 +1241,14 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     setKind(category);
     try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
   };
-  return <div className="flex h-full min-h-0 flex-1 flex-col md:flex-row">
+  return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
     {/* 分类沿用收藏库的二级侧栏样式：桌面为带图标与数量的白色选中项，手机横排。 */}
-    <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:bg-gray-50/70 md:p-2 md:dark:bg-gray-900/60">
+    <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60">
       <p className="hidden md:mb-2 md:block md:px-2 md:text-meta md:font-bold md:text-gray-400">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
         const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');
-        const Icon = category === 'all' ? Heart : KIND_ICONS[category as PromptLibraryKind];
+        const Icon = category === 'all' ? Library : KIND_ICONS[category as PromptLibraryKind];
         return <button key={category} type="button" role="tab" aria-selected={kind===category}
           className={`mobile-touch flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition md:h-10 md:w-full md:text-left ${kind===category ? '!border-indigo-500 !bg-indigo-600 !text-white shadow-sm' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
           onClick={() => { void selectKind(category); }}>
@@ -1221,6 +1260,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     </nav>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+        browsing={browsing.current[kind]} rememberBrowsing={state => { browsing.current[kind] = state; }}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>
   </div>;

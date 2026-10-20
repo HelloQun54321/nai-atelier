@@ -34,6 +34,41 @@
   contain-intrinsic-size: auto 320px;
 }
 
+/* 内容库按实际剩余宽度换行，打开助手也不会挤掉搜索或主要操作。 */
+.content-library { container: content-library / inline-size; }
+.content-library-toolbar .content-library-tools { flex-basis: 20rem; }
+.content-roll-dialog { --workspace-chrome-height: 0px; }
+/* 内容库主操作共用深色强调底及其配套前景，避免蓝底出现突兀的黑色文字和图标。 */
+html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='control'][data-tone='primary'] {
+  background-color: var(--nai-action-deep);
+  border-color: var(--nai-action-deep);
+  color: var(--nai-on-action);
+}
+.content-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
+.content-library-roll-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: .75rem; }
+.content-library-roll-layout { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; }
+@container content-library (max-width: 850px) {
+  .content-library-toolbar.workspace-command-bar { height: auto; flex-wrap: wrap; padding-block: .75rem; gap: .5rem; }
+  .content-library-toolbar > [role='tablist'] { flex: 1; }
+  .content-library-toolbar > [role='tablist'] > button { flex: 1; }
+  .content-library-toolbar .content-library-tools { order: 3; flex-basis: 100%; }
+  .content-library-roll-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@container content-library (max-width: 620px) {
+  /* 手机把手保留完整触控高度，分区标签从其下方开始。 */
+  .content-library-toolbar.workspace-command-bar { padding-top: 3rem; }
+  .prompt-library-hub { flex-direction: column; }
+  .prompt-library-hub > nav { width: auto; flex-direction: row; overflow-x: auto; }
+  .prompt-library-hub > nav > p { display: none; }
+  .prompt-library-hub > nav > button { width: auto; }
+  .content-library-tools { gap: .375rem; }
+  .content-library-tools [data-appearance='control'] { padding-inline: .625rem; }
+  .content-library-tools input[data-appearance='control'] { padding-left: 2.25rem; }
+  .content-roll-dialog-tools { flex-wrap: wrap; }
+  .content-roll-dialog-tools .content-roll-scope { flex-basis: 100%; }
+  .content-roll-dialog-tools .content-roll-scope ~ button { margin-left: auto; }
+}
+
 /* 卡片不画装饰边和悬停阴影，仅保留选中及键盘焦点的功能性外圈。 */
 html:root :is(.media-card, .gallery-image-card, .appearance-card, .atelier-theme-card, .appearance-control-panel) {
   border-width: 0 !important;

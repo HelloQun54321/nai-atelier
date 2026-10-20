@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
-import { t } from '../services/i18n';
+import { t, useLanguage } from '../services/i18n';
 import type { PromptChain } from '../types';
 import { KINDS, META } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
@@ -9,7 +10,7 @@ import type { ContentRollApplyPlan, ContentRollTarget } from '../services/conten
 import { filterPicksByScope, pickByParticipation, planContentRollApply } from '../services/contentRollApply';
 import type { ContentRollScope } from '../services/contentRollApply';
 import type { NAIParams } from '../types';
-import { WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 
 interface ContentRollWorkspaceProps {
   active: boolean;
@@ -35,6 +36,7 @@ interface ContentRollWorkspaceProps {
   onSeedConsumed?: () => void;
   /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
   embedded?: boolean;
+  toolbarSlot?: HTMLElement | null;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -66,17 +68,13 @@ const readStore = (): { history: RollRecord[]; cursor: number } => {
   }
 };
 
-const shortText = (value: string, max = 48): string => {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-};
-
 /**
  * 一键 Roll 工作区：六类内容各抽 1 条，可勾选参与、固定、单栏「换一个」，并保留会话内的抽取历史。
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed, embedded = false }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed, embedded = false, toolbarSlot = null }) => {
+  useLanguage();
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -99,7 +97,6 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [savedId, setSavedId] = useState('');
 
   const current = cursor >= 0 ? history[cursor] : null;
 
@@ -269,7 +266,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget) : null;
 
   const doApply = async () => {
-    if (!current || !onApplyRoll || !plan) return;
+    if (!current || !onApplyRoll || !plan || applying) return;
     setApplying(true);
     try {
       const ok = await onApplyRoll(plan);
@@ -277,19 +274,21 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
         setConfirming(false);
         notify(t('已填入实验室：角色 {0} 类、补充栏 {1} 类（可撤销）', [String(plan.rows.filter(item => item.action === 'replace' && META[item.kind].scope === 'character').length), String(plan.rows.filter(item => item.action === 'replace' && META[item.kind].scope === 'global').length)]));
       }
+    } catch (error) {
+      notify(t('填入失败：{0}', [String((error as Error)?.message || error)]), 'error');
     } finally {
       setApplying(false);
     }
   };
 
   const doSave = async () => {
-    if (!current || !onSaveRoll) return;
+    if (!current || !onSaveRoll || saving) return;
     const name = saveName.trim();
     if (!name) { notify(t('先给这条记录起个名字'), 'error'); return; }
     setSaving(true);
     try {
       const id = await onSaveRoll(name, activePicks, current.seed, current.seeds);
-      setSavedId(String(id || ''));
+      if (!id) throw new Error(t('保存失败，请稍后重试'));
       setSaveOpen(false);
       notify(t('已存为 Roll 内容「{0}」（六类内容与约束，不含画师风格与生图参数）', [name]));
     } catch (error) {
@@ -300,216 +299,99 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   };
 
   const rows = KINDS.map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
+  const toolbar = <>
+    <ToolbarSelect label="选择抽取范围" value={range} disabled={applying || saving} containerClassName="content-roll-scope min-w-0 flex-1" onChange={event => {
+      const nextRange = event.target.value as ContentRollScope;
+      setRange(nextRange); setConfirming(false);
+      try { window.localStorage.setItem('nai-content-roll-range', nextRange); } catch { /* 存储不可用时仍可抽取。 */ }
+    }}>
+      <option value="character">{t('仅角色')}</option><option value="global">{t('仅场景与镜头')}</option><option value="all">{t('角色＋场景')}</option>
+    </ToolbarSelect>
+    <div className="flex shrink-0 items-center gap-1">
+      <IconButton label="上一组" disabled={cursor <= 0 || applying} onClick={() => { setCursor(index => Math.max(0, index - 1)); setConfirming(false); }}><ChevronLeft /></IconButton>
+      <span className="min-w-8 text-center text-xs tabular-nums text-gray-400">{history.length ? `${cursor + 1}/${history.length}` : '0/0'}</span>
+      <IconButton label="下一组" disabled={cursor >= history.length - 1 || applying} onClick={() => { setCursor(index => Math.min(history.length - 1, index + 1)); setConfirming(false); }}><ChevronRight /></IconButton>
+    </div>
+    <ToolbarButton tone="primary" onClick={() => { setConfirming(false); (current ? rollAgain : rollOnce)(); }} disabled={busy || applying || saving}>
+      <Dice5 /><span>{t(current ? '再抽未固定项' : '抽一次')}</span>
+    </ToolbarButton>
+  </>;
 
-  return (
-    <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'}>
-      {!embedded && <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('一键 Roll')}</h2></WorkspaceToolbar></WorkspaceChrome>}
-      <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6">
-        <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-meta text-gray-400">
-              {current ? t('组合随机码 {0}', [current.seed]) : t('还没有抽取')}
-            </span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {t('六个库各抽 1 条。每栏使用独立随机流，固定或跳过某一栏不会改变其它栏；抽中的条目只被读取，不会改写词库。')}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={rollOnce} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-              <Dice5 className="h-4 w-4" />{t('抽一次')}
-            </button>
-            <button type="button" onClick={rollAgain} disabled={busy || !current}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">
-              <RefreshCw className="h-4 w-4" />{t('再抽未固定项')}
-            </button>
-            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-700" />
-            <button type="button" onClick={() => setCursor(index => Math.max(0, index - 1))} disabled={cursor <= 0}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs disabled:opacity-40 dark:border-gray-700">
-              <ChevronLeft className="h-4 w-4" />{t('上一组')}
-            </button>
-            <button type="button" onClick={() => setCursor(index => Math.min(history.length - 1, index + 1))} disabled={cursor >= history.length - 1}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs disabled:opacity-40 dark:border-gray-700">
-              {t('下一组')}<ChevronRight className="h-4 w-4" />
-            </button>
-            <span className="text-meta text-gray-400">
-              {history.length ? t('第 {0} / {1} 组', [String(cursor + 1), String(history.length)]) : ''}
-            </span>
-          </div>
-        </section>
-
-        <section className="space-y-2">
+  return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'}>
+    {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
+    <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
+      <div className="content-library-roll-layout mx-auto w-full max-w-7xl items-start gap-4">
+        <section className="content-library-roll-grid">
           {rows.map(({ kind, meta, row }) => {
             const on = effectiveChecks[kind] !== false;
             const isLocked = !!locked[kind];
-            return (
-              <div key={kind} data-content-roll-row={kind} data-content-roll-on={String(on)}
-                className={`appearance-group rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900 ${on ? '' : 'opacity-60'}`}>
-                <div className="flex flex-wrap items-start gap-3">
-                  <label className="flex select-none items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    <input type="checkbox" checked={on} disabled={scopeChecks[kind] === false} onChange={() => toggleCheck(kind)} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} />
-                    {t('参与')}
-                  </label>
-                  <span className="w-16 shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(meta.title)}</span>
-                  <div className="min-w-0 flex-1">
-                    {row && row.filled ? (
-                      <>
-                        <p className="truncate text-sm font-medium text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
-                        <p className="mt-0.5 line-clamp-2 break-words font-mono text-meta text-gray-500 dark:text-gray-400">{row.text}</p>
-                        {row.constraints?.notes ? (
-                          <p className="mt-1 text-meta leading-4 text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints.notes}</p>
-                        ) : null}
-                      </>
-                    ) : (
-                      <p className="text-xs text-gray-400" data-content-roll-note={kind}>
-                        {!on ? t('本次不参与：不抽取、也不会填入实验室') : row?.reason === 'empty' ? t('该库当前 0 条，该栏留空') : t('还没有结果')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button type="button" onClick={() => toggleLock(kind)}
-                      aria-pressed={isLocked} title={t(isLocked ? '解除固定' : '固定这一条')}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-meta ${isLocked ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}>
-                      {isLocked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
-                      {t(isLocked ? '已固定' : '固定')}
-                    </button>
-                    <button type="button" onClick={() => rerollKind(kind)} disabled={!current || !on}
-                      className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 disabled:opacity-40 dark:border-gray-700 dark:text-gray-400">
-                      {t('换一个')}
-                    </button>
-                  </div>
-                </div>
+            const poolSize = chains.filter(chain => chain.type === kind && chain.basePrompt?.trim()).length;
+            return <article key={kind} data-content-roll-row={kind} data-content-roll-on={String(on)}
+              className={`appearance-group rounded-2xl border bg-white p-4 dark:bg-gray-900 ${on ? 'border-gray-200 dark:border-gray-800' : 'border-dashed border-gray-200 text-gray-400 dark:border-gray-800'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <label className="mobile-touch flex select-none items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  <input type="checkbox" checked={on} disabled={scopeChecks[kind] === false || applying} onChange={() => { toggleCheck(kind); setConfirming(false); }} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} />
+                  {t(meta.title)}
+                </label>
+                <span className="text-xs tabular-nums text-gray-400">{t('共 {0} 条', [poolSize])}</span>
               </div>
-            );
+              <div className={`mt-3 min-h-20 ${on ? '' : 'opacity-50'}`}>
+                {row?.filled ? <>
+                  <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
+                  <p className="mt-1 line-clamp-3 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400" title={row.text}>{row.text}</p>
+                  {row.constraints?.notes && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints.notes}</p>}
+                </> : <p className="py-2 text-xs leading-5 text-gray-400" data-content-roll-note={kind}>
+                  {t(!on ? '本次不参与：不抽取、也不会填入实验室' : !poolSize ? '该库当前 0 条，该栏留空' : '还没有结果')}
+                </p>}
+              </div>
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <ToolbarButton active={isLocked} aria-pressed={isLocked} disabled={!row?.filled || !on || applying} onClick={() => toggleLock(kind)} title={t(isLocked ? '解除固定' : '固定这一条')}>
+                  {isLocked ? <Lock /> : <LockOpen />}{t(isLocked ? '已固定' : '固定')}
+                </ToolbarButton>
+                <ToolbarButton disabled={!current || !on || isLocked || applying} onClick={() => { rerollKind(kind); setConfirming(false); }}><RefreshCw />{t('换一个')}</ToolbarButton>
+              </div>
+            </article>;
           })}
         </section>
-
-        {current && onSaveRoll ? (
-          <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-save="true">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('存为 Roll 内容')}</span>
-              <span className="text-meta text-gray-400">{savedId ? t('上次保存：{0}', [savedId.slice(0, 12)]) : ''}</span>
+        <aside className="space-y-3">
+          {current ? <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
+            <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{t('当前组合')}</h3>
+            {range !== 'global' && <ToolbarSelect label="选择写入的目标角色" value={targetId} containerClassName="w-full" disabled={applying}
+              onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}>
+              {playgroundRoles.length > 0 && <option value="all-enabled">{t('所有启用角色')}</option>}
+              <option value="new">{t('新建角色')}</option>
+              {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
+            </ToolbarSelect>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ToolbarButton tone="primary" className="flex-1" disabled={!onApplyRoll || applying || !Object.keys(activePicks).length} onClick={() => setConfirming(true)}>{t('填入实验室…')}</ToolbarButton>
+              {onSaveRoll && <ToolbarButton disabled={saving || !Object.keys(activePicks).length} onClick={() => { setSaveName(saveName || t('组合 {0}', [new Date().toLocaleString()])); setSaveOpen(value => !value); }}>{t('保存组合')}</ToolbarButton>}
             </div>
-            {saveOpen ? (
-              <div className="mt-2">
-                <input autoFocus value={saveName} maxLength={80} disabled={saving}
-                  aria-label={t('给这条记录起名')} onChange={event => setSaveName(event.target.value)}
-                  onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') setSaveOpen(false); }}
-                  className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
-                <p className="mt-1 text-meta leading-4 text-gray-400">
-                  {t('只保存六类内容与它们自己的约束，不含画师串、风格负面与生图参数。')}
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <button type="button" onClick={() => void doSave()} disabled={saving}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-                    {saving ? t('保存中…') : t('保存')}
-                  </button>
-                  <button type="button" onClick={() => setSaveOpen(false)}
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('取消')}</button>
-                </div>
-              </div>
-            ) : (
-              <button type="button" onClick={() => { setSaveName(saveName || t('Roll 内容 {0}', [new Date().toLocaleString()])); setSaveOpen(true); }}
-                className="mt-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                {t('存为 Roll 内容…')}
-              </button>
-            )}
-          </section>
-        ) : null}
-
-        {current ? (
-          <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('填入实验室')}</span>
-              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
-                {t('范围')}
-                <select value={range} onChange={event => {
-                  const nextRange = event.target.value as ContentRollScope;
-                  setRange(nextRange);
-                  try { window.localStorage.setItem('nai-content-roll-range', nextRange); } catch { /* 忽略存储失败 */ }
-                }}
-                  aria-label={t('选择抽取范围')}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                  <option value="all">{t('角色＋场景')}</option>
-                  <option value="character">{t('仅角色')}</option>
-                  <option value="global">{t('仅场景与镜头')}</option>
-                </select>
-              </label>
-              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
-                {t('目标角色')}
-                <select value={targetId} onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}
-                  aria-label={t('选择写入的目标角色')}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                  {playgroundRoles.length ? <option value="all-enabled">{t('所有启用角色')}</option> : null}
-                  <option value="new">{t('新建角色')}</option>
-                  {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
-                </select>
-              </label>
-            </div>
-            <p className="mt-1 text-meta leading-4 text-gray-400">
-              {t('角色四类写进目标角色的提示词；场景与镜头各写自己的一栏。画师串、风格负面与生图参数不会改动。')}
-            </p>
-            {confirming && plan ? (
-              <div className="mt-2 space-y-1" data-content-roll-apply-preview="true">
-                {plan.rows.map(item => (
-                  <div key={item.kind} className="rounded-lg border border-gray-200 px-2 py-1 text-meta dark:border-gray-700" data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action}>
-                    <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
-                    <span className="ml-1 text-gray-400">{item.action === 'replace' ? t('改为填入') : t('保持原值')}</span>
-                    <span className="ml-1 break-all font-mono text-gray-500 dark:text-gray-400">
-                      {item.action === 'replace' ? shortText(item.next, 60) : t('本次未提供')}
-                    </span>
-                    {item.note ? <span className="ml-1 text-amber-600 dark:text-amber-400">{item.note}</span> : null}
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 pt-1">
-                  <button type="button" onClick={() => void doApply()} disabled={applying}
-                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-                    {applying ? t('写入中…') : t('确认填入')}
-                  </button>
-                  <button type="button" onClick={() => setConfirming(false)}
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('取消')}</button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setConfirming(true)} disabled={!onApplyRoll}
-                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">{t('填入实验室…')}</button>
-                {canUndo ? (
-                  <button type="button" onClick={() => void onUndoApply?.()} data-content-roll-undo="true"
-                    className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-300">{t('撤销上次填入')}</button>
-                ) : null}
-                {!onApplyRoll ? <span className="text-meta text-gray-400">{t('当前视图不支持写入，请进入实验室后再试')}</span> : null}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {current ? (
-          <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('这一组的证据')}</span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setShowEvidence(value => !value)}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  {t(showEvidence ? '收起' : '展开')}
-                </button>
-                <button type="button" onClick={() => void copyEvidence()}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">
-                  <Copy className="h-3.5 w-3.5" />{t('复制证据')}
-                </button>
-              </div>
-            </div>
-            <p className="mt-1 text-meta leading-4 text-gray-400">
-              {t('组合随机码只用于复现这一组，不是生图 seed。')}
-            </p>
-            {showEvidence ? (
-              <pre data-content-roll-evidence="true" className="appearance-group mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 font-mono text-micro leading-4 text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
-                {evidenceText}
-              </pre>
-            ) : null}
-          </section>
-        ) : null}
-      </div></div>
+            {saveOpen && <div className="mt-3 space-y-2" data-content-roll-save="true">
+              <input autoFocus value={saveName} maxLength={80} disabled={saving} aria-label={t('给这条记录起名')}
+                onChange={event => setSaveName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSaveOpen(false); } }}
+                className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 dark:text-gray-100" />
+              <div className="flex gap-2"><ToolbarButton tone="primary" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : '保存')}</ToolbarButton><ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
+            </div>}
+            {confirming && plan && <div className="mt-4 space-y-3" data-content-roll-apply-preview="true">
+              {plan.rows.filter(item => item.action === 'replace').map(item => <div key={item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action} className="border-t border-gray-200 pt-2 dark:border-gray-800">
+                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
+                <p className="mt-1 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400">{plan.target.mode === 'all-enabled' && META[item.kind].scope === 'character' ? t('所有启用角色') : item.current || t('空白')} → {item.next || t('空白')}</p>
+                {item.note && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{item.note}</p>}
+              </div>)}
+              <p className="text-xs leading-5 text-gray-400">{t('未列出的内容保持不变。')}</p>
+              <div className="flex gap-2"><ToolbarButton tone="primary" disabled={applying} onClick={() => void doApply()}>{t(applying ? '写入中…' : '确认填入')}</ToolbarButton><ToolbarButton disabled={applying} onClick={() => setConfirming(false)}>{t('取消')}</ToolbarButton></div>
+            </div>}
+            {canUndo && <button type="button" disabled={applying} onClick={() => void onUndoApply?.()} data-content-roll-undo="true" className="mobile-touch mt-3 text-xs font-semibold text-amber-600 dark:text-amber-400">{t('撤销上次填入')}</button>}
+          </section> : <p className="px-2 py-3 text-sm leading-6 text-gray-400">{t('选择范围，抽取一组内容。喜欢的条目可以固定。')}</p>}
+          {current && <details className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" open={showEvidence} onToggle={event => setShowEvidence(event.currentTarget.open)}>
+            <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-gray-400">{t('抽取记录')}</summary>
+            <p className="mt-3 break-all text-xs text-gray-400">{t('组合随机码 {0}', [current.seed])}</p>
+            <p className="mt-1 text-xs text-gray-400">{t('组合随机码只用于复现这一组，不是生图 seed。')}</p>
+            <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制快照')}</ToolbarButton>
+            {showEvidence && <pre data-content-roll-evidence="true" className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-micro text-gray-500 dark:text-gray-400">{evidenceText}</pre>}
+          </details>}
+        </aside>
+      </div>
     </div>
-  );
+  </div>;
 };

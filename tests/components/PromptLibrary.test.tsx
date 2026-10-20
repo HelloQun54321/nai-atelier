@@ -20,6 +20,45 @@ const props = () => ({chains,onCreate:vi.fn(),onSelect:vi.fn(),onUpdateChain:vi.
 const Hub = () => libraries.PromptLibraryHub;
 
 describe('图片提示词库', () => {
+  it('顶栏按筛选、搜索排列，新建与 AI 生成留在分类内容区', async () => {
+    const Component = Hub(); render(<Component {...props()} />);
+    fireEvent.click(screen.getByRole('tab', { name: '人物形象 1' }));
+    const create = await screen.findByRole('button', { name: '新建形象' });
+    const generate = screen.getByRole('button', { name: '✦ AI 生成人物形象' });
+    expect(create.closest('header')).toBeNull(); expect(generate.closest('header')).toBeNull();
+    expect(create.closest('.workspace-scroll-viewport')).toBeTruthy();
+    const toolbar = screen.getByRole('banner');
+    const controls = toolbar.querySelectorAll('button,input');
+    expect(controls[0].getAttribute('aria-label')).toBe('筛选');
+    expect(controls[1].getAttribute('type')).toBe('search');
+  });
+  it('分类独立记住搜索、排序与位置，新搜索重置位置，默认内容视图可切换封面', async () => {
+    const Component = Hub(); render(<Component {...props()} />);
+    const search = screen.getByRole('searchbox', { name: '搜索名称、标签或提示词' });
+    fireEvent.change(search, { target: { value: 'silver' } });
+    const viewport = screen.getByRole('button', { name: '提示词：形象甲' }).closest('.workspace-scroll-viewport') as HTMLElement;
+    expect(viewport.querySelector('.content-library-grid')).toBeTruthy();
+    viewport.scrollTop = 250; fireEvent.scroll(viewport);
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '排序' }), { target: { value: 'name' } });
+    expect(viewport.scrollTop).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: '封面视图' }));
+    expect(viewport.querySelector('.workspace-character-grid')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    viewport.scrollTop = 180; fireEvent.scroll(viewport);
+    fireEvent.click(screen.getByRole('tab', { name: '场景 1' }));
+    await screen.findByRole('button', { name: '场景：雨夜' });
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+    fireEvent.click(screen.getByRole('tab', { name: '全部 2' }));
+    await screen.findByRole('button', { name: '提示词：形象甲' });
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('silver');
+    const restored = screen.getByRole('button', { name: '提示词：形象甲' }).closest('.workspace-scroll-viewport') as HTMLElement;
+    expect(restored.scrollTop).toBe(180);
+    expect(restored.querySelector('.workspace-character-grid')).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'rainy' } });
+    expect(restored.scrollTop).toBe(0);
+    expect(screen.getByRole('button', { name: '提示词：雨夜' })).toBeTruthy();
+  });
   it('候选一次创建完整条目，部分失败保留候选，重试不重复已成功条目', async () => {
     vi.spyOn(promptAgentService, 'generateLibraryPrompt').mockResolvedValue({ items: [
       { name: '成功方案', prompt: 'silver_hair', bilingual: '银发', tags: [] },

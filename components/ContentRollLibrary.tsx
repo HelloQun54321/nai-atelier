@@ -1,219 +1,153 @@
-import React, { useMemo, useState } from 'react';
-import { Copy, Download, ImagePlus, LoaderCircle, Search, Trash2 } from 'lucide-react';
-import { t } from '../services/i18n';
-import type { PromptChain } from '../types';
+import React, { useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, Copy, ImagePlus, Layers, LoaderCircle, Trash2 } from 'lucide-react';
+import { t, useLanguage } from '../services/i18n';
+import type { LocalGenItem, PromptChain } from '../types';
 import { KINDS, META, contentRead, contentScopeOf, isContentRecord } from '../services/contentRoll';
 import { promptLibraryHistoryImageUrl } from './PromptLibrary';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { SmartImage } from './SmartImage';
-import type { LocalGenItem } from '../types';
-import { WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 
 interface ContentRollLibraryProps {
   active: boolean;
   chains: PromptChain[];
   notify: (message: string, kind?: 'success' | 'error') => void;
-  /** 把这条记录载入「一键 Roll」当作当前一组（之后可直接「填入实验室」） */
   onLoad: (chain: PromptChain) => void;
   onRename: (chain: PromptChain, name: string) => Promise<void>;
   onDelete: (chain: PromptChain) => Promise<void>;
-  /** 封面只写 previewImage（与图片提示词库同一套约定：历史图由 Worker 转成独立资产） */
   onSetCover: (chain: PromptChain, url: string) => Promise<void>;
-  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
   embedded?: boolean;
+  toolbarSlot?: HTMLElement | null;
 }
 
-const shortText = (value: string, max = 64): string => {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-};
-
-/**
- * Roll 内容库：只展示**纯内容记录**（`params._rollContentSnapshot`，format = nai-roll-content）。
- * 普通词库条目、完整搭配与旧记录都不在这里出现，也不会被这条筛选影响。
- * 只读预览里逐类列出内容与内容负面；「载入到一键 Roll」把这一组变成工作区的当前一组，
- * 之后仍然走同一条「填入实验室」确认流程（目标角色 + 逐栏预览 + 撤销）。
- */
-export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete, onSetCover, embedded = false }) => {
+/** 与条目共用工具栏和卡片密度；快照只读，载入仍交给同一套填入确认。 */
+export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete, onSetCover, embedded = false, toolbarSlot = null }) => {
+  useLanguage();
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('updated');
   const [previewId, setPreviewId] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [busy, setBusy] = useState('');
   const [coverFor, setCoverFor] = useState<PromptChain | null>(null);
+  const renamePending = useRef(false);
+  const renameCancelled = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; };
 
-  const records = useMemo(() => chains.filter(chain => isContentRecord(chain)), [chains]);
+  const records = useMemo(() => chains.filter(isContentRecord).map(chain => {
+    const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
+    const fields = KINDS.flatMap(kind => {
+      const role = read.roles[0];
+      const isRole = META[kind].scope === 'character';
+      const provided = isRole ? role?.provided[kind] : read.global[kind]?.provided;
+      const text = isRole ? role?.sections[kind] : read.global[kind]?.text;
+      const negative = isRole ? role?.negatives[kind] : read.global[kind]?.negative;
+      return provided ? [{ kind, text: text || '', negative }] : [];
+    });
+    return { chain, read, fields, scope: contentScopeOf(read) };
+  }), [chains]);
   const shown = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return records
-      .map(chain => {
-        const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
-        return { chain, read, scope: contentScopeOf(read) };
-      })
-      .filter(item => !keyword || [item.chain.name, item.chain.description, ...(item.chain.tags || []), item.scope.label].join(' ').toLowerCase().includes(keyword))
-      .sort((left, right) => Number(right.chain.updatedAt || 0) - Number(left.chain.updatedAt || 0));
-  }, [records, query]);
-  const preview = shown.find(item => item.chain.id === previewId) || null;
+    return records.filter(({ chain, fields, scope }) => !keyword || [chain.name, chain.description, ...(chain.tags || []), scope.label,
+      ...fields.flatMap(field => [field.text, field.negative?.text, field.negative?.note])].join(' ').toLowerCase().includes(keyword))
+      .sort((a, b) => sort === 'name' ? a.chain.name.localeCompare(b.chain.name) : Number(b.chain.updatedAt || 0) - Number(a.chain.updatedAt || 0));
+  }, [records, query, sort]);
 
-  const copySnapshot = async (item: { chain: PromptChain }) => {
+  const copySnapshot = async (chain: PromptChain) => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify((item.chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot, null, 2));
       notify(t('已复制这条记录的内容快照'));
-    } catch {
-      notify(t('复制失败：浏览器拒绝了剪贴板权限'), 'error');
-    }
+    } catch { notify(t('复制失败：浏览器拒绝了剪贴板权限'), 'error'); }
   };
-
   const commitRename = async () => {
-    if (!renaming) return;
-    const target = records.find(chain => chain.id === renaming.id);
+    if (!renaming || renamePending.current || renameCancelled.current) return;
+    const target = records.find(item => item.chain.id === renaming.id)?.chain;
     const name = renaming.value.trim();
-    if (!target) { setRenaming(null); return; }
-    if (!name || name === target.name) { setRenaming(null); return; }
-    setBusy(renaming.id);
-    try {
-      await onRename(target, name);
-      setRenaming(null);
-    } finally {
-      setBusy('');
-    }
+    if (!target || !name || name === target.name) { setRenaming(null); return; }
+    renamePending.current = true;
+    setBusy(target.id);
+    try { await onRename(target, name); setRenaming(null); }
+    catch { notify(t('改名失败，请重试'), 'error'); }
+    finally { renamePending.current = false; setBusy(''); }
   };
+  const remove = async (chain: PromptChain) => {
+    setBusy(chain.id);
+    try { await onDelete(chain); }
+    catch { notify(t('删除失败，请稍后重试'), 'error'); }
+    finally { setBusy(''); }
+  };
+  const toolbar = <>
+    <ToolbarPopover title={t('筛选组合库')} width={280}>
+      <label className="block text-xs font-semibold text-gray-500">{t('排序')}
+        <select className={TOOLBAR_FIELD_CLASS} aria-label={t('排序')} value={sort} onChange={event => { setSort(event.target.value); resetScroll(); }}>
+          <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
+        </select>
+      </label>
+    </ToolbarPopover>
+    <ToolbarSearch value={query} aria-label={t('搜索名称、标签或提示词')} placeholder={t('搜索名称、标签或提示词')}
+      onChange={event => { setQuery(event.target.value); resetScroll(); }} containerClassName="md:max-w-none!" />
+  </>;
 
-  return (
-    <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">
-      {!embedded && <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('Roll 内容库')}</h2></WorkspaceToolbar></WorkspaceChrome>}
-      <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6">
-        <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-meta text-gray-400">{t('共 {0} 条', [String(shown.length)])}</span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {t('这里只保存六类内容与它们自己的约束，不含画师串、风格负面与生图参数；载入后仍走「填入实验室」的确认流程。')}
-          </p>
-          <label className="mt-3 flex items-center gap-2 rounded-lg border border-gray-200 px-2 dark:border-gray-700">
-            <Search className="h-3.5 w-3.5 text-gray-400" />
-            <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-              aria-label={t('搜索名称、标签或备注')} placeholder={t('搜索名称、标签或备注…')}
-              className="h-8 w-full bg-transparent text-xs text-gray-700 outline-none dark:text-gray-200" />
-          </label>
-        </section>
-
-        <section className="space-y-2">
-          {!active ? null : shown.length ? shown.map(item => {
-            const isRenaming = renaming?.id === item.chain.id;
-            return (
-              <article key={item.chain.id} data-content-roll-record={item.chain.id}
-                className="appearance-group rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex items-start gap-3">
-                <div className="appearance-media h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
-                  {item.chain.previewImage ? (
-                    <SmartImage src={item.chain.previewImage} alt={item.chain.name || t('封面')} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center text-micro text-gray-400">{t('无封面')}</span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  {isRenaming ? (
-                    <input autoFocus value={renaming.value} disabled={busy === item.chain.id}
-                      aria-label={t('重命名这条记录')} onChange={event => setRenaming({ id: item.chain.id, value: event.target.value })}
-                      onKeyDown={event => { if (event.key === 'Enter') void commitRename(); else if (event.key === 'Escape') setRenaming(null); }}
-                      onBlur={() => void commitRename()}
-                      className="h-7 min-w-0 flex-1 rounded border border-gray-200 px-2 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
-                  ) : (
-                    <button type="button" onClick={() => setPreviewId(previewId === item.chain.id ? '' : item.chain.id)}
-                      className="min-w-0 truncate text-left text-sm font-bold text-gray-800 hover:text-indigo-600 dark:text-gray-100">
-                      {item.chain.name || t('未命名')}
-                    </button>
-                  )}
-                  <span className="text-micro text-gray-400">{new Date(Number(item.chain.updatedAt || 0)).toLocaleString()}</span>
-                </div>
-                <p className="mt-1 text-meta leading-4 text-gray-600 dark:text-gray-300" data-content-roll-scope={item.chain.id}>
-                  {item.read.ok ? (item.scope.label || t('（没有可载入的内容）')) : t('这条记录不能按纯内容载入：{0}', [item.read.warnings[0] || ''])}
-                </p>
-                {item.chain.description ? <p className="mt-1 text-meta leading-4 text-gray-500 dark:text-gray-400">{shortText(item.chain.description, 90)}</p> : null}
-                <div className="mt-2 flex flex-wrap items-center gap-1">
-                  <button type="button" disabled={!item.read.ok} onClick={() => onLoad(item.chain)}
-                    className="rounded-lg bg-indigo-600 px-2.5 py-1 text-meta font-semibold text-white disabled:opacity-40">
-                    {t('载入到一键 Roll')}
-                  </button>
-                  <button type="button" onClick={() => setRenaming({ id: item.chain.id, value: item.chain.name || '' })}
-                    className="rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('改名')}</button>
-                  <button type="button" onClick={() => void copySnapshot(item)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                    <Copy className="h-3 w-3" />{t('复制快照')}
-                  </button>
-                  <button type="button" onClick={() => setCoverFor(item.chain)} data-content-roll-cover={item.chain.id}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
-                    <ImagePlus className="h-3 w-3" />{t(item.chain.previewImage ? '换封面' : '从历史选封面')}
-                  </button>
-                  <button type="button" onClick={() => void onDelete(item.chain)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-red-600 dark:border-gray-700 dark:text-red-400">
-                    <Trash2 className="h-3 w-3" />{t('删除')}
-                  </button>
-                </div>
-                </div>
-                </div>
-              </article>
-            );
-          }) : (
-            <p className="appearance-group rounded-2xl border border-dashed border-gray-200 bg-white p-4 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-              {records.length ? t('没有符合搜索条件的记录') : t('还没有 Roll 内容记录：在「一键 Roll」里点「存为 Roll 内容」即可创建。')}
-            </p>
-          )}
-        </section>
-
-        {preview ? (
-          <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-preview={preview.chain.id}>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('只读预览：{0}', [preview.chain.name || t('未命名')])}</h3>
-              <button type="button" onClick={() => setPreviewId('')}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('关闭预览')}</button>
+  return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">
+    {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
+    <div ref={scrollRef} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
+      {shown.length ? <div className="content-library-grid items-start">
+        {shown.map(({ chain, read, fields, scope }) => {
+          const expanded = previewId === chain.id;
+          return <article key={chain.id} data-content-roll-record={chain.id} data-safe-mode-work="true"
+            className={`appearance-group overflow-hidden rounded-2xl border bg-white dark:bg-gray-900 ${expanded ? 'border-indigo-300 dark:border-indigo-700' : 'border-gray-200 dark:border-gray-800'}`}>
+            <button type="button" aria-expanded={expanded} aria-controls={`content-preview-${chain.id}`} onClick={() => setPreviewId(expanded ? '' : chain.id)}
+              className="flex w-full items-start gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-indigo-500">
+              <span className="appearance-media flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100 text-gray-400 dark:bg-gray-800">
+                {chain.previewImage ? <SmartImage src={chain.previewImage} alt={chain.name || t('封面')} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" /> : <Layers className="h-6 w-6" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span data-safe-mode-title="true" className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{chain.name || t('未命名')}</span>
+                <span data-content-roll-scope={chain.id} className="mt-1 block text-xs text-indigo-600 dark:text-indigo-300">{scope.label || t('（没有可载入的内容）')}</span>
+                <span className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-500 dark:text-gray-400">{chain.description || fields.map(field => field.text).join(', ')}</span>
+              </span>
+              <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+            <div className="flex items-center justify-between gap-2 px-4 pb-3">
+              <span className="text-xs text-gray-400">{new Date(Number(chain.updatedAt || 0)).toLocaleDateString()}</span>
+              <ToolbarButton disabled={!read.ok || !!busy} onClick={() => onLoad(chain)}>{t('载入组合')}</ToolbarButton>
             </div>
-            <div className="mt-2 space-y-1">
-              {KINDS.map(kind => {
-                const role = preview.read.roles?.[0];
-                const isRole = META[kind].scope === 'character';
-                const provided = isRole ? !!role?.provided?.[kind] : !!preview.read.global?.[kind]?.provided;
-                const text = isRole ? String(role?.sections?.[kind] || '') : String(preview.read.global?.[kind]?.text || '');
-                const negative = isRole ? role?.negatives?.[kind] : preview.read.global?.[kind]?.negative;
-                if (!provided) return null;
-                return (
-                  <div key={kind} className="rounded-lg border border-gray-200 p-2 text-meta dark:border-gray-700">
-                    <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</span>
-                    <p className="mt-0.5 break-all font-mono text-gray-600 dark:text-gray-300">{text}</p>
-                    {negative && (negative.text || negative.note) ? (
-                      <p className="mt-0.5 text-amber-600 dark:text-amber-400">
-                        {negative.text ? t('内容负面：') + negative.text : ''}
-                        {negative.text && negative.note ? '；' : ''}
-                        {negative.note || ''}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-2 flex items-center gap-1 text-meta text-gray-400">
-              <Download className="h-3 w-3" />{t('这只是只读预览，不会改动实验室，也不会消耗额度。')}
-            </p>
-          </section>
-        ) : null}
-        {busy ? <p className="flex items-center gap-1 text-meta text-gray-400"><LoaderCircle className="h-3 w-3 animate-spin" />{t('处理中…')}</p> : null}
-        <HistoryImagePicker open={!!coverFor} onClose={() => setCoverFor(null)}
-          onSelect={async (item: LocalGenItem) => {
-            const target = coverFor;
-            setCoverFor(null);
-            if (!target || !item?.id) return;
-            setBusy(target.id);
-            try {
-              await onSetCover(target, promptLibraryHistoryImageUrl(String(item.id)));
-              notify(t('封面已更新：历史图会由 Worker 转成独立资产，不受历史清理影响'));
-            } catch (error) {
-              notify(t('设置封面失败：{0}', [String((error as Error)?.message || error)]), 'error');
-            } finally {
-              setBusy('');
-            }
-          }} />
-      </div></div>
+            {!read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
+            {expanded && <div id={`content-preview-${chain.id}`} data-content-roll-preview={chain.id} className="border-t border-gray-200 p-4 dark:border-gray-800">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {renaming?.id === chain.id ? <input autoFocus aria-label={t('重命名这条记录')} value={renaming.value} disabled={!!busy} className={TOOLBAR_FIELD_CLASS}
+                  onChange={event => setRenaming({ id: chain.id, value: event.target.value })} onBlur={() => void commitRename()}
+                  onKeyDown={event => { if (event.key === 'Enter') void commitRename(); if (event.key === 'Escape') { renameCancelled.current = true; setRenaming(null); } }} />
+                  : <ToolbarButton disabled={!!busy} onClick={() => { renameCancelled.current = false; setRenaming({ id: chain.id, value: chain.name }); }}>{t('改名')}</ToolbarButton>}
+                <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制快照')} aria-label={t('复制快照')}><Copy /></ToolbarButton>
+                <ToolbarButton disabled={!!busy} onClick={() => setCoverFor(chain)} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')}><ImagePlus /></ToolbarButton>
+                <ToolbarButton tone="danger" disabled={!!busy} onClick={() => void remove(chain)} title={t('删除')} aria-label={t('删除')}><Trash2 /></ToolbarButton>
+                {busy === chain.id && <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />}
+              </div>
+              <div className="space-y-3">
+                {fields.map(({ kind, text, negative }) => <div key={kind}>
+                  <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</h3>
+                  <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{text}</p>
+                  {negative && (negative.text || negative.note) && <p className="mt-1 break-words text-xs text-amber-600 dark:text-amber-400">{negative.text ? t('内容负面：') + negative.text : ''}{negative.text && negative.note ? '；' : ''}{negative.note}</p>}
+                </div>)}
+              </div>
+            </div>}
+          </article>;
+        })}
+      </div> : <EmptyState icon={<Layers className="h-7 w-7" />} title={t(records.length ? '没有符合搜索条件的记录' : '组合库还是空的')}
+        hint={records.length ? undefined : t('点击右上角「Roll 组合」，保存喜欢的搭配。')}
+        action={records.length ? <ToolbarButton onClick={() => { setQuery(''); resetScroll(); }}>{t('清除筛选')}</ToolbarButton> : undefined} />}
     </div>
-  );
+    <HistoryImagePicker open={active && !!coverFor} onClose={() => setCoverFor(null)} onSelect={async (item: LocalGenItem) => {
+      const target = coverFor;
+      setCoverFor(null);
+      if (!target || !item?.id) return;
+      setBusy(target.id);
+      try { await onSetCover(target, promptLibraryHistoryImageUrl(String(item.id))); notify(t('封面已更新：历史图会由 Worker 转成独立资产，不受历史清理影响')); }
+      catch (error) { notify(t('设置封面失败：{0}', [String((error as Error)?.message || error)]), 'error'); }
+      finally { setBusy(''); }
+    }} />
+  </div>;
 };
