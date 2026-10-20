@@ -108,7 +108,7 @@ it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销�
   expect(mocks.editorDraft?.params._promptSections?.scene).toBeUndefined();
   fireEvent.click(screen.getByRole('button', { name: 'playground' }));
   fireEvent.click(await screen.findByRole('button', { name: '返回资料库' }));
-  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('content-roll'));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('content-library'));
 });
 
 it('提示词库创建使用完整回执并留在当前库，不重新下载整库或打开实验室', async () => {
@@ -119,7 +119,7 @@ it('提示词库创建使用完整回执并留在当前库，不重新下载整�
   await waitFor(() => expect(screen.getByTestId('prompt-library-chains').textContent).toContain('new-wardrobe'));
   expect(mocks.createChainWithData).toHaveBeenCalledWith('合成服饰', '', undefined, 'wardrobe');
   expect(mocks.getAllChains).toHaveBeenCalledTimes(readsBeforeCreate);
-  expect(screen.getByTestId('view').textContent).toBe('prompts');
+  expect(screen.getByTestId('view').textContent).toBe('content-library');
   expect(screen.queryByTestId('editor')).toBeNull();
 });
 

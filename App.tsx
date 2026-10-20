@@ -25,6 +25,7 @@ import { contentRead, contentSnapshotOf } from './services/contentRoll';
 import { stableOperationId } from './services/operationId';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
+import { ContentLibraryPage, type ContentLibrarySection } from './components/ContentLibraryPage';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
@@ -41,13 +42,13 @@ const ContentRollWorkspace = lazy(() => import('./components/ContentRollWorkspac
 const ContentRollLibrary = lazy(() => import('./components/ContentRollLibrary').then(module => ({ default: module.ContentRollLibrary })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
 
-type ViewState = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'content-roll' | 'content-roll-library';
+type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll', 'content-roll', 'content-roll-library'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'content-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll', 'prompts', 'content-roll', 'content-roll-library'];
 const chainLibraryView = (type?: ChainType): ViewState => type === 'character' ? 'characters'
-  : type && ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(type) ? 'prompts' : 'list';
+  : type && ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(type) ? 'content-library' : 'list';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -73,6 +74,8 @@ const App = () => {
   const [contentRollRevision, setContentRollRevision] = useState(0);
   /* 实验室就地发起一键 Roll 的范围/目标请求（工作区消费一次） */
   const [contentRollScopeRequest, setContentRollScopeRequest] = useState<{ scope: 'all' | 'character' | 'global'; targetId?: string; key: number } | null>(null);
+  /* 内容库当前分区：条目库／一键 Roll／已存组合 */
+  const [contentLibrarySection, setContentLibrarySection] = useState<ContentLibrarySection>('items');
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -170,13 +173,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
+      if (['list', 'characters', 'content-library', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'content-library', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -512,6 +515,13 @@ const App = () => {
       }
     }
 
+    // 旧入口统一收进「内容库」；一键 Roll 仍需要实验室参数作为应用目标。
+    if (newView === 'content-roll') { ensurePlayground(); keepViewMounted('playground'); }
+    if (newView === 'prompts' || newView === 'content-roll' || newView === 'content-roll-library') {
+      setContentLibrarySection(newView === 'prompts' ? 'items' : newView === 'content-roll' ? 'roll' : 'saved');
+      newView = 'content-library';
+    }
+
     // 记录进入实验室前的内容页，供手机端返回箭头使用；实验室内部切换不覆盖该记录。
     if (newView === 'playground' && LAB_ENTRY_VIEWS.includes(view)) lastLabEntryViewRef.current = view;
     setSelectedId(id);
@@ -520,11 +530,10 @@ const App = () => {
     if (newView === 'playground' && options.externalImport) {
       setPlaygroundImportToken(prev => prev + 1);
     }
-    if (newView === 'playground' || newView === 'content-roll') ensurePlayground();
-    if (newView === 'content-roll') keepViewMounted('playground');
+    if (newView === 'playground') ensurePlayground();
 
     // Auto-load data based on view, respecting cache
-    if (['list', 'characters', 'prompts'].includes(newView) && options.refreshData !== false) refreshData();
+    if (['list', 'characters', 'content-library', 'prompts'].includes(newView) && options.refreshData !== false) refreshData();
     if (newView === 'inspiration') loadInspirations();
 
   };
@@ -624,11 +633,15 @@ const App = () => {
   const handleContentRollForRole = (index: number) => {
     const character = (playgroundChain?.params?.characters || [])[index];
     setContentRollScopeRequest({ scope: 'character', targetId: character ? String(character.id) : undefined, key: Date.now() });
-    setView('content-roll');
+    setContentLibrarySection('roll');
+    keepViewMounted('content-library');
+    setView('content-library');
   };
   const handleContentRollForGlobal = () => {
     setContentRollScopeRequest({ scope: 'global', key: Date.now() });
-    setView('content-roll');
+    setContentLibrarySection('roll');
+    keepViewMounted('content-library');
+    setView('content-library');
   };
 
   const handleUndoContentRoll = async (): Promise<boolean> => {
@@ -792,9 +805,31 @@ const App = () => {
           isGuest={false}
           returnTargetId={view === 'list' ? selectedId : undefined}
         />;
-      case 'prompts':
-        return <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
-          onDelete={handleDelete} notify={notify} />;
+      case 'content-library':
+        return <ContentLibraryPage
+          section={contentLibrarySection}
+          onSectionChange={setContentLibrarySection}
+          items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
+            onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
+          roll={() => <ContentRollWorkspace active={contentLibrarySection === 'roll'} chains={chains} notify={notify}
+            playgroundParams={playgroundChain?.params || null}
+            playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
+            canUndo={!!contentRollUndo}
+            onApplyRoll={handleApplyContentRoll}
+            onUndoApply={handleUndoContentRoll}
+            scopeRequest={contentRollScopeRequest}
+            onScopeRequestConsumed={() => setContentRollScopeRequest(null)}
+            onSaveRoll={handleSaveContentRoll}
+            seedRecord={contentRollSeed}
+            onSeedConsumed={() => setContentRollSeed(null)}
+            embedded />}
+          saved={() => <ContentRollLibrary active={contentLibrarySection === 'saved'} chains={chains} notify={notify}
+            onLoad={handleLoadContentRoll}
+            onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
+            onDelete={async chain => { await handleDelete(chain.id); }}
+            onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }}
+            embedded />}
+        />;
       case 'characters':
         return <CharacterLibrary
           chains={chains}
@@ -920,32 +955,6 @@ const App = () => {
             setLastChainFetch(0);
             return saved;
           }} />;
-      case 'content-roll-library':
-        return <ContentRollLibrary
-          active={view === 'content-roll-library'}
-          chains={chains}
-          notify={notify}
-          onLoad={handleLoadContentRoll}
-          onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
-          onDelete={async chain => { await handleDelete(chain.id); }}
-          onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }}
-        />;
-      case 'content-roll':
-        return <ContentRollWorkspace
-          active={view === 'content-roll'}
-          chains={chains}
-          notify={notify}
-          playgroundParams={playgroundChain?.params || null}
-          playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
-          canUndo={!!contentRollUndo}
-          onApplyRoll={handleApplyContentRoll}
-          onUndoApply={handleUndoContentRoll}
-          scopeRequest={contentRollScopeRequest}
-          onScopeRequestConsumed={() => setContentRollScopeRequest(null)}
-          onSaveRoll={handleSaveContentRoll}
-          seedRecord={contentRollSeed}
-          onSeedConsumed={() => setContentRollSeed(null)}
-        />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;
         return <ChainEditor

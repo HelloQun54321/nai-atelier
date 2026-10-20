@@ -6,6 +6,12 @@
 
 ## 2026-10-21
 
+- **DeepSeek Harness (deepseek-flash)**：收藏库左侧目录面板改为上下圆角：展开时顶部使用 calc(顶栏高度 + 6px) 与顶栏底边留 12px 间距，折叠时保持页顶 6px；浏览器实页核对目录 y=70、顶栏 bottom=58。
+
+- **DeepSeek Harness (deepseek-flash)**：修复顶栏收起后实验室／风格串编辑页三分区失去底板颜色：LabEditorTabs 读取折叠状态，收起时三分区改用顶栏材质、贴顶并加圆角，展开后恢复共用连续底板；相关三分区、顶栏与外观覆盖 57 项定向测试通过。
+
+- **DeepSeek Harness (deepseek-flash)**：将图片提示词库、一键 Roll 与 Roll 内容库合并为单一「内容库」入口与三分区页面，新增 `ContentLibraryPage` 和三个组件的嵌入模式，顶栏分区切换保留各区输入、组合与滚动；同步侧边栏、手机资源面板、助手页面名及旧入口映射，更新产品决策与使用说明，并新增分区挂载回归；条目库分类改为二级侧栏；内容库标题、三区切换与条目库搜索／筛选、生成／新建合并为同一条可收起顶栏，工具栏通过 portal 挂到父顶栏。
+
 - **DeepSeek Harness (deepseek-flash)**：修复实验室与风格串编辑页顶栏收起后三分区与顶栏的连续底板丢失：收起时保持顶栏节点身份、只切可见性（避免 React 重建子树），LabEditorTabs 额外观察正文尺寸在就绪后重测；相关顶栏、三分区与外观覆盖 57 项定向测试通过。
 
 - **DeepSeek Harness (deepseek-flash)**：为所有主页面顶栏新增可收起把手：展开时把手位于顶栏上边中央、完全在顶栏内不跨界（悬停／聚焦显示「收起」），收起后留在页面顶边中央并变为向下三角（显示「展开」），不移动顶栏；收起状态跨页面与刷新保留，`--workspace-chrome-height` 同步归零。新增 `services/workspaceTopbar.ts` 与 WorkspaceChrome 折叠回归，补四语词条。相关 225 项定向测试通过。

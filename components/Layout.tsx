@@ -36,7 +36,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'content-roll' | 'content-roll-library';
+type AppView = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -134,14 +134,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '工作区', items: [
       { id: 'list', label: '风格串', icon: icons.list },
       { id: 'playground', label: '实验室', icon: icons.lab },
-      { id: 'content-roll', label: '一键 Roll', icon: Dice5 },
-      { id: 'content-roll-library', label: 'Roll 内容库', icon: Library },
       { id: 'roll', label: 'Roll 串', icon: Dice5 },
     ] },
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
-      { id: 'prompts', label: '图片提示词库', icon: icons.tag },
+      { id: 'content-library', label: '内容库', icon: Library },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
       { id: 'external-browse', label: '素材浏览', icon: Images },
     ] },
@@ -181,11 +179,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   }, [currentView]);
   const resourceItems = [
     { id: 'roll', label: 'Roll 串', icon: Dice5 },
-    { id: 'content-roll', label: '一键 Roll', icon: Dice5 },
-    { id: 'content-roll-library', label: 'Roll 内容库', icon: Library },
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
-    { id: 'prompts', label: '图片提示词库', icon: icons.tag },
+    { id: 'content-library', label: '内容库', icon: Library },
     ...externalItems,
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];

@@ -19,6 +19,8 @@ interface ContentRollLibraryProps {
   onDelete: (chain: PromptChain) => Promise<void>;
   /** 封面只写 previewImage（与图片提示词库同一套约定：历史图由 Worker 转成独立资产） */
   onSetCover: (chain: PromptChain, url: string) => Promise<void>;
+  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
+  embedded?: boolean;
 }
 
 const shortText = (value: string, max = 64): string => {
@@ -32,7 +34,7 @@ const shortText = (value: string, max = 64): string => {
  * 只读预览里逐类列出内容与内容负面；「载入到一键 Roll」把这一组变成工作区的当前一组，
  * 之后仍然走同一条「填入实验室」确认流程（目标角色 + 逐栏预览 + 撤销）。
  */
-export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete, onSetCover }) => {
+export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete, onSetCover, embedded = false }) => {
   const [query, setQuery] = useState('');
   const [previewId, setPreviewId] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
@@ -77,8 +79,8 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
   };
 
   return (
-    <div className="workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950" data-content-roll-library="true">
-      <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('Roll 内容库')}</h2></WorkspaceToolbar></WorkspaceChrome>
+    <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">
+      {!embedded && <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('Roll 内容库')}</h2></WorkspaceToolbar></WorkspaceChrome>}
       <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6">
         <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

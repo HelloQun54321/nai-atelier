@@ -18,11 +18,13 @@
  */
 import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Copy,
+  Heart,
   ImagePlus,
   LoaderCircle,
   PersonStanding,
@@ -155,6 +157,10 @@ export interface PromptLibraryProps {
   onUpdateChain: PromptLibraryUpdateChain;
   onDelete: (id: string) => Promise<void> | void;
   notify: (message: string, type?: 'success' | 'error') => void;
+  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
+  embedded?: boolean;
+  /** 嵌入时把搜索／筛选工具栏挂到父级顶栏的槽位。 */
+  toolbarSlot?: HTMLElement | null;
 }
 
 interface PromptLibraryInternalProps extends PromptLibraryProps {
@@ -178,6 +184,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   onUpdateChain,
   onDelete,
   notify,
+  embedded = false,
+  toolbarSlot = null,
 }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
@@ -671,8 +679,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     );
   };
 
-  const listToolbar = (
-    <WorkspaceToolbar>
+  const listToolbarContent = (
+    <>
       <div className="relative min-w-0 flex-1">
         <ToolbarSearch
           value={query}
@@ -731,8 +739,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}<span className="hidden sm:inline">{t(config.createLabel)}</span>
         </ToolbarButton>
       </div>}
-    </WorkspaceToolbar>
+    </>
   );
+  const listToolbar = <WorkspaceToolbar>{listToolbarContent}</WorkspaceToolbar>;
 
   const listBody = shown.length ? (
     <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={mobileGalleryStyle(imageDisplay)}>
@@ -756,8 +765,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     ? detail.references.map(row => ({ url: row.url, caption: row.prompt }))
     : [];
 
-  const detailToolbar = detail ? (
-    <WorkspaceToolbar>
+  const detailToolbarContent = detail ? (
+    <>
       <ToolbarButton onClick={() => void closeDetail()} disabled={savingDetail} aria-label={t('返回{0}', [t(config.title)])} title={t('返回{0}', [t(config.title)])} className="mobile-touch !px-2.5 md:!px-3">
         <ArrowLeft /><span className="hidden sm:inline">{t('返回')}</span>
       </ToolbarButton>
@@ -771,8 +780,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {savingDetail && <LoaderCircle className="animate-spin" />}<span>{savingDetail ? t('保存中…') : t('保存')}</span>
         </ToolbarButton>
       </div>
-    </WorkspaceToolbar>
+    </>
   ) : null;
+  const detailToolbar = detailToolbarContent ? <WorkspaceToolbar>{detailToolbarContent}</WorkspaceToolbar> : null;
 
   const detailBody = detail ? (
     <div className="mx-auto grid w-full max-w-[1400px] gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -1148,6 +1158,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     </ImagePreviewPortal>
   ) : null;
 
+  const body = <>
+    <div className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+      {detail ? detailBody : listBody}
+    </div>
+    {generator}
+    <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} />
+    {viewerModal}
+  </>;
+  if (embedded) return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {toolbarSlot ? createPortal(detail ? detailToolbarContent : listToolbarContent, toolbarSlot) : null}
+      {body}
+    </div>
+  );
   return (
     <div className="workspace-canvas relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>{categoryNavigation}{detail ? detailToolbar : listToolbar}</WorkspaceChrome>
@@ -1178,18 +1202,25 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     setKind(category);
     try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
   };
-  const categoryNavigation = (<div role="tablist" aria-label={t('提示词分类')} className="appearance-group flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+  return <div className="flex h-full min-h-0 flex-1 flex-col md:flex-row">
+    {/* 分类沿用收藏库的二级侧栏样式：桌面为带图标与数量的白色选中项，手机横排。 */}
+    <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:bg-gray-50/70 md:p-2 md:dark:bg-gray-900/60">
+      <p className="hidden md:mb-2 md:block md:px-2 md:text-meta md:font-bold md:text-gray-400">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
         const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');
+        const Icon = category === 'all' ? Heart : KIND_ICONS[category as PromptLibraryKind];
         return <button key={category} type="button" role="tab" aria-selected={kind===category}
-          className={`mobile-touch shrink-0 rounded-lg px-3 text-sm ${kind===category ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'text-gray-600 dark:text-gray-300'}`}
-          onClick={() => { void selectKind(category); }}>{t(label)} {count}</button>;
+          className={`mobile-touch flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition md:h-10 md:w-full md:text-left ${kind===category ? '!border-indigo-500 !bg-indigo-600 !text-white shadow-sm' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
+          onClick={() => { void selectKind(category); }}>
+          <span className="flex h-5 w-5 flex-none items-center justify-center [&_svg]:h-4 [&_svg]:w-4"><Icon /></span>
+          <span className="min-w-0 flex-1 truncate">{t(label)}</span>{' '}
+          <span className={`text-meta font-medium ${kind===category ? 'text-white/80' : 'text-gray-400'}`}>{count}</span>
+        </button>;
       })}
-    </div>);
-  return <div className="flex h-full min-h-0 flex-1 flex-col">
-    <div className="h-full min-h-0 flex-1">
-      <PromptLibrary key={kind} {...props} categoryNavigation={categoryNavigation} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+    </nav>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>
   </div>;

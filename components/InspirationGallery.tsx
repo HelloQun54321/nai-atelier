@@ -478,7 +478,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
     </WorkspaceChrome>
     <div className="flex min-h-0 flex-1">
-      <aside className="workspace-fixed-pane appearance-group hidden w-44 flex-none overflow-y-auto border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block">
+      <aside className="workspace-fixed-pane appearance-group mb-1.5 !mt-[calc(var(--workspace-chrome-height,0px)+0.375rem)] hidden w-44 flex-none overflow-y-auto rounded-2xl border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block">
         {renderNavigation()}
       </aside>
 

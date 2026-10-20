@@ -33,6 +33,8 @@ interface ContentRollWorkspaceProps {
   /** 从内容库「载入到一键 Roll」带过来的一组（消费一次） */
   seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null;
   onSeedConsumed?: () => void;
+  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
+  embedded?: boolean;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -74,7 +76,7 @@ const shortText = (value: string, max = 48): string => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed, embedded = false }) => {
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -300,8 +302,8 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const rows = KINDS.map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
 
   return (
-    <div className="workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
-      <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('一键 Roll')}</h2></WorkspaceToolbar></WorkspaceChrome>
+    <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'}>
+      {!embedded && <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('一键 Roll')}</h2></WorkspaceToolbar></WorkspaceChrome>}
       <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-5xl space-y-4 p-4 md:p-6">
         <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

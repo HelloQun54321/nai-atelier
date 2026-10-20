@@ -177,17 +177,17 @@ it('折叠菜单点外关闭，展开侧栏或切到手机断点也关闭且不�
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('true');
 });
 
-it('手机底栏仍是五个入口，资源面板可达内容 Roll、内容库和原有资源', () => {
+it('手机底栏仍是五个入口，资源面板可达内容库与原有资源', () => {
   vi.stubGlobal('innerWidth', 390);
   const { container } = renderLayout('list');
   const mobileNav = container.querySelector('.app-mobile-nav') as HTMLElement;
   expect(within(mobileNav).getAllByRole('button')).toHaveLength(5);
   fireEvent.click(within(mobileNav).getByRole('button', { name: '资源库' }));
   const resources = screen.getByRole('dialog', { name: '资源库菜单' });
-  expect(within(resources).getAllByRole('button')).toHaveLength(12); // 十一个入口与关闭按钮。
-  expect(within(resources).getByRole('button', { name: '一键 Roll' })).toBeTruthy();
-  expect(within(resources).getByRole('button', { name: 'Roll 内容库' })).toBeTruthy();
-  expect(within(resources).getByRole('button', { name: '图片提示词库' })).toBeTruthy();
+  expect(within(resources).getAllByRole('button')).toHaveLength(10); // 九个入口与关闭按钮。
+  expect(within(resources).getByRole('button', { name: '内容库' })).toBeTruthy();
+  expect(within(resources).queryByRole('button', { name: '一键 Roll' })).toBeNull();
+  expect(within(resources).queryByRole('button', { name: 'Roll 内容库' })).toBeNull();
   expect(within(resources).getByRole('button', { name: 'Roll 串' })).toBeTruthy();
   expect(within(resources).getByRole('button', { name: 'AITag' })).toBeTruthy();
 });
