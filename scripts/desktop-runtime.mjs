@@ -3,6 +3,9 @@ import { createServer } from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export const DESKTOP_APP_ID = 'com.naiatelier.desktop';
+/** 内置 Node 位于 runtime 根目录：Windows 为 node.exe，macOS 为可执行文件 node。 */
+export const runtimeNodeName = (platform = process.platform) => platform === 'win32' ? 'node.exe' : 'node';
+export const runtimeNodePath = (runtimeRoot, platform = process.platform) => join(runtimeRoot, runtimeNodeName(platform));
 
 export async function pickDesktopDirectory(dialog, window, initialPath = '') {
   if (!window || window.isDestroyed()) throw new Error('工坊窗口已关闭，请重新打开后选择文件夹');
@@ -13,7 +16,7 @@ export async function pickDesktopDirectory(dialog, window, initialPath = '') {
 }
 
 /** 安装目录只读，工作区独立持久化；不自动接管源码部署的数据。 */
-export async function prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot = runtimeRoot) {
+export async function prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot = runtimeRoot, platform = process.platform) {
   const runtime = resolve(runtimeRoot);
   if (!isAbsolute(dataRoot)) throw new Error('应用数据目录必须为绝对路径');
   const data = resolve(dataRoot);
@@ -33,7 +36,7 @@ export async function prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot
       ? await readFile(join(workspace, 'atelier-storage-workspace.json'), 'utf8').then(JSON.parse).catch(() => null) : null;
     if (entries.length && storageMarker?.app !== 'nai-atelier') throw new Error('数据目录已有未识别的工作区，已保留原文件');
   }
-  await access(join(runtime, 'node.exe'));
+  await access(runtimeNodePath(runtime, platform));
   await access(join(runtime, 'dist', '_worker.js'));
   const pkg = JSON.parse(await readFile(join(runtime, 'package.json'), 'utf8'));
   await mkdir(workspace, { recursive: true });
@@ -63,10 +66,10 @@ export async function findDesktopPorts({ preferred = 3000, available = isPortFre
   throw new Error('无法找到可用的本机服务端口，请关闭冲突程序后重试');
 }
 
-export function desktopServerOptions({ runtimeRoot, workspace, executable, ports, documents, downloads, storageAnchor, dataRoot, installRoot, env = process.env }) {
+export function desktopServerOptions({ runtimeRoot, workspace, executable, ports, documents, downloads, storageAnchor, dataRoot, installRoot, env = process.env, platform = process.platform }) {
   const inherited = Object.fromEntries(Object.entries(env).filter(([key]) => !/^NAI_|^NODE_OPTIONS$|^ELECTRON_RUN_AS_NODE$/i.test(key)));
   return {
-    command: join(runtimeRoot, 'node.exe'),
+    command: runtimeNodePath(runtimeRoot, platform),
     args: ['--no-warnings', join(runtimeRoot, 'scripts', 'local-server.mjs')],
     options: {
       cwd: workspace, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],

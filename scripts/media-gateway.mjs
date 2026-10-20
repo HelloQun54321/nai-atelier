@@ -966,6 +966,9 @@ export const createSseEventObserver = onEvent => {
   };
 };
 
+/** 本机文件管理（存储位置、画师图包）需要系统文件选择器：Windows、macOS，或由桌面安装版主窗口提供。 */
+export const localFileManagementPlatform = (platform = process.platform, packaged = process.env.NAI_PACKAGED === '1') => packaged || ['win32', 'darwin'].includes(platform);
+
 export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch, gatewayUrl = '') => requestRemote(gatewayUrl ? `${gatewayUrl}/user/subscription` : NAI_SUBSCRIPTION_URL, {
   method: 'GET',
   headers: { 'Authorization': authorization },
@@ -3276,7 +3279,7 @@ const serveDistFile = async (req, res, url) => {
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
     if (url.pathname.startsWith('/api/artist-samples/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-      const canManage = process.platform === 'win32' && collectorLocalRequest(req);
+      const canManage = localFileManagementPlatform() && collectorLocalRequest(req);
       try {
         if (req.method === 'GET' && url.pathname === '/api/artist-samples/status') return sendJson(res, 200, await artistSamples.status(canManage));
         if (req.method === 'GET' && url.pathname === '/api/artist-samples/catalog') return sendJson(res, 200, await artistSamples.catalog(url.searchParams.get('pack')));
@@ -3299,12 +3302,12 @@ const serveDistFile = async (req, res, url) => {
     }
     if (url.pathname === '/api/local-maintenance/storage') {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
-      const canManage = process.platform === 'win32' && collectorLocalRequest(req);
+      const canManage = localFileManagementPlatform() && collectorLocalRequest(req);
       const mode = process.env.NAI_PACKAGED === '1' ? 'desktop' : 'source';
       const workspace = process.cwd(), dataDir = process.env.NAI_STORAGE_DATA_ROOT || workspace;
       const anchor = process.env.NAI_STORAGE_ANCHOR || workspace;
       if (req.method === 'GET') return sendJson(res, 200, await storageLocationStatus({ anchor, dataDir, workspace, mode, canManage }));
-      if (!canManage || req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '存储管理只允许 Windows 电脑本机页面操作' });
+      if (!canManage || req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '存储管理只允许工坊电脑本机页面操作' });
       const body = await readJsonBody(req, 8192);
       if (body.action === 'pickDirectory') return sendJson(res, 200, await pickDirectory());
       if (body.action === 'openDirectory') { await openInExplorer(body.path); return sendJson(res, 200, { success: true }); }

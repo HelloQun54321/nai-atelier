@@ -56,3 +56,11 @@ test('存储切换不被只读长请求阻挡，真实写请求仍拒绝切换',
     worker.closeAllConnections(); await new Promise(done => worker.close(done));
   }
 });
+
+test('本机文件管理在 Windows、macOS 与桌面安装版开放，其余平台的源码版保持只读', async () => {
+  const { localFileManagementPlatform } = await import('../../scripts/media-gateway.mjs');
+  assert.equal(localFileManagementPlatform('win32', false), true);
+  assert.equal(localFileManagementPlatform('darwin', false), true);
+  assert.equal(localFileManagementPlatform('linux', false), false);
+  assert.equal(localFileManagementPlatform('linux', true), true);
+});

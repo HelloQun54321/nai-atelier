@@ -346,3 +346,10 @@ test('ensurePixivSchemeHandler 非 Windows 返回 false 且失败不抛出', asy
   assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'linux' }), false);
   assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'win32', nodePath: 'C:\\node\\node.exe' }), false);
 });
+
+test('macOS 只在安装版应用包已登记 pixiv 协议时启用自动回调，不改写系统配置', async () => {
+  const execFile = async () => { throw new Error('macOS 不应执行注册命令'); };
+  assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'darwin', appScheme: true }), true);
+  assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'darwin', appScheme: false }), false);
+  assert.equal(await ensurePixivSchemeHandler({ execFile, platform: 'linux', appScheme: true }), false);
+});

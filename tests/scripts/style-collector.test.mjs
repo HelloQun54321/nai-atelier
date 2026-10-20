@@ -4,7 +4,9 @@ import { encode } from 'fast-png';
 import { gzipSync } from 'node:zlib';
 import { imageLink, publicIp, validateDownloadTarget, downloadCollectorImage, resolveCollectorPublicDns, collectorErrorReason } from '../../scripts/collector-download.mjs';
 import { createServer } from 'node:http';
-import { StyleCollector, collectorLocalRequest } from '../../scripts/style-collector.mjs';
+import { StyleCollector, collectorLocalRequest, macCollector, MAC_CLIPBOARD_WATCHER } from '../../scripts/style-collector.mjs';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
 
 const generation = { prompt: 'artist:synthetic, scenery', uc: 'lowres', steps: 23, sampler: 'k_euler_ancestral', seed: 42, Source: 'NovelAI' };
@@ -283,4 +285,34 @@ test('appearance is remembered before startup and updates one active listener wi
   await assert.rejects(h.manager.command('appearance', { ...light, accentColor: 'red' }), /外观设置无效/);
   assert.equal(h.manager.state().appearance.themeMode, 'dark');
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
+});
+
+test('macOS 监听只转交图片直链，暂停期间忽略，关闭清除程序坞角标；平台状态区分置顶窗', async () => {
+  let child, spawned;
+  const spawnProcess = (command, args, options) => {
+    spawned = { command, args, options };
+    child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), killed: false, kill() { this.killed = true; } });
+    setImmediate(() => child.stdout.write(JSON.stringify({ type: 'ready' }) + '\n'));
+    return child;
+  };
+  const events = [], badges = [];
+  const native = await macCollector({ onEvent: event => events.push(event), spawnProcess, badge: text => badges.push(text) });
+  assert.equal(spawned.command, '/usr/bin/osascript');
+  assert.deepEqual(spawned.args.slice(0, 3), ['-l', 'JavaScript', '-e']);
+  assert.equal(spawned.args[3], MAC_CLIPBOARD_WATCHER);
+  assert.match(MAC_CLIPBOARD_WATCHER, /changeCount/); assert.match(MAC_CLIPBOARD_WATCHER, /file-url/);
+  const send = value => child.stdout.write(JSON.stringify(value) + '\n');
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  send({ type: 'text', text: '普通复制的文字不会进入收集' });
+  send({ type: 'text', text: 'https://example.com/a.png' });
+  await settle();
+  await native.command('pause'); send({ type: 'text', text: 'https://example.com/paused.png' }); await settle();
+  await native.command('resume'); send({ type: 'text', text: 'https://cdn.discordapp.com/attachments/1/2/b' }); await settle();
+  assert.deepEqual(events, [{ type: 'listening' }, { type: 'link', url: 'https://example.com/a.png' }, { type: 'link', url: 'https://cdn.discordapp.com/attachments/1/2/b' }]);
+  native.update({ enabled: true, saved: 3 }); native.update({ enabled: true, saved: 0 }); native.close();
+  assert.deepEqual(badges, ['3', '', '']); assert.equal(child.killed, true);
+  assert.equal(new StyleCollector({ platform: 'darwin', worker: async () => ({}) }).state().statusWindow, false);
+  assert.equal(new StyleCollector({ platform: 'darwin', worker: async () => ({}) }).state().available, true);
+  assert.equal(new StyleCollector({ platform: 'win32', worker: async () => ({}) }).state().statusWindow, true);
+  assert.equal(new StyleCollector({ platform: 'linux', worker: async () => ({}) }).state().available, false);
 });

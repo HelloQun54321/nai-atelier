@@ -2,7 +2,8 @@ export default {
   appId: 'com.naiatelier.desktop',
   productName: 'NAI Atelier',
   directories: { app: '.desktop-build/app', output: 'release', buildResources: 'desktop' },
-  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'services/appReleases.mjs', 'locales/**/*', 'package.json', '!node_modules{,/**/*}'],
+  // 主进程静态导入的脚本必须全部列入，缺一个 app.asar 就无法启动（与 build-desktop.mjs 的 DESKTOP_SCRIPT_FILES 一致）。
+  files: ['desktop/**/*', 'scripts/desktop-runtime.mjs', 'scripts/storage-locations.mjs', 'scripts/export-locations.mjs', 'services/appReleases.mjs', 'locales/**/*', 'package.json', '!node_modules{,/**/*}'],
   // extraResources 的根 node_modules 会被打包器默认跳过，需要独立映射。
   extraResources: [
     { from: '.desktop-build/runtime', to: 'runtime', filter: ['**/*'] },
@@ -17,6 +18,25 @@ export default {
     target: [{ target: 'nsis', arch: ['x64'] }],
     icon: 'public/nai-atelier.ico',
     artifactName: 'NAI-Atelier-Setup-${version}-${arch}.${ext}',
+  },
+  // macOS 不做 Developer ID 签名与公证：identity '-' 只做 ad-hoc 签名，首次打开需右键「打开」或在系统设置中放行。
+  mac: {
+    target: [{ target: 'dmg', arch: ['arm64'] }, { target: 'zip', arch: ['arm64'] }],
+    category: 'public.app-category.graphics-design',
+    identity: '-',
+    hardenedRuntime: false,
+    gatekeeperAssess: false,
+    darkModeSupport: true,
+    minimumSystemVersion: '12.0',
+    artifactName: 'NAI-Atelier-${version}-mac-${arch}.${ext}',
+    protocols: [{ name: 'Pixiv Login', schemes: ['pixiv'] }],
+    extendInfo: { NSHighResolutionCapable: true, NSQuitAlwaysKeepsWindows: false, LSApplicationCategoryType: 'public.app-category.graphics-design' },
+  },
+  dmg: {
+    title: 'NAI Atelier ${version}',
+    artifactName: 'NAI-Atelier-${version}-mac-${arch}.${ext}',
+    window: { width: 540, height: 380 },
+    contents: [{ x: 140, y: 190, type: 'file' }, { x: 400, y: 190, type: 'link', path: '/Applications' }],
   },
   nsis: {
     useZip: true,

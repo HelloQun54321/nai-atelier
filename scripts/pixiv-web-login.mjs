@@ -36,7 +36,10 @@ export const ensurePixivSchemeHandler = async ({
   platform = process.platform,
   nodePath = process.execPath,
   gatewayUrl = process.env.NAI_PACKAGED === '1' ? process.env.NAI_GATEWAY_URL : '',
+  appScheme = process.env.NAI_PIXIV_APP_SCHEME === '1',
 } = {}) => {
+  // macOS 安装版的协议登记在应用包内，回调由桌面主进程转交，无需改写系统配置。
+  if (platform === 'darwin') return appScheme;
   if (platform !== 'win32') return false;
   const scriptPath = resolve(moduleDir, PIXIV_SCHEME_HANDLER_SCRIPT);
   let callbackTarget = '';

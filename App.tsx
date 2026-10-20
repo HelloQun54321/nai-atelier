@@ -8,6 +8,7 @@ import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
+import { desktopShell } from './services/desktopShell';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import type { ChainEditorSaveHandle } from './components/ChainEditor';
@@ -254,6 +255,9 @@ const App = () => {
     applyAppearancePreferences(appearancePreferences, isDark);
     saveAppearancePreferences(appearancePreferences);
   }, [appearancePreferences, isDark]);
+
+  // 桌面版原生控件（文件面板、菜单、滚动条）跟随应用内明暗选择，而不只是系统设置。
+  useEffect(() => { void desktopShell()?.setTheme?.(themeMode).catch(() => {}); }, [themeMode]);
 
   useEffect(() => {
     const onTheme = (event: Event) => setThemeMode((event as CustomEvent<'light' | 'dark' | 'system'>).detail);

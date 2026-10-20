@@ -153,6 +153,22 @@ test('Windows源码无扩展名文件选择使用隐藏后台，取消不触发�
   assert.equal((await pickArtistSampleFile('', async () => ({ stdout: '' }))).cancelled, true);
 });
 
+test('macOS 图包文件选择使用系统面板，定位到原文件所在文件夹，取消与超时同 Windows', async () => {
+  let call;
+  const result = await pickArtistSampleFile('/Users/合成/图包/artist_thumbnail_nai', async (command, args, options) => {
+    call = { command, args, options };
+    return { stdout: '/Volumes/外置/artist_thumbnail_nai\n' };
+  }, 'darwin');
+  assert.deepEqual(result, { path: '/Volumes/外置/artist_thumbnail_nai', cancelled: false });
+  assert.equal(call.command, '/usr/bin/osascript');
+  assert.match(call.args.join('\n'), /choose file/); assert.match(call.args.join('\n'), /error number -128/);
+  assert.equal(call.options.env.NAI_ARTIST_PICK_INITIAL, '/Users/合成/图包');
+  assert.equal(call.options.timeout, 300000);
+  await assert.rejects(pickArtistSampleFile('', async () => { throw Object.assign(new Error('timeout'), { killed: true }); }, 'darwin'), /超时/);
+  assert.equal((await pickArtistSampleFile('', async () => ({ stdout: '\n' }), 'darwin')).cancelled, true);
+  await assert.rejects(pickArtistSampleFile('', async () => ({ stdout: '/x' }), 'linux'), /Windows 或 macOS/);
+});
+
 const waitPack = async (service, predicate) => {
   for (let i = 0; i < 400; i++) {
     const pack = (await service.status(true)).packs[0];

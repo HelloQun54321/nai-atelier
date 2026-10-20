@@ -23,6 +23,25 @@ export const getLanUrls = (port, interfaces = networkInterfaces()) => {
   return unique.map(address => `http://${address}:${port}`);
 };
 
+/**
+ * macOS 系统代理来自 `scutil --proxy`：优先 HTTPS、其次 HTTP，只取已启用且端口有效的条目；
+ * SOCKS 与 PAC 无法直接交给网关的 HTTP 代理客户端，返回空串由调用方沿用直连／环境变量。
+ */
+export const parseMacSystemProxy = output => {
+  const value = key => String(output || '').match(new RegExp(`^\\s*${key}\\s*:\\s*(\\S+)\\s*$`, 'm'))?.[1] || '';
+  for (const kind of ['HTTPS', 'HTTP']) {
+    const host = value(`${kind}Proxy`), port = Number(value(`${kind}Port`));
+    if (value(`${kind}Enable`) === '1' && host && Number.isInteger(port) && port > 0 && port < 65536) return `http://${host.includes(':') ? `[${host}]` : host}:${port}`;
+  }
+  return '';
+};
+
+/** 读取 macOS 当前网络服务的系统代理；命令失败按无代理处理，不阻断启动。 */
+export const readMacSystemProxy = (run = execFileSync) => {
+  try { return parseMacSystemProxy(run('/usr/sbin/scutil', ['--proxy'], { encoding: 'utf8', timeout: 3000 })); }
+  catch { return ''; }
+};
+
 const launcherPath = '/__atelier/launcher';
 const launcherMarker = 'nai-atelier-local-launcher';
 const requestJson = async (path, fetchImpl, port = 3000, timeout = 2000) => {

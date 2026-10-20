@@ -91,6 +91,17 @@ describe('DesktopLauncherManager', () => {
     });
   });
 
+  it('macOS 安装版没有快捷方式可管理，整节不渲染', async () => {
+    vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue({
+      supported: false, platform: 'darwin', launcherKind: 'exe', projectDir: '/Users/合成/Library/Application Support/NAI Atelier/workspace', desktopDir: '/Users/合成/Desktop', desktopExists: true,
+      batPath: '/Applications/NAI Atelier.app/Contents/MacOS/NAI Atelier', batExists: true, batMtime: null, shortcutPath: '', shortcutExists: false, shortcutMtime: null, iconPath: '', iconExists: false,
+    } as desktopLauncherService.DesktopLauncherStatus);
+    const { container } = render(React.createElement(DesktopLauncherManager, { notify: vi.fn() }));
+    await waitFor(() => expect(desktopLauncherService.getDesktopLauncherStatus).toHaveBeenCalled());
+    await waitFor(() => expect(container.innerHTML).toBe(''));
+    expect(screen.queryByText(/仅支持 Windows/)).toBeNull();
+  });
+
   it('安装版展示应用状态，快捷方式修复沿用同一入口', async () => {
     vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue({
       supported: true, launcherKind: 'exe', platform: 'win32', projectDir: 'D:\\数据', desktopDir: 'D:\\桌面', desktopExists: true,

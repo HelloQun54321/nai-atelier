@@ -7,7 +7,7 @@ import { platform } from 'os';
 import { resolve as resolvePath, dirname, join } from 'node:path';
 import { resolveStorageDataRoot, getStoragePreferences, storageResourcePaths, launchStorageSwitch, assertStorageNotSwitching, requestDesktopStorageDirectory } from './storage-locations.mjs';
 import { requestDesktopArtistSampleFile } from './artist-samples.mjs';
-import { getLanUrls, LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
+import { getLanUrls, LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch, readMacSystemProxy } from './local-server-runtime.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
@@ -104,6 +104,7 @@ function normalizeProxyUrl(value) {
 function getOutboundProxyUrl() {
   const environmentProxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
   if (environmentProxy) return normalizeProxyUrl(environmentProxy);
+  if (platform() === 'darwin') return readMacSystemProxy();
   if (!IS_WINDOWS) return '';
   try {
     const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';

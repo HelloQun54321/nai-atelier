@@ -32,6 +32,7 @@ import { OpusUsageBar } from './OpusUsageBar';
 import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 import { InteractionPopover } from './InteractionPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { desktopShell } from '../services/desktopShell';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
@@ -190,6 +191,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useEffect(() => {
     localStorage.setItem('nai_sidebar_collapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  // 桌面菜单「设置…」（macOS ⌘,）打开全局设置首页。
+  useEffect(() => desktopShell()?.onCommand(command => {
+    if (command === 'preferences') { setSettingsSection('home'); setShowSettings(true); }
+  }), []);
 
   useEffect(() => {
     if (!sidebarCollapsed) setShowExternalBrowsePopover(false);

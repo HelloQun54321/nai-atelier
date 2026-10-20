@@ -31,7 +31,10 @@ export const setLanguage = (value: Language) => {
 };
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const useLanguage = () => useSyncExternalStore(subscribe, getLanguage, () => 'zh-CN' as Language);
-export const t = (message: string | number | null | undefined, values: readonly unknown[] = []) => translate(language, message, values);
+// Apple 键盘以 ⌘ 为主修饰键；快捷键处理已同时接受 metaKey，这里只统一界面提示文案。
+const APPLE_KEYBOARD = typeof navigator !== 'undefined' && /Mac|iPad/.test(navigator.platform || navigator.userAgent || '');
+export const platformShortcutText = (text: string, apple = APPLE_KEYBOARD) => apple ? text.replace(/\bCtrl\s*\+\s*(?=[A-Za-z0-9])/g, '⌘').replace(/\bCtrl\b/g, '⌘') : text;
+export const t = (message: string | number | null | undefined, values: readonly unknown[] = []) => platformShortcutText(translate(language, message, values));
 if (typeof window !== 'undefined') {
   restoreLanguage();
   window.addEventListener('storage', event => { if (event.key === STORAGE_KEY || event.key === null) restoreLanguage(); });

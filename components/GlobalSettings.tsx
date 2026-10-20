@@ -1416,8 +1416,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <DataBackupManager notify={notify} />
               </div>
 
-              {/* Windows 桌面启动器 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
+              {/* Windows 桌面启动器（非 Windows 宿主时组件自身不渲染，空容器随之折叠） */}
+              <div className="border-b border-gray-200 pb-5 empty:hidden dark:border-gray-700">
                 <DesktopLauncherManager notify={notify} />
               </div>
 
