@@ -1038,7 +1038,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
                     {t("成功识别 ")}<b className="text-indigo-600 dark:text-indigo-400">{detectedItems.length}</b> {t(" 个有效风格串")}{duplicateItemsCount > 0 ? (
                       <>
-                        {t("（含 ")}<b className="text-emerald-600 dark:text-emerald-400">{newItemsCount}</b> {t(" 张新素材，")}<span className="text-gray-500 dark:text-gray-400">{t("{0} 张已在库中已自动排除", [duplicateItemsCount])}</span>）
+                        {t("（含 ")}<b className="text-emerald-700 dark:text-emerald-400">{newItemsCount}</b> {t(" 张新素材，")}<span className="text-gray-500 dark:text-gray-400">{t("{0} 张已在库中已自动排除", [duplicateItemsCount])}</span>）
                       </>
                     ) : (
                       <span>{t("（全部为新素材）")}</span>
@@ -1062,7 +1062,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     <button
                       type="button"
                       onClick={selectOnlyNewItems}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                      className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-700 dark:text-emerald-400"
                     >
                       <Layers className="h-3.5 w-3.5" /> {t(" 仅选新素材 (")}{newItemsCount})
                     </button>
@@ -1124,7 +1124,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       </div>
                       {item.isDuplicate && (
                         <div
-                          className="appearance-group absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
+                          className="appearance-media absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
                           title={t("已存在同参数风格串: {0}", [item.duplicateOfName || '现有风格串'])}
                         >
                           {t("已在库中")}</div>

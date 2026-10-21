@@ -141,7 +141,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
     const value: RowFeedback | undefined = feedback[row] || (row === switchingRow && storage?.state.phase === 'failed' && storage.state.error ? { phase: 'error', message: storage.state.error } : undefined);
     if (!value) return null;
     if (value.phase === 'error') return <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-600 dark:text-red-400"><span className="min-w-0 break-words">{value.message || t('存储位置设置失败')}</span>{retries.current[row] && <ToolbarButton className="h-9 text-xs" disabled={migrating} onClick={retries.current[row]}>{t('重试')}</ToolbarButton>}</div>;
-    if (value.phase === 'success') return <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"><Check className="h-3.5 w-3.5" />{t('已保存')}</p>;
+    if (value.phase === 'success') return <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400"><Check className="h-3.5 w-3.5" />{t('已保存')}</p>;
     return <p role="status" className="mt-2 flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300"><LoaderCircle className="h-3.5 w-3.5 flex-none animate-spin" />{value.phase === 'selecting' ? t('请在系统窗口中选择文件夹…') : value.phase === 'opening' ? t('正在打开文件夹…') : t('正在保存…')}</p>;
   };
   const pathRow = (label: string, path: string, kind: 'data' | 'cache') => <div className="grid min-w-0 gap-2 py-3 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-start" aria-label={t(label)}>

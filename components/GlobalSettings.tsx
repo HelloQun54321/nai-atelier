@@ -62,6 +62,7 @@ import { AppearanceBackgroundEditor } from './AppearanceBackgroundEditor';
 import { AppearancePresetPreview } from './AppearancePresetPreview';
 import { AppearanceDetailEditor } from './AppearanceDetailEditor';
 import { normalizeThemeDetails, resolveThemeDetails } from '../services/themeDetails';
+import { resolveWorkspaceBackground, type BackgroundMode } from '../services/themeBackground';
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
@@ -181,6 +182,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
   const [imageDisplayScope, setImageDisplayScope] = useState<'global' | ImageDisplayPage>('global');
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(isDark ? 'dark' : 'light');
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
@@ -855,7 +857,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 )}
 
-                <div className={`grid gap-3 ${allPresets.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                <div className="grid grid-cols-1 gap-4">
                   {allPresets.map(preset => {
                     const isSelected = activePresetId === preset.id && !appearanceModified;
                     const isEditing = editingPresetId === preset.id;
@@ -879,9 +881,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         )}
 
                         <div className="flex min-w-0 flex-col gap-3">
-                          <AppearancePresetPreview preset={preset} isDark={isDark} />
-
-                          <div className="min-w-0 w-full flex-1">
+                          <div className="min-w-0 w-full flex-1 pr-7">
                             {isEditing ? (
                               <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                 <input
@@ -928,6 +928,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                               </>
                             )}
                           </div>
+                          <AppearancePresetPreview preset={preset} isDark={isDark} backgrounds={appearancePreferences.workspaceBackgrounds} />
                         </div>
 
                         {/* 卡片底部操作栏 */}
@@ -1014,9 +1015,15 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </button>)}
                 </div>
 
-                <AppearanceBackgroundEditor key={activePresetId} background={appearancePreferences.background} onChange={background => {
-                  if (!saveAppearancePreferences({ ...appearancePreferences, background })) return false;
-                  updateAppearance({ background }); return true;
+                <AppearanceBackgroundEditor key={activePresetId} mode={backgroundMode} onModeChange={setBackgroundMode}
+                  background={resolveWorkspaceBackground(appearancePreferences.workspaceBackgrounds, activePresetId, backgroundMode, appearancePreferences.background)}
+                  onReset={Object.hasOwn(appearancePreferences.workspaceBackgrounds?.[activePresetId] || {}, backgroundMode) ? () => {
+                    const variants = { ...appearancePreferences.workspaceBackgrounds?.[activePresetId] }; delete variants[backgroundMode];
+                    updateAppearance({ workspaceBackgrounds: { ...appearancePreferences.workspaceBackgrounds, [activePresetId]: variants } });
+                  } : undefined} onChange={background => {
+                  const workspaceBackgrounds = { ...appearancePreferences.workspaceBackgrounds, [activePresetId]: { ...appearancePreferences.workspaceBackgrounds?.[activePresetId], [backgroundMode]: background || null } };
+                  if (!saveAppearancePreferences({ ...appearancePreferences, workspaceBackgrounds })) return false;
+                  updateAppearance({ workspaceBackgrounds }); return true;
                 }} />
                 <AppearancePaletteEditor palette={appearancePreferences.palette} onChange={palette => updateAppearance({ palette })} />
                 <AppearanceDetailEditor details={appearancePreferences.details} onChange={details => updateAppearance({ details, ...(details?.material && details.material !== appearancePreferences.details?.material ? { surfaces: 'translucent' } : {}) })} />
@@ -1339,7 +1346,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         </div>
                         <div className="appearance-group rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
                           <div className="text-meta text-gray-500 dark:text-gray-400" title={t("受限模型的免费生成；不含不限额免费图")}>{t("个人 Opus 免费图")}</div>
-                          <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{t("{0} 张", [personal.opusImages])}</div>
+                          <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-700 dark:text-emerald-300">{t("{0} 张", [personal.opusImages])}</div>
                           <div className="text-micro text-gray-400">{t("≈ {0}% 额度", [(personal.opusImages / naiRuntimeCoefficient).toFixed(2)])}</div>
                         </div>
                       </div>
@@ -1360,7 +1367,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id="settings-privacy" className={`${activeSection !== 'privacy' ? 'hidden' : 'space-y-4'}`}>
             {activeSection === 'privacy' && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
               <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("安全模式")}</h3>
-              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'appearance-group bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
+              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-700 text-white' : 'appearance-group bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
               <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("点击图片临时显示")}</p>
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="appearance-group mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("同时隐藏作品名称")}</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">{t("点击名称临时显示")}</span></span>

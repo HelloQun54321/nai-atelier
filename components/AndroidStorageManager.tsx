@@ -32,7 +32,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
           const result=await native.backup({action:'export',password,preferences});
           await native.saveFile({path:result.path,mime:'application/octet-stream',filename:`NAI-Atelier-${new Date().toISOString().slice(0,10)}.naiatelier`,removeAfterSave:true});
           notify('手机完整备份已导出');
-        })} className="mobile-touch flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-50"><Download className="h-4 w-4" />{t("导出完整备份")}</button>
+        })} className="mobile-touch flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-sm text-white disabled:opacity-50"><Download className="h-4 w-4" />{t("导出完整备份")}</button>
         <button type="button" disabled={Boolean(busy)||password.length<8} onClick={()=>void perform('正在验证备份…',async()=>{
           setBackup(await native.backup({action:'inspect',password}) as typeof backup);
         })} className="mobile-touch flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600"><Upload className="h-4 w-4" />{t("选择备份")}</button>

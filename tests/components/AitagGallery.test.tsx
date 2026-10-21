@@ -508,8 +508,8 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   fireEvent.click(card(1));
   const button = await screen.findByRole('button', { name: '保存到风格串' });
   expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
-  expect(button.classList.contains('bg-emerald-600')).toBe(true);
-  expect(button.classList.contains('dark:bg-emerald-600/90')).toBe(true);
+  expect(button.classList.contains('bg-emerald-700')).toBe(true);
+  expect(button.classList.contains('dark:bg-emerald-700/90')).toBe(true);
   expect(button.classList.contains('text-white')).toBe(true);
   fireEvent.click(button); fireEvent.click(button);
   expect(mocks.createChain).toHaveBeenCalledTimes(1);

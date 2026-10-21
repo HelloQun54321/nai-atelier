@@ -143,7 +143,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
       <footer className="flex flex-none items-center justify-end gap-3 border-t border-gray-200 p-3 dark:border-gray-800">
         {error && <p role="alert" className="min-w-0 flex-1 text-xs text-red-500">{t(error)}</p>}
         <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
-        <ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
+        <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
       </footer>
       {partyOpen && <StyleRollPartyDialog library={library} count={draft.rules.maxArtists} initial={plan.pinnedArtists ?? []} blocked={blockedTags}
         onBlock={onBlock ?? (async () => {})}

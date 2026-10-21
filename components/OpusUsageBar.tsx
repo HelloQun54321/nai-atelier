@@ -73,6 +73,9 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       : low
         ? 'text-amber-500 dark:text-amber-400'
         : 'text-emerald-500 dark:text-emerald-400';
+  const valueClass = syncBroken || negative
+    ? 'text-red-700 dark:text-red-400'
+    : low ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400';
   const syncSummary = t(error
     ? t(!info ? '额度同步失败：{0}' : gateway ? '成员额度同步失败：{0}' : 'Opus 限额同步失败：{0}', [t(error)])
     : syncPending
@@ -117,7 +120,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
             />
           </svg>
         )}
-        <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : showDetails && !collapsed ? 'text-meta' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
+        <span className={`relative font-bold tabular-nums ${valueClass} ${syncBroken ? 'text-lg leading-none' : showDetails && !collapsed ? 'text-meta' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
         {runtimeSyncBroken && <span role="img" aria-label={t('计费规则同步异常')} className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900" />}

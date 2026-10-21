@@ -1,12 +1,45 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyAppearancePreferences, appearanceMatchesPreset, BUILTIN_APPEARANCE_PRESET, DEFAULT_APPEARANCE_PREFERENCES, loadAppearancePreferences, readAppearancePresetImport, saveAppearancePreferences, serializeAppearancePresets } from '../../services/appearancePreferences';
-import { normalizeThemeBackground, prepareThemeBackground, themeBackgroundStyle } from '../../services/themeBackground';
+import { normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, prepareThemeBackground, themeBackgroundStyle } from '../../services/themeBackground';
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('自定义工作区背景', () => {
+  it('每个预设的明暗背景独立保存，重新应用外观不覆盖背景，也不进入预设快照', () => {
+    const light = normalizeThemeBackground({ image, opacity: .7 })!, dark = { ...light, opacity: .9 };
+    const workspaceBackgrounds = { custom: { light, dark }, other: { light: null } };
+    const preferences = { ...DEFAULT_APPEARANCE_PREFERENCES, activePresetId: 'custom', workspaceBackgrounds };
+    expect(saveAppearancePreferences(preferences)).toBe(true);
+    const reloaded = loadAppearancePreferences();
+    expect(reloaded.workspaceBackgrounds).toEqual(workspaceBackgrounds);
+    for (const isDark of [false, true]) {
+      applyAppearancePreferences({ ...reloaded, ...BUILTIN_APPEARANCE_PRESET, activePresetId: 'custom' }, isDark);
+      const applied = document.documentElement.style.getPropertyValue('--nai-background-image');
+      expect(applied).toContain(image); expect(Number(applied.match(/([\d.]+)%/)![1])).toBeCloseTo(isDark ? 10 : 30);
+    }
+    expect(appearanceMatchesPreset({ ...reloaded, activePresetId: 'builtin-default' }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+    expect(serializeAppearancePresets([{ ...BUILTIN_APPEARANCE_PRESET, ...reloaded }])).not.toContain('workspaceBackgrounds');
+  });
+  it('旧单背景沿用到当前预设的两个版本，显式移除优先于旧背景和配套壁纸', () => {
+    const background = normalizeThemeBackground({ image })!;
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, activePresetId: 'legacy', background });
+    expect(loadAppearancePreferences().workspaceBackgrounds?.legacy).toEqual({ light: background, dark: background });
+    expect(resolveWorkspaceBackground({ legacy: { light: null } }, 'legacy', 'light', background)).toBeUndefined();
+    expect(resolveWorkspaceBackground({ 'builtin-cupertino-liquid-glass': { dark: null } }, 'builtin-cupertino-liquid-glass', 'dark')).toBeUndefined();
+    expect(normalizeWorkspaceBackgrounds({ broken: [], valid: { light: null, dark: { image: 'https://bad.invalid/a.jpg' } } })).toEqual({ valid: { light: null } });
+  });
+  it('第二套主题自动使用配套明暗壁纸，默认主题不被改变且外链仍被拒绝', () => {
+    for (const mode of ['light', 'dark'] as const) {
+      const background = resolveWorkspaceBackground(undefined, 'builtin-cupertino-liquid-glass', mode)!;
+      expect(background.image).toContain(mode === 'light' ? 'cupertino-day.webp' : 'cupertino-night.webp');
+      expect(resolveWorkspaceBackground(undefined, 'builtin-default', mode)).toBeUndefined();
+      applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, activePresetId: 'builtin-cupertino-liquid-glass' }, mode === 'dark');
+      expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toContain(background.image);
+    }
+    expect(normalizeThemeBackground({ image: '/themes/wallpapers/arbitrary.webp' })).toBeUndefined();
+  });
   it('本端偏好、主题保存导入与明暗切换保留同一图片，恢复默认清除背景', () => {
     const background = normalizeThemeBackground({ image, fit: 'tile', opacity: .7, tileSize: 256 })!;
     const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'test', name: '带背景', isBuiltin: false, background };

@@ -188,7 +188,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
         <span className="min-w-0 text-xs text-gray-500">{t('已固定 {0} 位 · 之后每轮只随机权重', [picked.length])}</span>
         <div className="flex shrink-0 items-center gap-2">
           <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
-          <ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || !picked.length} onClick={submit}>{t('确定')}</ToolbarButton>
+          <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy || !picked.length} onClick={submit}>{t('确定')}</ToolbarButton>
         </div>
       </footer>
     </div>

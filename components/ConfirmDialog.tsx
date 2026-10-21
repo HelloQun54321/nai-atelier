@@ -189,7 +189,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 aria-busy={isSaving}
                                 data-agent-action="business"
                                 onClick={() => { void saveAndClose(); }}
-                                className="mobile-touch order-1 min-h-11 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 dark:focus:ring-offset-gray-900 md:order-3"
+                                className="mobile-touch order-1 min-h-11 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 transition-colors hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 dark:focus:ring-offset-gray-900 md:order-3"
                             >{isSaving ? t('保存中…') : t('保存并离开')}</button>}
                         </div>
                     </div>

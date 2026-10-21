@@ -33,6 +33,9 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
 }
+/* 参数区按面板的实际宽度换行，窄侧栏不能沿用整窗的多列断点。 */
+.chain-editor-model-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+.chain-editor-param-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
 
 /* 内容库按实际剩余宽度换行，打开助手也不会挤掉搜索或主要操作。 */
 .content-library { container: content-library / inline-size; }
@@ -111,8 +114,9 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     min-height: 3rem;
     padding: .875rem .75rem .75rem;
     border: 0;
-    background: transparent;
-    color: white;
+    /* 叠图状态优先于主题的白底映射，避免透明渐变下露出整块浅色底板。 */
+    background: transparent !important;
+    color: white !important;
     text-shadow: none;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption::before {
@@ -126,14 +130,14 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     -webkit-backdrop-filter: blur(10px);
     mask-image: linear-gradient(to bottom, transparent, black 42%);
   }
-  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button, svg) {
-    color: inherit;
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button) {
+    color: inherit !important;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-meta {
-    color: rgb(255 255 255 / .78);
+    color: rgb(255 255 255 / .78) !important;
   }
   html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-badge {
-    color: rgb(255 255 255 / .94);
+    color: rgb(255 255 255 / .94) !important;
     background: rgb(255 255 255 / .14);
     border-color: rgb(255 255 255 / .28);
   }
@@ -151,7 +155,7 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
   html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-chain-status {
     background: rgb(12 16 24 / .55);
     border: 1px solid rgb(251 191 36 / .3);
-    color: #fcd34d;
+    color: #fcd34d !important;
   }
 }
 
@@ -203,8 +207,8 @@ html[data-design-theme='nai-atelier'] {
   --color-gray-100: #eef1f7;
   --color-gray-200: #dde2ec;
   --color-gray-300: #c6cedd;
-  --color-gray-400: #98a3b7;
-  --color-gray-500: #6f7a90;
+  --color-gray-400: #606d83;
+  --color-gray-500: #58667d;
   --color-gray-600: #525d72;
   --color-gray-700: #3b4559;
   --color-gray-750: #30394c;
@@ -258,7 +262,7 @@ html[data-design-theme='nai-atelier'].dark {
   --color-gray-200: #dde1ee;
   --color-gray-300: #c2c9db;
   --color-gray-400: #939db5;
-  --color-gray-500: #68728a;
+  --color-gray-500: #8b97af;
   --color-gray-600: #495268;
   --color-gray-700: #2f3647;
   --color-gray-750: #242b3a;
@@ -380,7 +384,7 @@ html[data-design-theme='nai-atelier'] ::selection {
   isolation: isolate;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--nai-accent, #0ea5e9) 28%, transparent);
-  color: var(--nai-accent-text-600);
+  color: var(--nai-accent-text-800);
   background-color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 9%, transparent);
   background-image: none;
   box-shadow: 0 1px 2px rgb(15 23 42 / .06);
@@ -431,8 +435,8 @@ html[data-design-theme='nai-atelier'] ::selection {
   z-index: 1;
   padding: .125rem .5rem;
   border-radius: 999px;
-  color: var(--nai-accent-text-600);
-  background: color-mix(in srgb, var(--nai-accent, #0ea5e9) 13%, transparent);
+  color: var(--nai-accent-text-800);
+  background: transparent;
   font-size: .6875rem;
   font-weight: 700;
   line-height: 1.25rem;
@@ -442,7 +446,7 @@ html[data-design-theme='nai-atelier'] ::selection {
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost,
 .generation-action-button--loading .generation-action-button__cost {
   color: inherit;
-  background: rgb(255 255 255 / .16);
+  background: transparent;
 }
 
 .generation-action-button--loading {
@@ -489,7 +493,7 @@ html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.genera
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.generation-action-button--loading) .generation-action-button__cost {
   color: var(--nai-accent-text-300);
-  background: color-mix(in srgb, var(--nai-accent, #818cf8) 18%, transparent);
+  background: transparent;
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
@@ -500,7 +504,7 @@ html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost {
   color: inherit;
-  background: rgb(255 255 255 / .16);
+  background: transparent;
 }
 
 html[data-motion='full'] .generation-action-button--loading {
@@ -564,7 +568,7 @@ html[data-theme-background='true'] body::before {
 }
 html[data-theme-background='true'] body::before,
 .theme-background-preview {
-  filter: blur(var(--nai-background-blur, 40px));
+  filter: blur(var(--nai-background-blur, 2px));
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
   html[data-theme-background='true'] body::before { display: none; }

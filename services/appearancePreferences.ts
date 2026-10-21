@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalettes } from './themePalette';
 import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
 import { validateAppearancePreset } from './appearancePresets';
-import { applyThemeBackground, normalizeThemeBackground, type ThemeBackground } from './themeBackground';
+import { applyThemeBackground, normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, type ThemeBackground, type WorkspaceBackgrounds } from './themeBackground';
 export { APPEARANCE_FORMAT_VERSION, appearanceValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -148,6 +148,8 @@ export interface AppearancePreferences {
   palette?: ThemePalettes;
   details?: ThemeDetails;
   background?: ThemeBackground;
+  /** 独立于预设快照的本端背景，重新应用预设不覆盖。 */
+  workspaceBackgrounds?: WorkspaceBackgrounds;
   density: InterfaceDensity;
   corners: CornerStyle;
   surfaces: SurfaceStyle;
@@ -237,6 +239,10 @@ const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPag
 
 export const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
   const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> : {};
+  const workspaceBackgrounds = normalizeWorkspaceBackgrounds(input.workspaceBackgrounds);
+  const legacyBackground = normalizeThemeBackground(input.background);
+  const backgroundPresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim() || 'builtin-default';
+  if (legacyBackground && !Object.hasOwn(workspaceBackgrounds, backgroundPresetId)) workspaceBackgrounds[backgroundPresetId] = { light: legacyBackground, dark: legacyBackground };
   const persistedOrder = Array.isArray(input.labModuleOrder)
     ? input.labModuleOrder.filter((item): item is LabModuleId => isOneOf(item, DEFAULT_LAB_MODULE_ORDER))
     : [];
@@ -277,6 +283,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     ...(normalizeThemePalettes(input.palette) ? { palette: normalizeThemePalettes(input.palette) } : {}),
     ...(normalizeThemeDetails(input.details) ? { details: normalizeThemeDetails(input.details) } : {}),
     ...(normalizeThemeBackground(input.background) ? { background: normalizeThemeBackground(input.background) } : {}),
+    ...(Object.keys(workspaceBackgrounds).length ? { workspaceBackgrounds } : {}),
     density: isOneOf(input.density, ['comfortable', 'standard', 'compact']) ? input.density : DEFAULT_APPEARANCE_PREFERENCES.density,
     corners: isOneOf(input.corners, ['soft', 'standard', 'sharp']) ? input.corners : DEFAULT_APPEARANCE_PREFERENCES.corners,
     surfaces: isOneOf(input.surfaces, ['solid', 'translucent']) ? input.surfaces : DEFAULT_APPEARANCE_PREFERENCES.surfaces,
@@ -373,7 +380,7 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.style.setProperty('--nai-accent', accent);
   applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', accent);
   applyThemeDetails(root, preferences.details, preferences);
-  applyThemeBackground(root, preferences.background);
+  applyThemeBackground(root, resolveWorkspaceBackground(preferences.workspaceBackgrounds, preferences.activePresetId || 'builtin-default', isDark ? 'dark' : 'light', preferences.background));
   root.style.colorScheme = isDark ? 'dark' : 'light';
 };
 

@@ -262,7 +262,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
               return <button key={tag.name} type="button" aria-pressed={checked} onClick={() => toggle(tag.name)} className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-left ${checked ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'appearance-group border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
                 <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-md border ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-300 dark:border-gray-600'}`}>{checked && <Check className="h-3.5 w-3.5" />}</span>
                 <span className="min-w-0 flex-1"><span className="block truncate font-mono text-meta font-bold">{tag.name.replaceAll('_', ' ')}</span>{tag.chinese && <span className="block truncate text-micro text-gray-500">{tag.chinese}</span>}</span>
-                <span className={`text-micro font-black ${tag.category === 'character' ? 'text-emerald-600' : 'text-blue-500'}`}>{percent(tag.confidence)}</span>
+                <span className={`text-micro font-black ${tag.category === 'character' ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-500'}`}>{percent(tag.confidence)}</span>
               </button>;
             })}</div>
           </div>}

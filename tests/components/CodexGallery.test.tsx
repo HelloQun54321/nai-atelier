@@ -194,8 +194,8 @@ it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格�
   await ready();
   const save = screen.getByRole('button', { name: '保存到风格串' });
   expect(save.querySelector('svg.lucide-layers')).toBeTruthy();
-  expect(save.classList.contains('bg-emerald-600')).toBe(true);
-  expect(save.classList.contains('dark:bg-emerald-600/90')).toBe(true);
+  expect(save.classList.contains('bg-emerald-700')).toBe(true);
+  expect(save.classList.contains('dark:bg-emerald-700/90')).toBe(true);
   expect(save.classList.contains('text-white')).toBe(true);
   fireEvent.click(save);
   await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());

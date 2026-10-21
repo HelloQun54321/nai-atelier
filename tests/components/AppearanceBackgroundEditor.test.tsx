@@ -37,7 +37,7 @@ describe('工作区背景设置', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'tile', opacity: .4 });
     fireEvent.change(screen.getByLabelText('图案大小'), { target: { value: '256' } });
     expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'tile', tileSize: 256 });
-    fireEvent.click(screen.getByText('恢复默认背景'));
+    fireEvent.click(screen.getByText('移除背景图片'));
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
   it('关闭设置后迟到的解码不能覆盖后来选用的主题', async () => {
@@ -48,5 +48,18 @@ describe('工作区背景设置', () => {
     fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
     view.unmount(); resolve(background); await Promise.resolve();
     expect(onChange).not.toHaveBeenCalled();
+  });
+  it('切换背景明暗版本取消旧图片处理，保留展开状态并显示恢复默认入口', async () => {
+    let resolve!: (value: typeof background) => void;
+    vi.mocked(prepareThemeBackground).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    const onChange = vi.fn(() => true), onModeChange = vi.fn(), onReset = vi.fn();
+    const view = render(<AppearanceBackgroundEditor mode="light" onModeChange={onModeChange} onReset={onReset} onChange={onChange} />);
+    view.container.querySelector('details')!.open = true;
+    fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
+    fireEvent.click(screen.getByRole('tab', { name: '深色背景' })); expect(onModeChange).toHaveBeenCalledWith('dark');
+    view.rerender(<AppearanceBackgroundEditor mode="dark" onModeChange={onModeChange} onReset={onReset} onChange={onChange} />);
+    resolve(background); await Promise.resolve(); expect(onChange).not.toHaveBeenCalled();
+    expect(view.container.querySelector('details')!.open).toBe(true);
+    fireEvent.click(screen.getByText('恢复默认背景')); expect(onReset).toHaveBeenCalledTimes(1);
   });
 });

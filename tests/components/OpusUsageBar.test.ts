@@ -120,6 +120,7 @@ describe('OpusUsageBar', () => {
     expect(screen.getByRole('img', { name: '计费规则同步异常' })).toBeTruthy();
     expect(screen.getByRole('img', { name: '计费规则同步异常' }).className).toContain('bg-amber-500');
     expect(screen.getByText(visible).parentElement?.className).toContain(color);
+    expect(screen.getByText(visible).className).toContain(color.replace('-500', '-700'));
     expect(card.getAttribute('aria-label')).toContain('计费规则同步异常');
     expect(card.title).toContain('official page exposes no chunks');
   });

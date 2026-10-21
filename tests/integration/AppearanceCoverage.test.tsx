@@ -75,6 +75,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localS
 describe('全局外观覆盖审计', () => {
   it('助手挤窄时不再由 1180px 容器查询强制纵排，字段和生成栏按剩余宽度收纳', () => {
     expect(css).not.toContain('@container workspace (max-width: 1180px)');
+    expect(declarations('.chain-editor-model-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
+    expect(declarations('.chain-editor-param-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 10rem), 1fr))');
     expect(declarations('.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body', '(min-width: 1024px)', css)['flex-direction']).toBe('column');
     expect(declarations('.agent-panel-docked .chain-editor-param-grid', '(min-width: 1024px)', css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 10rem), 1fr))');
     const count = '.agent-panel-docked .chain-editor-preview .generation-count-control';
@@ -259,6 +261,30 @@ describe('全局外观覆盖审计', () => {
       /(?<![\w:-])(?:dark:)?bg-(?:red|rose|emerald|green|amber|orange|violet|blue|indigo)-\d/.test(text));
     expect(conflicts.map(({ file, text }) => ({ file, text }))).toEqual([]);
   });
+  it('保存与恢复的绿色实底使用足够深的色阶，悬停不退回浅绿白字', () => {
+    const lowContrast = classes.filter(({ text }) => /(?:!text-white|\btext-white\b)/.test(text)
+      && /(?:^|[\s'"`!])(?:dark:)?(?:hover:)?!?bg-emerald-(?:500|600)(?:[\s/'"`]|$)/.test(text));
+    expect(lowContrast.map(({ file, text }) => ({ file, text }))).toEqual([]);
+    const controls = sources.find(item => item.file === 'components/DesignSystem.tsx')!.text;
+    expect(controls).toContain('bg-emerald-700 text-white hover:bg-emerald-800');
+  });
+  it('图片上的定位点、导入标记与拖入提示保留独立承托，不被中性分组清空', () => {
+    const overlays = [
+      ['components/chain/CharacterPositionStage.tsx', '定位点', /absolute flex h-7 w-7/, ['bg-white', 'bg-indigo-600']],
+      ['components/chain/FolderBatchImportModal.tsx', '重复提示', /absolute right-1\.5 top-1\.5 max-w-/, ['bg-gray-900/85', 'text-amber-300']],
+      ['components/ImageEditPanel.tsx', '拖入提示', /border-2 border-dashed border-white\/80/, ['bg-white/95', 'dark:bg-gray-900/95']],
+    ] as const;
+    for (const [file, label, pattern, colors] of overlays) {
+      const overlay = classes.find(item => item.file.replaceAll('\\', '/') === file && pattern.test(item.text));
+      expect(overlay, `${file} ${label}`).toBeTruthy();
+      expect(overlay!.text).toContain('appearance-media');
+      expect(overlay!.text).not.toContain('appearance-group');
+      for (const color of colors) expect(overlay!.text).toContain(color);
+    }
+    const libraryCopy = classes.find(item => item.file === 'components/PromptLibrary.tsx' && item.text.includes('IMAGE_CARD_ACTION_CLASS'));
+    expect(libraryCopy?.text).not.toContain('appearance-group');
+    expect(libraryCopy).toBeTruthy();
+  });
   it('全局背景连续，独立分组承载材质，作品预览不铺衬底', () => {
     const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
@@ -272,7 +298,7 @@ describe('全局外观覆盖审计', () => {
     expect(detailCss).not.toContain('.app-workspace::before');
     expect(declarations(`${root} .appearance-group:is(div, section, article, details)`, undefined, detailCss)['border-width']).toBe('0');
     const nested = declarations(`${root} :is(.app-sidebar, .appearance-surface, .appearance-panel, .appearance-group, .settings-dialog, .operation-dialog) .appearance-group`, undefined, detailCss);
-    expect(nested['background-color']).toContain('calc(var(--nai-global-opacity, 100%) * .18)');
+    expect(nested['background-color']).toBe('transparent');
     expect(nested['backdrop-filter']).toBe('none');
     parse(detailCss).walkRules(rule => {
       if (rule.selector.includes('appearance-media')) throw new Error('图片和画布衬底不能进入玻璃覆盖选择器');
@@ -351,6 +377,30 @@ describe('全局外观覆盖审计', () => {
       expect(themeContrast(document.documentElement.style.getPropertyValue('--nai-on-accent-600'), actionFill)).toBeGreaterThanOrEqual(4.5);
     }
   });
+  it('白天玻璃的辅助文字、提示和文字操作具有阅读对比，不再沿用浅灰及亮蓝', () => {
+    const detailCss = readFileSync('components/themeDetails.css', 'utf8');
+    const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']):not(.dark)";
+    expect(declarations(`${root} :where(.text-gray-300, .text-gray-400)`, undefined, detailCss).color).toBe('var(--color-gray-500)');
+    expect(declarations(`${root} :is(input, textarea)::placeholder`, undefined, detailCss)).toMatchObject({ color: 'var(--color-gray-700)', opacity: '1' });
+    expect(declarations(`${root} :is(button, a):not(:disabled)[class~='text-[var(--nai-accent)]']`, undefined, detailCss).color).toBe('var(--nai-accent-text-800)');
+    const icon = "html:root[data-theme-material='glass'] [data-appearance='control'][data-control-kind='icon'][data-tone='neutral']:not([data-active='true']):not([aria-pressed='true'])";
+    parse(detailCss).walkRules(rule => {
+      if (rule.selector !== icon) return;
+      expect((rule.parent as AtRule).params).toBe('utilities');
+      expect(rule.nodes.some(node => node.type === 'decl' && node.prop === 'background-color' && node.value === 'transparent' && node.important)).toBe(true);
+    });
+    const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
+    const palette = resolveThemePalette(preset.palette, false);
+    const variables = themePaletteVariables(preset.palette, false, true);
+    applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, ...preset }, false);
+    const opacity = preset.details!.light!.labEditorOpacity!;
+    for (const backdrop of ['#000000', '#ffffff']) {
+      const reading = mixThemeColor(palette.panel, backdrop, opacity);
+      for (const text of [palette.text, variables['--color-gray-500'], variables['--color-gray-700'], document.documentElement.style.getPropertyValue('--nai-accent-text-800')]) {
+        expect(themeContrast(text, reading), `${text} / ${reading}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
   it('所有设置中性分组共用薄透表面，选中状态和实色模式保留', () => {
     const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const translucent = "html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content";
@@ -400,7 +450,7 @@ describe('全局外观覆盖审计', () => {
     expect(missing).toEqual([]);
     const settings = sources.find(source => source.file === 'components/GlobalSettings.tsx')!.text;
     expect(settings).toMatch(/key=\{entry\.id\} data-active=\{active\} className=\{`appearance-group/);
-    expect(settings).toContain("safeMode ? 'bg-emerald-600 text-white'");
+    expect(settings).toContain("safeMode ? 'bg-emerald-700 text-white'");
     expect(settings).toMatch(/h-5 w-5 rounded-full bg-white shadow-sm/);
   });
   it('壁纸在独立底层柔化，页面底板透明且不对 body、作品或安全模式加滤镜', () => {
@@ -435,10 +485,13 @@ describe('全局外观覆盖审计', () => {
     expect(module.overflow).toBe('visible');
     expect(declarations('.lab-preview-stage', undefined, source)['backdrop-filter']).toBe('none');
     expect(declarations('.lab-preview-stage', undefined, source)['background-color']).toBeUndefined();
+    expect(declarations("html[data-theme-material='glass'] .lab-preview-stage", undefined, source)['background-color']).toBeUndefined();
+    expect(declarations("html[data-theme-material='glass']:not(.dark) .lab-preview-stage:has(.lab-preview-empty)", undefined, source)['background-color']).toContain('8%, transparent');
     expect(source).not.toContain('.lab-preview-image');
     const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
     expect(nav['background-color']).toBe('var(--color-indigo-600)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
+    expect(declarations(`${root} .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost`, undefined, source)).toMatchObject({ color: 'inherit', background: 'transparent' });
     expect(declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source)).toEqual(nav);
     const surface = declarations(`${root} .lab-editor-surface`, undefined, source);
     expect(surface['background-color']).toContain('transparent');
@@ -446,7 +499,7 @@ describe('全局外观覆盖审计', () => {
     expect(surface.padding).toBe('0');
     expect(surface.margin).toBe('.75rem auto calc(var(--spacing) * 36)');
     expect(surface.filter).toBeUndefined();
-    expect(surface['backdrop-filter']).toBe('none');
+    expect(surface['backdrop-filter']).toContain('blur(var(--nai-glass-blur');
     expect(declarations(`${root} .lab-editor-surface`, '(min-width: 768px)', source)['margin-bottom']).toBe('calc(var(--spacing) * 24)');
     expect(source).not.toContain('.app-shell');
     expect(declarations(`${root}.dark .chain-editor-workspace`, undefined, source)['background-color']).toBeUndefined();
@@ -457,6 +510,19 @@ describe('全局外观覆盖审计', () => {
       expect(code).toContain('<LabModuleSection');
       expect(code.match(/className="lab-editor-surface/g)).toHaveLength(1);
     }
+  });
+  it('默认明暗的辅助文字可读，导航与内容库标题不再使用过浅或过暗的字阶', () => {
+    const light = declarations("html[data-design-theme='nai-atelier']");
+    for (const shade of [400, 500]) expect(themeContrast(light[`--color-gray-${shade}`], light['--color-gray-100'])).toBeGreaterThanOrEqual(4.5);
+    const dark = declarations("html[data-design-theme='nai-atelier'].dark");
+    expect(themeContrast(dark['--color-gray-500'], dark['--color-gray-750'])).toBeGreaterThanOrEqual(4.5);
+    const groupLabel = classes.find(item => item.file === 'components/Layout.tsx' && item.text.includes('tracking-[0.16em]'));
+    expect(groupLabel?.text).toContain('text-gray-500 dark:text-gray-400');
+    const libraryLabel = classes.find(item => item.file === 'components/PromptLibrary.tsx' && item.text.includes('md:mb-2 md:block'));
+    expect(libraryLabel?.text).toContain('text-gray-500 dark:text-gray-400');
+    expect(libraryLabel?.text).not.toContain('md:text-gray-400');
+    expect(declarations('.generation-action-button').color).toBe('var(--nai-accent-text-800)');
+    expect(declarations('.generation-action-button__cost')).toMatchObject({ color: 'var(--nai-accent-text-800)', background: 'transparent' });
   });
   it('夜间只增强连续编辑面，输入文字在最亮壁纸上仍具备阅读对比度', () => {
     const source = readFileSync(resolve('components/themeDetails.css'), 'utf8');
@@ -601,9 +667,9 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(nested, undefined, detailCss)['backdrop-filter']).toBe('none');
     expect(declarations(nested, undefined, detailCss)['-webkit-backdrop-filter']).toBe('none');
     const button = "html[data-theme-material='glass'][data-control-style='filled'] [data-appearance='control'][data-tone='neutral']:not(input):not(select):not([data-active='true'])";
-    expect(declarations(button, undefined, detailCss)['background-color']).toContain('transparent');
+    expect(declarations(button, undefined, detailCss)['background-color']).toBe('transparent');
     expect(declarations(button, undefined, detailCss)['box-shadow']).not.toContain('--nai-glass-edge');
-    expect(declarations(button, undefined, detailCss)['box-shadow']).toContain('inset 0 1px');
+    expect(declarations(button, undefined, detailCss)['box-shadow']).toBe('none');
     expect(detailCss).toContain("[data-theme-material='glass'][data-motion='full']");
     const fallback = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-surface, .appearance-group, .appearance-reading-surface, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
     expect(declarations(fallback, '(prefers-reduced-transparency: reduce)', detailCss)['backdrop-filter']).toBe('none');
@@ -666,6 +732,32 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(`${hover} .mobile-gallery-frame img`, media, css).scale).toBe('1.035');
     expect(declarations(hover, undefined, css)).toEqual({});
     expect(declarations('.media-card:hover', undefined, css).transform).toBeUndefined();
+  });
+  it('磨砂标题优先于主题白底和文字映射，保留图标语义色及关闭后的普通底栏', () => {
+    const root = "html[data-gallery-frosted-caption='true'] .gallery-card-caption";
+    const expected = new Map([
+      [root, { background: 'transparent', color: 'white' }],
+      [`${root} :where(p, h2, h3, div, span, button)`, { color: 'inherit' }],
+      [`${root} .gallery-card-meta`, { color: 'rgb(255 255 255 / .78)' }],
+      [`${root} .gallery-card-badge`, { color: 'rgb(255 255 255 / .94)' }],
+      [`${root} .gallery-chain-status`, { color: '#fcd34d' }],
+    ]);
+    for (const [selector, props] of expected) {
+      const checked = new Set<string>();
+      parse(generatedCss).walkRules(rule => {
+        if (!rule.selectors.includes(selector)) return;
+        for (const node of rule.nodes) {
+          if (node.type !== 'decl' || !(node.prop in props)) continue;
+          expect(node.important, `${selector} ${node.prop} 需要覆盖未分层的主题映射`).toBe(true);
+          checked.add(node.prop);
+        }
+      });
+      expect([...checked].sort()).toEqual(Object.keys(props).sort());
+      expect(declarations(selector, undefined, css)).toMatchObject(props);
+    }
+    expect(declarations(`${root} :where(p, h2, h3, div, span, button, svg)`, undefined, css)).toEqual({});
+    expect(declarations(`${root}::before`, undefined, css).background).toContain('rgb(12 16 24');
+    expect(declarations("html[data-custom-palette='true']:not(.dark) :where(.bg-white, [class~='hover:bg-white']:hover, [class~='focus:bg-white']:focus, [class~='focus-within:bg-white']:focus-within)", undefined, css)['background-color']).toBe('var(--nai-white-surface)');
   });
   it('所有页面与组件的 JSX 类名没有固定像素字号或任意值圆角旁路', () => {
     const violations = classes.filter(item => /text-\[[\d.]+px\]|rounded(?:-[a-z]+)?-\[[\d.]+(?:px|rem)\]/.test(item.text));

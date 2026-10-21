@@ -3,6 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { applyThemeColors, normalizeThemePalettes, resolveThemePalette, themeAccentColors, themeContrast, themeForeground, themePaletteVariables } from '../../services/themePalette';
 
 describe('主题配色', () => {
+  it('夜间旧组件的灰色说明文字保留色相并达到可读对比，浅色仍使用预设次要文字', () => {
+    for (const dark of [
+      { panel: '#10283f', text: '#edf6ff', mutedText: '#b1c9df' },
+      { panel: '#352c25', text: '#f5e8d3', mutedText: '#b4a390' },
+    ]) {
+      const vars = themePaletteVariables({ dark }, true, true);
+      expect(themeContrast(vars['--color-gray-500'], dark.panel)).toBeGreaterThanOrEqual(4.8);
+      expect(vars['--color-gray-400']).toBe(dark.mutedText);
+    }
+    expect(themePaletteVariables({ light: { mutedText: '#233e56' } }, false, true)['--color-gray-500']).toBe('#233e56');
+    expect(themePaletteVariables(undefined, true, true)).toEqual({});
+  });
+  it('浅色次级正文在弹窗透光变暗后仍有足够对比', () => {
+    const light = { panel: '#f3f6fa', text: '#071e33', mutedText: '#233e56' };
+    const vars = themePaletteVariables({ light }, false, true);
+    expect(themeContrast(vars['--color-gray-600'], '#c7cace')).toBeGreaterThanOrEqual(4.5);
+  });
   it('只保留受支持的明暗颜色，缺失字段回退默认值', () => {
     const palette = normalizeThemePalettes({ light: { canvas: '#FFF4DD', text: 'red', customCss: 'url(https://example.invalid)' }, dark: null });
     expect(palette).toEqual({ light: { canvas: '#fff4dd' } });

@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { t } from '../services/i18n';
-import { prepareThemeBackground, themeBackgroundStyle, type ThemeBackground } from '../services/themeBackground';
-import { ToolbarButton, ToolbarSelect } from './DesignSystem';
+import { prepareThemeBackground, themeBackgroundStyle, type ThemeBackground, type BackgroundMode } from '../services/themeBackground';
+import { SegmentedControl, ToolbarButton, ToolbarSelect } from './DesignSystem';
 
-export const AppearanceBackgroundEditor: React.FC<{ background?: ThemeBackground; onChange: (background: ThemeBackground | undefined) => boolean }> = ({ background, onChange }) => {
+export const AppearanceBackgroundEditor: React.FC<{ background?: ThemeBackground; mode?: BackgroundMode; onModeChange?: (mode: BackgroundMode) => void; onReset?: () => void; onChange: (background: ThemeBackground | undefined) => boolean }> = ({ background, mode = 'light', onModeChange, onReset, onChange }) => {
   const input = useRef<HTMLInputElement>(null);
   const request = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => () => { request.current++; }, []);
+  useEffect(() => { request.current++; setBusy(false); setError(''); }, [mode]);
   const change = (value: ThemeBackground | undefined) => {
     setError(onChange(value) ? '' : '外观存储空间不足，请缩小背景或减少已保存的主题');
   };
@@ -22,12 +23,15 @@ export const AppearanceBackgroundEditor: React.FC<{ background?: ThemeBackground
       if (current === request.current) setError(reason instanceof Error ? reason.message : '无法读取背景图片，请检查文件');
     } finally { if (current === request.current) setBusy(false); }
   };
-  return <details className="mt-4 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+  return <details className="appearance-group mt-4 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
     <summary className="cursor-pointer text-xs font-bold text-gray-700 dark:text-gray-200">{t('工作区背景')}</summary>
+    {onModeChange && <div className="mt-3"><SegmentedControl ariaLabel={t('背景明暗版本')} options={[{ value: 'light', label: '浅色背景' }, { value: 'dark', label: '深色背景' }]} value={mode} onChange={onModeChange} />
+      <p className="mt-2 text-meta text-gray-500 dark:text-gray-400">{t('每个预设的明暗背景单独记住，重新应用预设不会覆盖。')}</p></div>}
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" aria-label={t('选择背景图片')} className="hidden" onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void upload(file); }} />
       <ToolbarButton disabled={busy} onClick={() => input.current?.click()}>{t(busy ? '正在处理背景…' : background ? '更换背景图片' : '选择背景图片')}</ToolbarButton>
-      {background && <ToolbarButton disabled={busy} onClick={() => change(undefined)}>{t('恢复默认背景')}</ToolbarButton>}
+      {background && <ToolbarButton disabled={busy} onClick={() => change(undefined)}>{t('移除背景图片')}</ToolbarButton>}
+      {onReset && <ToolbarButton disabled={busy} onClick={onReset}>{t('恢复默认背景')}</ToolbarButton>}
     </div>
     {background && <>
       <div aria-hidden="true" className="relative isolate mt-3 h-24 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--nai-canvas)' }}>

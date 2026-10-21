@@ -164,8 +164,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
             </div>
 
-            {/* Model and Resolution row (2 columns symmetric) */}
-            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* 模型与画幅按实际面板宽度排列。 */}
+            <div className="chain-editor-model-grid mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className={supportsEffort ? 'grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1' : 'flex min-w-0 flex-col gap-1'}>
                     <label className="col-span-2 text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("生成模型")}</label>
                     <select
@@ -290,14 +290,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             />
                         </div>
                         <div className="flex items-center justify-between text-micro text-gray-400">
-                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{t("1.0x Opus 免费基准（0点）")}</span>
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-400">{t("1.0x Opus 免费基准（0点）")}</span>
                             <span>{t("{0}x 官方封顶（{1}×{2}）", [activeRatioMax.maxScale.toFixed(2), activeRatioMax.width, activeRatioMax.height])}</span>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Generation parameters: Sampler, Steps, Seed (3 columns) */}
+            {/* 采样器、步数与 Seed 在窄面板中自然换行。 */}
             <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
                 <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("采样器")}</label>
@@ -339,7 +339,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <div className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between gap-2 font-medium">
+                    <div className="text-xs text-gray-500 dark:text-gray-500 flex flex-wrap items-center justify-between gap-2 font-medium">
                         <span>{t("随机种子")}</span>
                         <button
                             type="button"

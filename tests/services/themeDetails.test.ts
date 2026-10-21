@@ -50,18 +50,17 @@ describe('可分享的高级主题能力', () => {
     expect(resolveThemeDetails(preset.details, true)?.controlStyle).toBe('filled');
     for (const dark of [false, true]) {
       const details = resolveThemeDetails(preset.details, dark)!;
-      // 保留足够透底的菜单，防止示例再次退化为近乎不透明的灰板。
-      expect(details.panelOpacity).toBeLessThanOrEqual(.65);
+      // 导航轻透，独立面板略厚；材料清楚分层，不再以统一灰白底覆盖全部表面。
+      expect(details.panelOpacity).toBeLessThanOrEqual(.85);
       expect(details.toolbarOpacity).toBeLessThanOrEqual(.65);
-      expect(details.blur).toBeGreaterThanOrEqual(32);
+      expect(details.blur).toBeGreaterThanOrEqual(16);
+      expect(details.sidebarOpacity).toBeLessThan(details.panelOpacity!);
+      expect(details.toolbarOpacity).toBeLessThan(details.panelOpacity!);
       applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, ...preset }, dark);
       expect(document.documentElement.style.getPropertyValue('--nai-panel-opacity')).toBe(`${details.panelOpacity! * 100}%`);
     }
-    expect(resolveThemeDetails(preset.details, true)?.highlight).toBe(.14);
-    for (const mode of ['light', 'dark'] as const) for (const key of ['sidebar', 'toolbar', 'panel'] as const) {
-      const tint = preset.palette![mode]![key]!;
-      expect(tint.slice(1, 3)).toBe(tint.slice(3, 5)); expect(tint.slice(3, 5)).toBe(tint.slice(5, 7));
-    }
+    expect(resolveThemeDetails(preset.details, true)?.highlight).toBeLessThan(.4);
+    expect(preset.details?.globalOpacity).toBeUndefined();
     expect(appearanceValues(readAppearancePresetImport(serializeAppearancePresets([preset]))[0])).toEqual(appearanceValues(preset));
   });
   it('明暗参数逐字段继承，导入完整验证并保留分层材质和控件风格', () => {
@@ -70,7 +69,7 @@ describe('可分享的高级主题能力', () => {
     expect(resolveThemeDetails(details, false)).toMatchObject({ highlight: .5, controlShadow: .4, accentColor: '#006adc' });
     const preset = { ...BUILTIN_APPEARANCE_PRESET, details };
     expect(readAppearancePresetImport(serializeAppearancePresets([preset]))[0].details).toEqual(details);
-    for (const bad of [{ controlStyle: 'macOS' }, { accentColor: '#ffffff' }, { dark: { customCss: 'body{}' } }, { light: { opacity: .1 } }, { dark: { accentColor: 'url(x)' } }, { light: [] }, { dark: { dark: {} } }]) {
+    for (const bad of [{ controlStyle: 'macOS' }, { accentColor: '#ffffff' }, { dark: { customCss: 'body{}' } }, { light: { opacity: -.1 } }, { dark: { accentColor: 'url(x)' } }, { light: [] }, { dark: { dark: {} } }]) {
       expect(() => readAppearancePresetImport(JSON.stringify({ name: '非法覆盖', details: bad }))).toThrow();
     }
   });

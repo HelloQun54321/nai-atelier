@@ -227,7 +227,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
                   setDetail(current => current?.id === result.item.id ? result.item : current);
                   await load();
                 }} />
-              <button type="button" onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch w-full rounded-xl text-sm font-bold ${archived ? 'bg-emerald-600 text-white' : 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复到资料库") : t("归档")}</button>
+              <button type="button" onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch w-full rounded-xl text-sm font-bold ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复到资料库") : t("归档")}</button>
             </div>
           </div>
         </main>}

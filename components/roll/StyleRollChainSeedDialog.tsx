@@ -148,7 +148,7 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
         {error && <p role="alert" className="min-w-0 flex-1 text-xs text-red-500">{error}</p>}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
-          <ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || dictionaryLoading || !selected || !preview?.seed} onClick={() => void create()}>{t(busy ? '正在新建…' : '新建 Roll 记录')}</ToolbarButton>
+          <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy || dictionaryLoading || !selected || !preview?.seed} onClick={() => void create()}>{t(busy ? '正在新建…' : '新建 Roll 记录')}</ToolbarButton>
         </div>
       </footer>
     </div>

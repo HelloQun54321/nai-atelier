@@ -65,7 +65,7 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
           key={character.id} type="button" data-character-id={character.id}
           aria-label={t("定位角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id} disabled={!canEdit}
           title={t("角色 {0} · {1}（方向键微调）", [index + 1, character.prompt || '尚未填写'])}
-          className={`absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-600 text-white' : 'appearance-group border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
+          className={`appearance-media absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-600 text-white' : 'border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
           style={{ left: `clamp(14px, ${normalizeCharacterCoordinate(character.x, freeform) * 100}%, calc(100% - 14px))`, top: `clamp(14px, ${normalizeCharacterCoordinate(character.y, freeform) * 100}%, calc(100% - 14px))` }}
           onClick={() => setSelectedId(character.id)}
           onKeyDown={event => {

@@ -81,7 +81,7 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
       <div className="mt-4 text-xs font-semibold text-gray-500">{t("自定义标签")}</div>
       <div className="mt-2 flex flex-wrap gap-1.5">{tags.map(tag => <span key={tag} className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">{tag}<button type="button" aria-label={t("移除标签 {0}", [tag])} disabled={saving} onClick={() => setTags(previous => previous.filter(value => value !== tag))}><X className="h-3 w-3" /></button></span>)}</div>
       <input aria-label={t("添加标签")} value={newTag} disabled={saving} onChange={event => setNewTag(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTag(); } }} placeholder={t("添加标签，回车确认")} className={fieldClass} />
-      <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={saving} onClick={close}>{t("取消")}</ToolbarButton><ToolbarButton type="submit" disabled={saving || !name.trim()} className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 dark:!border-emerald-900 dark:!bg-emerald-950/40 dark:!text-emerald-300">{saving ? t("保存中…") : t("保存")}</ToolbarButton></div>
+      <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={saving} onClick={close}>{t("取消")}</ToolbarButton><ToolbarButton type="submit" disabled={saving || !name.trim()} className="!border-emerald-300 !bg-emerald-50 !text-emerald-700 dark:!border-emerald-900 dark:!bg-emerald-950/40 dark:!text-emerald-300">{saving ? t("保存中…") : t("保存")}</ToolbarButton></div>
     </form>
   </div>;
 };

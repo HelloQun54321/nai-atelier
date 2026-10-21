@@ -32,7 +32,7 @@ galleryHoverFloat: 布尔值，允许鼠标悬停时卡片轻抬。
 gallerySelectionFocus: 布尔值，选择后淡化其他卡片并聚焦。
 palette: {"light":{配色字段},"dark":{配色字段}}。
 details: {高级参数}。
-background: 可省略；只有用户提供实际图片数据时才填写 {image:"data:image/png;base64,...",fit:"cover"|"contain"|"tile",opacity:0～1,tileSize:32～1024整数}。也接受 JPEG／WebP 的 data URL，最大 1,000,000 字符；不得编造 base64 或添加远程地址。用户可在设置中自行上传图片、调整平铺与强度，然后随主题保存分享。
+background: 可省略；旧格式兼容字段，只有用户提供实际图片数据时才填写 {image:"data:image/png;base64,...",fit:"cover"|"contain"|"tile",opacity:0～1,tileSize:32～1024整数}。也接受 JPEG／WebP 的 data URL，最大 1,000,000 字符；不得编造 base64 或添加远程地址。当前设置中的图片按预设 ID 与浅色／深色独立保存在本端，重新应用预设不会覆盖，也不进入主题保存和导出；旧文件的 background 继续作为兼容回退并往返导出。
 
 light 和 dark 各自包含且仅包含下列七个六位十六进制颜色：
 canvas: 工作区背景。
@@ -61,9 +61,9 @@ chromeInset: 0～16，px 桌面玻璃侧栏／工具栏外留边；手机导航�
 material: "frosted" 或 "glass"；玻璃效果请选择 "glass"，并配合 surfaces: "translucent"。
 blur: 0～40，px 背景模糊。
 saturation: 100～200，% 背景饱和度。
-opacity: 0.55～1，表面不透明度，1 完全不透明；过高会挡住折射。
+opacity: 0～1，表面不透明度，1 完全不透明；过高会挡住折射，过低须检查文字对比度。
 globalOpacity: 0～1，可选全局不透明度，统一覆盖通用表面的分层值，嵌套填充按比例变薄；实验室编辑面仍单独使用 labEditorOpacity。支持共用／明暗覆盖，不设置则沿用旧分层值；不可通过 CSS opacity 让文字和作品一起变淡。
-sidebarOpacity / toolbarOpacity / panelOpacity: 各 0.55～1，分别控制侧栏、工具栏、弹窗，未填继承 opacity。
+sidebarOpacity / toolbarOpacity / panelOpacity: 各 0～1，分别控制侧栏、工具栏、弹窗，未填继承 opacity。
 labEditorOpacity: 0～1，独立控制实验室左侧连续编辑面，支持共用与 light/dark 覆盖；缺省深色 0.6、浅色为有效 panelOpacity / opacity 的一半。设置中使用百分比滑条，不改变侧栏、工具栏或右侧预览。
 borderOpacity: 0～1，边框强度。
 controlShadow: 0～1，填充式中性按钮阴影强度。

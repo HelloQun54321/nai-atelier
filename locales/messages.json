@@ -1,4 +1,9 @@
 {
+  "浅色背景": ["淺色背景", "Light background", "ライトの背景", "라이트 배경"],
+  "深色背景": ["深色背景", "Dark background", "ダークの背景", "다크 배경"],
+  "背景明暗版本": ["背景明暗版本", "Background appearance", "背景の明暗", "배경 모드"],
+  "移除背景图片": ["移除背景圖片", "Remove background image", "背景画像を削除", "배경 이미지 제거"],
+  "每个预设的明暗背景单独记住，重新应用预设不会覆盖。": ["每個預設的明暗背景單獨記住，重新套用預設不會覆蓋。", "Light and dark backgrounds are remembered per preset and kept when you reapply it.", "プリセットごとに明暗の背景を記憶し、再適用しても保持します。", "각 프리셋의 라이트/다크 배경을 따로 기억하며 다시 적용해도 유지합니다."],
   "在置顶窗选择风格串／收藏库／内容库，复制即可收集": ["在置頂窗選擇風格串／收藏庫／內容庫，複製即可收集", "Choose styles, images or prompts in the floating window, then copy to collect", "小窓でスタイル／画像／プロンプトを選び、コピーして収集", "플로팅 창에서 스타일/컬렉션/콘텐츠를 선택하고 복사하여 수집하세요"],
   "存入": ["存入", "Save to", "保存先", "저장 위치"],
   "已选中": ["已選中", "Selected", "選択中", "선택됨"],

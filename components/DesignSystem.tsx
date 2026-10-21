@@ -157,7 +157,7 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : tone === 'save'
-      ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-500 dark:border-emerald-500/40 dark:bg-emerald-600/90 dark:hover:bg-emerald-500'
+      ? 'border-emerald-600 bg-emerald-700 text-white hover:bg-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-700/90 dark:hover:bg-emerald-800'
     : tone === 'edit'
       ? 'border-purple-600 bg-purple-600 text-white hover:bg-purple-500 dark:border-purple-500/40 dark:bg-purple-600/90 dark:hover:bg-purple-500'
     : tone === 'favorite'

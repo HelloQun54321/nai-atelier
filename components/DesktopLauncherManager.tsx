@@ -122,7 +122,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 dark:text-gray-500">{status.launcherKind === 'exe' ? t("桌面应用:") : t("项目内启动脚本:")}</span>
                 {status.batExists ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                     <CheckCircle2 className="h-3.5 w-3.5 flex-none" />
                     {t("已就绪")}</span>
                 ) : (
@@ -133,7 +133,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 dark:text-gray-500">{t("图标快捷方式 (LNK):")}</span>
                 {status.shortcutExists ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
                     <CheckCircle2 className="h-3.5 w-3.5 flex-none" />
                     {t("已就绪")}</span>
                 ) : (

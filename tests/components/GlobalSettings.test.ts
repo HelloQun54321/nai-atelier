@@ -142,20 +142,27 @@ describe('GlobalSettings', () => {
     await screen.findByRole('alert');
   });
 
-  it('背景修改进入当前主题草稿，保存到共享库，并随默认外观清除', async () => {
+  it('明暗背景独立于主题原件，重新应用和往返切换预设仍然保留', async () => {
     const background = { image: 'data:image/png;base64,AAAA', fit: 'cover' as const, opacity: 1, tileSize: 128 };
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
     themeFixture.presets = [{ ...BUILTIN_APPEARANCE_PRESET, id: 'with-background', isBuiltin: false, name: '带背景', background }];
     render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
     await waitThemeLibrary();
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：带背景' }));
+    fireEvent.click(screen.getByText('工作区背景'));
     fireEvent.change(screen.getByLabelText('背景显示方式'), { target: { value: 'tile' } });
-    expect(changed.mock.lastCall?.[0].background).toEqual({ ...background, fit: 'tile' });
-    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
-    await waitFor(() => expect(themeFixture.presets?.[0].background?.fit).toBe('tile'));
+    expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].light).toEqual({ ...background, fit: 'tile' });
+    expect(screen.queryByRole('button', { name: '保存修改' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: '深色背景' }));
+    fireEvent.change(screen.getByLabelText('背景显示强度'), { target: { value: '40' } });
+    expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].dark).toEqual({ ...background, opacity: .4 });
+    fireEvent.click(screen.getByRole('button', { name: '应用外观预设：带背景' }));
+    expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].light?.fit).toBe('tile');
     fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
     expect(changed.mock.lastCall?.[0].background).toBeUndefined();
-    expect(themeFixture.presets?.[0].background?.fit).toBe('tile');
+    fireEvent.click(screen.getByRole('button', { name: '应用外观预设：带背景' }));
+    expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].dark?.opacity).toBe(.4);
+    expect(themeFixture.presets?.[0].background?.fit).toBe('cover');
   });
   it('另一浏览器读取工坊主题库，返回页面同步列表但保留本机当前外观', async () => {
     const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'shared', name: '共享主题', isBuiltin: false, accentColor: '#123456' };
@@ -626,6 +633,8 @@ describe('GlobalSettings', () => {
 
     const activeCard = container.querySelector('.atelier-theme-card');
     expect(activeCard).toBeTruthy();
+    expect(activeCard?.parentElement?.classList.contains('grid-cols-1')).toBe(true);
+    expect(activeCard?.parentElement?.classList.contains('sm:grid-cols-2')).toBe(false);
 
     // 初始状态下卡片底部色标为 #0ea5e9
     expect(activeCard?.textContent).toContain('#0ea5e9');
@@ -639,9 +648,9 @@ describe('GlobalSettings', () => {
     expect(activeCard?.textContent).toContain('#0ea5e9');
     expect(activeCard?.textContent).not.toContain('#6366f1');
 
-    const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview span[style*="background-color"]');
+    const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview [data-preview-part="action"]');
     expect(previewAccentBar).toBeTruthy();
-    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(14, 165, 233)');
+    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(11, 135, 191)');
     fireEvent.click(screen.getByRole('button', { name: '导出当前外观' }));
     await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
     const reader = new FileReader();

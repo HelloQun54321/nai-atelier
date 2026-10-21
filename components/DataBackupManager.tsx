@@ -251,7 +251,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                 type="button"
                 disabled={browsing}
                 onClick={handleSaveTargetDir}
-                className="min-h-9 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="min-h-9 rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
               >
                 {t("保存")}</button>
               <button
@@ -274,7 +274,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
               </div>
               <p className="mt-1 flex items-center gap-1 text-micro text-gray-400 dark:text-gray-500">
                 {status?.targetDirExists ? (
-                  <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
                     <CheckCircle2 className="h-3 w-3" />
                     {t("目录已就绪（含 ")}{backups.length} {t(" 个历史备份）")}</span>
                 ) : (

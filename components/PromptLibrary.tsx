@@ -47,6 +47,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
 import { PressRevealSurface } from './PressRevealSurface';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
@@ -663,7 +664,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               aria-label={t('复制「{0}」的英文提示词', [name])}
               title={t('复制英文提示词')}
               onClick={event => { event.stopPropagation(); void copyText(prompt, t('英文提示词')); }}
-              className="appearance-group mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-600 shadow transition hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300 md:h-8 md:w-8"
+              className={`inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}
             >
               <Copy className="h-4 w-4" />
             </button>
@@ -1103,7 +1104,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                                 ? 'border-amber-300 text-amber-600 dark:border-amber-800 dark:text-amber-400'
                                 : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}
                               data-candidate-tag-source={sourceOf(chip.tag)}>
-                              <span aria-hidden className={sourceOf(chip.tag) === 'user' ? 'text-emerald-600 dark:text-emerald-400' : sourceOf(chip.tag) === 'ai' ? 'text-indigo-500 dark:text-indigo-300' : 'text-gray-400'}>
+                              <span aria-hidden className={sourceOf(chip.tag) === 'user' ? 'text-emerald-700 dark:text-emerald-400' : sourceOf(chip.tag) === 'ai' ? 'text-indigo-500 dark:text-indigo-300' : 'text-gray-400'}>
                                 {sourceOf(chip.tag) === 'user' ? 'U' : sourceOf(chip.tag) === 'ai' ? 'A' : '·'}
                               </span>
                               {chip.tag}
@@ -1244,7 +1245,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
     {/* 分类沿用收藏库的二级侧栏样式：桌面为带图标与数量的白色选中项，手机横排。 */}
     <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60">
-      <p className="hidden md:mb-2 md:block md:px-2 md:text-meta md:font-bold md:text-gray-400">{t('提示词分类')}</p>
+      <p className="hidden text-gray-500 dark:text-gray-400 md:mb-2 md:block md:px-2 md:text-meta md:font-bold">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
         const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');

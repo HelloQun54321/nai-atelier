@@ -12,7 +12,7 @@ export type ThemePalettes = Partial<Record<'light' | 'dark', Partial<ThemePalett
 export const THEME_PALETTE_KEYS = ['canvas', 'sidebar', 'toolbar', 'panel', 'text', 'mutedText', 'border'] as const;
 export const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 export const DEFAULT_THEME_PALETTES: Record<'light' | 'dark', ThemePalette> = {
-  light: { canvas: '#f3f5fa', sidebar: '#fbfcff', toolbar: '#ffffff', panel: '#ffffff', text: '#171e2d', mutedText: '#6f7a90', border: '#b4bccf' },
+  light: { canvas: '#f3f5fa', sidebar: '#fbfcff', toolbar: '#ffffff', panel: '#ffffff', text: '#171e2d', mutedText: '#58667d', border: '#b4bccf' },
   dark: { canvas: '#0d0f14', sidebar: '#12151c', toolbar: '#12151c', panel: '#171b24', text: '#f0f2f8', mutedText: '#939db5', border: '#2f3647' },
 };
 
@@ -52,12 +52,12 @@ export const themeContrast = (first: string, second: string): number => {
 };
 export const themeForeground = (background: string): string => themeContrast('#ffffff', background) >= themeContrast('#000000', background) ? '#ffffff' : '#000000';
 
-// 保留色相，只在文字与面板无法辨认时向高对比端移动。
-const readableAccent = (accent: string, panel: string) => {
+// 保留色相，并给浅色选中底和透光材质留少量对比余量。
+const readableText = (accent: string, panel: string) => {
   const target = themeForeground(panel);
   for (let step = 0; step <= 20; step++) {
     const color = mixThemeColor(target, accent, step / 20);
-    if (themeContrast(color, panel) >= 4.5) return color;
+    if (themeContrast(color, panel) >= 4.8) return color;
   }
   return target;
 };
@@ -86,10 +86,11 @@ export const themePaletteVariables = (palettes: ThemePalettes | undefined, isDar
   };
   // 组件现有的中性色阶共同派生，避免只改变大面板而留下原来的输入框和文字。
   for (const [shade, weight] of [[50, 0], [100, .04], [200, .12], [300, .24], [400, .4], [500, .55], [600, .68], [700, .8], [750, .85], [800, .9], [850, .94], [900, .97], [950, 1]]) {
-    result[`--color-gray-${shade}`] = mixThemeColor(isDark ? palette.panel : palette.text, isDark ? palette.text : palette.panel, weight);
+    result[`--color-gray-${shade}`] = mixThemeColor(isDark ? palette.panel : palette.text, isDark ? palette.text : palette.panel, !isDark && shade === 600 ? .75 : weight);
   }
   result[isDark ? '--color-gray-100' : '--color-gray-900'] = palette.text;
   result[isDark ? '--color-gray-400' : '--color-gray-500'] = palette.mutedText;
+  if (isDark) result['--color-gray-500'] = readableText(result['--color-gray-500'], palette.panel);
   return result;
 };
 
@@ -104,6 +105,6 @@ export const applyThemeColors = (root: HTMLElement, palettes: ThemePalettes | un
   const panel = resolveThemePalette(palettes, isDark).panel;
   for (const [shade, color] of Object.entries(themeAccentColors(accent, isDark))) {
     root.style.setProperty(`--nai-on-accent-${shade}`, themeForeground(color));
-    root.style.setProperty(`--nai-accent-text-${shade}`, readableAccent(color, panel));
+    root.style.setProperty(`--nai-accent-text-${shade}`, readableText(color, panel));
   }
 };

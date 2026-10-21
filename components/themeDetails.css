@@ -1,4 +1,8 @@
 /* 高级主题接管共用控件与界面材质；作品、画布、语义色和触控底线保持原义。 */
+.atelier-theme-card { container-type: inline-size; }
+@container (min-width: 960px) {
+  .atelier-theme-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @layer theme-accessibility, theme-state;
 html[data-theme-details='true'] body {
   line-height: var(--nai-line-height, 1.5);
@@ -98,7 +102,7 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 /* 嵌套分组和普通控件只作薄填充，避免反复模糊、叠灰及影响 fixed 浮层定位。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-sidebar, .appearance-surface, .appearance-panel, .appearance-group, .settings-dialog, .operation-dialog) .appearance-group,
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-group:is(button, a, label, summary, code, pre) {
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) calc(var(--nai-global-opacity, 100%) * .18), transparent) !important;
+  background-color: transparent !important;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -121,10 +125,14 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   color: var(--color-gray-900);
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .appearance-reading-surface { color: var(--color-gray-100); }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main :is(.text-gray-400, .text-gray-500) { color: var(--color-gray-600); }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main :is(.text-gray-400, .text-gray-500) { color: var(--color-gray-700); }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .chain-editor-main :is(.text-gray-400, .text-gray-500, [class~='dark:text-gray-400'], [class~='dark:text-gray-500']) { color: var(--color-gray-300); }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-reading-surface :is(input, textarea)::placeholder { color: var(--color-gray-600); opacity: 1; }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-reading-surface :is(input, textarea)::placeholder { color: var(--color-gray-700); opacity: 1; }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .appearance-reading-surface :is(input, textarea)::placeholder { color: var(--color-gray-300); }
+/* 浅灰元信息与默认占位色在透光背景上容易消失，白天统一采用可读的次级文字色。 */
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']):not(.dark) :where(.text-gray-300, .text-gray-400) { color: var(--color-gray-500); }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']):not(.dark) :is(input, textarea)::placeholder { color: var(--color-gray-700); opacity: 1; }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']):not(.dark) :is(button, a):not(:disabled)[class~='text-[var(--nai-accent)]'] { color: var(--nai-accent-text-800); }
 /* 壁纸提供环境色；编辑区薄透承托，作品预览不铺衬底，透明区域直接透出背景。 */
 html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) { --nai-scrollbar-track: transparent; }
 .lab-preview-stage {
@@ -133,6 +141,19 @@ html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-ma
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+html[data-theme-material='glass'] .lab-preview-stage {
+  border: 1px solid color-mix(in srgb, var(--nai-panel-border) 32%, transparent);
+  border-radius: var(--nai-panel-radius, 22px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22);
+}
+html[data-theme-material='glass']:not(.dark) .lab-preview-stage:has(.lab-preview-empty) {
+  border-color: rgb(255 255 255 / .6);
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 8%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .4);
+}
+html[data-theme-material='glass'] :is(.generation-mode-nav, .workspace-mode-tabs) > button:not([aria-current='page']):not([aria-selected='true']) { color: var(--nai-segment-text); }
+html[data-theme-material='glass'] .prompt-tag-assist button > span { font-size: .75rem; }
+html[data-theme-material='glass'] .prompt-tag-assist button > span:last-child { font-size: .8125rem; }
 .lab-preview-empty { color: var(--color-gray-900); }
 .dark .lab-preview-empty { color: var(--color-gray-100); }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main {
@@ -149,10 +170,10 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent);
   border: 1px solid color-mix(in srgb, var(--nai-panel-border) 28%, transparent) !important;
   border-radius: var(--nai-panel-radius, 18px);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .12);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), inset 1px 0 0 rgb(255 255 255 / .15);
   overflow: visible;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
+  -webkit-backdrop-filter: blur(var(--nai-glass-blur, 22px)) saturate(var(--nai-glass-saturation, 135%));
+  backdrop-filter: blur(var(--nai-glass-blur, 22px)) saturate(var(--nai-glass-saturation, 135%));
 }
 /* 夜间只加深编辑面与字段，明亮壁纸仍留给面板外的空间。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .lab-editor-surface {
@@ -192,7 +213,7 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   background-color: var(--color-indigo-600);
   border-color: transparent;
 }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost { color: inherit; background: rgb(255 255 255 / .16); }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost { color: inherit; background: transparent; }
 html[data-theme-details='true'][data-theme-material='glass'] {
   --nai-glass-filter: blur(var(--nai-glass-blur, 24px)) saturate(var(--nai-glass-saturation, 170%));
   /* 反光只贴近玻璃边缘；整块低亮度灰渐变会被合成成横向色阶。 */
@@ -229,12 +250,12 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 }
 html[data-theme-details='true'][data-theme-material='glass'] .settings-navigation { --nai-glass-surface-reflection: none; background-color: color-mix(in srgb, var(--nai-sidebar-surface) calc(var(--nai-global-opacity, 100%) * .2), transparent) !important; }
 /* 文字密集的独立浮层略厚，窗口和导航仍使用各自的透明度。 */
-html[data-theme-details='true'][data-theme-material='glass'] .appearance-popover { --nai-layer-opacity: var(--nai-global-opacity, max(82%, var(--nai-panel-opacity, var(--nai-glass-opacity, 85%)))); }
+html[data-theme-details='true'][data-theme-material='glass'] .appearance-popover { --nai-layer-opacity: max(82%, var(--nai-global-opacity, var(--nai-panel-opacity, var(--nai-glass-opacity, 85%)))); }
 html[data-theme-material='glass'] [data-appearance='control'][data-tone='neutral'] {
   border-color: color-mix(in srgb, var(--nai-panel-border) 65%, transparent);
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-global-opacity, 65%), transparent);
-  background-image: linear-gradient(rgb(255 255 255 / calc(var(--nai-glass-highlight, .6) * .12)), transparent);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--nai-glass-highlight, .6) * .6)), 0 1px 3px rgb(0 0 0 / .04);
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
 }
 html[data-theme-material='glass'] :is(.app-sidebar, .settings-navigation) button { border-radius: min(var(--workspace-control-radius), 14px); }
 html[data-theme-material='glass'] .app-sidebar [aria-current] { background-color: color-mix(in srgb, var(--nai-accent) 14%, transparent); }
@@ -245,6 +266,15 @@ html[data-theme-material='glass'] .workspace-page-heading { padding-inline: max(
 html[data-theme-material='glass'] [data-appearance='control'][data-tone='primary'] {
   background-image: linear-gradient(rgb(255 255 255 / calc(var(--nai-glass-highlight, .3) * .28)), transparent 75%);
   box-shadow: var(--nai-glass-edge), 0 1px 3px rgb(0 0 0 / calc(var(--nai-control-shadow, .25) * .3));
+}
+/* 普通工具图标常态透明；在工具层覆盖旧的 !bg 辅助填充，语义主操作保留原义。 */
+@layer utilities {
+html:root[data-theme-material='glass'] [data-appearance='control'][data-control-kind='icon'][data-tone='neutral']:not([data-active='true']):not([aria-pressed='true']) {
+  background-color: transparent !important;
+  background-image: none;
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  box-shadow: none;
+}
 }
 html[data-theme-details='true'][data-theme-material='glass'] [data-appearance='control'][data-tone='neutral'][aria-expanded='true']:not([data-active='true']) {
   background-color: color-mix(in srgb, var(--nai-control-surface, var(--nai-panel-solid-surface)) 90%, var(--nai-accent));
@@ -276,9 +306,10 @@ html[data-control-style='filled'] [data-appearance='control'][data-tone='neutral
 html[data-control-style='filled'].dark [data-appearance='control'][data-tone='neutral']:not(input):not(select):not([data-active='true']) { color: var(--color-gray-100); }
 html[data-theme-material='glass'][data-control-style='filled'] [data-appearance='control'][data-tone='neutral']:not(input):not(select):not([data-active='true']),
 html[data-theme-material='glass'][data-control-style='filled'] :is(.appearance-popover, .mobile-sheet) button[aria-pressed='false'] {
-  background-color: color-mix(in srgb, var(--nai-control-surface) calc(var(--nai-global-opacity, var(--nai-glass-opacity, 85%)) * .6), transparent);
-  background-image: var(--nai-glass-control-sheen);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--nai-glass-highlight, .3) * .2));
+  background-color: transparent;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
 }
 html[data-control-style='filled'] :is(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']), select, textarea) {
   background-color: color-mix(in srgb, var(--nai-canvas) 55%, var(--nai-panel-solid-surface));
@@ -287,7 +318,7 @@ html[data-control-style='filled'] :is(input:not([type='range']):not([type='color
 }
 /* 子控件沿用所在玻璃的背景颜色，不再用实色把透光层盖回去。 */
 html[data-theme-material='glass'][data-control-style='filled'] :is(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']), select, textarea) {
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) calc(var(--nai-global-opacity, var(--nai-glass-opacity, 85%)) * .55), transparent);
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 12%, transparent);
   background-image: none;
 }
 html[data-control-style='filled'] :is(input, select, textarea):focus-visible {
@@ -371,7 +402,7 @@ html[data-control-style='filled'] :is(button, a, input, select, textarea, [tabin
 }
 @media (hover: hover) and (pointer: fine) {
   html[data-theme-material='glass'][data-control-style='filled'] [data-appearance='control'][data-tone='neutral']:not(:disabled):not([data-active='true']):is(:hover, [aria-expanded='true']) {
-    background-color: color-mix(in srgb, var(--nai-control-surface) 75%, transparent);
+    background-color: color-mix(in srgb, var(--nai-panel-solid-surface) 14%, transparent);
     box-shadow: inset 0 1px 0 rgb(255 255 255 / calc(var(--nai-glass-highlight, .3) * .5));
   }
 }
