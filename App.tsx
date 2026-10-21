@@ -8,6 +8,9 @@ import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
+import { useAgentCommand } from './services/agentCommands';
+import { listGenerationSeriesSessions, stopGenerationSeriesSession } from './services/generationSeries';
+import { cancelGenerationQueue, getGenerationQueue, setGenerationQueuePaused } from './services/generationTask';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { LAB_DEFAULT_PARAMS, mergePromptSections, resolvePromptSections } from './services/labWorkspace';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
@@ -22,6 +25,7 @@ import {
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
+import { prepareCollectedPrompt } from './services/collectedPrompt';
 import { stableOperationId } from './services/operationId';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
@@ -57,6 +61,95 @@ const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => 
 const App = () => {
   useLanguage();
   const confirmAction = useConfirmDialog();
+  const agentViewScope = () => document.querySelector<HTMLElement>('[data-agent-view]');
+  const agentApiKey = () => { try { return (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim(); } catch { return ''; } };
+  useAgentCommand({
+    name: 'get_generation_status', label: '读取生成队列', description: '读取当前工坊所有正在执行或等待的生成任务，含范围、状态、真实进度、已保存历史 ID 与模型；同时读取同 Key 的后端队列。不返回 Key 或任务令牌。', parameters: { type: 'object', properties: {} }, readOnly: true,
+    scope: agentViewScope,
+    execute: async () => {
+      const sessions = listGenerationSeriesSessions().map(({ scope, session }) => ({
+        scope, state: session.state, queued: session.queued, stopped: session.stopped,
+        progress: session.progress, model: session.model, operation: session.operation,
+        historyIds: session.historyIds, awaiting: session.awaiting || null,
+        connectionError: session.connectionError || '', accountingFailed: session.accountingFailed === true,
+      }));
+      const key = agentApiKey();
+      let queue: Record<string, unknown> | { error: string } | null = null;
+      if (key) {
+        try {
+          const value = await getGenerationQueue(key);
+          queue = {
+            intervalSeconds: value.intervalSeconds, busy: value.busy, completed: value.completed, total: value.total,
+            paused: value.paused, pausing: value.pausing,
+            waiting: Array.isArray(value.waiting) ? value.waiting.map(item => ({ position: item.position, total: item.total, completed: item.completed })) : [],
+          };
+        } catch (error) { queue = { error: error instanceof Error ? error.message : '队列状态读取失败' }; }
+      }
+      return { sessions, queue };
+    },
+  });
+  useAgentCommand({
+    name: 'control_generation', label: '控制生成任务', description: '暂停、继续或取消当前生成队列。暂停与继续按同一 NovelAI Key 作用于整队；取消按同一 Key 停止当前与等待任务，只停止后续图片，已提交图片仍会保存。', parameters: { type: 'object', properties: { action: { enum: ['pause', 'resume', 'cancel'] }, scope: { type: 'string' } }, required: ['action'] },
+    scope: agentViewScope,
+    execute: async args => {
+      const action = String(args.action || '');
+      if (!['pause', 'resume', 'cancel'].includes(action)) throw new Error('请选择暂停、继续或取消');
+      if (action === 'pause' || action === 'resume') {
+        const key = agentApiKey();
+        if (!key) throw new Error('请先在全局设置中配置 NovelAI API Key');
+        await setGenerationQueuePaused(key, action === 'pause');
+        return { action, state: action === 'pause' ? 'paused' : 'resumed', note: '暂停与继续按同一 NovelAI Key 作用于整队；当前图片会先保存。' };
+      }
+      const sessions = listGenerationSeriesSessions().filter(item => !args.scope || item.scope === args.scope);
+      const key = agentApiKey();
+      if (!key) throw new Error('请先在全局设置中配置 NovelAI API Key');
+      if (sessions.length > 1 && !args.scope) throw new Error('有多个生成任务，请先读取状态并指定 scope');
+      for (const item of sessions) stopGenerationSeriesSession(item.session);
+      const queue = await cancelGenerationQueue(key);
+      return { action, cancelled: queue.cancelled ?? 0, results: sessions.map(item => ({ scope: item.scope, state: 'cancelling' })), note: '取消按同一 NovelAI Key 停止当前与等待任务；只停止后续图片，已提交的图片仍由后台保存。' };
+    },
+  });
+  useAgentCommand({
+    name: 'open_settings', label: '打开全局设置', description: '打开全局设置窗口，可定位外观、生成、NovelAI、助手或数据维护分区。', parameters: { type: 'object', properties: { section: { enum: ['appearance', 'generation', 'novelai', 'agent', 'maintenance'] } } }, readOnly: true,
+    scope: agentViewScope,
+    execute: args => {
+      const section = ['appearance', 'generation', 'novelai', 'agent', 'maintenance'].includes(String(args.section)) ? String(args.section) : undefined;
+      window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: section ? { section } : {} }));
+      return { opened: true, section: section || 'home' };
+    },
+  });
+  useAgentCommand({
+    name: 'inspect_image_tags', label: '反推图片 Tag', description: '对项目图片或助手已登记的本机图片做本地反推，返回 Danbooru Tag、置信度与中文对照。需要电脑端反推模型已就绪。', parameters: { type: 'object', properties: { source: { enum: ['project', 'local'] }, kind: { enum: ['history', 'inspiration', 'vibe', 'reference', 'chain'] }, id: { type: 'string' }, path: { type: 'string' }, threshold: { type: 'number' }, characterThreshold: { type: 'number' }, model: { type: 'string' } }, required: ['source'] }, readOnly: true,
+    scope: agentViewScope,
+    execute: async args => {
+      const [{ imageTaggerService }, { promptAgentService }] = await Promise.all([import('./services/imageTaggerService'), import('./services/promptAgent')]);
+      let blob: Blob;
+      if (args.source === 'local') {
+        blob = await promptAgentService.getLocalImage(String(args.path || ''));
+      } else {
+        const bases: Record<string, string> = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
+        const kind = String(args.kind || ''), id = String(args.id || '');
+        const base = bases[kind];
+        if (!base || !id) throw new Error('请提供项目图片类型和 ID');
+        const itemResponse = await fetch(`/api/${base}/${encodeURIComponent(id)}`, { cache: 'no-store' });
+        if (!itemResponse.ok) throw new Error('读取项目图片详情失败');
+        const payload = await itemResponse.json();
+        const item = payload.item || payload;
+        const imagePath = kind === 'chain' ? item.previewImage : item.imageUrl || item.originalImageUrl || `/api/${base}/${encodeURIComponent(id)}/image`;
+        if (typeof imagePath !== 'string' || !imagePath) throw new Error('该项目资料没有可反推的图片');
+        const imageResponse = await fetch(imagePath, { cache: 'no-store' });
+        if (!imageResponse.ok) throw new Error('读取项目图片失败');
+        blob = await imageResponse.blob();
+      }
+      if (!/^image\/(png|jpeg|webp)$/.test(blob.type)) throw new Error('反推只支持 PNG、JPEG 和 WebP 图片');
+      const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1];
+      return imageTaggerService.tagFile(new File([blob], `agent-image.${extension}`, { type: blob.type }), {
+        threshold: typeof args.threshold === 'number' ? args.threshold : undefined,
+        characterThreshold: typeof args.characterThreshold === 'number' ? args.characterThreshold : undefined,
+        model: typeof args.model === 'string' ? args.model : undefined,
+      });
+    },
+  });
   useEffect(() => {
     // 各列表已自行恢复滚动，避免浏览器在 popstate 后再用历史旧值覆盖。
     const previous = window.history.scrollRestoration;
@@ -174,13 +267,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'content-library', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
+      if (['list', 'characters', 'content-library', 'prompts', 'content-roll', 'content-roll-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'playground', 'roll'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'content-library', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'content-library', 'prompts', 'content-roll', 'content-roll-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -812,6 +905,11 @@ const App = () => {
           section={contentLibrarySection}
           onSectionChange={setContentLibrarySection}
           active={view === 'content-library'}
+          onCapture={async (text, name, category) => {
+            const data = prepareCollectedPrompt(text, name, category);
+            await createLibraryChain(data.name, '', data.type, data);
+            notify(t(category ? '已存入内容库' : '已存入组合库'));
+          }}
           rollOpen={contentRollOpen}
           onRollOpenChange={open => {
             if (open) { ensurePlayground(); keepViewMounted('playground'); }

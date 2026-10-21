@@ -138,6 +138,20 @@ export class GenerationTasks {
     task.expiresAt = this.now() + this.idleMs;
     return task;
   }
+  /** 当前队列的租约令牌只供服务端路由取消在途任务，不进入普通状态快照。 */
+  currentToken(key) {
+    this.prune();
+    return this.tasks.get(key)?.token || '';
+  }
+  /** 按 Key 取消当前与全部等待项；用于同一工坊跨标签页的明确取消。 */
+  cancelAll(key) {
+    this.prune();
+    const tokens = [this.currentToken(key), ...(this.waiting.get(key) || []).map(task => task.token)].filter(Boolean);
+    for (const token of tokens) {
+      try { this.cancel(key, token); } catch { /* 已被其他入口取消的项不重复建立终态。 */ }
+    }
+    return { cancelled: tokens.length, ...this.snapshot(key) };
+  }
   // 明确取消某个 token；未知 token 报过期且不建立墓碑，不影响其他任务。在途与待保存图片不提前放行。
   cancel(key, token) {
     this.prune();

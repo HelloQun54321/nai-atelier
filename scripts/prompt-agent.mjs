@@ -2183,6 +2183,7 @@ export class PromptAgentService {
       if (action === 'grant_local_image_folder') actionResult = await this.localImages.grant({ sessionId: confirmation.sessionId, keyHash: project.keyHash || '' }, input.payload.directory, input.payload.access, input.payload.create === true);
       else if (action === 'delete_chain' && resourceId) await project.requestJson(`/api/chains/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_inspiration' && resourceId) await project.requestJson(`/api/inspirations/${encodedId}`, { method: 'DELETE' });
+      else if (action === 'delete_inspiration_board' && resourceId) await project.requestJson(`/api/inspiration-boards/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
       else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
@@ -2891,6 +2892,41 @@ export class PromptAgentService {
       if (!isProjectImagePath(path)) throw new Error('该项目资料没有可读取的图片');
       return project.requestBuffer(path, MAX_AGENT_IMAGE_BYTES);
     };
+    /** 页面只在真实工作区里执行已登记的命令；先导航并等待命令注册，避免把旧页面当作目标。 */
+    const runPageCommand = async (command, args, view) => {
+      if (!project?.requestUI) throw new Error('当前运行不支持页面操作');
+      if (view) {
+        // 已在目标页面时不重复导航，避免打断当前筛选、详情或滚动位置。
+        const current = await project.requestUI({ action: 'read', limit: 4, permissionMode: this.config.permissionMode });
+        if (current?.view !== view || !current?.commands?.some(item => item.name === command)) await project.requestUI({ action: 'navigate', view, permissionMode: this.config.permissionMode });
+      }
+      for (let round = 0; round < 3; round++) {
+        let page;
+        for (let attempt = 0; attempt < 40; attempt++) {
+          page = await project.requestUI({ action: 'read', limit: 12, permissionMode: this.config.permissionMode });
+          if (page?.commands?.some(item => item.name === command)) break;
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+        if (!page?.commands?.some(item => item.name === command)) throw new Error(`当前页面没有「${command}」操作，请先打开对应页面后重试`);
+        try {
+          return await project.requestUI({ action: 'command', command, args, snapshotId: page.snapshotId, permissionMode: this.config.permissionMode });
+        } catch (error) {
+          if (round === 2 || !/页面已变化/.test(error instanceof Error ? error.message : '')) throw error;
+          await new Promise(resolve => setTimeout(resolve, 120));
+        }
+      }
+      throw new Error('页面状态持续变化，暂时无法执行；请稍后重试');
+    };
+    const assetFromLocal = async (endpoint, path, name, fallback) => {
+      const image = await this.localImages.read(localScope, path);
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType)) throw new Error('只支持 PNG、JPEG 和 WebP 图片作为项目资产');
+      const mimeType = image.mimeType;
+      const result = await readProject(endpoint, { method: 'POST', body: {
+        name: text(name).trim().slice(0, 100) || `${fallback} ${Date.now()}`,
+        imageData: `data:${mimeType};base64,${image.buffer.toString('base64')}`,
+      } });
+      return { result, image };
+    };
     return [
       {
         name: 'request_local_image_folder_access', label: '确认本地图片目录', description: '标准权限首次向电脑目录写图片时确认用途，确认后同一对话与 Key 可继续保存；没有计时失效。读取图片直接使用 list/show/inspect 工具，不要求目录确认。完全访问权限自动允许目录读写。create=true 可以创建目标目录。',
@@ -2981,7 +3017,7 @@ export class PromptAgentService {
         execute: async () => ({ content: jsonText({
           model: { imageInput: Boolean(modelInfo?.imageInput), imageInputStatus: modelInfo?.capabilityDetection?.imageInput === 'unknown' ? 'unknown' : modelInfo?.imageInput ? 'supported' : 'unsupported', separateVisionModel: false },
           localTime: true, displayProjectImages: Boolean(project?.requestJson), projectDataAvailable: Boolean(project?.requestJson),
-          livePage: { available: Boolean(project?.requestUI), readTool: 'read_current_page', operateTool: 'operate_current_page', imageTool: 'inspect_current_page_image', actions: ['前景弹窗与菜单', '读写普通设置', '点击、填写、勾选、滚动、悬停', '标记区域的拖动与双击', '暂存原图并粘贴到上传入口', '读取全局通知和导出产物'], canvasCommands: ['get_image_edit_state', 'edit_image_canvas'], scope: '发起任务的工坊浏览器标签页，不包含电脑其他应用' },
+          livePage: { available: Boolean(project?.requestUI), readTool: 'read_current_page', operateTool: 'operate_current_page', imageTool: 'inspect_current_page_image', actions: ['前景弹窗与菜单', '读写普通设置', '点击、填写、勾选、滚动、悬停', '标记区域的拖动与双击', '暂存原图并粘贴到上传入口', '读取全局通知和导出产物', '读取与控制生成队列', '发起 Roll、补齐与保存候选', '生成画师样张', '反推图片 Tag', '打开全局设置'], canvasCommands: ['get_image_edit_state', 'edit_image_canvas'], scope: '发起任务的工坊浏览器标签页，不包含电脑其他应用' },
           toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '所有工具已注册，直接调用对应工具；分组仅用于查找，不是权限档位' },
           permissionMode: this.publicConfig().permissionMode,
           localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片', '把本地图片、JSON、Vibe 或目录接入上传入口', '把实际图片、JSON、Vibe、ZIP 导出保存到指定目录'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
@@ -3313,18 +3349,26 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_chain', label: '新建风格串或角色', description: '在项目中创建风格串或自定义角色。type为style或character。',
-        parameters: Type.Object({ type: Type.Union([Type.Literal('style'), Type.Literal('character')]), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
+        name: 'create_chain', label: '新建风格串、角色或内容库条目', description: '在项目中创建风格串、自定义角色或六类内容库条目。type 为 style、character、appearance、wardrobe、pose、expression、scene、camera；内容库条目也可使用 create_prompt_library_item。',
+        parameters: Type.Object({ type: Type.Union(['style', 'character', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].map(value => Type.Literal(value))), name: Type.String(), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()), variableValues: Type.Optional(Type.Any()), guestHidden: Type.Optional(Type.Boolean()), coverHistoryId: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          const body = { id: operationId(['create_chain', args]), type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: { subject: text(args.subjectPrompt) } };
+          const body = { id: operationId(['create_chain', args]), type: args.type, name: text(args.name).slice(0, 160), description: text(args.description).slice(0, 1000), basePrompt: text(args.basePrompt), negativePrompt: text(args.negativePrompt), tags: (args.tags || []).slice(0, 40).map(value => text(value).slice(0, 80)), modules: Array.isArray(args.modules) ? sanitizeDraft({ modules: args.modules, params: {} }).modules : [], params: args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : undefined, variableValues: args.variableValues && typeof args.variableValues === 'object' ? structuredClone(args.variableValues) : {}, guestHidden: args.guestHidden === true };
+          if (typeof args.subjectPrompt === 'string') body.variableValues = { ...body.variableValues, subject: text(args.subjectPrompt) };
+          if (args.coverHistoryId) {
+            if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+            const item = await findHistory(text(args.coverHistoryId).slice(0, 200));
+            if (!item) throw new Error('找不到指定的生成历史');
+            const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+            body.previewImage = `data:${['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png'};base64,${image.buffer.toString('base64')}`;
+          }
           const result = await readProject('/api/chains', { method: 'POST', body });
           changed('chains');
           return { content: jsonText({ ok: true, id: result.id, name: body.name }), details: result };
         },
       },
       {
-        name: 'update_chain', label: '更新风格串或角色', description: '更新已有风格串或自定义角色的业务字段。id必须来自项目搜索。',
-        parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()) }),
+        name: 'update_chain', label: '更新风格串、角色或内容库条目', description: '更新已有风格串、自定义角色或内容库条目的业务字段。id必须来自项目搜索；封面可用 coverHistoryId 直接指定历史图。',
+        parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), description: Type.Optional(Type.String()), basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String())), modules: Type.Optional(Type.Array(Type.Object({ name: Type.String(), content: Type.String(), isActive: Type.Optional(Type.Boolean()), position: Type.Optional(Type.Union([Type.Literal('pre'), Type.Literal('post')])) }))), params: Type.Optional(Type.Any()), variableValues: Type.Optional(Type.Any()), guestHidden: Type.Optional(Type.Boolean()), coverHistoryId: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const currentValue = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
           const current = currentValue.item || currentValue;
@@ -3332,7 +3376,8 @@ export class PromptAgentService {
           const body = {};
           for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
           if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 40).map(value => text(value).slice(0, 80));
-          if (typeof args.subjectPrompt === 'string') body.variableValues = { ...(current.variableValues || {}), subject: text(args.subjectPrompt) };
+          if (typeof args.subjectPrompt === 'string' || args.variableValues && typeof args.variableValues === 'object') body.variableValues = { ...(current.variableValues || {}), ...(args.variableValues && typeof args.variableValues === 'object' ? args.variableValues : {}), ...(typeof args.subjectPrompt === 'string' ? { subject: text(args.subjectPrompt) } : {}) };
+          if (typeof args.guestHidden === 'boolean') body.guestHidden = args.guestHidden;
           if (Array.isArray(args.modules)) body.modules = sanitizeDraft({ modules: args.modules, params: {} }).modules;
           if (args.params && typeof args.params === 'object') {
             const merged = { ...(current.params || {}), ...args.params };
@@ -3341,6 +3386,14 @@ export class PromptAgentService {
             }
             body.params = sanitizeParams(merged);
           }
+          if (args.coverHistoryId) {
+            if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+            const item = await findHistory(text(args.coverHistoryId).slice(0, 200));
+            if (!item) throw new Error('找不到指定的生成历史');
+            const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+            body.previewImage = `data:${['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png'};base64,${image.buffer.toString('base64')}`;
+          }
+          if (!Object.keys(body).length) throw new Error('没有要修改的字段');
           await readProject(`/api/chains/${encodeURIComponent(args.id)}`, { method: 'PUT', body });
           changed('chains');
           return { content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body };
@@ -3547,8 +3600,16 @@ export class PromptAgentService {
       },
       {
         name: 'navigate_view', label: '切换项目页面', description: '完成当前任务后切换到指定项目页面。',
-        parameters: Type.Object({ view: Type.Union([Type.Literal('list'), Type.Literal('characters'), Type.Literal('prompts'), Type.Literal('library'), Type.Literal('aitag'), Type.Literal('danbooru'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('playground'), Type.Literal('roll')]) }),
+        parameters: Type.Object({ view: Type.Union([Type.Literal('list'), Type.Literal('characters'), Type.Literal('prompts'), Type.Literal('content-library'), Type.Literal('content-roll'), Type.Literal('content-roll-library'), Type.Literal('library'), Type.Literal('aitag'), Type.Literal('danbooru'), Type.Literal('pixiv'), Type.Literal('codex'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('footprint'), Type.Literal('playground'), Type.Literal('roll')]) }),
         execute: async (_id, args) => apply('navigate_view', { view: args.view }),
+      },
+      {
+        name: 'open_settings', label: '打开全局设置', description: '打开全局设置窗口，可定位外观、生成、NovelAI、助手或数据维护分区；不能读取或填写 API Key。',
+        parameters: Type.Object({ section: Type.Optional(Type.Union([Type.Literal('appearance'), Type.Literal('generation'), Type.Literal('novelai'), Type.Literal('agent'), Type.Literal('maintenance')])) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('open_settings', { ...(args.section ? { section: args.section } : {}) });
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
       },
       {
         name: 'request_clear_mobile_cache', label: '准备清空手机缓存', description: '请求清空当前设备可再生成的手机缩略图缓存，不影响电脑原图和历史。必须确认。',
@@ -3701,8 +3762,226 @@ export class PromptAgentService {
           return { content: jsonText({ ok: result.accepted && result.result?.success !== false, confirmed: result.accepted, result: result.result, ...(displayImages.length ? { displayImages } : {}) }), details: result.result };
         },
       },
+      {
+        name: 'get_generation_status', label: '读取生成队列', description: '读取当前工坊正在执行或等待的生成任务，含范围、状态、真实进度、已保存历史 ID、模型与暂停状态；不返回 Key。',
+        parameters: Type.Object({}),
+        execute: async () => {
+          const page = await runPageCommand('get_generation_status', {});
+          return { content: jsonText(page?.result ?? { sessions: [], queue: null }), details: page?.result };
+        },
+      },
+      {
+        name: 'control_generation', label: '控制生成任务', description: '暂停、继续或取消当前生成队列。暂停、继续与取消都按同一 Key 作用于整队；取消只停止后续图片，已提交图片仍会保存。多个本标签页任务时需先读取状态并指定 scope。',
+        parameters: Type.Object({ action: Type.Union([Type.Literal('pause'), Type.Literal('resume'), Type.Literal('cancel')]), scope: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('control_generation', { action: args.action, ...(args.scope ? { scope: text(args.scope).slice(0, 200) } : {}) });
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'get_roll_state', label: '读取 Roll 串', description: '读取当前 Roll 串记录、当前轮候选、已出图候选与生成状态。发起或补齐前先读取。',
+        parameters: Type.Object({}),
+        execute: async () => {
+          const page = await runPageCommand('get_roll_state', {}, 'roll');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'run_roll_round', label: '发起 Roll 一轮', description: '在当前 Roll 串记录中抽取一轮有限候选并保存；generate=true 时按当前权限直接生成或等待页面费用确认。用户明确要求 Roll 时才调用，count 默认 1，最多 24。',
+        parameters: Type.Object({ count: Type.Optional(Type.Integer({ minimum: 1, maximum: 24 })), generate: Type.Optional(Type.Boolean()), sampledOnly: Type.Optional(Type.Boolean()) }),
+        execute: async (_id, args) => {
+          if (args.generate !== false && this.config.permissionMode === 'read_only') throw new Error('当前为只读权限，不能生成图片');
+          const page = await runPageCommand('run_roll_round', { count: clamp(args.count, 1, 24, 1), generate: args.generate !== false, ...(typeof args.sampledOnly === 'boolean' ? { sampledOnly: args.sampledOnly } : {}), agentPermissionMode: this.config.permissionMode }, 'roll');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'generate_roll_pending', label: '补齐 Roll 候选', description: '为当前轮尚未出图的候选发起生成。ids 省略时使用本轮全部未出图候选；最多 24 张。',
+        parameters: Type.Object({ ids: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('generate_roll_pending', { ...(Array.isArray(args.ids) ? { ids: args.ids.slice(0, 24).map(value => text(value).slice(0, 200)) } : {}), agentPermissionMode: this.config.permissionMode }, 'roll');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'save_roll_candidate', label: '保存 Roll 候选为风格串', description: '把已经出图的 Roll 候选保存为风格串。candidateIds 来自 get_roll_state；省略时保存当前选中候选。单次最多 8 个，更多候选分批继续。',
+        parameters: Type.Object({ candidateIds: Type.Optional(Type.Array(Type.String(), { maxItems: 8 })) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('save_roll_candidate', { ...(Array.isArray(args.candidateIds) ? { candidateIds: args.candidateIds.slice(0, 8).map(value => text(value).slice(0, 200)) } : {}), agentPermissionMode: this.config.permissionMode }, 'roll');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'get_artist_sample_status', label: '读取画师样张状态', description: '读取指定画师与样张包当前的生成、保存、失败或取消状态。',
+        parameters: Type.Object({ tag: Type.String(), pack: Type.Optional(Type.Union([Type.Literal('v45'), Type.Literal('v5')])) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('get_artist_sample_status', { tag: text(args.tag).slice(0, 200), pack: args.pack || 'v45' }, 'library');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'generate_artist_sample', label: '生成或补充画师样张', description: '为指定画师生成样张并归档。用户明确要求补充或重新生成样张时调用；按当前权限直接生成或等待页面费用确认。',
+        parameters: Type.Object({ tag: Type.String(), pack: Type.Optional(Type.Union([Type.Literal('v45'), Type.Literal('v5')])), regenerate: Type.Optional(Type.Boolean()) }),
+        execute: async (_id, args) => {
+          const page = await runPageCommand('generate_artist_sample', { tag: text(args.tag).slice(0, 200), pack: args.pack || 'v45', regenerate: args.regenerate === true, agentPermissionMode: this.config.permissionMode }, 'library');
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'inspect_image_tags', label: '反推图片 Tag', description: '对项目图片或助手已登记的本机图片做本地反推，返回 Tag、置信度和中文对照。本机路径必须是真实绝对路径；需要反推模型已就绪。',
+        parameters: Type.Object({ source: Type.Union([Type.Literal('project'), Type.Literal('local')]), kind: Type.Optional(Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(value => Type.Literal(value)))), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()), threshold: Type.Optional(Type.Number()), characterThreshold: Type.Optional(Type.Number()), model: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          let commandArgs;
+          if (args.source === 'local') {
+            let path = text(args.path).trim();
+            if (!path) throw new Error('请提供本机图片路径');
+            if (!path.startsWith('/api/prompt-agent/local-image?')) path = (await this.localImages.register(localScope, path)).path;
+            commandArgs = { source: 'local', path, ...(typeof args.threshold === 'number' ? { threshold: args.threshold } : {}), ...(typeof args.characterThreshold === 'number' ? { characterThreshold: args.characterThreshold } : {}), ...(typeof args.model === 'string' ? { model: args.model } : {}) };
+          } else {
+            commandArgs = { source: 'project', kind: args.kind, id: text(args.id).slice(0, 200), ...(typeof args.threshold === 'number' ? { threshold: args.threshold } : {}), ...(typeof args.characterThreshold === 'number' ? { characterThreshold: args.characterThreshold } : {}), ...(typeof args.model === 'string' ? { model: args.model } : {}) };
+          }
+          const page = await runPageCommand('inspect_image_tags', commandArgs);
+          return { content: jsonText(page?.result ?? {}), details: page?.result };
+        },
+      },
+      {
+        name: 'list_inspiration_boards', label: '读取收藏夹', description: '读取收藏库的自定义收藏夹及其顺序。',
+        parameters: Type.Object({}),
+        execute: async () => {
+          const result = await readProject('/api/inspiration-boards');
+          return { content: jsonText(result.items || []), details: result };
+        },
+      },
+      {
+        name: 'create_inspiration_board', label: '新建收藏夹', description: '在收藏库新建自定义收藏夹；name 最长 80 字，color 使用 #RRGGBB。',
+        parameters: Type.Object({ name: Type.String(), color: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const name = text(args.name).trim().slice(0, 80);
+          if (!name) throw new Error('收藏夹名称不能为空');
+          const result = await readProject('/api/inspiration-boards', { method: 'POST', body: { id: operationId(['create_inspiration_board', args]), name, color: /^#[0-9a-f]{6}$/i.test(text(args.color)) ? text(args.color) : '#6366f1' } });
+          changed('inspirations');
+          return { content: jsonText({ ok: true, item: result.item }), details: result };
+        },
+      },
+      {
+        name: 'update_inspiration_board', label: '更新收藏夹', description: '重命名、改色或调整收藏夹顺序；只传需要修改的字段。',
+        parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), color: Type.Optional(Type.String()), sortOrder: Type.Optional(Type.Number()) }),
+        execute: async (_id, args) => {
+          const id = text(args.id).slice(0, 200);
+          if (!id) throw new Error('缺少收藏夹 ID');
+          const body = {};
+          if (typeof args.name === 'string' && args.name.trim()) body.name = text(args.name).trim().slice(0, 80);
+          if (typeof args.color === 'string' && /^#[0-9a-f]{6}$/i.test(args.color)) body.color = args.color;
+          if (typeof args.sortOrder === 'number') body.sortOrder = Math.max(0, Math.floor(args.sortOrder));
+          if (!Object.keys(body).length) throw new Error('没有要修改的收藏夹字段');
+          await readProject(`/api/inspiration-boards/${encodeURIComponent(id)}`, { method: 'PUT', body });
+          changed('inspirations');
+          return { content: jsonText({ ok: true, id, updated: Object.keys(body) }), details: { id, ...body } };
+        },
+      },
+      {
+        name: 'reorder_inspiration_boards', label: '排序收藏夹', description: '按给定的收藏夹 ID 顺序保存排序；必须包含当前全部收藏夹，不能遗漏或编造。',
+        parameters: Type.Object({ ids: Type.Array(Type.String(), { minItems: 1, maxItems: 200 }) }),
+        execute: async (_id, args) => {
+          const current = (await readProject('/api/inspiration-boards')).items || [];
+          const wanted = args.ids.map(value => text(value).slice(0, 200));
+          if (wanted.length !== current.length || new Set(wanted).size !== wanted.length || current.some(item => !wanted.includes(String(item.id)))) throw new Error('排序必须包含当前全部收藏夹且不能重复');
+          for (let index = 0; index < wanted.length; index++) await readProject(`/api/inspiration-boards/${encodeURIComponent(wanted[index])}`, { method: 'PUT', body: { sortOrder: index } });
+          changed('inspirations');
+          return { content: jsonText({ ok: true, ids: wanted }), details: { ids: wanted } };
+        },
+      },
+      {
+        name: 'delete_inspiration_board', label: '请求删除收藏夹', description: '请求删除收藏夹；只会打开确认框，不会直接删除。收藏中的图片会回到未整理，不删除图片。',
+        parameters: Type.Object({ id: Type.String(), reason: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const id = text(args.id).slice(0, 200);
+          if (!id) throw new Error('缺少收藏夹 ID');
+          const items = (await readProject('/api/inspiration-boards')).items || [];
+          const board = items.find(item => String(item.id) === id);
+          if (!board) throw new Error('找不到这个收藏夹');
+          return pending('delete_inspiration_board', id, `删除收藏夹「${board.name}」？`, `${text(args.reason).slice(0, 200) || '收藏中的图片会回到未整理，不会删除图片本身。'}`, { id });
+        },
+      },
+      {
+        name: 'create_prompt_library_item', label: '新建内容库条目', description: '在内容库创建一条提示词条目（人物形象/服饰/姿势/表情/场景/镜头）。kind 必须是六类之一；参考图请之后用页面或已有工具补充。',
+        parameters: Type.Object({ kind: Type.Union(['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].map(value => Type.Literal(value))), name: Type.String(), prompt: Type.String(), negativePrompt: Type.Optional(Type.String()), bilingual: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), description: Type.Optional(Type.String()), params: Type.Optional(Type.Any()), coverHistoryId: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const name = text(args.name).trim().slice(0, 160);
+          if (!name) throw new Error('条目名称不能为空');
+          const body = {
+            id: operationId(['create_prompt_library_item', args]), type: args.kind, name,
+            description: text(args.description).slice(0, 1000), basePrompt: text(args.prompt), negativePrompt: text(args.negativePrompt),
+            tags: Array.isArray(args.tags) ? args.tags.slice(0, 12).map(value => text(value).slice(0, 80)) : [],
+            modules: [], variableValues: { subject: '' },
+            params: { ...(args.params && typeof args.params === 'object' ? sanitizeParams(args.params) : {}), _promptLibrary: { bilingual: text(args.bilingual), references: [] } },
+          };
+          if (args.coverHistoryId) {
+            if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+            const item = await findHistory(text(args.coverHistoryId).slice(0, 200));
+            if (!item) throw new Error('找不到指定的生成历史');
+            const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+            body.previewImage = `data:${['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png'};base64,${image.buffer.toString('base64')}`;
+          }
+          const result = await readProject('/api/chains', { method: 'POST', body });
+          changed('chains');
+          return { content: jsonText({ ok: true, id: result.id || body.id, name }), details: result };
+        },
+      },
+      {
+        name: 'update_prompt_library_item', label: '更新内容库条目', description: '更新内容库条目的名称、提示词、中文对照、标签、备注或生图参数；只传需要修改的字段。',
+        parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()), bilingual: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), description: Type.Optional(Type.String()), params: Type.Optional(Type.Any()), coverHistoryId: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const id = text(args.id).slice(0, 200);
+          const currentValue = await readProject(`/api/chains/${encodeURIComponent(id)}`);
+          const current = currentValue.item || currentValue;
+          if (!current?.id) throw new Error('找不到要更新的内容库条目');
+          if (!['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(String(current.type))) throw new Error('这条记录不是内容库条目');
+          const body = {};
+          for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]).slice(0, key === 'description' ? 1000 : 4000);
+          if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 12).map(value => text(value).slice(0, 80));
+          const params = { ...(current.params && typeof current.params === 'object' ? current.params : {}) };
+          if (args.params && typeof args.params === 'object') Object.assign(params, sanitizeParams(args.params));
+          const previousMeta = current.params?._promptLibrary && typeof current.params._promptLibrary === 'object' ? current.params._promptLibrary : {};
+          const incomingMeta = params._promptLibrary && typeof params._promptLibrary === 'object' ? params._promptLibrary : {};
+          const meta = { ...previousMeta, ...incomingMeta };
+          if (!Array.isArray(meta.references)) meta.references = [];
+          if (typeof args.bilingual === 'string') meta.bilingual = text(args.bilingual);
+          params._promptLibrary = meta;
+          if (Object.keys(params).length) body.params = params;
+          if (args.coverHistoryId) {
+            if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
+            const item = await findHistory(text(args.coverHistoryId).slice(0, 200));
+            if (!item) throw new Error('找不到指定的生成历史');
+            const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
+            body.previewImage = `data:${['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png'};base64,${image.buffer.toString('base64')}`;
+          }
+          if (!Object.keys(body).length) throw new Error('没有要修改的字段');
+          await readProject(`/api/chains/${encodeURIComponent(id)}`, { method: 'PUT', body });
+          changed('chains');
+          return { content: jsonText({ ok: true, id, updated: Object.keys(body) }), details: { id, updated: Object.keys(body) } };
+        },
+      },
+      {
+        name: 'create_vibe_from_local', label: '从本机图片创建 Vibe', description: '把电脑上的图片保存为待编码 Vibe 资产；创建资产不扣费。之后需要 request_vibe_encoding 并由用户确认编码费用。',
+        parameters: Type.Object({ path: Type.String(), name: Type.String() }),
+        execute: async (_id, args) => {
+          const { result } = await assetFromLocal('/api/vibes', text(args.path).trim(), args.name, 'Vibe');
+          changed('vibes');
+          return { content: jsonText({ ok: true, item: result.item, duplicate: result.duplicate === true, encoded: false }), details: result };
+        },
+      },
+      {
+        name: 'create_character_reference_from_local', label: '从本机图片创建角色参考', description: '把电脑上的图片保存到角色参考资料库。读取本机图片不需要目录确认。',
+        parameters: Type.Object({ path: Type.String(), name: Type.String() }),
+        execute: async (_id, args) => {
+          const { result } = await assetFromLocal('/api/character-references', text(args.path).trim(), args.name, '角色参考');
+          changed('character_references');
+          return { content: jsonText({ ok: true, item: result.item, duplicate: result.duplicate === true }), details: result };
+        },
+      },
     ].map(tool => ({ ...tool, execute: async (...args) => {
-      const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
+      const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view', 'open_settings'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
       if (this.config.permissionMode === 'read_only' && !readOnly) throw new Error('当前为只读权限，不能修改项目、生成或保存图片；请由用户在权限菜单切换档位');
       const result = await tool.execute(...args);
       if (['update_prompts', 'set_prompt_modules', 'set_characters', 'set_generation_params', 'set_vibes', 'set_character_references'].includes(tool.name)) {

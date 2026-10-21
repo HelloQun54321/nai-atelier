@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +8,7 @@ import { extractPngMetadata, hasCollectibleNaiMetadata } from '../services/pngMe
 import { collectorErrorReason, downloadCollectorImage, imageLink } from './collector-download.mjs';
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 
-const collectorLabels = language => Object.fromEntries(['待处理', '已保存', '跳过', '失败', 'Atelier 风格串收集', '正在启动', '等待本机服务确认', '暂停', '继续', '暂停接收新复制，已入队图片继续处理', '继续接收之后的新复制', '折叠状态窗', '展开状态窗', '结束收集', '已暂停', '收集中', ' · 已保存 ', '待处理 ', ' · 跳过 ', ' · 失败 ', '已保存：', '失败：'].map(message => [message, translate(language, message)]));
+const collectorLabels = language => Object.fromEntries(['风格串', '收藏库', '待处理', '已保存', '跳过', '失败', 'Atelier 收集', '正在启动', '等待本机服务确认', '等待复制图片或图片链接', '暂停', '继续', '暂停接收新复制，已入队图片继续处理', '继续接收之后的新复制', '折叠状态窗', '展开状态窗', '结束收集', '已暂停', '收集中', ' · 已保存 ', '待处理 ', ' · 跳过 ', ' · 失败 ', '已保存：', '失败：', '收录提示词', '提示词原文', '名称（可选）', '分类', '不分类（组合库）', '人物形象', '服饰', '姿势', '表情状态', '场景', '镜头画面', '存入组合库', '存入内容库', '已存入内容库', '取消', '保存中…', '已存入组合库', '剪贴板没有文字', '剪贴板暂时不可用，请重试', '提示词过长，请分段收录', '保存失败，请重试', '尚未保存的提示词将被丢弃，继续关闭？'].map(message => [message, translate(language, message)]));
 
 export function collectorLocalRequest(req) {
   try {
@@ -20,7 +21,7 @@ export function collectorLocalRequest(req) {
   } catch { return false; }
 }
 
-/** 协议只接收已经过 Windows 本机过滤的候选链接，不建立剪贴板历史。 */
+/** 图片链接自动过滤；提示词只在用户明确保存后传入，不建立剪贴板历史。 */
 export async function windowsCollector({ session, position, onEvent, selfTest = false, appearance }) {
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./style-collector-window.ps1', import.meta.url)), ...(selfTest ? ['-SelfTest'] : []), ...(appearance ? ['-AppearanceJson', JSON.stringify(appearance)] : [])], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   const lines = createInterface({ input: child.stdout });
@@ -55,17 +56,17 @@ export async function windowsCollector({ session, position, onEvent, selfTest = 
   };
   child.on('error', ended); child.on('exit', ended);
   child.stdin.on('error', ended);
-  const command = async action => {
+  const command = async (action, payload = {}) => {
     if (!alive) throw new Error('Windows 监听模块已停止');
     const id = randomUUID();
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error('Windows 操作未确认')); }, 5000); timer.unref();
       pending.set(id, { resolve: () => { clearTimeout(timer); resolve(); }, reject: e => { clearTimeout(timer); reject(e); } });
-      send({ command: action, id });
+      send({ command: action, id, ...payload });
     });
   };
   try { await ready; } catch (error) { child.kill(); throw error; }
-  return { update: state => send({ command: 'state', state: { ...state, rawStage: state.stage, stage: translate(state.appearance.language, state.stage), detail: translate(state.appearance.language, state.detail), error: translate(state.appearance.language, state.error) } }), command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
+  return { update: state => send({ command: 'state', state: { ...state, rawStage: state.stage, stage: translate(state.appearance.language, state.stage), detail: translate(state.appearance.language, state.detail), error: translate(state.appearance.language, state.error) } }), textResult: result => send({ command: 'text-result', ...result }), command, close() { send({ command: 'stop' }); child.stdin.end(); setTimeout(() => { if (alive) child.kill(); }, 1500).unref(); } };
 }
 
 export class StyleCollector extends EventEmitter {
@@ -73,7 +74,7 @@ export class StyleCollector extends EventEmitter {
     super(); Object.assign(this, { worker, download, listener, platform, proxyUrl, modelMappings });
     this.run = null; this.control = Promise.resolve(); this.disposed = false;
     this.appearance = { themeMode: 'system', isDark: true, accentColor: '#0ea5e9', motion: 'full' };
-    this.stopped = { enabled: false, paused: false, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, error: '', detail: '', session: '' };
+    this.stopped = { enabled: false, paused: false, mode: 'style', collectionSaved: 0, stage: '已关闭', pending: 0, saved: 0, skipped: 0, failed: 0, error: '', detail: '', session: '' };
   }
   state() {
     const state = this.run?.state || this.stopped;
@@ -109,7 +110,11 @@ export class StyleCollector extends EventEmitter {
       if (action === 'pause' || action === 'resume') {
         await run.native.command(action);
         run.state.paused = action === 'pause';
-        if (!run.busy) run.state.stage = run.state.paused ? '已暂停' : '等待复制图片链接';
+        if (!run.busy) run.state.stage = run.state.paused ? '已暂停' : '等待复制图片或图片链接';
+        this.publish(run);
+      } else if (action === 'mode' && ['style', 'collection'].includes(id)) {
+        run.state.mode = id; await run.native.command('mode', { mode: id });
+        if (!run.busy) run.state.stage = run.state.paused ? '已暂停' : '等待复制图片或图片链接';
         this.publish(run);
       } else throw new Error('未知收集操作');
       return this.state();
@@ -120,7 +125,7 @@ export class StyleCollector extends EventEmitter {
     if (this.disposed) throw new Error('本机服务已退出');
     if (this.run) return this.state();
     if (this.platform !== 'win32') throw new Error('收集模式仅支持 Windows 电脑本机');
-    const run = { state: { ...this.stopped, enabled: false, paused: false, saved: 0, skipped: 0, failed: 0, error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
+    const run = { state: { ...this.stopped, enabled: false, paused: false, mode: 'style', collectionSaved: 0, saved: 0, skipped: 0, failed: 0, error: '', detail: '', stage: '正在启动', session: randomUUID() }, queue: [], seen: new Set(), abort: new AbortController(), busy: false, native: null };
     this.run = run; this.publish(run);
     try {
       const position = await this.worker('position');
@@ -128,7 +133,11 @@ export class StyleCollector extends EventEmitter {
       run.native = await this.listener({ session: run.state.session, position, appearance: { ...this.appearance }, onEvent: event => {
         if (this.run !== run || run.abort.signal.aborted) return;
         if (event.type === 'listening') { run.state.enabled = true; this.publish(run); }
-        if (event.type === 'link') this.accept(run, event.url);
+        if (event.type === 'link') this.accept(run, event.url, event.mode);
+        if (event.type === 'image') this.acceptImage(run, event.image, event.mode);
+        if (event.type === 'capture-error') { run.state.failed++; run.state.detail = `失败：${collectorErrorReason(new Error(event.error))}`; this.publish(run); }
+        if (event.type === 'mode') void this.command('mode', event.mode).catch(error => this.failListener(run, error));
+        if (event.type === 'save-text') void this.saveText(run, event);
         if (event.type === 'pause' || event.type === 'resume') void this.command(event.type).catch(error => this.failListener(run, error));
         if (event.type === 'stop' || event.type === 'lost') {
           if (event.type === 'lost') run.state.error = event.error || 'Windows 监听已失效';
@@ -137,7 +146,7 @@ export class StyleCollector extends EventEmitter {
         if (event.type === 'position') void this.worker('position', { x: event.x, y: event.y, collapsed: event.collapsed }).catch(() => {});
       } });
       if (run.abort.signal.aborted || this.disposed) throw new Error('收集启动已取消');
-      run.state.enabled = true; if (!run.busy) run.state.stage = '等待复制图片链接'; this.publish(run);
+      run.state.enabled = true; if (!run.busy) run.state.stage = '等待复制图片或图片链接'; this.publish(run);
       return this.state();
     } catch (error) {
       run.abort.abort(); run.native?.close(); await this.worker('session', { session: '' }).catch(() => {});
@@ -146,14 +155,43 @@ export class StyleCollector extends EventEmitter {
     }
   }
   failListener(run, error) { if (this.run === run) { run.state.error = error.message; void this.command('stop').catch(() => {}); } }
-  accept(run, text) {
+  async saveText(run, event) {
+    if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.textSaving) return;
+    run.textSaving = true;
+    try {
+      const result = await this.worker('text', { session: run.state.session, id: event.id, name: event.name, text: event.text, category: event.category });
+      if (result?.outcome !== 'saved') throw new Error('保存失败，请重试');
+      if (this.run !== run || run.abort.signal.aborted) return;
+      const message = event.category ? '已存入内容库' : '已存入组合库';
+      run.state.saved++; run.state.detail = message;
+      run.native.textResult({ id: event.id, ok: true, message }); this.publish(run);
+    } catch {
+      if (this.run === run && !run.abort.signal.aborted) run.native.textResult({ id: event.id, ok: false });
+    } finally { run.textSaving = false; }
+  }
+  acceptImage(run, image, mode = run.state.mode) {
+    if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.state.paused) return;
+    mode = mode === 'collection' ? 'collection' : 'style';
+    if (typeof image !== 'string' || image.length > 16 * 1024 * 1024) { run.state.failed++; run.state.detail = '失败：图片超过存储大小上限'; this.publish(run); return; }
+    const bytes = Buffer.from(image, 'base64');
+    if (run.queue.reduce((total, item) => total + (item.bytes?.length || 0), 0) + bytes.length > 48 * 1024 * 1024 || run.queue.length >= 200) {
+      run.state.failed++; run.state.detail = '失败：待处理图片过多，请等待后重新复制'; this.publish(run); return;
+    }
+    const key = `${mode}:image:` + createHash('sha256').update(bytes).digest('hex');
+    if (run.seen.has(key)) { run.state.skipped++; run.state.detail = '跳过：这张原图已经收集'; this.publish(run); return; }
+    run.seen.add(key); run.queue.push({ bytes, key, mode, name: '剪贴板图片' }); this.publish(run);
+    if (!run.busy) run.processing = this.process(run);
+  }
+  accept(run, text, mode = run.state.mode) {
     if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.state.paused) return;
     const url = imageLink(text); if (!url) return;
-    if (run.seen.has(url)) { run.state.skipped++; run.state.detail = '跳过：本次已经接收过这个链接'; this.publish(run); return; }
+    mode = mode === 'collection' ? 'collection' : 'style';
+    const key = `${mode}:${url}`;
+    if (run.seen.has(key)) { run.state.skipped++; run.state.detail = '跳过：本次已经接收过这个链接'; this.publish(run); return; }
     if (run.queue.length >= 200) { run.state.failed++; run.state.error = '待处理链接过多，请暂停后等待队列完成'; this.publish(run); return; }
-    run.seen.add(url);
+    run.seen.add(key);
     let name = ''; try { name = decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { /* 无文件名。 */ }
-    run.queue.push({ url, name }); this.publish(run);
+    run.queue.push({ url, name, mode, key }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
   }
   async process(run) {
@@ -161,14 +199,22 @@ export class StyleCollector extends EventEmitter {
     while (run.queue.length && !run.abort.signal.aborted) {
       const item = run.queue.shift();
       try {
-        run.state.stage = '正在下载图片'; run.state.detail = `处理：${item.name || '图片链接'}`; this.publish(run);
-        const { bytes, finalUrl } = await this.download(item.url, { signal: run.abort.signal, proxyUrl: this.proxyUrl });
+        run.state.stage = item.bytes ? '正在解析图片' : '正在下载图片'; run.state.detail = `处理：${item.name || '图片链接'}`; this.publish(run);
+        const { bytes, finalUrl } = item.bytes ? { bytes: item.bytes, finalUrl: '' } : await this.download(item.url, { signal: run.abort.signal, proxyUrl: this.proxyUrl });
         run.abort.signal.throwIfAborted(); run.state.stage = '正在解析图片'; this.publish(run);
         let raw, skipReason = '未找到有效 NovelAI 生成信息';
         if (!Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) skipReason = '内容不是支持收集的 PNG 原图';
         try { raw = await extractPngMetadata(bytes, { validatePixels: true, collectibleOnly: true }); } catch (error) { raw = null; skipReason = collectorErrorReason(error); }
         run.abort.signal.throwIfAborted();
-        if (!raw || !hasCollectibleNaiMetadata(raw)) { run.state.skipped++; run.state.detail = `跳过：${skipReason}`; }
+        if (item.mode === 'collection') {
+          const info = await sharp(bytes, { limitInputPixels: 40_000_000 }).metadata();
+          if (!['png', 'jpeg', 'webp'].includes(info.format)) throw new Error('仅支持 PNG、JPEG、WebP 图片');
+          run.abort.signal.throwIfAborted(); run.state.stage = '正在保存收藏'; this.publish(run);
+          const result = await this.worker('collection', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), format: info.format, rawMetadata: raw, sourceUrl: item.url, finalUrl, name: item.name, metadataModelMappings: this.modelMappings() });
+          if (result.outcome === 'saved') { run.state.saved++; run.state.collectionSaved++; run.state.detail = `已收藏：${item.name || '图片'}`; }
+          else { run.state.skipped++; run.state.detail = '跳过：这张原图已经收藏'; }
+        }
+        else if (!raw || !hasCollectibleNaiMetadata(raw)) { run.state.skipped++; run.state.detail = `跳过：${skipReason}`; }
         else {
           run.state.stage = '正在保存风格串'; this.publish(run);
           const result = await this.worker('import', { session: run.state.session, image: Buffer.from(bytes).toString('base64'), rawMetadata: raw, sourceUrl: item.url, finalUrl, name: item.name, metadataModelMappings: this.modelMappings() });
@@ -177,7 +223,7 @@ export class StyleCollector extends EventEmitter {
         }
       } catch (error) {
         if (!run.abort.signal.aborted) {
-          run.seen.delete(item.url);
+          run.seen.delete(item.key);
           const reason = collectorErrorReason(error);
           run.state.failed++; run.state.detail = `失败：${reason}`;
         }
@@ -185,7 +231,7 @@ export class StyleCollector extends EventEmitter {
       this.publish(run);
     }
     run.busy = false;
-    if (!run.abort.signal.aborted) { run.state.stage = run.state.paused ? '已暂停' : '等待复制图片链接'; this.publish(run); }
+    if (!run.abort.signal.aborted) { run.state.stage = run.state.paused ? '已暂停' : '等待复制图片或图片链接'; this.publish(run); }
   }
   async stop() {
     const run = this.run; if (!run) return this.state();

@@ -25,6 +25,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('风格串收集工具栏', () => {
+  it('新收藏单独通知收藏库刷新，切换模式和重复状态不重复通知', async () => {
+    const changed = vi.fn(); window.addEventListener('nai-collection-changed', changed);
+    try {
+      render(React.createElement(StyleCollectorControl, { onSaved: vi.fn(), notify: vi.fn() }));
+      await screen.findByRole('switch'); await waitFor(() => expect(FakeEvents.instances.length).toBe(1));
+      const next = { ...initial, enabled: true, session: 'new-run', saved: 1, collectionSaved: 1 };
+      FakeEvents.instances[0].emit(next); FakeEvents.instances[0].emit(next);
+      await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+      FakeEvents.instances[0].emit({ ...next, saved: 2 });
+      expect(changed).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener('nai-collection-changed', changed); }
+  });
   it('仅允许本机地址，局域网手机不启停电脑监听', () => {
     expect(collectorIsLocal('localhost')).toBe(true); expect(collectorIsLocal('::1')).toBe(true);
     expect(collectorIsLocal('192.168.1.3')).toBe(false); expect(collectorIsLocal('atelier.example.com')).toBe(false);

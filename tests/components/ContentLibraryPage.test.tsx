@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { ContentLibraryPage, type ContentLibrarySection } from '../../components/ContentLibraryPage';
 
 afterEach(() => cleanup());
@@ -11,14 +11,30 @@ const Tools = ({ slot, label }: { slot: HTMLElement | null; label: string }) => 
   const [value, setValue] = useState('');
   return <div data-testid={label}>{slot && createPortal(<><button>筛选</button><input aria-label={label} value={value} onChange={event => setValue(event.target.value)} /></>, slot)}</div>;
 };
-const Harness = ({ active = true }: { active?: boolean }) => {
+const Harness = ({ active = true, onCapture }: { active?: boolean; onCapture?: (text: string, name: string, category: string) => Promise<void> }) => {
   const [section, setSection] = useState<ContentLibrarySection>('items');
   const [rollOpen, setRollOpen] = useState(false);
-  return <ContentLibraryPage section={section} onSectionChange={setSection} active={active} rollOpen={rollOpen} onRollOpenChange={setRollOpen}
+  return <ContentLibraryPage section={section} onSectionChange={setSection} active={active} rollOpen={rollOpen} onRollOpenChange={setRollOpen} onCapture={onCapture}
     items={slot => <Tools slot={slot} label="条目搜索" />}
     roll={slot => <Tools slot={slot} label="搭配草稿" />}
     saved={slot => <Tools slot={slot} label="组合搜索" />} />;
 };
+
+it('粘贴收录两库均可达，后台隐藏且返回保留原文，不干扰原列表搜索与焦点', () => {
+  const save = vi.fn(async () => {}); const view = render(<Harness onCapture={save} />);
+  const trigger = screen.getByRole('button', { name: '粘贴收录' }); trigger.focus(); fireEvent.click(trigger);
+  const text = screen.getByRole('textbox', { name: '提示词原文' });
+  expect(document.activeElement).toBe(text);
+  fireEvent.change(text, { target: { value: 'snow' } });
+  view.rerender(<Harness active={false} onCapture={save} />); expect(screen.queryByRole('dialog')).toBeNull();
+  view.rerender(<Harness onCapture={save} />);
+  expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('snow');
+  fireEvent.keyDown(window, { key: 'Escape' }); expect(document.activeElement).toBe(trigger);
+  fireEvent.click(screen.getByRole('tab', { name: '组合库' }));
+  fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
+  expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('snow');
+  expect(save).not.toHaveBeenCalled();
+});
 
 it('只有两类资源，筛选、搜索、Roll 操作顺序一致，切库保留草稿', () => {
   render(<Harness />);

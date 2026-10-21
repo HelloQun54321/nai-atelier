@@ -1,9 +1,10 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { Suspense, useEffect, useId, useState } from 'react';
-import { Dice5, X } from 'lucide-react';
+import { ClipboardPaste, Dice5, X } from 'lucide-react';
 import { IconButton, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
+import { PromptCaptureDialog } from './PromptCaptureDialog';
 
 export type ContentLibrarySection = 'items' | 'saved';
 
@@ -18,6 +19,7 @@ interface ContentLibraryPageProps {
   active?: boolean;
   rollOpen: boolean;
   onRollOpenChange: (open: boolean) => void;
+  onCapture?: (text: string, name: string, category: string) => Promise<void>;
   /** 分区按需挂载，只有当前分区把操作挂到共用顶栏。 */
   items: (toolbarSlot: HTMLElement | null) => React.ReactNode;
   roll: (toolbarSlot: HTMLElement | null) => React.ReactNode;
@@ -54,12 +56,13 @@ const RollDialog: React.FC<{ open: boolean; onClose: () => void; children: Conte
 };
 
 /** 两种资源常驻，搭配按需打开；隐藏面板保留本次草稿和原列表位置。 */
-export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section, onSectionChange, active = true, rollOpen, onRollOpenChange, items, roll, saved }) => {
+export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section, onSectionChange, active = true, rollOpen, onRollOpenChange, onCapture, items, roll, saved }) => {
   useLanguage();
   const id = useId();
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   const [mounted, setMounted] = useState<ReadonlySet<ContentLibrarySection>>(() => new Set([section]));
   const [rollMounted, setRollMounted] = useState(rollOpen);
+  const [captureOpen, setCaptureOpen] = useState(false);
   useEffect(() => {
     setMounted(previous => previous.has(section) ? previous : new Set(previous).add(section));
   }, [section]);
@@ -87,6 +90,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section,
           </button>)}
         </div>
         <div ref={setToolbarSlot} className="content-library-tools flex min-w-0 flex-1 items-center gap-2" />
+        {onCapture && <ToolbarButton onClick={() => setCaptureOpen(true)} aria-label={t('粘贴收录')} aria-haspopup="dialog"><ClipboardPaste /><span className="hidden sm:inline">{t('粘贴收录')}</span></ToolbarButton>}
         <ToolbarButton tone="primary" className="content-library-roll-action" onClick={() => onRollOpenChange(true)} aria-haspopup="dialog"><Dice5 /><span>{t('Roll 组合')}</span></ToolbarButton>
       </WorkspaceToolbar>
     </WorkspaceChrome>
@@ -96,5 +100,6 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section,
       {pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}
     </div>
     {rollMounted && <ImagePreviewPortal><RollDialog open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
+    {onCapture && <ImagePreviewPortal><PromptCaptureDialog open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} /></ImagePreviewPortal>}
   </div>;
 };

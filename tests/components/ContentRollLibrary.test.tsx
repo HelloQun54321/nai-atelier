@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 import { ContentRollLibrary } from '../../components/ContentRollLibrary';
 import { contentSnapshotOf } from '../../services/contentRoll';
+import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
 import type { PromptChain } from '../../types';
 
@@ -12,6 +13,21 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', filled: true, name: '夜景', text: 'moonlight', negative: 'daylight', constraints: { notes: '保留月光' } } } }, '2026-10-21');
 const record = { id: 'saved', type: 'style', name: '夜游', tags: [], params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: snapshot }, updatedAt: 1 } as unknown as PromptChain;
 const props = () => ({ active: true, chains: [record], notify: vi.fn(), onLoad: vi.fn(), onRename: vi.fn(async () => {}), onDelete: vi.fn(async () => {}), onSetCover: vi.fn(async () => {}) });
+
+it('原文收录与 Roll 组合并列，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
+  const text = '  {{winter}}, 1.2::hair::\r\n[smile]  ';
+  const collected = { ...record, ...prepareCollectedPrompt(text, '冬日'), type: 'preset', id: 'collected' } as PromptChain;
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const p = props(); p.chains.push(collected); render(<ContentRollLibrary {...p} />);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'winter' } });
+  expect(screen.queryByRole('button', { name: '载入组合' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /冬日/ }));
+  expect(document.querySelector('[data-content-roll-preview="collected"] p')?.textContent).toBe(text);
+  fireEvent.click(screen.getByRole('button', { name: '复制提示词' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(text));
+  expect(p.onLoad).not.toHaveBeenCalled();
+});
 
 it('搜索组合内提示词与负面，在本卡片展开详情，原快照交给载入且不写库', () => {
   const p = props(); render(<ContentRollLibrary {...p} />);

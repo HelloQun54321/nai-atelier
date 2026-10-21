@@ -25,6 +25,7 @@ import { localHistory } from '../services/localHistory';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { createUuid } from '../services/id';
 import { useConfirmDialog } from './ConfirmDialog';
+import { useAgentCommand } from '../services/agentCommands';
 import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { SmartImage } from './SmartImage';
@@ -90,6 +91,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
   const sampleLoaded = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, active, selectionFocusEnabled);
   const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, {
     skipRestore: selectionAnchor.hasAnchor,
@@ -227,7 +229,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPinned?.token]);
-  const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment) => {
+  const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment, options: { skipConfirmation?: boolean } = {}) => {
     if (!target || target.archived || !candidates.length || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
     if (!continuousGenerationEnabled && candidates.length > 1) { setError(t('连续生成已关闭，请开启后生成本轮')); return; }
     const key = readRollApiKey();
@@ -241,7 +243,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     try {
       void subscription.refreshIfStale();
       const eachCost = estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
-      if (totalCost > 0 && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
+      if (totalCost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
       const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);      const receipt = await started.settle;
@@ -478,6 +480,75 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </details>
   </div> : null;
 
+  useAgentCommand({
+    name: 'get_roll_state', label: '读取 Roll 串状态', description: '读取当前 Roll 串记录、当前轮、候选出图与保存状态、生成会话。', parameters: { type: 'object', properties: {} }, readOnly: true, scope: () => rootRef.current,
+    execute: () => ({
+      experiment: experiment ? { id: experiment.id, name: experiment.name, archived: experiment.archived === true, rounds: experiment.rounds.length } : null,
+      round: round ? { id: round.id, candidateIds: round.candidateIds, closedAt: round.closedAt || null } : null,
+      candidates: experiment ? experiment.candidates.map(candidate => ({
+        id: candidate.id, tags: candidate.tags, archived: candidate.archived === true,
+        savedChainId: candidate.savedChainId || '', hasImage: images.has(candidate.id),
+      })) : [],
+      session: session ? { scope: session.scope, state: session.state, queued: session.queued, progress: session.progress, awaiting: session.awaiting || null } : null,
+      library: { count: library.length, loading: libraryLoading, error: libraryError, sampledOnly, effectiveCount: effectiveLibrary.length, sampledReady: sampledTags !== null },
+      drawMode, count,
+    }),
+  });
+  useAgentCommand({
+    name: 'run_roll_round', label: '发起 Roll 一轮', description: '按当前规则抽取候选并保存；generate 为真时按权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { count: { type: 'number' }, generate: { type: 'boolean' }, sampledOnly: { type: 'boolean' }, agentPermissionMode: { type: 'string' } } }, scope: () => rootRef.current,
+    execute: async args => {
+      if (session || generatingRef.current) throw new Error('已有图片正在生成，请先等待或取消');
+      if (args.generate !== false && !readRollApiKey()) throw new Error('请先在全局设置中配置 NovelAI API Key');
+      if (args.generate !== false && experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成');
+      const requested = Math.max(1, Math.min(24, Math.floor(Number(args.count) || count)));
+      if (!continuousGenerationEnabled && requested > 1) throw new Error('连续生成已关闭，本次只能生成 1 张');
+      if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
+      if (drawMode === 'pinnedArtists' && !pinnedArtists.length) throw new Error('请先固定至少一位画师');
+      if (drawMode === 'fixedWeight' && weightRange.minWeight !== weightRange.maxWeight) throw new Error('固定权重需要最低与最高权重相同');
+      const useSamples = typeof args.sampledOnly === 'boolean' ? args.sampledOnly : sampledOnly;
+      if (useSamples && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
+      if (useSamples && !effectiveLibrary.length) throw new Error('没有可用的有样张画师');
+      const plan: RollDrawPlan = drawMode === 'pinnedArtists' ? { mode: 'pinnedArtists', pinnedArtists } : { mode: drawMode };
+      let source = experiment || makeExperiment();
+      if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
+      source = { ...source, rules: roundRules, sampledOnly: useSamples };
+      const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { plan, blockedTags: blocklist, sampledOnly: useSamples });
+      const saved = await store(next), created = currentRollRound(saved)!;
+      selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
+      const candidates = saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id));
+      if (args.generate !== false) void generate(candidates, saved, { skipConfirmation: args.agentPermissionMode === 'full' });
+      return { experimentId: saved.id, roundId: created.id, candidateIds: created.candidateIds, generationStarted: args.generate !== false, note: args.generate !== false ? '已发起生成；费用确认由页面处理，进度用 get_generation_status 读取。' : '候选已抽取并保存，尚未消耗 Anlas。' };
+    },
+  });
+  useAgentCommand({
+    name: 'generate_roll_pending', label: '补齐 Roll 候选', description: '为当前轮未出图的候选发起生成，最多 24 张。', parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, agentPermissionMode: { type: 'string' } } }, scope: () => rootRef.current,
+    execute: async args => {
+      if (!experiment || !historyReady || historyLoading || session || generatingRef.current) throw new Error('当前不能发起生成，请先读取状态');
+      const ids = Array.isArray(args.ids) ? args.ids.map(value => String(value)).slice(0, 24) : undefined;
+      const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
+      if (!pending.length) return { generationStarted: false, ids: [], note: '没有待生成候选。' };
+      let source = experiment;
+      if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });
+      setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(''); setFilter('all');
+      void generate(pending, source, { skipConfirmation: args.agentPermissionMode === 'full' });
+      return { experimentId: source.id, ids: pending.map(candidate => candidate.id), generationStarted: true };
+    },
+  });
+  useAgentCommand({
+    name: 'save_roll_candidate', label: '保存 Roll 候选为风格串', description: '把已出图的候选保存为风格串；candidateIds 省略时保存当前选中候选，单次最多 8 个。', parameters: { type: 'object', properties: { candidateIds: { type: 'array', items: { type: 'string' } } } }, scope: () => rootRef.current,
+    execute: async args => {
+      if (!experiment) throw new Error('当前没有 Roll 串记录');
+      const ids = Array.isArray(args.candidateIds) && args.candidateIds.length ? args.candidateIds.map(value => String(value)).slice(0, 8) : selectedId ? [selectedId] : [];
+      if (!ids.length) throw new Error('请选择要保存的候选');
+      let current = experiment; const saved = [];
+      for (const id of ids) {
+        if (!images.has(id)) throw new Error(`候选 ${id} 还没有生成图片，无法保存`);
+        current = await persistCandidate(current, id);
+        saved.push({ candidateId: id, chainId: current.candidates.find(candidate => candidate.id === id)?.savedChainId || '' });
+      }
+      return { saved };
+    },
+  });
   const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
   // 流式预览跟随本轮第一张还没出图的候选；保存后自然移到下一张。
   const previewCandidateId = round && !round.closedAt ? round.candidateIds.find(id => !images.has(id)) : undefined;
@@ -501,7 +572,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const mode = snapshot.mode === 'pinnedArtists' ? t('固定画师 {0} 位', [snapshot.pinnedArtists?.length ?? 0]) : snapshot.mode === 'fixedWeight' ? t('固定权重 {0}', [snapshot.rules.minWeight.toFixed(1)]) : t('全随机');
     return `${mode} · ${t('{0} 张', [item.candidateIds.length])}`;
   };
-  return <div className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
+  return <div ref={rootRef} className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceChrome>
 <WorkspaceToolbar>
       {selecting ? <>

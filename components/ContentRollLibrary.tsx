@@ -4,6 +4,7 @@ import { ChevronDown, Copy, ImagePlus, Layers, LoaderCircle, Trash2 } from 'luci
 import { t, useLanguage } from '../services/i18n';
 import type { LocalGenItem, PromptChain } from '../types';
 import { KINDS, META, contentRead, contentScopeOf, isContentRecord } from '../services/contentRoll';
+import { collectedPromptText } from '../services/collectedPrompt';
 import { promptLibraryHistoryImageUrl } from './PromptLibrary';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { SmartImage } from './SmartImage';
@@ -36,7 +37,8 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
   const scrollRef = useRef<HTMLDivElement>(null);
   const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; };
 
-  const records = useMemo(() => chains.filter(isContentRecord).map(chain => {
+  const records = useMemo(() => chains.filter(chain => isContentRecord(chain) || collectedPromptText(chain) !== null).map(chain => {
+    const original = collectedPromptText(chain);
     const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
     const fields = KINDS.flatMap(kind => {
       const role = read.roles[0];
@@ -46,19 +48,20 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
       const negative = isRole ? role?.negatives[kind] : read.global[kind]?.negative;
       return provided ? [{ kind, text: text || '', negative }] : [];
     });
-    return { chain, read, fields, scope: contentScopeOf(read) };
+    return { chain, read, fields, original, scope: contentScopeOf(read) };
   }), [chains]);
   const shown = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return records.filter(({ chain, fields, scope }) => !keyword || [chain.name, chain.description, ...(chain.tags || []), scope.label,
+    return records.filter(({ chain, fields, scope, original }) => !keyword || [chain.name, chain.description, original, ...(chain.tags || []), scope.label,
       ...fields.flatMap(field => [field.text, field.negative?.text, field.negative?.note])].join(' ').toLowerCase().includes(keyword))
       .sort((a, b) => sort === 'name' ? a.chain.name.localeCompare(b.chain.name) : Number(b.chain.updatedAt || 0) - Number(a.chain.updatedAt || 0));
   }, [records, query, sort]);
 
   const copySnapshot = async (chain: PromptChain) => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot, null, 2));
-      notify(t('已复制这条记录的内容快照'));
+      const original = collectedPromptText(chain);
+      await navigator.clipboard.writeText(original ?? JSON.stringify((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot, null, 2));
+      notify(t(original !== null ? '已复制提示词原文' : '已复制这条记录的内容快照'));
     } catch { notify(t('复制失败：浏览器拒绝了剪贴板权限'), 'error'); }
   };
   const commitRename = async () => {
@@ -94,7 +97,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
     {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
     <div ref={scrollRef} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
       {shown.length ? <div className="content-library-grid items-start">
-        {shown.map(({ chain, read, fields, scope }) => {
+        {shown.map(({ chain, read, fields, scope, original }) => {
           const expanded = previewId === chain.id;
           return <article key={chain.id} data-content-roll-record={chain.id} data-safe-mode-work="true"
             className={`appearance-group overflow-hidden rounded-2xl border bg-white dark:bg-gray-900 ${expanded ? 'border-indigo-300 dark:border-indigo-700' : 'border-gray-200 dark:border-gray-800'}`}>
@@ -105,28 +108,30 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
               </span>
               <span className="min-w-0 flex-1">
                 <span data-safe-mode-title="true" className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{chain.name || t('未命名')}</span>
-                <span data-content-roll-scope={chain.id} className="mt-1 block text-xs text-indigo-600 dark:text-indigo-300">{scope.label || t('（没有可载入的内容）')}</span>
-                <span className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-500 dark:text-gray-400">{chain.description || fields.map(field => field.text).join(', ')}</span>
+                <span data-content-roll-scope={chain.id} className="mt-1 block text-xs text-indigo-600 dark:text-indigo-300">{original !== null ? t('原文收录') : scope.label || t('（没有可载入的内容）')}</span>
+                <span className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-500 dark:text-gray-400">{chain.description || original || fields.map(field => field.text).join(', ')}</span>
               </span>
               <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
             </button>
             <div className="flex items-center justify-between gap-2 px-4 pb-3">
               <span className="text-xs text-gray-400">{new Date(Number(chain.updatedAt || 0)).toLocaleDateString()}</span>
-              <ToolbarButton disabled={!read.ok || !!busy} onClick={() => onLoad(chain)}>{t('载入组合')}</ToolbarButton>
+              {original !== null ? <ToolbarButton onClick={() => void copySnapshot(chain)}><Copy />{t('复制提示词')}</ToolbarButton>
+                : <ToolbarButton disabled={!read.ok || !!busy} onClick={() => onLoad(chain)}>{t('载入组合')}</ToolbarButton>}
             </div>
-            {!read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
+            {original === null && !read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
             {expanded && <div id={`content-preview-${chain.id}`} data-content-roll-preview={chain.id} className="border-t border-gray-200 p-4 dark:border-gray-800">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 {renaming?.id === chain.id ? <input autoFocus aria-label={t('重命名这条记录')} value={renaming.value} disabled={!!busy} className={TOOLBAR_FIELD_CLASS}
                   onChange={event => setRenaming({ id: chain.id, value: event.target.value })} onBlur={() => void commitRename()}
                   onKeyDown={event => { if (event.key === 'Enter') void commitRename(); if (event.key === 'Escape') { renameCancelled.current = true; setRenaming(null); } }} />
                   : <ToolbarButton disabled={!!busy} onClick={() => { renameCancelled.current = false; setRenaming({ id: chain.id, value: chain.name }); }}>{t('改名')}</ToolbarButton>}
-                <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制快照')} aria-label={t('复制快照')}><Copy /></ToolbarButton>
+                {original === null && <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制快照')} aria-label={t('复制快照')}><Copy /></ToolbarButton>}
                 <ToolbarButton disabled={!!busy} onClick={() => setCoverFor(chain)} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')}><ImagePlus /></ToolbarButton>
                 <ToolbarButton tone="danger" disabled={!!busy} onClick={() => void remove(chain)} title={t('删除')} aria-label={t('删除')}><Trash2 /></ToolbarButton>
                 {busy === chain.id && <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />}
               </div>
               <div className="space-y-3">
+                {original !== null && <p className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{original}</p>}
                 {fields.map(({ kind, text, negative }) => <div key={kind}>
                   <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</h3>
                   <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{text}</p>

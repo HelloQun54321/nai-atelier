@@ -539,3 +539,30 @@ test('取消在途任务不提前放行，收图后才释放执行位', () => {
   tasks.reserve('flight-key', other, 1);
   assert.equal(tasks.status('flight-key', other).position, 0);
 });
+
+test('按 Key 取消当前与全部等待项，跨标签页取消返回真实数量', () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 }), tail = 'c'.repeat(32);
+  tasks.reserve('key', owner, 2);
+  tasks.enqueue('key', other, 'end', 1);
+  tasks.enqueue('key', tail, 'next', 1);
+  const result = tasks.cancelAll('key');
+  assert.equal(result.cancelled, 3);
+  for (const token of [owner, other, tail]) assert.throws(() => tasks.status('key', token), { code: 'generation_cancelled' });
+  assert.equal(tasks.size, 0);
+});
+
+test('取消全部队列的 HTTP 入口只接受当前 Key 的明确请求', async () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  await runTask(tasks, 'POST', owner, 'synthetic-key');
+  const req = request('DELETE', '', 'synthetic-key'), res = new Reply();
+  req.headers['x-nai-generation-cancel-all'] = '1';
+  await handleGenerationTaskRequest(req, res, 'synthetic-secret', tasks);
+  assert.equal(res.statusCode, 200);
+  const data = JSON.parse(res.body());
+  assert.equal(data.success, true);
+  assert.equal(data.cancelled, 1);
+  const after = await runTask(tasks, 'GET', owner, 'synthetic-key');
+  assert.equal(after.status, 200);
+  assert.equal(after.data.total, 0);
+  assert.equal(after.data.busy, false);
+});

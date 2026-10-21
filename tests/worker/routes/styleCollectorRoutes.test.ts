@@ -41,6 +41,76 @@ function fixture() {
 }
 
 describe('后台收集原子入库（隔离 SQLite 与内存封面）', () => {
+  it('收藏模式保存没有生成信息的原图及来源，不补造配置；重复复制去重，取消收藏后可恢复', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const image = png({ Software: '普通图片' });
+    const body = { session: f.session, image, format: 'png', name: 'sample.png', sourceUrl: 'https://example.com/a.png?signature=1' };
+    expect((await f.invoke('collection', body))?.status).toBe(200);
+    const row = f.sqlite.prepare('SELECT * FROM inspirations').get() as any;
+    expect(row.archived).toBe(0); expect(row.board_id).toBeNull(); expect(row.prompt).toBe(''); expect(row.params).toBeNull();
+    expect(row.source_url).toBe(body.sourceUrl); expect(JSON.parse(row.tags)).toEqual([]);
+    expect(Buffer.from(f.assets.get(row.image_key)!)).toEqual(Buffer.from(image, 'base64'));
+    expect(await (await f.invoke('collection', { ...body, sourceUrl: 'https://example.com/a.png?signature=2' }))?.json()).toMatchObject({ outcome: 'skipped' });
+    f.sqlite.prepare('UPDATE inspirations SET archived = 1, tags = ?').run('["自选标签"]');
+    expect(await (await f.invoke('collection', body))?.json()).toMatchObject({ outcome: 'saved', id: row.id });
+    expect(f.sqlite.prepare('SELECT archived, tags FROM inspirations').get()).toMatchObject({ archived: 0, tags: '["自选标签"]' });
+    expect(f.assets.size).toBe(1); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(0); f.sqlite.close();
+  });
+  it('收藏有元数据时保留完整参数，图片非法或结束期间返回不残留新图片', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const body = { session: f.session, image: png(), format: 'png', rawMetadata: JSON.stringify(metadata) };
+    await f.invoke('collection', body);
+    const row = f.sqlite.prepare('SELECT * FROM inspirations').get() as any;
+    expect(row.prompt).toBe(metadata.prompt); expect(row.negative_prompt).toBe('lowres'); expect(JSON.parse(row.params)).toMatchObject({ seed: 42, steps: 23 });
+    expect((await f.invoke('collection', { ...body, image: 'aW52YWxpZA==' }))?.status).toBe(400);
+    expect((await f.invoke('collection', { ...body, format: 'gif' }))?.status).toBe(400);
+    const put = f.bucket.put.bind(f.bucket);
+    f.bucket.put = async (key, bytes) => { await put(key, bytes); await f.invoke('session', { session: '' }); };
+    expect((await f.invoke('collection', { ...body, image: png({ ...metadata, seed: 43 }) }))?.status).toBe(409);
+    expect(f.assets.size).toBe(1); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM inspirations').get()?.n).toBe(1); f.sqlite.close();
+  });
+  it('收藏写库失败只回滚本次分配图片，保留已有资产', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    f.assets.set('existing', new ArrayBuffer(0)); f.db.batch = async () => { throw new Error('合成写库失败'); };
+    await expect(f.invoke('collection', { session: f.session, image: png(), format: 'png' })).rejects.toThrow('合成写库失败');
+    expect([...f.assets.keys()]).toEqual(['existing']); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM inspirations').get()?.n).toBe(0); f.sqlite.close();
+  });
+  it('原文存入组合库，空白及权重逐字保留，同一操作重试只有一条，不生成封面或分类', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const text = '  {{snow}}, 1.2::hair::\r\n[smile]  ';
+    const body = { session: f.session, id: '00000000-0000-4000-8000-000000000002', text, name: '' };
+    expect((await f.invoke('text', body))?.status).toBe(200);
+    expect((await f.invoke('text', body))?.status).toBe(200);
+    const rows = f.sqlite.prepare('SELECT * FROM chains').all() as any[];
+    expect(rows).toHaveLength(1); expect(rows[0].type).toBe('preset'); expect(rows[0].base_prompt).toBe(text);
+    expect(JSON.parse(rows[0].params)).toEqual({ _collectedPrompt: 1 }); expect(JSON.parse(rows[0].tags)).toEqual([]);
+    expect(f.assets.size).toBe(0); f.sqlite.close();
+  });
+  it('原文可指定六类归属，逐字保留并落在对应条目库，未知分类拒绝', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const text = '  {{snow}}, 1.2::hair::\r\n[smile]  ';
+    const body = { session: f.session, id: '00000000-0000-4000-8000-000000000003', text, name: '雪天', category: 'appearance' };
+    expect((await f.invoke('text', body))?.status).toBe(200);
+    const rows = f.sqlite.prepare('SELECT * FROM chains').all() as any[];
+    expect(rows).toHaveLength(1); expect(rows[0].type).toBe('appearance'); expect(rows[0].name).toBe('雪天');
+    expect(rows[0].base_prompt).toBe(text);
+    expect(JSON.parse(rows[0].params)).toEqual({ _collectedPrompt: 1, _collectedCategory: 'appearance' });
+    for (const category of ['style', 'preset', 'nope']) {
+      expect((await f.invoke('text', { ...body, id: '00000000-0000-4000-8000-000000000004', category }))?.status).toBe(400);
+    }
+    f.sqlite.close();
+  });
+  it('文字收录拒绝空白、超长、错误操作 ID 和已结束会话，不覆盖既有内容', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const body = { session: f.session, id: '00000000-0000-4000-8000-000000000002', text: 'original' };
+    for (const text of [null, ' \r\n', 'x'.repeat(65537)]) expect((await f.invoke('text', { ...body, text }))?.status).toBe(400);
+    expect((await f.invoke('text', { ...body, id: 'bad' }))?.status).toBe(400);
+    await f.invoke('text', body);
+    expect((await f.invoke('text', { ...body, text: 'changed' }))?.status).toBe(409);
+    await f.invoke('session', { session: '' });
+    expect((await f.invoke('text', body))?.status).toBe(409);
+    expect(f.sqlite.prepare('SELECT base_prompt FROM chains').get()?.base_prompt).toBe('original'); f.sqlite.close();
+  });
   it('保存完整提示词、参数、封面与来源，仅添加待实测状态', async () => {
     const f = fixture(); await f.invoke('session', { session: f.session });
     const result = await f.collect(); expect(result?.status).toBe(200);

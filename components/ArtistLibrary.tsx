@@ -31,6 +31,7 @@ import { applyEstimatorRuntime, estimateV45GenerationCost, useAnlasBudget } from
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
+import { useAgentCommand } from '../services/agentCommands';
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { approveGenerationSeries, stopGenerationSeriesSession } from '../services/generationSeries';
 import { setGenerationQueuePaused } from '../services/generationTask';
@@ -194,6 +195,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const agentRootRef = useRef<HTMLDivElement>(null);
     const active = useContext(ImageActivityContext);
     const activeRef = useRef(active); activeRef.current = active;
     useEffect(() => { activeRef.current = active; return () => { activeRef.current = false; }; }, [active]);
@@ -247,7 +249,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         const timer = window.setInterval(() => setSampleRefresh(current => current + 1), 2000);
         return () => window.clearInterval(timer);
     }, [active, sampleStatus]);
-    const generateSample = async (tag: string, pack: ArtistSamplePack, template: ArtistSampleTemplate, regenerate = false) => {
+    const generateSample = async (tag: string, pack: ArtistSamplePack, template: ArtistSampleTemplate, regenerate = false, options: { skipConfirmation?: boolean } = {}) => {
         if (requesting.current || artistSampleGenerationBusy(getArtistSampleGeneration(tag, pack))) return;
         const key = readArtistSampleApiKey();
         if (!key) { notify(t('请先在“全局设置”中配置 NovelAI API Key'), 'error'); return; }
@@ -256,7 +258,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         try {
             void subscription.refreshIfStale();
             const cost = estimateV45GenerationCost(snapshot.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true);
-            if (cost > 0 && !await confirm({ rememberKey: 'artist-sample.generate', rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片', message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [1, cost, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [cost]), ...(cost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
+            if (cost > 0 && !options.skipConfirmation && !await confirm({ rememberKey: 'artist-sample.generate', rememberScope: confirmationCostScope(key, cost, 1, budget.remaining, snapshot.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片', message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [1, cost, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [cost]), ...(cost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
             if (!activeRef.current) return;
             if (readArtistSampleApiKey() !== key) throw new Error('NovelAI Key 已变化，请重新发起生成');
             // 任务在服务中观察完成，页面卸载不会丢失入库核对；这里只放开确认互斥。
@@ -264,10 +266,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         } catch (error) { notify((error as Error).message, 'error'); }
         finally { requesting.current = false; setRequestingTarget(''); }
     };
-    const supplementSample = (tag: string, pack: ArtistSamplePack, regenerate = false) => {
+    const supplementSample = (tag: string, pack: ArtistSamplePack, regenerate = false, options: { skipConfirmation?: boolean } = {}) => {
         const template = sampleData.templates[pack];
-        if (!template) { setSampleSettings({ tag, pack, generateAfterSave: true, regenerate }); return; }
-        void generateSample(tag, pack, template, regenerate);
+        if (!template) { setSampleSettings({ tag, pack, generateAfterSave: true, regenerate }); return false; }
+        void generateSample(tag, pack, template, regenerate, options);
+        return true;
     };
     const manageGeneration = async (tag: string, pack: ArtistSamplePack, action: 'approve' | 'resume') => {
         const session = getArtistSampleGeneration(tag, pack)?.session;
@@ -566,8 +569,40 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         requestAnimationFrame(() => scrollContainerRef.current?.scrollTo({ top: catalogScrollTopRef.current }));
     };
 
+    useAgentCommand({
+        name: 'get_artist_sample_status', label: '读取画师样张状态', description: '读取指定画师与样张包的生成、保存、失败或取消状态。', parameters: { type: 'object', properties: { tag: { type: 'string' }, pack: { enum: ['v45', 'v5'] } }, required: ['tag'] }, readOnly: true, scope: () => agentRootRef.current,
+        execute: args => {
+            const tag = String(args.tag || '').trim();
+            const pack: ArtistSamplePack = args.pack === 'v5' ? 'v5' : 'v45';
+            if (!tag) throw new Error('请提供画师 Tag');
+            const state = getArtistSampleGeneration(tag, pack);
+            return state ? {
+                tag, pack, phase: state.phase, error: state.error || '', hasPreview: Boolean(state.preview),
+                historyIds: state.target.historyIds,
+                session: state.session ? { state: state.session.state, queued: state.session.queued, progress: state.session.progress, awaiting: state.session.awaiting || null } : null,
+            } : { tag, pack, phase: 'idle' };
+        },
+    });
+    useAgentCommand({
+        name: 'generate_artist_sample', label: '生成或补充画师样张', description: '为指定画师生成样张并归档；按当前权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { tag: { type: 'string' }, pack: { enum: ['v45', 'v5'] }, regenerate: { type: 'boolean' }, agentPermissionMode: { type: 'string' } }, required: ['tag'] }, scope: () => agentRootRef.current,
+        execute: args => {
+            const tag = String(args.tag || '').trim();
+            const pack: ArtistSamplePack = args.pack === 'v5' ? 'v5' : 'v45';
+            if (!tag) throw new Error('请提供画师 Tag');
+            if (!readArtistSampleApiKey()) throw new Error('请先在全局设置中配置 NovelAI API Key');
+            if (requesting.current) throw new Error('已有样张请求正在等待费用确认');
+            if (artistSampleGenerationBusy(getArtistSampleGeneration(tag, pack))) throw new Error('这位画师已有样张正在生成，请等待完成');
+            if (!sampleData.templates[pack]) {
+                setSampleSettings({ tag, pack, generateAfterSave: true, regenerate: args.regenerate === true });
+                return { started: false, requiresSettings: true, note: '还没有保存样张模板，已在页面打开设置。' };
+            }
+            const started = supplementSample(tag, pack, args.regenerate === true, { skipConfirmation: args.agentPermissionMode === 'full' });
+            return { started, tag, pack, regenerate: args.regenerate === true, note: started ? '已发起样张生成；费用确认由页面处理，进度用 get_artist_sample_status 读取。' : '未能发起，请检查页面状态。' };
+        },
+    });
+
     return (
-        <div className="workspace-canvas flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
+        <div ref={agentRootRef} className="workspace-canvas flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden relative">
 
             {/* --- Controls Header --- */}
             <WorkspaceChrome>

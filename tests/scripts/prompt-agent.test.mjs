@@ -858,7 +858,7 @@ test('会话落盘与历史接口不保存或返回费用，仅保留 Token 和�
 test('只读在工具执行层阻止整个修改集合，完全访问创建图片目录不弹确认', () => isolated(async service => {
   await service.setPermissionMode('read_only'); const events = [], requests = [];
   const tools = service.createTools({ params: {} }, {}, event => events.push(event), { agentSessionId: 's', requestJson: async path => { requests.push(path); return {}; } }, {});
-  const readTool = name => /^(get_|list_|search_|read_|inspect_|show_)/.test(name) || ['enable_tool_group', 'navigate_view'].includes(name);
+  const readTool = name => /^(get_|list_|search_|read_|inspect_|show_)/.test(name) || ['enable_tool_group', 'navigate_view', 'open_settings'].includes(name);
   const mutations = tools.filter(tool => !readTool(tool.name)); assert.ok(mutations.length > 20);
   for (const tool of mutations) await assert.rejects(tool.execute('t', {}), /只读/);
   assert.equal(requests.length, 0); assert.equal(events.length, 0);
@@ -1316,4 +1316,90 @@ test('助手仅在显式排队时传递队列位置，待确认恢复保留位�
   assert.match(tool.description, /next 等当前图片保存后执行新任务，再继续原任务余量/);
   await tool.execute('t', {}); assert.equal(action.patch.placement, undefined);
   await assert.rejects(tool.execute('t', { placement: 'interrupt' }), error => error.code === 'invalid_generation_queue');
+}));
+
+test('助手注册生成控制、Roll、画师样张、内容库、收藏夹、反推与本机资产业务工具', () => isolated(async service => {
+  const tools = service.createTools({ params: {} }, {}, () => {}, {});
+  const names = new Set(tools.map(tool => tool.name));
+  for (const name of ['get_generation_status', 'control_generation', 'get_roll_state', 'run_roll_round', 'generate_roll_pending', 'save_roll_candidate', 'get_artist_sample_status', 'generate_artist_sample', 'inspect_image_tags', 'list_inspiration_boards', 'create_inspiration_board', 'update_inspiration_board', 'reorder_inspiration_boards', 'delete_inspiration_board', 'create_prompt_library_item', 'update_prompt_library_item', 'create_vibe_from_local', 'create_character_reference_from_local', 'open_settings']) assert.ok(names.has(name), name);
+  const navigate = tools.find(tool => tool.name === 'navigate_view');
+  for (const view of ['footprint', 'content-roll', 'content-roll-library', 'content-library', 'pixiv', 'codex']) assert.ok(JSON.stringify(navigate.parameters).includes(view), view);
+}));
+
+test('内容库条目按六类与中文对照写入真实 chains 字段', () => isolated(async service => {
+  const requests = [];
+  const tools = service.createTools({ params: {} }, {}, () => {}, { agentOperationScope: 's', requestJson: async (path, options) => { requests.push({ path, options }); return { id: options?.body?.id }; } });
+  const tool = tools.find(item => item.name === 'create_prompt_library_item');
+  await tool.execute('id', { kind: 'wardrobe', name: '合成服饰', prompt: '1girl, long coat', bilingual: '长外套', tags: ['coat'] });
+  const body = requests[0].options.body;
+  assert.equal(body.type, 'wardrobe');
+  assert.equal(body.basePrompt, '1girl, long coat');
+  assert.equal(body.params._promptLibrary.bilingual, '长外套');
+  assert.deepEqual(body.tags, ['coat']);
+}));
+
+test('收藏夹工具使用真实排序字段，拒绝遗漏或重复的排序', () => isolated(async service => {
+  const requests = [];
+  const project = { agentOperationScope: 's', requestJson: async (path, options) => {
+    if (path === '/api/inspiration-boards' && !options?.method) return { items: [{ id: 'a' }, { id: 'b' }] };
+    requests.push({ path, options });
+    return path === '/api/inspiration-boards' ? { item: { id: 'c', name: '合成收藏夹' } } : { success: true };
+  } };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project);
+  await tools.find(item => item.name === 'create_inspiration_board').execute('id', { name: '合成收藏夹', color: '#123456' });
+  assert.equal(requests[0].options.body.color, '#123456');
+  requests.length = 0;
+  await tools.find(item => item.name === 'reorder_inspiration_boards').execute('id', { ids: ['b', 'a'] });
+  assert.deepEqual(requests.map(request => request.options.body.sortOrder), [0, 1]);
+  assert.ok(requests[0].path.endsWith('/b'));
+  await assert.rejects(tools.find(item => item.name === 'reorder_inspiration_boards').execute('id', { ids: ['a'] }), /全部收藏夹/);
+}));
+
+test('本机图片可直接创建 Vibe 与角色参考，不经过历史或上传入口', () => isolated(async service => {
+  const file = join(service.isolatedRoot, 'synthetic.png');
+  await writeFile(file, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1YQAAAAASUVORK5CYII=', 'base64'));
+  const requests = [];
+  const project = { agentSessionId: 's', keyHash: 'k', requestJson: async (path, options) => { requests.push({ path, options }); return { item: { id: 'asset' } }; } };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project);
+  await tools.find(item => item.name === 'create_vibe_from_local').execute('id', { path: file, name: '合成 Vibe' });
+  await tools.find(item => item.name === 'create_character_reference_from_local').execute('id', { path: file, name: '合成参考' });
+  assert.equal(requests[0].path, '/api/vibes');
+  assert.equal(requests[1].path, '/api/character-references');
+  for (const request of requests) {
+    assert.equal(request.options.body.name.length > 0, true);
+    assert.match(request.options.body.imageData, /^data:image\/png;base64,/);
+  }
+}));
+
+test('反推与本机图片、生成控制都通过真实页面命令回执返回', () => isolated(async service => {
+  const file = join(service.isolatedRoot, 'synthetic-tags.png');
+  await writeFile(file, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1YQAAAAASUVORK5CYII=', 'base64'));
+  const operations = [];
+  const project = { agentSessionId: 's', keyHash: 'k', requestUI: async operation => {
+    operations.push(operation);
+    if (operation.action === 'read') return { title: '工坊', snapshotId: 'p', controls: [], commands: [{ name: 'inspect_image_tags' }, { name: 'get_generation_status' }, { name: 'control_generation' }] };
+    if (operation.action === 'command') return { title: '工坊', snapshotId: 'p-2', controls: [], commands: [], result: operation.command === 'inspect_image_tags' ? { tags: [{ name: '1girl', confidence: 0.9 }] } : operation.command === 'get_generation_status' ? { sessions: [{ scope: 'playground', state: 'generating' }], queue: null } : { action: operation.args.action } };
+    return { title: '工坊', snapshotId: 'p', controls: [], commands: [] };
+  } };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project);
+  const tags = await tools.find(item => item.name === 'inspect_image_tags').execute('id', { source: 'local', path: file });
+  assert.equal(JSON.parse(tags.content[0].text).tags[0].name, '1girl');
+  assert.match(operations.find(operation => operation.action === 'command' && operation.command === 'inspect_image_tags').args.path, /^\/api\/prompt-agent\/local-image\?/);
+  const status = await tools.find(item => item.name === 'get_generation_status').execute('id', {});
+  assert.equal(JSON.parse(status.content[0].text).sessions[0].scope, 'playground');
+  const control = await tools.find(item => item.name === 'control_generation').execute('id', { action: 'pause', scope: 'playground' });
+  assert.equal(JSON.parse(control.content[0].text).action, 'pause');
+}));
+
+test('风格串工具补齐自定义变量、游客隐藏与历史封面字段', () => isolated(async service => {
+  const requests = [];
+  const project = { requestJson: async (path, options) => { requests.push({ path, options }); return { id: options?.body?.id || 'existing' }; }, requestBuffer: async () => ({ buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z1YQAAAAASUVORK5CYII=', 'base64'), mimeType: 'image/png' }) };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project);
+  await tools.find(item => item.name === 'create_chain').execute('id', { type: 'appearance', name: '合成条目', subjectPrompt: 'synthetic subject', variableValues: { extra: 'synthetic' }, guestHidden: true, coverHistoryId: 'history-1' });
+  const body = requests.find(request => request.path === '/api/chains').options.body;
+  assert.equal(body.type, 'appearance');
+  assert.equal(body.variableValues.subject, 'synthetic subject');
+  assert.equal(body.variableValues.extra, 'synthetic');
+  assert.equal(body.guestHidden, true);
+  assert.match(body.previewImage, /^data:image\/png;base64,/);
 }));

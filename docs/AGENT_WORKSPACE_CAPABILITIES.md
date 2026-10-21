@@ -29,6 +29,21 @@
 
 画布命令不会生成图片，也不会消耗 Anlas。生成沿用实际界面的业务流程，确认要求跟随当前助手权限。
 
+## 生成、Roll 与资料管理
+
+| 能力 | 工具 | 实际路径 |
+| --- | --- | --- |
+| 生成队列 | `get_generation_status`、`control_generation` | 页面命令读取本标签页会话与同 Key 后端队列；暂停／继续／取消按 Key 作用于整队，取消只停止后续图片，已提交图片仍保存 |
+| Roll 串 | `get_roll_state`、`run_roll_round`、`generate_roll_pending`、`save_roll_candidate` | 页面命令复用当前实验、画师库、费用确认、逐张生成与保存链路 |
+| 画师样张 | `get_artist_sample_status`、`generate_artist_sample` | 页面命令复用样张模板、费用确认、后台生成与入库核对 |
+| 内容库 | `create_prompt_library_item`、`update_prompt_library_item` | `/api/chains`，`type` 为六类之一，中文对照写入 `params._promptLibrary` |
+| 收藏夹 | `list_inspiration_boards`、`create_inspiration_board`、`update_inspiration_board`、`reorder_inspiration_boards`、`delete_inspiration_board` | `/api/inspiration-boards`；删除只打开确认框，图片回到未整理 |
+| 本机资产 | `create_vibe_from_local`、`create_character_reference_from_local` | 读取本机图片原始字节，写入 `/api/vibes` 或 `/api/character-references` |
+| 图片反推 | `inspect_image_tags` | 项目图片或已登记的本机图片交给当前设备的本地反推模型 |
+| 导航 | `navigate_view`、`open_settings` | 补齐创作足迹、Roll 组合库、内容库分区与五类设置分区 |
+
+状态型工具先导航到对应工作区并等待命令注册，再执行页面已登记命令；不新增第二套任务库。标准权限仍由页面确认费用，完全访问沿用生图授权直接执行；只读档只允许查询类工具。
+
 ## 本地文件、图片转用与导出
 
 | 工作流 | 实际路径 |
@@ -58,3 +73,5 @@
 前端 16 个文件、166 项定向测试通过；隔离临时副本网关 348 项通过；完整构建通过。浏览器使用实际 ImageEditPanel／Canvas 与合成图片验证：192×192 矩形实际改变 36,864 个像素，128×128 聚焦重绘选区只改变 16,384 个像素，撤销／重做、原生底图观察、全屏画布、四边扩图到 640×640、真实 FileList 上传、原图转用、JSON 导出及拖动均取得实际结果。
 
 验收未调用收费模型或生图接口，未读取或改写私人数据。自动化回归与组件验收建立当前实现的覆盖依据；无法据此保证未来新增的任意组件自动拥有完整操作语义，应继续遵循上述约定。
+
+2026-10-21 补齐生成、Roll、画师样张、内容库、收藏夹、反推、本机资产与导航工具后，`prompt-agent` 84 项、生成队列 34 项、Roll／画师库页面命令 100 项、App 集成 32 项、页面桥 30 项定向测试通过；新工具使用合成图片、内存记录与隔离临时目录，未调用收费生成。

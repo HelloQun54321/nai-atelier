@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { encode } from 'fast-png';
 import { gzipSync } from 'node:zlib';
+import sharp from 'sharp';
 import { imageLink, publicIp, validateDownloadTarget, downloadCollectorImage, resolveCollectorPublicDns, collectorErrorReason } from '../../scripts/collector-download.mjs';
 import { createServer } from 'node:http';
 import { StyleCollector, collectorLocalRequest } from '../../scripts/style-collector.mjs';
@@ -33,15 +34,78 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const until = async predicate => { for (let i = 0; i < 200; i++) { if (predicate()) return; await new Promise(r => setTimeout(r, 5)); } throw new Error('condition timeout'); };
 function harness(options = {}) {
   let receive, active = '', closed = 0;
-  const imports = [];
+  const imports = [], actions = [], textResults = [];
   const manager = new StyleCollector({ platform: 'win32',
-    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: () => {}, close: () => closed++ }; },
+    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: () => {}, textResult: result => textResults.push(result), close: () => closed++ }; },
     worker: async (action, body) => { if (action === 'position') return {}; if (action === 'session') { active = body.session; return {}; }
-      assert.equal(body.session, active); imports.push(body); return { outcome: 'saved' }; },
+      assert.equal(body.session, active); imports.push(body); actions.push(action); return { outcome: 'saved' }; },
     download: async url => ({ bytes: hidden(), finalUrl: url }), ...options,
   });
-  return { manager, imports, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
+  return { manager, imports, actions, textResults, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
 }
+
+test('collection mode saves metadata-free links; changing modes never reroutes queued images', async t => {
+  const gate = deferred(); let downloads = 0;
+  const h = harness({ download: async url => { downloads++; if (downloads === 1) await gate.promise; return { bytes: plain(), finalUrl: url }; } });
+  t.after(() => h.manager.command('stop')); await h.manager.command('start');
+  h.copy('https://example.com/same.png');
+  await h.manager.command('mode', 'collection'); h.copy('https://example.com/same.png');
+  await h.manager.command('mode', 'style'); gate.resolve(); await h.manager.run.processing;
+  assert.equal(downloads, 2); assert.deepEqual(h.actions, ['collection']);
+  assert.equal(h.imports[0].format, 'png'); assert.equal(h.imports[0].rawMetadata, null);
+  assert.equal(h.manager.state().saved, 1); assert.equal(h.manager.state().collectionSaved, 1); assert.equal(h.manager.state().mode, 'style');
+});
+
+test('copied images follow the active mode: style extracts metadata, collection keeps bytes', async t => {
+  const h = harness(); t.after(() => h.manager.command('stop')); await h.manager.command('start');
+  h.event({ type: 'image', image: plain().toString('base64'), mode: 'style' }); await h.manager.run.processing;
+  assert.equal(h.imports.length, 0); assert.equal(h.manager.state().skipped, 1);
+  const hiddenBytes = hidden();
+  h.event({ type: 'image', image: hiddenBytes.toString('base64'), mode: 'style' }); await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'import'); assert.equal(h.imports.at(-1).image, hiddenBytes.toString('base64'));
+  assert.equal(h.manager.state().saved, 1);
+  await h.manager.command('mode', 'collection');
+  for (const bytes of [plain(), await sharp(plain()).jpeg().toBuffer(), await sharp(plain()).webp().toBuffer()]) {
+    h.event({ type: 'image', image: bytes.toString('base64') }); await h.manager.run.processing;
+    assert.equal(h.imports.at(-1).image, bytes.toString('base64'));
+  }
+  assert.deepEqual(h.actions, ['import', 'collection', 'collection', 'collection']);
+  h.event({ type: 'image', image: 'aW52YWxpZA==' }); await h.manager.run.processing;
+  assert.equal(h.manager.state().failed, 1); assert.equal(h.imports.length, 4);
+  await h.manager.command('pause'); h.event({ type: 'image', image: plain().toString('base64') });
+  assert.equal(h.imports.length, 4);
+});
+
+test('prompt capture is explicit, works while image listening is paused, and never broadcasts original text', async t => {
+  const h = harness(); t.after(() => h.manager.command('stop'));
+  await h.manager.command('start'); await h.manager.command('pause');
+  const original = '  {{snow}}\r\n[smile]  ';
+  h.copy(original); assert.equal(h.imports.length, 0);
+  h.event({ type: 'save-text', id: 'synthetic', name: '雪天', text: original });
+  await until(() => h.textResults.length > 0);
+  assert.equal(h.imports[0].text, original); assert.equal(h.imports[0].name, '雪天');
+  assert.deepEqual(h.textResults, [{ id: 'synthetic', ok: true, message: '已存入组合库' }]);
+  assert.equal(h.manager.state().saved, 1);
+  assert.equal(JSON.stringify(h.manager.state()).includes(original), false);
+  h.event({ type: 'save-text', id: 'synthetic-category', name: '雪天', text: original, category: 'appearance' });
+  await until(() => h.textResults.length > 1);
+  assert.equal(h.imports.at(-1).category, 'appearance');
+  assert.deepEqual(h.textResults.at(-1), { id: 'synthetic-category', ok: true, message: '已存入内容库' });
+  assert.equal(h.manager.state().detail, '已存入内容库');
+});
+
+test('prompt save rejects double clicks, reports failure, and ignores late replies after stop', async t => {
+  let pending = deferred();
+  const h = harness({ worker: async action => { if (action === 'text') return pending.promise; return {}; } });
+  t.after(() => h.manager.command('stop')); await h.manager.command('start');
+  const event = { type: 'save-text', id: 'synthetic', text: 'test' };
+  h.event(event); h.event(event);
+  pending.resolve({ outcome: 'failed' }); await until(() => h.textResults.length > 0);
+  assert.deepEqual(h.textResults, [{ id: 'synthetic', ok: false }]); assert.equal(h.manager.state().saved, 0);
+  pending = deferred(); h.event(event); await h.manager.command('stop');
+  pending.resolve({ outcome: 'saved' }); await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(h.textResults.length, 1); assert.equal(h.manager.state().saved, 0);
+});
 
 test('only complete image links qualify; signed query retained', () => {
   assert.equal(imageLink('hello'), null); assert.equal(imageLink('https://discord.com/channels/1/2/3'), null);
@@ -246,7 +310,7 @@ test('failure detail survives idle, native state matches, fresh session clears i
   const h = harness({ listener: async ({ onEvent }) => { h.receive = onEvent; return { command: async () => {}, update: state => updates.push(state), close: () => {} }; }, download: async () => { throw new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } }); } });
   await h.manager.command('start'); h.receive({ type: 'link', url: 'https://example.com/a.png' });
   await until(() => h.manager.state().failed === 1);
-  assert.equal(h.manager.state().stage, '等待复制图片链接'); assert.match(h.manager.state().detail, /^失败：域名解析/);
+  assert.equal(h.manager.state().stage, '等待复制图片或图片链接'); assert.match(h.manager.state().detail, /^失败：域名解析/);
   assert.equal(updates.at(-1).detail, h.manager.state().detail); assert.equal('failures' in h.manager.state(), false);
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(h.manager.state().detail, ''); await h.manager.command('stop');
 });
@@ -276,7 +340,7 @@ test('appearance is remembered before startup and updates one active listener wi
   const before = h.manager.state();
   await h.manager.command('appearance', { ...light, language: 'en' });
   assert.equal(updates.at(-1).appearance.labels['已保存'], 'Saved');
-  assert.equal(updates.at(-1).stage, '等待复制图片链接');
+  assert.equal(updates.at(-1).stage, '等待复制图片或图片链接');
   assert.equal(h.manager.state().session, before.session);
   await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
   assert.equal(h.manager.state().session, before.session); assert.equal(h.manager.state().saved, before.saved); assert.equal(updates.at(-1).appearance.themeMode, 'dark');

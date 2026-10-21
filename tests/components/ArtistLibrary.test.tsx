@@ -3,6 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
+import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
 import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
 import { ImageActivityContext } from '../../components/SmartImage';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
@@ -52,6 +53,23 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo); else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo; });
 const publishGeneration = () => act(() => { mocks.generationRevision++; mocks.generationListeners.forEach(listener => listener()); });
 const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
+
+it('向助手登记读取与生成画师样张的命令', async () => {
+  const { container } = setup();
+  const names = getAgentCommands(container).map(command => command.name);
+  expect(names).toEqual(expect.arrayContaining(['get_artist_sample_status', 'generate_artist_sample']));
+  const status = await executeAgentCommand(container, 'get_artist_sample_status', { tag: 'alpha artist' }, true) as { phase: string };
+  expect(status.phase).toBe('idle');
+});
+
+it('助手生成画师样张复用页面费用确认与生成链路', async () => {
+  mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [] });
+  const { container } = setup();
+  await screen.findByTestId('cover-alpha artist');
+  const result = await executeAgentCommand(container, 'generate_artist_sample', { tag: 'alpha artist', pack: 'v45' }, false) as { started: boolean };
+  expect(result.started).toBe(true);
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalled());
+});
 
 it('确认一张费用后固定目标版本/模板，取消不投递，自己的样张才有封面重新生成入口', async () => {
   mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [{ ...template, id: 'old', tag: 'alpha artist', pack: 'v45', imageUrl: '/api/assets/old.png', createdAt: 1 }] });

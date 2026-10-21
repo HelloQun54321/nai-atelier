@@ -77,6 +77,8 @@ const installWatchers = () => {
 
 export const getGenerationSeriesSession = (scope: string) => (groups.get(scope) || []).find(entry => !entry.session.queued)?.session || null;
 export const getQueuedGenerationSeries = (scope: string) => (groups.get(scope) || []).filter(entry => entry.session.queued).map(entry => entry.session);
+/** 助手读取所有正在监督的生成会话；不返回 Key，只给状态与真实进度。 */
+export const listGenerationSeriesSessions = () => [...groups].flatMap(([scope, entries]) => entries.map(entry => ({ scope, session: entry.session })));
 export const subscribeGenerationSeries = (listener: () => void) => {
     listeners.add(listener);
     return () => { listeners.delete(listener); };
@@ -296,6 +298,9 @@ export const stopGenerationSeriesSession = (session: GenerationSeriesSession) =>
     publish();
     if (isGenerationJobTerminal(session.state)) return;
     void cancelGenerationJob(session.key, session.token).catch(error => {
+        // 已被同 Key 的其他入口取消或租约已过期时，不再叠加“取消未送达”的假告警。
+        const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+        if (code === 'generation_cancelled' || code === 'generation_task_expired') return;
         // 取消未送达不能当作已取消：保留「取消中」，由状态核实给出最终回执。
         session.connectionError = `取消请求未送达：${describeError(error, '连接失败')}`;
         publish();

@@ -22,9 +22,10 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   await until(() => events.some(e => e.id === 'before'));
   send('start', { position: { x: 999999, y: -999999, collapsed: false } });
   await until(() => events.some(e => e.type === 'window'));
-  assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 122, detail: '', detailVisible: true, detailEllipsis: true,
+  assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 194, detail: '', detailVisible: true, detailEllipsis: true,
     title: '收集中', breathing: false, processing: false, tooltipWhileInactive: true, detailTooltip: '', failureHint: false, failureTooltip: '', rounded: true, counters: { pending: 0, saved: 0, skipped: 0, failed: 0 },
     pauseTextFits: true, metricLabelsFit: true,
+    capture: { draft: false, saving: false, status: '', visible: true, preview: '', category: '' }, mode: 'style',
     appearance: { themeMode: 'dark', dark: true, accent: '#0EA5E9', background: '#171B24', foreground: '#F0F2F8', muted: '#939DB5', failure: '#DE999D', motion: 'full' } });
   const detail = '失败：连接中断';
   send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail }, id: 'detail' });
@@ -51,7 +52,7 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   assert.equal(events.filter(e => e.type === 'window').at(-1).failureHint, true);
   assert.equal(events.filter(e => e.type === 'window').at(-1).failureTooltip, longDetail);
   assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, '');
-  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '收集中 · 已保存 0');
+  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '收集中 · 风格串 · 已保存 0');
   const appearance = { themeMode: 'light', isDark: false, accentColor: '#8b5cf6', motion: 'off' };
   send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail: longDetail, appearance }, id: 'light-theme' });
   await until(() => events.some(e => e.id === 'light-theme'));
@@ -76,13 +77,13 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   assert.equal(events.filter(e => e.type === 'window').at(-1).failureHint, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).failureTooltip, '');
   assert.deepEqual(events.filter(e => e.type === 'window').at(-1).counters, { pending: 2, saved: 4, skipped: 1, failed: 1 });
-  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '收集中 · 已保存 4');
+  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '收集中 · 风格串 · 已保存 4');
   send('state', { state: { ...base, paused: true }, id: 'paused-busy' }); await until(() => events.some(e => e.id === 'paused-busy'));
   assert.equal(events.filter(e => e.type === 'window').at(-1).breathing, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).processing, false);
-  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '已暂停 · 已保存 4');
+  assert.equal(events.filter(e => e.type === 'window').at(-1).title, '已暂停 · 风格串 · 已保存 4');
   send('collapse', { id: 'expanded' }); await until(() => events.some(e => e.id === 'expanded'));
-  assert.equal(events.filter(e => e.type === 'window').at(-1).height, 122);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).height, 194);
   assert.equal(events.filter(e => e.type === 'window').at(-1).detailVisible, true);
   assert.equal(events.filter(e => e.type === 'window').at(-1).visiblePosition, true);
   send('state', { state: { ...base, stage: '等待复制图片链接' }, id: 'idle' }); await until(() => events.some(e => e.id === 'idle'));
@@ -112,6 +113,43 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
     assert.equal(current.pauseTextFits, true, language.code+' pause');
     assert.equal(current.metricLabelsFit, true, language.code+' metrics');
   }
+  send('inject-image', { image: 'AQID', id: 'style-image' }); await until(() => events.some(e => e.id === 'style-image'));
+  assert.equal(events.filter(e => e.type === 'image').length, 1);
+  assert.equal(events.filter(e => e.type === 'image').at(-1).mode, 'style');
+  send('mode', { mode: 'collection', id: 'collection-mode' }); await until(() => events.some(e => e.id === 'collection-mode'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).mode, 'collection');
+  send('inject-image', { image: 'AQID', id: 'collection-image' }); await until(() => events.some(e => e.id === 'collection-image'));
+  assert.equal(events.filter(e => e.type === 'image').at(-1).image, 'AQID');
+  send('inject', { text: 'https://example.com/collection.png', id: 'collection-link' }); await until(() => events.some(e => e.id === 'collection-link'));
+  assert.equal(events.filter(e => e.type === 'link').at(-1).mode, 'collection');
+  send('pause', { id: 'collection-pause' }); await until(() => events.some(e => e.id === 'collection-pause'));
+  send('inject-image', { image: 'AQID', id: 'ignored-image' }); await until(() => events.some(e => e.id === 'ignored-image'));
+  assert.equal(events.filter(e => e.type === 'image').length, 2);
+  const original = '  {snow}, 1.2::blue hair::\r\n[smile]  ';
+  send('capture-text', { text: original, id: 'capture' }); await until(() => events.some(e => e.id === 'capture'));
+  const draft = events.filter(e => e.type === 'window').at(-1);
+  assert.equal(draft.capture.draft, true); assert.equal(draft.capture.preview, original); assert.equal(draft.visiblePosition, true);
+  assert.equal(events.filter(e => e.type === 'save-text').length, 0);
+  send('inject', { text: 'unrelated clipboard text' });
+  send('save-text', { name: '雪天', category: 'appearance', id: 'save-text-click' }); await until(() => events.some(e => e.id === 'save-text-click'));
+  const savedText = events.find(e => e.type === 'save-text');
+  assert.equal(savedText.text, original); assert.equal(savedText.name, '雪天'); assert.equal(savedText.category, 'appearance');
+  assert.equal(events.filter(e => e.type === 'window').at(-1).capture.category, 'appearance');
+  send('save-text', { id: 'duplicate-click' }); await until(() => events.some(e => e.id === 'duplicate-click'));
+  assert.equal(events.filter(e => e.type === 'save-text').length, 1);
+  send('text-result', { id: savedText.id, ok: false }); await until(() => events.filter(e => e.type === 'window').at(-1).capture.saving === false);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).capture.preview, original);
+  send('save-text', { name: '雪天', id: 'retry-click' }); await until(() => events.some(e => e.id === 'retry-click'));
+  assert.equal(events.filter(e => e.type === 'save-text').at(-1).id, savedText.id);
+  assert.equal(events.filter(e => e.type === 'save-text').at(-1).category, 'appearance');
+  send('text-result', { id: savedText.id, ok: true, message: '已存入内容库' }); await until(() => events.filter(e => e.type === 'window').at(-1).capture.draft === false);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).capture.category, '');
+  assert.equal(events.filter(e => e.type === 'window').at(-1).noActivate, true);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).foreground, false);
+  send('capture-text', { text: 'next prompt', id: 'next-capture' }); await until(() => events.some(e => e.id === 'next-capture'));
+  send('cancel-text', { id: 'cancel-capture' }); await until(() => events.some(e => e.id === 'cancel-capture'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).capture.draft, false);
+  assert.equal(events.filter(e => e.type === 'save-text').length, 2);
   send('stop'); await until(() => child.exitCode !== null);
   assert.equal(child.exitCode, 0); assert.ok(events.some(e => e.type === 'stop'));
 });

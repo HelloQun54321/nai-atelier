@@ -1762,6 +1762,16 @@ export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = g
     if (req.method === 'POST') { tasks.reserve(key, token, count); return sendJson(res, 200, { success: true, ...tasks.status(key, token) }); }
     else if (req.method === 'PUT') return sendJson(res, 200, { success: true, ...tasks.renew(key, token, req.headers['x-nai-generation-completed'] === undefined ? undefined : Number(req.headers['x-nai-generation-completed']), req.headers['x-nai-generation-prepare'] === '1') });
     else if (req.method === 'DELETE') {
+      if (req.headers['x-nai-generation-cancel-all'] === '1') {
+        const current = tasks.currentToken(key);
+        if (current && jobs?.has(key, current)) jobs.cancel(key, current);
+        const snapshot = tasks.cancelAll(key);
+        return sendJson(res, 200, {
+          success: true, cancelled: snapshot.cancelled, paused: snapshot.paused, busy: snapshot.busy,
+          completed: snapshot.completed, total: snapshot.total,
+          waiting: (snapshot.waiting || []).map(item => ({ position: item.position, total: item.total, completed: item.completed })),
+        });
+      }
       if (jobs?.has(key, token)) jobs.cancel(key, token);
       else tasks.cancel(key, token);
     }

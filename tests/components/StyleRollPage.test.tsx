@@ -6,6 +6,7 @@ import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/sty
 import type { RollExperiment, RollRules } from '../../services/styleRoll';
 import type { PromptChain } from '../../types';
 import { StyleRollPage } from '../../components/StyleRollPage';
+import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
 import { setLanguage } from '../../services/i18n';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
@@ -58,6 +59,25 @@ const pending = () => filterBy('待生成');
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.change(screen.getByRole('spinbutton', { name }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
 const details = () => fireEvent.click(screen.getByText('更多操作', { exact: true }));
+
+it('向助手登记读取、发起、补齐与保存 Roll 候选的命令', async () => {
+  const { container } = await setup();
+  const names = getAgentCommands(container).map(command => command.name);
+  expect(names).toEqual(expect.arrayContaining(['get_roll_state', 'run_roll_round', 'generate_roll_pending', 'save_roll_candidate']));
+  const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as { experiment: { id: string }; candidates: unknown[] };
+  expect(state.experiment.id).toBe(experiment.id);
+  expect(state.candidates.length).toBeGreaterThan(0);
+});
+
+it('助手发起 Roll 时保存候选；generate=false 不投递收费生成', async () => {
+  const { container } = await setup();
+  const before = mocks.save.mock.calls.length;
+  const result = await executeAgentCommand(container, 'run_roll_round', { count: 1, generate: false }, false) as { candidateIds: string[]; generationStarted: boolean };
+  expect(result.candidateIds).toHaveLength(1);
+  expect(result.generationStarted).toBe(false);
+  expect(mocks.save.mock.calls.length).toBeGreaterThan(before);
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
 
 it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
   mocks.mobile = true; vi.stubGlobal('innerWidth', 390);

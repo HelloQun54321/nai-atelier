@@ -89,6 +89,33 @@ const setup = async (entry = 'aitag') => {
   await screen.findByRole('button', { name: entry === 'prompts' ? '新建合成服饰' : '保存合成作品' });
 };
 
+it('内容库粘贴原文直接创建组合并显示，保存不切库、不修改实验室或拆分提示词', async () => {
+  const text = '  {{snow}}, 1.2::hair::\r\n[smile]  ';
+  mocks.createChainWithData.mockImplementation(async (name, description, data, type) => ({ ...saved, ...data, id: 'captured', name, description, type }));
+  await setup('prompts');
+  fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
+  fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => text } });
+  fireEvent.click(screen.getByRole('button', { name: '存入组合库' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('{{snow}}, 1.2::hair::', '', { type: 'preset', name: '{{snow}}, 1.2::hair::', basePrompt: text, params: { _collectedPrompt: 1 } }, 'preset'));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '粘贴收录' })).toBeNull());
+  expect(screen.getByRole('tab', { name: '条目库' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.click(screen.getByRole('tab', { name: '组合库' }));
+  expect(await screen.findByRole('button', { name: '复制提示词' })).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: 'Roll 组合' })).toBeNull();
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+});
+
+it('粘贴原文可选指定分类，直接创建对应条目库记录', async () => {
+  const text = 'snow, night';
+  mocks.createChainWithData.mockImplementation(async (name, description, data, type) => ({ ...saved, ...data, id: 'captured-category', name, description, type }));
+  await setup('prompts');
+  fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
+  fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => text } });
+  fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'appearance' } });
+  fireEvent.click(screen.getByRole('button', { name: '存入内容库' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('snow, night', '', { type: 'appearance', name: 'snow, night', basePrompt: text, params: { _collectedPrompt: 1, _collectedCategory: 'appearance' } }, 'appearance'));
+});
+
 it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销并返回 Roll 页', async () => {
   mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene', type: 'scene', basePrompt: 'night', negativePrompt: 'day' }]);
   await setup();
