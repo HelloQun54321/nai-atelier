@@ -3,20 +3,24 @@ import type { AppearancePreferences } from './appearancePreferences';
 import { useLanguage, type Language } from './i18n';
 
 export const collectorIsLocal = (hostname: string) => ['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname);
-export type CollectorAppearance = Pick<AppearancePreferences, 'themeMode' | 'accentColor' | 'motion' | 'palette'> & { isDark: boolean; language?: Language };
+export type CollectorAppearance = Pick<AppearancePreferences, 'themeMode' | 'accentColor' | 'motion' | 'palette'> & {
+  isDark: boolean; language?: Language; surfaces?: AppearancePreferences['surfaces']; corners?: AppearancePreferences['corners'];
+  accents?: { light?: string; dark?: string };
+};
 
 /** 外观同步位于应用根部，切页不卸载；串行合并快速调色，避免旧请求覆盖新偏好。 */
 export function useCollectorAppearance(preferences: AppearancePreferences, isDark: boolean) {
   const language = useLanguage();
-  const { themeMode, accentColor, motion, palette } = preferences;
+  const { themeMode, accentColor, motion, palette, surfaces, corners, details } = preferences;
   useEffect(() => {
     if (!collectorIsLocal(window.location.hostname)) return;
-    const appearance = { themeMode, accentColor, motion, isDark, language, ...(palette ? { palette } : {}) };
+    const appearance = { themeMode, accentColor, motion, isDark, language, surfaces, corners,
+      accents: { light: details?.light?.accentColor || accentColor, dark: details?.dark?.accentColor || accentColor }, ...(palette ? { palette } : {}) };
     void syncCollectorAppearance(appearance);
     const sync = () => { void syncCollectorAppearance(appearance); };
     window.addEventListener('focus', sync);
     return () => window.removeEventListener('focus', sync);
-  }, [themeMode, accentColor, motion, isDark, language, palette]);
+  }, [themeMode, accentColor, motion, isDark, language, palette, surfaces, corners, details?.light?.accentColor, details?.dark?.accentColor]);
 }
 
 let pending: CollectorAppearance | null = null;

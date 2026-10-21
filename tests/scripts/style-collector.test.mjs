@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { encode } from 'fast-png';
 import { gzipSync } from 'node:zlib';
+import { mkdir, readFile, writeFile, truncate } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import sharp from 'sharp';
 import { imageLink, publicIp, validateDownloadTarget, downloadCollectorImage, resolveCollectorPublicDns, collectorErrorReason } from '../../scripts/collector-download.mjs';
 import { createServer } from 'node:http';
@@ -34,14 +37,14 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const until = async predicate => { for (let i = 0; i < 200; i++) { if (predicate()) return; await new Promise(r => setTimeout(r, 5)); } throw new Error('condition timeout'); };
 function harness(options = {}) {
   let receive, active = '', closed = 0;
-  const imports = [], actions = [], textResults = [];
+  const imports = [], actions = [];
   const manager = new StyleCollector({ platform: 'win32',
-    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: () => {}, textResult: result => textResults.push(result), close: () => closed++ }; },
+    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: () => {}, close: () => closed++ }; },
     worker: async (action, body) => { if (action === 'position') return {}; if (action === 'session') { active = body.session; return {}; }
       assert.equal(body.session, active); imports.push(body); actions.push(action); return { outcome: 'saved' }; },
     download: async url => ({ bytes: hidden(), finalUrl: url }), ...options,
   });
-  return { manager, imports, actions, textResults, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
+  return { manager, imports, actions, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
 }
 
 test('collection mode saves metadata-free links; changing modes never reroutes queued images', async t => {
@@ -76,35 +79,112 @@ test('copied images follow the active mode: style extracts metadata, collection 
   assert.equal(h.imports.length, 4);
 });
 
-test('prompt capture is explicit, works while image listening is paused, and never broadcasts original text', async t => {
-  const h = harness(); t.after(() => h.manager.command('stop'));
-  await h.manager.command('start'); await h.manager.command('pause');
-  const original = '  {{snow}}\r\n[smile]  ';
-  h.copy(original); assert.equal(h.imports.length, 0);
-  h.event({ type: 'save-text', id: 'synthetic', name: '雪天', text: original });
-  await until(() => h.textResults.length > 0);
-  assert.equal(h.imports[0].text, original); assert.equal(h.imports[0].name, '雪天');
-  assert.deepEqual(h.textResults, [{ id: 'synthetic', ok: true, message: '已存入组合库' }]);
-  assert.equal(h.manager.state().saved, 1);
-  assert.equal(JSON.stringify(h.manager.state()).includes(original), false);
-  h.event({ type: 'save-text', id: 'synthetic-category', name: '雪天', text: original, category: 'appearance' });
-  await until(() => h.textResults.length > 1);
-  assert.equal(h.imports.at(-1).category, 'appearance');
-  assert.deepEqual(h.textResults.at(-1), { id: 'synthetic-category', ok: true, message: '已存入内容库' });
-  assert.equal(h.manager.state().detail, '已存入内容库');
+test('copied desktop files preserve original bytes, names and metadata in both modes', async t => {
+  const root = createWorkspace('collector-files-');
+  t.after(() => removeWorkspace(root));
+  const fixtures = [
+    ['桌面 原图.PNG', withComment(plain(), generation)],
+    ['second.JpEg', await sharp(plain()).jpeg().toBuffer()],
+    ['third.webp', await sharp(plain()).webp().toBuffer()],
+  ];
+  for (const [name, bytes] of fixtures) await writeFile(join(root, name), bytes);
+  const h = harness({ download: () => { throw new Error('本地文件不应下载'); } });
+  t.after(() => h.manager.command('stop')); await h.manager.command('start'); await h.manager.command('mode', 'collection');
+  for (const [name] of fixtures) h.event({ type: 'file', path: join(root, name), mode: 'collection' });
+  await h.manager.command('mode', 'style'); await h.manager.run.processing;
+  assert.deepEqual(h.actions, ['collection', 'collection', 'collection']);
+  for (const [index, [name, bytes]] of fixtures.entries()) {
+    assert.equal(h.imports[index].name, name); assert.equal(h.imports[index].image, bytes.toString('base64'));
+    assert.equal(h.imports[index].sourceUrl, undefined); assert.equal(JSON.stringify(h.imports[index]).includes(root), false);
+    assert.deepEqual(await readFile(join(root, name)), bytes);
+  }
+  assert.equal(JSON.parse(h.imports[0].rawMetadata).prompt, generation.prompt);
+  h.event({ type: 'file', path: join(root, fixtures[0][0]), mode: 'style' }); await h.manager.run.processing;
+  assert.equal(h.actions.at(-1), 'import'); assert.equal(JSON.parse(h.imports.at(-1).rawMetadata).seed, generation.seed);
+  assert.equal(h.manager.state().saved, 4);
 });
 
-test('prompt save rejects double clicks, reports failure, and ignores late replies after stop', async t => {
-  let pending = deferred();
-  const h = harness({ worker: async action => { if (action === 'text') return pending.promise; return {}; } });
+test('unreadable and oversized copied files do not stop the batch; folders are not traversed and pause ignores new copies', async t => {
+  const root = createWorkspace('collector-file-errors-'); t.after(() => removeWorkspace(root));
+  await writeFile(join(root, 'large.png'), ''); await truncate(join(root, 'large.png'), 12 * 1024 * 1024 + 1);
+  await mkdir(join(root, 'folder.png')); await writeFile(join(root, 'folder.png', 'inside.png'), plain());
+  await writeFile(join(root, 'valid.png'), plain());
+  const h = harness(); t.after(() => h.manager.command('stop')); await h.manager.command('start'); await h.manager.command('mode', 'collection');
+  for (const name of ['missing.png', 'large.png', 'folder.png', 'ignore.txt', 'valid.png']) h.event({ type: 'file', path: join(root, name) });
+  h.event({ type: 'file', path: 'relative.png' });
+  await h.manager.run.processing;
+  assert.equal(h.manager.state().failed, 3); assert.equal(h.manager.state().saved, 1);
+  assert.deepEqual(h.imports.map(item => item.name), ['valid.png']);
+  await h.manager.command('pause'); h.event({ type: 'file', path: join(root, 'valid.png') });
+  assert.equal(h.manager.run.queue.length, 0); assert.equal(h.imports.length, 1);
+  await h.manager.command('resume'); h.event({ type: 'file', path: join(root, 'missing.png') }); await h.manager.run.processing;
+  assert.match(h.manager.state().detail, /图片文件无法读取/); assert.equal(h.manager.state().detail.includes(root), false);
+});
+
+test('content mode saves original prompts directly, deduplicates copies and respects pause', async t => {
+  const h = harness(); t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+  const original = '  {{snow}}\r\n[smile]  ';
+  h.copy(original); assert.equal(h.imports.length, 0);
+  await h.manager.command('mode', 'content');
+  const event = { type: 'text', mode: 'content', text: original };
+  h.event(event); h.event(event); await h.manager.run.processing;
+  assert.equal(h.imports[0].text, original); assert.equal(h.imports[0].name, ''); assert.equal(h.imports[0].category, '');
+  assert.match(h.imports[0].id, /^[a-f0-9-]{36}$/); assert.deepEqual(h.actions, ['text']);
+  assert.equal(h.manager.state().saved, 1);
+  assert.equal(h.manager.state().skipped, 1); assert.equal(h.manager.state().stage, '复制文字即可收录');
+  assert.equal(JSON.stringify(h.manager.state()).includes(original), false);
+  await h.manager.command('category', 'appearance');
+  h.event({ ...event, category: 'appearance' }); await h.manager.run.processing;
+  assert.equal(h.imports.at(-1).category, 'appearance');
+  await h.manager.command('pause'); h.event({ ...event, text: 'paused' });
+  assert.equal(h.imports.length, 2); assert.equal(h.manager.state().stage, '已暂停');
+  await h.manager.command('resume');
+  for (const invalid of [{ text: ' ' }, { text: 'x'.repeat(65537) }, { category: 'invalid' }]) h.event({ ...event, ...invalid });
+  assert.equal(h.manager.state().failed, 2); assert.equal(h.imports.length, 2);
+  h.event({ type: 'image', mode: 'content', image: plain().toString('base64') });
+  h.event({ type: 'file', mode: 'content', path: 'C:\\synthetic\\image.png' }); h.copy('https://example.com/image.png');
+  assert.equal(h.manager.run.queue.length, 0); assert.equal(h.imports.length, 2);
+});
+
+test('rapid copies queue in order and keep the category captured before a mode change', async t => {
+  const pending = deferred(), bodies = [];
+  const h = harness({ worker: async (action, body) => { if (action === 'text') { bodies.push(body); if (bodies.length === 1) await pending.promise; return { outcome: 'saved' }; } return {}; } });
   t.after(() => h.manager.command('stop')); await h.manager.command('start');
-  const event = { type: 'save-text', id: 'synthetic', text: 'test' };
-  h.event(event); h.event(event);
-  pending.resolve({ outcome: 'failed' }); await until(() => h.textResults.length > 0);
-  assert.deepEqual(h.textResults, [{ id: 'synthetic', ok: false }]); assert.equal(h.manager.state().saved, 0);
-  pending = deferred(); h.event(event); await h.manager.command('stop');
-  pending.resolve({ outcome: 'saved' }); await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(h.textResults.length, 1); assert.equal(h.manager.state().saved, 0);
+  await h.manager.command('mode', 'content');
+  h.event({ type: 'text', mode: 'content', text: 'first', category: '' });
+  h.event({ type: 'text', mode: 'content', text: 'second', category: 'scene' });
+  h.event({ type: 'text', mode: 'content', text: 'third', category: 'pose' });
+  await h.manager.command('mode', 'collection'); await h.manager.command('pause');
+  assert.equal(h.manager.state().pending, 2); pending.resolve(); await h.manager.run.processing;
+  assert.deepEqual(bodies.map(({ text, category }) => [text, category]), [['first', ''], ['second', 'scene'], ['third', 'pose']]);
+  assert.equal(h.manager.state().saved, 3); assert.equal(h.manager.state().stage, '已暂停');
+});
+
+test('failed text can be recopied with the same id; shutdown ignores late success and clears remaining text', async t => {
+  let pending = deferred(); const ids = [];
+  const h = harness({ worker: async (action, body) => { if (action === 'text') { ids.push(body.id); return pending.promise; } return {}; } });
+  t.after(() => h.manager.command('stop')); await h.manager.command('start'); await h.manager.command('mode', 'content');
+  const event = { type: 'text', mode: 'content', text: 'test' };
+  h.event(event); pending.resolve({ outcome: 'failed' }); await h.manager.run.processing;
+  assert.equal(h.manager.state().failed, 1); assert.match(h.manager.state().detail, /保存失败/);
+  pending = deferred(); h.event(event); pending.resolve({ outcome: 'saved' }); await h.manager.run.processing;
+  assert.equal(ids[0], ids[1]); assert.equal(h.manager.state().saved, 1);
+  pending = deferred(); h.event({ ...event, text: 'late' }); h.event({ ...event, text: 'queued' });
+  const stopping = h.manager.command('stop'); await until(() => h.manager.run.abort.signal.aborted);
+  pending.resolve({ outcome: 'saved' }); await stopping;
+  assert.equal(ids.length, 3); assert.equal(h.manager.state().saved, 1); assert.equal(h.manager.state().pending, 0);
+});
+
+test('full text queue rejects only the excess copy and accepts it after the queue drains', async t => {
+  const gate = deferred(); let saves = 0;
+  const h = harness({ worker: async action => { if (action === 'text') { saves++; await gate.promise; return { outcome: 'saved' }; } return {}; } });
+  t.after(() => h.manager.command('stop')); await h.manager.command('start'); await h.manager.command('mode', 'content');
+  for (let i = 0; i < 202; i++) h.event({ type: 'text', mode: 'content', text: String(i) });
+  assert.equal(h.manager.state().pending, 200); assert.equal(h.manager.state().failed, 1);
+  gate.resolve(); await h.manager.run.processing;
+  h.event({ type: 'text', mode: 'content', text: '201' }); await h.manager.run.processing;
+  assert.equal(saves, 202); assert.equal(h.manager.state().saved, 202);
 });
 
 test('only complete image links qualify; signed query retained', () => {
@@ -345,6 +425,9 @@ test('appearance is remembered before startup and updates one active listener wi
   await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
   assert.equal(h.manager.state().session, before.session); assert.equal(h.manager.state().saved, before.saved); assert.equal(updates.at(-1).appearance.themeMode, 'dark');
   await assert.rejects(h.manager.command('appearance', { ...light, accentColor: 'red' }), /外观设置无效/);
+  await assert.rejects(h.manager.command('appearance', { ...light, surfaces: 'unknown' }), /外观设置无效/);
+  await assert.rejects(h.manager.command('appearance', { ...light, corners: 'unknown' }), /外观设置无效/);
+  await assert.rejects(h.manager.command('appearance', { ...light, accents: { dark: 'red' } }), /外观配色无效/);
   assert.equal(h.manager.state().appearance.themeMode, 'dark');
   const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
   await h.manager.command('appearance', { ...light, palette });

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES } from '../../services/appearancePreferences';
 import { collectorIsLocal, syncCollectorAppearance, useCollectorAppearance } from '../../services/collectorAppearance';
 import { LANGUAGES, setLanguage } from '../../services/i18n';
+import { BUILTIN_APPEARANCE_PRESETS } from '../../services/builtinAppearancePresets';
 
 const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock); });
@@ -18,12 +19,12 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences, isDark }) => useCollectorAppearance(preferences, isDark), { initialProps: initial });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe('/api/style-collector/appearance');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0ea5e9', motion: 'full', language: 'zh-CN' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ themeMode: 'system', isDark: false, accentColor: '#0ea5e9', motion: 'full', language: 'zh-CN', surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
     view.rerender({ ...initial, preferences: { ...initial.preferences, forceEmptySeed: true } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     view.rerender({ preferences: { ...initial.preferences, accentColor: '#8b5cf6', motion: 'off' }, isDark: true });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ themeMode: 'system', isDark: true, accentColor: '#8b5cf6', motion: 'off', language: 'zh-CN' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ themeMode: 'system', isDark: true, accentColor: '#8b5cf6', motion: 'off', language: 'zh-CN', surfaces: 'solid', corners: 'standard', accents: { light: '#8b5cf6', dark: '#8b5cf6' } });
     view.rerender({ preferences: { ...initial.preferences, themeMode: 'light' }, isDark: false });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     view.unmount(); act(() => window.dispatchEvent(new Event('focus'))); expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -37,6 +38,23 @@ describe('悬浮窗外观同步', () => {
     }
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.every(call => call[0] === '/api/style-collector/appearance')).toBe(true);
+  });
+  it('未覆盖的明暗强调色沿用基础强调色', async () => {
+    renderHook(() => useCollectorAppearance({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#123456', details: { dark: { accentColor: '#abcdef' } } }, false));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).accents).toEqual({ light: '#123456', dark: '#abcdef' });
+  });
+  it('两套内置主题同步材质、圆角及明暗强调色，切回默认清除苹果主题参数', async () => {
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: DEFAULT_APPEARANCE_PREFERENCES } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const cupertino = BUILTIN_APPEARANCE_PRESETS[1];
+    view.rerender({ preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
+    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('palette');
   });
   it('明暗配色同步到小窗，恢复默认时不残留上一主题', async () => {
     const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
