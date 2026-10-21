@@ -1597,7 +1597,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (result.success) notify(`已生成并保存 ${completed} 张图片`, 'success');
             else if (result.outcome === 'cancelled') notify(`已取消后续生成，已保存 ${completed} 张图片`, 'success');
             else notify(`${result.error}（已保存 ${completed}/${count} 张）`, 'error');
-            if (session.accountingFailed) notify('图片已保存，但本地记账异常，请核对额度后再继续', 'error');
+            if (session.accountingFailed) notify(`图片已保存，但本地记账异常，请核对额度后再继续${session.accountingError ? `：${session.accountingError}` : ''}`, 'error');
             else if (session.cleanupError) notify(`后台任务清理异常：${session.cleanupError}`, 'error');
             return result;
         } catch (error) {

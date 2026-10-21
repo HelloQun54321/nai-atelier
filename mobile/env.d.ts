@@ -35,7 +35,7 @@ declare module 'mobile:gateway' {
 declare module 'mobile:generation-output' {
   export const generationImageBytes: (value: unknown) => { bytes: Uint8Array; mime: string };
   export const readGenerationResponse: (response: Response, onPreview?: (preview: { image: string; step?: number }) => void) =>
-    Promise<{ bytes: Uint8Array; mime: string; seed?: number; estimatedCost?: number; accountingFailed?: boolean; cleanupError?: string }>;
+    Promise<{ bytes: Uint8Array; mime: string; seed?: number; estimatedCost?: number; accountingFailed?: boolean; accountingError?: string; cleanupError?: string }>;
   export const generationHistoryForm: (output: { bytes: Uint8Array; mime?: string }, metadata: import('../worker/generationJobs.mjs').GenerationJobHistoryMetadata, editMask?: string) => FormData;
 }
 declare module 'mobile:remote' { export const classifyAitagRemoteTarget: any, classifyDanbooruRemoteTarget: any, AITAG_BROWSER_HEADERS: any; }

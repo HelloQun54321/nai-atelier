@@ -26,6 +26,10 @@ export async function readGenerationResponse(response, onPreview) {
     accountingFailed: response.headers.get('X-Nai-Anlas-Accounting-Failed') === '1',
     cleanupError: response.headers.get('X-Nai-Queue-Cleanup-Failed') === '1' ? '公共队列退出或释放失败，请检查队列状态' : undefined,
   };
+  const accountingDetail = response.headers.get('X-Nai-Anlas-Accounting-Error');
+  if (result.accountingFailed && accountingDetail) {
+    try { result.accountingError = decodeURIComponent(accountingDetail).slice(0, 240); } catch { /* 旧端或损坏详情仍保留异常标记。 */ }
+  }
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const zip = await JSZip.loadAsync(await response.arrayBuffer());
     const filename = Object.keys(zip.files).find(name => !zip.files[name].dir && /\.(?:png|jpe?g|webp)$/i.test(name));
@@ -47,16 +51,28 @@ export async function readGenerationResponse(response, onPreview) {
     return result;
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = '', finalImage = '', finalSeed, streamError;
+  let buffer = '', finalImage = '', finalSeed, streamError, usageReceived = false;
   const frame = text => {
     const lines = text.split(/\r?\n/), event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message';
     const encoded = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
     if (!encoded) return;
+    if (!['intermediate', 'final', 'error', 'nai_usage', 'nai_usage_error', 'nai_queue_cleanup_error'].includes(event)) return;
     let data;
     try { data = JSON.parse(encoded); } catch { throw imageError('流式生图响应数据损坏'); }
     if (event === 'error') { const error = parseHttpError(encoded, undefined, '流式生图失败'); streamError = Object.assign(new Error(error.message), { code: error.code || 'generation_failed' }); }
-    if (event === 'nai_usage') result.estimatedCost = Number.isFinite(data.estimatedSpent) ? data.estimatedSpent : result.estimatedCost;
-    if (event === 'nai_usage_error') result.accountingFailed = true;
+    if (event === 'nai_usage' && data && typeof data === 'object') {
+      // 状态与费用放在同一回执，避免断流恰好截掉后续错误帧时误认成功。
+      usageReceived = typeof data.accountingFailed === 'boolean';
+      if (data.accountingFailed === true) {
+        result.accountingFailed = true;
+        result.accountingError = typeof data.accountingError === 'string' ? data.accountingError.slice(0, 240) : '本地用量记录未完整保存';
+      }
+      result.estimatedCost = Number.isFinite(data.estimatedSpent) && data.estimatedSpent >= 0 ? data.estimatedSpent : result.estimatedCost;
+    }
+    if (event === 'nai_usage_error') {
+      result.accountingFailed = true;
+      result.accountingError = typeof data?.message === 'string' ? data.message.slice(0, 240) : '本地用量记录未完整保存';
+    }
     if (event === 'nai_queue_cleanup_error') result.cleanupError = data.message || '公共队列退出或释放失败，请检查队列状态';
     if ((event === 'intermediate' || event === 'final') && typeof data.image === 'string' && data.image) {
       const image = data.image.startsWith('data:image/') ? data.image : `data:${data.image.replace(/\s/g, '').startsWith('/9j/') ? 'image/jpeg' : 'image/png'};base64,${data.image}`;
@@ -78,7 +94,11 @@ export async function readGenerationResponse(response, onPreview) {
     }
   } catch (error) {
     if (!finalImage) throw error;
-    result.accountingFailed = true;
+    // 成功回执之后的收尾断流不推翻记账；未拿到回执才保持未知告警。
+    if (!usageReceived && !result.accountingFailed) {
+      result.accountingFailed = true;
+      result.accountingError = '图片已收齐，但连接中断，未收到本地记账回执';
+    }
   } finally { reader.releaseLock(); }
   if (!finalImage) throw streamError || imageError('流式响应没有最终图片');
   const { bytes, mime } = generationImageBytes(finalImage);

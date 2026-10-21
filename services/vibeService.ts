@@ -61,7 +61,7 @@ export const vibeService = {
       const keyHash = await hashNaiApiKey(apiKey.trim());
       window.dispatchEvent(new CustomEvent(ANLAS_BUDGET_CHANGED_EVENT, { detail: { ...result.anlasBudget, keyHash } }));
     }
-    if (result.anlasAccountingFailed) reportNaiAccountingError(await hashNaiApiKey(apiKey.trim()));
+    if (result.anlasAccountingFailed) reportNaiAccountingError(await hashNaiApiKey(apiKey.trim()), typeof result.anlasAccountingError === 'string' ? result.anlasAccountingError : '');
     // 新编码成功后立即查询官方余额，不等待查询返回再交付资产；重复复用没有新消费。
     // 期间切 Key 时不因旧账号编码完成而刷新当前另一个账号。
     if (result.duplicate !== true && typeof window !== 'undefined') {

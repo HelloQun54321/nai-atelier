@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api, createSseParser, isQueueCancelledError, parseErrorResponse, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 
 describe('SSE parser', () => {
+  it('记账回执自带失败状态，后续兼容错误帧不重复提示', async () => {
+    const events: Event[] = [];
+    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('event: final\ndata: {"image":"fake"}\n\nevent: nai_usage\ndata: {"estimatedSpent":0,"accountingFailed":true,"accountingError":"本地预算更新失败（HTTP 503）"}\n\nevent: nai_usage_error\ndata: {"message":"本地预算更新失败（HTTP 503）"}\n\n')));
+    await api.postSse('/generate-stream', {}, {}, () => {});
+    const notices = events.filter(event => event.type === NAI_ACCOUNTING_ERROR_EVENT) as CustomEvent[];
+    expect(notices).toHaveLength(1); expect(notices[0].detail.message).toContain('本地预算更新失败（HTTP 503）');
+    vi.unstubAllGlobals();
+  });
   it.each([null, '', false, -1])('费用字段 %s 不能伪装成零点数，记账失败仍交付成品并派发提示', async value => {
     const events: Event[] = [];
     vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });

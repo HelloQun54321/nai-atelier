@@ -36,6 +36,14 @@ it.each(['v45', 'v5'] as const)('%s补图只提交单张，并按明确画师/�
   expect(mocks.save).not.toHaveBeenCalled(); expect(template.params.seed).toBe(0);
 });
 
+it('样张已归档时保留记账失败的具体原因，不重新编码或生成', async () => {
+  const service = await import('../../services/artistSampleGeneration');
+  mocks.begin.mockReturnValue({ session: { ...session(), accountingFailed: true, accountingError: '用量记录写入失败（HTTP 503）' }, settle: Promise.resolve({ success: true }) });
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', getDefaultArtistSampleTemplate('v45'), 'synthetic-key', 0, true);
+  expect(service.getArtistSampleGeneration('synthetic artist', 'v45')).toMatchObject({ phase: 'saved', error: expect.stringContaining('用量记录写入失败（HTTP 503）') });
+  expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled();
+});
+
 it('再次生成只令本次描述符使用新随机Seed，模板保持不变且直播关闭有效', async () => {
   const service = await import('../../services/artistSampleGeneration');
   const template = getDefaultArtistSampleTemplate('v45');

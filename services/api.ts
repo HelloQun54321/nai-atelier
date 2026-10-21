@@ -123,10 +123,10 @@ const requestPersonalUsageRefresh = (budgetKeyHash = '') => {
   }));
 };
 
-export const reportNaiAccountingError = (budgetKeyHash = '') => {
+export const reportNaiAccountingError = (budgetKeyHash = '', reason = '') => {
   requestPersonalUsageRefresh(budgetKeyHash);
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, {
-    detail: { message: '任务已完成，但本地用量记账失败；请核对账号余额与本地预算，勿重复提交' },
+    detail: { message: '任务已完成，但本地用量记账失败；请核对账号余额与本地预算，勿重复提交' + (reason ? `：${reason.slice(0, 240)}` : '') },
   }));
 };
 
@@ -205,17 +205,24 @@ export const api = {
     // SSE 中 nai_usage 事件（final 图片之后到达）携带网关结算的真实 estimatedSpent，
     // 累积随 postSse 返回，供流式生成本地历史写入真实估算成本。
     let estimatedCost: number | undefined;
+    let accountingReported = false;
     const parser = createSseParser(event => {
       if (event.event === 'nai_usage' && event.data && typeof event.data === 'object') {
-        const usageData = event.data as { remaining?: unknown; estimatedSpent?: unknown };
+        const usageData = event.data as { remaining?: unknown; estimatedSpent?: unknown; accountingFailed?: unknown; accountingError?: unknown };
         const remaining = typeof usageData.remaining === 'number' ? usageData.remaining : NaN;
         if (Number.isFinite(remaining) && remaining >= 0) emitBudgetChanged(remaining, options.budgetKeyHash);
         else requestPersonalUsageRefresh(options.budgetKeyHash);
         const spent = typeof usageData.estimatedSpent === 'number' ? usageData.estimatedSpent : NaN;
         if (Number.isFinite(spent) && spent >= 0) estimatedCost = spent;
+        if (usageData.accountingFailed === true && !accountingReported) {
+          reportNaiAccountingError(options.budgetKeyHash, typeof usageData.accountingError === 'string' ? usageData.accountingError : '');
+          accountingReported = true;
+        }
       }
-      if (event.event === 'nai_usage_error') {
-        reportNaiAccountingError(options.budgetKeyHash);
+      if (event.event === 'nai_usage_error' && !accountingReported) {
+        const detail = event.data as { message?: unknown } | null;
+        reportNaiAccountingError(options.budgetKeyHash, typeof detail?.message === 'string' ? detail.message : '');
+        accountingReported = true;
       }
       if (event.event === 'nai_queue_cleanup_error') {
         reportCloudQueueCleanupError(res.headers.get('x-nai-queue-task-id') || '', (headers.Authorization || '').replace(/^Bearer /, ''));

@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { createHash } from 'node:crypto';
 import { Readable, Writable } from 'node:stream';
 import { DEFAULT_NAI_RUNTIME, applyNaiRuntimeOverride, cacheNovelAiSubscription, handleGenerateRequest, handleGenerateStreamRequest, handleVibeEncodeRequest, CloudQueueCoordinator } from '../../scripts/media-gateway.mjs';
+import { readGenerationResponse } from '../../scripts/generation-output.mjs';
 
 // 全部请求、额度和预算都注入模拟值，不访问真实 NovelAI、公共队列或私人数据库。
 const subscription = { active: true, tier: 3, usage: { percent: 30, isNegative: false } };
@@ -106,6 +107,36 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
   const success = () => new Response(handler === handleGenerateRequest ? 'zip' : 'event: final\ndata: {"image":"fake"}\n\n');
   const settleGeneration = async () => ({ estimatedCost: 0, anlasBudget: null });
   const prepareBilling = async () => ({ runtime: DEFAULT_NAI_RUNTIME });
+  test(`${label}：两处记账分别报告失败阶段与 HTTP 状态，不重试、不泄露错误原文`, async () => {
+    let failing;
+    const requests = [];
+    const worker = createServer(async (req, res) => {
+      for await (const _chunk of req) { /* 读完合成请求体。 */ }
+      const stage = req.url === '/api/local-usage/events' ? 'usage' : 'budget';
+      requests.push(stage);
+      res.setHeader('Content-Type', 'application/json');
+      if (failing === stage || failing === 'both') { res.statusCode = 503; return res.end('{"error":"synthetic-private-key-and-sql"}'); }
+      res.end(stage === 'usage' ? '{"inserted":1}' : '{"remaining":1666}');
+    });
+    worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+    try {
+      for (failing of ['usage', 'budget', 'both']) {
+        const key = `failure-stage-${label}-${failing}`, res = new Output();
+        cacheNovelAiSubscription(`Bearer ${key}`, subscription);
+        requests.length = 0;
+        await handler(request(key), res, '', worker.address().port, idleQueue(), { enabled: false }, async () => success(), {});
+        assert.equal(res.statusCode, 200); assert.deepEqual(requests.sort(), ['budget', 'usage']);
+        const message = handler === handleGenerateRequest ? decodeURIComponent(res.headers['X-Nai-Anlas-Accounting-Error']) : res.body();
+        if (handler === handleGenerateStreamRequest) {
+          const receipt = JSON.parse(res.body().match(/event: nai_usage\ndata: ([^\n]+)/)[1]);
+          assert.equal(receipt.accountingFailed, true); assert.ok(receipt.accountingError);
+        }
+        if (failing !== 'budget') assert.match(message, /用量记录写入失败（HTTP 503）/);
+        if (failing !== 'usage') assert.match(message, /本地预算更新失败（HTTP 503）/);
+        assert.doesNotMatch(message, /synthetic-private-key-and-sql|Bearer/);
+      }
+    } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+  });
   test(`${label}：成功图片独立记 Key、真实模型、费用和额度，未知费用不冒充零且失败不计数`, async () => {
     const usage = [], spends = [];
     let rejectRecord = false, generations = 0;
@@ -288,3 +319,28 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
     });
   }
 }
+
+test('SSE 上游交付最终图片后断开仍完成一次本地记账，未交付 final 不记账', async () => {
+  let settlements = 0, generations = 0;
+  for (const final of [true, false]) {
+    const res = new Output();
+    await handleGenerateStreamRequest(request(`late-close-${final}`), res, '', 0, idleQueue(), { enabled: false }, async () => {
+      generations++;
+      return new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode(`event: ${final ? 'final' : 'intermediate'}\ndata: {"image":"fake"}\n\n`));
+        setTimeout(() => controller.error(new Error('synthetic upstream disconnect')), 0);
+      } }));
+    }, { prepareBilling: async () => ({}), settleGeneration: async () => { settlements++; return { estimatedCost: 0 }; } });
+    if (final) { assert.match(res.body(), /event: nai_usage\n/); assert.doesNotMatch(res.body(), /event: error\n/); }
+    else assert.match(res.body(), /event: error\n/);
+  }
+  assert.equal(settlements, 1); assert.equal(generations, 2);
+});
+
+test('SSE final 在正常 EOF 前没有空行时，追加记账帧仍与图片正确分开', async () => {
+  const res = new Output(); let settlements = 0;
+  await handleGenerateStreamRequest(request('final-without-delimiter'), res, '', 0, idleQueue(), { enabled: false }, async () => new Response('event: final\ndata: {"image":"ZmFrZQ=="}'),
+    { prepareBilling: async () => ({}), settleGeneration: async () => { settlements++; return { estimatedCost: 0 }; } });
+  const decoded = await readGenerationResponse(new Response(res.body(), { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.equal(decoded.bytes.toString(), 'fake'); assert.equal(decoded.estimatedCost, 0); assert.equal(decoded.accountingFailed, false); assert.equal(settlements, 1);
+});

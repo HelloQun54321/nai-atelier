@@ -84,6 +84,7 @@ export class GenerationJobs {
       ...(job.error ? { error: job.error, code: job.code } : {}),
       ...(job.cost === undefined ? {} : { cost: job.cost }),
       ...(job.accountingFailed ? { accountingFailed: true } : {}),
+      ...(job.accountingError ? { accountingError: job.accountingError } : {}),
       ...(job.cleanupError ? { cleanupError: job.cleanupError } : {}),
     };
   }
@@ -173,6 +174,7 @@ export class GenerationJobs {
         }
         job.state = 'saving';
         job.accountingFailed ||= output.accountingFailed;
+        job.accountingError ||= output.accountingError;
         job.cleanupError ||= output.cleanupError;
         const seed = output.seed ?? payload.parameters.seed;
         const history = {

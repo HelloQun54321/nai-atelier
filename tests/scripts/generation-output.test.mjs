@@ -143,8 +143,9 @@ test('扩图新区域的全量蒙版不混回白色底图，透明回贴保持�
 test('ZIP 最终图片、真实 seed 与记账失败独立收回，不把附属 JSON 损坏当作再次生成理由', async () => {
   const image = await png(8, 8, [10, 20, 30, 255]);
   const zip = new JSZip(); zip.file('image.png', image); zip.file('metadata.json', JSON.stringify({ parameters: { seed: 123 } }));
-  const decoded = await readGenerationResponse(new Response(await zip.generateAsync({ type: 'nodebuffer' }), { headers: { 'X-Nai-Anlas-Accounting-Failed': '1' } }));
+  const decoded = await readGenerationResponse(new Response(await zip.generateAsync({ type: 'nodebuffer' }), { headers: { 'X-Nai-Anlas-Accounting-Failed': '1', 'X-Nai-Anlas-Accounting-Error': encodeURIComponent('用量记录写入失败（HTTP 500）') } }));
   assert.equal(decoded.seed, 123); assert.equal(decoded.accountingFailed, true); assert.deepEqual(decoded.bytes, image);
+  assert.equal(decoded.accountingError, '用量记录写入失败（HTTP 500）');
 });
 
 test('浏览器平台不支持 nodebuffer 时仍能解包并交付可读取的 PNG', async t => {
@@ -166,6 +167,31 @@ test('SSE final 后中断仍交付成图，只有 intermediate 时不能伪报�
   const result = await readGenerationResponse(new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
   assert.deepEqual(result.bytes, image); assert.equal(result.seed, 321); assert.equal(result.accountingFailed, true);
   await assert.rejects(readGenerationResponse(new Response(`event: intermediate\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })), { code: 'generation_output_invalid' });
+});
+
+test('SSE 已有记账成功回执后断流不误报，明确记账失败仍保留原因', async () => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  const final = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\n`;
+  for (const known of [true, false]) {
+    const usage = `event: nai_usage\ndata: ${JSON.stringify({ refreshPersonal: true, accountingFailed: false, ...(known ? { estimatedSpent: 0 } : {}) })}\n\n`;
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(final + usage)); setTimeout(() => controller.error(new Error('synthetic-late-disconnect')), 0); } });
+    const result = await readGenerationResponse(new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
+    assert.deepEqual(result.bytes, image); assert.equal(result.accountingFailed, false);
+    assert.equal(result.estimatedCost, known ? 0 : undefined);
+  }
+  const result = await readGenerationResponse(new Response(final + 'event: nai_usage\ndata: {"estimatedSpent":0}\n\nevent: nai_usage_error\ndata: {"message":"本地预算更新失败（HTTP 500）"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.equal(result.accountingFailed, true); assert.equal(result.accountingError, '本地预算更新失败（HTTP 500）');
+  const failedReceipt = 'event: nai_usage\ndata: {"estimatedSpent":0,"accountingFailed":true,"accountingError":"用量记录写入失败（HTTP 503）"}\n\n';
+  const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(final + failedReceipt)); setTimeout(() => controller.error(new Error('synthetic-late-disconnect')), 0); } });
+  const failed = await readGenerationResponse(new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.equal(failed.accountingFailed, true); assert.equal(failed.accountingError, '用量记录写入失败（HTTP 503）');
+});
+
+test('SSE 忽略未使用事件的非 JSON 内容，不将收尾消息误报为记账失败', async () => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  const frames = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\nevent: nai_usage\ndata: {"estimatedSpent":0}\n\ndata: [DONE]\n\n`;
+  const result = await readGenerationResponse(new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.deepEqual(result.bytes, image); assert.equal(result.accountingFailed, false);
 });
 
 test('后台回贴拒绝越界选区和任意外部原料地址', async () => {

@@ -26,6 +26,17 @@ const setup = (overrides = {}) => {
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
 
+test('成图记账异常与原因随真实保存快照交付，不重复生成或保存', async () => {
+  let generated = 0, saved = 0;
+  const f = setup({ generate: async () => { generated++; return { accountingFailed: true, accountingError: '本地预算更新失败（HTTP 503）' }; },
+    save: async (_job, _output, metadata) => { saved++; return { ...metadata, imageUrl: '/synthetic.png' }; },
+  });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {}); const job = f.jobs.get('key', a); await job.running;
+  assert.equal(generated, 1); assert.equal(saved, 1);
+  assert.equal(f.jobs.snapshot(job).accountingError, '本地预算更新失败（HTTP 503）');
+  assert.equal(f.jobs.snapshot(job).accountingFailed, true); assert.equal(f.jobs.snapshot(job).completedCount, 1);
+});
+
 test('一轮不同配方只占一个执行位，按顺序估价、生成和保存各自元数据', async () => {
   const seen = [], saved = [], estimated = [];
   const f = setup({ estimate: async job => { estimated.push(job.descriptor.history.prompt); return 0; },

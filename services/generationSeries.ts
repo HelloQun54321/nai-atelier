@@ -34,6 +34,7 @@ export interface GenerationSeriesSession {
     previewVersion?: number;
     awaiting?: { cost: number; completedCount: number; requestedCount: number };
     accountingFailed?: boolean;
+    accountingError?: string;
     cleanupError?: string;
     cloudQueueTaskId?: string;
     /** 观察链路暂时不可用时的就地说明；恢复后清除，不代表任务失败。 */
@@ -111,6 +112,7 @@ const applySnapshot = (session: GenerationSeriesSession, snapshot: GenerationJob
         ? { cost: typeof snapshot.cost === 'number' ? snapshot.cost : 0, completedCount: snapshot.completedCount, requestedCount: snapshot.requestedCount }
         : undefined;
     session.accountingFailed = snapshot.accountingFailed === true;
+    session.accountingError = session.accountingFailed && typeof snapshot.accountingError === 'string' ? snapshot.accountingError.slice(0, 240) : undefined;
     session.cleanupError = typeof snapshot.cleanupError === 'string' && snapshot.cleanupError ? snapshot.cleanupError : undefined;
     publish();
 };

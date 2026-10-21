@@ -21,11 +21,11 @@ export interface GenerationJobSnapshot {
   token: string; state: GenerationJobState; completedCount: number; requestedCount: number;
   historyIds: string[]; position?: number; lastSavedItem?: LocalGenItem;
   preview?: { image: string; step?: number }; previewVersion?: number; cost?: number; error?: string; code?: string;
-  accountingFailed?: boolean; cleanupError?: string;
+  accountingFailed?: boolean; accountingError?: string; cleanupError?: string;
   cloudQueue?: CloudQueueStatus | null;
 }
 export interface GenerationJobOutput {
-  seed?: number; estimatedCost?: number; accountingFailed?: boolean; cleanupError?: string; queueTaskId?: string;
+  seed?: number; estimatedCost?: number; accountingFailed?: boolean; accountingError?: string; cleanupError?: string; queueTaskId?: string;
 }
 export type GenerationJobHistoryMetadata = Omit<LocalGenItem, 'imageUrl'>;
 export interface GenerationJob<Context> {

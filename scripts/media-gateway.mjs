@@ -618,7 +618,7 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, header
       reject(error);
     } else resolve(parsed);
   });
-  upstream.setTimeout(30_000, () => upstream.destroy(new Error('电脑数据服务超时')));
+  upstream.setTimeout(30_000, () => upstream.destroy(Object.assign(new Error('电脑数据服务超时'), { code: 'ETIMEDOUT' })));
   upstream.on('error', reject);
   if (payload) upstream.write(payload);
   upstream.end();
@@ -851,6 +851,16 @@ const recordNaiUsage = async (req, workerPort, keyHash, action, model, images, c
   if (result?.inserted !== 1) throw new Error('本地 Key 用量记录回执无效');
 };
 
+// 只返回阶段和状态，不把 Key、请求正文或数据库异常原文带入提示与日志。
+const describeAccountingFailure = (stage, cause) => {
+  const reason = Number.isInteger(cause?.status) ? `HTTP ${cause.status}`
+    : cause?.code === 'ETIMEDOUT' ? '本地服务超时'
+    : ['ECONNRESET', 'ECONNREFUSED', 'EPIPE'].includes(cause?.code) ? '本地服务连接中断' : '未收到有效回执';
+  const message = `${stage}失败（${reason}）`;
+  console.warn(`[nai-accounting] ${message}`);
+  return message;
+};
+
 export class VibeEncodingMemoryCache {
   constructor(limit = VIBE_ENCODING_CACHE_LIMIT) {
     this.limit = limit;
@@ -1032,8 +1042,12 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, worker
     estimatedCost > 0 || personalUsage?.opusImagesDelta > 0
       ? spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage }) : null,
   ]);
+  const accountingError = [
+    recorded.status === 'rejected' ? describeAccountingFailure('用量记录写入', recorded.reason) : '',
+    budget.status === 'rejected' ? describeAccountingFailure('本地预算更新', budget.reason) : '',
+  ].filter(Boolean).join('；');
   return { estimatedCost, personalUsage, anlasBudget: budget.status === 'fulfilled' ? budget.value : null,
-    accountingFailed: recorded.status === 'rejected' || budget.status === 'rejected' };
+    accountingFailed: Boolean(accountingError), ...(accountingError ? { accountingError } : {}) };
 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
@@ -1983,13 +1997,14 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     const responseBody = Buffer.from(await response.arrayBuffer());
-    let estimatedCost, anlasBudget, accountingFailed = false;
+    let estimatedCost, anlasBudget, accountingError, accountingFailed = false;
     if (response.ok) {
       try {
-        ({ estimatedCost, anlasBudget, accountingFailed = false } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
-      } catch {
+        ({ estimatedCost, anlasBudget, accountingError, accountingFailed = false } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
+      } catch (cause) {
         // 已收到成品，记账失败不能变成生图失败并诱发重复付费；ZIP 与 SSE 语义相同。
         accountingFailed = true;
+        accountingError = describeAccountingFailure('本地记账', cause);
       }
     }
     const headers = {
@@ -1998,6 +2013,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       'X-Content-Type-Options': 'nosniff',
       ...(Number.isFinite(estimatedCost) ? { 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}),
       ...(accountingFailed ? { 'X-Nai-Anlas-Accounting-Failed': '1' } : {}),
+      ...(accountingFailed && accountingError ? { 'X-Nai-Anlas-Accounting-Error': encodeURIComponent(accountingError) } : {}),
       ...(anlasBudget ? { 'X-Nai-Anlas-Remaining': String(anlasBudget.remaining) } : {}),
       ...queueHeaders(),
     };
@@ -2109,7 +2125,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     await cloudQueue.release(lock, requestController.signal.aborted);
     const cleanupError = cloudQueue.get(keyHash, queueTaskId)?.cleanupError;
     if (cleanupError && !res.destroyed) {
-      if (res.headersSent) res.write(`\nevent: nai_queue_cleanup_error\ndata: ${JSON.stringify({ message: cleanupError })}\n\n`);
+      if (res.headersSent) res.write(`\n\nevent: nai_queue_cleanup_error\ndata: ${JSON.stringify({ message: cleanupError })}\n\n`);
       else {
         res.setHeader('X-Nai-Queue-Task-Id', queueTaskId);
         res.setHeader('X-Nai-Queue-Cleanup-Failed', '1');
@@ -2186,37 +2202,44 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       if (event === 'error') upstreamErrorSeen = true;
     });
     const reader = upstream.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      observer.push(decoder.decode(value, { stream: !done }));
-      if (value?.byteLength && !res.destroyed) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
-      if (done) break;
-    }
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        observer.push(decoder.decode(value, { stream: !done }));
+        if (value?.byteLength && !res.destroyed) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+        if (done) break;
+      }
+    } catch (cause) {
+      // 完整 final 已交付后仍应结算；上游收尾断开不能跳过本地记账。
+      if (!finalSeen) throw cause;
+    } finally { reader.releaseLock(); }
     observer.finish();
 
     if (!finalSeen) {
       const message = upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片';
       if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
-      res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
+      res.write(`\n\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
       await releaseQueue();
       responseCompleted = true;
       return res.end();
     }
 
     try {
-      const { estimatedCost, anlasBudget, accountingFailed } = await settleGeneration({
+      const { estimatedCost, anlasBudget, accountingFailed, accountingError } = await settleGeneration({
         payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing,
       });
-      res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
+      res.write(`\n\nevent: nai_usage\ndata: ${JSON.stringify({
         keyHash,
         remaining: anlasBudget?.remaining,
         estimatedSpent: estimatedCost,
         refreshPersonal: true,
+        accountingFailed: accountingFailed === true,
+        ...(accountingFailed ? { accountingError: accountingError || '本地用量记录未完整保存' } : {}),
       })}\n\n`);
-      if (accountingFailed) res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: '本地用量记录未完整保存' })}\n\n`);
+      if (accountingFailed) res.write(`\n\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError || '本地用量记录未完整保存' })}\n\n`);
     } catch (accountingError) {
       // 图片已经由 NovelAI 成功生成，结算异常单独上报，绝不能触发前端再次生图。
-      res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
+      res.write(`\n\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: describeAccountingFailure('本地记账', accountingError) })}\n\n`);
     }
     await releaseQueue();
     if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: 'completed', cancelable: false, controller: null });
@@ -2229,7 +2252,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
     if (res.headersSent) {
       if (!res.destroyed) {
-        res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
+        res.write(`\n\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
         responseCompleted = true;
         res.end();
       }
@@ -2317,10 +2340,14 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
         // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
         const anlasBudget = budget.status === 'fulfilled' ? budget.value : undefined;
         const anlasAccountingFailed = recorded.status === 'rejected' || budget.status === 'rejected';
+        const anlasAccountingError = [
+          recorded.status === 'rejected' ? describeAccountingFailure('用量记录写入', recorded.reason) : '',
+          budget.status === 'rejected' ? describeAccountingFailure('本地预算更新', budget.reason) : '',
+        ].filter(Boolean).join('；');
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
-          return { ...stored, anlasBudget, ...(anlasAccountingFailed ? { anlasAccountingFailed: true } : {}) };
+          return { ...stored, anlasBudget, ...(anlasAccountingFailed ? { anlasAccountingFailed: true, anlasAccountingError } : {}) };
         } catch (storageError) {
           await saveVibeRecovery(recovery);
           const error = new Error('付费编码已由电脑安全保留，但暂时无法写入资料库；请勿重新编码，重启项目后会自动恢复');

@@ -248,7 +248,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
       const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);      const receipt = await started.settle;
       if (mounted.current) {
-        if (started.session.accountingFailed) reportError(t('图片已保存，但本地记账异常，请核对额度后再继续'));
+        if (started.session.accountingFailed) reportError(t('图片已保存，但本地记账异常，请核对额度后再继续') + (started.session.accountingError ? `：${started.session.accountingError}` : ''));
         else if (started.session.cleanupError) reportError(t('后台任务清理异常：{0}', [started.session.cleanupError]));
         else if (!receipt.success && receipt.outcome !== 'cancelled') reportError(receipt.error || t('生成失败'));
         if (selectedExperimentRef.current === target.id) {

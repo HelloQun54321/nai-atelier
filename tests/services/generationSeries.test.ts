@@ -43,6 +43,14 @@ beforeEach(() => {
     job.observe.mockReset();
 });
 
+it('已保存结果的记账失败原因跟随后端回执，不再次提交生图', async () => {
+    job.start.mockResolvedValueOnce(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'], accountingFailed: true, accountingError: '本地预算更新失败（HTTP 503）' }));
+    const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: descriptor() });
+    await expect(settle).resolves.toMatchObject({ success: true, completedCount: 1 });
+    expect(session.accountingFailed).toBe(true); expect(session.accountingError).toBe('本地预算更新失败（HTTP 503）');
+    expect(job.start).toHaveBeenCalledOnce(); expect(job.cancel).not.toHaveBeenCalled();
+});
+
 it('开启预览后实时观察每步与保存终态，不再等待一秒轮询，重连不重复 POST', async () => {
     const steps: number[] = [];
     let publishSnapshot: (snapshot: GenerationJobSnapshot) => void = () => {};

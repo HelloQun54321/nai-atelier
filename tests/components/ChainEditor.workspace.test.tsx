@@ -2257,14 +2257,14 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     expect(view.props.notify).toHaveBeenCalledWith('已生成并保存 1 张图片', 'success');
   });
 
-  it('额度或同步异常不回退到逐张生成：失败回执按后端错误收尾', async () => {
+  it.each(['', '本地预算更新失败（HTTP 503）'])('额度或同步异常不回退到逐张生成，保留记账原因 %s', async accountingError => {
     prepare();
-    scriptJobs([{ state: 'failed', code: 'quota_exhausted', completedCount: 0, requestedCount: 1, historyIds: [], error: '账号额度不足', accountingFailed: true }]);
+    scriptJobs([{ state: 'failed', code: 'quota_exhausted', completedCount: 0, requestedCount: 1, historyIds: [], error: '账号额度不足', accountingFailed: true, accountingError }]);
     const view = setupSeries();
     await waitFor(() => expect(textPrompt().value).toBe('saved style'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('账号额度不足（已保存 0/1 张）', 'error'));
-    expect(view.props.notify).toHaveBeenCalledWith('图片已保存，但本地记账异常，请核对额度后再继续', 'error');
+    expect(view.props.notify).toHaveBeenCalledWith('图片已保存，但本地记账异常，请核对额度后再继续' + (accountingError ? `：${accountingError}` : ''), 'error');
     expect(state.addHistory).not.toHaveBeenCalled();
     expect(state.notifySaved).not.toHaveBeenCalled();
     await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());

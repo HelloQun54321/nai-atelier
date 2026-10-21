@@ -49,12 +49,13 @@ describe('Vibe 编码后的余额更新', () => {
     expect(events.mock.calls.map(([event]) => event.type)).toEqual([NOVELAI_USAGE_REFRESH_EVENT]);
   });
   it('新编码已保存但本地记账失败时保留资产并提示核对，不再编码', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(responseFor({ item, anlasAccountingFailed: true }));
+    const fetchMock = vi.fn().mockResolvedValue(responseFor({ item, anlasAccountingFailed: true, anlasAccountingError: '本地预算更新失败（HTTP 503）' }));
     vi.stubGlobal('fetch', fetchMock);
     const events = vi.spyOn(window, 'dispatchEvent');
     expect((await vibeService.encode(item.id, 1, apiKey)).item).toEqual(item);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(events.mock.calls.some(([event]) => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
+    expect((events.mock.calls.find(([event]) => event.type === NAI_ACCOUNTING_ERROR_EVENT)![0] as CustomEvent).detail.message).toContain('本地预算更新失败（HTTP 503）');
   });
 
   it('重复编码复用没有新消费，不额外刷新或再次请求编码', async () => {
