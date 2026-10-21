@@ -8,6 +8,8 @@ import { draw, evidenceOf, rerollOne } from '../services/contentRollDraw';
 import type { ContentRollApplyPlan, ContentRollTarget } from '../services/contentRollApply';
 import { filterPicksByScope, pickByParticipation, planContentRollApply } from '../services/contentRollApply';
 import type { ContentRollScope } from '../services/contentRollApply';
+import { planRollToChain } from '../services/contentRollToChain';
+import type { RollToChainScope, RollToChainSourceRow } from '../services/contentRollToChain';
 import type { NAIParams } from '../types';
 import { WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 
@@ -33,6 +35,16 @@ interface ContentRollWorkspaceProps {
   /** 从内容库「载入到一键 Roll」带过来的一组（消费一次） */
   seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null;
   onSeedConsumed?: () => void;
+  /**
+   * 把这一组写进风格串（新建或写进已有串）。
+   * App 负责落库、刷新列表，并清掉目标串的编辑器草稿，避免旧草稿在自动保存时覆盖刚写入的分栏。
+   */
+  onWriteRollToChain?: (payload: {
+    name: string;
+    chain: PromptChain | null;
+    params: NAIParams;
+    variableValues: Record<string, string>;
+  }) => Promise<string | undefined>;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -74,7 +86,7 @@ const shortText = (value: string, max = 48): string => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed, onWriteRollToChain }) => {
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -299,6 +311,60 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
 
   const rows = KINDS.map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
 
+  /* ---------------- 写入风格串 ---------------- */
+
+  const [chainTargetId, setChainTargetId] = useState('new');
+  const [chainScope, setChainScope] = useState<RollToChainScope>('split');
+  const [chainPicked, setChainPicked] = useState<Set<string>>(new Set());
+  const [chainConfirming, setChainConfirming] = useState(false);
+  const [chainName, setChainName] = useState('');
+  const [chainBusy, setChainBusy] = useState(false);
+
+  const styleChains = useMemo(() => (Array.isArray(chains) ? chains : []).filter(item => item && item.type === 'style'), [chains]);
+  const rollRows = useMemo<RollToChainSourceRow[]>(() => KINDS
+    .map(kind => ({ kind, row: activePicks[kind] as RollRow | undefined }))
+    .filter(({ row }) => row && row.filled && String(row.text || '').trim())
+    .map(({ kind, row }) => ({ kind, name: String(row!.name || ''), text: String(row!.text || '') })), [activePicks]);
+  const selectedChain = useMemo(() => styleChains.find(item => item.id === chainTargetId) || null, [chainTargetId, styleChains]);
+  const chainPlan = useMemo(
+    () => planRollToChain(selectedChain, rollRows.filter(row => chainPicked.has(row.kind)), { scope: chainScope }),
+    [chainPicked, chainScope, rollRows, selectedChain],
+  );
+  const chainWriteOf = (kind: string) => chainPlan.writes.find(write => write.kind === kind) || null;
+  const chainTargetLabel = (kind: string) => (chainScope === 'extra'
+    ? t('补充栏')
+    : META[kind].scope === 'character' ? t('角色 1') : t(META[kind].title));
+
+  const openChainConfirm = () => {
+    setChainPicked(new Set(rollRows.map(row => row.kind)));
+    setChainName(selectedChain ? '' : t('Roll 内容 {0}', [new Date().toLocaleString()]));
+    setChainConfirming(true);
+  };
+
+  const doWriteChain = async () => {
+    if (!onWriteRollToChain || !chainPicked.size) return;
+    setChainBusy(true);
+    try {
+      const name = chainName.trim() || t('Roll 内容 {0}', [new Date().toLocaleString()]);
+      await onWriteRollToChain({
+        name,
+        chain: selectedChain,
+        params: chainPlan.params,
+        variableValues: chainPlan.variableValues as Record<string, string>,
+      });
+      setChainConfirming(false);
+      const roleWrites = chainPlan.writes.filter(write => write.target === 'character').length;
+      const globalWrites = chainPlan.writes.filter(write => write.target !== 'character').length;
+      notify(chainScope === 'extra'
+        ? t('已写入风格串：六类合并进补充栏')
+        : t('已写入风格串：角色 {0} 栏、全局 {1} 栏', [String(roleWrites), String(globalWrites)]));
+    } catch (error) {
+      notify(t('写入失败：{0}', [String((error as Error)?.message || error)]), 'error');
+    } finally {
+      setChainBusy(false);
+    }
+  };
+
   return (
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
       <WorkspaceChrome><WorkspaceToolbar><h2 className="text-sm font-bold">{t('一键 Roll')}</h2></WorkspaceToolbar></WorkspaceChrome>
@@ -478,6 +544,79 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                 ) : null}
                 {!onApplyRoll ? <span className="text-meta text-gray-400">{t('当前视图不支持写入，请进入实验室后再试')}</span> : null}
               </div>
+            )}
+          </section>
+        ) : null}
+
+        {current && onWriteRollToChain ? (
+          <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-chain="true">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('写入风格串')}</span>
+              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
+                {t('目标')}
+                <select value={chainTargetId} onChange={event => { setChainTargetId(event.target.value); setChainConfirming(false); }}
+                  aria-label={t('选择写入的风格串')}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  <option value="new">{t('新建风格串')}</option>
+                  {styleChains.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </label>
+              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
+                {t('写入范围')}
+                <select value={chainScope} onChange={event => setChainScope(event.target.value as RollToChainScope)}
+                  aria-label={t('选择写入范围')}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  <option value="split">{t('按栏写入')}</option>
+                  <option value="extra">{t('合并成一段写进补充')}</option>
+                </select>
+              </label>
+            </div>
+            <p className="mt-1 text-meta leading-4 text-gray-400">
+              {t('人物形象／服饰穿搭／动作互动／表情状态写进角色 1，场景与镜头写各自的全局栏；画师串、风格负面与生图参数不会改动。')}
+            </p>
+            {chainConfirming ? (
+              <div className="mt-2 space-y-1" data-content-roll-chain-preview="true">
+                {!selectedChain ? (
+                  <input value={chainName} onChange={event => setChainName(event.target.value)} maxLength={120}
+                    aria-label={t('风格串名称')} placeholder={t('风格串名称（留空则自动命名）')}
+                    className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+                ) : null}
+                {rollRows.map(row => {
+                  const write = chainWriteOf(row.kind);
+                  return (
+                    <label key={row.kind} className="flex items-start gap-2 rounded-lg border border-gray-200 px-2 py-1 text-meta dark:border-gray-700" data-content-roll-chain-row={row.kind}>
+                      <input type="checkbox" checked={chainPicked.has(row.kind)} disabled={chainBusy}
+                        onChange={() => setChainPicked(previous => {
+                          const next = new Set(previous);
+                          if (next.has(row.kind)) next.delete(row.kind); else next.add(row.kind);
+                          return next;
+                        })}
+                        className="mt-0.5" aria-label={t('写入「{0}」', [t(META[row.kind].title)])} />
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(META[row.kind].title)} → {chainTargetLabel(row.kind)}</span>
+                        {write && write.previous ? <span className="ml-1 break-all font-mono text-gray-400 line-through">{shortText(write.previous, 40)}</span> : null}
+                        <span className="ml-1 break-all font-mono text-gray-500 dark:text-gray-400">{shortText(row.text, 60)}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {chainPlan.skipped.length ? (
+                  <p className="text-meta text-amber-600 dark:text-amber-400">{t('这些分类没有对应的栏位，已跳过：{0}', [chainPlan.skipped.join('、')])}</p>
+                ) : null}
+                <div className="flex items-center gap-2 pt-1">
+                  <button type="button" onClick={() => void doWriteChain()} disabled={chainBusy || !chainPicked.size}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    {chainBusy ? t('写入中…') : selectedChain ? t('写入这条风格串') : t('新建并写入')}
+                  </button>
+                  <button type="button" onClick={() => setChainConfirming(false)} disabled={chainBusy}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('取消')}</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={openChainConfirm} disabled={!rollRows.length}
+                className="mt-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 disabled:opacity-40 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-200">
+                {t('写入风格串…')}
+              </button>
             )}
           </section>
         ) : null}

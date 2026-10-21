@@ -6,6 +6,8 @@
 
 ## 2026-10-21
 
+- **DeepSeek Harness (deepseek-v4.1-flash)**：图片提示词库新增生成图回查（`prompt_library_links` 关联表、分批回填、`/api/prompt-library-links/*` 三个接口、详情缩略图墙与卡片角标）与「AI 一键六库」（`scripts/prompt-agent.mjs` 的 `generateLibraryBundle`、网关路由、六库面板与逐条入库）；同步补齐 worker／助手／前端定向回归与四语词条。后续补入：匹配正文包含角色分栏（修复苗族服饰等角色内容进不了图墙）、「一键 Roll → 风格串」与「AI 一键六库 → 风格串」（`services/contentRollToChain.ts` 纯函数、面板入口、写完清编辑器草稿），新增 `tests/services/contentRollToChain.test.ts` 与 2 条角色分栏 worker 回归；再补库条目自动封面（无封面时取最早关联的生成图，手动封面不覆盖）与「从历史选图」按条目收敛（`syncPromptLibraryCover`、picker 的 `scopeChainId`、2 条封面 worker 回归）。最后按实际使用反馈收紧来源保护：只要历史行已有具体来源 id 就一律不改写（即使类型为空），并补 1 条 worker 回归。
+
 - **DeepSeek Harness (deepseek-flash)**：修复实验室与风格串编辑页顶栏收起后三分区与顶栏的连续底板丢失：收起时保持顶栏节点身份、只切可见性（避免 React 重建子树），LabEditorTabs 额外观察正文尺寸在就绪后重测；相关顶栏、三分区与外观覆盖 57 项定向测试通过。
 
 - **DeepSeek Harness (deepseek-flash)**：为所有主页面顶栏新增可收起把手：展开时把手位于顶栏上边中央、完全在顶栏内不跨界（悬停／聚焦显示「收起」），收起后留在页面顶边中央并变为向下三角（显示「展开」），不移动顶栏；收起状态跨页面与刷新保留，`--workspace-chrome-height` 同步归零。新增 `services/workspaceTopbar.ts` 与 WorkspaceChrome 折叠回归，补四语词条。相关 225 项定向测试通过。

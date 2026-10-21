@@ -259,4 +259,15 @@ export const INIT_SQL = `
     ON local_usage_events(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_local_usage_events_category
     ON local_usage_events(user_id, category, action, created_at);
+  CREATE TABLE IF NOT EXISTS prompt_library_links (
+    history_id TEXT NOT NULL,
+    chain_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    chain_name TEXT,
+    matched_length INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (history_id, chain_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_prompt_library_links_chain ON prompt_library_links(chain_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_prompt_library_links_history ON prompt_library_links(history_id);
 `;

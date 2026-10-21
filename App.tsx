@@ -585,6 +585,29 @@ const App = () => {
     return created;
   };
   /**
+   * 一键 Roll 的内容写进风格串：新建一条，或写进已有串的对应分栏。
+   * 写完清掉目标串的编辑器草稿——否则旧草稿会在自动保存时把这些分栏覆盖回「补充」。
+   */
+  const handleWriteContentRollToChain = async (payload: {
+    name: string;
+    chain: PromptChain | null;
+    params: NAIParams;
+    variableValues: Record<string, string>;
+  }) => {
+    if (payload.chain) {
+      await handleUpdateChain(payload.chain.id, { params: payload.params, variableValues: payload.variableValues });
+      deleteLabWorkspaceSession(getLabWorkspaceSessionKey(payload.chain.id));
+      notify(t('已写入风格串「{0}」，打开该串即可看到分栏', [payload.chain.name]));
+      return payload.chain.id;
+    }
+    const created = await createLibraryChain(payload.name, t('来自一键 Roll 内容'), 'style', {
+      params: payload.params,
+      variableValues: payload.variableValues,
+    });
+    notify(t('已新建风格串「{0}」', [payload.name]));
+    return created;
+  };
+  /**
    * 从内容库载入一组：用**白名单读取**还原（分类负面、约束备注、来源快照都恢复），
    * 而不是只取第一角色的 sections —— 那样会把负面与约束丢掉。
    */
@@ -943,6 +966,7 @@ const App = () => {
           scopeRequest={contentRollScopeRequest}
           onScopeRequestConsumed={() => setContentRollScopeRequest(null)}
           onSaveRoll={handleSaveContentRoll}
+          onWriteRollToChain={handleWriteContentRollToChain}
           seedRecord={contentRollSeed}
           onSeedConsumed={() => setContentRollSeed(null)}
         />;

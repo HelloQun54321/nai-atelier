@@ -6,6 +6,7 @@ import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
 import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
+import { deletePromptLibraryLinksByChain, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type R2ObjectBody, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -831,6 +832,11 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         if (!retained.has(url)) await deleteR2File(env, url, db);
       }
     }
+    // 正文或名称变化会改变命中归属：重算原归属（关联失败不回滚已保存的条目）。
+    if (updates.basePrompt !== undefined || updates.name !== undefined) {
+      try { await recomputePromptLibraryLinksForChain(db, id); }
+      catch (cause) { console.error('提示词库归属重算失败，条目已保存', cause); }
+    }
     return json({ success: true });
   }
   if (chainIdMatch && method === 'DELETE') {
@@ -840,6 +846,9 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (chain) {
         if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
         await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
+        // 条目删除后不再有归属：清掉指向它的关联（表缺失时自愈创建，不阻塞删除）。
+        try { await deletePromptLibraryLinksByChain(db, id); }
+        catch (cause) { console.error('提示词库关联清理失败，条目已删除', cause); }
         if (chain.preview_image) await deleteR2File(env, chain.preview_image, db);
         for (const url of promptLibraryReferenceUrls(parseStoredJson(chain.params, {}))) await deleteR2File(env, url, db);
     }

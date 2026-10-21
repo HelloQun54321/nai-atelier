@@ -1,0 +1,83 @@
+name: prompt-library
+
+# 图片提示词库「生成图回查」与「AI 一键六库」的门禁：
+#   1) 类型与构建：确认新增的 worker 路由与前端组件没有类型/打包回归；
+#   2) 助手侧：六库 system prompt、JSON 解析与越界词过滤（复用既有 Node 回归入口）；
+#   3) worker 侧：关联表、文本匹配、来源保护、分批回填与三个只读接口；
+#   4) 前端侧：卡片胶囊、详情「生成记录」与六库面板的接线。
+# 全部离线执行，不依赖已安装应用、真实 local-data 或外网。
+
+on:
+  push:
+    paths:
+      - 'worker/routes/promptLibraryLinkRoutes.ts'
+      - 'worker/routes/historyRoutes.ts'
+      - 'worker/routes/settingsRoutes.ts'
+      - 'worker/routes/types.ts'
+      - 'scripts/prompt-agent.mjs'
+      - 'scripts/media-gateway.mjs'
+      - 'components/PromptLibrary*.tsx'
+      - 'services/promptAgent.ts'
+      - 'services/promptLibraryUsage.ts'
+      - 'services/contentRollToChain.ts'
+      - 'components/ContentRollWorkspace.tsx'
+      - 'locales/messages.json'
+      - 'tests/worker/routes/promptLibraryLinks.test.ts'
+      - 'tests/services/contentRollToChain.test.ts'
+      - 'tests/components/PromptLibrary*.test.tsx'
+      - 'tests/scripts/prompt-library.test.mjs'
+      - '.github/workflows/prompt-library.yml'
+  pull_request:
+    paths:
+      - 'worker/routes/promptLibraryLinkRoutes.ts'
+      - 'worker/routes/historyRoutes.ts'
+      - 'worker/routes/settingsRoutes.ts'
+      - 'worker/routes/types.ts'
+      - 'scripts/prompt-agent.mjs'
+      - 'scripts/media-gateway.mjs'
+      - 'components/PromptLibrary*.tsx'
+      - 'services/promptAgent.ts'
+      - 'services/promptLibraryUsage.ts'
+      - 'services/contentRollToChain.ts'
+      - 'components/ContentRollWorkspace.tsx'
+      - 'locales/messages.json'
+      - 'tests/worker/routes/promptLibraryLinks.test.ts'
+      - 'tests/services/contentRollToChain.test.ts'
+      - 'tests/components/PromptLibrary*.test.tsx'
+      - 'tests/scripts/prompt-library.test.mjs'
+      - '.github/workflows/prompt-library.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: prompt-library-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建（tsc + vite + worker）
+        run: npm run build
+
+      - name: 六库提示词与助手回归
+        run: npm run test:node -- tests/scripts/prompt-library.test.mjs tests/scripts/prompt-agent.test.mjs
+
+      - name: 提示词库关联接口回归
+        run: npm run test -- tests/worker/routes/promptLibraryLinks.test.ts
+
+      - name: 一键 Roll 写入风格串回归
+        run: npm run test -- tests/services/contentRollToChain.test.ts
+
+      - name: 提示词库图墙与六库面板回归
+        run: npm run test -- tests/components/PromptLibraryUsage.test.tsx tests/components/PromptLibraryBundleDialog.test.tsx

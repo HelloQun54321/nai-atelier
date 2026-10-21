@@ -8,6 +8,10 @@ import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
 import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
+import {
+  deletePromptLibraryLinksByHistory, ensurePromptLibraryLinkSchema, promptLibraryHistoryText, promptLibraryLinkHint,
+  syncPromptLibraryCover, writePromptLibraryLinks, type PromptLibraryLinkHint,
+} from './promptLibraryLinkRoutes';
 import { readNaiKeyUsage } from './naiUsageStats';
 import { readCreationFootprintAssets } from './creationFootprintAssets';
 
@@ -166,7 +170,7 @@ function sanitizeLocalHistoryEdit(edit: any) {
   };
 }
 
-function mapLocalHistoryRow(row: any) {
+export function mapLocalHistoryRow(row: any) {
   const hasStructuredPrompt = Number(row.structure_version || 0) >= 1;
   const storedParams = parseStoredJson(row.params, {});
   const mappedParams = storedParams && typeof storedParams === 'object'
@@ -433,6 +437,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       for (const row of rows) {
         await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
           .bind(row.id, currentUser.id).run();
+        // 历史消失后归属也失去意义；表缺失时自愈创建，不阻塞删除主流程。
+        await deletePromptLibraryLinksByHistory(db, row.id);
         if (row.image_key) await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db);
         await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id));
       }
@@ -922,12 +928,35 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         ...rawParams,
         ...(rawParams._local_edit ? { _local_edit: sanitizeLocalHistoryEdit(rawParams._local_edit) } : {}),
       };
-      const normalizedParams = {
+      const normalizedParams: any = {
         ...sanitizedRawParams,
         width,
         height,
         ...(editWithAvailability ? { _local_edit: editWithAvailability } : {}),
       };
+      // 提示词库归属识别：命中后记关联、允许时改写主来源。
+      // 识别/写入失败只记日志，历史保存本身不能因为关联推断而失败。
+      let linkHint: PromptLibraryLinkHint | null = null;
+      try {
+        linkHint = await promptLibraryLinkHint(db, promptLibraryHistoryText({
+          prompt: body.prompt, base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt, params: normalizedParams,
+        }), { sourceChainType: body.sourceChainType, sourceChainId: body.sourceChainId });
+        if (linkHint) {
+          // 与既有 _promptLibrary（中文对照/参考图）合并，不丢字段。
+          const previousMeta = rawParams._promptLibrary;
+          normalizedParams._promptLibrary = {
+            ...(previousMeta && typeof previousMeta === 'object' && !Array.isArray(previousMeta) ? previousMeta : {}),
+            ...linkHint.meta,
+          };
+          if (linkHint.primary) {
+            body.sourceChainId = linkHint.primary.id;
+            body.sourceChainName = linkHint.primary.name;
+            body.sourceChainType = linkHint.primary.kind;
+          }
+        }
+      } catch (cause) {
+        console.error('提示词库关联识别失败，生成历史按原样保存', cause);
+      }
       const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
       const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at, external_source, external_id FROM local_generation_history WHERE id = ? AND user_id = ?')
         .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null, external_source: string | null, external_id: string | null}>();
@@ -959,6 +988,18 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         body.externalSource || existing?.external_source || null,
         body.externalId || existing?.external_id || null
       ).run();
+      try {
+        // 重存同一条历史时，本次没命中也要清掉过期归属（INSERT OR REPLACE 会留下旧行）。
+        if (linkHint) {
+          await writePromptLibraryLinks(db, linkHint, id, createdAt);
+          // 命中的库条目如果还没有封面，用最早关联到的那张图补上（手动换过的封面不动）。
+          await syncPromptLibraryCover(db, (linkHint.meta?.sources || []).map(source => source.id));
+        } else {
+          await deletePromptLibraryLinksByHistory(db, id);
+        }
+      } catch (cause) {
+        console.error('提示词库关联写入失败，生成历史已保存', cause);
+      }
       if (existing?.image_key && existing.image_key !== imageKey) await deleteR2File(env, `/api/assets/${encodeURIComponent(existing.image_key)}`, db);
       if (!editMask) await env.BUCKET.delete(editMaskKey);
       const item = mapLocalHistoryRow({
@@ -1012,6 +1053,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         UPDATE local_generation_history SET source_chain_id = NULL, source_chain_name = NULL, source_chain_type = NULL
         WHERE user_id = ? AND source_chain_id = ?
       `).bind(currentUser.id, sourceChainId).run();
+      // 解除来源后这些图片不再归属于该库条目，关联一并清掉（仅限本人图片）。
+      if (typeof sourceChainId === 'string' && sourceChainId) {
+        await ensurePromptLibraryLinkSchema(db);
+        await db.prepare(`DELETE FROM prompt_library_links
+          WHERE chain_id = ? AND history_id IN (SELECT id FROM local_generation_history WHERE user_id = ?)`)
+          .bind(sourceChainId, currentUser.id).run();
+      }
       return json({ count: Number(result.meta?.changes || 0) });
     }
 
@@ -1022,6 +1070,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         UPDATE local_generation_history SET source_chain_id = NULL, source_chain_name = NULL, source_chain_type = NULL
         WHERE id = ? AND user_id = ?
       `).bind(id, currentUser.id).run();
+      // 单条解除视为放弃该图的库归属：清掉这张图的所有关联。
+      await deletePromptLibraryLinksByHistory(db, id);
       const row = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
         .bind(id, currentUser.id).first<any>();
       return json({ item: row ? mapLocalHistoryRow(row) : null });
