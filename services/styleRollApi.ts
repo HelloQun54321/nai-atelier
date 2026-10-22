@@ -16,6 +16,8 @@ export async function saveRollExperiment(experiment: RollExperiment): Promise<Ro
   return result.experiment;
 }
 
+export const ROLL_BLOCKLIST_CHANGED = 'nai-roll-blocklist-changed';
+
 export async function loadRollBlocklist(): Promise<string[]> {
   const result = await api.get('/style-roll/blocklist', { cache: 'no-store' });
   if (!Array.isArray(result.tags)) throw new Error('屏蔽画师列表读取失败');
@@ -28,6 +30,7 @@ export async function saveRollBlocklist(tags: string[]): Promise<string[]> {
   const result = await api.put('/style-roll/blocklist', { tags });
   if (!Array.isArray(result.tags)) throw new Error('屏蔽画师列表读取失败');
   validateRollBlocklist(result.tags);
+  window.dispatchEvent(new CustomEvent(ROLL_BLOCKLIST_CHANGED, { detail: result.tags }));
   return result.tags;
 }
 

@@ -4,8 +4,10 @@ import React from 'react';
 import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ArtistPreferenceActions } from '../../components/ArtistPreferenceActions';
 import { ImageShareOverlay } from '../../components/ImageShareActions';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
+vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import type { PromptChain } from '../../types';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
@@ -44,6 +46,11 @@ vi.mock('../../services/collectionFavorites', async original => ({
     const item = fixtures.favorites.get(target.sourceType + ':' + target.sourceId);
     return Boolean(item && !item.archived && (!item.imageUrl || item.imageUrl === target.imageUrl || item.analysis?.collectionOriginalUrl === target.imageUrl));
   },
+  toggleArtistPreference: vi.fn(async (tag: string) => {
+    const key = 'artist:' + tag, active = !fixtures.favorites.has(key);
+    if (active) fixtures.favorites.set(key, { sourceType: 'artist', sourceId: tag, archived: false }); else fixtures.favorites.delete(key);
+    fixtures.revision++; fixtures.listeners.forEach(listener => listener()); return active;
+  }),
   toggleCollectionTarget: vi.fn(async (target: any) => {
     const key = target.sourceType + ':' + target.sourceId, active = !fixtures.favorites.has(key);
     if (active) fixtures.favorites.set(key, { ...target, archived: false }); else fixtures.favorites.delete(key);
@@ -59,8 +66,8 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confi
 vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange, imageClassName }: any) =>
   <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
 }));
-vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, notify, onFavoriteChange, imageClassName }: any) =>
-  <div data-testid={`cover-${tag}`} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={'/synthetic/' + pack + '/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: '/synthetic/' + pack + '/' + tag + '.png', sourceType: 'artist', sourceId: tag, imageId: pack + ':' + tag }} onFavoriteChange={onFavoriteChange} /></div>,
+vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, onPackChange, preferred, blocked, onBlock, imageClassName }: any) =>
+  <div data-testid={`cover-${tag}`} data-image-class={imageClassName}>{tag}<ArtistPreferenceActions tag={tag} pack={pack} onPackChange={onPackChange} preferred={preferred} blocked={blocked} onBlock={onBlock} onFavorite={() => { void import('../../services/collectionFavorites').then(service => service.toggleArtistPreference(tag, '')); }} /></div>,
 }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(),
   getArtistSampleStatus: vi.fn(async () => ({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, phase: 'ready', count: 2, revision: 'synthetic' })) })),
@@ -543,16 +550,18 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
-it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，长按或收藏不改变所选 Tag', async kind => {
+it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，收藏不改变所选 Tag，角色保留长按操作', async kind => {
   renderLibrary(kind, 390);
   const entry = entriesFor(kind)[0];
   const card = await screen.findByRole('button', { name: `选择${kind === 'artist' ? '画师' : '角色'}：${kind === 'artist' ? entry.name : entry.chinese}` });
-  longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
-  const favorite = within(card).getByRole('button', { name: '收藏' });
-  expect(favorite.closest('.image-card-actions')!.className).toContain('absolute right-2 top-2');
-  for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'border-white/60', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
+  if (kind === 'character') { longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); }
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+  const favorite = within(card).getByRole('button', { name: kind === 'artist' ? '偏好画师：' + fixtures.artists[0].name : '收藏' });
+  if (kind === 'character') expect(favorite.closest('.image-card-actions')!.className).toContain('absolute right-2 top-2');
+  else for (const token of ['absolute', 'right-2', 'top-2']) expect(favorite.parentElement?.classList.contains(token)).toBe(true);
+  for (const token of ['h-11', 'w-11', 'md:h-8', 'md:w-8', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
   expect(favorite.classList.contains('hover-reveal-touch')).toBe(false); fireEvent.click(favorite);
-  await waitFor(() => expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');
+  await waitFor(() => expect(within(card).getByRole('button', { name: kind === 'artist' ? '取消偏好画师：' + fixtures.artists[0].name : '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');
 });
 it('自定义角色长按显露编辑和收藏，松手不打开图或选择；编辑只走信息窗口', () => {
   renderLibrary('character', 390, [custom]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });

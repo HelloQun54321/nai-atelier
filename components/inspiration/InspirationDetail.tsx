@@ -298,8 +298,10 @@ export const InspirationDetail: React.FC<Props> = ({
   return (
     <article data-safe-mode-work="true" data-collection-item={item.id} className="appearance-content appearance-card overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <PressRevealSurface as="section" pressResetKey={draft.id} className="appearance-media group relative bg-gray-100 dark:bg-black/60">
+        {draft.imageUrl ? <>
         <ViewableImage src={draft.imageUrl} previewTransform={getCollectionPreviewTransform(draft)} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
         <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
+        </> : <div className="flex min-h-40 items-center justify-center text-sm text-gray-400">{t('暂无样张')}</div>}
       </PressRevealSurface>
       {/* 每张图片的整理与生成信息 */}
         <section className="appearance-group w-full">
@@ -324,7 +326,7 @@ export const InspirationDetail: React.FC<Props> = ({
               className="h-8 min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-1 text-base font-bold text-gray-950 outline-none dark:bg-gray-900 dark:text-white sm:text-lg"
             /> : <h2 data-safe-mode-title="true" className="min-w-0 truncate text-base font-bold text-gray-950 dark:text-white sm:text-lg">{draft.title}</h2>}
             {editable && <button type="button" aria-label={t("修改收藏标题")} title={t("修改收藏标题")} onClick={() => { setEditingTitle(true); titleInputRef.current?.focus(); titleInputRef.current?.select(); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>}
-            <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch ml-auto flex flex-none items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>
+            {draft.imageUrl && <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch ml-auto flex flex-none items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>}
           </header>
 
           {/* 详情随作品组侧栏统一滚动 */}
@@ -413,7 +415,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 </button>
                 <button
                   type="button"
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || !draft.imageUrl}
                   onClick={() => { setLabMenuOpen(!labMenuOpen); }}
                   aria-label={t("更多底图模式")} aria-haspopup="menu" aria-expanded={labMenuOpen}
                   title={t("选择导入模式")}

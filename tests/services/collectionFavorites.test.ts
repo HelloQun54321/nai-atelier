@@ -11,6 +11,53 @@ vi.mock('../../services/danbooruCoverImport', () => ({ importDanbooruCoverAsData
 vi.mock('../../services/codexService', () => ({ readCodexImageFile: mocks.codexFile, readCodexImageMetadata: mocks.codexMetadata }));
 
 const user: User = { id: 'test-owner', username: 'test', role: 'admin', createdAt: 1 };
+
+it('画师级偏好保存当前样张版本来源，换图取消偏好不另存新图片', async () => {
+  const service = await import('../../services/collectionFavorites');
+  const image = { imageUrl: '/api/assets/sample.png', sourceUrl: 'https://synthetic.invalid/pack', imageId: 'v5:alpha:2', analysis: { artistSample: { pack: 'v5', tag: 'alpha', revision: 'fixture', index: 2 } } };
+  await service.toggleArtistPreference('alpha', image.imageUrl, image);
+  expect(service.collectionSnapshot()[0]).toMatchObject({ sourceType: 'artist', sourceId: 'alpha', sourceUrl: image.sourceUrl, analysis: { artistSample: image.analysis.artistSample, collectionImageId: image.imageId } });
+  await service.toggleArtistPreference('alpha', '/api/assets/another.png');
+  expect(service.collectionSnapshot()).toHaveLength(1); expect(service.collectionSnapshot()[0].archived).toBe(true);
+});
+
+it('缺样张画师可收藏 Tag，不同空封面互不合并，取消偏好同步收藏来源组', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.toggleArtistPreference('alpha', '');
+  await service.toggleArtistPreference('beta', '');
+  expect(service.collectionSnapshot().filter(item => !item.archived).map(item => item.sourceId)).toEqual(['alpha', 'beta']);
+  expect(service.collectionSnapshot().every(item => item.imageUrl === '' && item.sourceType === 'artist')).toBe(true);
+  expect(mocks.uploadFile).not.toHaveBeenCalled();
+  await service.toggleArtistPreference('alpha', '');
+  expect(service.collectionSnapshot().filter(item => !item.archived).map(item => item.sourceId)).toEqual(['beta']);
+  await service.toggleArtistPreference('alpha', '');
+  expect(service.collectionSnapshot()).toHaveLength(2);
+  await service.removeCollection(service.collectionSnapshot().filter(item => item.sourceId === 'alpha').map(item => item.id));
+  expect(service.collectionSnapshot().find(item => item.sourceId === 'alpha')?.archived).toBe(true);
+});
+
+it('已有画师图片收藏直接作为偏好，取消时仅归档引用且不会另存封面', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.toggleCollectionTarget({ sourceType: 'artist', sourceId: 'alpha', imageUrl: '/api/assets/original.png' });
+  await service.toggleArtistPreference('alpha', '/api/assets/new.png');
+  expect(service.collectionSnapshot()).toHaveLength(1);
+  expect(service.collectionSnapshot()[0]).toMatchObject({ archived: true, imageUrl: '/api/assets/original.png' });
+  await service.toggleArtistPreference('alpha', '/api/assets/new.png');
+  expect(service.collectionSnapshot()[0].archived).toBe(false);
+  expect(mocks.uploadFile).not.toHaveBeenCalled();
+});
+
+it('偏好沿用空格与下划线同名画师的收藏，收藏自建样张保留真实生成配置', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.toggleArtistPreference('alpha_artist', '');
+  await service.toggleArtistPreference('alpha artist', '');
+  expect(service.collectionSnapshot()).toHaveLength(1); expect(service.collectionSnapshot()[0].archived).toBe(true);
+  const get = mocks.get.getMockImplementation()!;
+  const sample = { tag: 'beta', imageUrl: '/api/assets/sample.png', prompt: 'artist:beta, original', negativePrompt: 'bad', params: { seed: 42 } };
+  mocks.get.mockImplementation(async path => path === '/artist-sample-data' ? { templates: {}, samples: [sample] } : get(path));
+  await service.toggleArtistPreference('beta', sample.imageUrl);
+  expect(service.collectionSnapshot().find(item => item.sourceId === 'beta')).toMatchObject({ prompt: sample.prompt, negativePrompt: sample.negativePrompt, params: sample.params });
+});
 let stored: Inspiration[];
 let details: any[];
 let chains: PromptChain[];

@@ -1,15 +1,15 @@
-import { buildArtistSampleImageUrl, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag } from './artistSamples';
+import { buildArtistSampleImageUrl, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag, type ArtistSamplePack } from './artistSamples';
 import { getArtistSampleData } from './artistSampleDrafts';
 
-/** 取每位画师一张可展示的样张：自建样张优先，其次按 V4.5、V5 的图包目录。 */
-export async function loadArtistSampleUrls(): Promise<Map<string, string>> {
+/** 自建样张优先；指定版本时不借用另一版的图片，未指定则继续按两版回退。 */
+export async function loadArtistSampleUrls(pack?: ArtistSamplePack): Promise<Map<string, string>> {
   const urls = new Map<string, string>();
   const [status, data] = await Promise.all([
     getArtistSampleStatus().catch(() => null),
     getArtistSampleData().catch(() => ({ templates: {}, samples: [] })),
   ]);
-  for (const sample of data.samples) urls.set(normalizeArtistSampleTag(sample.tag), sample.imageUrl);
-  const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready'));
+  for (const sample of data.samples) if (!pack || sample.pack === pack) urls.set(normalizeArtistSampleTag(sample.tag), sample.imageUrl);
+  const ready = (pack ? [pack] : ['v45', 'v5'] as const).filter(value => status?.packs.some(item => item.id === value && item.phase === 'ready'));
   const catalogs = await Promise.all(ready.map(pack => getArtistSampleCatalog(pack).catch(() => null)));
   for (const [index, catalog] of catalogs.entries()) {
     if (!catalog) continue;

@@ -10,6 +10,8 @@ import { externalImageDrafts } from './externalImageTags';
 import { createUuid } from './id';
 import { readCodexImageFile, readCodexImageMetadata } from './codexService';
 import { t } from './i18n';
+import { getArtistSampleData } from './artistSampleDrafts';
+import { normalizeArtistSampleTag } from './artistSamples';
 
 export interface CollectionImage {
   imageUrl: string;
@@ -109,6 +111,8 @@ export function aitagFavorites(detail: AitagWorkDetail, user: User): Inspiration
 
 export function matchesCollectionImage(item: Inspiration, image: CollectionImage): boolean {
   if (image.collectionId) return item.id === image.collectionId;
+  // 缺样张画师只收藏 Tag；空地址不能把不同画师合并为同一张图。
+  if (!image.imageUrl) return !item.imageUrl && image.sourceType === 'artist' && item.sourceType === 'artist' && Boolean(image.sourceId) && item.sourceId === image.sourceId;
   if (item.imageUrl === image.imageUrl || item.analysis?.collectionOriginalUrl === image.imageUrl) return true;
   if (image.sourceType && image.sourceId) {
     if (item.sourceType !== image.sourceType || item.sourceId !== image.sourceId) return false;
@@ -131,7 +135,7 @@ export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspi
   };
   const index = (item: Inspiration, position: number) => {
     for (const url of [item.imageUrl, item.analysis?.collectionOriginalUrl]) {
-      if (typeof url !== 'string') continue;
+      if (typeof url !== 'string' || !url) continue;
       const key = JSON.stringify([item.userId, url]);
       if (!byUrl.has(key)) byUrl.set(key, position);
     }
@@ -183,7 +187,7 @@ export async function loadCollection(user?: User): Promise<Inspiration[]> {
     owner = user || owner || await api.get('/auth/me');
     const [stored, favorites] = await Promise.all([api.get('/inspirations') as Promise<Inspiration[]>, loadImageFavorites(owner!)]);
     if (revision !== startedAt) return items;
-    items = mergeCollectionFavorites(stored, favorites);
+    items = mergeCollectionFavorites(stored.map(item => ({ ...item, imageUrl: item.imageUrl || '' })), favorites);
     const savedIds = new Set(stored.map(item => item.id));
     unsaved = new Set(items.filter(item => !savedIds.has(item.id)).map(item => item.id));
     changed();
@@ -294,7 +298,7 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
         createdAt: now, updatedAt: now,
       };
       const response = await api.post('/inspirations', item);
-      items = [...items, response.item || item];
+      items = [...items, response.item ? { ...response.item, imageUrl: response.item.imageUrl || '' } : item];
       changed();
     }
     if (target.sourceType === 'history' && target.sourceId) await localHistory.setFavorite(target.sourceId, true);
@@ -305,6 +309,17 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
   try { return await action; } finally {
     pendingTargets.delete(key);
   }
+}
+
+/** 画师偏好与收藏库共用来源组，取消偏好只归档收藏引用，原图保留。 */
+export async function toggleArtistPreference(tag: string, imageUrl: string, sample?: CollectionImage): Promise<boolean> {
+  await ensureCollection();
+  const existing = collectionSnapshot().find(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId && normalizeArtistSampleTag(item.sourceId) === normalizeArtistSampleTag(tag));
+  const sourceId = existing?.sourceId || tag;
+  const saved = collectionSnapshot().filter(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId === sourceId);
+  const ownSample = !sample && !saved.length && imageUrl.startsWith('/api/assets/') ? (await getArtistSampleData()).samples.find(sample => sample.imageUrl === imageUrl && normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(tag)) : undefined;
+  const image: CollectionImage = { title: tag, prompt: ownSample?.prompt ?? `artist:${tag}`, negativePrompt: ownSample?.negativePrompt, params: ownSample?.params, imageId: imageUrl || 'tag', ...sample, imageUrl, sourceType: 'artist', sourceId };
+  return toggleCollectionTarget({ ...image, ...(saved[0] ? { collectionId: saved[0].id } : {}), getGroup: async () => saved.length ? saved.map(item => ({ ...item, collectionId: item.id })) : [image] });
 }
 
 export async function syncHistoryCollectionFavorites(ids: string[], favorite: boolean): Promise<void> {

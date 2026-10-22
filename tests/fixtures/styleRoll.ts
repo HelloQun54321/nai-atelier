@@ -12,4 +12,4 @@ export const rollImageFixture = (experiment: RollExperiment, candidate: RollCand
   params: structuredClone(experiment.template.params), createdAt: 1, sourceChainId: rollSourceId(experiment.id), sourceChainName: experiment.name, sourceChainType: 'style',
   modules: [{ id: rollCandidateModuleId(candidate.id), name: 'Roll 串', content: '', isActive: false }],
 });
-export const seededRandom = () => { let value = 42; return () => { value = (Math.imul(value, 1664525) + 1013904223) >>> 0; return value / 4294967296; }; };
+export const seededRandom = (seed = 42) => { let value = seed; return () => { value = (Math.imul(value, 1664525) + 1013904223) >>> 0; return value / 4294967296; }; };

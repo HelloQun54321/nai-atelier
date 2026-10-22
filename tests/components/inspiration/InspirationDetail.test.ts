@@ -69,6 +69,16 @@ it('法典收藏保留部分配置，送入实验室时才补齐可执行默认�
   expect(item.params).toEqual({ steps: 12 });
 });
 
+it('缺样张画师收藏显示空封面，保留 Tag 且不出现图片分享按钮', () => {
+  const item: Inspiration = { ...mockItem, sourceType: 'artist', sourceId: 'synthetic artist', imageUrl: '', prompt: 'artist:synthetic artist' };
+  render(React.createElement(InspirationDetail, { item, items: [item], currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
+  expect(screen.getByText('暂无样张')).toBeTruthy();
+  expect(screen.getByText('artist:synthetic artist')).toBeTruthy();
+  expect(screen.queryByTitle('复制图片')).toBeNull();
+  expect(screen.queryByRole('button', { name: '识别图片 Tag' })).toBeNull();
+  expect(screen.getByRole('button', { name: '更多底图模式' })).toHaveProperty('disabled', true);
+});
+
 it('添加标签可复用其他作品的原名，回车后不重复生成标签，并保留已有标签', async () => {
   const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光', '雨天'] }];
   render(React.createElement(InspirationDetail, { item: mockItem, items, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));

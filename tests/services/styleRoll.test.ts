@@ -2,6 +2,47 @@ import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
 import { formatRollStyle, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollTemplate } from '../../services/styleRoll';
 
+it('每条串从人数范围抽取，锁定计入总数且权重仍随机', () => {
+  const e = rollFixture(); e.pinnedArtists = ['alpha', 'beta']; e.rules = { ...e.rules, minArtists: 4, maxArtists: 6 };
+  const candidates = rollCandidates(e, 24, { random: seededRandom(23) });
+  expect(new Set(candidates.map(candidate => candidate.tags.length))).toEqual(new Set([4, 5, 6]));
+  expect(candidates.every(candidate => candidate.tags.slice(0, 2).map(tag => tag.tag).join(',') === 'alpha,beta')).toBe(true);
+  expect(new Set(candidates.map(candidate => candidate.tags[0].weight)).size).toBeGreaterThan(1);
+  e.rules.minArtists = 6;
+  expect(rollCandidates(e, 12).every(candidate => candidate.tags.length === 6)).toBe(true);
+});
+
+it('偏好保底计入已锁定偏好，屏蔽和排除后不足会停止', () => {
+  const e = rollFixture(); e.pinnedArtists = ['alpha']; e.rules = { ...e.rules, minArtists: 3, maxArtists: 5, preferredMinArtists: 2 };
+  const preferredTags = ['alpha', 'beta'];
+  const candidates = rollCandidates(e, 12, { preferredTags, random: seededRandom(7) });
+  expect(candidates.every(candidate => preferredTags.every(tag => candidate.tags.some(item => item.tag === tag)))).toBe(true);
+  expect(() => rollCandidates(e, 1, { preferredTags, blockedTags: ['beta'] })).toThrow('可用偏好画师不足');
+  e.artists[1].excluded = true;
+  expect(() => rollCandidates(e, 1, { preferredTags })).toThrow('可用偏好画师不足');
+  e.pinnedArtists = ['gamma', 'delta', 'eta', 'theta', 'zeta'];
+  e.artists[1].excluded = false;
+  expect(() => rollCandidates(e, 1, { preferredTags })).toThrow('固定画师与偏好保底超出人数上限');
+});
+
+it('倍率由用户设置并增加偏好抽中率，不改变提示词权重或重复抽同一 Tag', () => {
+  const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
+  const sample = (multiplier: number) => {
+    const random = seededRandom(42); e.rules.preferredMultiplier = multiplier;
+    return Array.from({ length: 1000 }, () => rollCandidates(e, 1, { random, preferredTags: ['alpha'] })[0]).filter(candidate => candidate.tags[0].tag === 'alpha').length;
+  };
+  expect(sample(1)).toBeLessThan(180); expect(sample(10)).toBeGreaterThan(500);
+  e.rules = { ...e.rules, minArtists: 5, maxArtists: 5, minWeight: 1.2, maxWeight: 1.2 };
+  const candidates = rollCandidates(e, 12, { preferredTags: ['alpha', 'beta'], random: seededRandom(9) });
+  expect(candidates.every(candidate => new Set(candidate.tags.map(tag => tag.tag)).size === 5 && candidate.tags.every(tag => tag.weight === 1.2))).toBe(true);
+});
+
+it('保存边界校验偏好设置，旧记录缺省为不加权且不保底', () => {
+  const e = rollFixture(); expect(() => validateRollExperiment(e)).not.toThrow();
+  for (const preferredMultiplier of [0, -1, Infinity, NaN]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredMultiplier } })).toThrow('偏好');
+  for (const preferredMinArtists of [-1, 1.5, 5]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredMinArtists } })).toThrow('偏好');
+});
+
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
     const names = Array.from({ length: 1205 }, (_, index) => `catalog_${index}`);

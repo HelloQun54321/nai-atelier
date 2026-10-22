@@ -17,6 +17,12 @@ beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('共用图片分享操作', () => {
+  it('样张工具可省去第二个收藏入口，仍复制当前图片', async () => {
+    render(React.createElement(ImageShareActions, { imageUrl: '/sample.png', filename: 'sample.png', showFavorite: false }));
+    expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+    await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/sample.png', false));
+  });
   it('图片下载与复制的提示及无障碍名称随界面语言原位切换', () => {
     render(React.createElement(ImageShareActions, { imageUrl: '/synthetic.png', filename: 'synthetic.png', variant: 'card' }));
     for (const language of ['zh-TW', 'en', 'ja', 'ko'] as const) {

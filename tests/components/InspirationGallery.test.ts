@@ -83,6 +83,15 @@ const mockUser: User = {
   createdAt: 1,
 };
 
+it('缺图画师偏好在收藏库保留空封面与 Tag，可进入详情且没有失效图片操作', async () => {
+  const item: Inspiration = { id: 'empty-artist', userId: mockUser.id, title: 'synthetic artist', imageUrl: '', prompt: 'artist:synthetic artist', sourceType: 'artist', sourceId: 'synthetic artist', createdAt: 1 };
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [item], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(screen.getByText('暂无样张'));
+  expect(screen.getAllByText('暂无样张').length).toBeGreaterThan(0);
+  expect(screen.getByText('artist:synthetic artist')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '复制图片' })).toBeNull();
+});
+
 it.each(['v45', 'v5'])('%s图包收藏列表与详情预览裁边按实际比例展示，原图查看与复制仍取原件', async pack => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 1, desktopColumns: 1 }));
   const sample = { pack, tag: 'synthetic artist', revision: 'a'.repeat(24), index: 0 };

@@ -35,11 +35,19 @@ it('新轮次只保存总人数、固定 Tag 与权重范围，不写模式且�
   e.rounds = [{ id: 'old-round', candidateIds: ['old'], createdAt: 1, snapshot: { rules: { ...e.rules }, mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] } }];
   const before = structuredClone(e);
   const next = beginRollRound(e, e.artists.map(artist => artist.tag), 2);
-  expect(next.rules).toMatchObject({ minArtists: 5, maxArtists: 5 });
+  expect(next.rules).toMatchObject({ minArtists: 2, maxArtists: 5 });
   expect(currentRollRound(next)!.snapshot).toEqual({ rules: next.rules, pinnedArtists: ['alpha', 'beta'] });
   expect(next.drawPlan).toBeUndefined();
   expect(next.rounds[0]).toEqual(before.rounds[0]); expect(e).toEqual(before);
   expect(() => validateRollExperiment(next)).not.toThrow();
+});
+
+it('样张过滤不会被历史覆盖项绕过，偏好不足时不创建候选', () => {
+  const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 1, preferredMinArtists: 1, preferredMultiplier: 3 };
+  expect(() => beginRollRound(e, ['alpha'], 1, { sampledOnly: true, preferredTags: ['beta'] })).toThrow('可用偏好画师不足');
+  const next = beginRollRound(e, ['alpha'], 1, { sampledOnly: true, preferredTags: ['alpha'] });
+  expect(next.candidates[0].tags[0].tag).toBe('alpha');
+  expect(next.rounds[0].snapshot?.rules).toMatchObject({ preferredMinArtists: 1, preferredMultiplier: 3 });
 });
 
 it('样张过滤仅限制随机补位，固定的无样张 Tag 仍参与且不足总人数时拒绝', () => {

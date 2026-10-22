@@ -11,7 +11,7 @@ interface Props {
   limit: number; disabled?: boolean; blocked?: string[];
 }
 
-/** 两个设置入口共用 Tag 输入，不另开抽卡或画师选择窗口。 */
+/** 画师管理弹窗中保留手动粘贴 Tag 的入口。 */
 export const StyleRollArtistInput: React.FC<Props> = ({ label, value, onChange, limit, disabled, blocked = [] }) => {
   const [text, setText] = useState(''), [error, setError] = useState('');
   const [suggestions, setSuggestions] = useState<ArtistDictionaryEntry[]>([]);

@@ -1,10 +1,22 @@
+// @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), getBrowseOrder: vi.fn(), getPage: vi.fn() }));
 vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: mocks }));
-import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment } from '../../services/styleRollApi';
+import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment, saveRollBlocklist, ROLL_BLOCKLIST_CHANGED } from '../../services/styleRollApi';
 beforeEach(() => vi.clearAllMocks());
+
+it('全局屏蔽只在保存成功并校验回执后通知画师库和 Roll', async () => {
+  const changed = vi.fn(); window.addEventListener(ROLL_BLOCKLIST_CHANGED, changed);
+  try {
+    mocks.put.mockRejectedValueOnce(new Error('合成失败'));
+    await expect(saveRollBlocklist(['alpha'])).rejects.toThrow('合成失败'); expect(changed).not.toHaveBeenCalled();
+    mocks.put.mockResolvedValueOnce({ tags: ['alpha'] });
+    await saveRollBlocklist(['alpha']); expect(changed).toHaveBeenCalledOnce();
+    expect(changed.mock.calls[0][0].detail).toEqual(['alpha']);
+  } finally { window.removeEventListener(ROLL_BLOCKLIST_CHANGED, changed); }
+});
 
 it('只从匹配实验、候选、提示词和 Seed 的历史读取图片，固定首次匹配结果', () => {
   const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b')];

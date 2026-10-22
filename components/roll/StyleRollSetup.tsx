@@ -5,9 +5,11 @@ import React, { useEffect, useState } from 'react';
 import { Dice5, LockKeyhole, Sparkles, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
-import { getRollArtistCount, getRollPinnedArtists, mergeRollArtists, parseRollArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, ROLL_MAX_ARTISTS, type RollExperiment } from '../../services/styleRoll';
-import { StyleRollArtistInput } from './StyleRollArtistInput';
-import { normalizeRollArtistKey, rollSeedFromChain } from '../../services/styleRollSeed';
+import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, type RollExperiment } from '../../services/styleRoll';
+import { StyleRollArtistDialog } from './StyleRollArtistDialog';
+import { StyleRollRuleFields } from './StyleRollRuleFields';
+import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
+import { rollSeedFromChain } from '../../services/styleRollSeed';
 import { ChainEditorParams } from '../ChainEditorParams';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { IconButton, ToolbarButton } from '../DesignSystem';
@@ -16,19 +18,19 @@ import { useMobileHistoryLayer } from '../MobileUI';
 
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-interface Props { initial: RollExperiment; chains: PromptChain[]; libraryCount?: number; libraryLoading?: boolean; blockedTags?: string[]; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
+interface Props { initial: RollExperiment; chains: PromptChain[]; libraryCount?: number; libraryLoading?: boolean; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
 
 export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><SetupForm {...props} /></ImagePreviewPortal>;
 
-const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, libraryLoading = false, blockedTags = [], enforceFreeStepLimit, onSave, onClose }) => {
+const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, libraryLoading = false, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, onSave, onClose }) => {
   useLanguage();
   const legacyUpgraded = !initial.candidates.length && LEGACY_ROLL_PROMPTS.includes(initial.template.prompt) && !initial.template.negativePrompt.trim();
   const [draft, setDraft] = useState(() => {
-    const total = getRollArtistCount(initial);
-    const value = structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, minArtists: total, maxArtists: total } });
+    const value = structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } });
     if (legacyUpgraded) { value.template.prompt = DEFAULT_ROLL_PROMPT; value.template.negativePrompt = DEFAULT_ROLL_NEGATIVE; }
     return value;
   });
+  const [artistDialogOpen, setArtistDialogOpen] = useState(false);
   const [section, setSection] = useState<'pool' | 'template'>('pool');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const dialog = useModalA11y<HTMLDivElement>(true);
@@ -66,16 +68,8 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {section === 'pool' ? <div className="space-y-4">
           <p role="status" className="text-sm text-gray-500">{libraryLoading ? t('正在读取画师词库…') : t('从画师库自动抽取 · {0} 位画师', [libraryCount])}</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <label className="text-xs font-semibold">{t('每串总人数')}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules.maxArtists} min={Math.max(1, draft.pinnedArtists?.length ?? 0)} max={ROLL_MAX_ARTISTS} step={1} disabled={busy} onChange={event => { const total = Number(event.target.value); setDraft({ ...draft, rules: { ...draft.rules, minArtists: total, maxArtists: total } }); }} /></label>
-            {([['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={0.1} max={3} step={0.1} disabled={busy} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
-          </div>
-          <StyleRollArtistInput label="固定画师 Tag（可选）" value={draft.pinnedArtists ?? []} limit={draft.rules.maxArtists} blocked={[...blockedTags, ...draft.artists.filter(artist => artist.excluded).map(artist => artist.tag)]} disabled={busy} onChange={pinnedArtists => setDraft({ ...draft, pinnedArtists })} />
-          <p className="text-xs text-gray-400">{t('总人数包含固定画师，所有画师的权重每轮随机。')}</p>
-          <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-            <summary className="mobile-touch cursor-pointer text-sm font-semibold">{t('排除画师（可选）')}</summary>
-            <div className="mt-3"><StyleRollArtistInput label="本记录排除画师" value={draft.artists.filter(artist => artist.excluded).map(artist => artist.tag)} limit={1000} blocked={draft.pinnedArtists} disabled={busy} onChange={tags => setDraft({ ...draft, artists: mergeRollArtists(draft.artists, parseRollArtists(tags.join(', '))).map(artist => ({ ...artist, excluded: tags.some(tag => normalizeRollArtistKey(tag) === normalizeRollArtistKey(artist.tag)) })) })} /></div>
-          </details>
+          <StyleRollRuleFields rules={draft.rules} disabled={busy} onChange={rules => setDraft({ ...draft, rules })} />
+          <ToolbarButton disabled={busy} onClick={() => setArtistDialogOpen(true)}>{t('管理画师与偏好')} · {t('固定 {0} 位', [draft.pinnedArtists?.length ?? 0])}</ToolbarButton>
         </div> : <div className="space-y-4">
           {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}
           {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入生成配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
@@ -96,6 +90,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
         <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
         <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
       </footer>
+      {artistDialogOpen && <StyleRollArtistDialog library={library} loading={libraryLoading} pinned={draft.pinnedArtists ?? []} onPinnedChange={pinnedArtists => setDraft(current => ({ ...current, pinnedArtists }))} blocked={blockedTags} onBlockedChange={onBlockedChange} excluded={draft.artists.filter(artist => artist.excluded).map(artist => artist.tag)} onExcludedChange={tags => setDraft(current => ({ ...current, artists: current.artists.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })) }))} sampledOnly={draft.sampledOnly ?? false} onSampledOnlyChange={sampledOnly => setDraft(current => ({ ...current, sampledOnly }))} rules={draft.rules} onRulesChange={rules => setDraft(current => ({ ...current, rules }))} onClose={() => setArtistDialogOpen(false)} />}
 
     </div>
   </div></PromptLibraryWorkspace>;

@@ -21,10 +21,11 @@ interface Props {
   onToggleFavorite?: () => Promise<void> | void;
   onFavoriteChange?: (active: boolean) => void;
   revealClassName?: string;
+  showFavorite?: boolean;
 }
 
 /** 收藏常驻，下载与复制仍按共用规则显露；所有页面共享收藏状态。 */
-export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md' }) => {
+export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md', showFavorite = true }) => {
   useLanguage();
   const clean = useCleanSharedImages();
   const busyRef = useRef(false);
@@ -82,14 +83,14 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     { action: 'copy' as const, label: '复制', title: '复制图片', Icon: Copy },
   ];
   return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`image-share-actions flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
-    <button type="button" data-image-favorite="true" aria-pressed={active}
+    {showFavorite && <button type="button" data-image-favorite="true" aria-pressed={active}
       title={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
       aria-label={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
       aria-busy={Boolean(favoriteBusy || favoritePending)} disabled={favoriteBusy || favoritePending} onClick={() => void toggleFavorite()}
       className={`inline-flex shrink-0 items-center justify-center gap-1.5 transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${active ? '!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400' : ''} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}>
       {favoriteBusy || favoritePending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${active ? 'fill-current' : ''}`} />}
       {!iconOnly && <span>{t('收藏')}</span>}
-    </button>
+    </button>}
     {actions.map(({ action, label, title, Icon }) => <button
       key={action} type="button" title={t(title)} aria-label={t(title)}
       disabled={Boolean(busy)} onClick={() => void perform(action)}

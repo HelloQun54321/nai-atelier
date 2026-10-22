@@ -3,7 +3,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Filter } from 'lucide-react';
 import { IconButton, ToolbarButton } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { MobileBottomSheet } from './MobileUI';
+import { MobileBottomSheet, useMobileHistoryLayer } from './MobileUI';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useGlassRefraction } from './useGlassRefraction';
 
@@ -39,14 +39,16 @@ export const AnchoredToolbarPopover: React.FC<{
   width?: number;
   above?: boolean;
   compact?: boolean;
+  allowMobile?: boolean;
   onClose: () => void;
   children: React.ReactNode;
-}> = ({ anchorRef, title, width = 384, above = false, compact = false, onClose, children }) => {
+}> = ({ anchorRef, title, width = 384, above = false, compact = false, allowMobile = false, onClose, children }) => {
   useLanguage();
+  const requestClose = useMobileHistoryLayer(allowMobile, onClose, 'anchored-popover');
   const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 0, transformOrigin: 'center top' });
   useLayoutEffect(() => {
     const update = () => {
-      if (window.innerWidth < 768) { onClose(); return; }
+      if (!allowMobile && window.innerWidth < 768) { onClose(); return; }
       const anchor = anchorRef.current;
       if (!anchor) return;
       const next = getToolbarPopoverPosition(anchor.getBoundingClientRect(), width, window.innerWidth, window.innerHeight, above);
@@ -65,10 +67,10 @@ export const AnchoredToolbarPopover: React.FC<{
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [anchorRef, width, above, onClose]);
+  }, [anchorRef, width, above, allowMobile, onClose]);
   return <ImagePreviewPortal>
-    <div className="fixed inset-0 z-[1800]" onClick={onClose} />
-    <PopoverSurface title={title} position={position} above={above} compact={compact} onClose={onClose}>{children}</PopoverSurface>
+    <div className="fixed inset-0 z-[1800]" onClick={requestClose} />
+    <PopoverSurface title={title} position={position} above={above} compact={compact} onClose={requestClose}>{children}</PopoverSurface>
   </ImagePreviewPortal>;
 };
 

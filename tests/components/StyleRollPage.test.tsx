@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 import type { RollExperiment, RollRules } from '../../services/styleRoll';
@@ -12,6 +12,8 @@ import { setLanguage } from '../../services/i18n';
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
 vi.mock('../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
+vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => new Map() }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
 vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: async () => new Set(['alpha']) }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
@@ -29,10 +31,11 @@ vi.mock('../../components/SmartImage', async original => ({ ...await original<ty
 vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
 vi.mock('../../components/roll/StyleRollChainSeedDialog', () => ({ StyleRollChainSeedDialog: ({ chains, createOptions, onClose }: any) => <div role="dialog" aria-label="从风格串开始"><button onClick={async () => { await createOptions(chains[0]); onClose(); }}>合成从风格串新建</button></div> }));
 
+const preferredItems: any[] = [];
 let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  preferredItems.length = 0; vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
@@ -56,9 +59,24 @@ const setup = async (options = {}) => {
 };
 const filterBy = (name: string) => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name })); };
 const pending = () => filterBy('待生成');
-const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.change(screen.getByRole('spinbutton', { name }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
+const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
+const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
 const details = () => fireEvent.click(screen.getByText('更多操作', { exact: true }));
+
+it('画师库的全局屏蔽变更即时同步 Roll，解除该画师锁定并排除下一轮', async () => {
+  experiment.candidates = []; experiment.pinnedArtists = ['alpha']; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
+  const { container } = await setup();
+  act(() => window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: ['alpha'] })));
+  openArtists();
+  expect(screen.getByRole('button', { name: '取消屏蔽画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 1, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0] as RollExperiment;
+  expect(saved.candidates.at(-1)!.tags.every(artist => artist.tag !== 'alpha')).toBe(true);
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
 
 it('向助手登记读取、发起、补齐与保存 Roll 候选的命令', async () => {
   const { container } = await setup();
@@ -153,7 +171,7 @@ it('本轮设置与完整配置双向同步人数和权重范围，保存配置�
   openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByRole('spinbutton', { name: '每串总人数' })).toHaveProperty('value', '6');
+  expect(screen.getByRole('spinbutton', { name: '最多画师人数' })).toHaveProperty('value', '6');
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '0.3');
   expect(mocks.generate).not.toHaveBeenCalled();
@@ -341,6 +359,9 @@ it('本轮设置直接固定部分 Tag，总人数包含固定项且所有权重
   await setup(); configure('每串总人数', '5'); configure('最低权重', '1.8'); configure('最高权重', '2.2');
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   expect(screen.queryByRole('button', { name: /全随机|固定权重|选择固定画师/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
+  fireEvent.click(screen.getByText('手动添加固定 Tag'));
   fireEvent.change(screen.getByRole('textbox', { name: '固定画师 Tag（可选）' }), { target: { value: 'alpha, beta' } });
   fireEvent.click(screen.getByRole('button', { name: '添加到固定画师 Tag（可选）' }));
   fireEvent.keyDown(window, { key: 'Escape' });
@@ -360,10 +381,10 @@ it('旧固定模式无需解除权重锁，助手沿用相同的总人数和固�
   experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 5 };
   const { container } = await setup();
   const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as any;
-  expect(state.artistsPerMix).toBe(5); expect(state.pinnedArtists).toEqual(['alpha', 'beta']); expect(state.drawMode).toBeUndefined();
+  expect(state.rules).toMatchObject({ minArtists: 2, maxArtists: 5 }); expect(state.pinnedArtists).toEqual(['alpha', 'beta']); expect(state.drawMode).toBeUndefined();
   await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 6, generate: false }, false); });
   const saved = mocks.save.mock.calls.at(-1)![0];
-  expect(saved.candidates.slice(-6).every((candidate: any) => candidate.tags.length === 5 && candidate.tags[0].tag === 'alpha' && candidate.tags[0].weight <= 1.4)).toBe(true);
+  expect(saved.candidates.slice(-6).every((candidate: any) => candidate.tags.length >= 2 && candidate.tags.length <= 5 && candidate.tags[0].tag === 'alpha' && candidate.tags[0].weight <= 1.4)).toBe(true);
   expect(saved.candidates.slice(0, 2)).toEqual(experiment.candidates);
 });
 
@@ -386,8 +407,10 @@ it('只从有样张的画师中抽取会过滤抽取范围，并把开关写进�
   mocks.dictionary.mockResolvedValue(['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 })));
   await setup(); configure('每串总人数', '1');
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
-  expect(screen.getByText('可用 1 位有样张画师')).toBeTruthy();
+  expect(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' })).toHaveProperty('checked', true);
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
   await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
@@ -463,7 +486,8 @@ it('可从候选新建记录并预置固定画师，之后只抽权重', async (
   expect(created.candidates).toEqual([]);
   expect(created.name).not.toContain('权重');
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByRole('button', { name: '从固定画师 Tag（可选）移除 alpha' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 it('重 Roll 后保持全部轮次视图，旧候选不会被筛掉', async () => {
@@ -519,7 +543,8 @@ it('从画师库带入固定画师时新建记录并固定 Tag，不覆盖当前
   expect(created.drawPlan).toBeUndefined();
   expect(created.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByRole('button', { name: '从固定画师 Tag（可选）移除 beta' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+  expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
 });
 
 it('回收站可永久清理已归档候选，原图与已保存风格串仍保留', async () => {
@@ -582,4 +607,45 @@ it('从风格串开始时用画师词库识别裸画师名', async () => {
   fireEvent.click(screen.getByRole('button', { name: '合成从风格串新建' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   expect(mocks.save.mock.calls[0][0].artists.map((artist: any) => artist.tag)).toEqual(['dishwasher1910', 'akita_hika']);
+});
+
+
+it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保底', async () => {
+  preferredItems.push({ sourceType: 'artist', sourceId: 'beta', archived: false });
+  const { container } = await setup();
+  configure('最少画师人数', '4'); configure('最多画师人数', '6');
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  const people = screen.getByRole('group', { name: '每串人数范围' }), weights = screen.getByRole('group', { name: '权重范围' });
+  expect(people.contains(screen.getByLabelText('最多画师人数'))).toBe(true);
+  expect(weights.contains(screen.getByLabelText('最低权重'))).toBe(true);
+  expect(people.contains(weights)).toBe(false);
+  expect(screen.queryByRole('textbox', { name: '固定画师 Tag（可选）' })).toBeNull();
+  fireEvent.keyDown(window, { key: 'Escape' }); openArtists();
+  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
+  fireEvent.change(screen.getByLabelText('每串偏好保底人数'), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText('偏好抽中倍率'), { target: { value: '3' } });
+  fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 6, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0];
+  expect(saved.rules).toMatchObject({ minArtists: 4, maxArtists: 6, preferredMinArtists: 1, preferredMultiplier: 3 });
+  expect(saved.candidates.slice(-6).every((candidate: any) => candidate.tags.some((tag: any) => tag.tag === 'beta'))).toBe(true);
+});
+
+it('偏好不足时页面和助手都停止，不保存候选也不触发生图', async () => {
+  experiment.rules.preferredMinArtists = 2;
+  preferredItems.push({ sourceType: 'artist', sourceId: 'alpha', archived: false });
+  const { container } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await screen.findByText('可用偏好画师不足，请减少保底人数或调整屏蔽与样张过滤');
+  await expect(executeAgentCommand(container, 'run_roll_round', { count: 1, generate: false }, false)).rejects.toThrow('可用偏好画师不足');
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('助手临时开启样张过滤时按真实样张集合抽取，旧覆盖项不能绕过过滤', async () => {
+  experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
+  const { container } = await setup();
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 3, sampledOnly: true, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0];
+  expect(saved.sampledOnly).toBe(true);
+  expect(saved.candidates.slice(2).every((candidate: any) => candidate.tags.length === 1 && candidate.tags[0].tag === 'alpha')).toBe(true);
 });

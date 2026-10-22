@@ -19,6 +19,15 @@ const fixture = () => {
   return { sqlite, invoke };
 };
 
+it('人数范围与偏好条件持久保存，无效保底和倍率被拒绝', async () => {
+  const f = fixture(), experiment = { ...rollFixture(), revision: 0 };
+  experiment.rules = { ...experiment.rules, minArtists: 4, maxArtists: 6, preferredMultiplier: 2.5, preferredMinArtists: 2 };
+  const saved = await (await f.invoke(experiment))!.json() as any;
+  expect(saved.experiment.rules).toEqual(experiment.rules);
+  expect((await f.invoke({ ...saved.experiment, rules: { ...experiment.rules, preferredMinArtists: 7 } }))!.status).toBe(400);
+  expect((await f.invoke({ ...saved.experiment, rules: { ...experiment.rules, preferredMultiplier: 0 } }))!.status).toBe(400);
+});
+
 it('实验存在私人 settings，创建及更新回传版本号，其他工坊用户不可见', async () => {
   const f = fixture(), experiment = { ...rollFixture(), revision: 0 };
   const saved = await (await f.invoke(experiment))!.json() as any;

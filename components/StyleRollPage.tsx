@@ -1,16 +1,17 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
+import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Copy, Dice5, FlaskConical, ImagePlus, Layers, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Dice5, FlaskConical, ImagePlus, Layers, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistCount, getRollPinnedArtists, LEGACY_ROLL_PROMPTS, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollCandidate, type RollExperiment } from '../services/styleRoll';
+import { DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, LEGACY_ROLL_PROMPTS, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { getArtistSampleDictionary, normalizeArtistSampleTag } from '../services/artistSamples';
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
 import type { ArtistDictionaryEntry } from '../services/tagDictionary';
-import { loadRollBlocklist, loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
+import { loadRollBlocklist, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
 import { normalizeRollArtistKey, rollSeedFromChain } from '../services/styleRollSeed';
 import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
@@ -36,7 +37,9 @@ import { ImageCardActions } from './ImageCardActions';
 import { PressRevealSurface } from './PressRevealSurface';
 import { MobileDetailView } from './MobileUI';
 import { StyleRollSetup } from './roll/StyleRollSetup';
-import { StyleRollArtistInput } from './roll/StyleRollArtistInput';
+import { StyleRollArtistDialog } from './roll/StyleRollArtistDialog';
+import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
+import { collectionSnapshot, ensureCollection } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { StyleRollChainSeedDialog } from './roll/StyleRollChainSeedDialog';
 import { rollChipColor } from './roll/rollPalette';
@@ -54,6 +57,7 @@ interface Props {
   initialPinned?: { tags: string[]; token: number } | null;
 }
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
+const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
 
 export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground, onOpenArtistLibrary, initialPinned }) => {
@@ -71,8 +75,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [history, setHistory] = useState<LocalGenItem[]>([]), [historyLoading, setHistoryLoading] = useState(false);
   const [historyReadyId, setHistoryReadyId] = useState('');
   const [selectedId, setSelectedId] = useState('');
-  const [filter, setFilter] = useState('all'), [count, setCount] = useState(6), [artistsPerMix, setArtistsPerMix] = useState(4);
-  const [weightRange, setWeightRange] = useState({ minWeight: DEFAULT_ROLL_RULES.minWeight, maxWeight: DEFAULT_ROLL_RULES.maxWeight });
+  const [filter, setFilter] = useState('all'), [count, setCount] = useState(6);
+  const [roundRules, setRoundRules] = useState<RollRules>({ ...DEFAULT_ROLL_RULES });
+  const [artistDialogOpen, setArtistDialogOpen] = useState(false);
+  const [artistOverrides, setArtistOverrides] = useState<RollExperiment['artists']>([]);
   const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -99,8 +105,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   });
   selectedExperimentRef.current = experimentId;
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
-  const roundRules = { minArtists: artistsPerMix, maxArtists: artistsPerMix, ...weightRange };
-  const effectiveLibrary = sampledOnly && sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library;
+  const effectiveLibrary = sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library;
   const chineseNames = useMemo(() => new Map(libraryEntries.map(entry => [normalizeArtistSampleTag(entry.name), entry.chinese || ''])), [libraryEntries]);
   const knownArtistKeys = useMemo(() => new Set(library.map(normalizeRollArtistKey)), [library]);
   const roundNumbers = useMemo(() => {
@@ -153,12 +158,22 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, []);
   useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); }, [experimentId]);
   useEffect(() => { setRecordName(experiment?.name || ''); }, [experiment?.id, experiment?.name]);
-  useEffect(() => { if (experiment) setArtistsPerMix(getRollArtistCount(experiment)); }, [experimentId, experiment?.rules.minArtists, experiment?.rules.maxArtists]);
-  useEffect(() => { setWeightRange({ minWeight: experiment?.rules.minWeight ?? DEFAULT_ROLL_RULES.minWeight, maxWeight: experiment?.rules.maxWeight ?? DEFAULT_ROLL_RULES.maxWeight }); }, [experimentId, experiment?.rules.minWeight, experiment?.rules.maxWeight]);
+  useEffect(() => { setRoundRules(experiment ? { ...experiment.rules, ...getRollArtistRange(experiment) } : { ...DEFAULT_ROLL_RULES }); }, [experimentId, experiment?.rules]);
+  useEffect(() => { setArtistOverrides(experiment?.artists ?? []); }, [experimentId, experiment?.artists]);
   useEffect(() => { setPinnedArtists(experiment ? getRollPinnedArtists(experiment) : []); }, [experimentId, experiment?.pinnedArtists, experiment?.drawPlan, experiment?.artists]);
   useEffect(() => { setSampledOnly(experiment?.sampledOnly ?? false); }, [experimentId, experiment?.sampledOnly]);
   useEffect(() => { if (active) void getSampledArtistTags().then(setSampledTags).catch(() => setSampledTags(new Set())); }, [active]);
-  useEffect(() => { if (active) void loadRollBlocklist().then(setBlocklist).catch(() => {}); }, [active]);
+  useEffect(() => {
+    let stale = false;
+    const changed = (event: Event) => {
+      stale = true;
+      const tags = (event as CustomEvent<string[]>).detail, keys = new Set(tags.map(normalizeRollArtistKey));
+      setBlocklist(tags); setPinnedArtists(current => current.filter(tag => !keys.has(normalizeRollArtistKey(tag))));
+    };
+    window.addEventListener(ROLL_BLOCKLIST_CHANGED, changed);
+    if (active) void loadRollBlocklist().then(tags => { if (!stale) setBlocklist(tags); }).catch(() => {});
+    return () => { stale = true; window.removeEventListener(ROLL_BLOCKLIST_CHANGED, changed); };
+  }, [active]);
   useEffect(() => { if (active && experimentId) void refreshHistory(experimentId); }, [active, experimentId, refreshHistory]);
   useEffect(() => localHistory.subscribe(() => { if (selectedExperimentRef.current) void refreshHistory(selectedExperimentRef.current); }), [refreshHistory]);
   useEffect(() => {
@@ -170,8 +185,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, [experiments]);
 
   const store = async (next: RollExperiment) => {
-    const total = getRollArtistCount(next);
-    const saved = await saveRollExperiment({ ...next, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(next), rules: { ...next.rules, minArtists: total, maxArtists: total } });
+    const saved = await saveRollExperiment({ ...next, rules: { ...next.rules, ...getRollArtistRange(next) }, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(next) });
     if (mounted.current) setExperiments(current => [saved, ...current.filter(item => item.id !== saved.id)]);
     return saved;
   };
@@ -181,6 +195,19 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     try { await action(); }
     catch (cause) { if (mounted.current) setError((cause as Error).message); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
+  };
+  const updateBlocklist = async (tags: string[]) => { setBlocklist(await saveRollBlocklist(tags)); };
+  const openFromSettings = (close: () => void, open: () => void) => {
+    // 手机先退出设置的历史层，再打开画师／配置窗口，避免返回事件连带关闭新弹窗。
+    const returned = window.history.state?.__naiMobileLayer?.startsWith('sheet-')
+      ? new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true })) : null;
+    flushSync(close);
+    if (returned) void returned.then(() => { if (mounted.current) open(); }); else open();
+  };
+  const readPreferredTags = async () => {
+    if ((roundRules.preferredMultiplier ?? 1) === 1 && !roundRules.preferredMinArtists) return [];
+    await ensureCollection();
+    return collectionSnapshot().filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!);
   };
   const makeExperiment = () => {
     const now = Date.now();
@@ -192,7 +219,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     }
     const next: RollExperiment = {
       version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
-      artists: experiment ? structuredClone(experiment.artists) : [], rules: roundRules,
+      artists: structuredClone(artistOverrides), rules: roundRules, sampledOnly,
       template,
       candidates: [], rounds: [], pinnedArtists: [...pinnedArtists],
     };
@@ -219,7 +246,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         draft.name = t('固定画师组 {0} 位', [tags.length]);
         draft.pinnedArtists = tags;
         const size = Math.min(ROLL_MAX_ARTISTS, Math.max(1, tags.length));
-        draft.rules = { ...draft.rules, minArtists: size, maxArtists: size };
+        draft.rules = { ...draft.rules, minArtists: size, maxArtists: size, preferredMinArtists: 0 };
         const saved = await store(draft);
         selectedExperimentRef.current = saved.id;
         setExperimentId(saved.id); setPinnedArtists(tags);
@@ -275,11 +302,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!continuousGenerationEnabled && count > 1) throw new Error('连续生成已关闭，请开启后生成本轮');
     if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
     if (sampledOnly && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
-    if (sampledOnly && !effectiveLibrary.length && pinnedArtists.length < artistsPerMix) throw new Error('没有可用的有样张画师，请先在画师库下载图包或生成样张');
+    if (sampledOnly && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师，请先在画师库下载图包或生成样张');
     let source = experiment || makeExperiment();
     if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-    source = { ...source, drawPlan: undefined, pinnedArtists, rules: roundRules, sampledOnly };
-    const next = beginRollRound(source, sampledOnly ? effectiveLibrary : library, count, { blockedTags: blocklist, sampledOnly });
+    source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, rules: roundRules, sampledOnly };
+    const next = beginRollRound(source, sampledOnly ? effectiveLibrary : library, count, { blockedTags: blocklist, sampledOnly, preferredTags: await readPreferredTags() });
     const saved = await store(next), created = currentRollRound(saved)!;
     selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
     void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
@@ -372,7 +399,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const pinned = candidate.tags.map(tag => tag.tag);
     draft.name = t('固定画师组 {0} 位', [pinned.length]);
     draft.pinnedArtists = pinned;
-    draft.rules = { ...draft.rules, minArtists: pinned.length, maxArtists: pinned.length };
+    draft.rules = { ...draft.rules, minArtists: pinned.length, maxArtists: pinned.length, preferredMinArtists: 0 };
     const saved = await store(draft);
     selectedExperimentRef.current = saved.id;
     setExperimentId(saved.id);
@@ -472,7 +499,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       })) : [],
       session: session ? { scope: session.scope, state: session.state, queued: session.queued, progress: session.progress, awaiting: session.awaiting || null } : null,
       library: { count: library.length, loading: libraryLoading, error: libraryError, sampledOnly, effectiveCount: effectiveLibrary.length, sampledReady: sampledTags !== null },
-      count, artistsPerMix, pinnedArtists, weightRange,
+      count, rules: roundRules, pinnedArtists,
     }),
   });
   useAgentCommand({
@@ -486,11 +513,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
       const useSamples = typeof args.sampledOnly === 'boolean' ? args.sampledOnly : sampledOnly;
       if (useSamples && sampledTags === null) throw new Error('正在读取画师样张，请稍候');
-      if (useSamples && !effectiveLibrary.length && pinnedArtists.length < artistsPerMix) throw new Error('没有可用的有样张画师');
+      if (useSamples && !effectiveLibrary.length && pinnedArtists.length < roundRules.maxArtists) throw new Error('没有可用的有样张画师');
       let source = experiment || makeExperiment();
       if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-      source = { ...source, drawPlan: undefined, pinnedArtists, rules: roundRules, sampledOnly: useSamples };
-      const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples });
+      source = { ...source, artists: artistOverrides, drawPlan: undefined, pinnedArtists, rules: roundRules, sampledOnly: useSamples };
+      const next = beginRollRound(source, useSamples ? effectiveLibrary : library, requested, { blockedTags: blocklist, sampledOnly: useSamples, preferredTags: await readPreferredTags() });
       const saved = await store(next), created = currentRollRound(saved)!;
       selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
       const candidates = saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id));
@@ -538,11 +565,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading;
-  const canStart = !frozen && !working && remaining > 0 && !libraryLoading && !libraryError && library.length > 0 && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= artistsPerMix)));
+  const canStart = !frozen && !working && remaining > 0 && !libraryLoading && !libraryError && library.length > 0 && (!experiment || historyReady) && (!sampledOnly || (sampledTags !== null && (effectiveLibrary.length > 0 || pinnedArtists.length >= roundRules.maxArtists)));
   const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
     const snapshot = item.snapshot;
     if (!snapshot) return '';
-    return `${t('{0} 位画师', [snapshot.rules.maxArtists])} · ${t('固定 {0} 位', [snapshot.pinnedArtists?.length ?? 0])} · ${snapshot.rules.minWeight.toFixed(1)}～${snapshot.rules.maxWeight.toFixed(1)} · ${t('{0} 张', [item.candidateIds.length])}`;
+    return `${t('{0} 位画师', [artistCountLabel(snapshot.rules)])} · ${t('固定 {0} 位', [snapshot.pinnedArtists?.length ?? 0])} · ${snapshot.rules.minWeight.toFixed(1)}～${snapshot.rules.maxWeight.toFixed(1)} · ${t('{0} 张', [item.candidateIds.length])}`;
   };
   return <div ref={rootRef} className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceChrome>
@@ -596,7 +623,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 {(['all', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
               </div>
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
-              {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => { const snapshot = scopedRound.snapshot!; setWeightRange({ minWeight: snapshot.rules.minWeight, maxWeight: snapshot.rules.maxWeight }); setArtistsPerMix(Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0)); setPinnedArtists(snapshot.pinnedArtists ?? []); setSampledOnly(Boolean(snapshot.sampledOnly)); close(); }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
+              {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => { const snapshot = scopedRound.snapshot!; setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) }); setPinnedArtists(snapshot.pinnedArtists ?? []); setSampledOnly(Boolean(snapshot.sampledOnly)); close(); }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('候选排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
               <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
             </div>}
@@ -610,41 +637,23 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       {/* 主 CTA 固定在滚动区外，窄屏也始终可见；摘要只表达本轮，不另加轮次栏。 */}
       {!selecting && <div className="ml-1 flex shrink-0 items-center gap-2">
         <div className="hidden flex-col items-end leading-tight text-micro text-gray-500 xl:flex">
-          <span className="font-semibold text-gray-600 dark:text-gray-300">{t('{0} 张 · {1} 位', [count, artistsPerMix])}</span>
+          <span className="font-semibold text-gray-600 dark:text-gray-300">{t('{0} 张 · {1} 位', [count, artistCountLabel(roundRules)])}</span>
           {experiment && <span className="text-gray-400">{roundCostLabel}</span>}
         </div>
         <div className="flex shrink-0 items-center">
           <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} title={remaining <= 0 ? t('本记录候选已满，请在回收站永久清理') : undefined} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
-          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={340} className="[&_button[aria-haspopup]]:rounded-l-none">
-            {close => <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('本轮张数')}<input type="number" aria-label={t('本轮生成张数')} className={TOOLBAR_FIELD_CLASS} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
+          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={360} className="[&_button[aria-haspopup]]:rounded-l-none">
+            {close => <div className="space-y-3">
+              <label className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 text-xs font-semibold text-gray-600 dark:text-gray-300"><span>{t('本轮张数')}</span><input type="number" aria-label={t('本轮生成张数')} className={`${TOOLBAR_FIELD_CLASS} text-center tabular-nums`} min={1} max={24} value={count} onChange={event => setCount(Math.min(24, Math.max(1, Number(event.target.value) || 1)))} /></label>
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-800"><StyleRollRuleFields rules={roundRules} onChange={setRoundRules} disabled={frozen} /></div>
+              <div className="space-y-1 border-t border-gray-200 pt-2 dark:border-gray-800">
+                <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setArtistDialogOpen(true))}><span className="flex items-center gap-2"><Settings2 />{t('管理画师与偏好')}</span><span className="ml-auto text-xs font-normal text-gray-500">{t('固定 {0} 位', [pinnedArtists.length])}</span><ChevronRight /></ToolbarButton>
+                <ToolbarButton className="w-full !justify-between !px-2" onClick={() => openFromSettings(close, () => setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, artists: artistOverrides, pinnedArtists, rules: roundRules, sampledOnly }))}><span className="flex items-center gap-2"><Settings2 />{t('提示词与生成设置')}</span><ChevronRight /></ToolbarButton>
               </div>
-              <div className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800">
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录默认（随记录保存）')}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('每串总人数')}<input type="number" aria-label={t('每串总人数')} className={TOOLBAR_FIELD_CLASS} min={Math.max(1, pinnedArtists.length)} max={ROLL_MAX_ARTISTS} value={artistsPerMix} onChange={event => setArtistsPerMix(Math.min(ROLL_MAX_ARTISTS, Math.max(1, pinnedArtists.length, Number(event.target.value) || 1)))} /></label>
-                  {([['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(label)}<input type="number" className={TOOLBAR_FIELD_CLASS} min={0.1} max={3} step={0.1} value={weightRange[key]} onChange={event => setWeightRange(current => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
-                </div>
-                <StyleRollArtistInput label="固定画师 Tag（可选）" value={pinnedArtists} limit={artistsPerMix} blocked={[...blocklist, ...(experiment?.artists.filter(artist => artist.excluded).map(artist => artist.tag) ?? [])]} disabled={frozen} onChange={setPinnedArtists} />
-                <p className="text-xs text-gray-400">{t('总人数包含固定画师，所有画师的权重每轮随机。')}</p>
-                <p className="text-xs text-gray-400">{t('总人数、固定 Tag、权重与样张过滤随记录保存；本轮张数下次打开时回到默认。')}</p>
-                <label className="flex items-center justify-between gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                  <span>{t('只从有样张的画师中抽取')}</span>
-                  <input type="checkbox" aria-label={t('只从有样张的画师中抽取')} checked={sampledOnly} onChange={event => setSampledOnly(event.target.checked)} className="h-4 w-4 accent-indigo-600" />
-                </label>
-                {sampledOnly && <p className="text-xs text-gray-500">{sampledTags === null ? t('正在读取画师样张…') : t('可用 {0} 位有样张画师', [effectiveLibrary.length])}</p>}
-                <p className="text-xs text-gray-500">{t('从画师库自动抽取 · {0} 位画师', [library.length])}{sampledOnly && sampledTags ? ` · ${t('其中有样张 {0} 位', [effectiveLibrary.length])}` : ''}</p>
-              </div>
-              <div className="space-y-1.5 border-t border-gray-200 pt-3 dark:border-gray-800">
-                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('屏蔽 {0} 位画师', [blocklist.length])} · {t('跨记录生效')}</p>
-                <div className="mt-2"><StyleRollArtistInput label="全局屏蔽画师" value={blocklist} limit={1000} disabled={frozen} onChange={tags => void perform(async () => setBlocklist(await saveRollBlocklist(tags)))} /></div>
-              </div>
-              <div className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs ${remaining <= 0 ? 'bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-300' : remaining < count ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/60'}`}>
+              <div className={`flex items-center justify-between gap-2 text-micro ${remaining <= 0 ? 'text-red-600 dark:text-red-300' : remaining < count ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400'}`}>
                 <span>{t('本记录还可 Roll {0} 个候选', [remaining])}</span>
                 {remaining < count && <span className="font-semibold">{remaining <= 0 ? t('候选已满') : t('超出剩余容量')}</span>}
               </div>
-              <ToolbarButton className="w-full" onClick={() => { setSetup({ ...(experiment || makeExperiment()), drawPlan: undefined, pinnedArtists, rules: roundRules }); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
             </div>}
           </ToolbarPopover>
         </div>
@@ -661,7 +670,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
-    {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} blockedTags={blocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {artistDialogOpen && <StyleRollArtistDialog library={libraryEntries} loading={libraryLoading} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={artistOverrides.filter(artist => artist.excluded).map(artist => artist.tag)} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
     {chainSeedOpen && <StyleRollChainSeedDialog chains={chains} knownArtists={knownArtistKeys} createOptions={createFromChain} onClose={() => setChainSeedOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;

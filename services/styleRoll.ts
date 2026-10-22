@@ -4,7 +4,7 @@ import { createUuid } from './id';
 export interface RollArtist { tag: string; weight: number; locked: boolean; excluded: boolean }
 /** 候选只记录本次抽到的画师与权重，不保存来源关系或代数。 */
 export interface RollTag { tag: string; weight: number }
-export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number }
+export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number }
 export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
 /** 只读取旧记录的模式字段；新轮次统一使用固定 Tag 列表。 */
 interface LegacyRollDrawPlan {
@@ -121,6 +121,8 @@ function validateRuleRanges(rules: RollRules): void {
   if (!rules || !Number.isSafeInteger(rules.minArtists) || !Number.isSafeInteger(rules.maxArtists) ||
     rules.minArtists < 1 || rules.maxArtists > ROLL_MAX_ARTISTS || rules.minArtists > rules.maxArtists ||
     !validWeight(rules.minWeight) || !validWeight(rules.maxWeight) || rules.minWeight > rules.maxWeight) throw new Error('请检查画师数量和权重范围');
+  if ((rules.preferredMultiplier !== undefined && (!Number.isFinite(rules.preferredMultiplier) || rules.preferredMultiplier < 1 || rules.preferredMultiplier > Number.MAX_SAFE_INTEGER)) ||
+    (rules.preferredMinArtists !== undefined && (!Number.isSafeInteger(rules.preferredMinArtists) || rules.preferredMinArtists < 0 || rules.preferredMinArtists > rules.maxArtists))) throw new Error('请检查偏好抽中倍率和保底人数');
 }
 
 export function validateRollPinnedArtists(tags: string[]): void {
@@ -134,8 +136,11 @@ export function getRollPinnedArtists(experiment: Pick<RollExperiment, 'artists' 
   return [...new Map(tags.map(tag => [tagKey(tag), tag])).values()];
 }
 
-/** 旧人数范围以原上限作为后续总人数，不回落到无关默认值。 */
-export const getRollArtistCount = (experiment: RollExperiment) => experiment.pinnedArtists !== undefined ? experiment.rules.maxArtists : Math.max(experiment.rules.maxArtists, getRollPinnedArtists(experiment).length);
+/** 只为旧版超长固定组补足人数；保留用户设置的范围。 */
+export const getRollArtistRange = (experiment: RollExperiment) => {
+  const legacySize = experiment.pinnedArtists === undefined ? getRollPinnedArtists(experiment).length : 0;
+  return { minArtists: Math.max(experiment.rules.minArtists, legacySize), maxArtists: Math.max(experiment.rules.maxArtists, legacySize) };
+};
 
 function validateLegacyRollPlan(plan: LegacyRollDrawPlan | undefined, rules: RollRules): void {
   if (plan === undefined) return;
@@ -204,12 +209,11 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   }
 }
 
-export function rollCandidates(experiment: RollExperiment, count: number, options: { random?: () => number; blockedTags?: string[] } = {}): RollCandidate[] {
+export function rollCandidates(experiment: RollExperiment, count: number, options: { random?: () => number; blockedTags?: string[]; preferredTags?: string[] } = {}): RollCandidate[] {
   validateRuleRanges(experiment.rules);
   const pinnedTags = getRollPinnedArtists(experiment);
   validateRollPinnedArtists(pinnedTags);
-  const target = experiment.rules.maxArtists;
-  if (pinnedTags.length > target) throw new Error('固定画师数量不能超过每串总人数');
+  if (pinnedTags.length > experiment.rules.maxArtists) throw new Error('固定画师数量不能超过每串总人数');
   if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) {
     const remaining = Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
     throw new Error(`本记录最多保留 ${ROLL_CANDIDATE_LIMIT} 个候选，当前还可 Roll ${remaining} 串；可在回收站永久清理旧候选后继续`);
@@ -221,15 +225,29 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   if (unavailable) throw new Error(`固定画师不可用：${unavailable}（已排除或屏蔽）`);
   const pinnedKeys = new Set(pinnedTags.map(tagKey));
   const pool = experiment.artists.filter(artist => !artist.excluded && !blocked.has(tagKey(artist.tag)) && !pinnedKeys.has(tagKey(artist.tag)));
-  if (pool.length + pinnedTags.length < target) throw new Error('可用画师不足，请调整排除项或降低每串总人数');
+  if (pool.length + pinnedTags.length < rules.maxArtists) throw new Error('可用画师不足，请调整排除项或降低每串总人数');
+  const preferred = new Set((options.preferredTags || []).map(tagKey));
+  const preferredPool = pool.filter(artist => preferred.has(tagKey(artist.tag)));
+  const ordinaryPool = pool.filter(artist => !preferred.has(tagKey(artist.tag)));
+  const needed = Math.max(0, (rules.preferredMinArtists ?? 0) - pinnedTags.filter(tag => preferred.has(tagKey(tag))).length);
+  if (needed > preferredPool.length) throw new Error('可用偏好画师不足，请减少保底人数或调整屏蔽与样张过滤');
+  const minimum = Math.max(rules.minArtists, pinnedTags.length + needed);
+  if (minimum > rules.maxArtists) throw new Error('固定画师与偏好保底超出人数上限，请调整抽取条件');
   const choose = <T,>(items: T[]): T => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
   const integer = (min: number, max: number) => min + Math.min(max - min, Math.floor(random() * (max - min + 1)));
   const weight = () => integer(Math.round(rules.minWeight * 10), Math.round(rules.maxWeight * 10)) / 10;
   const signatures = new Set(experiment.candidates.map(candidate => rollSignature(candidate.tags))), result: RollCandidate[] = [];
   for (let attempts = 0; result.length < count && attempts < count * 100; attempts++) {
+    const target = integer(minimum, rules.maxArtists);
     const tags: RollTag[] = pinnedTags.map(tag => ({ tag, weight: weight() }));
-    const unused = [...pool];
-    while (tags.length < target) { const artist = choose(unused); tags.push({ tag: artist.tag, weight: weight() }); unused.splice(unused.indexOf(artist), 1); }
+    const favorites = [...preferredPool], others = [...ordinaryPool];
+    const take = (items: RollArtist[]) => { const artist = choose(items); tags.push({ tag: artist.tag, weight: weight() }); items.splice(items.indexOf(artist), 1); };
+    for (let index = 0; index < needed; index++) take(favorites);
+    while (tags.length < target) {
+      // 用相对权重选池，再在池内均匀抽取；每次移除已选项，倍率不改变提示词权重。
+      const ordinaryWeight = others.length / (rules.preferredMultiplier ?? 1);
+      take(favorites.length && (!others.length || random() * (favorites.length + ordinaryWeight) < favorites.length) ? favorites : others);
+    }
     const signature = rollSignature(tags);
     if (signatures.has(signature)) continue;
     signatures.add(signature);
