@@ -19,6 +19,8 @@
 .image-preview-action-group [role="alert"] { position: absolute; top: 100%; right: 0; }
 .image-card-actions :is(button, [data-image-action-item], [role="alert"]) { direction: ltr; }
 .image-card-actions [role="alert"] { position: absolute; top: 100%; right: 0; }
+/* 补足按钮高度不能通过 aspect-ratio 反向撑宽封面，否则换列会反复改变宽高。 */
+.mobile-gallery-frame[data-image-action-frame] { width: 100%; }
 [data-image-action-frame] .gallery-cover-navigation {
   bottom: calc(var(--image-card-caption-height, 0px) + .5rem) !important;
 }
