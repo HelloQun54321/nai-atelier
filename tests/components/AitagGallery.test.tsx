@@ -528,7 +528,10 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
 });
 
-it('蓝色导入按钮明确恢复当前图片的完整配置到文生图', async () => {
+it('蓝色导入直接使用已有配置，取图失败或完整详情仍在等待也立即进入文生图', async () => {
+  const fetchImage = vi.fn(() => { throw new Error('不允许重新取图'); });
+  vi.stubGlobal('fetch', fetchImage);
+  mocks.getWork.mockImplementation(() => new Promise(() => {}));
   await setup(); fireEvent.click(card(2));
   fireEvent.click(await screen.findByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toMatchObject({
@@ -536,6 +539,7 @@ it('蓝色导入按钮明确恢复当前图片的完整配置到文生图', asyn
     params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 23, seed: 123 },
   });
   expect(mocks.navigate).toHaveBeenCalledOnce(); expect(mocks.createChain).not.toHaveBeenCalled();
+  expect(fetchImage).not.toHaveBeenCalled();
 });
 
 it('失败只显示错误并恢复按钮，重试可以保存，其他复用入口仍使用当前元数据', async () => {

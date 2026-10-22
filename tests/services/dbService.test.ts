@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 
 const apiMock = vi.hoisted(() => ({
@@ -11,6 +12,8 @@ const apiMock = vi.hoisted(() => ({
 vi.mock('../../services/api', () => ({ api: apiMock }));
 
 import { db } from '../../services/dbService';
+
+afterEach(() => vi.unstubAllGlobals());
 
 it('收藏独立标签使用同一持久接口，规范化候选，不接受无效响应或吞掉保存失败', async () => {
   apiMock.get.mockResolvedValue({ tags: [' #构图 ', '构图', '光影'] });
@@ -46,6 +49,63 @@ it('新提示词库条目不夹带默认人物词，创建回执直接返回完�
   apiMock.post.mockResolvedValue({ id: chain.id, chain });
   expect(await db.createChainWithData('synthetic', '', undefined, 'wardrobe')).toEqual(chain);
   expect(apiMock.post).toHaveBeenLastCalledWith('/chains', expect.objectContaining({ type: 'wardrobe', variableValues: { subject: '' } }));
+});
+
+describe('AITag 风格串保存复用详情原图', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each([
+    ['/api/assets/aitag-covers/123.webp', '/api/assets/aitag-covers/123.webp'],
+    ['/api/assets/aitag-images/123/123_p3.webp', '/api/assets/aitag-images/123/123_p3.webp'],
+    ['https://ai-img.10118899.xyz/NAI/42/123_p3.webp', '/api/media?source=https%3A%2F%2Fai-img.10118899.xyz%2FNAI%2F42%2F123_p3.webp&variant=original'],
+  ])('从显示时的地址 %s 优先读浏览器缓存，提交原始字节而非再次让后端下载', async (previewImage, displayedUrl) => {
+    const image = new Blob([new Uint8Array([7, 8, 9])], { type: 'image/webp' });
+    const fetchImage = vi.fn(async () => ({ ok: true, blob: async () => image }));
+    vi.stubGlobal('fetch', fetchImage);
+    const source = makeChain({ previewImage, basePrompt: 'synthetic prompt', negativePrompt: 'synthetic negative' });
+    const saved = makeChain({ ...source, id: 'saved', previewImage: '/api/assets/covers/saved.webp' });
+    apiMock.post.mockResolvedValue({ id: saved.id, chain: saved });
+    expect(await db.createChainWithData(source.name, '', source)).toEqual(saved);
+    expect(fetchImage).toHaveBeenCalledExactlyOnceWith(displayedUrl, {
+      cache: 'force-cache', credentials: 'same-origin', signal: expect.any(AbortSignal),
+    });
+    expect(apiMock.post).toHaveBeenCalledExactlyOnceWith('/chains', expect.objectContaining({
+      previewImage: 'data:image/webp;base64,BwgJ', basePrompt: source.basePrompt, negativePrompt: source.negativePrompt, params: source.params,
+    }));
+    expect(source.previewImage).toBe(previewImage);
+    expect(apiMock.get).not.toHaveBeenCalled();
+  });
+
+  it('同类 Fork 入口等待原图就绪才创建，保留原始内容且只写一次', async () => {
+    let finish!: (image: Blob) => void;
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: () => new Promise<Blob>(resolve => { finish = resolve; }) })));
+    apiMock.post.mockResolvedValue({ id: 'saved' });
+    const saving = db.createChain('synthetic', '', makeChain({ previewImage: '/api/assets/aitag-covers/123.webp' }));
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(apiMock.post).not.toHaveBeenCalled();
+    finish(new Blob([new Uint8Array([7, 8, 9])], { type: 'image/webp' }));
+    expect(await saving).toBe('saved');
+    expect(apiMock.post).toHaveBeenCalledExactlyOnceWith('/chains', expect.objectContaining({ previewImage: 'data:image/webp;base64,BwgJ' }));
+  });
+
+  it.each(['HTTP', 'HTML', 'network'])('原图读取失败 %s 时不创建空封面条目、不自动重试，错误标明阶段', async failure => {
+    const fetchImage = vi.fn(async () => {
+      if (failure === 'network') throw new Error('Failed to fetch');
+      return { ok: failure !== 'HTTP', status: 403, blob: async () => new Blob(['not image'], { type: 'text/html' }) };
+    });
+    vi.stubGlobal('fetch', fetchImage);
+    await expect(db.createChainWithData('synthetic', '', makeChain({ previewImage: '/api/assets/aitag-covers/123.webp' })))
+      .rejects.toThrow('读取 AITag 封面失败：');
+    expect(fetchImage).toHaveBeenCalledOnce(); expect(apiMock.post).not.toHaveBeenCalled();
+  });
+
+  it.each(['/api/assets/covers/existing.webp', 'https://example.com/image.webp', undefined])('其他来源 %s 保留既有保存流程', async previewImage => {
+    const fetchImage = vi.fn(); vi.stubGlobal('fetch', fetchImage);
+    apiMock.post.mockResolvedValue({ id: 'saved' });
+    expect(await db.createChain('synthetic', '', makeChain({ previewImage }))).toBe('saved');
+    expect(apiMock.post).toHaveBeenCalledWith('/chains', expect.objectContaining({ previewImage }));
+    expect(fetchImage).not.toHaveBeenCalled();
+  });
 });
 
 describe('dbService 会话级 blob: 封面防护', () => {

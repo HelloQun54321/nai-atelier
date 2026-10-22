@@ -4,6 +4,8 @@ import { api } from './api';
 import { normalizeChainTags } from './chainTags';
 import { normalizeCollectionTagNames } from './inspirationUtils';
 import { loadCollection, updateCollection, removeCollection, markCollectionUsed } from './collectionFavorites';
+import { getMobileOriginalUrl } from './mobileImageCache';
+import { blobToDataUrl } from './labWorkspace';
 
 /**
  * blob: URL 只在创建它的页面会话内有效，落库后重启即失效。
@@ -54,6 +56,18 @@ class DBService {
       payload.variableValues = { subject: type === 'style' || type === 'character' ? '1girl' : '' };
       // Initialize with empty tags
       payload.tags = [];
+    }
+    if (typeof payload.previewImage === 'string' && /^(?:\/api\/assets\/aitag-(?:covers|images)\/|https:\/\/ai-img\.10118899\.xyz\/)/i.test(payload.previewImage)) {
+      // 与详情原图使用同一 URL 和浏览器缓存，把已有原始字节交给本地保存，避免 Worker 再次向图床取图。
+      try {
+        const response = await fetch(getMobileOriginalUrl(payload.previewImage), { cache: 'force-cache', credentials: 'same-origin', signal: AbortSignal.timeout(20_000) });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const image = await response.blob();
+        if (!/^image\/(?:png|jpeg|webp)$/i.test(image.type)) throw new Error('返回内容不是支持的图片');
+        payload.previewImage = await blobToDataUrl(image);
+      } catch (error) {
+        throw new Error(`读取 AITag 封面失败：${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     return api.post('/chains', payload);
   }

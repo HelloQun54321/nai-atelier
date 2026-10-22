@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.108.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.108.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -302,6 +302,8 @@ flowchart LR
 ## 📚 Tag 与资源资料库
 
 桌面侧栏的「素材浏览」集中提供 AITag、法典、Danbooru、Pixiv。展开侧栏时可原位展开／收起该组，并记住本端选择；分组收起时仍显示当前来源。侧栏收成图标时，点击该入口在右侧打开来源菜单，选中项高亮。画师库、角色库、收藏库仍可直接进入；手机沿用底部「资源库」面板。
+
+AITag 详情的「保存到风格串」优先复用已显示原图的浏览器缓存，再将原图与配置保存到本地；缓存未命中时才读取原图，成功后打开新风格串。蓝色「导入实验室」直接使用已有元数据恢复文生图配置，不等待图片下载或整个作品组刷新。
 
 收藏库、AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗，并通过平滑滚动将最近点击的卡片在列表可视区域垂直居中，遵循项目与系统减少动画设置；图片加载或详情展开导致重排时保留定位，主动滚动立即打断居中动画、保持新位置，关闭详情或清空选择后恢复亮度。画师／角色目录保留多选，已选项都保持明亮，抽卡、返回目录或切换筛选释放旧定位。
 
