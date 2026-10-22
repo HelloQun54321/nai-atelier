@@ -85,7 +85,7 @@ describe('提示词上下文工具隔离', () => {
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
     expect(screen.getAllByRole('textbox').every(input => (input as HTMLTextAreaElement).disabled)).toBe(true);
     expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
-    expect(screen.getAllByRole('button', { name: '库导入' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.queryByRole('button', { name: '库导入' })).toBeNull();
     fireEvent.click(screen.getByTitle('复制画师串'));
     expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
   });
@@ -104,10 +104,10 @@ describe('提示词上下文工具隔离', () => {
     };
     render(<Harness />);
     expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('legacy subject');
-    fireEvent.change(screen.getByRole('textbox', { name: '人物' }), { target: { value: 'silver_hair' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '外貌' }), { target: { value: 'silver_hair' } });
     fireEvent.change(screen.getByRole('textbox', { name: '服饰' }), { target: { value: 'blue_dress' } });
     expect(screen.getByRole('status').textContent).toBe('silver_hair, blue_dress, legacy subject');
-    const group = within(screen.getByRole('group', { name: '人物' }));
+    const group = within(screen.getByRole('group', { name: '外貌' }));
     fireEvent.click(group.getByRole('button', { name: '清空当前提示词' }));
     expect(screen.getByRole('status').textContent).toBe('blue_dress, legacy subject');
     fireEvent.click(group.getByRole('button', { name: '撤销清空' }));
@@ -119,7 +119,7 @@ describe('提示词上下文工具隔离', () => {
     setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject });
     expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
     expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('blue_dress');
-    fireEvent.change(screen.getByRole('textbox', { name: '姿势' }), { target: { value: 'sitting' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '动作' }), { target: { value: 'sitting' } });
     expect(setSubject).toHaveBeenCalledWith('sitting, blue_dress');
   });
 });

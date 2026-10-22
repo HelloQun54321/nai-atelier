@@ -5,6 +5,7 @@ import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
+import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
@@ -35,7 +36,7 @@ const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: bo
 };
 
 const CHARACTER_SECTION_LABELS: Record<(typeof CHARACTER_SECTION_KEYS)[number], string> = {
-    appearance: '形象',
+    appearance: '外貌',
     wardrobe: '服饰',
     pose: '动作',
     expression: '表情',
@@ -76,12 +77,12 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     characters,
     canEdit,
     tagAssistEnabled,
+    onContentRollForRole,
     promptClassificationEnabled = false,
     characterPresetSources,
     markPresetSectionModified,
     markChange,
     addCharacter,
-    onContentRollForRole,
     updateCharacter,
     removeCharacter,
     activeLabLayout,
@@ -226,10 +227,12 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         </div>
                         <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
                         <div className="min-w-0 space-y-2">
+                                <div className="flex justify-end"><PromptLibraryRandomButton roleId={char.id} disabled={!canEdit} fallback={promptClassificationEnabled && canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} /></div>
                                 <div>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
                                     <TagAutocompleteTextarea
                                         clearActionSlotRef={positiveSlotRef}
+                                        libraryField={{ roleId: char.id }}
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
                                         value={promptClassificationEnabled ? char.prompt : compileCharacterContent(char, legacyNegatives).prompt}
@@ -245,6 +248,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     <div className="mb-1 flex items-center justify-between gap-2"><label className="text-micro text-gray-500 font-bold">{t("角色负面提示词")}</label><span ref={negativeSlotRef} /></div>
                                     <TagAutocompleteTextarea
                                         clearActionSlotRef={negativeSlotRef}
+                                        libraryField={{ roleId: char.id, negative: true }}
                                         tagAssistEnabled={tagAssistEnabled && !negativeLocked}
                                         disabled={!canEdit || negativeLocked}
                                         value={(promptClassificationEnabled ? char : compileCharacterContent(char, legacyNegatives)).negativePrompt || ''}
@@ -262,12 +266,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
                                         <span className="flex items-center gap-2">
                                             <span className="text-micro text-gray-400">{t("请求时与正文合并")}</span>
-                                            {onContentRollForRole && canEdit ? (
-                                                <button type="button" onClick={() => onContentRollForRole(idx)}
-                                                    className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
-                                                    {t("随机搭配")}
-                                                </button>
-                                            ) : null}
                                         </span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
@@ -278,6 +276,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                                 </label>
                                                 <TagAutocompleteTextarea
                                                     id={`char-section-${idx}-${key}`}
+                                                    libraryField={{ roleId: char.id, kind: key }}
                                                     tagAssistEnabled={tagAssistEnabled}
                                                     disabled={!canEdit}
                                                     value={char.sections?.[key] || ''}

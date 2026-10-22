@@ -49,6 +49,7 @@ import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags 
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
+import { PromptLibraryWorkspace } from './PromptLibraryAccess';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
 import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
@@ -2076,7 +2077,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     return (
-        <div
+        <PromptLibraryWorkspace active={activeGenerationMode === 'text-to-image'} state={{ params, base: basePrompt, subject: subjectPrompt, negative: negativePrompt, classified: promptClassificationEnabled }} onChange={next => {
+            setParams(next.params); setBasePrompt(next.base); setSubjectPrompt(next.subject); setNegativePrompt(next.negative); markChange();
+        }}><div
             className="workspace-canvas chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
             onDragEnter={handleImportDragEnter}
             onDragOver={handleImportDragOver}
@@ -2275,6 +2278,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                             <TagAutocompleteTextarea
                                 clearActionSlotRef={negativeClearActionSlotRef}
+                                libraryField={{ negative: true }}
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
                                 disabled={isNaiMediumModel(params.model)}
                                 className="w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50"
@@ -2575,6 +2579,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 currentPreviewCover={currentPreviewCover}
             />
 
-        </div>
+        </div></PromptLibraryWorkspace>
     );
 };

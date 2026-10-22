@@ -11,7 +11,7 @@ import { collectorErrorReason, downloadCollectorImage, imageLink } from './colle
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { CUPERTINO_WALLPAPERS, normalizeThemeBackground } from '../services/themeBackgroundData.mjs';
 
-const collectorLabels = language => Object.fromEntries(['风格串', '收藏库', '内容库', '组合库', '存入', '未整理', '已选中', '待处理', '已保存', '跳过', '失败', 'Atelier 收集', '正在启动', '等待本机服务确认', '等待复制图片或图片链接', '暂停', '继续', '暂停接收新复制，已入队内容继续处理', '继续接收之后的新复制', '折叠状态窗', '展开状态窗', '结束收集', '已暂停', '收集中', ' · 已保存 ', '失败：', '人物形象', '服饰', '姿势', '表情状态', '场景', '镜头画面'].map(message => [message, translate(language, message)]));
+const collectorLabels = language => Object.fromEntries(['风格串', '收藏库', '提示词库', '原文', '存入', '未整理', '已选中', '待处理', '已保存', '跳过', '失败', 'Atelier 收集', '正在启动', '等待本机服务确认', '等待复制图片或图片链接', '暂停', '继续', '暂停接收新复制，已入队内容继续处理', '继续接收之后的新复制', '折叠状态窗', '展开状态窗', '结束收集', '已暂停', '收集中', ' · 已保存 ', '失败：', '外貌', '服饰', '动作', '表情', '场景', '镜头', '通用'].map(message => [message, translate(language, message)]));
 const collectorWindowScript = fileURLToPath(new URL('./style-collector-window.ps1', import.meta.url));
 let collectorPreparation;
 const collectorWallpapers = new Map();
@@ -227,7 +227,7 @@ export class StyleCollector extends EventEmitter {
         run.state.mode = id; await run.native.command('mode', { mode: id });
         if (!run.busy) run.state.stage = this.idleStage(run);
         this.publish(run);
-      } else if (action === 'category' && ['', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(id)) {
+      } else if (action === 'category' && ['', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'general'].includes(id)) {
         run.state.category = id; await run.native.command('category', { category: id }); this.publish(run);
       } else throw new Error('未知收集操作');
       return this.state();
@@ -277,7 +277,7 @@ export class StyleCollector extends EventEmitter {
     const record = run.state.records.content;
     const { text, category = '' } = event;
     if (typeof text !== 'string' || !text.trim()) return;
-    if (text.length > 65536 || !['', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(category)) {
+    if (text.length > 65536 || !['', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'general'].includes(category)) {
       record.failed++; record.detail = text.length > 65536 ? '失败：提示词过长，请分段收录' : '失败：分类无效'; this.publish(run); return;
     }
     const key = `text:${category}:` + createHash('sha256').update(text).digest('hex');

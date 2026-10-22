@@ -57,8 +57,9 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
       WHERE EXISTS (SELECT 1 FROM settings WHERE key = ? AND value = ?) AND NOT EXISTS (SELECT 1 FROM chains WHERE id = ?)`)
       .bind(id, currentUser.id, currentUser.username, data.type, data.name, data.basePrompt, JSON.stringify(data.params), now, now, SESSION_KEY, body.session, id).run();
     if (!Number(result.meta?.changes)) {
-      const existing = await db.prepare('SELECT user_id, base_prompt, type FROM chains WHERE id = ?').bind(id).first<{ user_id: string; base_prompt: string; type: string }>();
-      if (!existing || existing.user_id !== currentUser.id || existing.base_prompt !== data.basePrompt || existing.type !== data.type) return error('收集已结束或记录冲突', 409);
+      const existing = await db.prepare('SELECT user_id, base_prompt, type, params FROM chains WHERE id = ?').bind(id).first<{ user_id: string; base_prompt: string; type: string; params: string }>();
+      if (!existing || existing.user_id !== currentUser.id || existing.base_prompt !== data.basePrompt || existing.type !== data.type
+        || parseStoredJson(existing.params, {})._collectedCategory !== (data.params as unknown as Record<string, unknown>)._collectedCategory) return error('收集已结束或记录冲突', 409);
     }
     return json({ outcome: 'saved', id });
   }

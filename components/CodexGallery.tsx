@@ -1,3 +1,4 @@
+import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle, RefreshCw } from 'lucide-react';
@@ -228,7 +229,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   };
   const promptSection = (label: string, text: string, open = false) => text ? <details key={`${selectedKey}:${page}:${label}`} open={open} className="appearance-group rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
     <summary className="flex min-h-9 cursor-pointer items-center gap-2 px-2 text-xs font-semibold"><span className="mr-auto">{t(label)}</span><IconButton label={t('复制提示词')} className="!h-8 !w-8 !border-0 !bg-transparent" onClick={event => { event.preventDefault(); void copy(text); }}><Copy /></IconButton></summary>
-    <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words px-2 pb-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{text}</pre>
+    <PromptLibraryCaptureButton text={text} /><pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words px-2 pb-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{text}</pre>
   </details> : null;
   const frostedCaption = useGalleryFrostedCaption();
   const estimateHeight = useCallback((entry: CodexEntry, width: number) => {

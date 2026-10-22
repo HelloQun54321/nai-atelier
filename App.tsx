@@ -30,6 +30,8 @@ import { stableOperationId } from './services/operationId';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
 import { ContentLibraryPage, type ContentLibrarySection } from './components/ContentLibraryPage';
+import { PromptLibraryContext, PromptLibraryRequestEnabledContext } from './components/PromptLibraryAccess';
+import { combinationPicks, createCombinationData, libraryPicksWithSources } from './services/promptLibraryEntries';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
@@ -159,16 +161,18 @@ const App = () => {
   const [view, setView] = useState<ViewState>('list');
   /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
   const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; subject: string; createdRoleId: string } | null>(null);
-  /* 从内容库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
-  const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
+  /* 从提示词库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
+  const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string>; sourceText?: string } | null>(null);
+  const [contentRollEditId, setContentRollEditId] = useState('');
   /* 存为内容的稳定操作标识 → 已创建记录 id：重复点击复用同一条，不产生重复记录 */
   const contentRollSaveIndexRef = useRef<Map<string, string>>(new Map());
   /* 一键 Roll 写入 params 的次数：让实验室按这个版本号重新同步编辑区 */
   const [contentRollRevision, setContentRollRevision] = useState(0);
-  /* 实验室随机搭配的固定目标；关闭面板或从内容库重新打开时清除。 */
+  /* 实验室随机搭配的固定目标；关闭面板或从提示词库重新打开时清除。 */
   const [contentRollEntryTarget, setContentRollEntryTarget] = useState<ContentRollEntryTarget | null>(null);
-  /* 内容库资源分区与临时搭配面板独立，打开面板不切换原列表。 */
+  /* 提示词库资源分区与临时搭配面板独立，打开面板不切换原列表。 */
   const [contentLibrarySection, setContentLibrarySection] = useState<ContentLibrarySection>('items');
+  const [libraryEntryRequest, setLibraryEntryRequest] = useState<PromptChain | null>(null);
   const [contentRollOpen, setContentRollOpen] = useState(false);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
@@ -612,7 +616,7 @@ const App = () => {
       }
     }
 
-    // 旧入口统一收进「内容库」；一键 Roll 仍需要实验室参数作为应用目标。
+    // 旧入口统一收进「提示词库」；一键 Roll 仍需要实验室参数作为应用目标。
     setContentRollEntryTarget(null);
     setContentRollOpen(newView === 'content-roll');
     if (newView === 'content-roll') { ensurePlayground(); keepViewMounted('playground'); }
@@ -677,9 +681,15 @@ const App = () => {
     return true;
   };
   /* 存为 Roll 内容：字段白名单在 contentSnapshotOf 里，这里只负责落库（type='preset'） */
-  const handleSaveContentRoll = async (name: string, picks: Record<string, unknown>, seed: string, seeds: Record<string, string>) => {
-    const snapshot = contentSnapshotOf({ picks, seed, seeds, checks: {}, locked: {} } as never, new Date().toISOString());
+  const handleSaveContentRoll = async (name: string, picks: Record<string, unknown>, seed: string, seeds: Record<string, string>, copy = false) => {
+    const snapshot = contentSnapshotOf({ picks: libraryPicksWithSources(picks as Parameters<typeof libraryPicksWithSources>[0]), seed, seeds, checks: {}, locked: {} } as never, new Date().toISOString());
     if (!snapshot) throw new Error(t('这一组没有可保存的六类内容'));
+    if (contentRollEditId && !copy) {
+      const existing = chains.find(item => item.id === contentRollEditId);
+      if (!existing) throw new Error(t('原组合已不存在，请另存为新组合'));
+      await handleUpdateChain(existing.id, { name, params: { ...existing.params, _rollContentSnapshot: snapshot } as NAIParams });
+      return existing.id;
+    }
     /* 稳定操作标识：重复点击 / 网络重试复用同一条记录，不产生重复 */
     const operationId = stableOperationId('content-roll', { name, seed, picks });
     const existingId = contentRollSaveIndexRef.current.get(operationId);
@@ -717,38 +727,21 @@ const App = () => {
     return created;
   };
   /**
-   * 从内容库载入一组：用**白名单读取**还原（分类负面、约束备注、来源快照都恢复），
+   * 从提示词库载入一组：用**白名单读取**还原（分类负面、约束备注、来源快照都恢复），
    * 而不是只取第一角色的 sections —— 那样会把负面与约束丢掉。
    */
-  const handleLoadContentRoll = (chain: PromptChain) => {
+  const handleLoadContentRoll = (chain: PromptChain, selectedRole?: number) => {
+    setContentRollEditId(chain.id || '');
+    if (!chain.id) { setContentRollSeed({ picks: {}, seed: chain.name || t('新组合'), seeds: {}, sourceText: chain.basePrompt }); void handleNavigate('content-roll'); return; }
     const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
     if (!read.ok) {
       notify(t('这条记录不能按纯内容载入'), 'error');
       return;
     }
-    const picks: Record<string, unknown> = {};
-    const role = read.roles[0];
-    for (const [kind, text] of Object.entries(role?.sections || {})) {
-      const negative = role?.negatives?.[kind];
-      const meta = (role?.meta as Record<string, { entryId?: string; entryName?: string; notes?: string }> | undefined)?.[kind];
-      picks[kind] = {
-        kind, filled: true, text,
-        negative: String(negative?.text || ''),
-        name: String(meta?.entryName || ''),
-        id: String(meta?.entryId || ''),
-        constraints: { notes: [negative?.note, meta?.notes].filter(Boolean).join('；') },
-      };
-    }
-    for (const [kind, item] of Object.entries(read.global || {})) {
-      if (!item?.provided || !item.text) continue;
-      picks[kind] = {
-        kind, filled: true, text: item.text,
-        negative: String(item.negative?.text || ''),
-        name: '',
-        constraints: { notes: String(item.negative?.note || '') },
-      };
-    }
-    setContentRollSeed({ picks, seed: t('内容库'), seeds: {} });
+    if (read.roles.length > 1 && selectedRole === undefined) { notify(t('请先选择组合中的角色'), 'error'); return; }
+    if (read.roles.length > 1) setContentRollEditId('');
+    const picks = combinationPicks(chain, selectedRole || 0);
+    setContentRollSeed({ picks, seed: chain.name, seeds: {} });
     void handleNavigate('content-roll');
   };
 
@@ -937,11 +930,12 @@ const App = () => {
           onCapture={async (text, name, category) => {
             const data = prepareCollectedPrompt(text, name, category);
             await createLibraryChain(data.name, '', data.type, data);
-            notify(t(category ? '已存入内容库' : '已存入组合库'));
+            notify(t(category ? '已保存片段' : '已保存原文'));
           }}
           rollOpen={contentRollOpen}
           rollTitle={contentRollEntryTarget ? '随机搭配' : undefined}
           onRollOpenChange={open => {
+            if (open) setContentRollEditId('');
             setContentRollEntryTarget(null);
             if (open) { ensurePlayground(); keepViewMounted('playground'); }
             setContentRollOpen(open);
@@ -949,10 +943,12 @@ const App = () => {
           items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
             onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
           roll={toolbarSlot => <ContentRollWorkspace active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+            editing={!!contentRollEditId}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
             canUndo={!!contentRollUndo}
             onApplyRoll={handleApplyContentRoll}
+            onUseCombination={contentRollEntryTarget ? undefined : picks => { const entry = { id: 'current-combination', ...createCombinationData(t('当前组合'), picks) } as PromptChain; void handleNavigate('playground').then(() => setLibraryEntryRequest(entry)); }}
             onUndoApply={handleUndoContentRoll}
             entryTarget={contentRollEntryTarget}
             onSaveRoll={handleSaveContentRoll}
@@ -966,6 +962,11 @@ const App = () => {
             onDelete={async chain => { await handleDelete(chain.id); }}
             onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }}
             embedded />}
+          originals={toolbarSlot => <ContentRollLibrary section="originals" active={contentLibrarySection === 'originals'} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+            onLoad={handleLoadContentRoll}
+            onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
+            onDelete={async chain => { await handleDelete(chain.id); }}
+            onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }} embedded />}
         />;
       case 'characters':
         return <CharacterLibrary
@@ -1097,7 +1098,7 @@ const App = () => {
           }} />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;
-        return <ChainEditor
+        return <PromptLibraryRequestEnabledContext.Provider value={view === 'playground'}><ChainEditor
           chain={playgroundChain}
           allChains={chains}
           onUpdateChain={handleUpdatePlaygroundChain}
@@ -1125,7 +1126,7 @@ const App = () => {
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}
-        />;
+        /></PromptLibraryRequestEnabledContext.Provider>;
       default:
         return <div>Unknown View</div>;
     }
@@ -1168,6 +1169,15 @@ const App = () => {
       className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''} ${safeMode && safeModeHideTitles ? 'safe-mode-hide-titles' : ''}`}
       onClickCapture={handleSafeModeClickCapture}
     >
+      <PromptLibraryContext.Provider value={{ chains, requestedEntry: libraryEntryRequest, clearRequest: () => setLibraryEntryRequest(null),
+        save: async data => {
+          if (data.id) { await handleUpdateChain(data.id, data); return; }
+          const id = await createLibraryChain(data.name || '', data.description || '', data.type || 'preset', data);
+          if (!id) throw new Error(t('保存失败，请稍后重试'));
+          notify(t('已存入提示词库'));
+        },
+        useEntry: entry => { void handleNavigate('playground').then(() => setLibraryEntryRequest(entry)); },
+      }}>
       <Layout
         onNavigate={handleNavigate}
         currentView={view}
@@ -1192,6 +1202,7 @@ const App = () => {
           {renderContent()}
         </Suspense>
       </Layout>
+      </PromptLibraryContext.Provider>
     </div>
   );
 };

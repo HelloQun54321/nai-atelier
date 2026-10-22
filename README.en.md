@@ -156,6 +156,13 @@ On desktop, **Browse resources** groups AITag, Codex, Danbooru and Pixiv. Expand
 - Edit tags directly in the translation area: the trailing input shares dictionary completion, with suggestions anchored to that field; press Enter or leave it to append, and drag the tag area’s bottom-right corner to adjust its height. The red trash button enters deletion mode, hides weight controls and markers, and lets you select individual tags for confirmed batch deletion while preserving the remaining weights. The circular arrow undoes edits; Ctrl/Cmd+Z undoes, Ctrl+Y or Ctrl/Cmd+Shift+Z redoes. Selected tags support copy/cut of their original prompt text and paste to append; text fields keep native shortcuts.
 - WD ViT V3, WD SwinV2 V3 and WD EVA02-Large V3 run local CPU tagging after an explicit model download. Manage them in **Global settings → Generation preferences and lab**. Tagging does not consume Anlas or require a cloud inference upload; speed and memory usage depend on the model and device.
 
+### Prompt library
+
+The library separates snippets, combinations and original text. Snippets have a usage category (appearance, clothing, action, expression, scene, camera or general) and custom tags. Original text keeps its whitespace and weights. Combinations can be assembled manually or randomly and store a snapshot; later snippet edits do not change saved combinations.
+
+Prompt fields in all four lab modes can apply or save library content. Character targets stay fixed by ID, and combinations preview changes before applying. Type a saved name to search one grouped popup: My prompts above, Tags below. \@name searches only your library. Arrow keys select, Enter or a click applies, and Tab keeps its normal focus behavior. IME composition is preserved. Image details can capture prompts, and style chains and Roll configuration reuse the same library.
+
+
 ### Creative Assistant
 
 Open the assistant from the sidebar or floating button. It can inspect the current page, edit lab drafts, work with assets and use canvas tools for masks and selections. On the desktop it can access authorized local image folders and export files; Android file tools stay within the app's creative documents directory.

@@ -1,3 +1,4 @@
+import { PromptLibraryCaptureButton } from '../PromptLibraryAccess';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -209,6 +210,7 @@ export const InspirationDetail: React.FC<Props> = ({
           <ChevronDown className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" />
         </div>
       </summary>
+      <PromptLibraryCaptureButton text={draft.prompt || ''} params={draft.params} />
       <textarea
         aria-label={t("提示词")}
         readOnly={!editable}

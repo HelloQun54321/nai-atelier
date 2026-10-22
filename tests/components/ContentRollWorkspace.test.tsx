@@ -16,12 +16,12 @@ it('全局随机搭配提供五类选择，未选栏不进入保存与填入计�
   const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
   render(<ContentRollWorkspace active entryTarget={{ mode: 'global' }} chains={chains} notify={vi.fn()} playgroundParams={LAB_DEFAULT_PARAMS} onApplyRoll={onApplyRoll} />);
   expect(screen.queryByRole('combobox', { name: '选择抽取范围' })).toBeNull();
-  expect(screen.queryByRole('checkbox', { name: '参与「表情状态」的抽取' })).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: '参与「表情」的抽取' })).toBeNull();
   const checks = screen.getAllByRole('checkbox') as HTMLInputElement[];
   expect(checks).toHaveLength(5);
   for (const check of checks) fireEvent.click(check);
   expect((screen.getByRole('button', { name: '抽一次' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('checkbox', { name: '参与「服饰穿搭」的抽取' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '参与「服饰」的抽取' }));
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
   expect(screen.queryByRole('combobox', { name: '选择写入的目标角色' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
@@ -40,7 +40,7 @@ it('全局与角色入口切换和恢复历史不会串目标，角色只能选�
   const entryTarget = { mode: 'existing' as const, id: 'current' };
   view.rerender(<ContentRollWorkspace {...props} entryTarget={entryTarget} />);
   expect(screen.getAllByRole('checkbox')).toHaveLength(4);
-  expect(screen.queryByRole('checkbox', { name: '参与「场景环境」的抽取' })).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: '参与「场景」的抽取' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
   fireEvent.click(screen.getByRole('button', { name: '上一组' }));
   fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
@@ -55,7 +55,7 @@ it('全局与角色入口切换和恢复历史不会串目标，角色只能选�
   expect(onApplyRoll).toHaveBeenCalledOnce();
   view.rerender(<ContentRollWorkspace {...props} entryTarget={null} />);
   expect((screen.getByRole('combobox', { name: '选择抽取范围' }) as HTMLSelectElement).value).toBe('all');
-  expect((screen.getByRole('checkbox', { name: '参与「表情状态」的抽取' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('checkbox', { name: '参与「表情」的抽取' }) as HTMLInputElement).checked).toBe(false);
 });
 
 it('首次抽取之前可选全局范围，锁定项不能单栏重抽，填入前显示旧值和新值', async () => {
@@ -80,7 +80,7 @@ it('范围与参与开关一致，切范围后可抽取、保存和应用对应�
   const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
   render(<ContentRollWorkspace active chains={chains} notify={vi.fn()} playgroundParams={LAB_DEFAULT_PARAMS}
     onSaveRoll={onSaveRoll} onApplyRoll={onApplyRoll} />);
-  const scene = screen.getByRole('checkbox', { name: '参与「场景环境」的抽取' }) as HTMLInputElement;
+  const scene = screen.getByRole('checkbox', { name: '参与「场景」的抽取' }) as HTMLInputElement;
   expect(scene.checked).toBe(false); expect(scene.disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
   fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
@@ -130,4 +130,20 @@ it('Roll 写入已有串保留未分栏主体，并传递角色与全局分类�
     params: { characters: [{ sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'black dress' } }],
       _promptSections: { scene: 'night', sectionNegatives: { scene: 'day' } } },
   });
+});
+
+
+it('手写和定向选材无需先抽取，固定手写内容在重抽时保留', async () => {
+  const save = vi.fn(async () => 'saved');
+  render(<ContentRollWorkspace active chains={chains} notify={vi.fn()} onSaveRoll={save} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '服饰内容' }), { target: { value: 'my weighted outfit' } });
+  const card = document.querySelector('[data-content-roll-row="wardrobe"]')!;
+  fireEvent.click(Array.from(card.querySelectorAll('button')).find(button => button.textContent === '固定')!);
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  expect((screen.getByRole('textbox', { name: '服饰内容' }) as HTMLTextAreaElement).value).toBe('my weighted outfit');
+  fireEvent.click(screen.getByRole('button', { name: '保存组合' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '手动搭配' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect((save.mock.calls[0] as unknown as unknown[])[1]).toMatchObject({ wardrobe: { kind: 'wardrobe', text: 'my weighted outfit' } });
 });

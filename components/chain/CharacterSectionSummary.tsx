@@ -4,7 +4,7 @@ import type { CharacterParams, CharacterSectionContent } from '../../types';
 import { CHARACTER_SECTION_KEYS } from '../../services/characterPrompts';
 
 const SECTION_LABELS: Record<keyof CharacterSectionContent, string> = {
-  appearance: '形象',
+  appearance: '外貌',
   wardrobe: '服饰',
   pose: '动作',
   expression: '表情',

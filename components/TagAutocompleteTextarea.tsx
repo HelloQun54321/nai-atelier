@@ -3,6 +3,10 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef,
 import { createPortal } from 'react-dom';
 import { Eraser, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { InfoPopover } from './InfoPopover';
+import type { PromptChain } from '../types';
+import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
+import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
+import type { LibraryCompletionEdit } from '../services/promptLibraryApply';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
   parsePromptTags,
@@ -33,7 +37,10 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   tagAssistEnabled?: boolean;
   showTranslations?: boolean;
   allowAiTranslation?: boolean;
+  libraryField?: PromptLibraryField;
+  libraryEnabled?: boolean;
 }
+type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 
 const isPromptDelimiter = (character: string) => character === ',' || character === '，' || character === '\n' || character === '|';
 
@@ -85,6 +92,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   tagAssistEnabled = true,
   showTranslations = true,
   allowAiTranslation = true,
+  libraryField,
+  libraryEnabled = true,
   disabled,
   readOnly,
   onFocus,
@@ -97,6 +106,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   ...textareaProps
 }) => {
   useLanguage();
+  const library = usePromptLibrary();
+  const personalLibrary = libraryEnabled ? library : null;
+  const completionEnabled = tagAssistEnabled || !!personalLibrary;
+  const [librarySelection, setLibrarySelection] = useState<{ entry: PromptChain; edit: LibraryCompletionEdit } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => { setClearActionTarget(clearActionSlotRef?.current || null); }, [clearActionSlotRef]);
@@ -107,7 +120,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const searchTimerRef = useRef<number | null>(null);
   const listboxRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<PromptSuggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [target, setTarget] = useState<CompletionTarget | null>(null);
   const [completionSource, setCompletionSource] = useState<'prompt' | 'tag'>('prompt');
@@ -388,7 +401,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   }, [editable, completionSource, showTranslations, deleteMode, closeSuggestions]);
 
   const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0, source: 'prompt' | 'tag' = 'prompt') => {
-    if (!tagAssistEnabled || !editable || composingRef.current) return;
+    if (!completionEnabled || !editable || composingRef.current) return;
     closeSuggestions();
     setCompletionSource(source);
     const nextTarget = findCompletionTarget(nextValue, caret);
@@ -405,25 +418,36 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setIsLoading(true);
     searchTimerRef.current = window.setTimeout(() => {
       searchTimerRef.current = null;
-      void searchTagDictionary(nextTarget.query).then(results => {
-        if (requestId === requestIdRef.current) setSuggestions(results);
+      const personal: PromptSuggestion[] = (personalLibrary && !/artist:\s*$/i.test(nextValue.slice(0, nextTarget.replaceStart)) ? searchLibraryEntries(personalLibrary.chains, nextTarget.query, libraryField) : [])
+        .filter(entry => source === 'prompt' || librarySectionOf(entry) !== 'saved' && !entry.negativePrompt?.trim()).map(entry => ({
+        name: entry.name, chinese: libraryEntryText(entry, libraryField), category: -1, categoryLabel: t(librarySectionOf(entry) === 'saved' ? '组合' : librarySectionOf(entry) === 'originals' ? '原文' : '片段'), postCount: 0, isNovelAI: false, libraryEntry: entry,
+      }));
+      if (requestId === requestIdRef.current) setSuggestions(personal);
+      void (tagAssistEnabled && !isLibraryOnlyQuery(nextTarget.query) ? searchTagDictionary(nextTarget.query) : Promise.resolve([])).then(results => {
+        if (requestId === requestIdRef.current) setSuggestions([...personal, ...results]);
       }).catch(error => {
-        if (requestId === requestIdRef.current) setSuggestions([]);
+        if (requestId === requestIdRef.current) setSuggestions(personal);
         console.warn('Tag autocomplete search failed:', error);
       }).finally(() => {
         if (requestId === requestIdRef.current) setIsLoading(false);
       });
     }, 80);
-  }, [editable, tagAssistEnabled, value, closeSuggestions]);
+  }, [editable, tagAssistEnabled, completionEnabled, personalLibrary, libraryField, value, closeSuggestions]);
 
-  const selectSuggestion = (suggestion: TagSuggestion) => {
+  const selectSuggestion = (suggestion: PromptSuggestion) => {
     if (!target || !editable) return;
     const input = completionSource === 'tag' ? tagInputRef.current : textareaRef.current;
     const sourceValue = completionSource === 'tag' ? tagInput : value;
+    if (suggestion.libraryEntry && (librarySectionOf(suggestion.libraryEntry) === 'saved' || suggestion.libraryEntry.negativePrompt?.trim()) && completionSource === 'prompt' && !libraryField?.negative) {
+      setLibrarySelection({ entry: suggestion.libraryEntry, edit: { value, start: target.replaceStart, end: target.replaceEnd, field: libraryField || {} } });
+      closeSuggestions();
+      return;
+    }
+    const insertion = suggestion.libraryEntry ? libraryEntryText(suggestion.libraryEntry, libraryField) : suggestion.name;
     const nextValue = sourceValue.slice(0, target.replaceStart)
-      + suggestion.name
+      + insertion
       + sourceValue.slice(target.replaceEnd);
-    const nextCaret = target.replaceStart + suggestion.name.length + target.closingLength;
+    const nextCaret = target.replaceStart + insertion.length + target.closingLength;
     if (completionSource === 'tag') setTagInput(nextValue);
     else commitValue(nextValue);
     closeSuggestions();
@@ -434,7 +458,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     });
   };
 
-  const isOpen = tagAssistEnabled && editable && (completionSource === 'prompt' || showTranslations && !deleteMode) && Boolean(target && (suggestions.length > 0 || isLoading));
+  const isOpen = completionEnabled && editable && (completionSource === 'prompt' || showTranslations && !deleteMode) && Boolean(target && (suggestions.length > 0 || isLoading));
   const handleCompletionKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (composingRef.current || event.nativeEvent.isComposing || !isOpen
       || event.currentTarget !== (completionSource === 'tag' ? tagInputRef.current : textareaRef.current)) return false;
@@ -544,7 +568,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
-      {clearActionSlotRef && clearActionTarget ? createPortal(clearAction, clearActionTarget) : <div className="mb-1 flex justify-end">{clearAction}</div>}
+      {clearActionSlotRef && clearActionTarget ? createPortal(personalLibrary ? <span className="flex items-center gap-1">{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}</span> : clearAction, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}</div>}
+      {librarySelection && <PromptLibraryChooser value={value} onText={commitValue} field={libraryField} initialEntry={librarySelection.entry} completion={librarySelection.edit} onClose={() => setLibrarySelection(null)} />}
       <textarea
         {...textareaProps}
         ref={textareaRef}
@@ -552,21 +577,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         readOnly={readOnly}
         value={value}
         className={className}
-        role={tagAssistEnabled ? 'combobox' : undefined}
-        aria-autocomplete={tagAssistEnabled ? 'list' : undefined}
-        aria-expanded={tagAssistEnabled ? isOpen && completionSource === 'prompt' : undefined}
-        aria-controls={tagAssistEnabled && isOpen && completionSource === 'prompt' ? listboxId : undefined}
-        aria-activedescendant={tagAssistEnabled && isOpen && completionSource === 'prompt' && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
+        role={completionEnabled ? 'combobox' : undefined}
+        aria-autocomplete={completionEnabled ? 'list' : undefined}
+        aria-expanded={completionEnabled ? isOpen && completionSource === 'prompt' : undefined}
+        aria-controls={completionEnabled && isOpen && completionSource === 'prompt' ? listboxId : undefined}
+        aria-activedescendant={completionEnabled && isOpen && completionSource === 'prompt' && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
         onChange={(event) => {
           commitValue(event.target.value, true);
           clearSelection();
-          if (tagAssistEnabled) refreshSuggestions(event.target.value, event.target.selectionStart);
+          if (completionEnabled) refreshSuggestions(event.target.value, event.target.selectionStart);
         }}
         onFocus={(event) => {
           composingRef.current = false;
           if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
-          if (tagAssistEnabled) {
-            preloadTagDictionary();
+          if (completionEnabled) {
+            if (tagAssistEnabled) preloadTagDictionary();
             refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           }
           onFocus?.(event);
@@ -578,7 +603,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           onBlur?.(event);
         }}
         onClick={(event) => {
-          if (tagAssistEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          if (completionEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onClick?.(event);
         }}
         onKeyUp={onKeyUp}
@@ -593,7 +618,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
         onCompositionEnd={(event) => {
           composingRef.current = false;
-          if (tagAssistEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
+          if (completionEnabled) refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart);
           onCompositionEnd?.(event);
         }}
       />
@@ -813,9 +838,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
           {isLoading && suggestions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">{t("正在加载 Tag…")}</div>
           ) : suggestions.map((suggestion, index) => (
+            <React.Fragment key={suggestion.libraryEntry ? `library-${suggestion.libraryEntry.id}` : `${suggestion.category}-${suggestion.name}`}>
+            {(index === 0 || !!suggestion.libraryEntry !== !!suggestions[index - 1]?.libraryEntry) && <div role="presentation" className="sticky top-0 border-b border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-500 dark:border-gray-700 dark:bg-gray-900">{t(suggestion.libraryEntry ? '我的提示词' : 'Tag')}</div>}
             <button
               ref={(element) => { optionRefs.current[index] = element; }}
-              key={`${suggestion.category}-${suggestion.name}`}
               id={`${listboxId}-${index}`}
               type="button"
               role="option"
@@ -836,8 +862,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-200'
                 : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
               }`}>{suggestion.categoryLabel}</span>
-              <span className="w-14 shrink-0 text-right text-micro text-gray-400">{formatPostCount(suggestion.postCount)}</span>
+              {!suggestion.libraryEntry && <span className="w-14 shrink-0 text-right text-micro text-gray-400">{formatPostCount(suggestion.postCount)}</span>}
             </button>
+            </React.Fragment>
           ))}
         </div>
         ,

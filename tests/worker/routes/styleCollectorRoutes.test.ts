@@ -111,6 +111,16 @@ describe('后台收集原子入库（隔离 SQLite 与内存封面）', () => {
     expect((await f.invoke('text', body))?.status).toBe(409);
     expect(f.sqlite.prepare('SELECT base_prompt FROM chains').get()?.base_prompt).toBe('original'); f.sqlite.close();
   });
+  it('通用片段沿用 preset 存储但与原文分开，重复操作不能改换归属', async () => {
+    const f = fixture(); await f.invoke('session', { session: f.session });
+    const body = { session: f.session, id: '00000000-0000-4000-8000-000000000008', text: 'a red umbrella', category: 'general' };
+    expect((await f.invoke('text', body))?.status).toBe(200);
+    expect((await f.invoke('text', body))?.status).toBe(200);
+    expect((await f.invoke('text', { ...body, category: '' }))?.status).toBe(409);
+    const row = f.sqlite.prepare('SELECT * FROM chains').get() as any;
+    expect(row.type).toBe('preset'); expect(JSON.parse(row.params)._collectedCategory).toBe('general');
+    f.sqlite.close();
+  });
   it('保存完整提示词、参数、封面与来源，仅添加待实测状态', async () => {
     const f = fixture(); await f.invoke('session', { session: f.session });
     const result = await f.collect(); expect(result?.status).toBe(200);

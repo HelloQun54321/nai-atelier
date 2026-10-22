@@ -52,12 +52,12 @@ export function PromptCaptureDialog({ open, onClose, onSave }: {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">{t('名称（可选）')}<input aria-label={t('名称（可选）')} className={`${TOOLBAR_FIELD_CLASS} mt-2`} value={name} maxLength={200} disabled={busy} onChange={event => setName(event.target.value)} /></label>
         <label className="block text-sm">{t('分类')}<select aria-label={t('分类')} className={`${TOOLBAR_FIELD_CLASS} mt-2`} value={category} disabled={busy} onChange={event => setCategory(event.target.value)}>
-          <option value="">{t('不分类（组合库）')}</option>
+          <option value="">{t('原文（不分类）')}</option>
           {COLLECTED_PROMPT_CATEGORIES.map(item => <option key={item.kind} value={item.kind}>{t(item.label)}</option>)}
         </select></label>
       </div>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <footer className="flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={onClose}>{t('取消')}</ToolbarButton><ToolbarButton tone="primary" disabled={busy || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : category ? '存入内容库' : '存入组合库')}</ToolbarButton></footer>
+      <footer className="flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={onClose}>{t('取消')}</ToolbarButton><ToolbarButton tone="primary" disabled={busy || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : category ? '保存片段' : '保存原文')}</ToolbarButton></footer>
     </div>
   </div>;
 }

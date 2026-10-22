@@ -36,7 +36,7 @@ it('已有候选冻结生成配置，画师锁定及排除仍可保存且不改�
   fireEvent.change(screen.getByLabelText('最低权重'), { target: { value: '0.2' } });
   fireEvent.change(screen.getByLabelText('最高权重'), { target: { value: '2.5' } });
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
-  expect((screen.getByLabelText('公共提示词（{style} 为画风位置）') as HTMLTextAreaElement).disabled).toBe(true);
+  expect((screen.getByRole('combobox', { name: '公共提示词' }) as HTMLTextAreaElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0]; expect(value.pinnedArtists).toEqual(['alpha']); expect(value.artists[1].excluded).toBe(true);
   expect(value.candidates).toEqual(initial.candidates); expect(value.template).toEqual(initial.template);
@@ -76,7 +76,7 @@ it('打开仍有历史默认模板的记录时自动换成质量词模板并提�
   render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
   expect(screen.getByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeTruthy();
-  expect((screen.getByLabelText('公共提示词（{style} 为画风位置）') as HTMLTextAreaElement).value).toContain('masterpiece');
+  expect((screen.getByRole('combobox', { name: '公共提示词' }) as HTMLTextAreaElement).value).toContain('masterpiece');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].template.prompt).toContain('cinematic lighting');
 });
@@ -85,7 +85,7 @@ it('角色提示词独立于公共提示词保存', async () => {
   const initial = rollFixture(); initial.artists = []; const save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '角色提示词（可选）' }), { target: { value: 'miku, twintails' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '角色提示词（可选）' }), { target: { value: 'miku, twintails' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].template.characterPrompt).toBe('miku, twintails');
   expect(save.mock.calls[0][0].template.prompt).not.toContain('miku');

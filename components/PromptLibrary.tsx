@@ -60,6 +60,8 @@ import { PromptLibraryUsageBadge, PromptLibraryUsageSection } from './PromptLibr
 import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
+import { fragmentKindOf, FRAGMENT_LABELS } from '../services/promptLibraryEntries';
+import { usePromptLibrary } from './PromptLibraryAccess';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
@@ -108,7 +110,7 @@ const libraryMeta = (chain?: PromptChain | null): PromptLibraryMeta => {
 const chainTags = (chain?: PromptChain | null): string[] =>
   (Array.isArray(chain?.tags) ? chain!.tags : []).map(value => String(value || '').trim()).filter(Boolean);
 
-const chainPrompt = (chain?: PromptChain | null): string => String(chain?.basePrompt || '').replace(/\s+/g, ' ').trim();
+const chainPrompt = (chain?: PromptChain | null): string => String(chain?.basePrompt || '');
 
 const chainBilingual = (chain?: PromptChain | null): string => String(libraryMeta(chain).bilingual || '');
 
@@ -164,7 +166,7 @@ export interface PromptLibraryProps {
   onUpdateChain: PromptLibraryUpdateChain;
   onDelete: (id: string) => Promise<void> | void;
   notify: (message: string, type?: 'success' | 'error') => void;
-  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
+  /** 作为「提示词库」的子分区渲染：不再自带页面顶栏与外层画布。 */
   embedded?: boolean;
   /** 嵌入时把搜索／筛选工具栏挂到父级顶栏的槽位。 */
   toolbarSlot?: HTMLElement | null;
@@ -207,9 +209,10 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   rememberBrowsing,
 }) => {
   useLanguage();
+  const library = usePromptLibrary();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
-  const Icon = KIND_ICONS[config.kind];
+  const Icon = config.general ? Library : KIND_ICONS[config.kind];
   const generatorTitle = config.generateLabel.replace('✦ ', '');
 
   const [query, setQuery] = useState(browsing?.query || '');
@@ -303,8 +306,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   }, [refreshUsage]);
 
   const items = useMemo(
-    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && (Array.isArray(config.type) ? config.type.includes(chain.type) : chain.type === config.type)),
-    [chains, config.type],
+    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && fragmentKindOf(chain) && (config.hideActions || (config.general ? fragmentKindOf(chain) === 'general' : chain.type === config.type))),
+    [chains, config.type, config.general, config.hideActions],
   );
 
   const tagOptions = useMemo(() => {
@@ -472,7 +475,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (creating) return;
     setCreating(true);
     try {
-      const newId = await onCreate(t(config.defaultName), '', config.kind);
+      const newId = await onCreate(t(config.defaultName), '', config.general ? 'preset' : config.kind, config.general ? { params: { _collectedPrompt: 1, _collectedCategory: 'general' } as unknown as NAIParams } : undefined);
       if (!newId) {
         notify(t('创建失败，请稍后重试'), 'error');
         return;
@@ -752,6 +755,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             {config.hideActions && <span className="shrink-0 text-micro text-gray-500">{t(PROMPT_LIBRARY_KINDS[chain.type as PromptLibraryKind]?.itemNoun || '')}</span>}
           </div>
           {compact && <p className="mt-2 line-clamp-3 break-words text-xs leading-5 text-gray-600 dark:text-gray-300" title={prompt}>{chainBilingual(chain) || prompt || t('还没有提示词')}</p>}
+          {library?.useEntry && <button type="button" className="mobile-touch mt-1 rounded px-2 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={event => { event.stopPropagation(); library.useEntry?.(chain); }}>{t('取用')}</button>}
           <div className="gallery-card-meta mt-1 flex flex-wrap items-center gap-1">
             {tags.slice(0, 3).map(tag => (
               <span key={tag} className="gallery-card-badge max-w-full truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={tag}>{tag}</span>
@@ -765,12 +769,12 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const itemActions = !config.hideActions && <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t(config.title)} <span className="ml-1 text-xs font-normal tabular-nums text-gray-400">{shown.length}</span></span>
-        <ToolbarButton onClick={() => setBundleOpen(true)} aria-label={t('AI 一键六库')} title={t('AI 一键六库')} className="mobile-touch !px-2.5 md:!px-3">
-          <Wand2 /><span className="content-library-action-label hidden sm:inline">{t('AI 一键六库')}</span>
+        <ToolbarButton onClick={() => setBundleOpen(true)} aria-label={t('AI 生成搭配')} title={t('AI 生成搭配')} className="mobile-touch !px-2.5 md:!px-3">
+          <Wand2 /><span className="content-library-action-label hidden sm:inline">{t('AI 生成搭配')}</span>
         </ToolbarButton>
-        <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
+        {!config.general && <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
           <Sparkles /><span className="content-library-action-label hidden sm:inline">{t(generatorTitle)}</span>
-        </ToolbarButton>
+        </ToolbarButton>}
         <ToolbarButton tone="primary" onClick={() => void createBlank()} disabled={creating} aria-label={t(config.createLabel)} title={t(config.createLabel)} className="mobile-touch !px-2.5 md:!px-3">
           {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}<span className="content-library-action-label hidden sm:inline">{t(config.createLabel)}</span>
         </ToolbarButton>
@@ -1300,7 +1304,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 };
 
 const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','expression','scene','camera'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
-const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera'] as const;
+const GENERAL_CONFIG: PromptLibraryKindConfig = { ...PROMPT_LIBRARY_KINDS.appearance, general: true, type: 'preset', title: '通用', itemNoun: '片段', defaultName: '新片段', createLabel: '新建片段', emptyTitle: '通用片段还是空的', facets: [] };
+const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera','general'] as const;
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();
@@ -1322,9 +1327,9 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60">
       <p className="hidden text-gray-500 dark:text-gray-400 md:mb-2 md:block md:px-2 md:text-meta md:font-bold">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
-        const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
-        const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');
-        const Icon = category === 'all' ? Library : KIND_ICONS[category as PromptLibraryKind];
+        const count=props.chains.filter(chain => category==='all' ? !!fragmentKindOf(chain) : fragmentKindOf(chain)===category).length;
+        const label=category==='all' ? '全部' : FRAGMENT_LABELS[category];
+        const Icon = category === 'all' || category === 'general' ? Library : KIND_ICONS[category];
         return <button key={category} type="button" role="tab" aria-selected={kind===category}
           className={`mobile-touch flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition md:h-10 md:w-full md:text-left ${kind===category ? '!border-indigo-500 !bg-indigo-600 !text-white shadow-sm' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
           onClick={() => { void selectKind(category); }}>
@@ -1335,7 +1340,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
       })}
     </nav>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+      <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
         browsing={browsing.current[kind]} rememberBrowsing={state => { browsing.current[kind] = state; }}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>

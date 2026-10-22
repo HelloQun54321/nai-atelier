@@ -53,7 +53,7 @@ export function StyleCollectorControl({ onSaved, notify }: { onSaved: () => void
   if (!state?.available) return null;
   const label = state.enabled ? (state.paused ? '收集已暂停' : '收集中') : '收集模式';
   const detail = [t(state.error), t(state.detail)].filter(Boolean).join(' · ');
-  return <ToolbarButton role="switch" aria-label={t(label)} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || t("在置顶窗选择风格串／收藏库／内容库，复制即可收集")} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-700 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
+  return <ToolbarButton role="switch" aria-label={t(label)} aria-checked={state.enabled} disabled={busy || state.stage === '正在启动' || state.stage === '正在结束'} onClick={() => void act(state.enabled ? 'stop' : 'start')} title={detail || t("在置顶窗选择风格串／收藏库／提示词库，复制即可收集")} className={`mobile-touch flex-none !px-3 xl:!px-4 ${state.enabled ? '!border-emerald-300 !text-emerald-700 dark:!border-emerald-800 dark:!text-emerald-400' : ''}`}>
     <ClipboardList className="h-4 w-4" /><span className="hidden xl:inline">{t(label)}</span>
   </ToolbarButton>;
 }

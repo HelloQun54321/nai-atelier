@@ -1,3 +1,4 @@
+import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -1404,7 +1405,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                             </div>
                           </div>
                           <div className="appearance-group text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
-                            {promptText || <span className="text-gray-400">{t("暂无提示词")}</span>}
+                            <PromptLibraryCaptureButton text={promptText} />{promptText || <span className="text-gray-400">{t("暂无提示词")}</span>}
                           </div>
                         </div>
                       </div>

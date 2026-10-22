@@ -126,8 +126,8 @@ public sealed class AtelierCollectorView : Window {
     readonly CollectorGlassButton[] modes = { new CollectorGlassButton(), new CollectorGlassButton(), new CollectorGlassButton() };
     readonly Grid metrics = new Grid();
     readonly TextBlock[] metricLabels = new TextBlock[4], metricValues = new TextBlock[4];
-    public static readonly string[] ModeKeys = { "style", "collection", "content" }, ModeLabels = { "风格串", "收藏库", "内容库" };
-    public static readonly string[] Categories = { "", "appearance", "wardrobe", "pose", "expression", "scene", "camera" }, CategoryLabels = { "组合库", "人物形象", "服饰", "姿势", "表情状态", "场景", "镜头画面" };
+    public static readonly string[] ModeKeys = { "style", "collection", "content" }, ModeLabels = { "风格串", "收藏库", "提示词库" };
+    public static readonly string[] Categories = { "", "appearance", "wardrobe", "pose", "expression", "scene", "camera", "general" }, CategoryLabels = { "原文", "外貌", "服饰", "动作", "表情", "场景", "镜头", "通用" };
     Dictionary<string,object> appearance = new Dictionary<string,object>(), labels = new Dictionary<string,object>();
     CollectorViewState state = new CollectorViewState();
     HwndSource source;

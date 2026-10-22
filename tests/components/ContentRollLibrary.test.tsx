@@ -14,12 +14,12 @@ const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', filled: tr
 const record = { id: 'saved', type: 'style', name: '夜游', tags: [], params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: snapshot }, updatedAt: 1 } as unknown as PromptChain;
 const props = () => ({ active: true, chains: [record], notify: vi.fn(), onLoad: vi.fn(), onRename: vi.fn(async () => {}), onDelete: vi.fn(async () => {}), onSetCover: vi.fn(async () => {}) });
 
-it('原文收录与 Roll 组合并列，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
+it('原文与组合分区独立，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
   const text = '  {{winter}}, 1.2::hair::\r\n[smile]  ';
   const collected = { ...record, ...prepareCollectedPrompt(text, '冬日'), type: 'preset', id: 'collected' } as PromptChain;
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-  const p = props(); p.chains.push(collected); render(<ContentRollLibrary {...p} />);
+  const p = props(); p.chains.push(collected); render(<ContentRollLibrary {...p} section="originals" />);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'winter' } });
   expect(screen.queryByRole('button', { name: '载入组合' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /冬日/ }));

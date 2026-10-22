@@ -22,14 +22,14 @@ const Hub = () => libraries.PromptLibraryHub;
 describe('图片提示词库', () => {
   it('顶栏按筛选、搜索排列，新建与 AI 生成留在分类内容区', async () => {
     const Component = Hub(); render(<Component {...props()} />);
-    fireEvent.click(screen.getByRole('tab', { name: '人物形象 1' }));
+    fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
     const create = await screen.findByRole('button', { name: '新建形象' });
     const generate = screen.getByRole('button', { name: '✦ AI 生成人物形象' });
-    const bundle = screen.getByRole('button', { name: 'AI 一键六库' });
+    const bundle = screen.getByRole('button', { name: 'AI 生成搭配' });
     expect(bundle.closest('header')).toBeNull();
     expect(bundle.closest('.workspace-scroll-viewport')).toBeTruthy();
     fireEvent.click(bundle);
-    expect(screen.getByRole('dialog', { name: 'AI 一键六库' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'AI 生成搭配' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(create.closest('header')).toBeNull(); expect(generate.closest('header')).toBeNull();
     expect(create.closest('.workspace-scroll-viewport')).toBeTruthy();
@@ -74,7 +74,7 @@ describe('图片提示词库', () => {
     p.onCreate.mockResolvedValueOnce('created').mockRejectedValueOnce(new Error('synthetic save failure')).mockResolvedValueOnce('retried');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(<Component {...p} />);
-    fireEvent.click(screen.getByRole('tab', { name: '人物形象 1' }));
+    fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
     fireEvent.click(await screen.findByRole('button', { name: '✦ AI 生成人物形象' }));
     fireEvent.change(screen.getByRole('textbox', { name: '想要什么人物形象' }), { target: { value: 'synthetic' } });
     fireEvent.change(screen.getByRole('combobox', { name: '生成数量' }), { target: { value: '2' } });
@@ -122,7 +122,7 @@ describe('图片提示词库', () => {
     vi.spyOn(promptAgentService,'getLibraryPrompts').mockResolvedValue({spec:'',extra:''});
     const generate=vi.spyOn(promptAgentService,'generateLibraryPrompt').mockResolvedValue({items:[{name:'奇幻',prompt:'silver_hair, red_eyes, elf_ears',bilingual:'',tags:[]}],provider:'test',model:'test',kind:'appearance',count:1});
     const Component=Hub(); render(<Component {...props()} />);
-    fireEvent.click(screen.getByRole('tab',{name:'人物形象 1'}));
+    fireEvent.click(screen.getByRole('tab',{name:'外貌 1'}));
     fireEvent.click(await screen.findByRole('button',{name:'✦ AI 生成人物形象'}));
     const brief=screen.getByRole('textbox',{name:'想要什么人物形象'});
     fireEvent.change(brief,{target:{value:'奇幻人物'}});

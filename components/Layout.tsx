@@ -139,7 +139,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
-      { id: 'content-library', label: '内容库', icon: Library },
+      { id: 'content-library', label: '提示词库', icon: Library },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
       { id: 'external-browse', label: '素材浏览', icon: Images },
     ] },
@@ -181,7 +181,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'roll', label: 'Roll 串', icon: Dice5 },
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
-    { id: 'content-library', label: '内容库', icon: Library },
+    { id: 'content-library', label: '提示词库', icon: Library },
     ...externalItems,
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];

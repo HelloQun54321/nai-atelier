@@ -44,6 +44,7 @@ export interface RollToChainPlan {
 }
 
 export interface RollToChainOptions {
+  targetRoleId?: string;
   scope?: RollToChainScope;
   /** 只写这些分类；省略表示全部。 */
   include?: string[];
@@ -92,6 +93,9 @@ export const planRollToChain = (
       sectionMeta: plainObject(item?.sectionMeta) ? { ...item.sectionMeta } : item?.sectionMeta,
     }))
     : [];
+  const roleIndex = options.targetRoleId === 'new' ? characters.length : options.targetRoleId
+    ? characters.findIndex(item => String(item.id) === options.targetRoleId) : 0;
+  if (roleIndex < 0) throw new Error('目标角色已不存在，请重新选择');
 
   const usable = rows.filter(row => trimmed(row.text) && (!include || include.has(row.kind)));
   const writes: RollToChainWrite[] = [];
@@ -110,7 +114,7 @@ export const planRollToChain = (
     for (const row of usable) {
       const value = trimmed(row.text);
       if (isRoleKind(row.kind)) {
-        const character = characters[0] || (characters[0] = {
+        const character = characters[roleIndex] || (characters[roleIndex] = {
           id: options.characterId || createUuid(), x: 0.5, y: 0.5, prompt: '', sections: {}, sectionNegatives: {}, sectionMeta: {},
         });
         const characterSections = plainObject(character.sections) || {};

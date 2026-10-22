@@ -198,12 +198,12 @@ it('没有风格串可写时不显示入口，取消勾选后写入按钮禁用'
 
 it('Esc、遮罩与取消都能关闭，且说明只走当前助手模型、可能收费、不消耗生图额度', async () => {
   setup();
-  expect(screen.getByRole('dialog', { name: 'AI 一键六库' }).getAttribute('aria-modal')).toBe('true');
+  expect(screen.getByRole('dialog', { name: 'AI 生成搭配' }).getAttribute('aria-modal')).toBe('true');
   expect(screen.getByText('用一段话一次生成六类提示词')).toBeTruthy();
   expect(screen.getByText('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')).toBeTruthy();
   expect((screen.getByLabelText('描述你想要的画面') as HTMLTextAreaElement).placeholder).toBe('例如：雨夜天台，少女，湿发，霓虹倒影');
 
-  const dialog = screen.getByRole('dialog', { name: 'AI 一键六库' });
+  const dialog = screen.getByRole('dialog', { name: 'AI 生成搭配' });
   fireEvent.mouseDown(dialog.parentElement as HTMLElement);
   expect(mocks.close).toHaveBeenCalledOnce();
   mocks.close.mockClear();
@@ -215,7 +215,7 @@ it('Esc、遮罩与取消都能关闭，且说明只走当前助手模型、可�
 });
 
 it('一键六库相关文案在四语言字典中齐全且占位符一致', () => {
-  const keys = ['AI 一键六库', '用一段话一次生成六类提示词', '描述你想要的画面', '例如：雨夜天台，少女，湿发，霓虹倒影',
+  const keys = ['AI 生成搭配', '用一段话一次生成六类提示词', '描述你想要的画面', '例如：雨夜天台，少女，湿发，霓虹倒影',
     '生成六条', '正在生成…', '生成失败：{0}', '已生成 {0} 条', '{0} 类缺失，可重试', '勾选后一起保存', '选择{0}',
     '{0}提示词', '{0}名称', '全部保存到提示词库', '已保存 {0} 条', '保存失败：{0}', '条目名称', '提示词',
     '写入风格串', '写入风格串…', '新建风格串', '写入已有风格串', '写入这条风格串', '新建并写入',

@@ -6,6 +6,7 @@ import { ImageEditMetadata, NAIParams } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { copyTagText } from '../services/externalImageTags';
 import { InfoPopover } from './InfoPopover';
+import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 
 /**
  * UC Preset 的人类可读标签映射
@@ -74,6 +75,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
 
     return (
         <div className="space-y-4">
+            {!section && prompt?.trim() && <PromptLibraryCaptureButton text={prompt} params={params as NAIParams} />}
             {/* 正面提示词 */}
             {prompt !== undefined && (
                 <div>

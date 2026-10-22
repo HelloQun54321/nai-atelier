@@ -10,6 +10,7 @@ export interface PromptLibraryFacet {
 }
 
 export interface PromptLibraryKindConfig {
+  general?: boolean;
   kind: PromptLibraryKind;
   /** 条目落库时的 PromptChain.type（三个领域与 kind 同名）。 */
   type: ChainType | ChainType[];
@@ -37,7 +38,7 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
   appearance: {
     kind: "appearance",
     type: "appearance",
-    title: "人物形象库",
+    title: "外貌",
     itemNoun: "形象",
     unit: "个",
     briefLabel: "想要什么人物形象",
@@ -67,23 +68,18 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
       {"key":"hair_second","label":"副发色","options":["","同主色","白色","黑色","粉色","蓝色","紫色","银色","金色"],"multiple":false},
       {"key":"bangs","label":"刘海","options":["","齐刘海","空气刘海","斜刘海","中分","无刘海","碎刘海","公主切"],"multiple":false},
       {"key":"hair_updo","label":"扎发方式","options":["","披发","马尾","高马尾","低马尾","双马尾","丸子头","半扎","编发"],"multiple":false},
-      {"key":"eyes_state","label":"眼睛状态","options":["","睁开","半睁","闭上","眯眼","湿润","含泪","失焦"],"multiple":true},
-      {"key":"eye_glow","label":"发光瞳","options":["","无","微弱","明显","强烈"],"multiple":false},
-      {"key":"brow","label":"眉部","options":["","平眉","挑眉","皱眉","八字眉","眉梢下垂"],"multiple":false},
-      {"key":"mouth","label":"嘴部","options":["","闭合","微张","张开","微笑","吐舌","咬唇","鼓腮"],"multiple":false},
       {"key":"waist","label":"腰线","options":["","无明显腰线","收腰","极细腰","柔软腰身"],"multiple":false},
       {"key":"presentation","label":"外观呈现","options":["","清纯","成熟","中性","幼态","御姐","少年感"],"multiple":true},
       {"key":"hair_detail","label":"发型细节","options":["","同基础","微碎","层次","挑染发丝","湿润"],"multiple":false},
       {"key":"eye_left","label":"左眼瞳色","options":["","同右眼","红色","蓝色","绿色","紫色","金色","异色"],"multiple":false},
       {"key":"eye_right","label":"右眼瞳色","options":["","同左眼","红色","蓝色","绿色","紫色","金色","异色"],"multiple":false},
       {"key":"breasts_shape","label":"胸部·形态","options":["","自然","圆润","挺拔","柔软","丰满"],"multiple":false},
-      {"key":"temp_hair","label":"头发临时状态","options":["","无","湿润","凌乱"],"multiple":true},
     ],
   },
   wardrobe: {
     kind: "wardrobe",
     type: "wardrobe",
-    title: "服饰库",
+    title: "服饰",
     itemNoun: "服饰",
     unit: "套",
     briefLabel: "想要什么穿搭",
@@ -130,20 +126,19 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
   pose: {
     kind: "pose",
     type: "pose",
-    title: "姿势库",
+    title: "动作",
     itemNoun: "姿势",
     unit: "个",
     briefLabel: "想要什么姿势",
     briefPlaceholder: "例如：坐在地板上回头看镜头，双腿屈起，慵懒一点",
     generateLabel: "✦ AI 生成姿势",
-    generateHint: "仅生成姿势、动作与视角标签。",
+    generateHint: "仅生成身体姿态、动作与互动标签。",
     createLabel: "新建姿势",
     defaultName: "新姿势",
     tagPlaceholder: "坐姿, 回头, 动态",
     emptyTitle: "姿势库还是空的",
     emptyHint: "新建条目或用一句话生成提示词。",
     facets: [
-      {"key":"view","label":"视角","options":["","正面","侧面","背面","三分之二侧","俯视","仰视","特写","半身","全身","过肩","鸟瞰","第一人称","仰角","斜角"],"multiple":false},
       {"key":"posture","label":"姿态","options":["","站姿","坐姿","躺姿","跪姿","蹲姿","跳跃","行走","趴姿","倒立","蜷缩","劈叉","弯腰","后仰","前倾","侧身","悬浮"],"multiple":false},
       {"key":"motion","label":"动态","options":["","静态","动态","张力","放松","舒展","奔跑","转身","挥手","漂浮","颤抖","伸展"],"multiple":false},
       {"key":"interaction","label":"互动","options":["","看向镜头","回头","抱膝","叉腰","举手","伸展","摸头","捂脸","牵手","拥抱","亲吻","递物","比心","竖大拇指","单手托腮","双手背后"],"multiple":true},
@@ -158,13 +153,12 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
       {"key":"hold_hand","label":"持握手","options":["","左手","右手","双手"],"multiple":false},
       {"key":"gaze","label":"视线目标","options":["","看镜头","看他处","闭眼","低头看","望向上方"],"multiple":false},
       {"key":"support","label":"支撑物","options":["","无","靠墙","坐椅","倚栏","躺地"],"multiple":true},
-      {"key":"direction","label":"方位（拍摄方向）","options":["","正面","侧面","背面","四分之三侧"],"multiple":false},
     ],
   },
   scene: {
     kind: "scene",
     type: "scene",
-    title: "场景及补充库",
+    title: "场景",
     itemNoun: "场景",
     unit: "个",
     briefLabel: "想要什么场景",
@@ -183,9 +177,7 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
       {"key":"season","label":"季节","options":["","春","夏","秋","冬","初春","盛夏","深秋","隆冬","梅雨"],"multiple":false},
       {"key":"weather","label":"天气","options":["","晴","阴","雨","雪","雾","雷雨","暴风雨","多云","大风","冰雹","彩虹","樱花飘落"],"multiple":true},
       {"key":"light","label":"光线","options":["","自然光","逆光","霓虹","烛光","昏暗","明亮","柔光","硬光","侧光","顶光","轮廓光","月光","荧光","火光","斑驳光影"],"multiple":true},
-      {"key":"framing","label":"构图","options":["","特写","半身","全身","远景","俯视","仰视","中景","近景","超远景","对称构图","三分法","对角线","框架构图","广角"],"multiple":false},
       {"key":"mood","label":"氛围","options":["","安静","热闹","梦幻","压抑","温馨","神秘","恐怖","浪漫","悲伤","欢快","紧张","怀旧","治愈"],"multiple":true},
-      {"key":"effect","label":"特效","options":["","光斑","花瓣","粒子","辉光","动态模糊","雨滴","雪花","火花","烟雾","闪光","镜头光晕","色差","噪点","景深虚化","速度线"],"multiple":true},
       {"key":"spot","label":"地点与室内外","options":["","室内","室外","街道","校园","森林","海边","咖啡厅","卧室","废墟","神社","教室","图书馆","天台","车站","浴室"],"multiple":false},
       {"key":"props","label":"陈设与环境元素","options":["","无","桌椅","书架","花丛","窗帘","路灯","床铺"],"multiple":true},
       {"key":"background_crowd","label":"背景人群","options":["","无","少量路人","人群","模糊人群"],"multiple":false},
@@ -199,7 +191,7 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
   expression: {
     kind: "expression",
     type: "expression",
-    title: "表情状态库",
+    title: "表情",
     itemNoun: "表情",
     unit: "个",
     briefLabel: "想要什么表情与情绪",
@@ -227,7 +219,7 @@ export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindCo
   camera: {
     kind: "camera",
     type: "camera",
-    title: "镜头画面库",
+    title: "镜头",
     itemNoun: "镜头",
     unit: "个",
     briefLabel: "想要什么取景与镜头",

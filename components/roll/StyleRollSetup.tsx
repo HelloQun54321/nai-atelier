@@ -1,3 +1,6 @@
+import { PromptLibraryWorkspace } from '../PromptLibraryAccess';
+import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
+import { mergePromptFields } from '../../services/promptUtils';
 import React, { useEffect, useState } from 'react';
 import { Dice5, LockKeyhole, Sparkles, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
@@ -50,7 +53,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
       validateRollExperiment(draft); await onSave(draft); onClose();
     } catch (cause) { setError((cause as Error).message); } finally { setBusy(false); }
   };
-  return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
+  return <PromptLibraryWorkspace active={!frozen && !busy} state={{ base: draft.template.prompt, subject: '', negative: draft.template.negativePrompt, params: draft.template.params, classified: false }} onChange={next => setDraft({ ...draft, template: { ...draft.template, prompt: mergePromptFields(next.base, next.subject), negativePrompt: next.negative, params: next.params } })}><div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('Roll 串配置')} className="appearance-panel flex h-[min(800px,90dvh)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
       <header className="flex flex-none items-center gap-3 border-b border-gray-200 p-3 dark:border-gray-800">
         <input aria-label={t('记录名称')} className={`${field} flex-1 font-semibold`} value={draft.name} maxLength={120} disabled={busy} onChange={event => setDraft({ ...draft, name: event.target.value })} />
@@ -78,8 +81,8 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
           {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入生成配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
           {legacyUpgraded && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">{t('已把旧的默认提示词换成质量词模板，保存后生效。')}</p>}
           {!frozen && <div className="flex flex-wrap gap-2"><ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE } })}><Sparkles />{t('套用常用质量词')}</ToolbarButton></div>}
-          <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<textarea className={`${field} mt-1 min-h-28 resize-y font-mono`} value={draft.template.prompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, prompt: event.target.value } })} /></label>
-          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<textarea aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.characterPrompt || ''} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, characterPrompt: event.target.value } })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t('自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
+          <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 resize-y font-mono`} value={draft.template.prompt} disabled={busy || frozen} onValueChange={value => setDraft({ ...draft, template: { ...draft.template, prompt: value } })} /></label>
+          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.characterPrompt || ''} disabled={busy || frozen} onValueChange={value => setDraft({ ...draft, template: { ...draft.template, characterPrompt: value } })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t('自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
           <label className="block text-xs font-semibold">{t('负面提示词')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.negativePrompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, negativePrompt: event.target.value } })} /></label>
           <ChainEditorParams params={draft.template.params} prompt={draft.template.prompt} setParams={params => setDraft({ ...draft, template: { ...draft.template, params } })} canEdit={!busy && !frozen} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
           {!frozen && <div className="flex flex-wrap gap-2">
@@ -95,5 +98,5 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
       </footer>
 
     </div>
-  </div>;
+  </div></PromptLibraryWorkspace>;
 };

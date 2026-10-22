@@ -12,6 +12,7 @@ import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
 import { LabModuleSection } from './LabModuleSection';
 import { OutpaintCanvasStage } from './OutpaintCanvasStage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibraryAccess';
 import { VibeManager } from './VibeManager';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { createUuid } from '../services/id';
@@ -154,10 +155,11 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     );
   };
 
-  return <><div className="appearance-content chain-editor-main order-2 flex min-w-0 min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+  return <PromptLibraryWorkspace state={{ params: selectableParams, base: classifiedBase, subject: sectionMatches ? sectionText : '', negative: draft.negativePrompt, classified: promptClassificationEnabled }} onChange={next => onDraftChange({ params: next.params, prompt: mergePromptFields(next.base, next.subject), negativePrompt: next.negative, promptSource: 'custom' })}><div className="appearance-content chain-editor-main order-2 flex min-w-0 min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="lab-editor-surface mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
       <LabModuleSection moduleId="prompt" label={t("全局提示词")} order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <section className="space-y-4">
+          {!promptClassificationEnabled && <div className="flex justify-end"><PromptLibraryRandomButton disabled={isBusy} /></div>}
           {promptClassificationEnabled ? <ChainEditorPromptInputs embedded promptClassificationEnabled
             prompt={classifiedBase} supplementPrompt={sectionMatches ? sectionText : ''} sections={sectionMatches ? selectableParams._promptSections : undefined}
             setPrompt={value => onPromptChange(mergePromptFields(value, sectionMatches ? sectionText : ''))}
@@ -194,7 +196,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               }
             />
           </div>}
-          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={promptClassificationEnabled ? draft.negativePrompt : getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections)} onValueChange={value => {
+          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea libraryField={{ negative: true }} clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={promptClassificationEnabled ? draft.negativePrompt : getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections)} onValueChange={value => {
             if (promptClassificationEnabled) onNegativePromptChange(value);
             else onDraftChange({ negativePrompt: value, params: { ...selectableParams, _promptSections: selectableParams._promptSections && { ...selectableParams._promptSections, sectionNegatives: undefined } } });
           }} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></div>
@@ -497,5 +499,5 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       </LabModuleSection>}
     </div>
   </div>
-  </>;
+  </PromptLibraryWorkspace>;
 };

@@ -282,7 +282,7 @@ export interface PromptLibraryResult {
   filteredCount?: number;
 }
 
-/** AI 一键六库：一段话一次生成六类库，每条带自己的领域 kind。 */
+/** AI 生成搭配：一段话一次生成六类库，每条带自己的领域 kind。 */
 export interface PromptLibraryBundleItem {
   kind: PromptLibraryKind;
   label: string;
@@ -320,12 +320,12 @@ export interface PromptLibraryPrompts {
 }
 
 export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
-  appearance: '人物形象',
+  appearance: '外貌',
   wardrobe: '服饰',
-  pose: '姿势',
-  expression: '表情状态',
+  pose: '动作',
+  expression: '表情',
   scene: '场景',
-  camera: '镜头画面',
+  camera: '镜头',
 };
 
 export const promptAgentService = {
@@ -401,7 +401,7 @@ export const promptAgentService = {
     return response.json();
   },
   /**
-   * AI 一键六库：一段话一次生成人物形象 / 服饰 / 姿势 / 表情状态 / 场景 / 镜头六类提示词。
+   * AI 生成搭配：一段话一次生成人物形象 / 服饰 / 姿势 / 表情状态 / 场景 / 镜头六类提示词。
    *
    * 与 generateLibraryPrompt 同一套路：带 operationId 仅用于追踪，客户端不自动重发，
    * 避免连接中断后重复消耗模型调用。用户主动触发，使用当前助手模型，不消耗生图额度。

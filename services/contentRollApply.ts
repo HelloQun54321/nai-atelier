@@ -12,7 +12,7 @@ import { CHARACTER_SECTION_KEYS } from './characterPrompts';
  *     正文由 `services/characterPrompts.compileCharacterContent` 在**实际请求**时编译，
  *     因此未参与的栏位、手动补充正文都不会被这次替换吃掉；
  *   - 每栏的内容负面写进 `character.sectionNegatives`，来源写进 `character.sectionMeta`（不进请求）；
- *   - 全局入口的五类写 `_promptSections` 对应栏；内容库自由搭配仍将角色四类与场景／镜头分别写入；
+ *   - 全局入口的五类写 `_promptSections` 对应栏；提示词库自由搭配仍将角色四类与场景／镜头分别写入；
  *   - 画师串、风格负面、模型与全部生图参数一个字节都不动。
  *
  * 撤销：调用方保留 `undo`（改动前的 params 快照 + 新建角色 id），一次撤销恢复全部范围。
@@ -78,7 +78,7 @@ export interface ContentRollApplyPlan {
   characterText: string;
   /** 场景 + 镜头合并文本（兼容旧调用） */
   globalText: string;
-  /** 按全局栏位分好的文本（全局入口支持五类，内容库入口为场景／镜头） */
+  /** 按全局栏位分好的文本（全局入口支持五类，提示词库入口为场景／镜头） */
   globalSections: Record<string, string>;
   /** 本次全局分类的内容负面（写入 _promptSections.sectionNegatives） */
   globalNegatives: Record<string, string>;
@@ -125,7 +125,7 @@ const charactersOf = (params: NAIParams): CharacterParams[] =>
 
 /**
  * 组计划：target 决定全局或角色目标；新建角色的 ID 留到 apply 阶段生成。
- * 全局入口全部进入 globalSections；内容库沿用角色／全局分工，未参与的栏位不进入 written。
+ * 全局入口全部进入 globalSections；提示词库沿用角色／全局分工，未参与的栏位不进入 written。
  */
 export const planContentRollApply = (
   picks: Record<string, RollRow>,

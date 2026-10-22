@@ -1,3 +1,4 @@
+import { FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
@@ -5,7 +6,7 @@ import { t, useLanguage } from '../services/i18n';
 import type { PromptChain } from '../types';
 import { KINDS, META } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
-import { draw, evidenceOf, rerollOne } from '../services/contentRollDraw';
+import { draw, evidenceOf, rerollOne, rowOf } from '../services/contentRollDraw';
 import type { ContentRollApplyPlan, ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
 import { GLOBAL_ROLL_KINDS, filterPicksByScope, pickByParticipation, planContentRollApply } from '../services/contentRollApply';
 import type { ContentRollScope } from '../services/contentRollApply';
@@ -15,6 +16,7 @@ import type { NAIParams } from '../types';
 import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 
 interface ContentRollWorkspaceProps {
+  editing?: boolean;
   active: boolean;
   chains: PromptChain[];
   notify: (message: string, kind?: 'success' | 'error') => void;
@@ -24,18 +26,19 @@ interface ContentRollWorkspaceProps {
   playgroundParams?: NAIParams | null;
   /** 组好的应用计划交给 App 落盘（App 负责写 playground 参数）；返回是否成功 */
   onApplyRoll?: (plan: ContentRollApplyPlan) => Promise<boolean>;
+  onUseCombination?: (picks: Record<string, RollRow>) => void;
   /** 撤销上一次填入（App 用改动前的快照恢复） */
   onUndoApply?: () => Promise<boolean>;
-  /** 实验室快捷入口固定写入目标；内容库自由搭配不指定。 */
+  /** 实验室快捷入口固定写入目标；提示词库自由搭配不指定。 */
   entryTarget?: ContentRollEntryTarget | null;
   /** 是否有可撤销的填入 */
   canUndo?: boolean;
   /** 存为 Roll 内容（App 负责按白名单构造快照并落库），返回新记录 id */
-  onSaveRoll?: (name: string, picks: Record<string, RollRow>, seed: string, seeds: Record<string, string>) => Promise<string>;
-  /** 从内容库「载入到一键 Roll」带过来的一组（消费一次） */
-  seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null;
+  onSaveRoll?: (name: string, picks: Record<string, RollRow>, seed: string, seeds: Record<string, string>, copy?: boolean) => Promise<string>;
+  /** 从提示词库「载入到一键 Roll」带过来的一组（消费一次） */
+  seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string>; sourceText?: string } | null;
   onSeedConsumed?: () => void;
-  /** 作为「内容库」的子分区渲染：不再自带页面顶栏与外层画布。 */
+  /** 作为「提示词库」的子分区渲染：不再自带页面顶栏与外层画布。 */
   /**
    * 把这一组写进风格串（新建或写进已有串）。
    * App 负责落库、刷新列表，并清掉目标串的编辑器草稿，避免旧草稿在自动保存时覆盖刚写入的分栏。
@@ -89,7 +92,7 @@ const readStore = (): { history: RollRecord[]; cursor: number } => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ editing = false, active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
   useLanguage();
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
@@ -113,8 +116,17 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [sourceText, setSourceText] = useState('');
 
   const current = cursor >= 0 ? history[cursor] : null;
+  const editRow = (kind: string, text: string, negative = current?.picks[kind]?.negative || '', entry?: PromptChain) => {
+    const row = entry ? rowOf(entry, kind, 'manual', false, chains.filter(item => item.type === kind).length)
+      : { ...current?.picks[kind], kind, id: `manual-${kind}`, name: t('手写片段'), text, negative, filled: !!text.trim() };
+    setConfirming(false);
+    if (current) setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, picks: { ...record.picks, [kind]: row } } : record));
+    else { setHistory(previous => [...previous, { seed: 'manual', seeds: {}, picks: { [kind]: row }, locked: {}, checks: {}, scope: range, at: Date.now() }]); setCursor(history.length); }
+  };
+  const rollChains = [...chains, ...Object.entries(current?.picks || {}).filter(([kind, row]) => locked[kind] && row.id?.startsWith('manual-')).map(([kind, row]) => ({ id: row.id!, type: kind, basePrompt: row.text || '', negativePrompt: row.negative || '', name: row.name || '' } as PromptChain))];
 
   /* 每次从实验室打开都重新选择参与项；旧记录不能改写入口指定的目标。 */
   useEffect(() => {
@@ -155,13 +167,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   }, [active, history, cursor]);
 
-  /* 从内容库载入的一组：转成一条历史记录（草稿只在本机） */
+  /* 从提示词库载入的一组：转成一条历史记录（草稿只在本机） */
   useEffect(() => {
     if (!seedRecord) return;
     const picks = seedRecord.picks as Record<string, RollRow>;
     const hasRoles = Object.keys(picks).some(kind => META[kind]?.scope === 'character');
     const hasGlobal = Object.keys(picks).some(kind => META[kind]?.scope === 'global');
-    const scope = hasRoles && hasGlobal ? 'all' : hasGlobal ? 'global' : 'character';
+    const scope = hasRoles && hasGlobal || !hasRoles && !hasGlobal ? 'all' : hasGlobal ? 'global' : 'character';
+    setSourceText(seedRecord.sourceText || '');
     setRange(scope);
     setHistory(previous => {
       const next = [...previous, { seed: seedRecord.seed, seeds: seedRecord.seeds || {}, picks, locked: {}, checks: {}, scope: scope as ContentRollScope, at: Date.now() }].slice(-HISTORY_LIMIT);
@@ -171,7 +184,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     setSaveName(seedRecord.seed);
     setChecks({});
     setLocked({});
-    notify(t('已把内容库的这一组载入为当前一组；点「填入实验室」继续确认'));
+    notify(t('已把提示词库的这一组载入为当前一组；点「填入实验室」继续确认'));
     onSeedConsumed?.();
   }, [seedRecord, notify, onSeedConsumed]);
 
@@ -199,14 +212,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const rollOnce = useCallback(() => {
     setBusy(true);
     try {
-      const result = draw({ chains, seed: newSeed(), checks: effectiveChecks, locked });
+      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: { ...checks }, at: Date.now() });
       const missing = result.notes.filter(note => note.code !== 'pool_empty').length;
       notify(missing ? t('已抽取；有 {0} 条说明需要看一眼', [String(missing)]) : t('已按所选分类抽取'));
     } finally {
       setBusy(false);
     }
-  }, [chains, checks, effectiveChecks, locked, commit, notify]);
+  }, [rollChains, checks, effectiveChecks, locked, commit, notify]);
 
   /* 「再抽未固定项」：只换没固定的栏，并排除当前条目（候选不足时核会如实保留并说明） */
   const rollAgain = useCallback(() => {
@@ -218,14 +231,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
         if (locked[kind]) continue;
         avoid[kind] = current.picks[kind]?.id || undefined;
       }
-      const result = draw({ chains, seed: newSeed(), checks: effectiveChecks, locked, avoid });
+      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked, avoid });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: { ...checks }, at: Date.now() });
       const kept = result.notes.filter(note => note.code === 'avoid_short').length;
       notify(kept ? t('已重抽；{0} 栏只有一条候选，已保留并说明', [String(kept)]) : t('已重新抽取未固定的栏'));
     } finally {
       setBusy(false);
     }
-  }, [chains, current, checks, effectiveChecks, locked, commit, notify]);
+  }, [rollChains, current, checks, effectiveChecks, locked, commit, notify]);
 
   const rerollKind = useCallback((kind: string) => {
     if (!current) return;
@@ -298,13 +311,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   };
 
-  const doSave = async () => {
+  const doSave = async (copy = false) => {
     if (!current || !onSaveRoll || saving) return;
     const name = saveName.trim();
     if (!name) { notify(t('先给这条记录起个名字'), 'error'); return; }
     setSaving(true);
     try {
-      const id = await onSaveRoll(name, activePicks, current.seed, current.seeds);
+      const id = await onSaveRoll(name, activePicks, current.seed, current.seeds, copy);
       if (!id) throw new Error(t('保存失败，请稍后重试'));
       setSaveOpen(false);
       notify(t('已存为 Roll 内容「{0}」（六类内容与约束，不含画师风格与生图参数）', [name]));
@@ -315,12 +328,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   };
 
-  const rows = KINDS.filter(kind => !entryTarget || scopeChecks[kind] !== false).map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
+  const rows = KINDS.filter(kind => !entryTarget || scopeChecks[kind] !== false).map(kind => ({ kind, meta: { ...META[kind], short: FRAGMENT_LABELS[kind as PromptFragmentKind], title: FRAGMENT_LABELS[kind as PromptFragmentKind] }, row: current?.picks[kind] || null }));
   const entryLabel = entryTarget?.mode === 'global' ? t('全局提示词') : entryTarget ? t('角色 {0}', [String((playgroundParams?.characters || []).findIndex(item => String(item.id) === entryTarget.id) + 1)]) : '';
   const missingTarget = entryTarget?.mode === 'existing' && !(playgroundParams?.characters || []).some(item => String(item.id) === entryTarget.id);
   /* ---------------- 写入风格串 ---------------- */
 
   const [chainTargetId, setChainTargetId] = useState('new');
+  const [chainRoleId, setChainRoleId] = useState('new');
   const [chainScope, setChainScope] = useState<RollToChainScope>('split');
   const [chainPicked, setChainPicked] = useState<Set<string>>(new Set());
   const [chainConfirming, setChainConfirming] = useState(false);
@@ -334,13 +348,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     .map(({ kind, row }) => ({ kind, name: String(row!.name || ''), text: String(row!.text || ''), negative: String(row!.negative || '') })), [activePicks]);
   const selectedChain = useMemo(() => styleChains.find(item => item.id === chainTargetId) || null, [chainTargetId, styleChains]);
   const chainPlan = useMemo(
-    () => planRollToChain(selectedChain, rollRows.filter(row => chainPicked.has(row.kind)), { scope: chainScope }),
-    [chainPicked, chainScope, rollRows, selectedChain],
+    () => planRollToChain(selectedChain, rollRows.filter(row => chainPicked.has(row.kind)), { scope: chainScope, targetRoleId: selectedChain?.params.characters?.some(role => role.id === chainRoleId) ? chainRoleId : 'new' }),
+    [chainPicked, chainScope, chainRoleId, rollRows, selectedChain],
   );
   const chainWriteOf = (kind: string) => chainPlan.writes.find(write => write.kind === kind) || null;
   const chainTargetLabel = (kind: string) => (chainScope === 'extra'
     ? t('补充栏')
-    : META[kind].scope === 'character' ? t('角色 1') : t(META[kind].title));
+    : META[kind].scope === 'character' ? chainRoleId === 'new' ? t('新建角色') : t('所选角色') : t(META[kind].title));
 
   const openChainConfirm = () => {
     setChainPicked(new Set(rollRows.map(row => row.kind)));
@@ -394,6 +408,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'}>
     {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
     <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
+      {sourceText && <details open className="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary>{t('来源原文')}</summary><pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs">{sourceText}</pre></details>}
       <div className="content-library-roll-layout mx-auto w-full max-w-7xl items-start gap-4">
         <section className="content-library-roll-grid">
           {rows.map(({ kind, meta, row }) => {
@@ -409,11 +424,16 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                 </label>
                 <span className="text-xs tabular-nums text-gray-400">{t('共 {0} 条', [poolSize])}</span>
               </div>
+              <select aria-label={t('选择{0}片段', [t(meta.short)])} value={row?.id && chains.some(item => item.id === row.id) ? row.id : ''} disabled={!on || applying || isLocked} onChange={event => { const entry = chains.find(item => item.id === event.target.value); if (entry) editRow(kind, entry.basePrompt, entry.negativePrompt, entry); }} className="mt-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-700">
+                <option value="">{t('手写或选择片段')}</option>{chains.filter(item => item.type === kind).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+              <textarea aria-label={t('{0}内容', [t(meta.short)])} value={row?.text || ''} disabled={!on || applying || isLocked} onChange={event => editRow(kind, event.target.value)} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-200 bg-transparent p-2 font-mono text-xs dark:border-gray-700" />
+              <details className="mt-1 text-xs text-gray-500"><summary>{t('分类负面')}</summary><textarea aria-label={t('{0}负面', [t(meta.short)])} value={row?.negative || ''} disabled={!on || applying || isLocked} onChange={event => editRow(kind, row?.text || '', event.target.value)} className="mt-1 w-full rounded border border-gray-200 bg-transparent p-2 dark:border-gray-700" /></details>
               <div className={`mt-3 min-h-20 ${on ? '' : 'opacity-50'}`}>
                 {row?.filled ? <>
                   <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
                   <p className="mt-1 line-clamp-3 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400" title={row.text}>{row.text}</p>
-                  {row.constraints?.notes && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints.notes}</p>}
+                  {(row.constraints?.notes || row.constraintNotes) && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints?.notes || row.constraintNotes}</p>}
                 </> : <p className="py-2 text-xs leading-5 text-gray-400" data-content-roll-note={kind}>
                   {t(!on ? '本次不参与：不抽取、也不会填入实验室' : !poolSize ? '该库当前 0 条，该栏留空' : '还没有结果')}
                 </p>}
@@ -430,21 +450,21 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
         <aside className="space-y-3">
           {current ? <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
             <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{t('当前组合')}</h3>
-            {!entryTarget && range !== 'global' && <ToolbarSelect label="选择写入的目标角色" value={targetId} containerClassName="w-full" disabled={applying}
+            {!entryTarget && !onUseCombination && range !== 'global' && <ToolbarSelect label="选择写入的目标角色" value={targetId} containerClassName="w-full" disabled={applying}
               onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}>
               {playgroundRoles.length > 0 && <option value="all-enabled">{t('所有启用角色')}</option>}
               <option value="new">{t('新建角色')}</option>
               {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
             </ToolbarSelect>}
             <div className="mt-3 flex flex-wrap gap-2">
-              <ToolbarButton tone="primary" className="flex-1" disabled={!onApplyRoll || applying || missingTarget || !plan?.written.length} onClick={() => setConfirming(true)}>{t('填入实验室…')}</ToolbarButton>
+              <ToolbarButton tone="primary" className="flex-1" disabled={(!onApplyRoll && !onUseCombination) || applying || missingTarget || !plan?.written.length} onClick={() => onUseCombination ? onUseCombination(activePicks) : setConfirming(true)}>{t('填入实验室…')}</ToolbarButton>
               {onSaveRoll && <ToolbarButton disabled={saving || !Object.keys(activePicks).length} onClick={() => { setSaveName(saveName || t('组合 {0}', [new Date().toLocaleString()])); setSaveOpen(value => !value); }}>{t('保存组合')}</ToolbarButton>}
             </div>
             {saveOpen && <div className="mt-3 space-y-2" data-content-roll-save="true">
               <input autoFocus value={saveName} maxLength={80} disabled={saving} aria-label={t('给这条记录起名')}
                 onChange={event => setSaveName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSaveOpen(false); } }}
                 className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 dark:text-gray-100" />
-              <div className="flex gap-2"><ToolbarButton tone="primary" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : '保存')}</ToolbarButton><ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
+              <div className="flex gap-2"><ToolbarButton tone="primary" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : editing ? '保存修改' : '保存')}</ToolbarButton>{editing && <ToolbarButton disabled={saving} onClick={() => void doSave(true)}>{t('另存为新组合')}</ToolbarButton>}<ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
             </div>}
             {confirming && plan && <div className="mt-4 space-y-3" data-content-roll-apply-preview="true">
               {plan.rows.filter(item => item.action === 'replace').map(item => <div key={item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action} className="border-t border-gray-200 pt-2 dark:border-gray-800">
@@ -481,8 +501,9 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
               </label>
             </div>
             <p className="mt-1 text-meta leading-4 text-gray-400">
-              {t('人物形象／服饰穿搭／动作互动／表情状态写进角色 1，场景与镜头写各自的全局栏；画师串、风格负面与生图参数不会改动。')}
+              {t('人物内容写入所选角色，场景与镜头写入全局栏位。')}
             </p>
+            {chainScope === 'split' && <select aria-label={t('风格串目标角色')} value={chainRoleId} onChange={event => setChainRoleId(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-200 bg-transparent p-2 text-sm dark:border-gray-700"><option value="new">{t('新建角色')}</option>{selectedChain?.params.characters?.map((role, index) => <option key={role.id} value={role.id}>{t('角色 {0}', [index + 1])}</option>)}</select>}
             {chainConfirming ? (
               <div className="mt-2 space-y-1" data-content-roll-chain-preview="true">
                 {!selectedChain ? (

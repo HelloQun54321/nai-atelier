@@ -1,5 +1,5 @@
 /**
- * AI 一键六库：用一段话一次生成人物形象 / 服饰 / 姿势 / 表情状态 / 场景 / 镜头六类提示词，
+ * AI 生成搭配：用一段话一次生成外貌 / 服饰 / 动作 / 表情 / 场景 / 镜头六类提示词，
  * 逐条勾选、改名、改提示词后一次性保存到对应提示词库。
  *
  * 费用与授权：由用户主动点击生成，使用当前创作助手模型做文本补全，不消耗 NovelAI 生图额度；
@@ -10,6 +10,8 @@ import { LoaderCircle, Sparkles, Wand2, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { planRollToChain } from '../services/contentRollToChain';
+import { createCombinationData } from '../services/promptLibraryEntries';
+import { usePromptLibrary } from './PromptLibraryAccess';
 import {
   PROMPT_LIBRARY_KIND_LABELS,
   promptAgentService,
@@ -76,6 +78,7 @@ const draftFromItem = (item: PromptLibraryBundleItem, id: number): BundleDraft =
 
 export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps> = ({ open, onClose, notify, onCreate, onSaved, styleChains = [], onWriteToChain }) => {
   useLanguage();
+  const library = usePromptLibrary();
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [brief, setBrief] = useState('');
   const [drafts, setDrafts] = useState<BundleDraft[]>([]);
@@ -85,6 +88,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   const [saving, setSaving] = useState(false);
   const [chainOpen, setChainOpen] = useState(false);
   const [chainTarget, setChainTarget] = useState('new');
+  const [chainRoleId, setChainRoleId] = useState('new');
   const [chainName, setChainName] = useState('');
   const [chainWriting, setChainWriting] = useState(false);
   // 卸载后不再回写状态（StrictMode 下 effect 会模拟卸载重挂）。
@@ -208,7 +212,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   const selectedChain = styleChains.find(item => item.id === chainTarget) || null;
 
   /**
-   * 把勾选的六条写进风格串：人物/服饰/姿势/表情进角色 1，场景/镜头进各自全局栏。
+   * 把勾选的六条写进风格串：外貌/服饰/动作/表情进所选角色，场景/镜头进各自全局栏。
    * 映射复用 `planRollToChain`，与「一键 Roll → 风格串」保持同一套规则。
    */
   const writeToChain = async () => {
@@ -219,7 +223,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
       const plan = planRollToChain(
         selectedChain,
         pickedDrafts.map(draft => ({ kind: draft.kind, name: draft.name, text: draft.prompt, negative: draft.negativePrompt })),
-        { scope: 'split' },
+        { scope: 'split', targetRoleId: selectedChain?.params.characters?.some(role => role.id === chainRoleId) ? chainRoleId : 'new' },
       );
       await onWriteToChain({
         chain: selectedChain,
@@ -251,12 +255,12 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
-          aria-label={t('AI 一键六库')}
+          aria-label={t('AI 生成搭配')}
           className="appearance-panel ui-modal-enter flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:rounded-2xl"
         >
           <header className="flex flex-none items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
             <Wand2 className="h-4 w-4 text-indigo-500" aria-hidden="true" />
-            <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{t('AI 一键六库')}</h2>
+            <h2 className="min-w-0 flex-1 truncate font-bold text-gray-900 dark:text-white">{t('AI 生成搭配')}</h2>
             <button
               type="button"
               onClick={closeDialog}
@@ -299,7 +303,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                 )}
                 <p className="text-micro text-gray-400 dark:text-gray-500">{t('勾选后一起保存')}</p>
                 {drafts.map(draft => {
-                  const label = draft.label || t(PROMPT_LIBRARY_KIND_LABELS[draft.kind] || '提示词');
+                  const label = t(PROMPT_LIBRARY_KIND_LABELS[draft.kind] || '提示词');
                   return (
                     <div
                       key={draft.id}
@@ -385,7 +389,8 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                   />
                 )}
               </div>
-              <p className="mt-1 text-micro text-gray-400">{t('人物形象／服饰穿搭／动作互动／表情状态写进角色 1，场景与镜头写各自的全局栏；画师串、风格负面与生图参数不会改动。')}</p>
+              <select aria-label={t('风格串目标角色')} value={chainRoleId} onChange={event => setChainRoleId(event.target.value)} className={DETAIL_FIELD_CLASS}><option value="new">{t('新建角色')}</option>{selectedChain?.params.characters?.map((role, index) => <option key={role.id} value={role.id}>{t('角色 {0}', [index + 1])}</option>)}</select>
+              <p className="mt-1 text-micro text-gray-400">{t('人物内容写入所选角色，场景与镜头写入全局栏位。')}</p>
               <div className="mt-2 flex items-center gap-2">
                 <ToolbarButton onClick={() => void writeToChain()} disabled={chainWriting || !pickedCount} tone="primary" className="mobile-touch">
                   {chainWriting ? <LoaderCircle className="animate-spin" /> : null}
@@ -397,6 +402,12 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           ) : null}
 
           <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+            {library && <ToolbarButton disabled={generating || saving || !pickedDrafts.length} onClick={async () => {
+              setSaving(true);
+              try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedDrafts.map(draft => [draft.kind, { kind: draft.kind, name: draft.name, text: draft.prompt, negative: draft.negativePrompt, filled: true }])))); notify(t('已保存组合')); }
+              catch (error) { notify((error as Error).message, 'error'); }
+              finally { setSaving(false); }
+            }}>{t('保存为组合')}</ToolbarButton>}
             <ToolbarButton onClick={() => void generate()} disabled={generating || saving || !brief.trim()} tone="primary" className="mobile-touch">
               {generating ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
               <span>{generating ? t('正在生成…') : drafts.length ? t('重新生成') : t('生成六条')}</span>

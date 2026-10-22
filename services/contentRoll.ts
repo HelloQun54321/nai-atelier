@@ -92,7 +92,7 @@ export interface RollRow {
   scope?: string; label?: string; title?: string; key?: string;
   id?: string; name?: string; text?: string; negative?: string; bilingual?: string;
   description?: string; preview?: string; tags?: string[]; updatedAt?: number | null;
-  summary?: { text: string; englishOnly: boolean }; constraints?: ConstraintSummary;
+  summary?: string; summaryEnglishOnly?: boolean; constraints?: ConstraintSummary;
   filled?: boolean; reason?: string; poolSize?: number; locked?: unknown;
   code?: string; message?: string;
   [key: string]: Json;

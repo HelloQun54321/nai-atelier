@@ -50,7 +50,7 @@ export const AppearancePresetPreview: React.FC<{ preset: AppearancePreset; isDar
           <div data-preview-part="sidebar" className="flex min-h-0 min-w-0 flex-col overflow-hidden" style={{ ...pane(colors.sidebar, details?.globalOpacity ?? details?.sidebarOpacity ?? .82), padding: unit(gap) }}>
             <div className="flex items-center gap-2" style={{ padding: unit(gap), fontWeight: details?.strongWeight ?? 600 }}><Palette style={{ ...icon, color: accent }} /><span className="truncate">NAI Atelier</span></div>
             <div style={{ padding: `${unit(gap)} ${unit(8)}`, color: colors.mutedText, fontSize: '.75em' }}>{t('工作区')}</div>
-            {[[Layers, '风格串'], [FlaskConical, '实验室'], [Dices, 'Roll 串'], [Paintbrush, '画师库'], [Users, '角色库'], [Library, '内容库'], [Heart, '收藏库'], [History, '历史']].map(([Icon, label]) => {
+            {[[Layers, '风格串'], [FlaskConical, '实验室'], [Dices, 'Roll 串'], [Paintbrush, '画师库'], [Users, '角色库'], [Library, '提示词库'], [Heart, '收藏库'], [History, '历史']].map(([Icon, label]) => {
               const ItemIcon = Icon as typeof Layers, selected = label === '实验室';
               return <div key={label as string} data-preview-part={selected ? 'navigation-selected' : undefined} className="flex items-center gap-2" style={{ ...control, marginBottom: unit(3), backgroundColor: selected ? navigationFill : 'transparent', color: selected ? navigationText : colors.mutedText, fontWeight: selected ? details?.strongWeight ?? 600 : 400 }}><ItemIcon style={icon} /><span className="truncate">{t(label as string)}</span></div>;
             })}
