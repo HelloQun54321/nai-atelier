@@ -37,15 +37,103 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const until = async predicate => { for (let i = 0; i < 200; i++) { if (predicate()) return; await new Promise(r => setTimeout(r, 5)); } throw new Error('condition timeout'); };
 function harness(options = {}) {
   let receive, active = '', closed = 0;
-  const imports = [], actions = [];
+  const imports = [], actions = [], updates = [];
   const manager = new StyleCollector({ platform: 'win32',
-    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: () => {}, close: () => closed++ }; },
+    listener: async ({ onEvent }) => { receive = onEvent; return { command: async () => {}, update: state => updates.push(structuredClone(state)), close: () => closed++ }; },
     worker: async (action, body) => { if (action === 'position') return {}; if (action === 'session') { active = body.session; return {}; }
       assert.equal(body.session, active); imports.push(body); actions.push(action); return { outcome: 'saved' }; },
     download: async url => ({ bytes: hidden(), finalUrl: url }), ...options,
   });
-  return { manager, imports, actions, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
+  return { manager, imports, actions, updates, copy: url => receive({ type: 'link', url }), event: event => receive(event), receiver: () => receive, closed: () => closed };
 }
+
+test('each collector mode retains its own counters and detail while library notifications keep aggregate totals', async t => {
+  const h = harness(); t.after(() => h.manager.command('stop')); await h.manager.command('start');
+  h.copy('https://example.com/style.png'); await h.manager.run.processing;
+  h.copy('https://example.com/style.png');
+  h.event({ type: 'image', mode: 'style', image: null });
+  await h.manager.command('mode', 'collection');
+  h.event({ type: 'image', image: plain().toString('base64') }); await h.manager.run.processing;
+  h.copy('https://example.com/collection.png'); await h.manager.run.processing;
+  await h.manager.command('mode', 'content');
+  h.event({ type: 'text', mode: 'content', text: 'synthetic prompt' }); await h.manager.run.processing;
+  h.event({ type: 'text', mode: 'content', text: 'synthetic prompt' });
+  h.event({ type: 'text', mode: 'content', text: 'x'.repeat(65537) });
+  // 原生采集失败携带复制时的目标，迟到回执不能污染当前模式。
+  h.event({ type: 'capture-error', mode: 'collection', error: 'synthetic capture failure' });
+  const counts = state => [state.pending, state.saved, state.skipped, state.failed];
+  const expected = { style: [0, 1, 1, 1], collection: [0, 2, 0, 1], content: [0, 1, 1, 1] };
+  for (const mode of ['style', 'collection', 'content', 'style']) {
+    await h.manager.command('mode', mode);
+    assert.deepEqual(counts(h.updates.at(-1)), expected[mode]);
+    assert.deepEqual(counts(h.manager.state().records[mode]), expected[mode]);
+    assert.equal(h.updates.at(-1).detail, h.manager.state().records[mode].detail);
+    assert.deepEqual(counts(h.manager.state()), [0, 4, 2, 3]);
+    assert.equal(h.manager.state().collectionSaved, 2);
+  }
+  assert.match(h.manager.state().records.collection.detail, /synthetic capture failure/);
+  await h.manager.command('stop'); await h.manager.command('start');
+  for (const record of Object.values(h.manager.state().records)) { assert.deepEqual(counts(record), [0, 0, 0, 0]); assert.equal(record.detail, ''); }
+});
+
+test('queued and in-flight records stay with their captured mode across switches, pause and failure', async t => {
+  const gate = deferred();
+  const h = harness({ download: async url => { await gate.promise; throw new Error('synthetic download failure'); } });
+  t.after(() => { gate.resolve(); return h.manager.command('stop'); }); await h.manager.command('start');
+  h.copy('https://example.com/style.png');
+  h.event({ type: 'image', mode: 'collection', image: plain().toString('base64') });
+  h.event({ type: 'text', mode: 'content', text: 'queued prompt' });
+  await h.manager.command('mode', 'content');
+  assert.equal(h.updates.at(-1).pending, 1); assert.equal(h.updates.at(-1).stage, '复制文字即可收录');
+  await h.manager.command('mode', 'style');
+  assert.equal(h.updates.at(-1).pending, 0); assert.equal(h.updates.at(-1).stage, '正在下载图片');
+  await h.manager.command('mode', 'collection'); await h.manager.command('pause');
+  assert.equal(h.updates.at(-1).pending, 1); assert.equal(h.updates.at(-1).stage, '已暂停');
+  gate.resolve(); await h.manager.run.processing;
+  const { records } = h.manager.state();
+  assert.equal(records.style.failed, 1); assert.equal(records.style.saved, 0);
+  assert.equal(records.collection.saved, 1); assert.equal(records.collection.failed, 0);
+  assert.equal(records.content.saved, 1); assert.equal(records.content.failed, 0);
+  assert.equal(h.updates.at(-1).pending, 0); assert.equal(h.updates.at(-1).stage, '已暂停');
+  assert.match(h.updates.at(-1).detail, /^已收藏/);
+  await h.manager.command('mode', 'content'); assert.match(h.updates.at(-1).detail, /^已收录/);
+});
+
+test('stopping ignores late image save receipts in both destination records', async t => {
+  for (const mode of ['style', 'collection']) {
+    const gate = deferred(); let saving = false;
+    const h = harness({ worker: async action => {
+      if (action === 'import' || action === 'collection') { saving = true; await gate.promise; return { outcome: 'saved' }; }
+      return {};
+    } });
+    t.after(() => { gate.resolve(); return h.manager.command('stop'); });
+    await h.manager.command('start'); await h.manager.command('mode', mode);
+    h.event({ type: 'image', mode, image: hidden().toString('base64') }); await until(() => saving);
+    const stopped = h.manager.command('stop'); await until(() => h.manager.run.abort.signal.aborted);
+    gate.resolve(); await stopped;
+    assert.equal(h.manager.state().saved, 0); assert.equal(h.manager.state().records[mode].saved, 0);
+  }
+});
+
+test('queue-limit failures belong to the incoming mode and do not replace another mode detail', async t => {
+  const gate = deferred();
+  const h = harness({ download: async url => { await gate.promise; return { bytes: hidden(), finalUrl: url }; } });
+  t.after(() => { gate.resolve(); return h.manager.command('stop'); }); await h.manager.command('start');
+  h.copy('https://example.com/blocked.png');
+  for (let i = 0; i < 200; i++) h.event({ type: 'text', mode: 'content', text: `queued ${i}` });
+  h.event({ type: 'link', mode: 'collection', url: 'https://example.com/full.png' });
+  h.event({ type: 'file', mode: 'collection', path: join(process.cwd(), 'synthetic.png') });
+  h.event({ type: 'image', mode: 'style', image: plain().toString('base64') });
+  h.event({ type: 'text', mode: 'content', text: 'overflow' });
+  assert.equal(h.manager.state().records.collection.failed, 2);
+  assert.equal(h.manager.state().records.style.failed, 1);
+  assert.equal(h.manager.state().records.content.failed, 1);
+  assert.equal(h.updates.at(-1).pending, 0);
+  assert.match(h.updates.at(-1).detail, /待处理图片过多/);
+  await h.manager.command('mode', 'content'); assert.equal(h.updates.at(-1).pending, 200);
+  const stopping = h.manager.command('stop'); gate.resolve(); await stopping;
+  assert.equal(h.manager.state().pending, 0);
+});
 
 test('collection mode saves metadata-free links; changing modes never reroutes queued images', async t => {
   const gate = deferred(); let downloads = 0;
@@ -446,9 +534,13 @@ test('appearance is remembered before startup and updates one active listener wi
   assert.deepEqual(h.manager.state().appearance.palette, palette);
   const materials = { light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 0, saturation: 105, refraction: 8 }, dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8 } };
   await h.manager.command('appearance', { ...light, surfaces: 'translucent', materials });
+  await h.manager.command('appearance', { ...light, surfaces: 'translucent', materials, backgrounds: { light: { image: '/themes/wallpapers/cupertino-day.webp' } } });
+  assert.deepEqual(updates.at(-1).appearance.backgrounds.light, { fit: 'cover', opacity: 1, tileSize: 128 });
+  assert.ok(updates.at(-1).appearance.images.light.length > 0);
+  for (const image of ['file:///private.png', 'https://example.invalid/image', {}, null]) await assert.rejects(h.manager.command('appearance', { ...light, backgrounds: { light: { image } } }), /外观背景无效/);
   assert.deepEqual(h.manager.state().appearance.materials, materials);
   assert.deepEqual(updates.at(-1).appearance.materials, materials);
-  for (const extra of [{ blur: 41 }, { blur: -1 }, { saturation: 99 }, { saturation: 201 }, { refraction: 25 }, { refraction: NaN }]) await assert.rejects(h.manager.command('appearance', { ...light, materials: { light: { ...materials.light, ...extra } } }), /外观材质无效/);
+  for (const extra of [{ controlShadow: -1 }, { controlShadow: 1.1 }, { blur: 41 }, { blur: -1 }, { saturation: 99 }, { saturation: 201 }, { refraction: 25 }, { refraction: NaN }]) await assert.rejects(h.manager.command('appearance', { ...light, materials: { light: { ...materials.light, ...extra } } }), /外观材质无效/);
   for (const invalid of [null, [], { blue: materials.light }, { light: { ...materials.light, kind: 'custom' } }, { light: { ...materials.light, opacity: NaN } }, { light: { ...materials.light, opacity: 2 } }, { light: { ...materials.light, highlight: -.1 } }, { light: { ...materials.light, panelRadius: 37 } }, { light: { ...materials.light, panelRadius: '22' } }, { light: { ...materials.light, extra: 'ignored' } }]) await assert.rejects(h.manager.command('appearance', { ...light, materials: invalid }), /外观材质无效/);
   assert.deepEqual(h.manager.state().appearance.materials, materials);
   await h.manager.command('appearance', { ...light, palette });
@@ -457,5 +549,6 @@ test('appearance is remembered before startup and updates one active listener wi
   await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
   assert.equal(h.manager.state().appearance.palette, undefined);
   assert.equal(h.manager.state().appearance.materials, undefined);
+  assert.deepEqual(h.manager.state().appearance.backgrounds, {});
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
 });

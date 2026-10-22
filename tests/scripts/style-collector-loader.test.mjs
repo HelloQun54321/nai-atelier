@@ -8,7 +8,7 @@ import { createWorkspace, removeWorkspace, projectRoot } from '../support/worksp
 test('collector loader reuses assemblies, invalidates changed source and repairs bad cache without showing a window', { skip: process.platform !== 'win32', timeout: 25_000 }, t => {
   const root = createWorkspace('collector-loader-');
   t.after(() => removeWorkspace(root));
-  for (const file of ['style-collector-window.ps1', 'style-collector-window.cs', 'style-collector-view.cs', 'style-collector-composition.cs']) copyFileSync(join(projectRoot, 'scripts', file), join(root, file));
+  for (const file of ['style-collector-window.ps1', 'style-collector-window.cs', 'style-collector-view.cs', 'style-collector-wallpaper.cs']) copyFileSync(join(projectRoot, 'scripts', file), join(root, file));
   const load = resourceRoot => {
     const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'style-collector-window.ps1'), '-LoadOnly'], { windowsHide: true, cwd: root, env: { ...process.env, NAI_RESOURCE_ROOT: resourceRoot }, encoding: 'utf8', timeout: 8000 });
     assert.equal(result.status, 0, result.error?.message || result.stderr || result.stdout);

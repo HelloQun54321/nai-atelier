@@ -3374,8 +3374,8 @@ const serveDistFile = async (req, res, url) => {
       }
       if (req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: 'Forbidden' });
       try {
-        const body = await readJsonBody(req, 4096);
         const action = url.pathname.split('/').pop();
+        const body = await readJsonBody(req, action === 'appearance' ? 2_100_000 : 4096);
         const state = await styleCollector.command(action, action === 'appearance' ? body : body.id);
         return sendJson(res, 200, state);
       } catch (error) { return sendJson(res, 400, { error: error.message || '收集操作失败' }); }

@@ -1,3 +1,5 @@
+import { CUPERTINO_WALLPAPERS, normalizeThemeBackground } from '../../services/themeBackgroundData.mjs';
+import { loadCollectorWallpapers, StyleCollector, windowsCollector } from '../../scripts/style-collector.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
@@ -5,6 +7,40 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { LANGUAGES, translate } from '../../locales/index.mjs';
+
+const backgrounds = Object.fromEntries(Object.entries(CUPERTINO_WALLPAPERS).map(([mode, image]) => [mode, normalizeThemeBackground({ image })]));
+
+test('native counters and collapsed detail follow the selected mode through the real manager protocol', { skip: process.platform !== 'win32', timeout: 30_000 }, async t => {
+  let native, latest;
+  const manager = new StyleCollector({ platform: 'win32',
+    worker: async action => action === 'text' ? { outcome: 'saved' } : {},
+    listener: async options => {
+      native = await windowsCollector({ ...options, selfTest: true, onEvent: event => { if (event.type === 'window') latest = event; options.onEvent(event); } });
+      return native;
+    },
+  });
+  t.after(() => manager.command('stop'));
+  await manager.command('start');
+  const flush = () => native.command('category', { category: '' });
+  await manager.command('mode', 'content');
+  await native.command('inject', { text: 'synthetic prompt' }); await manager.run.processing;
+  await native.command('inject', { text: 'synthetic prompt' });
+  await flush();
+  assert.deepEqual(latest.counters, { pending: 0, saved: 1, skipped: 1, failed: 0 });
+  await manager.command('mode', 'collection');
+  await native.command('inject-image', { image: Buffer.alloc(12 * 1024 * 1024 + 1).toString('base64') });
+  await flush();
+  assert.equal(manager.state().records.collection.failed, 1);
+  assert.deepEqual(latest.counters, { pending: 0, saved: 0, skipped: 0, failed: 1 });
+  await native.command('collapse'); assert.match(latest.titleTooltip, /图片超过存储大小上限/);
+  await manager.command('mode', 'style'); await flush();
+  assert.deepEqual(latest.counters, { pending: 0, saved: 0, skipped: 0, failed: 0 });
+  assert.doesNotMatch(latest.titleTooltip, /图片超过存储大小上限/);
+  await manager.command('mode', 'content'); await flush();
+  assert.deepEqual(latest.counters, { pending: 0, saved: 1, skipped: 1, failed: 0 });
+  assert.match(latest.titleTooltip, /内容库 · 已保存 1/);
+  assert.match(latest.detail, /这段提示词已经收录/);
+});
 
 // 自测不注册系统剪贴板，使用独立合成事件；不读取、覆盖或备份真实剪贴板内容。
 test('native collector: fixed modes, automatic text intake, file copies and both builtin themes', { skip: process.platform !== 'win32', timeout: 30_000 }, async t => {
@@ -27,7 +63,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   const setState = (state = {}) => send('state', { state: { ...base, ...state } });
   await until(() => events.some(e => e.type === 'ready'));
   await send('inject', { session: '', text: 'https://example.com/preexisting.png' });
-  await send('start', { position: { x: 999999, y: -999999, collapsed: false } }); await setState();
+  await send('start', { appearance: { ...defaults, images: await loadCollectorWallpapers(backgrounds) }, position: { x: 999999, y: -999999, collapsed: false } }); await setState();
   assert.equal(window().noActivate, true); assert.equal(window().topMost, true); assert.equal(window().foreground, false);
   assert.equal(window().visiblePosition, true); assert.equal(window().rounded, true); assert.equal(window().labelsFit, true);
   assert.equal(window().width, 384); assert.equal(window().height, 232); assert.equal(window().editableFields, 0);
@@ -72,9 +108,9 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   const cupertino = JSON.parse(await readFile(new URL('../../public/themes/cupertino-liquid-glass.json', import.meta.url), 'utf8')).presets[0];
   const materials = Object.fromEntries(['light', 'dark'].map(mode => {
     const d = { ...cupertino.details, ...cupertino.details[mode] };
-    return [mode, { kind: d.material, opacity: d.sidebarOpacity, highlight: d.highlight, borderOpacity: d.borderOpacity, controlRadius: d.controlRadius, panelRadius: d.panelRadius, blur: d.blur, saturation: d.saturation, refraction: d.refraction }];
+    return [mode, { kind: d.material, opacity: d.sidebarOpacity, highlight: d.highlight, controlShadow: d.controlShadow, borderOpacity: d.borderOpacity, controlRadius: d.controlRadius, panelRadius: d.panelRadius, blur: d.blur, saturation: d.saturation, refraction: d.refraction }];
   }));
-  const themes = [defaults, { ...cupertino, materials, accents: { light: cupertino.details.light.accentColor, dark: cupertino.details.dark.accentColor } }];
+  const themes = [defaults, { ...cupertino, backgrounds, materials, accents: { light: cupertino.details.light.accentColor, dark: cupertino.details.dark.accentColor } }];
   const luminance = hex => { const rgb = hex.slice(1).match(/../g).map(h => parseInt(h, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722; };
   for (const theme of themes) for (const dark of [false, true]) {
     const mode = dark ? 'dark' : 'light';
@@ -83,13 +119,13 @@ test('native collector: fixed modes, automatic text intake, file copies and both
     assert.equal(a.dark, dark); assert.equal(a.surfaces, theme.surfaces); assert.equal(a.radius, theme.materials?.[mode].panelRadius ?? 8);
     assert.equal(a.background, (theme.palette?.[mode][theme.surfaces === 'translucent' ? 'sidebar' : 'panel'] || (dark ? '#171b24' : '#ffffff')).toUpperCase());
     assert.equal(a.accent, (theme.accents?.[mode] || theme.accentColor).toUpperCase());
-    if (theme.materials) { assert.equal(a.blur, theme.materials[mode].blur); assert.equal(a.saturation, theme.materials[mode].saturation); assert.equal(a.refraction, theme.materials[mode].refraction); }
+    assert.equal(a.renderer, theme.backgrounds ? 'theme-image' : 'solid'); assert.equal(a.wallpaper, theme.backgrounds ? mode : '');
     const levels = [luminance(a.selectedFill), luminance(a.selectedText)].sort((x, y) => y - x);
     assert.ok((levels[0] + .05) / (levels[1] + .05) >= 4.5, 'selected text contrast');
     assert.equal(window().height, 232); assert.equal(window().width, 384); assert.equal(window().labelsFit, true); assert.equal(window().foreground, false);
   }
   await setState({ appearance: { ...themes[1], themeMode: 'system', isDark: false } });
-  for (const dark of [true, false]) { await send('system-theme', { dark }); assert.equal(window().appearance.dark, dark); assert.equal(window().appearance.accent, dark ? '#0A84FF' : '#007AFF'); }
+  for (const dark of [true, false]) { await send('system-theme', { dark }); assert.equal(window().appearance.dark, dark); assert.equal(window().appearance.wallpaper, dark ? 'dark' : 'light'); assert.equal(window().appearance.accent, dark ? '#0A84FF' : '#007AFF'); }
   await setState({ appearance: { ...defaults, themeMode: 'light', isDark: false, motion: 'off' }, stage: '正在收录提示词' });
   await send('system-theme', { dark: true }); assert.equal(window().appearance.dark, false); assert.equal(window().appearance.background, '#FFFFFF'); assert.equal(window().breathing, false);
   for (const language of LANGUAGES) {

@@ -12,6 +12,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Documents;
+using System.Windows.Media.Effects;
 using Microsoft.Win32;
 
 public sealed class CollectorViewState {
@@ -21,8 +23,12 @@ public sealed class CollectorViewState {
 }
 
 public sealed class CollectorGlassButton : Button {
-    Brush fill, hover;
-    bool hovered;
+    Brush fill, hover, stroke, glassBorder;
+    bool hovered, glass, selected;
+    double highlight, shadow, radius;
+    Border face;
+    public CollectorGlassReflection Reflection { get; private set; }
+    public Func<Color,Color,Brush> ReadableBacking;
     public CollectorGlassButton() {
         Focusable = false; Padding = new Thickness(5,0,5,0); BorderThickness = new Thickness(1);
         var face = new FrameworkElementFactory(typeof(Border)); face.Name = "face";
@@ -32,32 +38,49 @@ public sealed class CollectorGlassButton : Button {
         face.SetBinding(Border.CornerRadiusProperty, new System.Windows.Data.Binding("Tag") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
         var content = new FrameworkElementFactory(typeof(ContentPresenter));
         content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        face.AppendChild(content); Template = new ControlTemplate(typeof(Button)) { VisualTree = face };
-        MouseEnter += delegate { hovered = true; Background = IsEnabled ? hover : fill; };
-        MouseLeave += delegate { hovered = false; Background = fill; };
-        IsEnabledChanged += delegate { Background = hovered && IsEnabled ? hover : fill; };
+        var layers=new FrameworkElementFactory(typeof(Grid));
+        var reflection=new FrameworkElementFactory(typeof(CollectorGlassReflection));reflection.Name="reflection";reflection.SetValue(UIElement.IsHitTestVisibleProperty,false);
+        layers.AppendChild(reflection);layers.AppendChild(content);face.AppendChild(layers);Template = new ControlTemplate(typeof(Button)) { VisualTree = face };
+        MouseEnter += delegate { hovered = true; UpdateSurface(); };
+        MouseLeave += delegate { hovered = false; UpdateSurface(); };
+        IsEnabledChanged += delegate { UpdateSurface(); };
         PreviewMouseLeftButtonDown += delegate { Opacity = .78; };
         PreviewMouseLeftButtonUp += delegate { Opacity = 1; };
         LostMouseCapture += delegate { Opacity = 1; };
     }
     public void Surface(Brush normal, Brush over, Brush stroke, double radius) {
-        fill = normal; hover = over; Background = hovered && IsEnabled ? hover : fill; BorderBrush = stroke; Tag = new CornerRadius(radius);
+        fill = normal; hover = over; this.stroke=stroke;this.radius=radius;Tag = new CornerRadius(radius);UpdateSurface();
+    }
+    public void Glass(bool enabled,bool active,double highlight,double shadow,Brush border) {
+        glass=enabled;selected=active;this.highlight=highlight;this.shadow=shadow;glassBorder=border;UpdateSurface();
+    }
+    public override void OnApplyTemplate() {
+        base.OnApplyTemplate();face=GetTemplateChild("face") as Border;Reflection=GetTemplateChild("reflection") as CollectorGlassReflection;UpdateSurface();
+    }
+    void UpdateSurface() {
+        bool active=glass && IsEnabled && (selected || hovered);
+        Background=hovered && IsEnabled ? hover : fill;BorderBrush=active?glassBorder:stroke;
+        if(Reflection!=null) {Reflection.Control=true;Reflection.Highlight=active?highlight:0;Reflection.Shadow=active?shadow:0;Reflection.Radius=radius;Reflection.InvalidateVisual();}
+        if(face!=null) face.Effect=active && selected && shadow>0 ? new DropShadowEffect {Color=Colors.Black,Opacity=shadow*.3,BlurRadius=3,ShadowDepth=1,Direction=270,RenderingBias=RenderingBias.Quality} : null;
+        var caption=Content as TextBlock;
+        if(caption!=null && ReadableBacking!=null && Background is SolidColorBrush && Foreground is SolidColorBrush) caption.Background=ReadableBacking(((SolidColorBrush)Foreground).Color,((SolidColorBrush)Background).Color);
     }
 }
 
 // 沿用 themeDetails.css 侧边栏的 36px 顶缘反光及上／右／下／左四边强度。
 public sealed class CollectorGlassReflection : FrameworkElement {
-    public double Highlight, Radius;
+    public double Highlight, Radius, Shadow;
+    public bool Control;
     protected override void OnRender(DrawingContext dc) {
-        if(Highlight<=0 || ActualWidth<=0 || ActualHeight<=0) return;
+        if((Highlight<=0 && Shadow<=0) || ActualWidth<=0 || ActualHeight<=0) return;
         double w=ActualWidth,h=ActualHeight;
         dc.PushClip(new RectangleGeometry(new Rect(0,0,w,h),Radius,Radius));
-        var sheen=new LinearGradientBrush {StartPoint=new Point(0,0),EndPoint=new Point(0,36),MappingMode=BrushMappingMode.Absolute};
-        sheen.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(255*Highlight*.28),255,255,255),0));
-        sheen.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(255*Highlight*.08),255,255,255),1.0/3));
+        var sheen=new LinearGradientBrush {StartPoint=new Point(0,0),EndPoint=new Point(0,Control?h*.7:36),MappingMode=BrushMappingMode.Absolute};
+        sheen.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(255*Highlight*(Control ? .16 : .28)),255,255,255),0));
+        if(!Control) sheen.GradientStops.Add(new GradientStop(Color.FromArgb((byte)Math.Round(255*Highlight*.08),255,255,255),1.0/3));
         sheen.GradientStops.Add(new GradientStop(Colors.Transparent,1));
         dc.DrawRectangle(sheen,null,new Rect(0,0,w,Math.Min(36,h)));
-        double[] strengths={Math.Min(.8,Highlight*2.5),Highlight*.2,Highlight*.4,Highlight*.7};
+        double[] strengths={Control?Highlight:Math.Min(.8,Highlight*2.5),Highlight*.2,Control?Shadow*.3:Highlight*.4,Highlight*.7};
         Matrix[] transforms={Matrix.Identity,new Matrix(0,1,-1,0,w,0),new Matrix(-1,0,0,-1,w,h),new Matrix(0,-1,1,0,0,h)};
         for(int side=0;side<4;side++) {
             double length=side%2==0 ? w : h,r=Math.Max(0,Math.Min(Radius,Math.Min(w,h)/2)-.5),diagonal=r/Math.Sqrt(2);
@@ -69,7 +92,8 @@ public sealed class CollectorGlassReflection : FrameworkElement {
                 if(r>0) path.ArcTo(new Point(length-r-.5+diagonal,r+.5-diagonal),new Size(r,r),0,false,SweepDirection.Clockwise,true,false);
             }
             dc.PushTransform(new MatrixTransform(transforms[side]));
-            dc.DrawGeometry(null,new Pen(new SolidColorBrush(Color.FromArgb((byte)Math.Round(255*strengths[side]),255,255,255)),1),edge);
+            byte tone=(byte)(Control && side==2?0:255);
+            dc.DrawGeometry(null,new Pen(new SolidColorBrush(Color.FromArgb((byte)Math.Round(255*strengths[side]),tone,tone,tone)),1),edge);
             dc.Pop();
         }
         dc.Pop();
@@ -89,8 +113,12 @@ public sealed class AtelierCollectorView : Window {
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr value);
     [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr window,IntPtr region,bool redraw);
     readonly Grid root = new Grid();
-    readonly Canvas canvas = new Canvas();
+    readonly Canvas canvas = new Canvas { Background=Brushes.Transparent };
     readonly Border surface = new Border(), track = new Border(), detailSurface = new Border();
+    readonly Image wallpaper = new Image { Stretch=Stretch.UniformToFill, IsHitTestVisible=false };
+    readonly Dictionary<string,BitmapSource> wallpapers = new Dictionary<string,BitmapSource>();
+    readonly Dictionary<string,string> wallpaperCodes = new Dictionary<string,string>();
+    readonly Dictionary<Color,Brush> textBackings = new Dictionary<Color,Brush>();
     readonly CollectorGlassReflection reflection = new CollectorGlassReflection {IsHitTestVisible=false};
     readonly TextBlock title = Label(), phase = Label(), detail = Label(), destinationLabel = Label();
     readonly System.Windows.Shapes.Ellipse statusDot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8 };
@@ -103,20 +131,18 @@ public sealed class AtelierCollectorView : Window {
     Dictionary<string,object> appearance = new Dictionary<string,object>(), labels = new Dictionary<string,object>();
     CollectorViewState state = new CollectorViewState();
     HwndSource source;
-    CollectorComposition composition;
-    CollectorBackdropWindow backdrop;
-    Color panel, text, muted, accent, border;
-    bool dark, translucent, nativeBackdrop, processing, breathing, closed;
+    Color panel, text, muted, accent, border, canvasColor, backgroundMin, backgroundMax;
+    bool dark, translucent, processing, breathing, closed;
     bool? testDark;
-    double tintOpacity, highlight, borderOpacity, controlRadius, panelRadius, blur, saturation, refraction;
+    double tintOpacity, highlight, borderOpacity, controlRadius, panelRadius, blur, saturation, refraction, controlShadow;
+    int imageRevision;
+    string renderedBackground;
     string windowShape;
     string themeMode = "system", motion = "full", material = "frosted";
     public bool Collapsed { get; private set; }
     public IntPtr NativeHandle { get { return source == null ? IntPtr.Zero : source.Handle; } }
     public event Action<string,string> Command;
     public event Action<int> NativeMessage;
-    public bool BackdropRequested { get { return translucent && !SystemParameters.HighContrast && TransparencyEnabled(); } }
-    public bool NativeBackdrop { get { return nativeBackdrop; } }
     public double TintOpacity { get { return tintOpacity; } }
     public Brush SurfaceBrush { get { return surface.Background; } }
     public CollectorGlassReflection Reflection { get { return reflection; } }
@@ -128,7 +154,7 @@ public sealed class AtelierCollectorView : Window {
         AllowsTransparency = true; UseLayoutRounding = true; SnapsToDevicePixels = true; Background = Brushes.Transparent;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display); TextOptions.SetTextRenderingMode(this, TextRenderingMode.Grayscale);
         surface.BorderThickness = new Thickness(1);
-        root.Children.Add(surface); root.Children.Add(reflection); root.Children.Add(canvas); Content = root;
+        root.Children.Add(wallpaper); root.Children.Add(surface); root.Children.Add(reflection); root.Children.Add(canvas); Content = root;
         foreach (var element in new UIElement[]{ track, detailSurface, statusDot, title, pause, collapse, finish, destinationLabel, destination, phase, metrics, detail }) canvas.Children.Add(element);
         for (int i = 0; i < modes.Length; i++) { int index = i; canvas.Children.Add(modes[i]); modes[i].Click += delegate { Request("mode",ModeKeys[index]); }; }
         for (int i = 0; i < 4; i++) {
@@ -149,13 +175,12 @@ public sealed class AtelierCollectorView : Window {
         SourceInitialized += delegate {
             source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle); source.AddHook(WindowMessage);
             SetWindowLong(NativeHandle,-20,(GetWindowLong(NativeHandle,-20) | 0x08000000 | 0x00000080) & ~0x00040000);
-            ApplyNativeMaterial(); UpdateWindowShape();
+            source.CompositionTarget.BackgroundColor = Colors.Transparent; Refresh();
         };
         SizeChanged += delegate { UpdateWindowShape(); };
         LocationChanged += delegate { UpdateWindowShape(); };
         IsVisibleChanged += delegate { UpdateWindowShape(); };
         ContentRendered += delegate { UpdateWindowShape(); };
-        Closing += delegate { StopBackdrop(); };
         Closed += delegate { closed = true; statusDot.BeginAnimation(OpacityProperty,null); if (source != null) source.RemoveHook(WindowMessage); };
         if (!String.IsNullOrEmpty(initialAppearance)) appearance = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(initialAppearance);
         ApplyAppearance(appearance);
@@ -170,9 +195,6 @@ public sealed class AtelierCollectorView : Window {
     static double Measure(string value, double size) { return new FormattedText(value ?? "",CultureInfo.CurrentUICulture,FlowDirection.LeftToRight,new Typeface("Microsoft YaHei UI"),size,Brushes.Black,1).WidthIncludingTrailingWhitespace; }
     string T(string value) { return labels.ContainsKey(value) ? Convert.ToString(labels[value]) : value; }
     void Request(string command, string value) { if (Command != null) Command(command,value); }
-    static bool TransparencyEnabled() {
-        try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) { return key == null || Convert.ToString(key.GetValue("EnableTransparency",1)) != "0"; } } catch { return true; }
-    }
     bool ResolveDark() {
         if (themeMode != "system") return themeMode == "dark";
         if (testDark.HasValue) return testDark.Value;
@@ -186,61 +208,90 @@ public sealed class AtelierCollectorView : Window {
         var palette = Map(Map(appearance,"palette"),dark ? "dark" : "light");
         var parameters = Map(Map(appearance,"materials"),dark ? "dark" : "light");
         panel = ColorValue(palette,translucent ? "sidebar" : "panel",dark ? (translucent ? "#12151c" : "#171b24") : (translucent ? "#fbfcff" : "#ffffff")); text = ColorValue(palette,"text",dark ? "#f0f2f8" : "#171e2d");
+        canvasColor=ColorValue(palette,"canvas",dark?"#0d0f14":"#f3f5fa");
         muted = ColorValue(palette,"mutedText",dark ? "#939db5" : "#59677f"); border = ColorValue(palette,"border",dark ? "#5a6478" : "#b4bccf");
         accent = ColorValue(Map(appearance,"accents"),dark ? "dark" : "light",Str(appearance,"accentColor") == "" ? "#0ea5e9" : Str(appearance,"accentColor"));
         material = Str(parameters,"kind") == "glass" ? "glass" : "frosted";
         tintOpacity = Number(parameters,"opacity",.85); highlight = Number(parameters,"highlight",.3); borderOpacity = Number(parameters,"borderOpacity",.26);
+        controlShadow=Number(parameters,"controlShadow",.25);
         controlRadius = Number(parameters,"controlRadius",Str(appearance,"corners") == "soft" ? 10 : Str(appearance,"corners") == "sharp" ? 3 : 7);
-        if(material=="glass") controlRadius=Math.Min(controlRadius,14);
-        panelRadius = translucent ? Number(parameters,"panelRadius",8) : 8;
-        blur=Number(parameters,"blur",22);saturation=Number(parameters,"saturation",130);refraction=material=="glass" ? Number(parameters,"refraction",0) : 0;
+        panelRadius = Number(parameters,"panelRadius",8);
+        blur=Number(parameters,"blur",22);saturation=Number(parameters,"saturation",130);refraction=material=="glass"?Number(parameters,"refraction",0):0;
         if (SystemParameters.HighContrast) { panel = SystemColors.WindowColor; text = SystemColors.WindowTextColor; muted = text; accent = SystemColors.HighlightColor; border = text; translucent=false; panelRadius=8; }
-        Title = T("Atelier 收集"); Foreground = Brush(text,1); ApplyNativeMaterial(); Refresh();
+        Title = T("Atelier 收集"); Foreground = Brush(text,1);
+        if(appearance.ContainsKey("images")) SetWallpapers(Map(appearance,"images"));
+        Refresh();
     }
-    void ApplyNativeMaterial() {
-        nativeBackdrop = false;
-        if (NativeHandle != IntPtr.Zero) {
+    public void SetWallpapers(Dictionary<string,object> images) {
+        foreach(string mode in new[]{"light","dark"}) {
+            string encoded=Str(images,mode),previous;
+            if(wallpaperCodes.TryGetValue(mode,out previous) && previous==encoded) continue;
+            wallpaperCodes[mode]=encoded;wallpapers.Remove(mode);imageRevision++;
+            if(encoded=="" || encoded.Length>20000000) continue;
             try {
-                if(BackdropRequested) {
-                    if(backdrop==null)backdrop=new CollectorBackdropWindow(this);
-                    if(backdrop.PrepareComposition(dark)) {
-                        try {
-                            backdrop.SetBackgroundBlur(false);
-                            if(composition==null) {composition=new CollectorComposition();composition.Attach(backdrop.Handle);}
-                            UpdateComposition();nativeBackdrop=true;
-                        } catch(Exception) {StopComposition();}
-                    } else StopComposition();
-                    if(!nativeBackdrop)nativeBackdrop=backdrop.SetBackgroundBlur(true);
+                using(var stream=new System.IO.MemoryStream(Convert.FromBase64String(encoded))) {
+                    var image=new BitmapImage(); image.BeginInit(); image.CacheOption=BitmapCacheOption.OnLoad; image.StreamSource=stream; image.EndInit(); image.Freeze(); wallpapers[mode]=image;
                 }
-            } catch (System.ComponentModel.Win32Exception) { nativeBackdrop = false; }
-              catch (DllNotFoundException) { nativeBackdrop = false; } catch (EntryPointNotFoundException) { nativeBackdrop = false; }
-            if(!nativeBackdrop)StopBackdrop();
-            source.CompositionTarget.BackgroundColor = Colors.Transparent;
+            } catch(Exception) { /* 无效资源回退主题实色，不影响收集。 */ }
         }
-        SetSurface(nativeBackdrop);
+        renderedBackground=null;
     }
-    void UpdateComposition() {
-        if(composition==null)return;
-        composition.Update((float)(ActualWidth>0 ? ActualWidth : Width),(float)(ActualHeight>0 ? ActualHeight : Height),(float)panelRadius,(float)blur,(float)saturation,(float)refraction,(float)source.CompositionTarget.TransformToDevice.M11);
-    }
-    void StopComposition() {if(composition!=null) {composition.Dispose();composition=null;}}
-    void StopBackdrop() {StopComposition();if(backdrop!=null) {backdrop.Dispose();backdrop=null;}}
-    // 纯视觉层也用于无窗口回归；只有 DWM 成功后，实际窗口才使用透明承托。
-    public void SetSurface(bool backdropAvailable) {
-        surface.Background = Brush(panel,backdropAvailable && translucent ? tintOpacity : 1);
-        // Alpha 为零的分层窗口会穿透鼠标，保留最小命中底层以覆盖完整按钮和拖动区域。
-        root.Background = backdropAvailable && translucent && tintOpacity==0 ? Brush(panel,1d/255) : null;
+    void SetSurface() {
+        string mode=dark?"dark":"light";
+        var background=Map(Map(appearance,"backgrounds"),mode);
+        BitmapSource image; wallpapers.TryGetValue(mode,out image);
+        if(background==null || !translucent) image=null;
+        string fit=Str(background,"fit");double opacity=Number(background,"opacity",1),tileSize=Number(background,"tileSize",128);
+        double scale=source==null?1:source.CompositionTarget.TransformToDevice.M11;
+        string key=Width+":"+Height+":"+scale+":"+mode+":"+translucent+":"+imageRevision+":"+fit+":"+opacity+":"+tileSize+":"+canvasColor+":"+panel+":"+tintOpacity+":"+blur+":"+saturation+":"+refraction+":"+panelRadius;
+        if(key!=renderedBackground) {
+            wallpaper.Source=translucent ? CollectorWallpaper.Render(image,fit,opacity,tileSize,canvasColor,Width,Height,scale,blur,saturation,refraction,panelRadius) : null;
+            renderedBackground=key;
+            backgroundMin=backgroundMax=panel;
+            if(wallpaper.Source!=null) {
+                var bitmap=(BitmapSource)wallpaper.Source;var pixels=new byte[bitmap.PixelWidth*bitmap.PixelHeight*4];bitmap.CopyPixels(pixels,bitmap.PixelWidth*4,0);
+                byte[] min={255,255,255},max={0,0,0};
+                for(int p=0;p<pixels.Length;p+=4)for(int c=0;c<3;c++) {min[c]=Math.Min(min[c],pixels[p+c]);max[c]=Math.Max(max[c],pixels[p+c]);}
+                var tint=((SolidColorBrush)Brush(panel,tintOpacity)).Color;
+                backgroundMin=Composite(tint,Color.FromRgb(min[2],min[1],min[0]));backgroundMax=Composite(tint,Color.FromRgb(max[2],max[1],max[0]));
+            }
+            textBackings.Clear();
+        }
+        // 透明度描述主题色与图片的混合；窗口自身不透出桌面。
+        root.Background = Brush(canvasColor,1);
+        surface.Background = Brush(panel,translucent ? tintOpacity : 1);
         surface.BorderBrush = Brush(border,translucent ? borderOpacity : .45);
         surface.CornerRadius=new CornerRadius(panelRadius);
         reflection.Highlight=translucent && material=="glass" ? highlight : 0; reflection.Radius=panelRadius; reflection.InvalidateVisual();
     }
+    Brush TextBacking(Color color) {
+        Brush cached;if(textBackings.TryGetValue(color,out cached))return cached;
+        cached=TextBackingBetween(color,backgroundMin,backgroundMax);textBackings[color]=cached;return cached;
+    }
+    Brush ControlTextBacking(Color color,Color fill) {
+        Color min=Composite(fill,backgroundMin),max=Composite(fill,backgroundMax);
+        if(translucent && material=="glass") max=Composite(((SolidColorBrush)Brush(Colors.White,highlight*.16)).Color,max);
+        return TextBackingBetween(color,min,max);
+    }
+    static Brush TextBackingBetween(Color color,Color min,Color max) {
+        double foreground=Luminance(color);Color backing=foreground>.179?Colors.Black:Colors.White;
+        for(int step=0;step<=20;step++) {
+            var brush=(SolidColorBrush)Brush(backing,step/20d);
+            double low=Luminance(Composite(brush.Color,min)),high=Luminance(Composite(brush.Color,max));
+            double contrast=foreground<low?(low+.05)/(foreground+.05):foreground>high?(foreground+.05)/(high+.05):1;
+            if(contrast>=4.5 || step==20) return brush;
+        }
+        return Brushes.Transparent;
+    }
+    void ProtectText(TextBlock label) {
+        string value=label.Text;var color=((SolidColorBrush)label.Foreground).Color;
+        label.Inlines.Clear();label.Inlines.Add(new Run(value) {Background=TextBacking(color)});
+    }
     void UpdateWindowShape() {
         WindowRect bounds; if(NativeHandle==IntPtr.Zero || closed || !GetWindowRect(NativeHandle,out bounds)) return;
-        UpdateComposition();
-        if(backdrop!=null)backdrop.Sync(panelRadius*source.CompositionTarget.TransformToDevice.M11);
         int w=bounds.Right-bounds.Left,h=bounds.Bottom-bounds.Top,r=(int)Math.Round(panelRadius*source.CompositionTarget.TransformToDevice.M11*2);
         string shape=w+":"+h+":"+r; if(shape==windowShape || w<=0 || h<=0) return;
-        // 裁剪的是原生模糊区域，避免 WPF 圆角外仍露出矩形桌面模糊。
+        // 单窗口与内容共用圆角，避免透明窗口边缘留下矩形区域。
         IntPtr region=CreateRoundRectRgn(0,0,w+1,h+1,r,r);
         if(region==IntPtr.Zero) return;
         if(SetWindowRgn(NativeHandle,region,true)==0) DeleteObject(region); else windowShape=shape;
@@ -256,6 +307,7 @@ public sealed class AtelierCollectorView : Window {
         foreach (string label in new string[]{"待处理","已保存","跳过","失败"}) Width = Math.Max(Width,(Measure(T(label),FontSize)+32)*4+32);
         Height = Collapsed ? 44 : 232;
         root.Clip = new RectangleGeometry(new Rect(0,0,Width,Height),panelRadius,panelRadius);
+        SetSurface();
         Place(statusDot,18,18,8,8); Place(title,34,10,Width-200,24);
         Place(pause,Width-144,8,64,28); Place(collapse,Width-74,8,28,28); Place(finish,Width-40,8,28,28);
         pause.Content = T(state.Paused ? "继续" : "暂停"); collapse.Content = Collapsed ? "+" : "−"; finish.Content = "×";
@@ -263,17 +315,24 @@ public sealed class AtelierCollectorView : Window {
         ToolTipService.SetToolTip(title,title.Text + T(" · 已保存 ") + state.Saved + (state.LatestFailed ? " · " + state.Detail : "")); ToolTipService.SetShowOnDisabled(title,true);
         ToolTipService.SetToolTip(pause,T(state.Paused ? "继续接收之后的新复制" : "暂停接收新复制，已入队内容继续处理"));
         ToolTipService.SetToolTip(collapse,T(Collapsed ? "展开状态窗" : "折叠状态窗")); ToolTipService.SetToolTip(finish,T("结束收集"));
-        foreach (var button in new CollectorGlassButton[]{ pause,collapse,finish,destination,modes[0],modes[1],modes[2] }) { button.Foreground = Brush(text,1); button.FontSize = FontSize; button.Surface(Brushes.Transparent,Brush(text,dark ? .09 : .055),Brushes.Transparent,controlRadius); }
+        bool glass=translucent && material=="glass";
+        foreach (var button in new CollectorGlassButton[]{ pause,collapse,finish,destination,modes[0],modes[1],modes[2] }) {
+            button.Foreground = Brush(text,1); button.FontSize = FontSize;button.ReadableBacking=ControlTextBacking;
+            button.Surface(Brushes.Transparent,Brush(glass?panel:text,glass?borderOpacity*.5:dark?.09:.055),Brushes.Transparent,controlRadius);
+            button.Glass(glass,false,highlight,controlShadow,Brush(border,borderOpacity));
+        }
         finish.Surface(Brushes.Transparent,Brush(Colors.IndianRed,.16),Brushes.Transparent,controlRadius);
         Place(track,12,44,Width-24,38); track.CornerRadius = new CornerRadius(controlRadius+3); track.Background = Brush(text,translucent ? 0 : .06);
+        track.BorderThickness=new Thickness(glass?1:0);track.BorderBrush=Brush(border,glass?borderOpacity*.5:0);
         double tabWidth = (Width-30)/3;
         for (int i=0;i<modes.Length;i++) {
             bool selected = state.Mode == ModeKeys[i]; var button = modes[i]; button.Content = T(ModeLabels[i]); Place(button,15+tabWidth*i,47,tabWidth,32);
             Color selectedAccent = accent;
             for(int step=0;step<12 && (1.05/(Luminance(selectedAccent)+.05))<4.5;step++) selectedAccent=Color.FromRgb((byte)(selectedAccent.R*.9),(byte)(selectedAccent.G*.9),(byte)(selectedAccent.B*.9));
-            Brush selectedFill = translucent ? Brush(accent,.14) : Brush(selectedAccent,1);
-            button.Surface(selected ? selectedFill : Brushes.Transparent,selected ? selectedFill : Brush(text,.055),Brushes.Transparent,controlRadius);
-            button.Foreground = selected && !translucent ? Brushes.White : Brush(text,1);
+            Brush selectedFill = glass?Brush(accent,tintOpacity):Brush(selectedAccent,1);
+            button.Surface(selected ? selectedFill : Brushes.Transparent,selected ? selectedFill : Brush(glass?panel:text,glass?borderOpacity*.5:.055),Brushes.Transparent,controlRadius);
+            button.Glass(glass,selected,highlight,controlShadow,Brush(border,borderOpacity));
+            button.Foreground = selected && !glass ? Brushes.White : Brush(text,1);
             button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal; AutomationProperties.SetName(button,T(ModeLabels[i]) + (selected ? " · " + T("已选中") : ""));
         }
         destinationLabel.Text = T("存入"); destinationLabel.Foreground = Brush(muted,1); Place(destinationLabel,16,96,54,24);
@@ -291,16 +350,25 @@ public sealed class AtelierCollectorView : Window {
         processing = !state.Paused && (state.RawStage == "正在下载图片" || state.RawStage == "正在解析图片" || state.RawStage == "正在保存风格串" || state.RawStage == "正在保存收藏" || state.RawStage == "正在收录提示词");
         bool next = processing && motion == "full" && SystemParameters.ClientAreaAnimation;
         if (next != breathing) { breathing = next; statusDot.BeginAnimation(OpacityProperty,next ? new DoubleAnimation(.5,1,new Duration(TimeSpan.FromSeconds(1.2))) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever } : null); }
+        title.Foreground=Brush(text,1);
+        foreach(var label in new[]{title,phase,detail,destinationLabel}) ProtectText(label);
+        foreach(var label in metricLabels) ProtectText(label);
+        foreach(var label in metricValues) ProtectText(label);
+        foreach(var button in new[]{pause,collapse,finish,destination,modes[0],modes[1],modes[2]}) {
+            string caption=button.Content is TextBlock?((TextBlock)button.Content).Text:Convert.ToString(button.Content);
+            var fill=(SolidColorBrush)button.Background;
+            button.Content=new TextBlock {Text=caption,Background=ControlTextBacking(((SolidColorBrush)button.Foreground).Color,fill.Color)};
+        }
         if (NativeHandle != IntPtr.Zero && !closed) { UpdateWindowShape(); ClampPosition(); }
     }
     static double Luminance(Color color) { Func<byte,double> channel = v => v/255.0 <= .04045 ? v/255.0/12.92 : Math.Pow((v/255.0+.055)/1.055,2.4); return .2126*channel(color.R)+.7152*channel(color.G)+.0722*channel(color.B); }
     void OpenCategories() {
         var menu = new ContextMenu { PlacementTarget = destination, Placement = PlacementMode.Bottom, Background = Brush(panel,1), Foreground = Brush(text,1), FontFamily = FontFamily, FontSize = FontSize, BorderBrush = Brush(border,.5), BorderThickness = new Thickness(1), StaysOpen = false };
-        var menuFrame=new FrameworkElementFactory(typeof(Border)); menuFrame.SetValue(Border.CornerRadiusProperty,new CornerRadius(8)); menuFrame.SetValue(Border.BackgroundProperty,Brush(panel,1)); menuFrame.SetValue(Border.BorderBrushProperty,Brush(border,.45)); menuFrame.SetValue(Border.BorderThicknessProperty,new Thickness(1)); menuFrame.SetValue(Border.PaddingProperty,new Thickness(4)); menuFrame.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter))); menu.Template=new ControlTemplate(typeof(ContextMenu)){VisualTree=menuFrame};
+        var menuFrame=new FrameworkElementFactory(typeof(Border)); menuFrame.SetValue(Border.CornerRadiusProperty,new CornerRadius(panelRadius)); menuFrame.SetValue(Border.BackgroundProperty,Brush(panel,1)); menuFrame.SetValue(Border.BorderBrushProperty,Brush(border,.45)); menuFrame.SetValue(Border.BorderThicknessProperty,new Thickness(1)); menuFrame.SetValue(Border.PaddingProperty,new Thickness(4)); menuFrame.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter))); menu.Template=new ControlTemplate(typeof(ContextMenu)){VisualTree=menuFrame};
         for(int i=0;i<Categories.Length;i++) {
             int index=i; var header=new StackPanel {Orientation=Orientation.Horizontal}; header.Children.Add(new TextBlock {Text=Categories[i]==state.Category ? "✓" : "",Width=22}); header.Children.Add(new TextBlock {Text=T(CategoryLabels[i])});
             var item=new MenuItem {Header=header,IsCheckable=true,IsChecked=Categories[i]==state.Category,Background=Brushes.Transparent};
-            var face=new FrameworkElementFactory(typeof(Border)); face.Name="face"; face.SetValue(Border.CornerRadiusProperty,new CornerRadius(5)); face.SetValue(Border.PaddingProperty,new Thickness(10,7,14,7));
+            var face=new FrameworkElementFactory(typeof(Border)); face.Name="face"; face.SetValue(Border.CornerRadiusProperty,new CornerRadius(controlRadius)); face.SetValue(Border.PaddingProperty,new Thickness(10,7,14,7));
             var content=new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(ContentPresenter.ContentSourceProperty,"Header"); face.AppendChild(content);
             var template=new ControlTemplate(typeof(MenuItem)){VisualTree=face}; var over=new Trigger{Property=MenuItem.IsHighlightedProperty,Value=true}; over.Setters.Add(new Setter(Border.BackgroundProperty,Brush(text,.075),"face")); template.Triggers.Add(over); item.Template=template;
             item.Click+=delegate { Request("category",Categories[index]); }; menu.Items.Add(item);
@@ -310,7 +378,7 @@ public sealed class AtelierCollectorView : Window {
     IntPtr WindowMessage(IntPtr hwnd,int message,IntPtr wParam,IntPtr lParam,ref bool handled) {
         if (message==0x21) { handled=true; return new IntPtr(3); }
         if (message==0x1A || message==0x31A || message==0x31E) ApplyAppearance(appearance);
-        if (message==0x7E || message==0x2E0) Dispatcher.BeginInvoke(new Action(delegate { UpdateWindowShape(); ClampPosition(); }));
+        if (message==0x7E || message==0x2E0) Dispatcher.BeginInvoke(new Action(delegate { renderedBackground=null;Refresh(); }));
         if (message==0x47) UpdateWindowShape();
         if (NativeMessage!=null) NativeMessage(message); return IntPtr.Zero;
     }
@@ -337,9 +405,9 @@ public sealed class AtelierCollectorView : Window {
         return new { type="window",session=session,noActivate=NativeHandle==IntPtr.Zero || (GetWindowLong(NativeHandle,-20)&0x08000000)!=0,topMost=Topmost,foreground=NativeHandle!=IntPtr.Zero && GetForegroundWindow()==NativeHandle,
             visiblePosition=PositionVisible(),collapsed=Collapsed,width=Width,height=Height,mode=state.Mode,category=state.Category,title=title.Text,phase=phase.Text,detail=detail.Text,detailVisible=!Collapsed,detailTooltip=ToolTipService.GetToolTip(detail) ?? "",titleTooltip=ToolTipService.GetToolTip(title),
             breathing=breathing,processing=processing,tooltipWhileInactive=true,rounded=true,labelsFit=fit,editableFields=0,counters=new {pending=state.Pending,saved=state.Saved,skipped=state.Skipped,failed=state.Failed},
-            appearance=new {themeMode=themeMode,dark=dark,accent=Hex(accent),background=Hex(panel),foreground=Hex(text),muted=Hex(muted),surfaces=translucent?"translucent":"solid",radius=panelRadius,selectedFill=Hex(selectedColor),selectedText=Hex(((SolidColorBrush)selected.Foreground).Color),motion=motion,material=material,backdrop=nativeBackdrop,tintOpacity=tintOpacity,blur=blur,saturation=saturation,refraction=refraction,renderer=composition!=null ? "windows-composition" : nativeBackdrop ? "system-blur" : "solid"} };
+            appearance=new {themeMode=themeMode,dark=dark,accent=Hex(accent),background=Hex(panel),foreground=Hex(text),muted=Hex(muted),surfaces=translucent?"translucent":"solid",radius=panelRadius,selectedFill=Hex(selectedColor),selectedText=Hex(((SolidColorBrush)selected.Foreground).Color),motion=motion,material=material,tintOpacity=tintOpacity,blur=blur,saturation=saturation,refraction=refraction,controlRadius=controlRadius,textBacking=((SolidColorBrush)TextBacking(text)).Color.ToString(),mutedBacking=((SolidColorBrush)TextBacking(muted)).Color.ToString(),renderer=translucent?"theme-image":"solid",wallpaper=translucent && wallpapers.ContainsKey(dark?"dark":"light") ? (dark?"dark":"light") : ""} };
     }
     static Color Composite(Color color,Color under) { double a=color.A/255.0; return Color.FromRgb((byte)(color.R*a+under.R*(1-a)),(byte)(color.G*a+under.G*(1-a)),(byte)(color.B*a+under.B*(1-a))); }
     static string Hex(Color color) { return "#"+color.R.ToString("X2")+color.G.ToString("X2")+color.B.ToString("X2"); }
-    public void Snapshot(string path) { root.Measure(new Size(Width,Height)); root.Arrange(new Rect(0,0,Width,Height)); var bitmap=new RenderTargetBitmap((int)Width,(int)Height,96,96,PixelFormats.Pbgra32); bitmap.Render(root); var png=new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap)); using(var file=System.IO.File.Create(path)) png.Save(file); }
+    public void Snapshot(string path) { root.Measure(new Size(Width,Height)); root.Arrange(new Rect(0,0,Width,Height)); root.UpdateLayout(); var bitmap=new RenderTargetBitmap((int)Width,(int)Height,96,96,PixelFormats.Pbgra32); bitmap.Render(root); var png=new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(bitmap)); using(var file=System.IO.File.Create(path)) png.Save(file); }
 }

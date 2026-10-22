@@ -9,11 +9,10 @@ Add-Type -AssemblyName System.Web.Extensions
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName System.Xaml
 $collectorFramework = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
-$collectorMetadata = Join-Path $env:windir 'System32/WinMetadata'
-$collectorAssemblies = @([System.Windows.Forms.Form].Assembly.Location, [System.Drawing.Image].Assembly.Location, [System.Web.Script.Serialization.JavaScriptSerializer].Assembly.Location, [System.Xaml.XamlReader].Assembly.Location, [System.Windows.Window].Assembly.Location, [System.Windows.Media.Brush].Assembly.Location, [System.Windows.Threading.Dispatcher].Assembly.Location, [System.Numerics.Vector2].Assembly.Location, [System.Reflection.Assembly]::Load('System.Numerics.Vectors, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a').Location, [System.Reflection.Assembly]::Load('System.Runtime, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a').Location, (Join-Path $collectorFramework 'System.Runtime.WindowsRuntime.dll'), (Join-Path $collectorFramework 'System.dll'), (Join-Path $collectorFramework 'System.Core.dll'), (Join-Path $collectorMetadata 'Windows.UI.winmd'), (Join-Path $collectorMetadata 'Windows.Foundation.winmd'), (Join-Path $collectorMetadata 'Windows.Graphics.winmd'))
-$collectorSources = @((Join-Path $PSScriptRoot 'style-collector-composition.cs'), (Join-Path $PSScriptRoot 'style-collector-view.cs'), (Join-Path $PSScriptRoot 'style-collector-window.cs'))
+$collectorAssemblies = @([System.Windows.Forms.Form].Assembly.Location, [System.Drawing.Image].Assembly.Location, [System.Web.Script.Serialization.JavaScriptSerializer].Assembly.Location, [System.Xaml.XamlReader].Assembly.Location, [System.Windows.Window].Assembly.Location, [System.Windows.Media.Brush].Assembly.Location, [System.Windows.Threading.Dispatcher].Assembly.Location, (Join-Path $collectorFramework 'System.dll'), (Join-Path $collectorFramework 'System.Core.dll'))
+$collectorSources = @((Join-Path $PSScriptRoot 'style-collector-wallpaper.cs'), (Join-Path $PSScriptRoot 'style-collector-view.cs'), (Join-Path $PSScriptRoot 'style-collector-window.cs'))
 function Compile-Collector([string]$outputPath = '') {
-    # CodeDOM 能直接引用系统 WinRT 元数据；Add-Type 会尝试把 winmd 当普通 DLL 加载。
+    # 保留磁盘程序集缓存和无写权限时的内存编译。
     $collectorCompilerParameters = [System.CodeDom.Compiler.CompilerParameters]::new()
     $collectorCompilerParameters.GenerateInMemory = -not $outputPath
     if ($outputPath) { $collectorCompilerParameters.OutputAssembly = $outputPath }

@@ -23,7 +23,8 @@ public sealed class AtelierCollectorWindow {
     [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
-    readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 20*1024*1024 };
+    readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 64*1024*1024 };
+    Dictionary<string,object> currentAppearance;
     readonly ConcurrentQueue<string> input = new ConcurrentQueue<string>();
     readonly DispatcherTimer timer = new DispatcherTimer();
     readonly AtelierCollectorView view;
@@ -40,6 +41,7 @@ public sealed class AtelierCollectorWindow {
     static string Str(Dictionary<string,object> value,string key) { return value.ContainsKey(key) ? Convert.ToString(value[key]) : ""; }
     public AtelierCollectorWindow(bool selfTest,string appearance) {
         test=selfTest; view=new AtelierCollectorView(appearance); lastAppearance=appearance ?? "";
+        currentAppearance=String.IsNullOrEmpty(appearance)?null:json.Deserialize<Dictionary<string,object>>(appearance);
         view.Command += delegate(string command,string value) {
             if(command=="position") { SavePosition(); return; }
             receiving=false;
@@ -59,7 +61,7 @@ public sealed class AtelierCollectorWindow {
     void SavePosition() { positionDirty=false; var position=view.PhysicalPosition(); Emit(new {type="position",session=session,x=(int)Math.Round(position.X),y=(int)Math.Round(position.Y),collapsed=view.Collapsed}); }
     uint CurrentSequence() { return test ? sequence : GetClipboardSequenceNumber(); }
     void Emit(object value) { Console.WriteLine(json.Serialize(value)); Console.Out.Flush(); }
-    void CandidateImage(byte[] bytes) { if (!receiving || target == "content") return; if (bytes.Length > 12*1024*1024) { Emit(new { type = "capture-error", session = session, error = "图片超过存储大小上限" }); return; } Emit(new { type = "image", session = session, image = Convert.ToBase64String(bytes), mode = target }); }
+    void CandidateImage(byte[] bytes) { if (!receiving || target == "content") return; if (bytes.Length > 12*1024*1024) { Emit(new { type = "capture-error", session = session, mode = target, error = "图片超过存储大小上限" }); return; } Emit(new { type = "image", session = session, image = Convert.ToBase64String(bytes), mode = target }); }
     void CandidateFiles(System.Collections.IEnumerable paths) { if (!receiving || target == "content") return; foreach (object value in paths) { string path = value as string; if (!String.IsNullOrEmpty(path) && Path.IsPathRooted(path) && Regex.IsMatch(path, @"\.(png|jpe?g|webp)$", RegexOptions.IgnoreCase)) Emit(new { type = "file", session = session, path = path, mode = target }); } }
     bool ReadClipboardImage() {
         try {
@@ -78,7 +80,7 @@ public sealed class AtelierCollectorWindow {
             }
             sequence = CurrentSequence(); readAttempts = 0; return true;
         } catch (ExternalException) { readAttempts++; return true; }
-        catch (Exception e) { sequence = CurrentSequence(); readAttempts = 0; Emit(new { type = "capture-error", session = session, error = e.Message }); return true; }
+        catch (Exception e) { sequence = CurrentSequence(); readAttempts = 0; Emit(new { type = "capture-error", session = session, mode = target, error = e.Message }); return true; }
     }
     void ReadClipboard() {
         if (!receiving || test) return;
@@ -89,7 +91,7 @@ public sealed class AtelierCollectorWindow {
             if (IsClipboardFormatAvailable(15) || IsClipboardFormatAvailable(2) || IsClipboardFormatAvailable(8) || IsClipboardFormatAvailable(17) || IsClipboardFormatAvailable(RegisterClipboardFormat("PNG"))) return;
             if (!IsClipboardFormatAvailable(13)) return;
             IntPtr memory = GetClipboardData(13); if (memory == IntPtr.Zero) return;
-            if (GlobalSize(memory).ToUInt64() > (target == "content" ? 131074UL : 16386UL)) { if (target == "content") Emit(new { type = "capture-error", session = session, error = "提示词过长，请分段收录" }); return; }
+            if (GlobalSize(memory).ToUInt64() > (target == "content" ? 131074UL : 16386UL)) { if (target == "content") Emit(new { type = "capture-error", session = session, mode = target, error = "提示词过长，请分段收录" }); return; }
             IntPtr value = GlobalLock(memory); if (value == IntPtr.Zero) return;
             try { Candidate(Marshal.PtrToStringUni(value)); } finally { GlobalUnlock(memory); }
         } finally { CloseClipboard(); sequence = observed; readAttempts = 0; }
@@ -111,6 +113,7 @@ public sealed class AtelierCollectorWindow {
                 var d=json.Deserialize<Dictionary<string,object>>(line); string command=Str(d,"command"),incoming=Str(d,"session");
                 if(command=="start" && session=="") {
                     session=incoming; applyingPosition=true;
+                    if(d.ContainsKey("appearance")) { currentAppearance=d["appearance"] as Dictionary<string,object>; view.ApplyAppearance(currentAppearance); lastAppearance=json.Serialize(currentAppearance); }
                     view.RestorePosition(d.ContainsKey("position") ? d["position"] as Dictionary<string,object> : null); applyingPosition=false;
                     sequence=CurrentSequence();
                     if(!test && !AddClipboardFormatListener(Handle)) throw new Exception("无法注册 Windows 剪贴板变化通知");
@@ -126,11 +129,12 @@ public sealed class AtelierCollectorWindow {
                         state.Saved=Convert.ToInt32(value["saved"]); state.Paused=Convert.ToBoolean(value["paused"]); state.RawStage=Str(value,"rawStage"); if(state.RawStage=="") state.RawStage=Str(value,"stage");
                         state.Phase=Str(value,"stage"); state.Detail=Str(value,"error")!="" ? Str(value,"error") : Str(value,"detail");
                         state.Pending=Convert.ToInt32(value["pending"]); state.Skipped=Convert.ToInt32(value["skipped"]); state.Failed=Convert.ToInt32(value["failed"]);
-                        var a=value.ContainsKey("appearance") ? value["appearance"] as Dictionary<string,object> : null;
+                        bool changed=value.ContainsKey("appearance");
+                        var a=changed ? value["appearance"] as Dictionary<string,object> : currentAppearance;
                         var labels=a!=null && a.ContainsKey("labels") ? a["labels"] as Dictionary<string,object> : null;
                         string failure=labels!=null && labels.ContainsKey("失败：") ? Convert.ToString(labels["失败："]) : "失败：";
                         state.LatestFailed=Str(value,"error")!="" || state.Detail.StartsWith(failure);
-                        if(a!=null) { string nextAppearance=json.Serialize(a); if(nextAppearance!=lastAppearance) { view.ApplyAppearance(a); lastAppearance=nextAppearance; } }
+                        if(changed && a!=null) { string nextAppearance=json.Serialize(a); if(nextAppearance!=lastAppearance) { view.ApplyAppearance(a); lastAppearance=nextAppearance; currentAppearance=a; } }
                         view.UpdateState(state); if(test) ReportWindow();
                     }
                 } else if(test && command=="inject") { sequence++; Candidate(Str(d,"text")); }

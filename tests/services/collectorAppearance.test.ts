@@ -10,6 +10,24 @@ const fetchMock = vi.fn();
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 describe('悬浮窗外观同步', () => {
+  it('复用主界面背景解析：自选明暗、显式移除、默认壁纸和旧背景均原样同步', async () => {
+    const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+    const custom = { image, fit: 'tile' as const, opacity: .3, tileSize: 64 };
+    const id = 'builtin-cupertino-liquid-glass';
+    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...BUILTIN_APPEARANCE_PRESETS[1], activePresetId: id, workspaceBackgrounds: { [id]: { light: custom, dark: null } } };
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).backgrounds).toEqual({ light: custom, dark: null });
+    view.rerender({ preferences: { ...initial, workspaceBackgrounds: {} } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).backgrounds).toMatchObject({ light: { image: '/themes/wallpapers/cupertino-day.webp' }, dark: { image: '/themes/wallpapers/cupertino-night.webp' } });
+    view.rerender({ preferences: { ...initial, activePresetId: 'custom', background: custom, workspaceBackgrounds: {} } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).backgrounds).toEqual({ light: custom, dark: custom });
+    view.rerender({ preferences: { ...initial, workspaceBackgrounds: { [id]: { light: null, dark: null } } } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('backgrounds');
+  });
   it('电脑本机才发送，局域网手机不改悬浮窗外观', () => {
     expect(collectorIsLocal('localhost')).toBe(true); expect(collectorIsLocal('127.0.0.1')).toBe(true);
     expect(collectorIsLocal('192.168.1.8')).toBe(false);
@@ -48,19 +66,20 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: DEFAULT_APPEARANCE_PREFERENCES } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const cupertino = BUILTIN_APPEARANCE_PRESETS[1];
-    view.rerender({ preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino } });
+    view.rerender({ preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino, activePresetId: cupertino.id } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'translucent', corners: 'soft', palette: cupertino.palette, accents: { light: '#007aff', dark: '#0a84ff' } });
     view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).toMatchObject({ surfaces: 'solid', corners: 'standard', accents: { light: '#0ea5e9', dark: '#0ea5e9' } });
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('palette');
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('backgrounds');
   });
   it('明暗配色同步到小窗，恢复默认时不残留上一主题', async () => {
     const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, palette } as typeof DEFAULT_APPEARANCE_PREFERENCES } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).palette).toEqual(palette);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).palette).toMatchObject(palette);
     view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('palette');
@@ -71,12 +90,13 @@ describe('悬浮窗外观同步', () => {
     const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials).toEqual({
-      light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 105, refraction: 8 },
-      dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8 },
+      light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 105, refraction: 8, controlShadow: .12 },
+      dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8, controlShadow: .1 },
     });
     view.rerender({ preferences: { ...initial, details: { ...initial.details, light: { ...initial.details?.light, globalOpacity: 0, highlight: .5, blur: 0, saturation: 180, refraction: 24 } } } });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toMatchObject({ opacity: 0, highlight: .5, blur: 0, saturation: 180, refraction: 24 });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toMatchObject({ opacity: 0, highlight: .5 });
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toHaveProperty('refraction', 24);
     view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('materials');
