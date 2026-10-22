@@ -8,7 +8,7 @@ import type { ArtistOwnSample } from '../../services/artistSamples';
 const mocks = vi.hoisted(() => ({ lookup: vi.fn(), share: vi.fn(), observers: [] as IntersectionObserverCallback[] }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleLookup: mocks.lookup }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} data-eager={String(eager)} data-preview-transform={previewTransform} /> }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', ImageShareOverlay: (props: any) => { mocks.share(props); return <div data-testid="share" data-card-action="true" data-url={props.imageUrl} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制</button></div>; } }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', ImageShareActions: (props: any) => { mocks.share(props); return <div className="image-share-actions" data-testid="share" data-card-action="true" data-url={props.imageUrl} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制</button></div>; } }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.observers.length = 0;
   mocks.lookup.mockResolvedValue({ pack: 'v45', tag: 'synthetic artist', revision: 'one', imageCount: 2, sourceUrl: 'https://synthetic.invalid/pack' });
@@ -147,7 +147,7 @@ it('有图的生成入口共用右侧小圆形操作样式，图包和自建区�
   expect(button.title).toBe('生成样张'); expect(button.textContent).toBe('');
   expect(button.className).toContain('h-11'); expect(button.className).toContain('rounded-full'); expect(button.className).toContain('hover-reveal-md');
   expect(button.className).not.toMatch(/absolute|bottom-|right-/);
-  expect(button.parentElement?.className).toContain('right-2'); expect(button.parentElement?.className).toContain('top-2'); expect(button.parentElement?.className).toContain('flex-col');
+  expect(button.parentElement?.className).toContain('right-2'); expect(button.parentElement?.className).toContain('top-2'); expect(button.parentElement?.className).toContain('image-card-actions');
   expect(Array.from(button.parentElement?.querySelectorAll('button') || [], action => action.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '生成样张']);
   fireEvent.click(button); expect(generate).toHaveBeenCalledOnce(); expect(select).not.toHaveBeenCalled();
   const own: ArtistOwnSample = { id: 'new', tag: 'artist', pack: 'v45', imageUrl: '/api/assets/new.png', prompt: '', negativePrompt: '', params: { model: 'nai-diffusion-4-5-full' } as any, createdAt: 1 };

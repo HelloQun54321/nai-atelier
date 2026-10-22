@@ -8,6 +8,7 @@ import { PromptChain, ChainType } from '../types';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -345,15 +346,15 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           style={{ '--mobile-image-ratio': String(chainPreviewRatio(chain, previewRatios[chain.id])) } as React.CSSProperties}
       >
           {selecting && <span aria-hidden="true" className={`absolute left-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur ${selectedIds.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}><Check className="h-4 w-4" /></span>}
-          {!selecting && !syncSelection.open && !isGuest && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
+          {!selecting && !syncSelection.open && !isGuest && <div data-card-action="true" data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20">
             <button type="button" onClick={event => { event.stopPropagation(); void handleDelete(chain); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t('删除：{0}', [chain.name])} title={t('删除')}><Trash2 className="h-4 w-4" /></button>
           </div>}
-          {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
-          {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+          {/* 图片取用与编辑共同换列；无封面时仍保留编辑。 */}
+          {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <ImageCardActions>
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
-          </div>}
+          </ImageCardActions>}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
                   <SmartImage

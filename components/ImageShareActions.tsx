@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Copy, Download, Heart, LoaderCircle } from 'lucide-react';
 import { copySharedImage, downloadSharedImage, useCleanSharedImages } from '../services/imageSharing';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
+import { ImageCardActions } from './ImageCardActions';
 import { collectionRevision, collectionTargetActive, ensureCollection, loadCollection, subscribeCollection, toggleCollectionTarget, type CollectionTarget } from '../services/collectionFavorites';
 
 export const IMAGE_CARD_ACTION_CLASS = 'mobile-touch mobile-size-locked h-11 w-11 rounded-full border border-white/60 bg-black/45 text-white shadow backdrop-blur hover:bg-black/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:text-white/90 md:h-8 md:w-8';
@@ -80,7 +81,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     { action: 'download' as const, label: '下载', title: '下载图片', Icon: Download },
     { action: 'copy' as const, label: '复制', title: '复制图片', Icon: Copy },
   ];
-  return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
+  return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`image-share-actions flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
     <button type="button" data-image-favorite="true" aria-pressed={active}
       title={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
       aria-label={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
@@ -101,7 +102,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   </div>;
 };
 
-/** 右上角依次为常驻收藏、下载、复制。 */
+/** 右上角依次为常驻收藏、下载、复制，短封面向左换列。 */
 export const ImageShareOverlay: React.FC<Omit<Props, 'variant'>> = ({ className = '', ...props }) => (
-  <ImageShareActions {...props} variant="card" className={`absolute right-2 top-2 z-20 flex-col ${className}`} />
+  <ImageCardActions className={className}><ImageShareActions {...props} variant="card" /></ImageCardActions>
 );

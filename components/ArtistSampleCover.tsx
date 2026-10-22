@@ -4,7 +4,8 @@ import { t, useLanguage } from '../services/i18n';
 import { buildArtistSampleImageUrl, getArtistSampleLookup, type ArtistOwnSample, type ArtistSampleLookup, type ArtistSamplePack } from '../services/artistSamples';
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import type { ArtistSampleGeneration } from '../services/artistSampleGeneration';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 
 export const ArtistSampleCover: React.FC<{
   generation?: ArtistSampleGeneration;
@@ -75,14 +76,14 @@ export const ArtistSampleCover: React.FC<{
   const switchLabel = t('样张版本 {0}，切换为 {1}', [pack === 'v45' ? 'V4.5' : 'V5', nextPack === 'v45' ? 'V4.5' : 'V5']);
   const missing = (!hasPackSample || lookup?.imageCount === 0) && ownSamples.length === 0;
   return <div ref={rootRef} className="absolute inset-0">
-    <div data-card-action="true" className="absolute left-2 top-2 z-20 flex flex-col items-start gap-1" onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
+    <div data-card-action="true" data-image-action-left className="absolute left-2 top-2 z-20 flex flex-col items-start gap-1" onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
       <button type="button" aria-label={switchLabel} title={switchLabel} onClick={() => onPackChange(nextPack)} className="mobile-touch mobile-size-locked inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full border border-white/50 bg-black/55 px-2 text-white backdrop-blur hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 [@media(any-pointer:coarse)]:min-h-11"><span className="text-meta font-bold leading-none">{pack === 'v45' ? 'V4.5' : 'V5'}</span><ArrowLeftRight className="h-2.5 w-2.5" /></button>
     </div>
     {imageUrl && !imageError ? <>
       <SmartImage key={`${imageUrl}:${retry}`} src={imageUrl} alt={alt} eager={visible} className={imageClassName} previewTransform={!own && imageUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v1' : undefined} onError={() => setImageError(true)} onLoad={event => { if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight); }} />
-      {!preview && <div className="absolute right-2 top-2 z-20 flex flex-col gap-2"><ImageShareOverlay className="!static" imageUrl={imageUrl} filename={filename} favorite={favorite} notify={notify} onFavoriteChange={onFavoriteChange} />
+      {!preview && <ImageCardActions><ImageShareActions variant="card" imageUrl={imageUrl} filename={filename} favorite={favorite} notify={notify} onFavoriteChange={onFavoriteChange} />
         {onGenerate && generation?.phase !== 'save_failed' && <button type="button" data-card-action="true" data-agent-action="business" title={t(own ? '重新生成样张' : '生成样张')} aria-label={t(own ? '重新生成样张' : '生成样张')} disabled={pending} onClick={event => { event.stopPropagation(); onGenerate(); }} onPointerDown={stopCardAction} onKeyDown={stopCardAction} className={`${IMAGE_CARD_ACTION_CLASS} hover-reveal-md inline-flex shrink-0 items-center justify-center disabled:opacity-40`}><RefreshCw className="h-4 w-4" /></button>}
-      </div>}
+      </ImageCardActions>}
       {own && <span className="pointer-events-none absolute bottom-14 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{t('自建样张')}</span>}
       {total > 1 && <>
         <button data-card-action="true" type="button" aria-label={t('上一张')} disabled={index === 0} onClick={event => { event.stopPropagation(); move(-1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute bottom-2 left-2 rounded-full bg-black/65 p-2 text-white backdrop-blur disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>

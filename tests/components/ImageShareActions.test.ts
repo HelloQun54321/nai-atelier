@@ -57,9 +57,9 @@ describe('共用图片分享操作', () => {
     const parentKey = vi.fn();
     const view = render(React.createElement(PressRevealSurface, { onKeyDown: parentKey }, React.createElement(ImageShareOverlay, { imageUrl: '/synthetic.png', filename: 'synthetic.png' })));
     const surface = view.container.firstElementChild!;
-    const group = screen.getByTitle('下载图片').parentElement!;
+    const group = screen.getByTitle('下载图片').closest('.image-card-actions')!;
     expect(group.className).toContain('absolute right-2 top-2');
-    expect(group.classList.contains('flex-col')).toBe(true);
+    expect(group.classList.contains('image-card-actions')).toBe(true);
     expect(group.classList.contains('hover-reveal-md')).toBe(false);
     expect(screen.getByTitle('收藏').closest('.hover-reveal-md')).toBeNull();
     expect(screen.getByTitle('下载图片').classList.contains('hover-reveal-md')).toBe(true);

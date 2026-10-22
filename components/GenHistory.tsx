@@ -22,6 +22,7 @@ import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { getLabModeLabel } from '../services/labWorkspace';
 import { syncHistoryCollectionFavorites } from '../services/collectionFavorites';
 import { ImageShareActions } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
@@ -159,15 +160,15 @@ const HistoryCard = React.memo(function HistoryCard({
                 }} />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                 {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
-                {!selectionMode && <div data-card-action="true" className="absolute right-2 top-2 z-10 flex flex-col items-end gap-2" onPointerDown={event => event.stopPropagation()}>
+                {!selectionMode && <ImageCardActions onPointerDown={event => event.stopPropagation()}>
                     <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
-                </div>}
-                {!selectionMode && <div data-card-action="true" className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
+                </ImageCardActions>}
+                {!selectionMode && <div data-card-action="true" data-image-action-left className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
                     <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t("删除历史图片")} title={t("删除")}>
                         <Trash2 className="h-4 w-4" />
                     </button>
                 </div>}
-                <div className="hover-reveal-md hover-reveal-info absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-micro md:block truncate">
+                <div data-image-action-caption className="hover-reveal-md hover-reveal-info absolute bottom-0 left-0 right-0 hidden p-2 bg-gradient-to-t from-black/80 to-transparent text-white text-micro md:block truncate">
                     {createdAt}
                 </div>
             </div>

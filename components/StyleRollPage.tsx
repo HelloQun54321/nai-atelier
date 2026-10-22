@@ -32,6 +32,7 @@ import { SmartImage } from './SmartImage';
 import { ImageLightbox } from './ImageLightbox';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageShareActions } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 import { PressRevealSurface } from './PressRevealSurface';
 import { MobileDetailView } from './MobileUI';
 import { StyleRollSetup } from './roll/StyleRollSetup';
@@ -436,7 +437,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const detail = experiment && selected ? <div className="space-y-4 p-4">
     {selectedImage ? <PressRevealSurface className="appearance-group group relative overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-950" data-safe-mode-work="true">
       <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="max-h-[45vh] w-full object-contain" containerClassName="w-full" /></button>
-      <ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" className="absolute right-2 top-2 flex-col" />
+      <ImageCardActions><ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" /></ImageCardActions>
     </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
     <div className="appearance-group rounded-xl border border-gray-100 bg-gray-50/70 p-3.5 space-y-2.5 dark:border-gray-800/80 dark:bg-gray-900/40 shadow-inner">
       <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">

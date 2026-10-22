@@ -174,7 +174,7 @@ function expectCustomCardLayout(card: HTMLElement, hasPreview: boolean) {
   expect(left.classList.contains('hover-reveal-md')).toBe(true);
   expect(within(left).getAllByRole('button')).toEqual([remove]);
   expect(right.className).toContain('absolute right-2 top-2');
-  for (const token of ['flex', 'flex-col', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
+  for (const token of ['image-card-actions', 'gap-2']) expect(right.classList.contains(token)).toBe(true);
   expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label')))
     .toEqual(hasPreview ? ['收藏', '下载图片', '复制图片', '编辑自定义角色信息'] : ['编辑自定义角色信息']);
   for (const button of within(right).getAllByRole('button')) {
@@ -544,7 +544,7 @@ it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，长按或�
   const card = await screen.findByRole('button', { name: `选择${kind === 'artist' ? '画师' : '角色'}：${kind === 'artist' ? entry.name : entry.chinese}` });
   longPress(card); expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-pressed')).toBe('false');
   const favorite = within(card).getByRole('button', { name: '收藏' });
-  expect(favorite.parentElement!.className).toContain('absolute right-2 top-2');
+  expect(favorite.closest('.image-card-actions')!.className).toContain('absolute right-2 top-2');
   for (const token of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'border-white/60', 'bg-black/45']) expect(favorite.classList.contains(token)).toBe(true);
   expect(favorite.classList.contains('hover-reveal-touch')).toBe(false); fireEvent.click(favorite);
   await waitFor(() => expect(within(card).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');

@@ -48,6 +48,7 @@ import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToo
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 import { PressRevealSurface } from './PressRevealSurface';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
@@ -713,7 +714,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [references.length])}</span>
           )}
           <PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />
-          <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+          <ImageCardActions className="hover-reveal-md">
             <button
               type="button"
               aria-label={t('复制「{0}」的英文提示词', [name])}
@@ -732,7 +733,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             >
               <Trash2 className="h-4 w-4" />
             </button>
-          </div>
+          </ImageCardActions>
         </div>
         <div className={compact ? 'min-w-0 flex-1 py-0.5' : 'gallery-card-caption p-3'}>
           <div className="flex items-center justify-between gap-1.5">

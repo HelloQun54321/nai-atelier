@@ -22,6 +22,7 @@ import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -120,13 +121,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     </div>
                   )}
                   {card.kind === 'custom' && card.chain && <>
-                    <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
+                    <div data-card-action="true" data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20">
                       <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>
                     </div>
-                    <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
+                    <ImageCardActions>
                       {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} />}
                       <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
-                    </div>
+                    </ImageCardActions>
                   </>}
                   {selected && (
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80" />

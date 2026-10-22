@@ -10,6 +10,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnM
 import { PressRevealSurface } from '../PressRevealSurface';
 import { SmartImage } from '../SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from '../ImageShareActions';
+import { ImageCardActions } from '../ImageCardActions';
 import { EmptyState } from '../DesignSystem';
 
 interface Props {
@@ -51,7 +52,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
       {/* 左上角：编号与丢弃操作 */}
-      <div className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
+      <div data-image-action-left className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
         <span className="pointer-events-none flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
           #{index}{roundNo ? <span className="text-micro opacity-70">R{roundNo}</span> : null}
         </span>
@@ -77,10 +78,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         ) : (
           <>
             {/* 右上角操作岛（分享 / 存为风格串） */}
-            <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-1.5">
+            <ImageCardActions>
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" />}
               {!candidate.archived && item && (candidate.savedChainId
-                ? <span aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
+                ? <span data-image-action-item aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-700 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
                 : <button
                   type="button"
                   aria-label={t('保存候选 {0}', [index])}
@@ -92,7 +93,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
                   <Save className="h-4 w-4" />
                 </button>
               )}
-            </div>
+            </ImageCardActions>
           </>
         )}
 

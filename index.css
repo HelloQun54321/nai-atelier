@@ -4,6 +4,20 @@
 @import "./components/operationDialog.css";
 @import "./components/inputCapabilities.css";
 
+.image-card-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  direction: rtl;
+  align-items: start;
+}
+.image-card-actions > .image-share-actions { display: contents; }
+.image-card-actions :is(button, [data-image-action-item], [role="alert"]) { direction: ltr; }
+.image-card-actions [role="alert"] { position: absolute; top: 100%; right: 0; }
+[data-image-action-frame] .gallery-cover-navigation {
+  bottom: calc(var(--image-card-caption-height, 0px) + .5rem) !important;
+}
+
 /* Agent 的语义悬停只显露已有卡片操作，不覆盖主题、颜色或真实鼠标状态。 */
 [data-agent-hover] .group-hover\:opacity-100,
 [data-agent-hover] .md\:group-hover\:opacity-100,

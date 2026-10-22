@@ -1158,7 +1158,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                             alt={rel.title}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-mini text-white">
+                          <div data-image-action-caption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1 text-left text-mini text-white">
                             <p className="truncate font-semibold">{rel.title}</p>
                           </div>
                         </button>

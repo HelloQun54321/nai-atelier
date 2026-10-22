@@ -51,7 +51,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   const edit = within(card).getByRole('button', { name: `编辑${label}信息：风格 A` });
   const controls = edit.parentElement!;
   expect(controls.className).toContain('absolute right-2 top-2');
-  expect(controls.classList.contains('flex-col')).toBe(true);
+  expect(controls.classList.contains('image-card-actions')).toBe(true);
   expect(controls.classList.contains('hover-reveal-md')).toBe(false);
   expect(within(controls).getByRole('button', { name: '收藏' }).closest('.hover-reveal-md')).toBeNull();
   expect(controls.contains(imageCopy)).toBe(true);
