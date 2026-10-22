@@ -3657,6 +3657,12 @@ const serveDistFile = async (req, res, url) => {
             : await promptAgent.generateLibraryPrompt(body);
           return sendJson(res, 200, result);
         }
+        if (url.pathname === '/api/prompt-agent/library-bundle') {
+          // 一段话 → 六库提示词：一次调用产出六条，body 里的 dryRun 只回系统提示不调模型。
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.generateLibraryBundle(body));
+        }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           // Four 6 MB images become roughly 32 MB after Base64 encoding; leave

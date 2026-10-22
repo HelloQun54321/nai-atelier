@@ -132,6 +132,144 @@ test('详细补全三档与「保持留空」进入系统提示，未指定时�
   assert.match(library.buildLibrarySystemPrompt('camera', { detail: 'strict' }), /严格/);
 });
 
+/* ---------- 一段话 → 六库提示词（bundle） ---------- */
+
+test('六库合一的系统提示列出六个 kind 与六个中文 label，并带上自定义规范与附加指令', () => {
+  const prompt = library.buildLibraryBundleSystemPrompt({ spec: '自定义输出规范', extra: '附加指令正文', detail: 'strict' });
+  for (const kind of library.PROMPT_LIBRARY_BUNDLE_ORDER) {
+    /* 每个 kind 都要以「英文键（中文 label）」的形式出现在职责清单里 */
+    assert.match(prompt, new RegExp(`${kind}（[^）]+）`), kind + ' 没有出现在六库职责清单');
+  }
+  for (const label of ['人物形象', '服饰穿搭', '人物姿势', '表情状态', '场景及补充', '镜头画面']) {
+    assert.match(prompt, new RegExp(label), '缺中文 label：' + label);
+  }
+  /* 输出规范 / 附加指令 / 详细补全三段与单库同构 */
+  assert.match(prompt, /自定义输出规范/);
+  assert.match(prompt, /附加指令正文/);
+  assert.match(prompt, /【详细补全】/);
+  assert.match(prompt, /严格/);
+  /* JSON 契约：六键对象、每条五个字段都要写进提示 */
+  assert.match(prompt, /\{"items":\{"appearance":\{"name":"","prompt":"","bilingual":"","tags":\[\],"note":""\}/);
+  for (const kind of library.PROMPT_LIBRARY_BUNDLE_ORDER) assert.match(prompt, new RegExp(`"${kind}":\\{"name"`), kind + ' 的 JSON 契约缺失');
+  /* 一致性约束与写法要求 */
+  assert.match(prompt, /下划线/);
+  assert.match(prompt, /不要留空/);
+  assert.match(prompt, /不能互相矛盾/);
+  /* 未填内容时不应凭空多出空段 */
+  const plain = library.buildLibraryBundleSystemPrompt();
+  assert.doesNotMatch(plain, /【输出规范】/);
+  assert.doesNotMatch(plain, /【附加指令】/);
+  assert.match(plain, /【详细补全】/);
+  assert.ok(library.buildLibraryBundleSystemPrompt({ keepEmpty: true, singleColor: false }).includes(library.buildLibraryDetailInstruction('detailed', true, false)));
+});
+
+test('六库结果解析支持 items 对象、数组带 kind、中文 label 键与代码围栏', () => {
+  const item = { name: '白发少女', prompt: 'silver_hair, long_hair', bilingual: 'silver_hair（银发）, long_hair（长发）', tags: ['发色'], note: '银白长发' };
+  /* 形状一：{items:{kind:...}} */
+  assert.deepEqual(library.parseLibraryBundleResponse(JSON.stringify({ items: { appearance: item } })), { appearance: item });
+  /* 形状二：{kind:...} 直接挂在顶层 */
+  assert.deepEqual(library.parseLibraryBundleResponse(JSON.stringify({ wardrobe: item })), { wardrobe: item });
+  /* 形状三：带 kind 字段的数组 */
+  assert.deepEqual(library.parseLibraryBundleResponse(JSON.stringify([{ kind: 'pose', ...item }])), { pose: item });
+  /* 中文 label 当键（模型偶尔按界面标题回） */
+  assert.deepEqual(library.parseLibraryBundleResponse(JSON.stringify({ items: { 人物形象: item } })), { appearance: item });
+  /* 代码围栏 + 前后噪声 */
+  const fenced = '```json\n' + JSON.stringify({ items: { camera: item } }) + '\n```';
+  assert.deepEqual(library.parseLibraryBundleResponse(fenced), { camera: item });
+  const noisy = '好的，结果如下：' + JSON.stringify({ items: { scene: item } }) + ' 希望有用';
+  assert.deepEqual(library.parseLibraryBundleResponse(noisy), { scene: item });
+  /* 结果顺序固定为六库顺序，与模型返回顺序无关 */
+  const many = library.parseLibraryBundleResponse(JSON.stringify({ items: { camera: item, appearance: item } }));
+  assert.deepEqual(Object.keys(many), ['appearance', 'camera']);
+});
+
+test('六库结果缺项只返回存在的 kind，坏 JSON 抛 502 而不是静默返回空', () => {
+  const only = library.parseLibraryBundleResponse(JSON.stringify({ items: { pose: { prompt: 'standing, arms_behind_back' } } }));
+  assert.deepEqual(Object.keys(only), ['pose']);
+  assert.equal(only.wardrobe, undefined);
+  /* 空对象、空数组、非 JSON 文本都不应该凭空造条目 */
+  assert.deepEqual(library.parseLibraryBundleResponse('{}'), {});
+  assert.deepEqual(library.parseLibraryBundleResponse('[]'), {});
+  /* 不认识的键与不像条目的值一律忽略（防止把 {"error":"..."} 当成一条提示词） */
+  assert.deepEqual(library.parseLibraryBundleResponse(JSON.stringify({ items: { unknown: { prompt: 'x' }, scene: { error: '失败' } } })), {});
+  assert.throws(() => library.parseLibraryBundleResponse('没有任何 JSON 的正文'), error => error.status === 502 && /模型没有返回有效的提示词 JSON/.test(error.message));
+  assert.throws(() => library.parseLibraryBundleResponse('{ 坏的 JSON '), error => error.status === 502);
+});
+
+test('bundle 里的条目照样过越界词校验：服饰库剔除 long_hair 且中英对照同步', () => {
+  const bundle = library.parseLibraryBundleResponse(JSON.stringify({
+    items: {
+      wardrobe: {
+        name: '白裙少女',
+        prompt: 'long_hair, white_dress, pleated_skirt, boots',
+        bilingual: 'long_hair（长发）, white_dress（白裙）, pleated_skirt（百褶裙）, boots（靴子）',
+        tags: ['连衣裙', '白色'],
+        note: '白色连衣裙配长靴',
+      },
+      appearance: { name: '银发少女', prompt: 'silver_hair, long_hair, red_eyes', bilingual: 'silver_hair（银发）, long_hair（长发）, red_eyes（红瞳）', tags: ['发色'], note: '银发红瞳' },
+    },
+  }));
+  /* 服饰库剔除 long_hair（外貌越界），其余三条保留 */
+  const wardrobe = library.filterLibraryItems([bundle.wardrobe], 'wardrobe');
+  assert.equal(wardrobe.items[0].prompt, 'white_dress, pleated_skirt, boots');
+  assert.equal(wardrobe.items[0].bilingual, 'white_dress（白裙）, pleated_skirt（百褶裙）, boots（靴子）');
+  assert.deepEqual(wardrobe.items[0].filtered, ['long_hair']);
+  assert.equal(wardrobe.filteredCount, 1);
+  /* 形象库不该被动到：同一个 long_hair 在那边是合法内容 */
+  const appearance = library.filterLibraryItems([bundle.appearance], 'appearance');
+  assert.equal(appearance.items[0].prompt, 'silver_hair, long_hair, red_eyes');
+  assert.equal(appearance.filteredCount, 0);
+  /* 原始解析结果不被就地改写 */
+  assert.equal(bundle.wardrobe.prompt, 'long_hair, white_dress, pleated_skirt, boots');
+});
+
+test('六库预览（dryRun）不查凭据、不调模型，只回系统提示与待填清单', async t => {
+  const root = createWorkspace('prompt-library-bundle-'); t.after(() => removeWorkspace(root));
+  const service = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  /* 没有任何凭据也必须成功：这正是 dryRun 的意义 */
+  assert.equal(service.publicConfig().configured, false);
+  const preview = await service.generateLibraryBundle({ brief: '雨夜霓虹街道上的银发少女', dryRun: true, detail: 'moderate' });
+  assert.deepEqual(preview.items, []);
+  assert.equal(preview.dryRun, true);
+  assert.deepEqual(preview.missing, library.PROMPT_LIBRARY_BUNDLE_ORDER.slice());
+  assert.equal(preview.missing.length, 6);
+  assert.equal(preview.provider, service.publicConfig().provider);
+  assert.equal(preview.model, service.publicConfig().model);
+  assert.match(preview.systemPrompt, /雨夜|六库|场景及补充/);
+  assert.match(preview.systemPrompt, /【详细补全】/);
+  /* 入参为空或全空白都按 400 处理，文案面向用户 */
+  await assert.rejects(service.generateLibraryBundle({ brief: '   ', dryRun: true }), error => error.status === 400 && /请先用一段话描述你想要的画面/.test(error.message));
+  await assert.rejects(service.generateLibraryBundle({} ), error => error.status === 400);
+  /* 非 dryRun 且没配凭据时仍然是凭据错误（400），不会静默走预览分支 */
+  await assert.rejects(service.generateLibraryBundle({ brief: '雨夜街道' }), error => error.status === 400 && /请先在设置中配置创作助手的模型服务/.test(error.message));
+});
+
+test('六库路由接在 prompt-agent 分支里，dryRun 可预览且只接受 POST', async t => {
+  const root = createWorkspace('prompt-library-bundle-route-'); t.after(() => removeWorkspace(root));
+  const service = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  const source = await readFile(join(projectRoot, 'scripts/media-gateway.mjs'), 'utf8');
+  const tree = ts.createSourceFile('gateway.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let branch;
+  const visit = node => {
+    if (ts.isIfStatement(node) && node.expression.getText(tree) === "url.pathname.startsWith('/api/prompt-agent/')") branch = node.getText(tree);
+    ts.forEachChild(node, visit);
+  };
+  visit(tree); assert.ok(branch);
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const handler = new AsyncFunction('req', 'res', 'url', 'promptAgent', 'sendJson', 'hasValidLanCookie', 'readRequestBody', `const lanSecret=''; ${branch}`);
+  const invoke = (path, method, body) => handler({ method, headers: {} }, {}, { pathname: path }, service,
+    (_res, status, value) => ({ status, value }), () => true, async () => Buffer.from(JSON.stringify(body || {})));
+  const endpoint = '/api/prompt-agent/library-bundle';
+  const preview = await invoke(endpoint, 'POST', { brief: '雨夜霓虹街道上的银发少女', dryRun: true });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.value.dryRun, true);
+  assert.deepEqual(preview.value.missing, library.PROMPT_LIBRARY_BUNDLE_ORDER.slice());
+  assert.match(preview.value.systemPrompt, /镜头画面/);
+  /* 空描述与错误方法都走既有错误约定 */
+  assert.equal((await invoke(endpoint, 'POST', { brief: '' })).status, 400);
+  assert.equal((await invoke(endpoint, 'GET')).status, 405);
+});
+
 test('界面上的六类字段都能到达模型（后端 facets 清单与前端一致，不按数量验收）', async t => {
   /* 逐库列出「界面有、后端也必须读」的代表性新字段，全部走 collectLibraryFacets */
   const cases = [

@@ -13,6 +13,7 @@ import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
+import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
@@ -204,6 +205,9 @@ export default {
 
       const stBridgeResult = await handleStBridgeRoute(routeContext);
       if (stBridgeResult) return stBridgeResult;
+
+      const promptLibraryLinkResult = await handlePromptLibraryLinkRoute(routeContext);
+      if (promptLibraryLinkResult) return promptLibraryLinkResult;
 
       const historyResult = await handleHistoryRoute(routeContext);
       if (historyResult) return historyResult;
