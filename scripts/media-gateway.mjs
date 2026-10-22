@@ -3671,6 +3671,11 @@ const serveDistFile = async (req, res, url) => {
             tagDictionary: method => requestTagDictionaryControl(method),
           }));
         }
+        if (url.pathname === '/api/prompt-agent/classify-prompts') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 128 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.classifyPrompts(body));
+        }
         if (url.pathname === '/api/prompt-agent/library-prompts/preview') {
           // 预览某个库最终使用的 system prompt；带上当前输入框内容即可在保存前预览
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });

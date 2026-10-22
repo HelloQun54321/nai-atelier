@@ -8,7 +8,7 @@ import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import sharp from 'sharp';
 import { imageLink, publicIp, validateDownloadTarget, downloadCollectorImage, resolveCollectorPublicDns, collectorErrorReason } from '../../scripts/collector-download.mjs';
 import { createServer } from 'node:http';
-import { StyleCollector, collectorLocalRequest } from '../../scripts/style-collector.mjs';
+import { StyleCollector, collectorLocalRequest, windowsCollector } from '../../scripts/style-collector.mjs';
 import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pngMetadata.mjs';
 
 const generation = { prompt: 'artist:synthetic, scenery', uc: 'lowres', steps: 23, sampler: 'k_euler_ancestral', seed: 42, Source: 'NovelAI' };
@@ -410,6 +410,18 @@ test('native startup failures restore off; native disappearance stops monitoring
   const h = harness(); await h.manager.command('start'); h.event({ type: 'lost', error: 'window died' });
   await until(() => h.manager.run === null); assert.equal(h.manager.state().enabled, false);
 });
+
+test('cancelled startup never opens a late native collector', async () => {
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(windowsCollector({ signal: abort.signal }), { name: 'AbortError' });
+  const entered = deferred();
+  const h = harness({ listener: ({ signal }) => new Promise((resolve, reject) => {
+    entered.resolve(); signal.addEventListener('abort', () => reject(new Error('synthetic cancelled startup')), { once: true });
+  }) });
+  const start = h.manager.command('start'); await entered.promise; h.manager.shutdown();
+  await assert.rejects(start, /synthetic cancelled startup/);
+  assert.equal(h.manager.state().enabled, false); assert.equal(h.manager.run, null);
+});
 test('appearance is remembered before startup and updates one active listener without resetting jobs', async () => {
   const updates = []; let initial;
   const h = harness({ listener: async ({ appearance }) => { initial = appearance; return { command: async () => {}, close: () => {}, update: state => updates.push(state) }; } });
@@ -432,9 +444,18 @@ test('appearance is remembered before startup and updates one active listener wi
   const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
   await h.manager.command('appearance', { ...light, palette });
   assert.deepEqual(h.manager.state().appearance.palette, palette);
+  const materials = { light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 0, saturation: 105, refraction: 8 }, dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8 } };
+  await h.manager.command('appearance', { ...light, surfaces: 'translucent', materials });
+  assert.deepEqual(h.manager.state().appearance.materials, materials);
+  assert.deepEqual(updates.at(-1).appearance.materials, materials);
+  for (const extra of [{ blur: 41 }, { blur: -1 }, { saturation: 99 }, { saturation: 201 }, { refraction: 25 }, { refraction: NaN }]) await assert.rejects(h.manager.command('appearance', { ...light, materials: { light: { ...materials.light, ...extra } } }), /外观材质无效/);
+  for (const invalid of [null, [], { blue: materials.light }, { light: { ...materials.light, kind: 'custom' } }, { light: { ...materials.light, opacity: NaN } }, { light: { ...materials.light, opacity: 2 } }, { light: { ...materials.light, highlight: -.1 } }, { light: { ...materials.light, panelRadius: 37 } }, { light: { ...materials.light, panelRadius: '22' } }, { light: { ...materials.light, extra: 'ignored' } }]) await assert.rejects(h.manager.command('appearance', { ...light, materials: invalid }), /外观材质无效/);
+  assert.deepEqual(h.manager.state().appearance.materials, materials);
+  await h.manager.command('appearance', { ...light, palette });
   await assert.rejects(h.manager.command('appearance', { ...light, palette: { light: { panel: 'url(https://example.invalid)' } } }), /外观配色无效/);
   assert.deepEqual(h.manager.state().appearance.palette, palette);
   await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
   assert.equal(h.manager.state().appearance.palette, undefined);
+  assert.equal(h.manager.state().appearance.materials, undefined);
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
 });

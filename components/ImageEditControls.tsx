@@ -15,6 +15,9 @@ import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { VibeManager } from './VibeManager';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { createUuid } from '../services/id';
+import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
+import { mergePromptSections } from '../services/labWorkspace';
+import { getEditableGlobalNegative, mergePromptFields } from '../services/promptUtils';
 
 interface ImageEditControlsProps {
   operation: ImageEditOperation;
@@ -37,6 +40,7 @@ interface ImageEditControlsProps {
   isBusy?: boolean;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
+  promptClassificationEnabled?: boolean;
   forceEmptySeed?: boolean;
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
@@ -78,7 +82,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, promptClassificationEnabled = false, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onPasteImage, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas',
@@ -86,6 +90,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   useLanguage();
   const promptClearActionSlotRef = useRef<HTMLSpanElement>(null);
   const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
+  const sectionText = mergePromptSections(selectableParams._promptSections);
+  const sectionMatches = Boolean(sectionText && (draft.prompt === sectionText || draft.prompt.endsWith(', ' + sectionText)));
+  const classifiedBase = sectionMatches ? draft.prompt.slice(0, -sectionText.length).replace(/,\s*$/, '') : draft.prompt;
   const selectedRatioId = draft.outpaintRatioId || (Object.values(draft.expansion).some(Boolean) ? 'custom' : '16:9');
   const sourceSize = outpaintSourceSize || { width: canvasProps.width, height: canvasProps.height };
   const appliedExpansion = draft.appliedExpansion || { top: 0, right: 0, bottom: 0, left: 0 };
@@ -151,7 +158,14 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     <div className="lab-editor-surface mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
       <LabModuleSection moduleId="prompt" label={t("全局提示词")} order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <section className="space-y-4">
-          <div>
+          {promptClassificationEnabled ? <ChainEditorPromptInputs embedded promptClassificationEnabled
+            prompt={classifiedBase} supplementPrompt={sectionMatches ? sectionText : ''} sections={sectionMatches ? selectableParams._promptSections : undefined}
+            setPrompt={value => onPromptChange(mergePromptFields(value, sectionMatches ? sectionText : ''))}
+            setSupplementPrompt={value => onPromptChange(mergePromptFields(classifiedBase, value))}
+            setSections={sections => onDraftChange({ params: { ...selectableParams, _promptSections: sections } })}
+            presetSources={{}} tagAssistEnabled={tagAssistEnabled} canEdit={!isBusy} activeLabLayout={layout} mobileEditorTab="global"
+            copyPromptToClipboard={value => { void navigator.clipboard.writeText(value).catch(() => notify(t('复制失败'), 'error')); }}
+            markPresetSectionModified={() => undefined} markChange={() => undefined} /> : <div>
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                 {operation === 'outpaint' ? t("扩图提示词") : operation === 'inpaint' ? t("重绘提示词") : t("图生图提示词")}
@@ -169,7 +183,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               tagAssistEnabled={tagAssistEnabled}
               disabled={isBusy}
               value={draft.prompt}
-              onValueChange={onPromptChange}
+              onValueChange={value => onDraftChange({ prompt: value, promptSource: 'custom', negativePrompt: getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections), params: { ...selectableParams, _promptSections: undefined } })}
               className="min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               placeholder={
                 operation === 'outpaint'
@@ -179,13 +193,17 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                   : t("图生图提示词")
               }
             />
-          </div>
-          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></div>
+          </div>}
+          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={promptClassificationEnabled ? draft.negativePrompt : getEditableGlobalNegative(draft.negativePrompt, selectableParams._promptSections)} onValueChange={value => {
+            if (promptClassificationEnabled) onNegativePromptChange(value);
+            else onDraftChange({ negativePrompt: value, params: { ...selectableParams, _promptSections: selectableParams._promptSections && { ...selectableParams._promptSections, sectionNegatives: undefined } } });
+          }} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></div>
         </section>
       </LabModuleSection>
 
       <ChainEditorCharacters
         scopeKey={operation}
+        promptClassificationEnabled={promptClassificationEnabled}
         params={selectableParams}
         setParams={params => onDraftChange({ params })}
         characters={selectableParams.characters || []}

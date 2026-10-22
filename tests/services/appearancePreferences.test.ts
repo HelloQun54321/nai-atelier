@@ -62,6 +62,13 @@ describe('appearance preferences', () => {
     expect(normalizeAppearancePreferences({}).continuousGenerationEnabled).toBe(true);
   });
 
+  it('分类编辑与自动分类默认关闭，保存后恢复，主题导出不携带调用偏好', () => {
+    expect(loadAppearancePreferences()).toMatchObject({ promptClassificationEnabled: false, autoClassifyMetadata: false });
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, promptClassificationEnabled: true, autoClassifyMetadata: true });
+    expect(loadAppearancePreferences()).toMatchObject({ promptClassificationEnabled: true, autoClassifyMetadata: true });
+    expect(validateAppearancePreset({ name: '主题', promptClassificationEnabled: true, autoClassifyMetadata: true })).not.toHaveProperty('autoClassifyMetadata');
+  });
+
   it('旧偏好默认记住生图设置，关闭后重载仍保持关闭且不进入外观预设', () => {
     expect(loadAppearancePreferences().rememberGenerationSettings).toBe(true);
     expect(normalizeAppearancePreferences({ rememberGenerationSettings: 'false' }).rememberGenerationSettings).toBe(true);
@@ -137,6 +144,8 @@ describe('appearance preferences', () => {
       generationStreamPreview: true,
       rememberGenerationSettings: false,
       generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,
+      promptClassificationEnabled: false,
+      autoClassifyMetadata: false,
       continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,

@@ -10,8 +10,8 @@ export const PUBLIC_ICONS = ['nai-atelier.ico', 'app-icon.ico', 'app-icon.png', 
 // 明确列出公开运行文件，禁止将开发目录中的新增文件自动带入分发包。
 export const RUNTIME_FILES = [
   ...['agent-web', 'agent-ui-bridge', 'agent-runtime', 'agent-page-tools', 'agent-local-images', 'artist-samples', 'collector-download', 'danbooru-loading', 'desktop-launcher', 'export-locations', 'storage-locations', 'generation-gateway', 'generation-output', 'image-tagger', 'local-backup', 'local-server', 'local-server-runtime', 'media-gateway', 'media-memory-cache', 'novelai-agent-knowledge', 'pixiv-local', 'pixiv-scheme-handler', 'pixiv-web-login', 'prompt-agent', 'st-chatu8-bridge', 'style-collector', 'tag-update-server', 'tagger-model-download', 'update-tag-dictionary'].map(name => `scripts/${name}.mjs`),
-  'scripts/style-collector-window.ps1', 'scripts/style-collector-window.cs', 'scripts/pixiv-edge-callback-watcher.ps1', 'scripts/pixiv-login-complete.html',
-  ...['agentOperation', 'agentLabSync', 'agentConnection', 'danbooruErrors', 'httpErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'pngMetadata'].map(name => `services/${name}.mjs`),
+  'scripts/style-collector-window.ps1', 'scripts/style-collector-window.cs', 'scripts/style-collector-view.cs', 'scripts/style-collector-composition.cs', 'scripts/pixiv-edge-callback-watcher.ps1', 'scripts/pixiv-login-complete.html',
+  ...['agentOperation', 'agentLabSync', 'agentConnection', 'danbooruErrors', 'httpErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'pngMetadata', 'promptClassification', 'promptSegments'].map(name => `services/${name}.mjs`),
   ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling', 'generationTasks', 'generationJobs', 'codexRemote'].map(name => `worker/${name}.mjs`),
   'LICENSE', 'PROJECT_AGENT.md', 'wrangler.toml', 'data/novelai-v45-tags.json',
   'locales/index.mjs', 'locales/messages.json',

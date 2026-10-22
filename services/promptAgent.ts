@@ -329,6 +329,13 @@ export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
 };
 
 export const promptAgentService = {
+  classifyPrompts: async (documents: Array<{ id: string; kind: 'global' | 'character'; prompt: string }>) => {
+    const response = await fetch('/api/prompt-agent/classify-prompts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documents }),
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json() as Promise<{ items: Array<{ id: string; kind: 'global' | 'character'; sections: Record<string, string> }> }>;
+  },
   setCreativeDirect: async (enabled: boolean): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/creative-direct', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
     if (!response.ok) return readError(response) as never;

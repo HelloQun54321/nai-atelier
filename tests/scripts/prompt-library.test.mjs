@@ -73,6 +73,10 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.doesNotMatch(preview.value.systemPrompt, /saved extra/);
   assert.equal(service.getLibraryPrompts().spec, 'saved spec');
   assert.equal((await invoke(endpoint + '/preview', 'POST', { kind: 'unknown' })).status, 400);
+  const classified = [{ id: 'global', kind: 'global', sections: { style: 'artist:synthetic' } }];
+  service.classifyPrompts = async input => { assert.deepEqual(input.documents, [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }]); return { items: classified }; };
+  assert.deepEqual((await invoke('/api/prompt-agent/classify-prompts', 'POST', { documents: [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }] })).value, { items: classified });
+  assert.equal((await invoke('/api/prompt-agent/classify-prompts', 'GET')).status, 405);
   const directEndpoint = '/api/prompt-agent/creative-direct';
   assert.equal(service.publicConfig().creativeDirect, true);
   assert.equal((await invoke(directEndpoint, 'PUT', { enabled: false })).value.creativeDirect, false);
@@ -104,6 +108,13 @@ test('六类库分类都可生成系统提示（表情状态 / 镜头画面不�
   }
   /* previewLibrarySystemPrompt 是同步方法：用 throws 断言，而不是 rejects */
   assert.throws(() => service.previewLibrarySystemPrompt({ kind: 'not-a-kind' }), /分类无效/);
+});
+
+test('自动分类空文本不请求模型，未配置助手时明确失败且不写入会话', async t => {
+  const root = createWorkspace('prompt-classification-'); t.after(() => removeWorkspace(root));
+  const service = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  assert.deepEqual(await service.classifyPrompts({ documents: [] }), { items: [] });
+  await assert.rejects(service.classifyPrompts({ documents: [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }] }), /配置创作助手/);
 });
 
 test('详细补全三档与「保持留空」进入系统提示，未指定时默认详细', async () => {

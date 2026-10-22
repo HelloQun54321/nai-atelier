@@ -4,6 +4,7 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { promptAgentService } from '../services/promptAgent';
+import { getClassificationDocuments, applyPromptClassification } from '../services/promptClassificationDraft';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
 import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobState } from '../services/generationJob';
@@ -13,7 +14,7 @@ import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
-import { compilePrompt } from '../services/promptUtils';
+import { compilePrompt, getEditableGlobalNegative } from '../services/promptUtils';
 import { buildGenerationJobDescriptor } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
@@ -74,6 +75,9 @@ interface ChainEditorProps {
   onContentRollForGlobal?: () => void;
     agentOpenToken?: number;
     tagAssistEnabled: boolean;
+    promptClassificationEnabled?: boolean;
+    onPromptClassificationEnabledChange?: (enabled: boolean) => void;
+    autoClassifyMetadata?: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
     forceEmptySeed?: boolean;
@@ -87,7 +91,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, promptClassificationEnabled = false, onPromptClassificationEnabledChange, autoClassifyMetadata = false, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -278,6 +282,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [showForkModal, setShowForkModal] = useState(false);
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [translationPending, setTranslationPending] = useState(false);
+    const [classificationImport, setClassificationImport] = useState<{ token: number; mode: GenerationMode } | null>(null);
+    const classificationTokenRef = useRef(0);
+    const classificationStartedRef = useRef(0);
+    const [classificationPending, setClassificationPending] = useState(false);
+    const [classificationResult, setClassificationResult] = useState<{ before: PromptAgentDraft; after: PromptAgentDraft; applied: boolean } | null>(null);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
@@ -1065,6 +1074,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const parsed = parseNovelAIMetadata(rawMeta, activeEditDraft?.params || params, naiRuntimeConfig?.metadataModelMappings);
             if (activeEditOperation && activeEditDraft) {
                 updateEditDraft(activeEditOperation, buildImageEditMetadataPatch(parsed.prompt, parsed.negativePrompt, parsed.params));
+                queueMetadataClassification(activeEditOperation);
                 const modeLabel = activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图';
                 notify(`已将完整提示词、角色与生成参数导入当前${modeLabel}页面。`);
                 return;
@@ -1073,6 +1083,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setSubjectPrompt('');
             setNegativePrompt(parsed.negativePrompt);
             setParams(parsed.params);
+            setModules([]); setActiveModules({});
+            queueMetadataClassification('text-to-image');
             clearPresetSources();
             markChange();
             notify('已将完整提示词导入全局提示词，并恢复角色与生成参数。');
@@ -1201,6 +1213,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
     const applyImportData = (data: PendingImportData | PromptFragmentImport | BaseImageImport) => {
+        classificationTokenRef.current += 1;
+        setClassificationResult(null); setClassificationPending(false);
         setArtistSampleTarget(data.mode === 'prompt-fragments' ? data.artistSampleTarget || null : null);
         setArtistSampleRandomSeed(false);
         if (data.mode === 'base-image') {
@@ -1230,7 +1244,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     setActiveModules(Object.fromEntries([...Object.keys(activeModules), ...modules.map(module => module.id)].map(id => [id, false])));
                 }
             }
-            if (fragment.fullMetadata) clearPresetSources();
+            if (fragment.fullMetadata) {
+                clearPresetSources();
+                queueMetadataClassification(data.targetMode === 'text-to-image' ? 'text-to-image' : activeGenerationMode);
+            }
             markChange();
             notify('已取用所选内容到当前模式');
             return;
@@ -1248,7 +1265,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 data.params ?? params,
                 data.editMetadata,
                 data.reuseEditMask === true,
-            );
+            ).then(() => queueMetadataClassification(operation));
             notify('已载入底图，正在打开对应图片编辑模式。');
             return;
         }
@@ -1285,6 +1302,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         setNegativePrompt(data.negativePrompt);
         setParams(data.params);
+        if (!hasPromptStructure) queueMetadataClassification('text-to-image');
         clearPresetSources();
         markChange();
         const charCount = data.params?.characters?.length || 0;
@@ -1850,6 +1868,36 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setHasChanges(true);
     };
 
+    const classificationStateRef = useRef({ draft: currentAgentDraft(), enabled: promptClassificationEnabled && autoClassifyMetadata, isGenerating });
+    classificationStateRef.current = { draft: currentAgentDraft(), enabled: promptClassificationEnabled && autoClassifyMetadata, isGenerating };
+    function queueMetadataClassification(mode: GenerationMode) {
+        const token = ++classificationTokenRef.current;
+        setClassificationResult(null); setClassificationPending(false);
+        if (promptClassificationEnabled && autoClassifyMetadata) setClassificationImport({ token, mode });
+    }
+    useEffect(() => {
+        if (!classificationImport || classificationStartedRef.current === classificationImport.token) return;
+        classificationStartedRef.current = classificationImport.token;
+        const before = classificationStateRef.current.draft;
+        if (!classificationStateRef.current.enabled || before.target?.mode !== classificationImport.mode) return;
+        const documents = getClassificationDocuments(before);
+        if (!documents.length) return;
+        setClassificationPending(true);
+        void promptAgentService.classifyPrompts(documents).then(({ items }) => {
+            if (!mountedRef.current || classificationImport.token !== classificationTokenRef.current || !classificationStateRef.current.enabled) return;
+            const after = applyPromptClassification(before, items);
+            const state = classificationStateRef.current;
+            if (state.draft.target?.chainId !== before.target?.chainId || state.draft.target?.mode !== before.target?.mode) return;
+            const applied = state.draft.target?.fingerprint === before.target?.fingerprint && !state.isGenerating;
+            if (applied) applyAgentDraft(after);
+            setClassificationResult({ before, after, applied });
+        }).catch(error => {
+            if (mountedRef.current && classificationImport.token === classificationTokenRef.current) notify(t('自动分类失败，已保留导入原文：{0}', [error instanceof Error ? error.message : String(error)]), 'error');
+        }).finally(() => {
+            if (mountedRef.current && classificationImport.token === classificationTokenRef.current) setClassificationPending(false);
+        });
+    }, [classificationImport]);
+
     const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count = 1, placement?: GenerationPlacement): Promise<PromptAgentGenerationResult> => {
         // 未提交的任务也回完整回执：请求数与已保存数为 0，历史 ID 为空。
         if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating)) return { ...agentGenerationFailure(agentOperationError('已有图片正在生成，请等待完成', 'generation_busy')), requestedCount: count, completedCount: 0, historyIds: [] };
@@ -2005,10 +2053,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const translateAllMissingPromptTags = async () => {
         if (translationPending) return;
-        const characterPrompts = (activeEditDraft?.params || params).characters || [];
+        const currentParams = activeEditDraft?.params || params;
+        const characterPrompts = (currentParams.characters || []).map(character => compileCharacterContent(character, (currentParams as NAIParams & { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives));
         const promptValues = activeEditDraft
-            ? [activeEditDraft.prompt, activeEditDraft.negativePrompt, ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])]
-            : [basePrompt, negativePrompt, ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
+            ? [activeEditDraft.prompt, getEditableGlobalNegative(activeEditDraft.negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])]
+            : [basePrompt, subjectPrompt, getEditableGlobalNegative(negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
         const tokens = promptValues.flatMap(value => parsePromptTags(value || ''));
         if (!tokens.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
 
@@ -2070,6 +2119,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 handleImportImage={handleImportImage}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
+                promptClassificationEnabled={promptClassificationEnabled}
+                onPromptClassificationEnabledChange={onPromptClassificationEnabledChange}
                 notify={notify}
             />
 
@@ -2102,6 +2153,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 splitPromptFields={false}
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
+            {(classificationPending || classificationResult && classificationResult.before.target?.chainId === chain.id && classificationResult.before.target?.mode === activeGenerationMode) && <div role="status" className="appearance-group flex items-center gap-3 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {classificationPending ? t('正在自动分类…') : <>
+                    <span>{classificationResult!.applied ? t('已自动分类') : t('分类已完成，当前编辑已保留')}</span>
+                    <button type="button" className="mobile-touch font-semibold text-indigo-600 dark:text-indigo-300" disabled={isGenerating} onClick={() => {
+                        if (classificationResult!.applied) {
+                            const before = classificationResult!.before;
+                            const state = classificationStateRef.current.draft;
+                            const expected = classificationResult!.after;
+                            const content = (draft: PromptAgentDraft) => ({ prompt: compilePrompt(draft, draft.subjectPrompt), negativePrompt: draft.negativePrompt, params: draft.params });
+                            if (agentDraftFingerprint(content(state)) !== agentDraftFingerprint(content(expected))) { notify(t('提示词已修改，无法直接撤销分类'), 'error'); return; }
+                            applyAgentDraft(before); setClassificationResult(null);
+                        } else setAgentProposal(classificationResult!.after);
+                    }}>{classificationResult!.applied ? t('撤销分类') : t('查看分类结果')}</button>
+                    <button type="button" className="mobile-touch ml-auto" aria-label={t('关闭')} onClick={() => setClassificationResult(null)}>×</button>
+                </>}
+            </div>}
             {activeGenerationMode === 'text-to-image' ? <>
             <LabEditorTabs key={chain.id} value={mobileEditorTab} options={[['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />
 
@@ -2112,6 +2179,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     <div className="lab-editor-surface flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
+                            promptClassificationEnabled={promptClassificationEnabled}
+                            onPlainPromptChange={value => {
+                                setNegativePrompt(getEditableGlobalNegative(negativePrompt, params._promptSections));
+                                setBasePrompt(value); setSubjectPrompt('');
+                                setParams(previous => ({ ...previous, _promptSections: undefined }));
+                            }}
                             setPrompt={setBasePrompt}
                             sections={params._promptSections}
                             onContentRollForGlobal={onContentRollForGlobal}
@@ -2131,6 +2204,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {/* Character Management (New V4.5) */}
                         <ChainEditorCharacters
                             scopeKey={`${chain.id}:text-to-image`}
+                            promptClassificationEnabled={promptClassificationEnabled}
                             params={params}
                             setParams={setParams}
                             characters={params.characters || []}
@@ -2197,15 +2271,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>
-                                <div className="flex items-center gap-1"><span ref={negativeClearActionSlotRef} /><PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} /></div>
+                                <div className="flex items-center gap-1"><span ref={negativeClearActionSlotRef} /><PromptCopyButton onClick={() => copyPromptToClipboard(promptClassificationEnabled ? negativePrompt : getEditableGlobalNegative(negativePrompt, params._promptSections), '全局负面提示词')} title={t("复制全局负面提示词")} /></div>
                             </div>
                             <TagAutocompleteTextarea
                                 clearActionSlotRef={negativeClearActionSlotRef}
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
                                 disabled={isNaiMediumModel(params.model)}
                                 className="w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50"
-                                value={negativePrompt}
-                                onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}
+                                value={promptClassificationEnabled ? negativePrompt : getEditableGlobalNegative(negativePrompt, params._promptSections)}
+                                onValueChange={(nextValue) => {
+                                    setNegativePrompt(nextValue);
+                                    if (!promptClassificationEnabled) setParams(previous => ({ ...previous, _promptSections: previous._promptSections && { ...previous._promptSections, sectionNegatives: undefined } }));
+                                    markPresetSectionModified('negative'); markChange();
+                                }}
                             />
                         </section>
                         </LabModuleSection>
@@ -2271,6 +2349,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </div>
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
+                promptClassificationEnabled={promptClassificationEnabled}
                 favorite={imageEditPreviewItem ? { imageUrl: imageEditPreviewItem.imageUrl, sourceType: 'history', sourceId: imageEditPreviewItem.id } : undefined}
                 key={chain.id}
                 generationData={imageEditPreviewItem ? { prompt: imageEditPreviewItem.prompt, negativePrompt: imageEditPreviewItem.negativePrompt, params: imageEditPreviewItem.params } : undefined}

@@ -987,6 +987,9 @@ const App = () => {
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
+          promptClassificationEnabled={appearancePreferences.promptClassificationEnabled}
+          onPromptClassificationEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, promptClassificationEnabled: enabled }))}
+          autoClassifyMetadata={appearancePreferences.autoClassifyMetadata}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}
@@ -1101,6 +1104,9 @@ const App = () => {
           onContentRollForGlobal={handleContentRollForGlobal}
           agentOpenToken={playgroundAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
+          promptClassificationEnabled={appearancePreferences.promptClassificationEnabled}
+          onPromptClassificationEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, promptClassificationEnabled: enabled }))}
+          autoClassifyMetadata={appearancePreferences.autoClassifyMetadata}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}

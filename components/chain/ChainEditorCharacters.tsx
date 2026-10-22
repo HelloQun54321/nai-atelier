@@ -8,7 +8,7 @@ import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
-import { CHARACTER_SECTION_KEYS, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, compileCharacterContent, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
 import { CharacterSectionSummary } from './CharacterSectionSummary';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
@@ -47,6 +47,7 @@ export interface ChainEditorCharactersProps {
     characters: CharacterParams[];
     canEdit: boolean;
     tagAssistEnabled: boolean;
+    promptClassificationEnabled?: boolean;
     characterPresetSources: Record<string, PresetSource>;
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
@@ -75,6 +76,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     characters,
     canEdit,
     tagAssistEnabled,
+    promptClassificationEnabled = false,
     characterPresetSources,
     markPresetSectionModified,
     markChange,
@@ -96,6 +98,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     notify,
 }) => {
   useLanguage();
+    const legacyNegatives = (params as NAIParams & { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives;
     const actionSlots = useRef(new Map<string, React.RefObject<HTMLSpanElement | null>>());
     const actionSlot = (key: string) => {
         if (!actionSlots.current.has(key)) actionSlots.current.set(key, React.createRef<HTMLSpanElement>());
@@ -229,8 +232,11 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         clearActionSlotRef={positiveSlotRef}
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
-                                        value={char.prompt}
-                                        onValueChange={(nextValue) => updateCharacter(idx, { prompt: nextValue })}
+                                        value={promptClassificationEnabled ? char.prompt : compileCharacterContent(char, legacyNegatives).prompt}
+                                        onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { prompt: nextValue } : {
+                                            prompt: nextValue, negativePrompt: compileCharacterContent(char, legacyNegatives).negativePrompt,
+                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(CHARACTER_SECTION_KEYS.map(key => [key, { source: 'manual' }])) : char.sectionMeta,
+                                        })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                         placeholder={t("角色提示词")}
                                     />
@@ -241,14 +247,17 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         clearActionSlotRef={negativeSlotRef}
                                         tagAssistEnabled={tagAssistEnabled && !negativeLocked}
                                         disabled={!canEdit || negativeLocked}
-                                        value={char.negativePrompt || ''}
-                                        onValueChange={(nextValue) => updateCharacter(idx, { negativePrompt: nextValue })}
+                                        value={(promptClassificationEnabled ? char : compileCharacterContent(char, legacyNegatives)).negativePrompt || ''}
+                                        onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { negativePrompt: nextValue } : {
+                                            prompt: compileCharacterContent(char, legacyNegatives).prompt, negativePrompt: nextValue,
+                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(CHARACTER_SECTION_KEYS.map(key => [key, { source: 'manual' }])) : char.sectionMeta,
+                                        })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                         placeholder={t("选填")}
                                     />
                                 </div>
                                 {/* 分栏内容：写入 character.sections，实际请求时与正文按固定顺序编译合并 */}
-                                <div className="rounded border border-dashed border-gray-300 p-2 dark:border-gray-600">
+                                {promptClassificationEnabled && <div className="rounded border border-dashed border-gray-300 p-2 dark:border-gray-600">
                                     <div className="mb-1 flex items-center justify-between gap-2">
                                         <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
                                         <span className="flex items-center gap-2">
@@ -281,8 +290,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                                <CharacterSectionSummary character={char} />
+                                </div>}
+                                {promptClassificationEnabled && <CharacterSectionSummary character={char} />}
                         </div>
                     </div>
                     );

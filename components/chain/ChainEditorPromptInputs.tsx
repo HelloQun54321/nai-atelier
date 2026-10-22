@@ -8,6 +8,7 @@ import { PromptLibraryPicker } from '../PromptLibraryPicker';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptLibraryKind } from '../../services/promptAgent';
 import type { PromptSectionSource, PromptSections } from '../../types';
+import { getEditableGlobalPrompt } from '../../services/promptUtils';
 
 /** 文本型栏位（排除只用于追溯的 sectionMeta） */
 type SectionKey = Exclude<keyof PromptSections, 'sectionMeta' | 'sectionNegatives'>;
@@ -72,6 +73,9 @@ export interface ChainEditorPromptInputsProps {
     presetSources: Partial<Record<PresetSection, PresetSource>>;
     tagAssistEnabled: boolean;
     canEdit: boolean;
+    promptClassificationEnabled?: boolean;
+    onPlainPromptChange?: (value: string) => void;
+    embedded?: boolean;
     copyPromptToClipboard: (value: string, label: string) => void;
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
@@ -82,6 +86,7 @@ export interface ChainEditorPromptInputsProps {
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
+    promptClassificationEnabled = false, onPlainPromptChange, embedded = false,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
 }) => {
     useLanguage();
@@ -97,10 +102,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
         markPresetSectionModified('subject');
         markChange();
     };
-    return <LabModuleSection moduleId="prompt" label={t('全局提示词')}
-        order={activeLabLayout.order.indexOf('prompt')} defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
-        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
-        <section className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
+    const content = <section className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
                 <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject })
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
@@ -114,6 +116,12 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                         </button>
                     </div>
                 ) : null}
+                {!promptClassificationEnabled ? <PromptField label="全局正向提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局提示词" disabled={!canEdit}
+                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
+                        if (onPlainPromptChange) onPlainPromptChange(value);
+                        else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }
+                        markPresetSectionModified('base'); markPresetSectionModified('subject'); markChange();
+                    }} /> : <>
                 <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         setPrompt(value); markPresetSectionModified('base'); markChange();
@@ -123,7 +131,10 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     sourceName={current.sectionMeta?.[field.key]?.entryName}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
                     onChange={(value, source) => writeSection(field.key, value, source)} />)}
+                </>}
             </div>
-        </section>
-    </LabModuleSection>;
+        </section>;
+    return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局提示词')}
+        order={activeLabLayout.order.indexOf('prompt')} defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
+        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{content}</LabModuleSection>;
 };

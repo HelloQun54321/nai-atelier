@@ -1,5 +1,5 @@
 
-import { PromptChain } from '../types';
+import { PromptChain, PromptSections } from '../types';
 
 /**
  * NAI V4 Specific String Constants
@@ -29,6 +29,12 @@ export const mergePromptFields = (basePrompt: string, subjectPrompt: string): st
  */
 export const getEditableGlobalPrompt = (basePrompt: string, subjectPrompt: string): string =>
   subjectPrompt.trim() ? mergePromptFields(basePrompt, subjectPrompt) : basePrompt;
+
+/** 整段编辑也显示参与生成的分类负面，编辑后即可完整保留。 */
+export const getEditableGlobalNegative = (negative: string, sections?: PromptSections): string =>
+  ['scene', 'camera', 'extra'].reduce((value, key) =>
+    sections?.[key as 'scene' | 'camera' | 'extra']?.trim() && sections.sectionNegatives?.[key]?.trim()
+      ? mergePromptFields(value, sections.sectionNegatives[key]) : value, negative);
 
 /**
  * Compiles the final prompt string by combining parts in a fixed order:

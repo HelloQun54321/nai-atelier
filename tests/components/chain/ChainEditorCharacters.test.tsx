@@ -13,9 +13,9 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
   { id: 'b', prompt: 'red hair', negativePrompt: 'blue hair', x: 0.7, y: 0.3 },
 ] };
 const mark = vi.fn();
-const Harness = ({ freeform = false, canEdit = true, model }: { freeform?: boolean; canEdit?: boolean; model?: string }) => {
-  const [params, setParams] = useState(initial);
-  return <><ChainEditorCharacters params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
+const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams }) => {
+  const [params, setParams] = useState(initialParams);
+  return <><ChainEditorCharacters promptClassificationEnabled={classified} params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
     canEdit={canEdit} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
     addCharacter={vi.fn()} removeCharacter={index => setParams(current => ({ ...current, characters: current.characters?.filter((_, i) => i !== index) }))}
     updateCharacter={(index, patch, useCoords) => { setParams(current => ({ ...current, ...(useCoords === undefined ? {} : { useCoords }), characters: current.characters?.map((character, i) => i === index ? { ...character, ...patch } : character) })); mark(); }}
@@ -29,6 +29,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('整段显示完整角色正负词，编辑后分类词不重复参与请求，坐标与其他角色保留', () => {
+    render(<Harness classified={false} initialParams={{ ...initial, characters: [{ ...initial.characters![0], prompt: 'smile', sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }, initial.characters![1]] }} />);
+    const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
+    expect(positive.value).toBe('blue dress, smile');
+    expect((screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement).value).toBe('red dress, red hair');
+    expect(screen.queryByText('分栏内容')).toBeNull();
+    fireEvent.change(positive, { target: { value: 'green dress, smile' } });
+    expect(draft().characters?.[0]).toMatchObject({ prompt: 'green dress, smile', negativePrompt: 'red dress, red hair', x: 0.223, y: 0.887 });
+    expect(draft().characters?.[0].sections).toBeUndefined();
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]);
+  });
   it.each([1280, 390])('%spx 下坐标图标与原有角色动作同排，展开后仍只修改对应角色并可关闭', async width => {
     vi.stubGlobal('innerWidth', width);
     render(<Harness freeform />);

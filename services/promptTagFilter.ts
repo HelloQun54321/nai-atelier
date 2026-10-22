@@ -1,3 +1,4 @@
+import { splitPromptSegments } from './promptSegments.mjs';
 /**
  * 提示词候选的**逐标签筛选**（对齐中英删除、保护带权重标签组）。
  *
@@ -36,34 +37,7 @@ export interface PromptTagRemoval {
  * 例：`1.3::silver hair, long hair::, blue eyes` → 两段（而不是三段）。
  * 直接按逗号拆会把权重组拆坏，删一个标签就留下未配对的 `::`。
  */
-export const splitPromptSegments = (value: string): string[] => {
-  const text = String(value || '');
-  const out: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-  let inGroup = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === ':' && text[index + 1] === ':') {
-      inGroup = !inGroup;
-      current += '::';
-      index += 1;
-      continue;
-    }
-    if (!inGroup) {
-      if ('({[（'.includes(char)) parenDepth += 1;
-      else if (')}]）'.includes(char) && parenDepth > 0) parenDepth -= 1;
-    }
-    if ((char === ',' || char === '，') && !inGroup && parenDepth === 0) {
-      if (current.trim()) out.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  if (current.trim()) out.push(current.trim());
-  return out;
-};
+export { splitPromptSegments } from './promptSegments.mjs';
 
 const splitParts = (value: string): string[] => splitPromptSegments(value);
 

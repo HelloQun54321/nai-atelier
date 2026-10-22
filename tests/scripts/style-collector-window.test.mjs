@@ -70,15 +70,20 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   await setState({ paused: true, stage: '正在收录提示词' }); assert.equal(window().processing, false); assert.equal(window().breathing, false);
 
   const cupertino = JSON.parse(await readFile(new URL('../../public/themes/cupertino-liquid-glass.json', import.meta.url), 'utf8')).presets[0];
-  const themes = [defaults, { ...cupertino, accents: { light: cupertino.details.light.accentColor, dark: cupertino.details.dark.accentColor } }];
+  const materials = Object.fromEntries(['light', 'dark'].map(mode => {
+    const d = { ...cupertino.details, ...cupertino.details[mode] };
+    return [mode, { kind: d.material, opacity: d.sidebarOpacity, highlight: d.highlight, borderOpacity: d.borderOpacity, controlRadius: d.controlRadius, panelRadius: d.panelRadius, blur: d.blur, saturation: d.saturation, refraction: d.refraction }];
+  }));
+  const themes = [defaults, { ...cupertino, materials, accents: { light: cupertino.details.light.accentColor, dark: cupertino.details.dark.accentColor } }];
   const luminance = hex => { const rgb = hex.slice(1).match(/../g).map(h => parseInt(h, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722; };
-  for (const [index, theme] of themes.entries()) for (const dark of [false, true]) {
+  for (const theme of themes) for (const dark of [false, true]) {
     const mode = dark ? 'dark' : 'light';
     await setState({ appearance: { ...theme, themeMode: mode, isDark: dark } });
     const a = window().appearance;
-    assert.equal(a.dark, dark); assert.equal(a.surfaces, theme.surfaces); assert.equal(a.radius, index ? 18 : 16);
-    assert.equal(a.background, (theme.palette?.[mode].panel || (dark ? '#171b24' : '#ffffff')).toUpperCase());
+    assert.equal(a.dark, dark); assert.equal(a.surfaces, theme.surfaces); assert.equal(a.radius, theme.materials?.[mode].panelRadius ?? 8);
+    assert.equal(a.background, (theme.palette?.[mode][theme.surfaces === 'translucent' ? 'sidebar' : 'panel'] || (dark ? '#171b24' : '#ffffff')).toUpperCase());
     assert.equal(a.accent, (theme.accents?.[mode] || theme.accentColor).toUpperCase());
+    if (theme.materials) { assert.equal(a.blur, theme.materials[mode].blur); assert.equal(a.saturation, theme.materials[mode].saturation); assert.equal(a.refraction, theme.materials[mode].refraction); }
     const levels = [luminance(a.selectedFill), luminance(a.selectedText)].sort((x, y) => y - x);
     assert.ok((levels[0] + .05) / (levels[1] + .05) >= 4.5, 'selected text contrast');
     assert.equal(window().height, 232); assert.equal(window().width, 384); assert.equal(window().labelsFit, true); assert.equal(window().foreground, false);

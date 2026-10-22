@@ -12,6 +12,7 @@ import { ChainEditor, type ChainEditorSaveHandle } from '../../components/ChainE
 import { getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession } from '../../services/generationSeries';
 import { GenerationCountControl } from '../../components/GenerationCountControl';
 import { DEFAULT_NAI_RUNTIME, type NaiRuntimeConfig } from '../../services/naiRuntime';
+import * as promptTranslations from '../../services/tagTranslations';
 import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 import type { GenerationJobDescriptorInput } from '../../services/naiService';
@@ -38,6 +39,7 @@ const state = vi.hoisted(() => ({
   getEditMask: vi.fn(async (): Promise<Blob | null> => null),
   confirm: vi.fn(async (_options?: unknown) => true),
   agentConfig: vi.fn<() => Promise<{ permissionMode: 'read_only' | 'standard' | 'full' }>>(),
+  classify: vi.fn<typeof import('../../services/promptAgent').promptAgentService.classifyPrompts>(),
   budget: 1666,
   buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput) => Promise<GenerationJobDescriptor>>(),
   startJob: vi.fn<(key: string, token: string, descriptor: GenerationJobDescriptor, count: number, placement?: GenerationPlacement) => Promise<GenerationJobSnapshot>>(),
@@ -62,7 +64,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../services/promptAgent', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/promptAgent')>(),
-  promptAgentService: { getConfig: state.agentConfig },
+  promptAgentService: { getConfig: state.agentConfig, classifyPrompts: state.classify },
 }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), saveArtistOwnSample: state.saveArtistSample }));
 vi.mock('../../services/generationJob', async importOriginal => {
@@ -211,10 +213,85 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   state.scopes.add(entry.id);
   const props = { chain: entry, allChains: [entry], onUpdateChain: vi.fn(async () => {}), onFork: vi.fn(async () => {}), setIsDirty: vi.fn(), notify: vi.fn(),
     saveRef: React.createRef<ChainEditorSaveHandle>(),
-    tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
+    promptClassificationEnabled: true, tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
+
+describe('元数据导入后自动分类', () => {
+  it('整段编辑的复制与一键翻译包含分类正负词和角色内容', async () => {
+    const resolve = vi.spyOn(promptTranslations, 'resolvePromptTranslations').mockResolvedValue([]);
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const sectioned = { ...chain, variableValues: { subject: 'forest' }, params: { ...chain.params, _promptSections: { scene: 'forest', sectionNegatives: { scene: 'city' } },
+      characters: [{ id: 'role', prompt: 'smile', x: 0.2, y: 0.8, sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }] } };
+    const view = setup(sectioned);
+    view.rerender(<ChainEditor {...view.props} promptClassificationEnabled={false} />);
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('saved style, forest'));
+    fireEvent.click(screen.getByTitle('复制全局负面提示词'));
+    expect(writeText).toHaveBeenCalledWith('saved negative, city');
+    fireEvent.click(screen.getByRole('button', { name: '翻译所有未翻译提示词' }));
+    await waitFor(() => expect(resolve).toHaveBeenCalled());
+    expect(resolve.mock.calls.at(-1)![0].map(token => token.displayTag)).toEqual(expect.arrayContaining(['saved style', 'forest', 'city', 'blue dress', 'red dress', 'smile']));
+  });
+  const result = { items: [{ id: 'global', kind: 'global' as const, sections: { style: 'artist:test', wardrobe: 'red dress' } }] };
+  const sendImport = (view: ReturnType<typeof setup>, token: number, auto = true, classified = true) => {
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', fullMetadata: true, targetMode: 'text-to-image', replace: true,
+      prompt: 'artist:test, red dress', negativePrompt: 'imported negative', params: { ...chain.params, seed: 42 }, importSettings: true }));
+    view.rerender(<ChainEditor {...view.props} promptClassificationEnabled={classified} autoClassifyMetadata={auto} externalImportToken={token} />);
+  };
+  it.each([[false, true], [true, false]])('自动分类=%s，分类编辑=%s 时不隐式调用模型', async (auto, classified) => {
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sendImport(view, 1, auto, classified);
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress'));
+    expect(state.classify).not.toHaveBeenCalled();
+  });
+  it('正常导入自动填栏，不弹确认；可撤销且保留导入参数和负面', async () => {
+    state.classify.mockResolvedValue(result);
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sendImport(view, 1);
+    await waitFor(() => expect(state.agent?.draft.params._promptSections?.wardrobe).toBe('red dress'));
+    expect(state.classify).toHaveBeenCalledTimes(1);
+    expect(state.classify).toHaveBeenCalledWith([{ id: 'global', kind: 'global', prompt: 'artist:test, red dress' }]);
+    expect(state.agent?.draft).toMatchObject({ basePrompt: 'artist:test', subjectPrompt: 'red dress', negativePrompt: 'imported negative', params: { seed: 42 } });
+    expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '撤销分类' }));
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress'));
+    expect(state.agent?.draft.params._promptSections).toBeUndefined();
+    expect(state.agent?.draft.negativePrompt).toBe('imported negative');
+  });
+  it('失败保留原文，不自动重试；再次导入才发起新调用', async () => {
+    state.classify.mockRejectedValue(new Error('synthetic failure'));
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sendImport(view, 1);
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('自动分类失败，已保留导入原文：synthetic failure', 'error'));
+    expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress');
+    expect(state.classify).toHaveBeenCalledTimes(1);
+  });
+  it('等待期间手改不被覆盖，结果留在就地入口，不自动打开差异窗口', async () => {
+    let finish!: (value: typeof result) => void;
+    state.classify.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sendImport(view, 1); await waitFor(() => expect(state.classify).toHaveBeenCalledTimes(1));
+    fireEvent.change(textPrompt(), { target: { value: 'manual edit' } });
+    await act(async () => finish(result));
+    await screen.findByRole('button', { name: '查看分类结果' });
+    expect(state.agent?.draft.basePrompt).toBe('manual edit');
+    expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
+  });
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 完整配置导入使用同一自动分类链，纯换底图不触发', async mode => {
+    state.classify.mockResolvedValue(result);
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: mode, baseImageUrl: 'data:image/png;base64,AQID', prompt: 'artist:test, red dress', negativePrompt: 'imported negative', params: chain.params }));
+    view.rerender(<ChainEditor {...view.props} autoClassifyMetadata externalImportToken={1} />);
+    await waitFor(() => expect(state.agent?.draft.params._promptSections?.wardrobe).toBe('red dress'));
+    expect(state.agent?.draft.target?.mode).toBe(mode); expect(state.classify).toHaveBeenCalledTimes(1);
+    expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress');
+    fireEvent.click(screen.getByText('粘贴合成底图'));
+    await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toContain('cGFzdGVk'));
+    expect(state.classify).toHaveBeenCalledTimes(1);
+  });
+});
 
 it('Roll 填入后编辑器重新挂载，外部内容优先于旧会话草稿', async () => {
   const initial = { ...chain, id: 'playground', variableValues: { subject: 'old_subject' } };
@@ -340,6 +417,7 @@ const switchTo = async (label: string) => {
 };
 
 beforeEach(() => {
+  state.classify.mockReset().mockResolvedValue({ items: [] });
   vi.mocked(getGenerationQueue).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
   vi.mocked(setGenerationQueuePaused).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
   vi.mocked(setGenerationInterval).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));

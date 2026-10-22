@@ -65,6 +65,27 @@ describe('悬浮窗外观同步', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('palette');
   });
+  it('玻璃窗口同步完整明暗材质，实时修改透明度和高光，恢复实色时清除', async () => {
+    const cupertino = BUILTIN_APPEARANCE_PRESETS[1];
+    const initial: typeof DEFAULT_APPEARANCE_PREFERENCES = { ...DEFAULT_APPEARANCE_PREFERENCES, ...cupertino };
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: initial } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials).toEqual({
+      light: { kind: 'glass', opacity: .54, highlight: .38, borderOpacity: .28, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 105, refraction: 8 },
+      dark: { kind: 'glass', opacity: .38, highlight: .22, borderOpacity: .24, controlRadius: 12, panelRadius: 22, blur: 22, saturation: 135, refraction: 8 },
+    });
+    view.rerender({ preferences: { ...initial, details: { ...initial.details, light: { ...initial.details?.light, globalOpacity: 0, highlight: .5, blur: 0, saturation: 180, refraction: 24 } } } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toMatchObject({ opacity: 0, highlight: .5, blur: 0, saturation: 180, refraction: 24 });
+    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body)).not.toHaveProperty('materials');
+  });
+  it('侧栏透明度优先于工具栏，零透明度及自定义圆角也原样同步', async () => {
+    renderHook(() => useCollectorAppearance({ ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'translucent', details: { material: 'glass', opacity: .9, sidebarOpacity: 0, toolbarOpacity: .7, panelRadius: 30 } }, false));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.lastCall![1].body).materials.light).toMatchObject({ opacity: 0, panelRadius: 30 });
+  });
   it('快速调色串行提交并合并中间值，最后的颜色不会被旧请求覆盖', async () => {
     let release!: () => void;
     fetchMock.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve({ ok: true }); }));

@@ -10,6 +10,7 @@ afterEach(cleanup);
 const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
   const props: ChainEditorPromptInputsProps = {
     prompt: 'original prompt', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
+    promptClassificationEnabled: true,
     copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
     activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global', ...overrides,
   };
@@ -18,11 +19,33 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
 };
 
 describe('提示词上下文工具隔离', () => {
+  it('整段与分类切换只改变展示，编辑整段后清除旧分栏，不丢逗号与换行', () => {
+    const Harness = () => {
+      const [classified, setClassified] = useState(false);
+      const [prompt, setPrompt] = useState('artist:test');
+      const [subject, setSubject] = useState('blue dress');
+      const [sections, setSections] = useState<import('../../../types').PromptSections>({ wardrobe: 'blue dress' });
+      return <><button onClick={() => setClassified(value => !value)}>切换</button><ChainEditorPromptInputs
+        prompt={prompt} setPrompt={setPrompt} supplementPrompt={subject} setSupplementPrompt={setSubject}
+        sections={sections} setSections={setSections} promptClassificationEnabled={classified} presetSources={{}} tagAssistEnabled={false} canEdit
+        copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
+        activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" /></>;
+    };
+    render(<Harness />);
+    expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('artist:test, blue dress');
+    fireEvent.click(screen.getByText('切换'));
+    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('blue dress');
+    fireEvent.click(screen.getByText('切换'));
+    fireEvent.change(screen.getByRole('textbox', { name: '全局正向提示词' }), { target: { value: 'red dress, \n' } });
+    expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('red dress, \n');
+    fireEvent.click(screen.getByText('切换'));
+    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
+  });
   it('清空和撤销位于既有复制旁，仅更新当前全局文本并恢复焦点', () => {
     const mark = vi.fn(), preset = vi.fn();
     const Harness = () => {
       const [prompt, setPrompt] = useState('global prompt');
-      return <ChainEditorPromptInputs prompt={prompt} setPrompt={setPrompt} presetSources={{}} tagAssistEnabled={false} canEdit
+      return <ChainEditorPromptInputs promptClassificationEnabled prompt={prompt} setPrompt={setPrompt} presetSources={{}} tagAssistEnabled={false} canEdit
         copyPromptToClipboard={vi.fn()} markPresetSectionModified={preset} markChange={mark}
         activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" />;
     };
@@ -63,6 +86,7 @@ describe('提示词上下文工具隔离', () => {
       const [sections, setSections] = useState<import('../../../types').PromptSections>();
       return <><ChainEditorPromptInputs {...{
         prompt: 'artist', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
+        promptClassificationEnabled: true,
         copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
         activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global' as const,
       }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} />

@@ -55,6 +55,7 @@ interface ImageEditPanelProps {
   generationCountControl?: GenerationCountControlProps;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
+  promptClassificationEnabled?: boolean;
   forceEmptySeed?: boolean;
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
@@ -123,6 +124,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   maskData,
   generationCostLabel,
   tagAssistEnabled,
+  promptClassificationEnabled = false,
   forceEmptySeed = false,
   onForceEmptySeedChange,
   enforceFreeStepLimit = true,
@@ -1197,6 +1199,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           isBusy={isLoading || isImportingImage || isGenerating || isApplyingOutpaint}
           safeMode={safeMode}
           tagAssistEnabled={tagAssistEnabled}
+          promptClassificationEnabled={promptClassificationEnabled}
           apiKey={apiKey}
           allChains={allChains}
           showCharacterReference={showCharacterReference}

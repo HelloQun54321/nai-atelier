@@ -160,6 +160,9 @@ export interface AppearancePreferences {
   /** 选中作品时垂直居中并淡化其他卡片。 */
   gallerySelectionFocus: boolean;
   tagAssistEnabled: boolean;
+  /** 本端提示词编辑方式，与外观预设独立。 */
+  promptClassificationEnabled: boolean;
+  autoClassifyMetadata: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
   /** 跨重启记住各工作台的文字与参数，不属于外观预设。 */
@@ -195,6 +198,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   galleryHoverFloat: true,
   gallerySelectionFocus: true,
   tagAssistEnabled: true,
+  promptClassificationEnabled: false,
+  autoClassifyMetadata: false,
   generationStreamPreview: false,
   rememberGenerationSettings: true,
   generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
@@ -295,6 +300,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,
+    promptClassificationEnabled: input.promptClassificationEnabled === true,
+    autoClassifyMetadata: input.autoClassifyMetadata === true,
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,

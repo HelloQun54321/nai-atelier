@@ -65,7 +65,10 @@ export const compileCharacterContent = (
   };
   return {
     ...character,
-    prompt: joinTags([...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt]),
+    // AI 分类只整理原文，重复词也属于原配方，不能套用库片段的去重合并。
+    prompt: Object.values(character.sectionMeta || {}).some(meta => meta?.source === 'ai')
+      ? [...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt].map(value => value?.trim()).filter(Boolean).join(', ')
+      : joinTags([...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt]),
     ...(() => {
       /* 没有负面时保持 undefined，不要把空串写进负数提示词字段 */
       const merged = joinTags([

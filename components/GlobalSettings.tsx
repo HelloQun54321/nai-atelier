@@ -1034,6 +1034,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id={`settings-generation`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'generation' ? 'hidden' : ''}`}>
             {activeSection === 'generation' && <div className="space-y-3">
               <div className="appearance-group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                <button type="button" role="switch" aria-checked={appearancePreferences.promptClassificationEnabled} aria-label={t("提示词分类编辑")} onClick={() => updateAppearance({ promptClassificationEnabled: !appearancePreferences.promptClassificationEnabled })} className="mobile-touch flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left">
+                  <b className="text-xs">{t("提示词分类编辑")}</b>
+                  <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full ${appearancePreferences.promptClassificationEnabled ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${appearancePreferences.promptClassificationEnabled ? 'translate-x-5' : ''}`} /></span>
+                </button>
+                {appearancePreferences.promptClassificationEnabled && <div className="border-t border-gray-100 px-3 py-3 dark:border-gray-800">
+                  <label className="mobile-touch flex cursor-pointer items-center gap-2 text-xs font-semibold">
+                    <input type="checkbox" checked={appearancePreferences.autoClassifyMetadata} onChange={event => updateAppearance({ autoClassifyMetadata: event.currentTarget.checked })} className="h-4 w-4 rounded accent-indigo-600" />
+                    {t("导入后自动分类")}
+                  </label>
+                  <p className="mt-1 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("导入元数据后，使用当前助手模型自动整理提示词。仅发送提示词文本，可能产生模型调用费用。")}</p>
+                </div>}
+              </div>
+              <div className="appearance-group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                 <button type="button" role="switch" aria-checked={appearancePreferences.rememberGenerationSettings} aria-label={t("记住上次生图设置")} onClick={() => updateAppearance({ rememberGenerationSettings: !appearancePreferences.rememberGenerationSettings })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:text-indigo-700 dark:hover:text-indigo-300">
                   <span className="min-w-0">
                     <b className="block text-xs text-gray-800 dark:text-gray-100">{t("记住上次生图设置")}</b>

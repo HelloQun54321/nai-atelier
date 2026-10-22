@@ -263,6 +263,21 @@ describe('GlobalSettings', () => {
     for (const field of fields) expect((await screen.findByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(field === '角色负面提示词');
   });
 
+  it('默认整段编辑；自动分类由分类编辑子开关控制，收起后保留选择', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
+    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    const toggle = await screen.findByRole('switch', { name: '提示词分类编辑' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('checkbox', { name: '导入后自动分类' })).toBeNull();
+    fireEvent.click(toggle);
+    expect((screen.getByRole('checkbox', { name: '导入后自动分类' }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('checkbox', { name: '导入后自动分类' }));
+    expect(changed.mock.lastCall?.[0].autoClassifyMetadata).toBe(true);
+    fireEvent.click(toggle); fireEvent.click(toggle);
+    expect((screen.getByRole('checkbox', { name: '导入后自动分类' }) as HTMLInputElement).checked).toBe(true);
+  });
+
   it('应用外观预设和恢复默认外观不会重置连续生成偏好', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, {

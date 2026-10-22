@@ -36,15 +36,15 @@ const onCanvasChange = vi.fn();
 const onGenerateBar = vi.fn();
 const onAgentGenerateReady = vi.fn();
 const drawImage = vi.fn();
-const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string }) => {
+const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel, classified = false }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string; classified?: boolean }) => {
   const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'scene', 'negative', params, patch));
   const [bar, setBar] = useState({ costLabel: '', unavailableLabel: '' });
   return <><output data-testid="mobile-cost">{bar.costLabel}</output><output data-testid="mobile-status">{bar.unavailableLabel || '生成'}</output>
-    <ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft}
+    <output data-testid="prompt-draft">{JSON.stringify(draft)}</output><ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft} promptClassificationEnabled={classified}
       generationUnavailableLabel={generationUnavailableLabel}
       layout={DEFAULT_LAB_PAGE_LAYOUTS[operation]} tagAssistEnabled={false} apiKey="" notify={vi.fn()}
       generationCostLabel={(_operation, _focused, context) => `${context?.width}×${context?.height}`}
-      onPromptChange={vi.fn()} onNegativePromptChange={vi.fn()} onPromptSource={vi.fn()}
+      onPromptChange={prompt => setDraft(previous => ({ ...previous, prompt }))} onNegativePromptChange={negativePrompt => setDraft(previous => ({ ...previous, negativePrompt }))} onPromptSource={vi.fn()}
       onDraftChange={value => setDraft(previous => ({ ...previous, ...value }))}
       onBaseImageChange={vi.fn()} onCanvasChange={onCanvasChange} onGenerate={onGenerate} onAgentGenerateReady={onAgentGenerateReady}
       onGenerateBarChange={value => { onGenerateBar(value); setBar(previous => previous.costLabel === value.costLabel && previous.unavailableLabel === (value.unavailableLabel || '')
@@ -74,6 +74,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('图生图输出尺寸与提交副本', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 分类编辑与整段编辑共享正文，编辑某栏保留其他词、分类负面和参数', async operation => {
+    const view = render(<Harness classified operation={operation} patch={{ prompt: 'artist:test, red dress, forest', negativePrompt: 'lowres', params: { ...params, _promptSections: { wardrobe: 'red dress', scene: 'forest', sectionNegatives: { scene: 'city' } } } }} />);
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).disabled).toBe(false));
+    expect((screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement).value).toBe('artist:test');
+    fireEvent.change(screen.getByRole('textbox', { name: '服饰' }), { target: { value: 'blue dress' } });
+    let draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe('artist:test, blue dress, forest');
+    expect(draft.params._promptSections?.wardrobe).toBe('blue dress');
+    expect(draft.params.seed).toBe(123);
+    view.rerender(<Harness operation={operation} />);
+    const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
+    expect(negative.value).toBe('lowres, city');
+    fireEvent.change(screen.getByDisplayValue('artist:test, blue dress, forest'), { target: { value: 'new full prompt, ' } });
+    draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe('new full prompt, ');
+    expect(draft.negativePrompt).toBe('lowres, city');
+    expect(draft.params._promptSections).toBeUndefined();
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 Medium 全局负面词保持原文且灰白禁用，正向词仍可用', async operation => {
     render(<Harness operation={operation} patch={{ params: { ...params, model: 'nai-diffusion-5-full-medium' } }} />);
     const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;

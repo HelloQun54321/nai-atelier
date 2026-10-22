@@ -8,6 +8,14 @@ import { promptAgentService } from '../../services/promptAgent';
  */
 describe('库生成：结果未知时不自动重发', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
+  it('自动分类请求只发送原词，网络失败也不重发', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetch);
+    const documents = [{ id: 'global', kind: 'global' as const, prompt: 'artist:test, blue dress' }];
+    await expect(promptAgentService.classifyPrompts(documents)).rejects.toBeTruthy();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ documents });
+  });
 
   it('连接级失败只发一次，并把 operationId 放进请求体', async () => {
     const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));

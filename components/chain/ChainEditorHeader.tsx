@@ -3,7 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Copy, FileDown, Languages, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
-import { IconButton } from '../DesignSystem';
+import { IconButton, SegmentedControl } from '../DesignSystem';
 import { MobileBottomSheet } from '../MobileUI';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -46,6 +46,8 @@ export interface ChainEditorHeaderProps {
     hasChanges: boolean;
     hasPendingPreviewCover: boolean;
     tagAssistEnabled: boolean;
+    promptClassificationEnabled?: boolean;
+    onPromptClassificationEnabledChange?: (enabled: boolean) => void;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     activeGenerationMode: GenerationMode;
     selectGenerationMode: (mode: GenerationMode) => void | Promise<void>;
@@ -73,6 +75,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     hasChanges,
     hasPendingPreviewCover,
     tagAssistEnabled,
+    promptClassificationEnabled = false,
+    onPromptClassificationEnabledChange,
     onTagAssistEnabledChange,
     activeGenerationMode,
     selectGenerationMode,
@@ -162,6 +166,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
+                {renderPromptMode()}
                 {canEdit && <>
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
                     <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
@@ -199,6 +204,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     function renderActions() {
         return <div className="flex flex-col gap-1">
+                {renderPromptMode()}
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 <ActionRow
@@ -215,5 +221,13 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 {canEdit && <ActionRow icon={<RotateCcw className="h-4 w-4" />} label={t("重置当前模式")} tone="danger" onClick={() => { closeActions(); handleReset(); }} />}
                 {canSaveActiveModeToLibrary && isPlayground && <ActionRow icon={<Save className="h-4 w-4" />} label={t("保存到库")} tone="primary" disabled={isUploading} onClick={() => { closeActions(); handleFork(); }} />}
             </div>;
+    }
+
+    function renderPromptMode() {
+        return onPromptClassificationEnabledChange && <SegmentedControl size="sm" ariaLabel={t('提示词编辑方式')}
+            className="[&_button]:min-h-11 md:[&_button]:min-h-0"
+            options={[{ value: 'plain', label: '整段' }, { value: 'classified', label: '分类' }]}
+            value={promptClassificationEnabled ? 'classified' : 'plain'}
+            onChange={value => onPromptClassificationEnabledChange(value === 'classified')} />;
     }
 };
