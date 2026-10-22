@@ -108,7 +108,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
-                {onContentRollForGlobal ? (
+                {promptClassificationEnabled && canEdit && onContentRollForGlobal ? (
                     <div className="flex justify-end">
                         <button type="button" onClick={onContentRollForGlobal}
                             className="rounded border border-dashed border-indigo-300 px-2 py-1 text-meta font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">

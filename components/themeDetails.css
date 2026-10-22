@@ -161,16 +161,23 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   border-color: transparent;
   --nai-control-surface: color-mix(in srgb, var(--nai-panel-solid-surface) 24%, transparent);
 }
-/* 连续承托仅包住左侧编辑内容，安全留白放在面板外，不与导航或预览连成整页暗面。 */
+/* 外层只排布模块与留白，各模块独立承托，间隙直接透出壁纸。 */
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface {
   --nai-global-opacity: initial;
   width: calc(100% - 1.5rem);
   margin: .75rem auto calc(var(--spacing) * 36);
   padding: 0;
-  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent);
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface .lab-module-section {
+  background-color: color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent) !important;
   border: 1px solid color-mix(in srgb, var(--nai-panel-border) 28%, transparent) !important;
   border-radius: var(--nai-panel-radius, 18px);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), inset 1px 0 0 rgb(255 255 255 / .15);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / var(--nai-glass-highlight, .3)), inset 1px 0 0 rgb(255 255 255 / calc(var(--nai-glass-highlight, .3) / 3)) !important;
   overflow: visible;
   -webkit-backdrop-filter: blur(var(--nai-glass-blur, 22px)) saturate(var(--nai-glass-saturation, 135%));
   backdrop-filter: blur(var(--nai-glass-blur, 22px)) saturate(var(--nai-glass-saturation, 135%));
@@ -185,7 +192,6 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .lab-editor-surface :is(.text-gray-400, .text-gray-500, [class~='dark:text-gray-400'], [class~='dark:text-gray-500']) { color: var(--color-gray-200); }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .lab-editor-surface button:not(:disabled):is([class~='text-[var(--nai-accent)]'], [class~='dark:text-indigo-300'], [class~='dark:text-indigo-400']) { color: color-mix(in srgb, var(--nai-accent) 25%, var(--color-gray-100)); }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main .lab-module-section { overflow: visible; }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main .lab-module-section,
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main .lab-module-section > summary,
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main .lab-module-section :is(div, section, article, fieldset).appearance-group:not([role]):not([data-active]):not(.appearance-segmented) {
   background: transparent !important;
@@ -390,10 +396,17 @@ html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) >
   background-color: var(--nai-control-surface) !important;
   color: var(--nai-segment-text) !important;
 }
-html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'],
-html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true'] {
+html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'] {
   background-color: var(--color-indigo-600) !important;
   color: var(--nai-on-accent-600) !important;
+}
+html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true'] {
+  background-color: color-mix(in srgb, var(--nai-accent) 14%, var(--nai-control-surface)) !important;
+  color: var(--nai-segment-text) !important;
+  box-shadow: inset 0 0 0 1px var(--nai-control-border), inset 0 1px 0 rgb(255 255 255 / var(--nai-glass-highlight, .3)), var(--nai-filled-shadow) !important;
+}
+html[data-control-style='filled'][data-theme-material='glass'] .workspace-mode-tabs > button[aria-selected='true'] {
+  background-color: color-mix(in srgb, var(--nai-accent) 14%, transparent) !important;
 }
 }
 html[data-control-style='filled'] :is(button, a, input, select, textarea, [tabindex]):focus-visible {
@@ -472,7 +485,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
 }
 @media (prefers-reduced-transparency: reduce) {
   html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main { --nai-control-surface: var(--nai-panel-solid-surface); }
-  html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface { background-color: var(--nai-panel-solid-surface) !important; }
+  html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface .lab-module-section { background-color: var(--nai-panel-solid-surface) !important; }
   html[data-theme-details='true'][data-theme-material='glass'] .ui-backdrop-enter:has(> :is(.settings-dialog, .operation-dialog)) { background-color: rgb(0 0 0 / .55); }
   html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-surface, .appearance-group, .appearance-reading-surface, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer) { background-color: var(--nai-glass-surface, var(--nai-panel-solid-surface)) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
   html[data-theme-material='glass'] [data-appearance='control'][data-tone='neutral']:not([data-active='true']) { background-color: var(--nai-control-surface, var(--nai-panel-solid-surface)) !important; }
@@ -481,7 +494,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
 }
 @supports not (backdrop-filter: blur(1px)) {
   html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .chain-editor-main { --nai-control-surface: var(--nai-panel-solid-surface); }
-  html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface { background-color: var(--nai-panel-solid-surface) !important; }
+  html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .lab-editor-surface .lab-module-section { background-color: var(--nai-panel-solid-surface) !important; }
   html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-surface, .appearance-group, .appearance-reading-surface, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer) { background-color: var(--nai-glass-surface, var(--nai-panel-solid-surface)) !important; }
   html[data-theme-material='glass'][data-control-style='filled'] :is(input, select, textarea) { background-color: var(--nai-control-surface, var(--nai-panel-solid-surface)) !important; }
 }
@@ -491,7 +504,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
 @media (prefers-contrast: more) {
   html[data-design-theme] { --nai-accessible-surface: #fff; --nai-accessible-text: #000; }
   html[data-design-theme].dark { --nai-accessible-surface: #151515; --nai-accessible-text: #fff; }
-  html:root[data-design-theme] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .settings-navigation, .settings-dialog, .operation-dialog, .appearance-panel, .appearance-group, .appearance-reading-surface, .mobile-sheet, .chain-editor-main, .chain-editor-preview, .lab-editor-surface) {
+  html:root[data-design-theme] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .settings-navigation, .settings-dialog, .operation-dialog, .appearance-panel, .appearance-group, .appearance-reading-surface, .mobile-sheet, .chain-editor-main, .chain-editor-preview) {
     background-color: var(--nai-accessible-surface) !important;
     background-image: none !important;
     color: var(--nai-accessible-text) !important;
@@ -510,7 +523,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
 }
 @media (forced-colors: active) {
   html:root[data-design-theme] body { background: Canvas !important; color: CanvasText; }
-  html:root[data-design-theme] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .settings-navigation, .settings-dialog, .operation-dialog, .appearance-panel, .appearance-group, .appearance-reading-surface, .mobile-sheet, .chain-editor-main, .chain-editor-preview, .lab-editor-surface) {
+  html:root[data-design-theme] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .settings-navigation, .settings-dialog, .operation-dialog, .appearance-panel, .appearance-group, .appearance-reading-surface, .mobile-sheet, .chain-editor-main, .chain-editor-preview) {
     background: Canvas !important; color: CanvasText !important;
     border: 1px solid CanvasText !important;
     -webkit-backdrop-filter: none !important; backdrop-filter: none !important;

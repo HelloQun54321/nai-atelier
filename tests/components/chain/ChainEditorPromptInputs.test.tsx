@@ -19,6 +19,16 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
 };
 
 describe('提示词上下文工具隔离', () => {
+  it.each([[false, true, false], [true, true, true], [true, false, false]])('分类编辑=%s、可编辑=%s 时场景镜头 Roll 入口显示=%s', (promptClassificationEnabled, canEdit, visible) => {
+    const onContentRollForGlobal = vi.fn();
+    const props = setup({ promptClassificationEnabled, canEdit, onContentRollForGlobal });
+    const button = screen.queryByRole('button', { name: 'Roll 场景 / 镜头' });
+    expect(Boolean(button)).toBe(visible);
+    if (button) { fireEvent.click(button); expect(onContentRollForGlobal).toHaveBeenCalledOnce(); }
+    else expect(onContentRollForGlobal).not.toHaveBeenCalled();
+    expect(props.setPrompt).not.toHaveBeenCalled();
+    expect(props.markChange).not.toHaveBeenCalled();
+  });
   it('整段与分类切换只改变展示，编辑整段后清除旧分栏，不丢逗号与换行', () => {
     const Harness = () => {
       const [classified, setClassified] = useState(false);

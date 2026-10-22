@@ -773,6 +773,16 @@ body,
 /* 分区入口固定在滚动内容外；电脑只占左栏，预览保持原位置。 */
 .workspace-mode-tabs { height: 44px; padding: 0 !important; gap: 0 !important; border-radius: 0; }
 .workspace-mode-tabs > button { height: 100% !important; }
+.workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 28%;
+  bottom: 28%;
+  width: 1px;
+  background: var(--nai-control-border, var(--color-gray-400));
+  pointer-events: none;
+}
 /* 顶栏收起后共用底板随之隐藏：三分区自带顶栏材质，避免按钮直接裸在壁纸上。 */
 html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='true'] {
   margin-top: 0 !important;
@@ -820,13 +830,13 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   html:root .chain-editor-workspace .workspace-mode-tabs {
     isolation: isolate;
     padding: var(--lab-tabs-padding) 0 !important;
-    gap: 2px !important;
+    gap: 6px !important;
     border: 0;
     border-radius: 0;
     background: transparent !important;
     box-shadow: none;
   }
-  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; box-shadow: none; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
+  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
   .workspace-mode-tabs > button { font-size: .8125rem; font-weight: 500; }
   .workspace-mode-tabs > button[aria-selected='true'] { font-weight: 600; }
   .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); }

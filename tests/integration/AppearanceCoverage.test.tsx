@@ -120,7 +120,7 @@ describe('全局外观覆盖审计', () => {
   it('桌面两排导航只绘制一块连续底板，保留点击区域、选中颜色和触屏高度', () => {
     const root = 'html:root .chain-editor-workspace .workspace-mode-tabs';
     const nav = declarations(root, '(min-width: 1024px)', css);
-    expect(nav).toMatchObject({ background: 'transparent', border: '0', 'border-radius': '0', padding: 'var(--lab-tabs-padding) 0', gap: '2px' });
+    expect(nav).toMatchObject({ background: 'transparent', border: '0', 'border-radius': '0', padding: 'var(--lab-tabs-padding) 0', gap: '6px' });
     expect(css).not.toContain('.workspace-mode-tabs::before');
     const header = "html:root .chain-editor-workspace .chain-editor-header[data-lab-navigation='joined']";
     expect(declarations(header, '(min-width: 1024px)', css)).toMatchObject({ background: 'transparent', 'border-color': 'transparent', 'box-shadow': 'none', 'backdrop-filter': 'none' });
@@ -128,7 +128,8 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(plate, '(min-width: 1024px)', css)).toMatchObject({ display: 'block', 'pointer-events': 'none', height: 'auto', 'clip-path': 'var(--lab-navigation-outline)', bottom: 'calc(-1 * var(--lab-tabs-height))' });
     expect(declarations('.lab-navigation-surface', undefined, css).display).toBe('none');
     expect(declarations("html:root .chain-editor-header[data-lab-navigation='joined'] .generation-mode-nav", '(min-width: 1024px)', css)).toMatchObject({ background: 'transparent', 'border-color': 'transparent', 'box-shadow': 'none' });
-    expect(declarations(`${root} > button`, '(min-width: 1024px)', css)['box-shadow']).toBe('none');
+    expect(declarations(`${root} > button`, '(min-width: 1024px)', css)['box-shadow']).toBeUndefined();
+    expect(declarations(".workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before", undefined, css)).toMatchObject({ width: '1px', top: '28%', bottom: '28%', 'pointer-events': 'none', background: 'var(--nai-control-border, var(--color-gray-400))' });
     expect(declarations('.chain-editor-workspace', '(min-width: 1024px) and (any-pointer: coarse)', css)['--lab-tabs-height']).toBe('48px');
     expect(readFileSync('components/chain/ChainEditorHeader.tsx', 'utf8')).toContain('aria-hidden="true" className="lab-navigation-surface workspace-command-bar"');
   });
@@ -145,8 +146,9 @@ describe('全局外观覆盖审计', () => {
     expect(panels.opacity).toBeUndefined();
     const editor = declarations(`${root} .lab-editor-surface`, undefined, source);
     expect(editor['--nai-global-opacity']).toBe('initial');
-    expect(editor['background-color']).toContain('--nai-lab-editor-opacity');
-    expect(editor['background-color']).not.toContain('--nai-global-opacity');
+    const moduleSurface = declarations(`${root} .lab-editor-surface .lab-module-section`, undefined, source);
+    expect(moduleSurface['background-color']).toContain('--nai-lab-editor-opacity');
+    expect(moduleSurface['background-color']).not.toContain('--nai-global-opacity');
     const mobileDetails = declarations(`${root} .history-viewer .history-viewer-details`, '(max-width: 767px)', source);
     expect(mobileDetails['background-color']).toContain('--nai-global-opacity');
     expect(mobileDetails['backdrop-filter']).toContain('blur(');
@@ -473,16 +475,20 @@ describe('全局外观覆盖审计', () => {
       if (rule.selector.includes('data-theme-background')) expect(rule.selector).not.toMatch(/safe-mode|\bimg\b|media-card|gallery-image/);
     });
   });
-  it('四模式共用通透编辑面，空预览开放且作品预览不铺衬底', () => {
+  it('四模式的编辑模块独立承托，外层与模块间隙透明，空预览及作品不铺衬底', () => {
     const source = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
     expect(declarations(`${root} .chain-editor-main`, undefined, source)['background-color']).toBe('transparent');
     expect(declarations(`${root} .chain-editor-preview`, undefined, source)['background-color']).toBeUndefined();
-    const module = declarations(`${root} .chain-editor-main .lab-module-section`, undefined, source);
-    expect(module.background).toBe('transparent');
-    expect(module.border).toBe('0');
-    expect(module['backdrop-filter']).toBe('none');
+    const module = declarations(`${root} .lab-editor-surface .lab-module-section`, undefined, source);
+    expect(module['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent)');
+    expect(module.border).toContain('1px solid');
+    expect(module['border-radius']).toBe('var(--nai-panel-radius, 18px)');
+    expect(module['backdrop-filter']).toContain('blur(var(--nai-glass-blur');
     expect(module.overflow).toBe('visible');
+    for (const suffix of [' > summary', ' :is(div, section, article, fieldset).appearance-group:not([role]):not([data-active]):not(.appearance-segmented)']) {
+      expect(declarations(`${root} .chain-editor-main .lab-module-section${suffix}`, undefined, source)).toMatchObject({ background: 'transparent', border: '0', 'backdrop-filter': 'none' });
+    }
     expect(declarations('.lab-preview-stage', undefined, source)['backdrop-filter']).toBe('none');
     expect(declarations('.lab-preview-stage', undefined, source)['background-color']).toBeUndefined();
     expect(declarations("html[data-theme-material='glass'] .lab-preview-stage", undefined, source)['background-color']).toBeUndefined();
@@ -492,23 +498,32 @@ describe('全局外观覆盖审计', () => {
     expect(nav['background-color']).toBe('var(--color-indigo-600)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
     expect(declarations(`${root} .generation-action-button--workbench:not(.generation-action-button--loading) .generation-action-button__cost`, undefined, source)).toMatchObject({ color: 'inherit', background: 'transparent' });
-    expect(declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source)).toEqual(nav);
+    const secondary = declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source);
+    expect(secondary['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 14%, var(--nai-control-surface))');
+    expect(secondary.color).toBe('var(--nai-segment-text)');
+    expect(secondary['box-shadow']).toContain('var(--nai-control-border)');
+    expect(secondary['box-shadow']).toContain('var(--nai-glass-highlight, .3)');
+    expect(declarations("html[data-control-style='filled'][data-theme-material='glass'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source)['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 14%, transparent)');
     const surface = declarations(`${root} .lab-editor-surface`, undefined, source);
-    expect(surface['background-color']).toContain('transparent');
+    expect(surface.background).toBe('transparent');
+    expect(surface.border).toBe('0');
+    expect(surface['box-shadow']).toBe('none');
     expect(surface.width).toBe('calc(100% - 1.5rem)');
     expect(surface.padding).toBe('0');
     expect(surface.margin).toBe('.75rem auto calc(var(--spacing) * 36)');
     expect(surface.filter).toBeUndefined();
-    expect(surface['backdrop-filter']).toContain('blur(var(--nai-glass-blur');
+    expect(surface['backdrop-filter']).toBe('none');
     expect(declarations(`${root} .lab-editor-surface`, '(min-width: 768px)', source)['margin-bottom']).toBe('calc(var(--spacing) * 24)');
     expect(source).not.toContain('.app-shell');
     expect(declarations(`${root}.dark .chain-editor-workspace`, undefined, source)['background-color']).toBeUndefined();
-    expect(declarations(`${root} .lab-editor-surface`, '(prefers-reduced-transparency: reduce)', source)['background-color']).toBe('var(--nai-panel-solid-surface)');
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section`, '(prefers-reduced-transparency: reduce)', source)['background-color']).toBe('var(--nai-panel-solid-surface)');
+    expect(source).not.toContain('.lab-editor-surface { background-color: var(--nai-panel-solid-surface)');
     expect(sources.find(item => item.file === 'components/ImageEditPreview.tsx')!.text).toContain('<ChainEditorPreview');
     for (const name of ['ChainEditor', 'ImageEditControls']) {
       const code = sources.find(item => item.file === `components/${name}.tsx`)!.text;
       expect(code).toContain('<LabModuleSection');
       expect(code.match(/className="lab-editor-surface/g)).toHaveLength(1);
+      expect(code).toMatch(/className="lab-editor-surface[^\"]*gap-6/);
     }
   });
   it('默认明暗的辅助文字可读，导航与内容库标题不再使用过浅或过暗的字阶', () => {
@@ -524,12 +539,12 @@ describe('全局外观覆盖审计', () => {
     expect(declarations('.generation-action-button').color).toBe('var(--nai-accent-text-800)');
     expect(declarations('.generation-action-button__cost')).toMatchObject({ color: 'var(--nai-accent-text-800)', background: 'transparent' });
   });
-  it('夜间只增强连续编辑面，输入文字在最亮壁纸上仍具备阅读对比度', () => {
+  it('夜间独立编辑模块沿用透明度与字段保护，输入文字在最亮壁纸上仍具备阅读对比度', () => {
     const source = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
     const night = `${root}.dark .lab-editor-surface`;
     const surface = declarations(night, undefined, source);
-    expect(declarations(`${root} .lab-editor-surface`, undefined, source)['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent)');
+    expect(declarations(`${root} .lab-editor-surface .lab-module-section`, undefined, source)['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) var(--nai-lab-editor-opacity, 60%), transparent)');
     const fieldOpacity = parseFloat(surface['--nai-editor-field-fill']) / 100;
     const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
     const palette = resolveThemePalette(preset.palette, true);
@@ -663,7 +678,7 @@ describe('全局外观覆盖审计', () => {
     expect(lensOrder).toEqual(['var(--nai-glass-filter) var(--nai-glass-contour, )']);
     expect(filteredSelectors[0]).not.toMatch(/(?:img|canvas|media-card|gallery-image)/);
     for (const surface of ['.settings-dialog', '.operation-dialog', '.mobile-page-header', '.mobile-detail-header', '.mobile-detail-footer']) expect(filteredSelectors[0]).toContain(surface);
-    const nested = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) :is(.appearance-surface, .appearance-panel)";
+    const nested = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) .appearance-surface";
     expect(declarations(nested, undefined, detailCss)['backdrop-filter']).toBe('none');
     expect(declarations(nested, undefined, detailCss)['-webkit-backdrop-filter']).toBe('none');
     const button = "html[data-theme-material='glass'][data-control-style='filled'] [data-appearance='control'][data-tone='neutral']:not(input):not(select):not([data-active='true'])";

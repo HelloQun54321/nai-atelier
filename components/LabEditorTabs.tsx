@@ -25,18 +25,20 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
     const firstMode = modes?.querySelector<HTMLButtonElement>(':scope > button:first-child');
     const lastMode = modes?.querySelector<HTMLButtonElement>(':scope > button:last-child');
     if (!nav || !host || !chrome || !header || !modes || !firstMode || !lastMode) return;
-    // 对齐首尾按钮的选中块边界，不包含模式导航外框的留白。
+    // 次级分区在首尾模式按钮之间居中，宽度收紧；连续底板保留原来的转折弧度。
     const measure = () => {
       const firstRect = firstMode.getBoundingClientRect(), lastRect = lastMode.getBoundingClientRect();
       const modeRect = modes.getBoundingClientRect(), headerRect = header.getBoundingClientRect();
       const bodyRect = nav.nextElementSibling?.getBoundingClientRect();
-      const width = lastRect.right - firstRect.left;
-      if (!bodyRect || width <= 0) return;
+      const available = lastRect.right - firstRect.left;
+      if (!bodyRect || available <= 0) return;
+      const width = Math.min(available, 30 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16));
+      const inset = (available - width) / 2;
       nav.style.setProperty('--lab-tabs-width', `${width}px`);
-      nav.style.setProperty('--lab-tabs-left', `${firstRect.left - bodyRect.left}px`);
+      nav.style.setProperty('--lab-tabs-left', `${firstRect.left + inset - bodyRect.left}px`);
       // 共用一个连续轮廓，避免两块半透明底板重叠形成接缝。
       const w = headerRect.width, h = headerRect.height;
-      const left = modeRect.left - headerRect.left, right = modeRect.right - headerRect.left;
+      const left = modeRect.left - headerRect.left + inset, right = modeRect.right - headerRect.left - inset;
       const bottom = h + nav.getBoundingClientRect().height;
       const radius = Math.min(parseFloat(getComputedStyle(header).borderTopLeftRadius) || 10, h / 2);
       const lowerRadius = Math.min(parseFloat(getComputedStyle(modes).borderTopLeftRadius) || radius, nav.getBoundingClientRect().height / 2);

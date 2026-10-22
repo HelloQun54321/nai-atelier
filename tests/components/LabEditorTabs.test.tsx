@@ -20,7 +20,7 @@ const Harness = () => {
   </>;
 };
 
-it('三分区对齐首尾模式按钮选中块，排除导航外框留白并紧贴顶栏', () => {
+it('三分区收紧居中，宽窄切换仍保留两排连接弧度并紧贴顶栏', () => {
   let modeLeft = 110, modeWidth = 560;
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const rect = this.classList.contains('generation-mode-nav') ? { left: modeLeft, right: modeLeft + modeWidth, width: modeWidth, bottom: 52 }
@@ -43,19 +43,26 @@ it('三分区对齐首尾模式按钮选中块，排除导航外框留白并紧�
   expect(tabs.classList.contains('grid-cols-3')).toBe(true);
   expect(tabs.classList.contains('appearance-segmented')).toBe(true);
   expect(tabs.classList.contains('appearance-group')).toBe(false);
-  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('552px');
-  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('34px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('480px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('70px');
   const header = container.querySelector<HTMLElement>('.chain-editor-header')!;
   expect(header.dataset.labNavigation).toBe('joined');
   const outline = header.style.getPropertyValue('--lab-navigation-outline');
   expect(outline).toContain('H 990 Q 1000 0 1000 10');
-  expect(outline).toContain('Q 590 94 580 94 H 40 Q 30 94 30 84');
+  expect(outline).toContain('H 562 Q 554 58 554 66');
+  expect(outline).toContain('Q 554 94 544 94 H 76 Q 66 94 66 84');
+  expect(outline).toContain('V 66 Q 66 58 58 58');
   expect(container.querySelector<HTMLElement>('.chain-editor-workspace')?.style.getPropertyValue('--lab-tabs-chrome-gap')).toBe('6px');
   modeLeft = 100; modeWidth = 500;
   fireEvent(window, new Event('resize'));
-  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('492px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('480px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('30px');
+  expect(header.style.getPropertyValue('--lab-navigation-outline')).toContain('Q 514 94 504 94 H 36 Q 26 94 26 84');
+  modeWidth = 300;
+  fireEvent(window, new Event('resize'));
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('292px');
   expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('24px');
-  expect(header.style.getPropertyValue('--lab-navigation-outline')).toContain('Q 520 94 510 94 H 30 Q 20 94 20 84');
+  expect(header.style.getPropertyValue('--lab-navigation-outline')).toContain('Q 320 94 310 94 H 30 Q 20 94 20 84');
   cleanup();
   expect(header.dataset.labNavigation).toBeUndefined();
   expect(header.style.getPropertyValue('--lab-navigation-outline')).toBe('');
