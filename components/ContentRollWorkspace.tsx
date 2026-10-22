@@ -324,7 +324,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const rollRows = useMemo<RollToChainSourceRow[]>(() => KINDS
     .map(kind => ({ kind, row: activePicks[kind] as RollRow | undefined }))
     .filter(({ row }) => row && row.filled && String(row.text || '').trim())
-    .map(({ kind, row }) => ({ kind, name: String(row!.name || ''), text: String(row!.text || '') })), [activePicks]);
+    .map(({ kind, row }) => ({ kind, name: String(row!.name || ''), text: String(row!.text || ''), negative: String(row!.negative || '') })), [activePicks]);
   const selectedChain = useMemo(() => styleChains.find(item => item.id === chainTargetId) || null, [chainTargetId, styleChains]);
   const chainPlan = useMemo(
     () => planRollToChain(selectedChain, rollRows.filter(row => chainPicked.has(row.kind)), { scope: chainScope }),

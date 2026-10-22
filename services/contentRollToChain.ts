@@ -8,18 +8,19 @@
  *
  * 本模块只做纯计算：给出新的 params / variableValues 与逐栏差异，写库交给调用方（App）。
  */
-import { mergePromptSections, normalizeParams } from './labWorkspace';
+import { mergePromptSections, normalizeParams, resolvePromptSections } from './labWorkspace';
 import { createUuid } from './id';
 import type { NAIParams, PromptChain } from '../types';
 
 export const ROLL_TO_CHAIN_ROLE_KINDS = ['appearance', 'wardrobe', 'pose', 'expression'] as const;
 export const ROLL_TO_CHAIN_GLOBAL_KINDS = ['scene', 'camera'] as const;
 
-/** Roll 结果的一栏：只有正文与条目名参与写入。 */
+/** Roll 结果的一栏：正负词与条目名一起写入。 */
 export interface RollToChainSourceRow {
   kind: string;
   name?: string;
   text: string;
+  negative?: string;
 }
 
 /** split = 按栏写入（角色四栏 + 全局场景/镜头）；extra = 六类合并成一段写进补充。 */
@@ -77,14 +78,17 @@ export const planRollToChain = (
   const scope: RollToChainScope = options.scope === 'extra' ? 'extra' : 'split';
   const include = Array.isArray(options.include) ? new Set(options.include) : null;
   const params = normalizeParams((chain?.params || null) as NAIParams | null) as NAIParams & Record<string, unknown>;
-  const sourceSections = plainObject(params._promptSections);
-  const sections: Record<string, unknown> = sourceSections ? { ...sourceSections } : {};
+  // 未分栏或与旧分栏不一致的主体，沿用编辑器规则保留在补充栏。
+  const sections: Record<string, unknown> = { ...resolvePromptSections(params._promptSections,
+    String(chain?.variableValues?.subject ?? mergePromptSections(params._promptSections))) };
+  const sectionNegatives = { ...(plainObject(sections.sectionNegatives) || {}) };
   const sourceMeta = plainObject(sections.sectionMeta);
   const sectionMeta: Record<string, unknown> = sourceMeta ? { ...sourceMeta } : {};
   const characters: any[] = Array.isArray(params.characters)
     ? params.characters.map((item: any) => ({
       ...item,
       sections: plainObject(item?.sections) ? { ...item.sections } : item?.sections,
+      sectionNegatives: { ...(plainObject(item?.sectionNegatives) || {}) },
       sectionMeta: plainObject(item?.sectionMeta) ? { ...item.sectionMeta } : item?.sectionMeta,
     }))
     : [];
@@ -97,6 +101,8 @@ export const planRollToChain = (
     const previous = trimmed(sections.extra);
     const merged = [...(previous ? [previous] : []), ...usable.map(row => trimmed(row.text))].join(', ');
     sections.extra = merged;
+    const negative = [trimmed(sectionNegatives.extra), ...usable.map(row => trimmed(row.negative))].filter(Boolean).join(', ');
+    if (negative) sectionNegatives.extra = negative;
     sectionMeta.extra = mergeMeta(sectionMeta.extra, '一键 Roll 合并');
     writes.push({ kind: 'extra', target: 'extra', text: merged, previous });
     for (const row of usable) writes.push({ kind: row.kind, target: 'extra', text: trimmed(row.text), previous: '' });
@@ -105,19 +111,24 @@ export const planRollToChain = (
       const value = trimmed(row.text);
       if (isRoleKind(row.kind)) {
         const character = characters[0] || (characters[0] = {
-          id: options.characterId || createUuid(), x: 0.5, y: 0.5, prompt: '', sections: {}, sectionMeta: {},
+          id: options.characterId || createUuid(), x: 0.5, y: 0.5, prompt: '', sections: {}, sectionNegatives: {}, sectionMeta: {},
         });
         const characterSections = plainObject(character.sections) || {};
         const previous = trimmed(characterSections[row.kind]);
         character.sections = { ...characterSections, [row.kind]: value };
+        if (trimmed(row.negative)) character.sectionNegatives[row.kind] = trimmed(row.negative);
+        else delete character.sectionNegatives[row.kind];
         character.sectionMeta = { ...(plainObject(character.sectionMeta) || {}), [row.kind]: mergeMeta(plainObject(character.sectionMeta)?.[row.kind], row.name || '') };
         // 这几栏在风格串里只属于角色：全局栏里的同名遗留值一并移走，避免正文出现两份。
         delete sections[row.kind];
         delete sectionMeta[row.kind];
+        delete sectionNegatives[row.kind];
         writes.push({ kind: row.kind, target: 'character', text: value, previous });
       } else if (isGlobalKind(row.kind)) {
         const previous = trimmed(sections[row.kind]);
         sections[row.kind] = value;
+        if (trimmed(row.negative)) sectionNegatives[row.kind] = trimmed(row.negative);
+        else delete sectionNegatives[row.kind];
         sectionMeta[row.kind] = mergeMeta(sectionMeta[row.kind], row.name || '');
         writes.push({ kind: row.kind, target: 'global', text: value, previous });
       } else {
@@ -126,6 +137,8 @@ export const planRollToChain = (
     }
   }
 
+  if (Object.keys(sectionNegatives).length) sections.sectionNegatives = sectionNegatives;
+  else delete sections.sectionNegatives;
   params._promptSections = (Object.keys(sectionMeta).length ? { ...sections, sectionMeta } : sections) as NAIParams['_promptSections'];
   if (characters.length) params.characters = characters;
   const variableValues = {

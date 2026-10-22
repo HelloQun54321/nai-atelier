@@ -4,6 +4,12 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-10-22
+
+- **Codex (GPT-6)**：按用户后续合并授权整理 PR #5 的四项审查修复与回归，修复批次版本升至 1.101.1；复用已通过的 75 项定向测试，提交门禁统一执行密钥扫描、ESLint 与 TypeScript 检查。修复在独立工作区提交，原本地 main 的未推送提交及未提交改动保留。
+
+- **Codex (GPT-6)**：在 PR #5 提交的独立工作区修复主体原文丢失、分类负面残留／漏传、自动封面原件随历史删除、完成回填后新增／改文条目漏查四项问题；新增 14 项回归并补齐两入口断言，5 个定向文件共 75 项通过，`git diff --check` 通过。同步使用说明及模块决策，原主工作区 55 个未提交文件的内容哈希保持一致，不提交或合并，版本待最终提交批次统一递增。
+
 ## 2026-10-21
 
 - **DeepSeek Harness (deepseek-v4.1-flash)**：图片提示词库新增生成图回查（`prompt_library_links` 关联表、分批回填、`/api/prompt-library-links/*` 三个接口、详情缩略图墙与卡片角标）与「AI 一键六库」（`scripts/prompt-agent.mjs` 的 `generateLibraryBundle`、网关路由、六库面板与逐条入库）；同步补齐 worker／助手／前端定向回归与四语词条。后续补入：匹配正文包含角色分栏（修复苗族服饰等角色内容进不了图墙）、「一键 Roll → 风格串」与「AI 一键六库 → 风格串」（`services/contentRollToChain.ts` 纯函数、面板入口、写完清编辑器草稿），新增 `tests/services/contentRollToChain.test.ts` 与 2 条角色分栏 worker 回归；再补库条目自动封面（无封面时取最早关联的生成图，手动封面不覆盖）与「从历史选图」按条目收敛（`syncPromptLibraryCover`、picker 的 `scopeChainId`、2 条封面 worker 回归）。最后按实际使用反馈收紧来源保护：只要历史行已有具体来源 id 就一律不改写（即使类型为空），并补 1 条 worker 回归。

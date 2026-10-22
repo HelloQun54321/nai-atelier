@@ -15,6 +15,12 @@ const BACKFILL_BATCH_ROWS = 200;
 
 const backfillProgressKey = (userId: string) => `prompt_library_links_backfill_v1:${userId}`;
 
+/** 新条目或正文变化只补算该条目，避免重建其他条目已解除的关联。 */
+export async function queuePromptLibraryLinkBackfill(db: D1Database, userId: string, chainId: string, kind: string) {
+  if (!(PROMPT_LIBRARY_KINDS as readonly string[]).includes(kind)) return;
+  await saveBackfillProgress(db, `${backfillProgressKey(userId)}:chain:${chainId}`, { cursor: 0, scanned: 0, linked: 0, done: false });
+}
+
 export interface PromptLibraryEntry {
   id: string;
   kind: string;
@@ -110,7 +116,7 @@ export function promptLibraryHistoryText(row: {
 
 /**
  * 库条目自动封面：没有任何封面时，用「最早关联到的那张生成图」补上。
- * 手动换过的封面（`preview_image` 非空）一律不动；这里直接引用历史图 URL，不再复制一份资产。
+ * 手动换过的封面（`preview_image` 非空）一律不动；复用原件资产引用，让删除历史时仍保护封面。
  */
 export async function syncPromptLibraryCover(db: D1Database, chainIds: unknown[]) {
   const ids = [...new Set((chainIds || []).map(value => String(value ?? '')).filter(Boolean))];
@@ -120,12 +126,13 @@ export async function syncPromptLibraryCover(db: D1Database, chainIds: unknown[]
       const chain = await db.prepare('SELECT preview_image FROM chains WHERE id = ?').bind(chainId).first<{ preview_image: string | null }>();
       if (!chain) continue;
       if (String(chain.preview_image || '').trim()) continue;
-      const first = await db.prepare(`SELECT h.id AS id FROM prompt_library_links l
+      const first = await db.prepare(`SELECT h.image_key FROM prompt_library_links l
         JOIN local_generation_history h ON h.id = l.history_id
-        WHERE l.chain_id = ? ORDER BY h.created_at ASC, h.id ASC LIMIT 1`).bind(chainId).first<{ id: string }>();
-      if (!first?.id) continue;
+        WHERE l.chain_id = ? AND COALESCE(h.image_key, '') <> ''
+        ORDER BY h.created_at ASC, h.id ASC LIMIT 1`).bind(chainId).first<{ image_key: string }>();
+      if (!first?.image_key) continue;
       await db.prepare(`UPDATE chains SET preview_image = ?
-        WHERE id = ? AND COALESCE(TRIM(preview_image), '') = ''`).bind(`/api/local-history/${first.id}/image`, chainId).run();
+        WHERE id = ? AND COALESCE(TRIM(preview_image), '') = ''`).bind(`/api/assets/${encodeURIComponent(first.image_key)}`, chainId).run();
       updated += 1;
     } catch (cause) {
       console.error('提示词库自动封面写入失败', cause);
@@ -252,7 +259,7 @@ export async function deletePromptLibraryLinksByChain(db: D1Database, chainId: s
 /**
  * 条目正文或名称变更后重算归属：只处理原先挂着该条目的图片，
  * 命中则重建关联，不再命中则清掉以它为主来源的来源字段。
- * 其它历史行若因正文加长而新命中，由 /rebuild 全量回填补齐。
+ * 其它历史行若因正文变化而新命中，由保存入口安排的逐条目回填补齐。
  */
 export async function recomputePromptLibraryLinksForChain(db: D1Database, chainId: string) {
   await ensurePromptLibraryLinkSchema(db);
@@ -317,14 +324,27 @@ async function saveBackfillProgress(db: D1Database, key: string, progress: Promp
  * 分批懒回填：一次只扫 BACKFILL_BATCH_ROWS 行，进度落 settings，下次请求接着跑。
  * restart 只在新一轮开始（上次已完成）时重置进度：正在进行的回填继续推进，
  * 否则反复调用 /rebuild 会一直停在第一页。
+ * 普通读取优先推进新增／改文条目，详情优先处理当前条目；每次仍最多扫描一批。
  */
 export async function runPromptLibraryLinkBackfill(
   db: D1Database,
   userId: string,
   restart = false,
+  preferredChainId = '',
 ): Promise<PromptLibraryLinkBackfillProgress> {
   await ensurePromptLibraryLinkSchema(db);
-  const key = backfillProgressKey(userId);
+  const baseKey = backfillProgressKey(userId);
+  const pending = restart ? null : await db.prepare('SELECT key FROM settings WHERE key GLOB ? ORDER BY key = ? DESC, key LIMIT 1')
+    .bind(`${baseKey}:chain:*`, `${baseKey}:chain:${preferredChainId}`).first<{ key: string }>();
+  const chainId = pending?.key.slice(`${baseKey}:chain:`.length);
+  const key = chainId ? `${baseKey}:chain:${chainId}` : baseKey;
+  const saveProgress = async (progress: PromptLibraryLinkBackfillProgress) => {
+    if (chainId && progress.done) {
+      await db.prepare('DELETE FROM settings WHERE key = ?').bind(key).run();
+      return progress;
+    }
+    return saveBackfillProgress(db, key, progress);
+  };
   const stored = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
   let progress = normalizeBackfillProgress(parseStoredJson(stored?.value, null));
   if (restart && progress.done) progress = { cursor: 0, scanned: 0, linked: 0, done: false };
@@ -332,19 +352,24 @@ export async function runPromptLibraryLinkBackfill(
 
   const total = Number((await db.prepare('SELECT COUNT(*) AS count FROM local_generation_history WHERE user_id = ?')
     .bind(userId).first<{ count: number }>())?.count || 0);
-  if (progress.cursor >= total) return saveBackfillProgress(db, key, { ...progress, done: true });
+  if (progress.cursor >= total) return saveProgress({ ...progress, done: true });
 
   const rows = await db.prepare(`SELECT id, prompt, base_prompt, subject_prompt, params, created_at
     FROM local_generation_history WHERE user_id = ?
     ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
     .bind(userId, BACKFILL_BATCH_ROWS, progress.cursor).all<any>();
   const scanned = rows.results || [];
-  const entries = await loadPromptLibraryEntries(db);
+  const entries = (await loadPromptLibraryEntries(db)).filter(entry => !chainId || entry.id === chainId);
   let linkedCount = 0;
   for (const row of scanned) {
     const matches = matchPromptLibraryEntries(promptLibraryHistoryText(row), entries);
     if (!matches.length) continue;
-    linkedCount += await writePromptLibraryLinks(db, { matches }, String(row.id), Number(row.created_at) || 0);
+    if (chainId) {
+      for (const entry of matches) await upsertPromptLibraryLink(db, String(row.id), entry, Number(row.created_at) || 0);
+      linkedCount += matches.length;
+    } else {
+      linkedCount += await writePromptLibraryLinks(db, { matches }, String(row.id), Number(row.created_at) || 0);
+    }
   }
   const next: PromptLibraryLinkBackfillProgress = {
     cursor: progress.cursor + scanned.length,
@@ -356,7 +381,7 @@ export async function runPromptLibraryLinkBackfill(
   if (linkedCount > 0) {
     try { await syncPromptLibraryCovers(db); } catch (cause) { console.error('提示词库自动封面回填失败', cause); }
   }
-  return saveBackfillProgress(db, key, next);
+  return saveProgress(next);
 }
 
 // /api/prompt-library-links/* 反查接口；未匹配的路径返回 null 交给后续路由。
@@ -408,7 +433,7 @@ export async function handlePromptLibraryLinkRoute(ctx: RouteContext): Promise<R
     // 默认一屏 60 张，上限 200，避免一次拉整库原图索引。
     const limit = clampInt(url.searchParams.get('limit'), 60, 1, 200);
     const offset = clampInt(url.searchParams.get('offset'), 0, 0, 1_000_000);
-    await runPromptLibraryLinkBackfill(db, currentUser.id);
+    await runPromptLibraryLinkBackfill(db, currentUser.id, false, chainId);
     const [rows, count] = await Promise.all([
       db.prepare(`SELECT history.*, links.kind AS link_kind, links.chain_name AS link_chain_name
         FROM prompt_library_links links

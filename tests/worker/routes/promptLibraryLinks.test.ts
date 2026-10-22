@@ -386,7 +386,7 @@ it('保存历史命中库条目时，立刻把这张图设为该条目的自动�
   addChain(f, { id: 'lib-a', type: 'appearance', name: '白发', basePrompt: 'white hair, long hair' });
   const response = await saveHistory(f, { id: 'img-1', prompt: 'white hair, long hair, solo' });
   expect(response.status).toBe(200);
-  expect(coverOf(f, 'lib-a')).toBe('/api/local-history/img-1/image');
+  expect(coverOf(f, 'lib-a')).toBe('/api/assets/local-history%2Fowner%2Fimg-1.png');
 });
 
 it('自动封面取最早关联到的生成图，且不覆盖手动换过的封面', async () => {
@@ -401,7 +401,83 @@ it('自动封面取最早关联到的生成图，且不覆盖手动换过的封�
 
   expect((await f.invoke('/api/prompt-library-links/rebuild', 'POST', {})).status).toBe(200);
 
-  expect(coverOf(f, 'lib-appearance')).toBe('/api/local-history/img-older/image');
-  expect(coverOf(f, 'lib-pose')).toBe('/api/local-history/img-older/image');
+  expect(coverOf(f, 'lib-appearance')).toBe('/api/assets/synthetic%2Fimg-older');
+  expect(coverOf(f, 'lib-pose')).toBe('/api/assets/synthetic%2Fimg-older');
   expect(coverOf(f, 'lib-wardrobe')).toBe('/api/assets/covers/manual.png');
+});
+
+it('自动封面保留历史原件，删除历史不丢图，最后一个封面释放后才清理', async () => {
+  const f = fixture();
+  for (const id of ['lib-a', 'lib-b']) addChain(f, { id, basePrompt: 'white hair, long hair' });
+  await saveHistory(f, { id: 'cover-img', prompt: 'white hair, long hair' });
+  const key = savedRow(f, 'cover-img').image_key;
+  const url = `/api/assets/${encodeURIComponent(key)}`;
+  expect(coverOf(f, 'lib-a')).toBe(url);
+  expect(coverOf(f, 'lib-b')).toBe(url);
+  expect((await f.invoke('/api/local-history/cover-img', 'DELETE')).status).toBe(200);
+  expect(f.images.has(key)).toBe(true);
+  expect(coverOf(f, 'lib-a')).toBe(url);
+  expect((await f.invoke('/api/chains/lib-a', 'PUT', { previewImage: '' })).status).toBe(200);
+  expect(f.images.has(key)).toBe(true);
+  expect((await f.invoke('/api/chains/lib-b', 'DELETE')).status).toBe(200);
+  expect(f.images.has(key)).toBe(false);
+});
+
+it('回填完成后新建条目仍分批补算旧图，且不恢复其他条目已解除的关联', async () => {
+  const f = fixture();
+  addChain(f, { id: 'existing', basePrompt: 'white hair, long hair' });
+  for (let index = 0; index < 250; index++) addHistory(f, { id: `old-${index}`, prompt: 'white hair, long hair', createdAt: index + 1 });
+  await f.invoke('/api/prompt-library-links/summary');
+  await f.invoke('/api/prompt-library-links/summary');
+  const completed = progressOf(f);
+  expect(completed.done).toBe(true);
+  await f.invoke('/api/local-history/old-249/unlink', 'PUT');
+  expect(linkIds(f, 'old-249')).toEqual([]);
+
+  const created = await (await f.invoke('/api/chains', 'POST', { type: 'appearance', name: '白发', basePrompt: 'white hair, long hair' })).json() as any;
+  const pendingKey = `prompt_library_links_backfill_v1:owner:chain:${created.id}`;
+  const first = await (await f.invoke(`/api/prompt-library-links/images?chainId=${created.id}`)).json() as any;
+  expect(first.count).toBe(200);
+  expect(linkIds(f, 'old-249')).toEqual([created.id]);
+  expect(linkIds(f, 'old-248')).toEqual([created.id, 'existing'].sort());
+  expect(JSON.parse((f.sqlite.prepare('SELECT value FROM settings WHERE key = ?').get(pendingKey) as any).value)).toMatchObject({ cursor: 200, done: false });
+  const second = await (await f.invoke(`/api/prompt-library-links/images?chainId=${created.id}`)).json() as any;
+  expect(second.count).toBe(250);
+  expect(f.sqlite.prepare('SELECT value FROM settings WHERE key = ?').get(pendingKey)).toBeUndefined();
+  expect(progressOf(f)).toEqual(completed);
+  // 这次补算不改历史的主来源或参数。
+  expect(savedRow(f, 'old-249')).toMatchObject({ source_chain_id: null, params: '{"model":"nai-diffusion-4-5-full"}' });
+});
+
+it('改正文会补上新命中的旧图，改名及非库条目不安排补算', async () => {
+  const f = fixture();
+  addChain(f, { id: 'lib-a', basePrompt: 'white hair, long hair' });
+  addHistory(f, { id: 'white', prompt: 'white hair, long hair' });
+  addHistory(f, { id: 'black', prompt: 'black hair, short hair' });
+  await f.invoke('/api/prompt-library-links/summary');
+  expect(linkIds(f, 'white')).toEqual(['lib-a']);
+  await f.invoke('/api/chains/lib-a', 'PUT', { basePrompt: 'black hair, short hair' });
+  const page = await (await f.invoke('/api/prompt-library-links/images?chainId=lib-a')).json() as any;
+  expect(page.items.map((item: any) => item.id)).toEqual(['black']);
+  expect(linkIds(f, 'white')).toEqual([]);
+  await f.invoke('/api/chains/lib-a', 'PUT', { name: '改名' });
+  await f.invoke('/api/chains', 'POST', { type: 'style', name: '风格串', basePrompt: 'black hair, short hair' });
+  expect(f.sqlite.prepare("SELECT key FROM settings WHERE key GLOB 'prompt_library_links_backfill_v1:owner:chain:*'").all()).toEqual([]);
+});
+
+it('一批新建多个条目时，打开详情优先补算当前条目', async () => {
+  const f = fixture();
+  addHistory(f, { id: 'old', prompt: 'white hair, long hair' });
+  await f.invoke('/api/prompt-library-links/summary');
+  const ids: string[] = [];
+  for (let index = 0; index < 2; index++) {
+    const created = await (await f.invoke('/api/chains', 'POST', { type: 'appearance', name: `白发${index}`, basePrompt: 'white hair, long hair' })).json() as any;
+    ids.push(created.id);
+  }
+  ids.sort();
+  const page = await (await f.invoke(`/api/prompt-library-links/images?chainId=${ids[1]}`)).json() as any;
+  expect(page.items.map((item: any) => item.id)).toEqual(['old']);
+  expect(linkIds(f, 'old')).toEqual([ids[1]]);
+  await f.invoke('/api/prompt-library-links/summary');
+  expect(linkIds(f, 'old')).toEqual(ids);
 });

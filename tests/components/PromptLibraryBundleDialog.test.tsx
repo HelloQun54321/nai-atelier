@@ -179,7 +179,11 @@ it('六条可以按栏写进已有风格串：人物四栏进角色 1、场景/�
   expect(payload.params._promptSections.camera).toBe('camera prompt, night');
   // 角色类不重复写进全局栏，主体只合并全局栏
   expect(payload.params._promptSections.appearance).toBeUndefined();
-  expect(payload.variableValues.subject).toBe('scene prompt, night, camera prompt, night');
+  expect(payload.variableValues.subject).toBe('scene prompt, night, camera prompt, night, 旧主体');
+  expect(payload.params.characters[0].sectionNegatives).toEqual(Object.fromEntries(
+    ['appearance', 'wardrobe', 'pose', 'expression'].map(kind => [kind, 'lowres, blurry']),
+  ));
+  expect(payload.params._promptSections.sectionNegatives).toEqual({ scene: 'lowres, blurry', camera: 'lowres, blurry' });
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('已写入风格串：角色 4 栏、全局 2 栏'));
 });
 

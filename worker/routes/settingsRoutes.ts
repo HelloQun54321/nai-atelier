@@ -6,7 +6,7 @@ import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
 import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
-import { deletePromptLibraryLinksByChain, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
+import { deletePromptLibraryLinksByChain, queuePromptLibraryLinkBackfill, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type R2ObjectBody, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -730,6 +730,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         throw e;
       }
     }
+    try { await queuePromptLibraryLinkBackfill(db, currentUser.id, id, type); }
+    catch (cause) { console.error('提示词库回填标记更新失败，条目已保存', cause); }
     // 保留旧调用方的 id，同时返回实际落库内容；打开新条目无需重新读取整库。
     return json({ id, chain: {
       id, userId: currentUser.id, username: currentUser.username, type,
@@ -834,7 +836,10 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     }
     // 正文或名称变化会改变命中归属：重算原归属（关联失败不回滚已保存的条目）。
     if (updates.basePrompt !== undefined || updates.name !== undefined) {
-      try { await recomputePromptLibraryLinksForChain(db, id); }
+      try {
+        if (updates.basePrompt !== undefined) await queuePromptLibraryLinkBackfill(db, currentUser.id, id, chain.type);
+        await recomputePromptLibraryLinksForChain(db, id);
+      }
       catch (cause) { console.error('提示词库归属重算失败，条目已保存', cause); }
     }
     return json({ success: true });

@@ -218,7 +218,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
     try {
       const plan = planRollToChain(
         selectedChain,
-        pickedDrafts.map(draft => ({ kind: draft.kind, name: draft.name, text: draft.prompt })),
+        pickedDrafts.map(draft => ({ kind: draft.kind, name: draft.name, text: draft.prompt, negative: draft.negativePrompt })),
         { scope: 'split' },
       );
       await onWriteToChain({
