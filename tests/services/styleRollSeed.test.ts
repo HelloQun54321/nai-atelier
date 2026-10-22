@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PromptChain } from '../../types';
-import { hasLockedPinnedArtists, countRollChainArtists, replacePinnedArtistOverrides, rollSeedFromChain, unlockPinnedArtists } from '../../services/styleRollSeed';
-import { parseRollArtists } from '../../services/styleRoll';
+import { countRollChainArtists, rollSeedFromChain } from '../../services/styleRollSeed';
+import { rollCandidates } from '../../services/styleRoll';
+import { rollFixture, seededRandom } from '../fixtures/styleRoll';
 
 const chain = (overrides: Partial<PromptChain> = {}): PromptChain => ({
   id: 'chain-1', userId: 'u', type: 'style', name: '合成画风', description: '', tags: [], modules: [],
@@ -15,7 +16,7 @@ const chain = (overrides: Partial<PromptChain> = {}): PromptChain => ({
 });
 
 describe('从风格串创建 Roll 起点', () => {
-  it('保留提示词、负面、参数、角色与固定 Seed，画师改为固定组并保留原权重', () => {
+  it('保留提示词、负面、参数、角色与固定 Seed，画师只固定 Tag 并改用随机权重', () => {
     const seed = rollSeedFromChain(chain());
     expect(seed.template.prompt).toBe('masterpiece, {style}, 1girl, solo');
     expect(seed.template.negativePrompt).toBe('lowres, bad hands');
@@ -23,9 +24,11 @@ describe('从风格串创建 Roll 起点', () => {
     expect(seed.template.params.characters).toEqual([{ id: 'r', prompt: 'person', negativePrompt: 'sad', x: 0.2, y: 0.7 }]);
     expect(seed.template.params.characters).not.toBe(chain().params.characters);
     expect(seed.artists).toHaveLength(2);
-    expect(seed.artists[0]).toMatchObject({ tag: 'alpha', weight: 1.2, locked: true });
+    expect(seed.artists[0]).toMatchObject({ tag: 'alpha', weight: 1, locked: false });
     expect(seed.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
-    expect(seed.drawPlan).toEqual({ mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] });
+    expect(seed.pinnedArtists).toEqual(['alpha', 'beta']);
+    const e = { ...rollFixture(), ...seed };
+    expect(rollCandidates(e, 12, { random: seededRandom() })).toHaveLength(12);
   });
 
   it('清理旧串里的分组括号和残留冒号，异常 Tag 不拖垮整条串', () => {
@@ -39,14 +42,14 @@ describe('从风格串创建 Roll 起点', () => {
     const source = chain({ basePrompt: 'Artist:alpha, 1.2::ARTIST:beta ::, 1girl' });
     const seed = rollSeedFromChain(source);
     expect(seed.artists.map(artist => artist.tag)).toEqual(['alpha', 'beta']);
-    expect(seed.artists[1].weight).toBe(1.2);
+    expect(seed.pinnedArtists).toEqual(['alpha', 'beta']);
   });
 
   it('支持 Artists: 复数前缀和多位画师权重', () => {
     const source = chain({ basePrompt: '1.7::Artists:ushikani kassen::, 0.8::Artists:ame_(uten_cancel)::, 0.6::Artists:zhili_xingzou ::, year 2026, best quality' });
     const seed = rollSeedFromChain(source);
     expect(seed.artists.map(artist => artist.tag)).toEqual(['ushikani kassen', 'ame_(uten_cancel)', 'zhili_xingzou']);
-    expect(seed.artists.map(artist => artist.weight)).toEqual([1.7, 0.8, 0.6]);
+    expect(seed.pinnedArtists).toEqual(seed.artists.map(artist => artist.tag));
     expect(seed.template.prompt).toBe('{style}, year 2026, best quality');
   });
 
@@ -62,7 +65,7 @@ describe('从风格串创建 Roll 起点', () => {
     const known = new Set(['orange maru', 'meion']);
     const seed = rollSeedFromChain(source, 0, known);
     expect(seed.artists.map(artist => artist.tag)).toEqual(['orange_maru', 'MeioN']);
-    expect(seed.artists.map(artist => artist.weight)).toEqual([1, 0.9]);
+    expect(seed.pinnedArtists).toEqual(['orange_maru', 'MeioN']);
     expect(seed.template.prompt).toBe('{style}, 1girl');
   });
 
@@ -78,16 +81,15 @@ describe('从风格串创建 Roll 起点', () => {
     expect(rollSeedFromChain(source).template.params.seed).toBe(6386002392 % 4294967296);
   });
 
-  it('通过词库识别没有 artist: 前缀的裸画师 Tag，并归一化权重', () => {
+  it('通过词库识别没有 artist: 前缀的裸画师 Tag，并忽略原串权重', () => {
     const source = chain({ basePrompt: 'masterpiece, 3.8::alpha_artist ::, 1girl, 1.36::beta_artist ::, solo' });
     const known = new Set(['alpha artist', 'beta artist']);
     expect(countRollChainArtists(source, known)).toBe(2);
     const seed = rollSeedFromChain(source, 0, known);
     expect(seed.artists).toEqual([
-      expect.objectContaining({ tag: 'alpha_artist', weight: 3, locked: true }),
-      expect.objectContaining({ tag: 'beta_artist', weight: 1.4, locked: true }),
+      expect.objectContaining({ tag: 'alpha_artist', weight: 1, locked: false }),
+      expect.objectContaining({ tag: 'beta_artist', weight: 1, locked: false }),
     ]);
-    expect(seed.normalizedWeights).toBe(true);
     expect(seed.template.prompt).toBe('masterpiece, {style}, 1girl, solo');
   });
 
@@ -114,15 +116,4 @@ describe('从风格串创建 Roll 起点', () => {
     expect(rollSeedFromChain(chain({ basePrompt: many }), 0).artists).toHaveLength(40);
   });
 
-  it('替换画师继承被替换位置的权重与锁定状态，移除旧覆盖项', () => {
-    const overrides = parseRollArtists('1.2::alpha ::, 0.8::beta ::, 1.5::gamma ::').map(artist => ({ ...artist, locked: true }));
-    const next = replacePinnedArtistOverrides(overrides, ['alpha', 'beta', 'gamma'], ['alpha', 'delta', 'gamma']);
-    expect(next.map(artist => artist.tag).sort()).toEqual(['alpha', 'delta', 'gamma']);
-    expect(next.find(artist => artist.tag === 'delta')).toMatchObject({ weight: 0.8, locked: true, excluded: false });
-    expect(next.find(artist => artist.tag === 'beta')).toBeUndefined();
-    expect(hasLockedPinnedArtists(next, ['alpha', 'delta', 'gamma'])).toBe(true);
-    const unlocked = unlockPinnedArtists(next, ['alpha', 'delta', 'gamma']);
-    expect(unlocked.every(artist => !artist.locked)).toBe(true);
-    expect(hasLockedPinnedArtists(unlocked, ['alpha', 'delta', 'gamma'])).toBe(false);
-  });
 });

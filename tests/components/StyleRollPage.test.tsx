@@ -11,6 +11,7 @@ import { setLanguage } from '../../services/i18n';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
 vi.mock('../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
+vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: async () => new Set(['alpha']) }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
@@ -25,9 +26,8 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className }: any) => <img src={src} alt={alt} className={className} />, OriginalImage: (props: any) => <img {...props} /> }));
-vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-mode={initial.drawPlan?.mode ?? ''} data-pinned={(initial.drawPlan?.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
-vi.mock('../../components/roll/StyleRollChainSeedDialog', () => ({ StyleRollChainSeedDialog: ({ chains, createOptions, onClose }: any) => <div role="dialog" aria-label="从风格串开始"><button onClick={async () => { await createOptions(chains[0], { preserveWeights: true }); onClose(); }}>合成从风格串新建</button></div> }));
-vi.mock('../../components/roll/StyleRollPartyDialog', () => ({ StyleRollPartyDialog: ({ onSave, onClose }: any) => <div role="dialog" aria-label="固定画师"><button onClick={() => { onSave(['alpha', 'gamma']); onClose(); }}>合成替换画师</button></div> }));
+vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
+vi.mock('../../components/roll/StyleRollChainSeedDialog', () => ({ StyleRollChainSeedDialog: ({ chains, createOptions, onClose }: any) => <div role="dialog" aria-label="从风格串开始"><button onClick={async () => { await createOptions(chains[0]); onClose(); }}>合成从风格串新建</button></div> }));
 
 let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
@@ -106,7 +106,7 @@ it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保�
 it('首次使用直接设置人数、张数和权重范围开始一轮，无需先建实验；多配方一次提交', async () => {
   experiment.candidates = []; experiment.artists = []; mocks.load.mockResolvedValue([]);
   const names = Array.from({ length: 1205 }, (_, index) => `catalog-${index}`); mocks.dictionary.mockResolvedValue(names.map(name => ({ name, chinese: '', postCount: 1 })));
-  await setup(); configure('每串画师数', '4');
+  await setup(); configure('每串总人数', '4');
   configure('本轮生成张数', '3');
   configure('最低权重', '1.8'); configure('最高权重', '2.2');
   fireEvent.click(screen.getAllByRole('button', { name: '开始 Roll' })[0]); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
@@ -143,7 +143,7 @@ it('权重范围随记录切换并在重新进入后恢复，新范围只作用�
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.9');
 });
 it('本轮设置与完整配置双向同步人数和权重范围，保存配置不会自动出图', async () => {
-  await setup(); configure('每串画师数', '5'); configure('最低权重', '0.4'); configure('最高权重', '0.6');
+  await setup(); configure('每串总人数', '5'); configure('最低权重', '0.4'); configure('最高权重', '0.6');
   const openSetup = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' })); };
   openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
@@ -153,7 +153,7 @@ it('本轮设置与完整配置双向同步人数和权重范围，保存配置�
   openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByRole('spinbutton', { name: '每串画师数' })).toHaveProperty('value', '6');
+  expect(screen.getByRole('spinbutton', { name: '每串总人数' })).toHaveProperty('value', '6');
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
   expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '0.3');
   expect(mocks.generate).not.toHaveBeenCalled();
@@ -337,56 +337,54 @@ it('记录可重命名、移入与恢复回收站，全部收起后仍保留恢�
   expect(mocks.save.mock.calls.at(-1)![0].candidates).toEqual(experiment.candidates); expect(mocks.generate).not.toHaveBeenCalled();
 });
 
-it('本轮设置的抽取方式可切换，固定权重收成一个输入，固定画师进入选择固定画师弹层', async () => {
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '固定权重' }));
-  expect(screen.getByRole('spinbutton', { name: '固定权重' })).toBeTruthy();
-  expect(screen.queryByRole('spinbutton', { name: '最低权重' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '固定画师' }));
-  expect(screen.getByText('尚未固定画师，先选择固定画师再随机权重')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '选择固定画师' }));
-  expect(screen.getByRole('dialog', { name: '固定画师' })).toBeTruthy();
-  expect(mocks.generate).not.toHaveBeenCalled();
+it('本轮设置直接固定部分 Tag，总人数包含固定项且所有权重随机', async () => {
+  await setup(); configure('每串总人数', '5'); configure('最低权重', '1.8'); configure('最高权重', '2.2');
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.queryByRole('button', { name: /全随机|固定权重|选择固定画师/ })).toBeNull();
+  fireEvent.change(screen.getByRole('textbox', { name: '固定画师 Tag（可选）' }), { target: { value: 'alpha, beta' } });
+  fireEvent.click(screen.getByRole('button', { name: '添加到固定画师 Tag（可选）' }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  configure('本轮生成张数', '1');
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  const [saved, candidate] = mocks.generate.mock.calls[0];
+  expect(saved.pinnedArtists).toEqual(['alpha', 'beta']); expect(saved.drawPlan).toBeUndefined();
+  expect(candidate.tags).toHaveLength(5);
+  expect(candidate.tags.slice(0, 2).map((tag: any) => tag.tag)).toEqual(['alpha', 'beta']);
+  expect(candidate.tags.every((tag: any) => tag.weight >= 1.8 && tag.weight <= 2.2)).toBe(true);
 });
 
-it('替换固定画师时同步记录覆盖项，其他画师保留原权重', async () => {
-  experiment.artists = [
-    { tag: 'alpha', weight: 1.2, locked: true, excluded: false },
-    { tag: 'beta', weight: 1, locked: true, excluded: false },
-    { tag: 'gamma', weight: 1, locked: false, excluded: false },
-  ];
+it('旧固定模式无需解除权重锁，助手沿用相同的总人数和固定 Tag', async () => {
+  experiment.artists[0] = { ...experiment.artists[0], locked: true, weight: 3 };
   experiment.drawPlan = { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] };
-  await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  fireEvent.click(screen.getByRole('button', { name: '选择固定画师' }));
-  fireEvent.click(screen.getByRole('button', { name: '合成替换画师' }));
-  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-  const saved = mocks.save.mock.calls[0][0];
-  expect(saved.drawPlan).toEqual({ mode: 'pinnedArtists', pinnedArtists: ['alpha', 'gamma'] });
-  expect(saved.artists.find((artist: any) => artist.tag === 'alpha')).toMatchObject({ weight: 1.2, locked: true });
-  expect(saved.artists.find((artist: any) => artist.tag === 'gamma')).toMatchObject({ weight: 1, locked: true });
-  expect(saved.artists.find((artist: any) => artist.tag === 'beta')).toBeUndefined();
+  experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 5 };
+  const { container } = await setup();
+  const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as any;
+  expect(state.artistsPerMix).toBe(5); expect(state.pinnedArtists).toEqual(['alpha', 'beta']); expect(state.drawMode).toBeUndefined();
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 6, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0];
+  expect(saved.candidates.slice(-6).every((candidate: any) => candidate.tags.length === 5 && candidate.tags[0].tag === 'alpha' && candidate.tags[0].weight <= 1.4)).toBe(true);
+  expect(saved.candidates.slice(0, 2)).toEqual(experiment.candidates);
 });
 
-it('保留原权重的固定画师可一键重 roll，下一轮使用随机权重', async () => {
-  experiment.artists = [
-    { tag: 'alpha', weight: 1.2, locked: true, excluded: false },
-    { tag: 'beta', weight: 1, locked: true, excluded: false },
-  ];
+it('旧固定组多于原人数时保存候选仍成功，固定项与历史配方完整保留', async () => {
+  experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
   experiment.drawPlan = { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] };
-  await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  fireEvent.click(screen.getByRole('button', { name: '重 roll 画师权重' }));
+  const { props } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  fireEvent.click(screen.getByRole('button', { name: '存为风格串' }));
+  await waitFor(() => expect(props.onSaveChain).toHaveBeenCalledOnce());
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   const saved = mocks.save.mock.calls[0][0];
-  expect(saved.artists.filter((artist: any) => ['alpha', 'beta'].includes(artist.tag)).every((artist: any) => !artist.locked)).toBe(true);
+  expect(saved.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
+  expect(saved.pinnedArtists).toEqual(['alpha', 'beta']);
+  expect(saved.candidates[0].tags).toEqual(experiment.candidates[0].tags);
 });
 
 it('只从有样张的画师中抽取会过滤抽取范围，并把开关写进记录与轮次条件', async () => {
   experiment.artists = [];
   mocks.dictionary.mockResolvedValue(['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 })));
-  await setup(); configure('每串画师数', '1');
+  await setup(); configure('每串总人数', '1');
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
   expect(screen.getByText('可用 1 位有样张画师')).toBeTruthy();
@@ -404,7 +402,7 @@ it('筛选面板显示轮次条件并可沿用，沿用只填设置不自动提�
   experiment.rounds = [{ id: 'r1', candidateIds: ['a'], createdAt: 1, snapshot: { rules: { ...experiment.rules, minArtists: 2, maxArtists: 2, minWeight: 2, maxWeight: 2.4 }, mode: 'random' } }];
   await setup(); fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: 'r1' } });
-  expect(screen.getByRole('option', { name: /全随机/ })).toBeTruthy();
+  expect(screen.getByRole('option', { name: /2 位画师.*固定 0 位/ })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
   expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
@@ -457,14 +455,15 @@ it('卡片画师标签使用小号磨砂徽章，编号只保留在左上角', a
 
 it('可从候选新建记录并预置固定画师，之后只抽权重', async () => {
   await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details();
-  fireEvent.click(screen.getByRole('button', { name: '新建记录 · 只随机权重' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建记录 · 固定这些画师' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   const created = mocks.save.mock.calls[0][0];
-  expect(created.drawPlan).toEqual({ mode: 'pinnedArtists', pinnedArtists: ['alpha'] });
+  expect(created.pinnedArtists).toEqual(['alpha']);
+  expect(created.rules).toMatchObject({ minArtists: 1, maxArtists: 1 });
   expect(created.candidates).toEqual([]);
   expect(created.name).not.toContain('权重');
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByText('已固定 1 位画师')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '从固定画师 Tag（可选）移除 alpha' })).toBeTruthy();
 });
 
 it('重 Roll 后保持全部轮次视图，旧候选不会被筛掉', async () => {
@@ -477,18 +476,13 @@ it('重 Roll 后保持全部轮次视图，旧候选不会被筛掉', async () =
   expect(screen.getByRole('combobox', { name: '查看轮次' })).toHaveProperty('value', '');
 });
 
-it('本轮临时改抽取方式不会覆盖记录默认', async () => {
-  experiment.drawPlan = { mode: 'fixedWeight' };
-  experiment.rules = { ...experiment.rules, minWeight: 1, maxWeight: 1 };
-  await setup();
-  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  fireEvent.click(screen.getByRole('button', { name: '全随机' }));
-  fireEvent.keyDown(window, { key: 'Escape' });
-  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+it('旧统一权重记录使用相同上下限继续抽取，新轮次不保存模式', async () => {
+  experiment.drawPlan = { mode: 'fixedWeight' }; experiment.rules = { ...experiment.rules, minWeight: 1, maxWeight: 1 };
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
   await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
-  const saved = mocks.generate.mock.calls[0][0];
-  expect(saved.drawPlan).toEqual({ mode: 'fixedWeight' });
-  expect(saved.rounds.at(-1).snapshot.mode).toBe('random');
+  const [saved, candidates] = mocks.generate.mock.calls[0];
+  expect(saved.drawPlan).toBeUndefined(); expect(saved.rounds.at(-1).snapshot.mode).toBeUndefined();
+  expect(candidates.every((candidate: any) => candidate.tags.every((tag: any) => tag.weight === 1))).toBe(true);
 });
 
 it('流式预览显示在本轮第一张未出图的封面，关闭预览设置后不显示', async () => {
@@ -516,15 +510,16 @@ it('未出图的候选不允许保存为风格串，先生成再保存', async (
   expect(screen.queryByRole('button', { name: '存为风格串' })).toBeNull();
 });
 
-it('从画师库带入固定画师时新建记录并预置组队，不覆盖当前记录', async () => {
+it('从画师库带入固定画师时新建记录并固定 Tag，不覆盖当前记录', async () => {
   experiment.candidates = []; mocks.load.mockResolvedValue([]);
   await setup({ initialPinned: { tags: ['alpha', 'beta'], token: 1 } });
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   const created = mocks.save.mock.calls[0][0];
-  expect(created.drawPlan).toEqual({ mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] });
+  expect(created.pinnedArtists).toEqual(['alpha', 'beta']);
+  expect(created.drawPlan).toBeUndefined();
   expect(created.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
   fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
-  expect(screen.getByText('已固定 2 位画师')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '从固定画师 Tag（可选）移除 beta' })).toBeTruthy();
 });
 
 it('回收站可永久清理已归档候选，原图与已保存风格串仍保留', async () => {
@@ -562,10 +557,11 @@ it('可从已有风格串新建 Roll 记录并保留提示词、参数与固定 
   expect(created.name).toBe('合成画风 · Roll');
   expect(created.template.prompt).toBe('masterpiece, {style}, 1girl, solo');
   expect(created.template.params.seed).toBe(42);
-  expect(created.drawPlan).toEqual({ mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] });
+  expect(created.pinnedArtists).toEqual(['alpha', 'beta']);
+  expect(created.drawPlan).toBeUndefined();
   expect(created.artists).toEqual([
-    expect.objectContaining({ tag: 'alpha', weight: 1.2, locked: true }),
-    expect.objectContaining({ tag: 'beta', weight: 1, locked: true }),
+    expect.objectContaining({ tag: 'alpha', weight: 1, locked: false }),
+    expect.objectContaining({ tag: 'beta', weight: 1, locked: false }),
   ]);
   expect(created.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
 });

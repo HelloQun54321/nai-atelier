@@ -116,3 +116,20 @@ it('轮次快照随轮次一起不可改写', async () => {
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   expect((await f.invoke({ ...saved, rounds: [{ ...saved.rounds[0], snapshot: { ...saved.rounds[0].snapshot, rules: { ...saved.rounds[0].snapshot.rules, minArtists: 5 } } }] }))!.status).toBe(400);
 });
+
+it('旧模式记录可追加统一 Roll，历史快照及原配方不变，新固定项按总人数校验', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.drawPlan = { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] };
+  e.artists[0].locked = true; e.artists[0].weight = 3;
+  e.candidates = [candidateFixture('old')];
+  e.rounds = [{ id: 'old-round', candidateIds: ['old'], createdAt: 1, snapshot: { rules: e.rules, mode: 'pinnedArtists', pinnedArtists: ['alpha', 'beta'] } }];
+  const { experiment: saved } = await (await f.invoke(e))!.json() as any;
+  const next = beginRollRound(saved, e.artists.map(artist => artist.tag), 3);
+  expect((await f.invoke(next))!.status).toBe(200);
+  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  expect(restored.rounds[0]).toEqual(e.rounds[0]); expect(restored.candidates[0]).toEqual(e.candidates[0]);
+  expect(restored.pinnedArtists).toEqual(['alpha', 'beta']); expect(restored.drawPlan).toBeUndefined();
+  expect(restored.candidates.slice(1).every((candidate: any) => candidate.tags.length === 4 && candidate.tags[0].weight <= 1.4)).toBe(true);
+  expect((await f.invoke({ ...restored, pinnedArtists: ['alpha', 'beta', 'gamma', 'delta', 'epsilon'] }))!.status).toBe(400);
+  expect((await f.invoke({ ...restored, pinnedArtists: ['alpha', 'ALPHA'] }))!.status).toBe(400);
+});

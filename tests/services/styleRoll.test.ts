@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -10,7 +10,7 @@ describe('Roll 串画师与规则', () => {
     expect(artists).toHaveLength(1205); expect(artists[0]).toEqual(overrides[0]); expect(artists[1]).toEqual(overrides[1]); expect(artists[2].tag).toBe('catalog_2');
     const e = rollFixture(); e.artists = artists;
     const candidate = rollCandidates(e, 1, { random: () => 0.999999 })[0];
-    expect(candidate.tags[0]).toEqual({ tag: 'CATALOG 0', weight: 2 }); expect(candidate.tags.some(tag => tag.tag === 'catalog_1204')).toBe(true);
+    expect(candidate.tags[0]).toEqual({ tag: 'CATALOG 0', weight: 1.4 }); expect(candidate.tags.some(tag => tag.tag === 'catalog_1204')).toBe(true);
     expect(candidate.tags.some(tag => tag.tag === 'catalog_1')).toBe(false); expect(overrides).toHaveLength(2);
   });
   it('支持裸 Tag、artist 前缀和数值权重，归一化去重但保留第一份名字', () => {
@@ -30,7 +30,8 @@ describe('Roll 串画师与规则', () => {
     const e = rollFixture(); e.artists = []; expect(() => validateRollExperiment(e)).not.toThrow();
     expect(() => rollCandidates(e, 1)).toThrow('可用画师不足');
     e.artists = parseRollArtists('alpha, beta, gamma').map(artist => ({ ...artist, locked: true }));
-    expect(() => validateRollRules(e.artists, { ...e.rules, minArtists: 1, maxArtists: 2 })).toThrow('锁定画师');
+    e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+    expect(() => rollCandidates(e, 1)).toThrow('固定画师数量');
   });
   it('候选只保存画师与权重，不再接受来源、方法或代数字段', () => {
     const e = rollFixture(); e.candidates = [candidateFixture('a')];
@@ -61,15 +62,15 @@ describe('Roll 抽取', () => {
     expect(result.every(candidate => !('parents' in candidate) && !('method' in candidate))).toBe(true);
     expect(new Set(result.map(candidate => rollSignature(candidate.tags))).size).toBe(8);
   });
-  it('批次去重、锁定原权重、排除生效，并满足全部数量和权重边界', () => {
+  it('批次去重、固定 Tag 随机权重、排除生效，并满足总人数和权重边界', () => {
     const e = rollFixture(); e.artists[0] = { ...e.artists[0], locked: true, weight: 2 }; e.artists[1].excluded = true;
     const random = seededRandom(); e.candidates = rollCandidates(e, 24, { random });
     e.candidates.push(...rollCandidates(e, 24, { random }));
     expect(new Set(e.candidates.map(candidate => rollSignature(candidate.tags))).size).toBe(48);
     for (const candidate of e.candidates) {
-      expect(candidate.tags.length).toBeGreaterThanOrEqual(3); expect(candidate.tags.length).toBeLessThanOrEqual(6);
-      expect(candidate.tags[0]).toEqual({ tag: 'alpha', weight: 2 }); expect(candidate.tags.some(tag => tag.tag === 'beta')).toBe(false);
-      for (const tag of candidate.tags.slice(1)) { expect(tag.weight).toBeGreaterThanOrEqual(0.7); expect(tag.weight).toBeLessThanOrEqual(1.4); }
+      expect(candidate.tags).toHaveLength(4);
+      expect(candidate.tags[0].tag).toBe('alpha'); expect(candidate.tags.some(tag => tag.tag === 'beta')).toBe(false);
+      for (const tag of candidate.tags) { expect(tag.weight).toBeGreaterThanOrEqual(0.7); expect(tag.weight).toBeLessThanOrEqual(1.4); }
     }
     expect(() => validateRollExperiment(e)).not.toThrow();
   });
@@ -80,40 +81,57 @@ describe('Roll 抽取', () => {
   });
 });
 
-describe('抽取方式', () => {
-  it('固定权重时每个画师都用同一权重', () => {
-    const e = rollFixture(); e.rules = { ...e.rules, minWeight: 1.1, maxWeight: 1.1 };
-    const result = rollCandidates(e, 4, { plan: { mode: 'fixedWeight' } });
-    expect(result).toHaveLength(4);
-    expect(result.every(candidate => candidate.tags.every(tag => tag.weight === 1.1))).toBe(true);
-    expect(() => validateRollExperiment({ ...e, drawPlan: { mode: 'fixedWeight' } })).not.toThrow();
+describe('统一随机抽取', () => {
+  it('部分固定计入总人数，补齐其余 Tag，全部权重每条重新抽取', () => {
+    const e = rollFixture(); e.pinnedArtists = ['alpha', 'beta'];
+    e.rules = { ...e.rules, minArtists: 5, maxArtists: 5 };
+    e.artists[0].weight = 3; e.artists[0].locked = true;
+    const result = rollCandidates(e, 24, { random: seededRandom() });
+    expect(result).toHaveLength(24);
+    for (const candidate of result) {
+      expect(candidate.tags).toHaveLength(5);
+      expect(candidate.tags.slice(0, 2).map(item => item.tag)).toEqual(['alpha', 'beta']);
+      expect(new Set(candidate.tags.map(item => item.tag)).size).toBe(5);
+      expect(candidate.tags.every(item => item.weight >= 0.7 && item.weight <= 1.4)).toBe(true);
+    }
+    expect(new Set(result.map(candidate => candidate.tags[0].weight)).size).toBeGreaterThan(1);
+    expect(new Set(result.map(candidate => candidate.tags.slice(2).map(item => item.tag).join(','))).size).toBeGreaterThan(1);
   });
-  it('固定画师时集合不变，只随机权重', () => {
-    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
-    const plan = { mode: 'pinnedArtists' as const, pinnedArtists: ['alpha', 'beta'] };
-    const result = rollCandidates(e, 4, { plan, random: seededRandom() });
-    expect(result).toHaveLength(4);
-    for (const candidate of result) expect(candidate.tags.map(tag => tag.tag).sort()).toEqual(['alpha', 'beta']);
-    expect(new Set(result.map(candidate => JSON.stringify(candidate.tags))).size).toBe(4);
+  it('固定全部画师仍随机每位的权重，无需额外解除权重锁', () => {
+    const e = rollFixture(); e.pinnedArtists = ['alpha', 'beta']; e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+    const result = rollCandidates(e, 12, { random: seededRandom() });
+    expect(result).toHaveLength(12);
+    expect(result.every(candidate => candidate.tags.map(tag => tag.tag).join(',') === 'alpha,beta')).toBe(true);
+    expect(new Set(result.map(candidate => rollSignature(candidate.tags))).size).toBe(12);
   });
-  it('固定画师必须包含锁定画师，且不能是被排除或屏蔽的画师', () => {
-    const e = rollFixture(); e.artists[0].locked = true;
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['beta'] } })).toThrow('需要包含已锁定的画师');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'missing'] } })).toThrow('固定画师不可用');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha'] }, blockedTags: ['alpha'] })).toThrow('固定画师不可用');
+  it('上下限相等即统一权重，对固定 Tag 同样生效', () => {
+    const e = rollFixture(); e.pinnedArtists = ['alpha']; e.rules = { ...e.rules, minWeight: 1.1, maxWeight: 1.1 };
+    expect(rollCandidates(e, 4).every(candidate => candidate.tags.every(tag => tag.weight === 1.1))).toBe(true);
   });
-  it('全局屏蔽从随机池移除画师，屏蔽后不足最少人数时明确失败', () => {
-    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 8, minWeight: 1, maxWeight: 1 };
+  it('固定项不能超过总人数、重复或绕过屏蔽及排除', () => {
+    const e = rollFixture(); e.pinnedArtists = ['alpha'];
+    expect(() => rollCandidates(e, 1, { blockedTags: ['alpha'] })).toThrow('固定画师不可用');
+    e.artists[0].excluded = true;
+    expect(() => rollCandidates(e, 1)).toThrow('固定画师不可用');
+    e.pinnedArtists = ['beta', 'BETA'];
+    expect(() => validateRollExperiment(e)).toThrow('不重复');
+    e.pinnedArtists = ['alpha', 'beta', 'gamma', 'delta', 'epsilon'];
+    expect(() => rollCandidates(e, 1)).toThrow('不能超过每串总人数');
+  });
+  it('候选池不足时不偷偷减少总人数，手动固定项可来自词库之外', () => {
+    const e = rollFixture(); e.pinnedArtists = ['manual'];
+    expect(rollCandidates(e, 1)[0].tags[0].tag).toBe('manual');
     const blocked = e.artists.slice(1).map(artist => artist.tag);
-    expect(rollCandidates(e, 1, { blockedTags: blocked })[0].tags.map(tag => tag.tag)).toEqual(['alpha']);
-    e.rules = { ...e.rules, minArtists: 3 };
     expect(() => rollCandidates(e, 1, { blockedTags: blocked })).toThrow('可用画师不足');
   });
-  it('固定权重要求最低与最高权重相同，固定画师要求 1～64 个不重复 Tag', () => {
-    const e = rollFixture();
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'fixedWeight' } })).toThrow('固定权重需要最低与最高权重相同');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: [] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'alpha'] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
+  it('旧固定模式与单项锁定只保留 Tag，显式空列表可解除全部旧锁定', () => {
+    const e = rollFixture(); e.drawPlan = { mode: 'pinnedArtists', pinnedArtists: ['beta'] };
+    e.artists[0].locked = true; e.artists[0].weight = 3;
+    expect(() => validateRollExperiment(e)).not.toThrow();
+    expect(getRollPinnedArtists(e)).toEqual(['beta', 'alpha']);
+    const result = rollCandidates(e, 1, { random: () => 0 });
+    expect(result[0].tags.slice(0, 2)).toEqual([{ tag: 'beta', weight: 0.7 }, { tag: 'alpha', weight: 0.7 }]);
+    e.pinnedArtists = []; expect(getRollPinnedArtists(e)).toEqual([]);
   });
 });
 

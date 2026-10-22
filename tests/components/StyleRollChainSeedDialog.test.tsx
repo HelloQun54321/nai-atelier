@@ -20,16 +20,16 @@ const chain = (overrides: Partial<PromptChain> = {}): PromptChain => ({
 beforeEach(() => { vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('选择风格串后预览画师并默认保留原权重新建', async () => {
+it('选择风格串后预览固定 Tag，权重交给统一随机流程', async () => {
   const createOptions = vi.fn(async () => {}), onClose = vi.fn();
   render(<StyleRollChainSeedDialog chains={[chain()]} createOptions={createOptions} onClose={onClose} />);
   fireEvent.click(screen.getByRole('button', { name: /合成画风/ }));
-  expect(await screen.findByText('画师 2 位 · 首次保留原权重')).toBeTruthy();
+  expect(await screen.findByText('固定 2 位画师 Tag，权重随机')).toBeTruthy();
   expect(screen.getByText('2 位画师')).toBeTruthy();
   expect(screen.getAllByRole('img', { name: '合成画风' }).length).toBeGreaterThan(0);
   expect(screen.getByText('masterpiece, {style}, 1girl, solo')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '新建 Roll 记录' }));
-  await waitFor(() => expect(createOptions).toHaveBeenCalledWith(expect.objectContaining({ id: 'chain-1' }), { preserveWeights: true }));
+  await waitFor(() => expect(createOptions).toHaveBeenCalledWith(expect.objectContaining({ id: 'chain-1' })));
   expect(onClose).toHaveBeenCalled();
 });
 
@@ -41,13 +41,11 @@ it('没有画师 Tag 的风格串明确报错并禁用新建', async () => {
   expect(screen.getByRole('button', { name: '新建 Roll 记录' })).toHaveProperty('disabled', true);
 });
 
-it('可以关闭保留权重，新建时交给调用方立即重 roll', async () => {
-  const createOptions = vi.fn(async () => {});
-  render(<StyleRollChainSeedDialog chains={[chain()]} createOptions={createOptions} onClose={vi.fn()} />);
+it('不再提供原权重锁定选项', async () => {
+  render(<StyleRollChainSeedDialog chains={[chain()]} createOptions={vi.fn()} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: /合成画风/ }));
-  fireEvent.click(await screen.findByRole('checkbox', { name: /保留风格串里的画师权重/ }));
-  fireEvent.click(screen.getByRole('button', { name: '新建 Roll 记录' }));
-  await waitFor(() => expect(createOptions).toHaveBeenCalledWith(expect.anything(), { preserveWeights: false }));
+  await screen.findByText('固定 2 位画师 Tag，权重随机');
+  expect(screen.queryByRole('checkbox')).toBeNull();
 });
 
 it('没有记录模型的旧风格串仍可新建，使用默认模型', async () => {

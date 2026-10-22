@@ -1,27 +1,20 @@
 import type { PromptChain } from '../types';
 import { compilePrompt } from './promptUtils';
 import { parsePromptTags, removePromptTagTokens } from './tagTranslations';
-import { DEFAULT_ROLL_RULES, parseRollArtists, ROLL_MAX_ARTISTS, validateRollDrawPlan, validateRollTemplate, type RollArtist, type RollDrawPlan, type RollRules, type RollTemplate } from './styleRoll';
+import { DEFAULT_ROLL_RULES, parseRollArtists, ROLL_MAX_ARTISTS, validateRollTemplate, type RollArtist, type RollRules, type RollTemplate } from './styleRoll';
 import { DEFAULT_NAI_MODEL } from './naiModels';
 
 export interface RollChainSeed {
   template: RollTemplate;
   artists: RollArtist[];
   rules: RollRules;
-  drawPlan: RollDrawPlan;
-  /** 原权重超出 Roll 的 0.1～3.0 一位小数范围，导入时已取整。 */
-  normalizedWeights: boolean;
+  pinnedArtists: string[];
   /** 语法异常、无法作为画师 Tag 使用的条目数。 */
   skippedArtists: number;
 }
 
 /** 词库匹配键：大小写、下划线与括号前空格不影响裸画师名识别。 */
 export const normalizeRollArtistKey = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s*\(/g, ' (').replace(/\s+/g, ' ').toLowerCase();
-const normalizeImportWeight = (value: string | number | undefined) => {
-  const number = Number(value);
-  if (value === undefined || !Number.isFinite(number)) return 1;
-  return Math.round(Math.min(3, Math.max(0.1, number)) * 10) / 10;
-};
 /** 导入时清理常见的分组／括号／残留冒号，并尝试从脏 Token 中取回画师名与权重。 */
 const parseImportedArtistToken = (value: string, groupWeight?: string): { tag: string; weight: string | number } | null => {
   let tag = value.trim().replace(/[<>[\]{}]/g, '').trim();
@@ -69,25 +62,22 @@ const cleanRemainingPrompt = (value: string) => value
 
 /**
  * 把已有风格串转成 Roll 起点：保留公共提示词、负面、参数、角色与固定 Seed，
- * 画师串改为占位符并作为固定画师组；首次保留原权重，由调用方决定何时重 roll。
+ * 画师串改为占位符，只固定 Tag，权重在每轮统一随机。
  */
 export function rollSeedFromChain(chain: PromptChain, fallbackSeed = 0, knownArtists?: ReadonlySet<string>): RollChainSeed {
   const prompt = compilePrompt(chain, chain.variableValues?.subject || '').trim();
   const tokens = parsePromptTags(prompt);
   const artistTokens = tokens.filter(token => isArtistToken(token, prompt, knownArtists));
   if (!artistTokens.length) throw new Error('该风格串没有可识别的画师 Tag；请使用 artist: 或 Artists: 前缀（大小写不限），或确认画师名已收录在词库');
-  let normalizedWeights = false;
   let skippedArtists = 0;
   const seen = new Set<string>();
   const artists: RollArtist[] = [];
   for (const token of artistTokens) {
     const parsed = parseImportedArtistToken(token.displayTag, token.groupWeight);
     if (!parsed) { skippedArtists++; continue; }
-    const weight = normalizeImportWeight(parsed.weight);
-    if (Math.abs(Number(parsed.weight) - weight) > 1e-9) normalizedWeights = true;
     if (!parsed.tag) { skippedArtists++; continue; }
     try {
-      const [artist] = parseRollArtists(`${weight.toFixed(1)}::${parsed.tag} ::`);
+      const [artist] = parseRollArtists(parsed.tag);
       if (!artist) { skippedArtists++; continue; }
       if (seen.has(normalizeRollArtistKey(artist.tag))) continue;
       seen.add(normalizeRollArtistKey(artist.tag));
@@ -132,44 +122,11 @@ export function rollSeedFromChain(chain: PromptChain, fallbackSeed = 0, knownArt
   params.seed = !Number.isSafeInteger(rawSeed) || rawSeed! < 0 ? fallback : rawSeed! > 4294967295 ? rawSeed! % 4294967296 : rawSeed!;
   validateRollTemplate(template);
   const rules: RollRules = { ...DEFAULT_ROLL_RULES, minArtists: artists.length, maxArtists: artists.length };
-  const drawPlan: RollDrawPlan = { mode: 'pinnedArtists', pinnedArtists: artists.map(artist => artist.tag) };
-  validateRollDrawPlan(drawPlan, rules);
   return {
     template,
-    artists: artists.map(artist => ({ ...artist, locked: true })),
+    artists,
     rules,
-    drawPlan,
-    normalizedWeights,
+    pinnedArtists: artists.map(artist => artist.tag),
     skippedArtists,
   };
-}
-
-/** 固定画师替换后同步覆盖项：移除旧画师，新画师继承被替换位置的权重与锁定状态。 */
-export function replacePinnedArtistOverrides(overrides: RollArtist[], previousTags: readonly string[], nextTags: readonly string[]): RollArtist[] {
-  const previousKeys = new Set(previousTags.map(normalizeRollArtistKey));
-  const nextKeys = new Set(nextTags.map(normalizeRollArtistKey));
-  const next = overrides.filter(artist => !previousKeys.has(normalizeRollArtistKey(artist.tag)) || nextKeys.has(normalizeRollArtistKey(artist.tag)));
-  nextTags.forEach((tag, index) => {
-    const replaced = previousTags[index];
-    const old = replaced && normalizeRollArtistKey(replaced) !== normalizeRollArtistKey(tag) ? overrides.find(artist => normalizeRollArtistKey(artist.tag) === normalizeRollArtistKey(replaced)) : undefined;
-    const existingIndex = next.findIndex(artist => normalizeRollArtistKey(artist.tag) === normalizeRollArtistKey(tag));
-    if (existingIndex >= 0) {
-      next[existingIndex] = { ...next[existingIndex], excluded: false, ...(old ? { weight: old.weight, locked: old.locked } : {}) };
-      return;
-    }
-    next.push({ tag, weight: old?.weight ?? 1, locked: old?.locked ?? false, excluded: false });
-  });
-  return next;
-}
-
-/** 是否有固定画师仍保留原权重；决定「重roll权重」入口是否显示。 */
-export function hasLockedPinnedArtists(overrides: RollArtist[], pinnedTags: readonly string[]): boolean {
-  const keys = new Set(pinnedTags.map(normalizeRollArtistKey));
-  return overrides.some(artist => artist.locked && keys.has(normalizeRollArtistKey(artist.tag)));
-}
-
-/** 解除固定画师的锁定，让后续 Roll 重新随机权重。 */
-export function unlockPinnedArtists(overrides: RollArtist[], pinnedTags: readonly string[]): RollArtist[] {
-  const keys = new Set(pinnedTags.map(normalizeRollArtistKey));
-  return overrides.map(artist => keys.has(normalizeRollArtistKey(artist.tag)) ? { ...artist, locked: false } : artist);
 }

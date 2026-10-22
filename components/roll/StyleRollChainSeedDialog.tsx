@@ -16,7 +16,7 @@ interface Props {
   chains: PromptChain[];
   /** 当前词库中的画师名；用于识别没有 artist: 前缀的裸画师 Tag。 */
   knownArtists?: ReadonlySet<string>;
-  createOptions: (chain: PromptChain, options: { preserveWeights: boolean }) => Promise<void>;
+  createOptions: (chain: PromptChain) => Promise<void>;
   onClose: () => void;
 }
 
@@ -26,7 +26,6 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
   useLanguage();
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
-  const [preserveWeights, setPreserveWeights] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [dictionary, setDictionary] = useState<ReadonlySet<string> | null>(knownArtists?.size ? knownArtists : null);
@@ -65,7 +64,7 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
   const create = async () => {
     if (!selected || !preview?.seed || busy) return;
     setBusy(true); setError('');
-    try { await createOptions(selected, { preserveWeights }); onClose(); }
+    try { await createOptions(selected); onClose(); }
     catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
@@ -123,12 +122,11 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
             </div>
             {preview?.error ? <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{preview.error}</p> : preview?.seed ? <>
               <div>
-                <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('画师 {0} 位 · 首次保留原权重', [preview.seed.artists.length])}</p>
-                {preview.seed.normalizedWeights && <p className="mb-1.5 text-micro text-amber-600 dark:text-amber-400">{t('部分画师权重已按 0.1 精度取整')}</p>}
+                <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('固定 {0} 位画师 Tag，权重随机', [preview.seed.artists.length])}</p>
                 {preview.seed.skippedArtists > 0 && <p className="mb-1.5 text-micro text-amber-600 dark:text-amber-400">{t('{0} 个异常画师 Tag 已跳过', [preview.seed.skippedArtists])}</p>}
                 <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
                   {preview.seed.artists.map(artist => <span key={artist.tag} className="inline-flex max-w-full items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                    <span className="truncate">{artist.tag}</span><span className="font-mono text-micro opacity-60">{artist.weight.toFixed(1)}</span>
+                    <span className="truncate">{artist.tag}</span>
                   </span>)}
                 </div>
               </div>
@@ -136,10 +134,7 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
                 <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('公共提示词')}</p>
                 <p className="appearance-group max-h-28 overflow-y-auto break-words rounded-xl bg-gray-50 p-2.5 font-mono text-xs leading-relaxed text-gray-600 dark:bg-gray-950 dark:text-gray-300">{preview.seed.template.prompt}</p>
               </div>
-              <label className="mobile-touch flex items-start gap-2 rounded-xl border border-gray-200 p-3 text-xs dark:border-gray-700">
-                <input type="checkbox" checked={preserveWeights} onChange={event => setPreserveWeights(event.target.checked)} className="mt-0.5 h-4 w-4 accent-indigo-600" />
-                <span className="min-w-0"><span className="block font-semibold text-gray-700 dark:text-gray-200">{t('保留风格串里的画师权重')}</span><span className="mt-0.5 block text-gray-500">{t('关闭后新建记录会立即重 roll 权重；保留时可在「本轮设置」里随时重 roll。')}</span></span>
-              </label>
+
             </> : null}
           </div>}
         </div>
