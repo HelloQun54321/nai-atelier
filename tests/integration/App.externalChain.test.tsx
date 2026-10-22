@@ -36,11 +36,11 @@ vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, o
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
-vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork, saveRef, setIsDirty }: any) => {
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork, saveRef, setIsDirty, onContentRollForGlobal, onContentRollForRole }: any) => {
   mocks.editorDraft = chain;
   mocks.updatePlayground = onUpdateChain;
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
-  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
+  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onContentRollForGlobal}>全局随机搭配</button><button onClick={() => onContentRollForRole(1)}>角色二随机搭配</button><button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
 } }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
@@ -114,6 +114,50 @@ it('粘贴原文可选指定分类，直接创建对应条目库记录', async (
   fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'appearance' } });
   fireEvent.click(screen.getByRole('button', { name: '存入内容库' }));
   await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('snow, night', '', { type: 'appearance', name: 'snow, night', basePrompt: text, params: { _collectedPrompt: 1, _collectedCategory: 'appearance' } }, 'appearance'));
+});
+
+it.each(['global', 'character'])('实验室 %s 随机搭配按入口填入选中分类，未选栏、画师串和补充不动，关闭后内容库恢复自由范围', async entry => {
+  mocks.getAllChains.mockResolvedValue([
+    { ...saved, id: 'wardrobe', type: 'wardrobe', basePrompt: 'new_dress', negativePrompt: 'new_negative' },
+    { ...saved, id: 'scene', type: 'scene', basePrompt: 'new_scene' },
+  ]);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'playground' }));
+  await screen.findByTestId('editor');
+  const params = { ...source.params, seed: 42, _promptSections: { wardrobe: 'old_dress', scene: 'keep_scene', extra: 'keep_extra' }, characters: [
+    { id: 'first', prompt: 'first text', x: .2, y: .5 },
+    { id: 'second', prompt: 'second text', x: .8, y: .5, sections: { wardrobe: 'role_dress', appearance: 'keep_role_hair' } },
+  ] };
+  await act(async () => { await mocks.updatePlayground!('playground', { basePrompt: 'keep_artist', negativePrompt: 'keep_negative', variableValues: { subject: 'old_dress, keep_scene, keep_extra' }, params }); });
+  fireEvent.click(screen.getByRole('button', { name: entry === 'global' ? '全局随机搭配' : '角色二随机搭配' }));
+  await screen.findByRole('dialog', { name: '随机搭配' });
+  const checks = await screen.findAllByRole('checkbox') as HTMLInputElement[];
+  expect(checks).toHaveLength(entry === 'global' ? 5 : 4);
+  for (const check of checks) if (!check.getAttribute('aria-label')?.includes('服饰穿搭')) fireEvent.click(check);
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  expect(screen.getByText(`${entry === 'global' ? 'old_dress' : 'role_dress'} → new_dress`)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
+  await waitFor(() => expect(entry === 'global' ? mocks.editorDraft?.params._promptSections?.wardrobe : mocks.editorDraft?.params.characters?.[1].sections?.wardrobe).toBe('new_dress'));
+  expect(mocks.editorDraft?.basePrompt).toBe('keep_artist');
+  expect(mocks.editorDraft?.negativePrompt).toBe('keep_negative');
+  expect(mocks.editorDraft?.params.seed).toBe(42);
+  expect(mocks.editorDraft?.params._promptSections).toMatchObject({ scene: 'keep_scene', extra: 'keep_extra' });
+  if (entry === 'global') {
+    expect(mocks.editorDraft?.params.characters).toEqual(params.characters);
+    expect(mocks.editorDraft?.variableValues?.subject).toBe('new_dress, keep_scene, keep_extra');
+  } else {
+    expect(mocks.editorDraft?.params._promptSections).toEqual(params._promptSections);
+    expect(mocks.editorDraft?.params.characters?.[0]).toEqual(params.characters[0]);
+    expect(mocks.editorDraft?.params.characters?.[1].sections?.appearance).toBe('keep_role_hair');
+    expect(mocks.editorDraft?.variableValues?.subject).toBe('old_dress, keep_scene, keep_extra');
+  }
+  fireEvent.click(screen.getByRole('button', { name: '撤销上次填入' }));
+  await waitFor(() => expect(mocks.editorDraft?.params).toEqual(params));
+  fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Roll 组合' }));
+  expect(await screen.findByRole('dialog', { name: 'Roll 组合' })).toBeTruthy();
+  expect(screen.getByRole('combobox', { name: '选择抽取范围' })).toBeTruthy();
 });
 
 it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销并返回 Roll 页', async () => {

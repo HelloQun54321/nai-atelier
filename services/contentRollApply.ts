@@ -1,4 +1,4 @@
-﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections } from '../types';
+﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
 import { KINDS, META } from './contentRoll';
 import type { RollRow } from './contentRoll';
 import { CHARACTER_SECTION_KEYS } from './characterPrompts';
@@ -12,22 +12,27 @@ import { CHARACTER_SECTION_KEYS } from './characterPrompts';
  *     正文由 `services/characterPrompts.compileCharacterContent` 在**实际请求**时编译，
  *     因此未参与的栏位、手动补充正文都不会被这次替换吃掉；
  *   - 每栏的内容负面写进 `character.sectionNegatives`，来源写进 `character.sectionMeta`（不进请求）；
- *   - 场景与镜头各写 `_promptSections.scene` / `.camera`（全局栏位，与「补充」栏互不占用）；
+ *   - 全局入口的五类写 `_promptSections` 对应栏；内容库自由搭配仍将角色四类与场景／镜头分别写入；
  *   - 画师串、风格负面、模型与全部生图参数一个字节都不动。
  *
  * 撤销：调用方保留 `undo`（改动前的 params 快照 + 新建角色 id），一次撤销恢复全部范围。
  */
 
 export type ContentRollTarget =
+  | { mode: 'global' }
   | { mode: 'new' }
   | { mode: 'existing'; id: string }
   /** 把同一套搭配写进所有启用角色（停用角色跳过，不新建） */
   | { mode: 'all-enabled' };
 
+/** 实验室入口固定落点；全局没有表情栏，不把它塞进补充或角色。 */
+export type ContentRollEntryTarget = Extract<ContentRollTarget, { mode: 'global' | 'existing' }>;
+export const GLOBAL_ROLL_KINDS = KINDS.filter(kind => kind !== 'expression');
+
 /** 抽取范围：只角色四类 / 只场景镜头 / 全部（与界面上的「范围」选择一致）。 */
 export type ContentRollScope = 'all' | 'character' | 'global';
 
-/** 按范围过滤要参与抽取的机型：角色四类进目标角色，场景镜头进全局栏位。 */
+/** 按范围过滤要参与抽取的分类：角色四类进目标角色，场景镜头进全局栏位。 */
 export const filterPicksByScope = (
   picks: Record<string, RollRow>,
   scope: ContentRollScope,
@@ -73,10 +78,11 @@ export interface ContentRollApplyPlan {
   characterText: string;
   /** 场景 + 镜头合并文本（兼容旧调用） */
   globalText: string;
-  /** 场景 / 镜头按栏位分好的文本（写入 _promptSections.scene / .camera） */
+  /** 按全局栏位分好的文本（全局入口支持五类，内容库入口为场景／镜头） */
   globalSections: Record<string, string>;
-  /** 场景 / 镜头各自的内容负面（写入 _promptSections.sectionNegatives） */
+  /** 本次全局分类的内容负面（写入 _promptSections.sectionNegatives） */
   globalNegatives: Record<string, string>;
+  globalMeta: Record<string, PromptSectionSource>;
   /** 角色四类的分栏写入载荷 */
   roleWrites: ContentRollRoleWrite[];
   /** 实际会改动的落点 */
@@ -118,8 +124,8 @@ const charactersOf = (params: NAIParams): CharacterParams[] =>
   (Array.isArray(params.characters) ? params.characters : []);
 
 /**
- * 组计划：target 决定写哪个角色（新建角色时 roleId 由 apply 阶段生成，这里先留空）。
- * 角色四类进 roleWrites（分栏写入），场景与镜头进 globalSections；未提供的栏位不进入 written。
+ * 组计划：target 决定全局或角色目标；新建角色的 ID 留到 apply 阶段生成。
+ * 全局入口全部进入 globalSections；内容库沿用角色／全局分工，未参与的栏位不进入 written。
  */
 export const planContentRollApply = (
   picks: Record<string, RollRow>,
@@ -140,15 +146,16 @@ export const planContentRollApply = (
   const globalParts: string[] = [];
   const globalSections: Record<string, string> = {};
   const globalNegatives: Record<string, string> = {};
+  const globalMeta: Record<string, PromptSectionSource> = {};
   const written: string[] = [];
   const kept: string[] = [];
 
-  for (const kind of KINDS) {
+  for (const kind of target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS) {
     const meta = META[kind];
     const row = picks[kind];
     const next = textOfRow(row);
     const negative = negativeOfRow(row);
-    const isGlobal = meta.scope === 'global';
+    const isGlobal = target.mode === 'global' || meta.scope === 'global';
     const current = isGlobal
       ? String(globalSectionsMap[kind] || '')
       : String(sections[kind] || '');
@@ -159,6 +166,7 @@ export const planContentRollApply = (
         globalParts.push(next);
         globalSections[kind] = next;
         if (negative) globalNegatives[kind] = negative;
+        globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name };
       } else {
         characterParts.push(next);
         roleWrites.push({
@@ -185,7 +193,7 @@ export const planContentRollApply = (
   return {
     target,
     roleId: existing ? String(existing.id) : '',
-    roleName: target.mode === 'all-enabled'
+    roleName: target.mode === 'global' ? '全局提示词' : target.mode === 'all-enabled'
       ? '所有启用角色（' + enabledCharactersOf(safeParams).length + ' 个）'
       : existing ? '角色 ' + (characters.findIndex(item => String(item.id) === String(existing.id)) + 1) : '角色 1',
     rows,
@@ -193,6 +201,7 @@ export const planContentRollApply = (
     globalText: joinTags(globalParts),
     globalSections,
     globalNegatives,
+    globalMeta,
     roleWrites,
     written,
     kept,
@@ -221,12 +230,8 @@ export const applyContentRollToParams = (
   const next: NAIParams = { ...before };
   const written: string[] = [];
   const target = plan.target;
-  const characters = charactersOf(before).map(item => ({
-    ...item,
-    sections: { ...(item.sections || {}) },
-    sectionNegatives: { ...(item.sectionNegatives || {}) },
-    sectionMeta: { ...(item.sectionMeta || {}) },
-  }));
+  if (plan.roleWrites.length && target.mode === 'existing' && !charactersOf(before).some(item => String(item.id) === target.id)) throw new Error('目标角色已不存在，请重新打开随机搭配');
+  const characters = charactersOf(before).map(item => ({ ...item }));
   let createdRoleId = '';
 
   if (plan.roleWrites.length && target.mode === 'all-enabled') {
@@ -272,20 +277,23 @@ export const applyContentRollToParams = (
       }
     }
   }
-  if (characters.length) next.characters = characters;
+  if (plan.roleWrites.length && characters.length) next.characters = characters;
 
   const globalWrites = plan.globalSections || {};
   if (Object.keys(globalWrites).length) {
     const sections: PromptSections = { ...(before._promptSections || {}) };
     const sectionNegatives = { ...((before._promptSections || {}).sectionNegatives || {}) };
+    const sectionMeta = { ...(before._promptSections?.sectionMeta || {}) };
     for (const [kind, text] of Object.entries(globalWrites)) {
       if (!text) continue;
       (sections as Record<string, string>)[kind] = text;
       const negative = plan.globalNegatives?.[kind];
       if (negative) sectionNegatives[kind] = negative; else delete sectionNegatives[kind];
+      sectionMeta[kind] = plan.globalMeta[kind];
       written.push(kind);
     }
     sections.sectionNegatives = sectionNegatives;
+    sections.sectionMeta = sectionMeta;
     next._promptSections = sections;
   }
 

@@ -65,7 +65,7 @@ export interface ChainEditorPromptInputsProps {
     prompt: string;
     setPrompt: (value: string) => void;
     sections?: PromptSections | null;
-    /** 就地发起「Roll 场景 / 镜头」 */
+    /** 就地发起「随机搭配」 */
     onContentRollForGlobal?: () => void;
     setSections?: (sections: PromptSections) => void;
     supplementPrompt?: string;
@@ -112,7 +112,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     <div className="flex justify-end">
                         <button type="button" onClick={onContentRollForGlobal}
                             className="rounded border border-dashed border-indigo-300 px-2 py-1 text-meta font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
-                            {t('Roll 场景 / 镜头')}
+                            {t('随机搭配')}
                         </button>
                     </div>
                 ) : null}

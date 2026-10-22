@@ -18,6 +18,7 @@ interface ContentLibraryPageProps {
   onSectionChange: (section: ContentLibrarySection) => void;
   active?: boolean;
   rollOpen: boolean;
+  rollTitle?: string;
   onRollOpenChange: (open: boolean) => void;
   onCapture?: (text: string, name: string, category: string) => Promise<void>;
   /** 分区按需挂载，只有当前分区把操作挂到共用顶栏。 */
@@ -28,7 +29,7 @@ interface ContentLibraryPageProps {
 
 const Loading = () => <div className="flex flex-1 items-center justify-center text-sm text-gray-400">{t('加载中…')}</div>;
 
-const RollDialog: React.FC<{ open: boolean; onClose: () => void; children: ContentLibraryPageProps['roll'] }> = ({ open, onClose, children }) => {
+const RollDialog: React.FC<{ open: boolean; title?: string; onClose: () => void; children: ContentLibraryPageProps['roll'] }> = ({ open, title = 'Roll 组合', onClose, children }) => {
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -43,10 +44,10 @@ const RollDialog: React.FC<{ open: boolean; onClose: () => void; children: Conte
   }, [open, onClose, dialogRef]);
   return <div hidden={!open} className={open ? 'fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm sm:p-4' : 'hidden'}
     onClick={event => { if (event.target === event.currentTarget && isTopmostModal(dialogRef.current)) onClose(); }}>
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('Roll 组合')}
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t(title)}
       className="content-library content-roll-dialog appearance-panel flex h-dvh w-full flex-col overflow-hidden border border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-700 dark:bg-gray-950 sm:h-[min(900px,90dvh)] sm:max-w-[1400px] sm:rounded-2xl">
       <header className="appearance-surface flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-900">
-        <Dice5 className="h-5 w-5 text-indigo-500" /><h2 className="flex-1 text-sm font-semibold">{t('Roll 组合')}</h2>
+        <Dice5 className="h-5 w-5 text-indigo-500" /><h2 className="flex-1 text-sm font-semibold">{t(title)}</h2>
         <IconButton label="关闭搭配面板" onClick={onClose}><X /></IconButton>
       </header>
       <div ref={setToolbarSlot} className="content-roll-dialog-tools flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800" />
@@ -56,7 +57,7 @@ const RollDialog: React.FC<{ open: boolean; onClose: () => void; children: Conte
 };
 
 /** 两种资源常驻，搭配按需打开；隐藏面板保留本次草稿和原列表位置。 */
-export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section, onSectionChange, active = true, rollOpen, onRollOpenChange, onCapture, items, roll, saved }) => {
+export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section, onSectionChange, active = true, rollOpen, rollTitle, onRollOpenChange, onCapture, items, roll, saved }) => {
   useLanguage();
   const id = useId();
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
@@ -99,7 +100,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ section,
       {pane('items', () => items(section === 'items' ? toolbarSlot : null))}
       {pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}
     </div>
-    {rollMounted && <ImagePreviewPortal><RollDialog open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
+    {rollMounted && <ImagePreviewPortal><RollDialog title={rollTitle} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
     {onCapture && <ImagePreviewPortal><PromptCaptureDialog open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} /></ImagePreviewPortal>}
   </div>;
 };

@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.107.5-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.108.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -195,6 +195,8 @@ flowchart LR
 </div>
 
 ---
+
+实验室开启「分类编辑」后，可从全局或某个角色点击「随机搭配」，逐类选择参与内容并预览后填入：全局入口写回人物、服饰、姿势、场景、镜头对应栏；角色入口只写打开时那个角色的形象、服饰、动作、表情栏。未选分类、空库、画师串与补充保持原样，不自动生图；填入可撤销。内容库的「Roll 组合」仍可自由选择范围和目标。
 
 ### 🎲 Roll 串：抽取组合
 

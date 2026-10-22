@@ -13,10 +13,10 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
   { id: 'b', prompt: 'red hair', negativePrompt: 'blue hair', x: 0.7, y: 0.3 },
 ] };
 const mark = vi.fn();
-const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams }) => {
+const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial, onContentRollForRole }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void }) => {
   const [params, setParams] = useState(initialParams);
   return <><ChainEditorCharacters promptClassificationEnabled={classified} params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
-    canEdit={canEdit} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
+    canEdit={canEdit} onContentRollForRole={onContentRollForRole} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
     addCharacter={vi.fn()} removeCharacter={index => setParams(current => ({ ...current, characters: current.characters?.filter((_, i) => i !== index) }))}
     updateCharacter={(index, patch, useCoords) => { setParams(current => ({ ...current, ...(useCoords === undefined ? {} : { useCoords }), characters: current.characters?.map((character, i) => i === index ? { ...character, ...patch } : character) })); mark(); }}
     activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']} mobileEditorTab="character" freeformPosition={freeform} />
@@ -29,6 +29,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it.each([[false, true, 0], [true, false, 0], [true, true, 2]] as const)('分类=%s、可编辑=%s 时只显示对应角色的随机搭配入口', (classified, canEdit, count) => {
+    const onContentRollForRole = vi.fn();
+    render(<Harness classified={classified} canEdit={canEdit} onContentRollForRole={onContentRollForRole} />);
+    const buttons = screen.queryAllByRole('button', { name: '随机搭配' });
+    expect(buttons).toHaveLength(count);
+    if (count) { fireEvent.click(buttons[1]); expect(onContentRollForRole).toHaveBeenCalledWith(1); }
+    expect(draft()).toEqual(initial);
+    expect(mark).not.toHaveBeenCalled();
+  });
   it('整段显示完整角色正负词，编辑后分类词不重复参与请求，坐标与其他角色保留', () => {
     render(<Harness classified={false} initialParams={{ ...initial, characters: [{ ...initial.characters![0], prompt: 'smile', sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }, initial.characters![1]] }} />);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;

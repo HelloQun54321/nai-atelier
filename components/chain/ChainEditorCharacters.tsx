@@ -52,7 +52,7 @@ export interface ChainEditorCharactersProps {
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
     addCharacter: () => void;
-    /** 就地发起「Roll 当前角色」 */
+    /** 就地发起「随机搭配」 */
     onContentRollForRole?: (index: number) => void;
     updateCharacter: (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => void;
     removeCharacter: (idx: number) => void;
@@ -265,7 +265,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                             {onContentRollForRole && canEdit ? (
                                                 <button type="button" onClick={() => onContentRollForRole(idx)}
                                                     className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
-                                                    {t("Roll 当前角色")}
+                                                    {t("随机搭配")}
                                                 </button>
                                             ) : null}
                                         </span>

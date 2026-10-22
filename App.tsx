@@ -23,7 +23,7 @@ import {
   ThemeMode,
 } from './services/appearancePreferences';
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
-import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
+import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan, type ContentRollEntryTarget } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
 import { prepareCollectedPrompt } from './services/collectedPrompt';
 import { stableOperationId } from './services/operationId';
@@ -165,8 +165,8 @@ const App = () => {
   const contentRollSaveIndexRef = useRef<Map<string, string>>(new Map());
   /* 一键 Roll 写入 params 的次数：让实验室按这个版本号重新同步编辑区 */
   const [contentRollRevision, setContentRollRevision] = useState(0);
-  /* 实验室就地发起一键 Roll 的范围/目标请求（工作区消费一次） */
-  const [contentRollScopeRequest, setContentRollScopeRequest] = useState<{ scope: 'all' | 'character' | 'global'; targetId?: string; key: number } | null>(null);
+  /* 实验室随机搭配的固定目标；关闭面板或从内容库重新打开时清除。 */
+  const [contentRollEntryTarget, setContentRollEntryTarget] = useState<ContentRollEntryTarget | null>(null);
   /* 内容库资源分区与临时搭配面板独立，打开面板不切换原列表。 */
   const [contentLibrarySection, setContentLibrarySection] = useState<ContentLibrarySection>('items');
   const [contentRollOpen, setContentRollOpen] = useState(false);
@@ -224,6 +224,9 @@ const App = () => {
 
   // 连续 notify 时旧计时器会把新 toast 提前清掉，先清旧再挂新
   const toastTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
   const accountingWarningUntilRef = useRef(0);
   // useCallback 保持稳定引用：notify 被多处 effect 依赖，每次渲染新建会导致监听反复重挂。
   const notify = React.useCallback((message: string, type: 'success' | 'error' = 'success') => {
@@ -610,6 +613,7 @@ const App = () => {
     }
 
     // 旧入口统一收进「内容库」；一键 Roll 仍需要实验室参数作为应用目标。
+    setContentRollEntryTarget(null);
     setContentRollOpen(newView === 'content-roll');
     if (newView === 'content-roll') { ensurePlayground(); keepViewMounted('playground'); }
     if (newView === 'prompts' || newView === 'content-roll' || newView === 'content-roll-library') {
@@ -658,7 +662,8 @@ const App = () => {
     ensurePlayground();
     const params = playgroundChain?.params || LAB_DEFAULT_PARAMS;
     const subject = playgroundChain?.variableValues?.subject ?? mergePromptSections(params._promptSections);
-    const base = { ...params, _promptSections: resolvePromptSections(params._promptSections, subject) };
+    const writesGlobal = Object.keys(plan.globalSections).length > 0;
+    const base = writesGlobal ? { ...params, _promptSections: resolvePromptSections(params._promptSections, subject) } : params;
     const result = applyContentRollToParams(base, plan, createUuid);
     setContentRollUndo({ params, subject, createdRoleId: result.createdRoleId });
     /* 分区与「主体正文」必须一起提交：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落到补充栏 */
@@ -666,7 +671,7 @@ const App = () => {
     /* 主体正文在 chain.variableValues.subject 上（分区在 params 上），两者必须一起提交 */
     await handleUpdatePlaygroundChain('playground', {
       params: result.params,
-      variableValues: { ...(playgroundChain?.variableValues || {}), subject: merged },
+      variableValues: { ...(playgroundChain?.variableValues || {}), subject: writesGlobal ? merged : subject },
     });
     setContentRollRevision(value => value + 1);
     return true;
@@ -747,16 +752,17 @@ const App = () => {
     void handleNavigate('content-roll');
   };
 
-  /* 实验室里就地发起：只滚角色四类（并可指定目标角色）或只滚场景镜头 */
+  /* 实验室入口固定落点，面板内只选择参与分类。 */
   const handleContentRollForRole = (index: number) => {
     const character = (playgroundChain?.params?.characters || [])[index];
-    setContentRollScopeRequest({ scope: 'character', targetId: character ? String(character.id) : undefined, key: Date.now() });
+    if (!character) return;
+    setContentRollEntryTarget({ mode: 'existing', id: String(character.id) });
     setContentRollOpen(true);
     keepViewMounted('content-library');
     setView('content-library');
   };
   const handleContentRollForGlobal = () => {
-    setContentRollScopeRequest({ scope: 'global', key: Date.now() });
+    setContentRollEntryTarget({ mode: 'global' });
     setContentRollOpen(true);
     keepViewMounted('content-library');
     setView('content-library');
@@ -934,7 +940,9 @@ const App = () => {
             notify(t(category ? '已存入内容库' : '已存入组合库'));
           }}
           rollOpen={contentRollOpen}
+          rollTitle={contentRollEntryTarget ? '随机搭配' : undefined}
           onRollOpenChange={open => {
+            setContentRollEntryTarget(null);
             if (open) { ensurePlayground(); keepViewMounted('playground'); }
             setContentRollOpen(open);
           }}
@@ -946,8 +954,7 @@ const App = () => {
             canUndo={!!contentRollUndo}
             onApplyRoll={handleApplyContentRoll}
             onUndoApply={handleUndoContentRoll}
-            scopeRequest={contentRollScopeRequest}
-            onScopeRequestConsumed={() => setContentRollScopeRequest(null)}
+            entryTarget={contentRollEntryTarget}
             onSaveRoll={handleSaveContentRoll}
             onWriteRollToChain={handleWriteContentRollToChain}
             seedRecord={contentRollSeed}

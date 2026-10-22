@@ -31,6 +31,43 @@ const baseParams = (): NAIParams => ({
 } as unknown as NAIParams);
 
 describe('一键 Roll → 实验室：组计划', () => {
+  it('全局入口把参与的五类写回全局，不创建角色，也不把表情塞进补充', () => {
+    const params = baseParams();
+    const original = structuredClone(params);
+    const plan = planContentRollApply(picks, params, { mode: 'global' });
+    expect(plan.roleWrites).toEqual([]);
+    expect(plan.rows.map(item => item.kind)).toEqual(['appearance', 'wardrobe', 'pose', 'scene', 'camera']);
+    expect(plan.rows.find(item => item.kind === 'appearance')?.current).toBe('keep_me');
+    const result = applyContentRollToParams(params, plan, () => { throw new Error('不得新建角色'); });
+    expect(result.params._promptSections).toMatchObject({ appearance: 'blonde_hair, blue_eyes', wardrobe: 'white_dress', pose: '', scene: 'rain, night', camera: 'close_up', extra: 'old_extra' });
+    expect(result.params._promptSections?.sectionMeta?.wardrobe).toMatchObject({ source: 'roll', entryName: 'wardrobe 条目' });
+    expect(result.params.characters).toBe(params.characters);
+    expect(result.params.seed).toBe(params.seed);
+    expect(params).toEqual(original);
+  });
+
+  it('全局只选服饰时仅替换该栏及负面来源，未选内容与补充原样保留', () => {
+    const params = baseParams();
+    params._promptSections = { ...params._promptSections, extra: '  keep extra\n', sectionNegatives: { wardrobe: 'old_negative', scene: 'keep_negative' }, sectionMeta: { wardrobe: { source: 'library', entryId: 'old' }, scene: { source: 'manual' } } };
+    const selected = pickByParticipation(picks, Object.fromEntries(Object.keys(picks).map(kind => [kind, kind === 'wardrobe'])));
+    selected.wardrobe = { ...selected.wardrobe, negative: '' };
+    const next = applyContentRollToParams(params, planContentRollApply(selected, params, { mode: 'global' }), () => 'unused').params;
+    expect(next._promptSections).toEqual({ ...params._promptSections, wardrobe: 'white_dress', sectionNegatives: { scene: 'keep_negative' }, sectionMeta: { ...params._promptSections.sectionMeta, wardrobe: { source: 'roll', entryId: undefined, entryName: 'wardrobe 条目' } } });
+    expect(next.characters).toBe(params.characters);
+    expect(applyContentRollToParams(params, planContentRollApply({}, params, { mode: 'global' }), () => 'unused').params).toEqual(params);
+  });
+
+  it('角色入口按 ID 写入，重排不串角色，目标删除后拒绝写入', () => {
+    const params = baseParams();
+    const other = { id: 'c2', prompt: 'other', x: .2, y: .8 };
+    params.characters = [other, ...params.characters!];
+    const plan = planContentRollApply({ wardrobe: picks.wardrobe }, params, { mode: 'existing', id: 'c1' });
+    const next = applyContentRollToParams(params, plan, () => 'unused').params;
+    expect(next.characters?.[0]).toEqual(other);
+    expect(next.characters?.[1].sections?.wardrobe).toBe('white_dress');
+    expect(next._promptSections).toBe(params._promptSections);
+    expect(() => applyContentRollToParams({ ...params, characters: [other] }, plan, () => 'unused')).toThrow('目标角色已不存在');
+  });
   it('只把「有内容」的栏位标为替换，未提供的保持原值并出现在 kept 里', () => {
     const plan = planContentRollApply(picks, baseParams(), { mode: 'existing', id: 'c1' });
     const byKind = Object.fromEntries(plan.rows.map(item => [item.kind, item]));

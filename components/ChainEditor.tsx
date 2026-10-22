@@ -70,7 +70,7 @@ interface ChainEditorProps {
     externalImportToken?: number;
   /** 外部页面（一键 Roll）写入 params 后的版本号：变化时重新同步编辑区，避免旧草稿盖住新内容 */
   sectionsRevision?: number;
-  /** 实验室就地发起一键 Roll：'character' 只滚角色四类，'global' 只滚场景与镜头 */
+  /** 实验室随机搭配：全局入口填全局分类，角色入口固定当前角色 */
   onContentRollForRole?: (index: number) => void;
   onContentRollForGlobal?: () => void;
     agentOpenToken?: number;
