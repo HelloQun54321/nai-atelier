@@ -23,6 +23,7 @@ interface ImageEditPreviewProps {
   getDownloadFilename: () => string;
   generationData?: ImageGenerationData;
   favorite?: CollectionTarget;
+  notify?: (message: string, type?: 'success' | 'error') => void;
   canNavigateHistory?: boolean;
   historyLabel?: string;
   onPreviousHistory?: () => void;
@@ -37,7 +38,7 @@ const getOperationLabel = (operation: ImageEditOperation) => operation === 'imag
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
   operation, image, error, generationCostLabel, isGenerating = false, generationProgress, generationCountControl, isLoading = false,
   canGenerate, generationDisabled, unavailableLabel,
-  onGenerate, onOpenLightbox, getDownloadFilename, generationData, favorite, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
+  onGenerate, onOpenLightbox, getDownloadFilename, generationData, favorite, notify, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
 }) => {
   useLanguage();
@@ -61,7 +62,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
         handleSavePreview={() => undefined}
         handleUploadCover={() => undefined}
         getDownloadFilename={getDownloadFilename}
-        generationData={generationData} favorite={favorite}
+        generationData={generationData} favorite={favorite} notify={notify}
         hideCoverActions
         canNavigateHistory={canNavigateHistory}
         historyLabel={historyLabel}

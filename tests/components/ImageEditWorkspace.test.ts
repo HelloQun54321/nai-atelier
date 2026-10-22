@@ -167,7 +167,7 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将�
 
 describe('ImageEditControls', () => {
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 正负词清空分别在既有标题行，不覆盖框中文字或混清另一字段', operation => {
-    const { onPromptChange, onNegativePromptChange } = renderControls(operation, false, false, false, {}, 'prompt');
+    const { onDraftChange } = renderControls(operation, false, false, false, {}, 'prompt');
     const positive = screen.getByPlaceholderText(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词') as HTMLTextAreaElement;
     const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
     const [clearPositive, clearNegative] = screen.getAllByRole('button', { name: '清空当前提示词' });
@@ -175,9 +175,10 @@ describe('ImageEditControls', () => {
     expect(negative.parentElement!.contains(clearNegative)).toBe(false);
     expect(clearPositive.parentElement!.parentElement!.parentElement!.textContent).toContain(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词');
     expect(clearNegative.parentElement!.parentElement!.textContent).toContain('全局负面提示词');
-    fireEvent.click(clearPositive); expect(onPromptChange).toHaveBeenLastCalledWith(''); expect(onNegativePromptChange).not.toHaveBeenCalled();
+    const originalNegative = negative.value;
+    fireEvent.click(clearPositive); expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({ prompt: '', promptSource: 'custom', negativePrompt: originalNegative }));
     expect(document.activeElement).toBe(positive);
-    fireEvent.click(clearNegative); expect(onNegativePromptChange).toHaveBeenLastCalledWith(''); expect(document.activeElement).toBe(negative);
+    fireEvent.click(clearNegative); expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining({ negativePrompt: '' })); expect(onDraftChange.mock.lastCall![0]).not.toHaveProperty('prompt'); expect(document.activeElement).toBe(negative);
     expect(positive.className).not.toMatch(/pr-14|md:pr-9/); expect(negative.className).not.toMatch(/pr-14|md:pr-9/);
   });
   it.each(['canvas', 'params'] as const)('图生图输出尺寸随 %s Tab 正确显隐，选择不影响其他编辑模式', mobileTab => {
@@ -245,7 +246,7 @@ describe('ImageEditControls', () => {
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用底图和编辑提示词', operation => {
-    const { container, onPasteImage, onSelectImageSource, onPromptChange } = renderControls(operation);
+    const { container, onPasteImage, onSelectImageSource, onDraftChange } = renderControls(operation);
     expect(container.textContent).not.toMatch(/可直接粘贴|独立保存|绘制重绘区域|生成结果在右侧/);
     expect(screen.getByRole('button', { name: '上传图片' })).toBeTruthy();
     const paste = screen.getByRole('button', { name: '粘贴' });
@@ -267,7 +268,7 @@ describe('ImageEditControls', () => {
     }), 'generated');
     const placeholder = operation === 'image-to-image' ? '图生图提示词' : operation === 'inpaint' ? '重绘提示词' : '扩图提示词';
     fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: 'new scene' } });
-    expect(onPromptChange).toHaveBeenCalledWith('new scene');
+    expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'new scene', promptSource: 'custom' }));
     expect(screen.queryByText('无免费档')).toBeNull();
   });
 
@@ -332,12 +333,12 @@ describe('ImageEditControls', () => {
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('在 %s 的正负面提示词中启用 Tag 辅助', operation => {
-    const { onPromptChange } = renderControls(operation, false, false, true);
+    const { onDraftChange } = renderControls(operation, false, false, true);
 
     const assistedInputs = screen.getAllByRole('combobox').filter(element => element.tagName === 'TEXTAREA');
     expect(assistedInputs).toHaveLength(2);
     fireEvent.change(assistedInputs[0], { target: { value: 'blue bottle, 1girl' } });
-    expect(onPromptChange).toHaveBeenCalledWith('blue bottle, 1girl');
+    expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'blue bottle, 1girl', promptSource: 'custom' }));
   });
 
   it('图生图只显示底图、Strength 和 Noise，不显示蒙版或扩图控件', () => {

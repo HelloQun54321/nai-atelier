@@ -6,6 +6,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { FolderBatchImportModal } from '../../../components/chain/FolderBatchImportModal';
 import { api } from '../../../services/api';
 import { db } from '../../../services/dbService';
+import { extractMetadata } from '../../../services/metadataService';
+import type { PromptChain } from '../../../types';
 vi.mock('../../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
 
 vi.mock('../../../services/metadataService', async importOriginal => ({
@@ -14,6 +16,28 @@ vi.mock('../../../services/metadataService', async importOriginal => ({
 }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('导入与清理候选支持空格和回车勾选，编辑输入框不误切换且不执行删除', async () => {
+  class PreviewURL extends URL { static createObjectURL = () => 'blob:keyboard-fixture'; static revokeObjectURL = vi.fn(); }
+  vi.stubGlobal('URL', PreviewURL);
+  vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: 'duplicate', steps: 28, width: 832, height: 1216 }));
+  const pickDirectory = vi.fn(); vi.stubGlobal('showDirectoryPicker', pickDirectory);
+  const save = vi.spyOn(db, 'createChain').mockRejectedValue(new Error('测试禁止写库'));
+  const existing = { id: 'synthetic', type: 'style', name: '已有', basePrompt: 'duplicate', negativePrompt: '', params: {} } as PromptChain;
+  render(React.createElement(FolderBatchImportModal, { isOpen: true, existingChains: [existing], onClose: vi.fn(), onSuccess: vi.fn(), notify: vi.fn() }));
+  fireEvent.change(screen.getByLabelText('批量导入 PNG 图片'), { target: { files: [new File(['synthetic'], 'duplicate.png', { type: 'image/png' })] } });
+  const card = await screen.findByRole('checkbox', { name: '导入条目：duplicate' });
+  const initial = card.getAttribute('aria-checked');
+  fireEvent.keyDown(card, { key: ' ' }); expect(card.getAttribute('aria-checked')).not.toBe(initial);
+  fireEvent.keyDown(card, { key: 'Enter' }); expect(card.getAttribute('aria-checked')).toBe(initial);
+  fireEvent.keyDown(card.querySelector('input')!, { key: ' ' }); expect(card.getAttribute('aria-checked')).toBe(initial);
+  fireEvent.click(screen.getByRole('button', { name: /清理无意义图片/ }));
+  const candidate = screen.getByRole('checkbox', { name: '待清理文件：duplicate' });
+  const selected = candidate.getAttribute('aria-checked');
+  fireEvent.keyDown(candidate, { key: ' ' }); expect(candidate.getAttribute('aria-checked')).not.toBe(selected);
+  fireEvent.keyDown(candidate, { key: 'Enter' }); expect(candidate.getAttribute('aria-checked')).toBe(selected);
+  expect(pickDirectory).not.toHaveBeenCalled(); expect(save).not.toHaveBeenCalled();
+});
 
 it('批量导入遮罩与侧栏同处应用根层，关闭与卸载不操作文件或资料库', () => {
   const close = vi.fn();

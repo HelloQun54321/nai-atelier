@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import {act,cleanup,fireEvent,render,screen,within} from '@testing-library/react';
+import {act,cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {ImageLightbox,ViewableImage} from '../../components/ImageLightbox';
 import {ChainEditorPreview} from '../../components/ChainEditorPreview';
 import {ImageEditPreview} from '../../components/ImageEditPreview';
 import {installPointerEvents,longPress} from '../support/touchEvents';
 import {buildMediaUrl} from '../../services/mobileImageCache';
+import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 beforeEach(()=>{installPointerEvents();vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
 const setup=()=>{const onClose=vi.fn(),onSwipe=vi.fn();render(<ImageLightbox src="/synthetic.png" onClose={onClose} onSwipe={onSwipe}/>);return{stage:screen.getByLabelText('图片平移与缩放'),image:screen.getByRole('img'),onClose,onSwipe};};
@@ -66,21 +68,23 @@ it.each([
 });
 
 it('Portal 挂载后立即测量并注册尺寸监听，调整窗口重新适配，关闭清理监听',()=>{
-  let box={width:1400,height:900},resize!:()=>void;
+  let box={width:1400,height:900};
+  const callbacks=new Set<()=>void>();
   const observe=vi.fn(),disconnect=vi.fn();
   vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({...box,left:0,top:0} as DOMRect));
   vi.stubGlobal('ResizeObserver',class{
-    constructor(callback:ResizeObserverCallback){resize=()=>callback([],this as unknown as ResizeObserver);}
-    observe=observe;disconnect=disconnect;
+    callback:()=>void;
+    constructor(callback:ResizeObserverCallback){this.callback=()=>callback([],this as unknown as ResizeObserver);callbacks.add(this.callback);}
+    observe=observe;disconnect=()=>{callbacks.delete(this.callback);disconnect();};
   });
   const {stage,image}=setup();expect(observe).toHaveBeenCalledWith(stage);
   Object.defineProperties(image,{naturalWidth:{value:1024},naturalHeight:{value:1024}});fireEvent.load(image);
   expect(screen.getByLabelText('图片缩放比例').textContent).toBe('88%');
-  box={width:700,height:500};act(()=>resize());
+  box={width:700,height:500};act(()=>callbacks.forEach(callback=>callback()));
   expect(screen.getByLabelText('图片缩放比例').textContent).toBe('49%');
   fireEvent.wheel(stage,{deltaY:-100,clientX:350,clientY:250});
   expect(image.style.transform).toContain('scale(1.2214027581601699)');
-  cleanup();expect(disconnect).toHaveBeenCalledOnce();
+  cleanup();expect(callbacks.size).toBe(0);expect(disconnect).toHaveBeenCalled();
 });
 
 it.each(['text-to-image','image-to-image','inpaint','outpaint'] as const)('%s 预览入口共用稳定比例的大图查看器',operation=>{
@@ -106,3 +110,49 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+it('原图最终失败才提示，主动重试重建图片，切换图片不残留旧错误', () => {
+  const onClose = vi.fn();
+  const view = render(<ImageLightbox src="/synthetic.png" onClose={onClose} />);
+  const image = screen.getByRole('img'); fireEvent.error(image);
+  const retry = screen.getByRole('button', { name: '原图加载失败 · 重试' });
+  fireEvent.click(retry);
+  expect(screen.getByRole('img')).not.toBe(image);
+  expect(screen.queryByRole('button', { name: '原图加载失败 · 重试' })).toBeNull();
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.error(screen.getByRole('img'));
+  view.rerender(<ImageLightbox src="/another.png" onClose={onClose} />);
+  expect(screen.queryByRole('button', { name: '原图加载失败 · 重试' })).toBeNull();
+});
+
+it('多页大图支持按钮、方向键和页码，边界及输入框不翻页，单张不出现分页', () => {
+  const change = vi.fn();
+  const Harness = ({ count = 3 }) => { const [index, setIndex] = useState(0); return <ImageLightbox src={`/p${index}.png`} onClose={vi.fn()} pager={{ index, count, onChange: next => { change(next); setIndex(next); } }}><input aria-label="合成输入" /></ImageLightbox>; };
+  const view = render(<Harness />);
+  expect(screen.getByText('1 / 3')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '上一张图片' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '下一张图片' }));
+  expect(screen.getByText('2 / 3')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'ArrowRight' });
+  expect(screen.getByText('2 / 3')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'ArrowRight', ctrlKey: true });
+  expect(screen.getByText('2 / 3')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'ArrowRight' });
+  expect(screen.getByText('3 / 3')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '下一张图片' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.keyDown(window, { key: 'ArrowRight' }); expect(change).toHaveBeenCalledTimes(2);
+  fireEvent.keyDown(window, { key: 'ArrowLeft' }); expect(screen.getByText('2 / 3')).toBeTruthy();
+  view.rerender(<Harness count={1} />);
+  expect(screen.queryByRole('button', { name: '下一张图片' })).toBeNull();
+});
+
+it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 小预览的复制成功与下载失败均通过调用方通知', async operation => {
+  const notify = vi.fn();
+  vi.mocked(downloadSharedImage).mockRejectedValueOnce(new Error('合成下载失败'));
+  render(<ImageEditPreview operation={operation} image="/synthetic.png" error={null} generationCostLabel="免费" onGenerate={vi.fn()} onOpenLightbox={vi.fn()} getDownloadFilename={() => 'synthetic.png'} notify={notify} />);
+  fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已复制图片', 'success'));
+  expect(copySharedImage).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成下载失败', 'error'));
+});

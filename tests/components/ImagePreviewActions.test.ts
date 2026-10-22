@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ImagePreviewActions } from '../../components/ImagePreviewActions';
+import { ImagePreviewActions, previewActionLayout } from '../../components/ImagePreviewActions';
 
 beforeEach(() => localStorage.clear());
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('小图和全屏大图的共用操作', () => {
   it.each([false, true])('全屏=%s：辅助操作统一圆形尺寸与材质，保留语义色及左右分组', fullscreen => {
@@ -27,16 +27,16 @@ describe('小图和全屏大图的共用操作', () => {
     const right = coverButton.parentElement!;
     expect(left.classList.contains('top-4')).toBe(true);
     expect(left.classList.contains('left-4')).toBe(true);
-    expect(left.classList.contains(fullscreen ? 'gap-6' : 'gap-2')).toBe(true);
+    expect(left.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('top-4')).toBe(true);
     expect(right.classList.contains('right-4')).toBe(true);
     expect(right.classList.contains('w-28')).toBe(false);
     expect(right.classList.contains('md:w-32')).toBe(false);
-    expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
+    expect(removeButton.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(false);
     expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-lg')).toBeNull();
-    expect(right.classList.contains('items-center')).toBe(true);
+    expect(right.classList.contains('image-preview-action-group')).toBe(true);
     expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
     expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);
     for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
@@ -118,6 +118,40 @@ describe('小图和全屏大图的共用操作', () => {
     fireEvent.click(button); expect(choose).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: '复制图片' }).hasAttribute('disabled')).toBe(false);
   });
+});
+
+it('预览操作避让左右翻图、底部工具，换列后两侧也不相交', () => {
+  for (const width of [260, 320, 520, 1200]) for (const height of [200, 300, 640]) {
+    for (const size of [32, 44, 48]) for (const navigation of [0, 48, 56]) for (const gap of [8, 12]) {
+      const counts = [3, 5], footer = 80;
+      const inset = gap * 2;
+      const { rows, minHeight } = previewActionLayout(width, height, counts, [size, size], size, navigation, footer, gap, inset);
+      const actualHeight = Math.max(height, minHeight);
+      const usedWidth = counts.reduce((sum, count) => sum + Math.ceil(count / rows) * (size + gap) - gap, inset * 2 + gap);
+      expect(usedWidth).toBeLessThanOrEqual(width);
+      const bottom = inset + rows * (size + gap) - gap;
+      expect(bottom + (navigation ? gap + navigation / 2 : inset + footer)).toBeLessThanOrEqual(navigation ? actualHeight / 2 : actualHeight);
+    }
+  }
+});
+
+it('300px 预览按实际按钮与翻图尺寸向内换列，放大后恢复一列并保留焦点', () => {
+  let width = 300, height = 300;
+  const callbacks: Array<() => void> = [];
+  const disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback); } observe() {} disconnect = disconnect; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => height);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.tagName === 'BUTTON' ? 32 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-image-preview-navigation') ? 48 : this.tagName === 'BUTTON' ? 32 : 0; });
+  const view = render(React.createElement('div', null, React.createElement('button', { 'data-image-preview-navigation': true }, '上一张'), React.createElement(ImagePreviewActions, { imageUrl: '/synthetic.png', filename: 'test.png', canManageHistoryGroup: true, onSetCover: vi.fn(), onSaveArtistSample: vi.fn() })));
+  const cover = screen.getByRole('button', { name: '设为封面' }); cover.focus();
+  expect(cover.parentElement!.style.gridTemplateRows).toBe('repeat(2, 32px)');
+  width = 600; height = 700;
+  act(() => callbacks.forEach(callback => callback()));
+  expect(cover.parentElement!.style.gridTemplateRows).toBe('repeat(5, 32px)');
+  expect(document.activeElement).toBe(cover);
+  view.unmount(); expect(disconnect).toHaveBeenCalled();
 });
 
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。

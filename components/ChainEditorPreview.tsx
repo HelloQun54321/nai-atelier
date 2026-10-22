@@ -99,7 +99,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 >
                     {canNavigateHistory && (
                         <>
-                            <button data-card-action="true"
+                            <button data-card-action="true" data-image-preview-navigation
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onPreviousHistory?.();
@@ -112,7 +112,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
                                 </svg>
                             </button>
-                            <button data-card-action="true"
+                            <button data-card-action="true" data-image-preview-navigation
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onNextHistory?.();
@@ -132,7 +132,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         <>
                             <OriginalImage src={generatedImage} alt={resultAlt} className="max-w-full max-h-full object-contain shadow-2xl" />
                             {historyLabel && (
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none">
+                                <div data-image-preview-footer className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none">
                                     {historyLabel}
                                 </div>
                             )}

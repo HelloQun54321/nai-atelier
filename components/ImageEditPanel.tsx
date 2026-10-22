@@ -1250,6 +1250,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           onNormalize={applyNormalization}
         />
         <ImageEditPreview
+          notify={notify}
           operation={operation}
           image={previewImage}
           error={t(error)}

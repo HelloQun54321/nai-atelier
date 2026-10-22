@@ -1101,9 +1101,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                 /></button>
                 <ImageShareOverlay imageUrl={buildPixivMediaUrl(selected, selectedPage, 'original')} filename={`pixiv-${selected.id}-p${selectedPage + 1}.png`} favorite={collectionImage(selected, selectedPage)} notify={notify} />
               </DetailImageStage>
-              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={t("{0} 第 {1} 页", [selected.title, zoomPage + 1])} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} favorite={collectionImage(selected, zoomPage)} notify={notify} onClose={() => setZoomPage(null)} onSwipe={delta => {
-                const next=zoomPage+delta;if(next>=0&&next<currentPageCount){setZoomPage(next);setSelectedPage(next);}
-              }} />}
+              {zoomPage !== null && <ImageLightbox src={buildPixivMediaUrl(selected, zoomPage, 'original')} alt={t("{0} 第 {1} 页", [selected.title, zoomPage + 1])} filename={`pixiv-${selected.id}-p${zoomPage + 1}.png`} favorite={collectionImage(selected, zoomPage)} notify={notify} onClose={() => setZoomPage(null)} pager={{ index: zoomPage, count: currentPageCount, onChange: next => { setZoomPage(next); setSelectedPage(next); } }} />}
               {selected.type === 'ugoira' && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-meta text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                   {t("动图首帧 · 在 Pixiv 查看动画")}</div>

@@ -1101,6 +1101,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                   <PressRevealSurface
                     key={item.id}
                     role="checkbox" aria-label={t("导入条目：{0}", [item.name])} aria-checked={item.selected} tabIndex={0} onClick={() => toggleSelectItem(item.id)}
+                    onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); toggleSelectItem(item.id); } }}
                     className={`group relative flex flex-col rounded-xl border p-2.5 transition cursor-pointer select-none ${
                       item.selected
                         ? 'border-indigo-500 bg-indigo-50/30 dark:border-indigo-500/80 dark:bg-indigo-950/20 shadow-sm'
@@ -1384,6 +1385,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     <div
                       key={item.id}
                       role="checkbox" aria-label={t("待清理文件：{0}", [item.name])} aria-checked={isSelected} aria-disabled={isDeleting} tabIndex={0} onClick={() => !isDeleting && toggleCleanupItemSelection(item.id)}
+                      onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); if (!isDeleting) toggleCleanupItemSelection(item.id); } }}
                       className={`flex items-center justify-between gap-3 rounded-xl border p-2.5 transition cursor-pointer select-none ${
                         isSelected
                           ? 'border-rose-300 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20'

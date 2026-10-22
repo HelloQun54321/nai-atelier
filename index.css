@@ -12,6 +12,11 @@
   align-items: start;
 }
 .image-card-actions > .image-share-actions { display: contents; }
+.image-preview-action-group { display: grid; grid-auto-flow: column; grid-auto-columns: max-content; align-items: start; justify-items: center; }
+.image-preview-action-group-right { direction: rtl; }
+.image-preview-action-group > .image-share-actions { display: contents; }
+.image-preview-action-group :is(button, [role="alert"]) { direction: ltr; }
+.image-preview-action-group [role="alert"] { position: absolute; top: 100%; right: 0; }
 .image-card-actions :is(button, [data-image-action-item], [role="alert"]) { direction: ltr; }
 .image-card-actions [role="alert"] { position: absolute; top: 100%; right: 0; }
 [data-image-action-frame] .gallery-cover-navigation {

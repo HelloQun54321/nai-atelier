@@ -98,7 +98,7 @@ describe('四模式的分享入口', () => {
     expect(cover.classList.contains('rounded-full')).toBe(true);
     expect(cover.classList.contains('!bg-indigo-600/90')).toBe(true);
     expect(cover.classList.contains('min-h-10')).toBe(false);
-    expect(cover.parentElement?.classList.contains('flex-col')).toBe(true);
+    expect(cover.parentElement?.classList.contains('image-preview-action-group')).toBe(true);
     expect(cover.parentElement?.classList.contains('right-4')).toBe(true);
     expect(cover.parentElement?.classList.contains('w-28')).toBe(false);
     const remove = screen.getByRole('button', { name: '移除当前图片' });

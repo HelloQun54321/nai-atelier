@@ -2529,7 +2529,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         backButtonRef={lightboxCloseBtnRef}
                     />
                     {previewHistory.length > 1 && (
-                        <button data-card-action="true"
+                        <button data-card-action="true" data-image-preview-navigation
                             className="appearance-media hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -2544,7 +2544,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
                     {previewHistory.length > 1 && (
-                        <button data-card-action="true"
+                        <button data-card-action="true" data-image-preview-navigation
                             className="appearance-media hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -2559,7 +2559,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </button>
                     )}
                     {lightboxItem && (
-                        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
+                        <div data-image-preview-footer className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1.5 text-xs text-white pointer-events-none">
                             {previewHistory.indexOf(lightboxItem) + 1} / {previewHistory.length} · {new Date(lightboxItem.createdAt).toLocaleString(getLanguage())}
                         </div>
                     )}

@@ -110,11 +110,11 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
   fireEvent.click(card.querySelector('button.h-full.w-full')!);
   expect(screen.getByRole('button', { name: '复制角色提示词' })).toBeTruthy();
   const imageCopies = screen.getAllByRole('button', { name: '复制图片' });
-  expect(imageCopies).toHaveLength(5);
+  expect(imageCopies).toHaveLength(4);
   imageCopies.forEach(button => expect(button.closest('.right-2')!.className).toContain('absolute right-2 top-2'));
-  const desktop = screen.getByRole('button', { name: '关闭角色大图' }).closest('[role="dialog"]')!;
-  fireEvent.click(desktop.querySelector('.press-reveal-surface')!);
-  expect(screen.queryByRole('button', { name: '关闭角色大图' })).toBeNull();
+  expect(screen.queryByRole('dialog', { name: '图片预览' })).toBeNull();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('button', { name: '复制角色提示词' })).toBeNull();
 });
 const entriesFor = (kind: Kind) => kind === 'artist' ? fixtures.artists : fixtures.characters;
 const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEntriesAt : getCharacterDictionaryEntriesAt;
@@ -480,19 +480,24 @@ it.each([1280, 390])('宽度 %s 角色大图、手机详情与新建窗口覆盖
   </div>);
   const cover = view.container.querySelector<HTMLButtonElement>(`[data-return-item-id="${custom.id}"] button.h-full`)!;
   fireEvent.click(cover);
-  const dialogs = screen.getAllByRole('dialog', { name: custom.name });
-  expect(dialogs).toHaveLength(2);
+  const dialogs = screen.getAllByRole('dialog');
+  expect(dialogs).toHaveLength(1);
   for (const dialog of dialogs) {
     expect(dialog.parentElement).toBe(view.container.firstElementChild);
     expect(dialog.closest('main')).toBeNull();
     expect(dialog.closest('.safe-mode.dark')).toBe(view.container.firstElementChild);
   }
-  const desktop = dialogs.find(dialog => dialog.classList.contains('md:flex'))!;
-  expect(desktop.classList.contains('hidden')).toBe(true);
-  expect(desktop.classList.contains('z-[1500]')).toBe(true);
-  expect(dialogs.find(dialog => dialog.classList.contains('mobile-detail'))?.classList.contains('md:hidden')).toBe(true);
-  fireEvent.click(desktop);
-  expect(screen.queryByRole('dialog', { name: custom.name })).toBeNull();
+  if (width >= 768) {
+    const desktop = screen.getByRole('dialog', { name: '图片预览' });
+    expect(desktop.classList.contains('z-[1500]')).toBe(true);
+    const image = within(desktop).getByRole('img');
+    fireEvent.click(within(desktop).getByRole('button', { name: '放大图片' }));
+    expect(image.style.transform).toContain('scale(1.25)');
+    fireEvent.click(within(desktop).getByRole('button', { name: '适应窗口' }));
+    expect(image.style.transform).toContain('scale(1)');
+  } else expect(dialogs[0].classList.contains('mobile-detail')).toBe(true);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '新建自定义角色' }));
   const create = screen.getByRole('dialog', { name: '新建自定义还原角色' });
   expect(create.closest('.fixed')?.parentElement).toBe(view.container.firstElementChild);
@@ -596,7 +601,7 @@ it('自定义角色删除失败保留选择和详情且只提示失败，重试�
   await waitFor(() => expect(p.notify).toHaveBeenCalledWith('删除失败，请稍后重试', 'error'));
   expect(p.notify).not.toHaveBeenCalledWith('自定义角色已删除');
   expect(card.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getAllByRole('dialog', { name: custom.name })).toHaveLength(2);
+  expect(screen.getAllByRole('dialog', { name: custom.name })).toHaveLength(1);
   fireEvent.click(remove);
   await waitFor(() => expect(p.notify).toHaveBeenCalledWith('自定义角色已删除'));
   expect(screen.queryByRole('dialog', { name: custom.name })).toBeNull();

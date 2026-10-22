@@ -2,7 +2,7 @@ import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { collectionSnapshot, collectionTargetActive, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
-import { ViewableImage } from './ImageLightbox';
+import { ImageLightbox, ViewableImage } from './ImageLightbox';
 import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,7 +18,7 @@ import {
   searchCharacterDictionary,
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
-import { ImageActivityContext, OriginalImage, SmartImage } from './SmartImage';
+import { ImageActivityContext, SmartImage } from './SmartImage';
 import { MobileDetailView } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions, ImageShareOverlay } from './ImageShareActions';
@@ -215,6 +215,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [gachaCards, setGachaCards] = useState<CharacterCard[] | null>(null);
   const [isGachaLoading, setIsGachaLoading] = useState(false);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
+  const [desktopPreview, setDesktopPreview] = useState(() => window.innerWidth >= 768);
+  useEffect(() => {
+    const resize = () => setDesktopPreview(window.innerWidth >= 768);
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -243,7 +249,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useEffect(() => {
     if (!showCreate && !lightbox) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (showCreate) { setShowCreate(false); return; }
       setLightbox(null);
     };
@@ -707,17 +713,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
       <TagSelectionBar count={selectedCards.length} unit={t("个角色")} onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
 
-       <ImagePreviewPortal>{lightbox?.previewImage && (
-         <div role="dialog" aria-modal="true" aria-label={lightbox.name} className="ui-backdrop-enter fixed inset-0 z-[1500] hidden items-center justify-center bg-black/90 p-4 backdrop-blur-sm md:flex" onClick={() => setLightbox(null)}>
-          <PressRevealSurface className="group relative flex h-full w-full items-center justify-center" onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) setLightbox(null); }}>
-            <OriginalImage src={lightbox.previewImage} alt={lightbox.name} className="max-h-full max-w-full rounded-lg object-contain shadow-2xl" data-safe-mode-ignore="true" />
-            <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} />
-          </PressRevealSurface>
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
-          <button onClick={() => setLightbox(null)} className="absolute left-5 top-5 text-3xl text-white" aria-label={t("关闭角色大图")}>×</button>
-        </div>
+       <ImagePreviewPortal>{desktopPreview && lightbox?.previewImage && (
+         <ImageLightbox src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} onClose={() => setLightbox(null)}>
+           <div className="pointer-events-none absolute left-1/2 top-5 max-w-[calc(100%-9rem)] -translate-x-1/2 truncate rounded bg-black/65 px-4 py-2 text-center text-sm text-white">{lightbox.name}{lightbox.tagName ? ` · ${lightbox.tagName}` : ''}</div>
+         </ImageLightbox>
        )}
-       <MobileDetailView open={Boolean(lightbox)} title={lightbox?.name || t("角色详情")} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
+       <MobileDetailView open={Boolean(lightbox) && !desktopPreview} title={lightbox?.name || t("角色详情")} subtitle={lightbox?.tagName} onClose={() => setLightbox(null)} sensitiveTitle={Boolean(lightbox)} footer={lightbox ? <>
          <button onClick={() => void copyCharacter(lightbox)} className="appearance-group mobile-touch flex-1 rounded-xl bg-gray-200 font-bold text-gray-700 dark:bg-gray-700 dark:text-white">{t("复制角色提示词")}</button>
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">{t("导入实验室")}</button>
        </> : null}>
