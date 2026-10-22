@@ -25,6 +25,12 @@ describe('图片提示词库', () => {
     fireEvent.click(screen.getByRole('tab', { name: '人物形象 1' }));
     const create = await screen.findByRole('button', { name: '新建形象' });
     const generate = screen.getByRole('button', { name: '✦ AI 生成人物形象' });
+    const bundle = screen.getByRole('button', { name: 'AI 一键六库' });
+    expect(bundle.closest('header')).toBeNull();
+    expect(bundle.closest('.workspace-scroll-viewport')).toBeTruthy();
+    fireEvent.click(bundle);
+    expect(screen.getByRole('dialog', { name: 'AI 一键六库' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     expect(create.closest('header')).toBeNull(); expect(generate.closest('header')).toBeNull();
     expect(create.closest('.workspace-scroll-viewport')).toBeTruthy();
     const toolbar = screen.getByRole('banner');

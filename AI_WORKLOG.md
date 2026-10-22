@@ -6,11 +6,17 @@
 
 ## 2026-10-22
 
+- **Codex (GPT-6)**：按用户授权将远程 PR #5 合并结果整合到本地 main 的提交历史，保留六个未推送提交；解决内容库布局、Roll 弹窗接线、分类生成入口及文档／版本冲突，补齐真实 App 接线回归，版本升至 1.106.0；未提交改动单独保留与恢复，不混入合并提交。
+
 - **Codex (GPT-6)**：按用户明确要求提交记账收尾修复并重启工坊，将本批次版本递增至 1.105.1；沿用已完成的业务回归与环境限制记录，提交钩子执行密钥、ESLint 与 TypeScript 检查；重启使用项目既有源码启动入口加载最新前后端，不推送远端、不回填旧账或发起收费请求。
 - **Codex (GPT-6)**：排查生成完成后偶发“本地记账异常”，先以合成断流／收尾事件复现，再修复成功回执后断流误报、完整 final 后断开跳过结算、未使用非 JSON 事件误报及最终帧缺少空行时与回执串帧；记账状态与原因同帧交付，兼容旧错误帧且不重复提示。用量写入和预算更新分别保留有界阶段／状态信息，贯通 ZIP、SSE、后台快照、实验室、Roll、画师样张与 Vibe，日志不带 Key 或数据库异常原文；不重试生图或扣费，不改写旧账及事实源。相关前端去重 270 项与 Worker 240 项通过，完整后端 Node 687 项中 686 项通过，Windows 定向重启测试偶发 PowerShell 超时（曾在串行复跑通过，后续仍可复现），保留为未改动的环境限制；补跑 Android 共用实现与成图协议检查，前端 Vite 产物更新。同步模块约定及更新日志，未提交，未重启运行中的工坊后端；后端修复需下次重启加载，未调用真实生图／付费编码。
 - **Codex (GPT-6)**：按用户要求汇总提交 Cupertino 明暗主题、分预设明暗背景持久化、全工作区主题预览及四种主题的页面／弹窗修复；按包含新功能的批次将版本递增至 1.105.0，沿用已通过的定向回归与视觉检查，提交前另复核背景与材质相关 22 项测试通过，密钥、ESLint 和 TypeScript 检查交由提交钩子执行，未推送远端。
 - **Codex (GPT-6)**：按用户要求逐页检查两套内置预设的四种明暗组合及六类设置，并用真实组件、独立端口与合成资料补齐确认、草稿差异、标签、选图、角色参考、Vibe、接入与门禁等条件窗口；修复灰字／语义色操作对比、响应式分类标题、生成费用重复底色及 Opus 小字，参数区改按实际面板宽度排列。定向回归按文件去重 430 项通过，含 Windows 收集窗两套主题原生自测；更新前端产物，复验四种主题并保留对照图，关闭临时服务并清理源码；自动审批拒绝递归删除，忽略目录内生成的临时预览产物保留。同步检查报告、模块约定及更新日志，未动事实源、未执行真实生图／付费编码／删除／迁移，保留改动未提交。
 - **Codex (GPT-6)**：修复主题普通白底映射覆盖共用磨砂标题栏的问题，明确叠图透明底及亮色文字的层叠优先级，保留图标语义色与关闭磨砂后的普通信息栏；按用户要求审计共用图库、图上操作、中性分组、菜单和选中态，内容库复制按钮复用图片操作样式，角色定位点、批量导入重复标记及拖图提示退出中性材质透明化。补齐编译后 CSS 优先级及图片覆盖层回归，9 个文件共 208 项定向测试通过（修正新增测试的 Windows 路径匹配后重跑通过）；前端产物已更新，实际页面检查明暗磨砂与普通底栏，保存同一画师卡片的修复截图，恢复浅色及磨砂开启状态。同步模块决策与更新日志，未触碰数据保护区，保留改动未提交。
+
+- **Codex (GPT-6)**：按用户后续合并授权整理 PR #5 的四项审查修复与回归，修复批次版本升至 1.101.1；复用已通过的 75 项定向测试，提交门禁统一执行密钥扫描、ESLint 与 TypeScript 检查。修复在独立工作区提交，原本地 main 的未推送提交及未提交改动保留。
+
+- **Codex (GPT-6)**：在 PR #5 提交的独立工作区修复主体原文丢失、分类负面残留／漏传、自动封面原件随历史删除、完成回填后新增／改文条目漏查四项问题；新增 14 项回归并补齐两入口断言，5 个定向文件共 75 项通过，`git diff --check` 通过。同步使用说明及模块决策，原主工作区 55 个未提交文件的内容哈希保持一致，不提交或合并，版本待最终提交批次统一递增。
 
 ## 2026-10-21
 
@@ -73,6 +79,8 @@
 - **Codex (GPT-6)**：将手机实验室的三分区推广至电脑，复用四模式现有内容归属并去除桌面强制全部展示；共用分区入口保存各自滚动位置，保留字段与画布挂载，补齐键盘导航、玻璃顶栏避让、助手窄栏及真实显隐回归，同步产品原则与使用说明。按用户追加反馈将电脑分区收紧为主模式顶栏下方的 216×30px 次级导航，手机保持 44px 触控高度。110 项定向回归通过，尺寸调整后相关 47 项再次通过；实页验证参数独立显示、图生图分区及滚动位置恢复。
 
 - **Codex (GPT-6)**：按用户要求汇总全部未提交外观改动并升级至 1.97.0；核查 GitHub `nai-roll` 运行 39435558497，在 Node 22 重现三项图片恢复失败，确认原生 Response Blob 与 jsdom FileReader 环境不一致。统一同文件九处合成图片响应并增加真实转换回归，补齐实验室源码／测试的 CI 触发路径，不修改图片恢复业务逻辑或降低断言。本机相关回归 309 项通过；修复后使用 CI 同版本 Node 22 重跑回归及产物一致性 398 项、库与助手 Node 测试 87 项全部通过。提交钩子发现背景预览 CSS 自定义变量缺少类型声明，已为两处预览补齐明确的变量类型。
+
+- **DeepSeek Harness (deepseek-v4.1-flash)**：图片提示词库新增生成图回查（`prompt_library_links` 关联表、分批回填、`/api/prompt-library-links/*` 三个接口、详情缩略图墙与卡片角标）与「AI 一键六库」（`scripts/prompt-agent.mjs` 的 `generateLibraryBundle`、网关路由、六库面板与逐条入库）；同步补齐 worker／助手／前端定向回归与四语词条。后续补入：匹配正文包含角色分栏（修复苗族服饰等角色内容进不了图墙）、「一键 Roll → 风格串」与「AI 一键六库 → 风格串」（`services/contentRollToChain.ts` 纯函数、面板入口、写完清编辑器草稿），新增 `tests/services/contentRollToChain.test.ts` 与 2 条角色分栏 worker 回归；再补库条目自动封面（无封面时取最早关联的生成图，手动封面不覆盖）与「从历史选图」按条目收敛（`syncPromptLibraryCover`、picker 的 `scopeChainId`、2 条封面 worker 回归）。最后按实际使用反馈收紧来源保护：只要历史行已有具体来源 id 就一律不改写（即使类型为空），并补 1 条 worker 回归。
 
 ## 2026-10-20
 
@@ -334,7 +342,6 @@
 - **Codex（GPT-6）**：收尾关闭本次临时预览服务与标签页、还原测试视口；删除本次临时翻译 JSON 的明确单文件 PowerShell 操作被自动审批以“blocked by policy”拒绝，未给出更具体原因，未绕过。该文件与前次保留的参考／预览资料留在 Git 忽略的 `tests/.tmp/`，不影响功能或私人资料。
 
 - **Codex（GPT-6）**：按用户要求参考 nai-style-lab 的完整创作体验独立重做 Roll 串，首次不再强制创建实验或手填画师池；直接复用完整画师词库，有限一轮多配方逐张出图，自动二分排位、进化确认归档、冠军挑战及逐步收窄权重、三 Seed 同条件验证与最终保存衔接。复用既有 GenerationJobs 的费用／Key／互斥／暂停／历史链路，增加有限配方 sequence 并在准入前校验整列，费用上涨按剩余整轮总额补充授权；旧资料兼容，配方 Seed 和轮次快照防覆盖，已确认轮次不再撤票。画风库采用等级／排名／胜负卡片与桌面右侧大图及权重条；根据用户现场反馈放大卡片，按容器宽度最多六列，1366px 带详情四列约196px、390px 两列约168px，不占空详情栏。同步产品宪法的有限一轮与自动安排原则、模块决定、分析说明、五语 README／文案和作者项目致谢。gateway 612项Node＋179项Worker全部通过，功能及集成153项定向用例通过（含重复覆盖的5项Worker），页面最终21项、五语16项；更新前端和Worker产物。以真实组件＋合成22套图片核对宽屏六列、普通桌面四列、深浅主题、手机详情返回与无横向溢出，截图保存于logs/tests/roll-workflow-gallery-large.jpg；显式视口切换后截图工具两次失败，手机仅DOM与组件验收，不宣称手机像素／真机验收。未使用真实Key、生图或读取私人数据，未重启工坊后台、打包EXE／APK或手动lint／tsc／密钥扫描；未提交、推送或递增版本。
-
 
 - **Codex（GPT-6；复用子代理 GPT-6.1-sol）**：按用户要求在 tests/.tmp 创建独立真实空白工坊（3416／3417／3418／3419），仅复用公开程序与构建产物，数据库、缓存、词库及备份目录全部隔离。实际从设置下载安装公开 Tag 词库，点击两套画师图包下载并检查进度、暂停与续传；V4.5接收13.1MiB后暂停，V5整包1030625005字节下载、SHA校验、自动关联及6145条索引完成。关闭设置后画师库自动从下载／索引状态进入卡片，未手动刷新或关联文件，抽查12张真实缩略图均加载成功；截图及状态记录保留于logs/artist-download-live。重启隔离服务确认续传进度保留、不自动联网续跑。检查发现固定20分钟总时限会截断慢速图包，最小改为新增字节刷新无进度计时器；保留暂停、错误、校验与关联门禁，新增慢流超过期限仍完成回归。最终定向13/13通过（logs/tests/node-1792080145561-1896.log），同步模块决定及CHANGELOG。已停止本次服务、关闭有效测试标签页并核对端口释放，清理经边界核对的本次临时工作区，未触碰正式私人数据或重启正式工坊。失败启动留下的临时错误标签页由浏览器工具本轮结束时回收；未使用Key或触发生图，未完整下载V4.5、运行全套构建／后端回归或手动重复lint／tsc／密钥扫描，未提交／推送／递增版本。
 
@@ -789,6 +796,7 @@
 - **Codex（GPT-6）**：根据导出日志定位历史详情 GET 缺失导致展示反复失败，补齐历史／灵感详情与所有者隔离，统一展示、观察、保存的真实资产路径并支持酒馆索引；使用内存 SQLite、合成图片与临时镜像验证，不读取或修改私人配置。
 
 ## 2026-10-03
+
 - **Codex（GPT-6）**：将上下文圆环浮层接入项目面板主题，移除固定深色背景与独立材质，同步适配次级文字及缓存分隔线，补充主题与交互定向回归并核对明暗合成预览。
 - **Codex（GPT-6）**：独立完成圆环的深色上下文悬浮卡片与缓存命中率计算，保留未知用量语义与跨模型隔离；将思考粒子改为右往左单向流动、随机重生与稀疏分布的单画布动画，补齐 56 项定向回归并在合成预览核对卡片与最高档效果，不调用收费接口、不重启真实服务。
 - **Codex（GPT-6）**：按用户要求停止子智能体并独立完成 Agent 模型按钮去底色、上下文用量圆环、紧凑居中卡片、最高档 Ultra 渐变及不规则无缝循环粒子，修复切档抽动和手机发送／停止键椭圆，补齐全局主题与 56 项定向回归；合成预览验证明暗、主题色及控件几何，不调用付费接口、不重启待恢复配置的真实服务。
@@ -822,6 +830,7 @@
 - **Codex（GPT-6）**：按用户确认方案实现 AITag 选中作品突出、其余压暗与再次点击／关闭取消，按作品身份补偿详情展开、关闭与图片重排的位置，尊重主动滚动；同步跨页面及分作品详情滚动恢复、稳定瀑布流列与筛选移除／跳页清理、键盘和收藏隔离及窄屏返回。5 个文件、50 项组件与几何定位定向回归通过，更新中文说明并递增功能版本；未修改私人数据、存储键或外部接口。
 
 ## 2026-10-02
+
 - **Codex（GPT-6）**：按红色标注将 Danbooru／Pixiv 原帖入口移到固定标题栏，收紧图片处理与灵感保存为内容宽度单行，Pixiv 作者名接入全集、站内收藏改为右侧心形状态按钮；补齐窄栏提示、手机作者触控区与长标题收缩，审计共用详情对其他图库的兼容，20 项定向组件回归通过。同步产品意图、中文文档并递增补丁版本，沿用现有主题与保存逻辑，无私人资产改动或真实外部收藏／推理请求。
 - **Codex（GPT-6）**：梳理 Danbooru／Pixiv 图片详情为直接反推、来源操作及两种 Tag 的独立复制／使用；加入可编辑反推会话草稿、现有灵感分析字段持久化和按来源／页码恢复，保存实际图片、更新保留分类备注，灵感详情同步展示原站及反推 Tag。补齐真实组件交互、隔离 SQLite 持久化、取消与局域网复制回归，执行网关测试，更新中文文档和产品意图并递增版本；无私人数据迁移、付费请求或真实模型推理。
 - **Codex（GPT-6）**：为画师／角色共用封面查找加入有界最新作品兜底，覆盖评分查询无图和全部实际图片失效；保留精确 Tag、全部评级、公开地址与评分游标，同 ID 更新地址且不重复追加，兼容旧空／正缓存并补齐取消返回、跨 Tag 迟到及限流失败隔离。43 项定向回归通过，更新中文文档并递增补丁版本；沿用全局联网预算，不修改私人资产或存储键。
@@ -849,6 +858,7 @@
 - **Codex（GPT-6）**：将风格串标签收敛为用户自定义分类，切断 AITag 来源／类型和灵感标签自动复制，统一前后台读取、写入、Fork、智慧姬与 Agent 链路的旧标签过滤；保留待实测与角色目录状态，卡片编辑和预设引用共用规则。恢复桌面／手机动态标签筛选、多选交集、滚动搜索及删除后的失效条件清理，46 项定向回归与 257 项隔离网关测试通过，更新中文文档与产品宪法；未批量改写私人资料或执行付费调用。
 
 ## 2026-10-01
+
 - **Codex（GPT-6）**：修复扩图原图被补白画布覆盖造成的尺寸累加、预设覆盖和历史扩展量错位；分离待调整／已应用尺寸，补齐草稿、换底图、手动蒙版和移动端拦截。经用户授权进行 4 次 V5 真实生成，消耗 164 Paid Anlas（其中 1 次因测试蒙版坐标错误重复，已向用户说明）；对照确认并获准默认加入 32px 接缝重绘。纠正独立验收页漏加载主题造成的截图色差，修复网格硬编码紫色；58 项定向回归、真实 Canvas 像素／交互和前端／Worker 打包验收，更新中文文档与产品宪法。
 - **Codex（GPT-6）**：复现扩图标准羽化将白色补底混回边界的残余亮线，修复扩图蒙版内生成覆盖并保留原图侧羽化；普通／流式共用，普通重绘与 Focused 不变。49 项定向回归、隔离真实浏览器 Canvas 像素验收及前端／Worker 打包通过，未调用 NovelAI 生图、改变请求计费或触碰私人资产，更新中文文档。
 - **Codex（GPT-6）**：移除风格串／自定义角色工作台顶栏的名称与信息铅笔，保留返回和同排模式导航；编辑入口移到卡片悬浮按钮，共用全局信息弹窗并补齐触屏、键盘、保存失败和重复提交处理；工作台保存使用最新资料且保留草稿，自定义抽卡卡片同步改名。61 项定向回归通过，未修改网关、存储定位或私人资产，更新产品宪法与中文文档。
@@ -873,6 +883,7 @@
 - **Codex（GPT-6）**：按用户要求统一图片入口为复制／下载，由清洗开关决定输出，删除原图旁路按钮；修复工作区隔离层导致的大图侧栏遮挡，同步历史与灵感弹层，统一预览按钮等宽、居中与高度，补齐设置切换、四模式与弹层交互回归测试，原图和私人数据完整保留。
 
 ## 2026-09-30
+
 - **Codex（GPT-6）**：实现可选分享清洗设置与共用图片下载／复制入口，覆盖实验室四模式、大图、历史和灵感，原图完整保留、分享副本独立命名；清除 PNG 文本与 Alpha 隐藏参数，保留色彩和透明背景，补齐合成图片、剪贴板、失败保护及多端定向测试，未改写私人数据或发送收费请求。
 - **Codex（GPT-6）**：补齐 Vibe 新编码成功后的官方余额即时查询与本地预算 Key 指纹，覆盖管理器／Agent 共用服务、重复复用、失败抛错和迟到响应隔离；46 项定向模拟测试通过，未发送收费请求或新增自动重试。
 - **Codex（GPT-6）**：实现侧栏个人预算／官方总余额分数，展开横排、收起固定高度竖排，兼顾大数与明暗主题；复用订阅驱动并同步设置页，覆盖未知／零值、失败保留快照、切 Key 与迟到响应，统一过期订阅展示避免重复余额，补充定向模拟回归测试，不改写本地预算或发送收费请求。
@@ -885,11 +896,13 @@
 - **Codex（GPT-6）**：修复公共队列普通响应提前释放、排队与生成超时混用、浏览器断连后继续排队、清理失败无反馈及上游失败误显示完成的问题；同步四模式与 ZIP／SSE 的任务／Key 警告隔离，补充不自动重试的回归测试，并在隔离副本验证网关测试以保护真实 local-data。
 
 ## 2026-09-22
+
 - **Codex（GPT-6）**：统一 README 中 ffdkj 数据源相关表述，明确项目提供 GitHub 下载入口，词库与画师／角色目录按需生成而非直接内置。
 - **Codex（GPT-6）**：重排 README 阅读结构，将桌面快捷方式与手机连接紧接首次安装，突出四个项目重点并折叠低频细节，同步校准导航（docs: streamline readme onboarding and navigation）。
 - **Codex（GPT-6）**：对照实现校准 README 的凭据、费用、模型与备份边界，补齐首次使用和独立目录恢复流程，合并重复介绍并校准相关入口及过度承诺（docs: clarify readme setup and data boundaries）。
 
 ## 2026-09-07
+
 - **Antigravity**：纠正 README 表述，明确 Opus 电池限额全自动通过 Key 轮询获取，而 Anlas 积分预算因官方 API 权限限制需由用户自主设定本地安全预算守卫，各 Key 独立隔离核算与透支防护（docs: clarify automatic opus quota vs user-set anlas budget per key in README）。
 - **Gemini 3.8 Flash**：更正 README 界面预览表述，准确定义为代表性页面的完整界面视图展示，剔除多余的「局部预览/特写」生硬字眼（docs: accurately describe screenshots as full views of representative pages）。
 - **Gemini 3.8 Flash**：彻底清除 README 本机绝对路径与单测用户名脱敏，清理无用外部脚本 cleanup-omp-browser.ps1 及 docs/ 下 5 篇早期 AI 任务指导文档（chore: purge personal machine paths and obsolete bugfix briefs）。
@@ -915,6 +928,7 @@
 - **Gemini 3.8 Flash**：修复密钥保管箱迁移接口的全量覆盖缺陷，改为查重合流并增加前端前置过滤守卫，补齐回归测试并从数据库底层碎片中找回恢复旧密钥（fix: merge legacy key vault instead of overwriting server entries）。
 
 ## 2026-09-06
+
 - **Antigravity**：为 main 增加 isolate 并将侧栏与展开按钮分别提至 z-40/z-50，彻底解决右侧 WorkspaceToolbar 的 z-30 层级遮盖小箭头的问题并全量构建（fix: isolate workspace stacking context and elevate sidebar to z-40）。
 - **Antigravity**：侧栏补齐 z-20 并调整展开按钮层级与尺寸，解决主工作区背景遮挡导致小箭头显示不全的问题（fix: prevent main container from clipping sidebar expand chevron）。
 - **Antigravity**：折叠侧栏 Logo 改为居中对齐并为展开按钮引入边框小箭头 ChevronRight（>），实验室图标由直筒量杯 Beaker 升级为经典三角烧瓶 FlaskConical（style: center collapsed sidebar logo, add chevron expand button, and switch lab icon to flask）。
@@ -949,19 +963,6 @@
 - **ZCode (GLM-5.3)**：按反馈重构权重 Tag 展示：权重语法（数字::/::、多层花括号）还原到 Tag 文本两侧，权重组以强调色相连并区分首尾；顺带修复正则贪婪匹配导致 `{{tag}}` 层级失配的问题（fix: render weight syntax around weighted tag chips）。
 - **ZCode (GLM-5.3)**：修复 Tag 解析器中分隔符空格导致后续权重组（数值/花括号）丢失分组标识与角标的问题，补充回归测试（fix: recognize weighted tag groups after leading whitespace）。
 
-## 2026-09-05
-- **Codex (GPT-5)**：统一 Tag 操作区主题色，移除翻译状态色，保持权重菜单与选择状态，并按括号层级实现最简减权（fix: refine weighted tag controls and theme colors）。
-
-## 2026-09-05
-- **Codex (GPT-5)**：修正权重 Tag 解析测试以匹配权重标识与 Tag 文本分离后的展示语义（fix: align weighted tag parser expectation）。
-
-## 2026-09-05
-- **Codex (GPT-5)**：将提示词翻译区升级为可多选 Tag 与权重操作区域，并按数值/增强/减弱权重类型区分颜色（feat: add selectable weighted tag controls）。
-
-## 2026-09-05
-- **Codex (GPT-5)**：修复 Tag 补全翻译遇到权重语法时把权重带入查询的问题，增加常见权重格式解析测试（fix: normalize weighted tags before translation lookup）。
-
-## 2026-09-06
 - **Codex (GPT-5)**：修复追加反推 Tag 后引用预设会覆盖 Tag，以及实验室常驻时重复发送 Tag 无法被消费的问题（fix: preserve appended tags across preset imports and repeated lab sends）。
 - **Codex (GPT-5)**：修复反推 Tag/追加提示词导入实验室时清空已有主体提示词的问题，恢复提示词结构的可叠加性（fix: preserve subject prompt when appending tags）。
 - **Antigravity (Gemini 3.8 Flash)**：将 WD Tagger「反推 Tag」移至底部操作栏前台（置于「导入实验室」左侧），彻底移除标签头部「自动整理」伪功能与冗余按钮，更新配套单测（refactor: relocate image tagger to inspiration footer and remove auto-organize tags）。
@@ -980,6 +981,15 @@
 - **Gemini 3.8 Flash**：修复主题卡片选中状态下微缩骨架条与底部色标未随强调色微调实时联动，以及深色模式下 --color-indigo-200 混黑导致选中按钮文字对比度不足看不清的问题，补充单元测试（fix: sync active theme accent preview and enhance dark mode button text contrast）。
 
 ## 2026-09-05
+
+- **Codex (GPT-5)**：统一 Tag 操作区主题色，移除翻译状态色，保持权重菜单与选择状态，并按括号层级实现最简减权（fix: refine weighted tag controls and theme colors）。
+
+- **Codex (GPT-5)**：修正权重 Tag 解析测试以匹配权重标识与 Tag 文本分离后的展示语义（fix: align weighted tag parser expectation）。
+
+- **Codex (GPT-5)**：将提示词翻译区升级为可多选 Tag 与权重操作区域，并按数值/增强/减弱权重类型区分颜色（feat: add selectable weighted tag controls）。
+
+- **Codex (GPT-5)**：修复 Tag 补全翻译遇到权重语法时把权重带入查询的问题，增加常见权重格式解析测试（fix: normalize weighted tags before translation lookup）。
+
 - **Codex (GPT-5)**：修复 AITag 导入风格串/实验室后费用状态异步加载期间误显示 Anlas 点数的问题（fix: avoid transient generation cost mislabel）。
 - **Codex (GPT-5)**：移除 Agent 输入框默认占位提示文字，保留加载、排队和编辑状态提示（fix: remove default agent input placeholder）。
 - **Codex (GPT-5)**：修复 PromptAgent 自定义服务商重复渲染、同名模型混淆与模型标题来源显示，补充模型 ID 去重及回归测试（fix: deduplicate prompt agent providers and model options）。
@@ -1001,6 +1011,7 @@
 - **DeepSeek V4 Flash (Oh My Pi)**：官方常量同步健康修复——同步失败只改进程内状态不落盘，磁盘保留最近完整成功；启动读到旧失败记录降级为 pending；前端降级响应（502 带完整体）合并缓存而非冻结旧值（fix: keep one-off runtime sync failure out of persisted health）。
 
 ## 2026-09-04
+
 - **Kimi K3 (Oh My Pi)**：历史灯箱、灵感详情、角色灯箱大图统一豁免安全模式遮挡（data-safe-mode-ignore），外部图库浏览保持遮挡（fix: exempt own-asset big image viewers from safe mode blur consistently）。
 - **Kimi K3 (Oh My Pi)**：元信息字号 token 化（--text-tiny/mini/micro/meta）并迁移全站 308 处绝对像素任意值，VIP 无限动画纳入 data-motion 与 prefers-reduced-motion 门禁（style: tokenize meta font sizes and gate VIP animations behind motion preference）。
 - **DeepSeek V4 Flash (Oh My Pi 子代理 FixServicesLeft)**：服务层竞态与资源治理——SSE estimatedSpent 透传、滚动恢复到位终止、缩略图缓存 release/401 修复、标签词典代际失效、运行时/额度轮询共享订阅与隐藏暂停、导入进度单调计数、画廊历史写盘失败回滚（fix: service-layer race and resource governance）。
@@ -1017,10 +1028,12 @@
 - **Kimi K3 (Oh My Pi)**：修复角色库「生成预览」把会话级 blob: URL 写入数据库封面导致重启后失效的缺陷，改为先上传持久资产再落库，并在 dbService 读写边界统一拦截 blob: 封面（fix: persist character preview cover as uploaded asset instead of session blob URL）。
 
 ## 2026-09-02
+
 - **Codex (GPT-5)**：提交画板测试清理，移除已不再适用的右键拖动交互测试并保留其余回归覆盖（test: remove obsolete canvas pan interaction test）。
 - **Codex (GPT-5)**：执行全仓 Ponytail 过度工程审计，删除个人模式死日志调用、未使用状态与导出、空 Worker Pixiv 路由及无效元数据构造，保留本地数据与兼容边界（refactor: remove personal-mode dead code）。
 
 ## 2026-09-01
+
 - **Antigravity (Gemini 3.7 Flash)**：修复全屏大画板切换时 Canvas 节点跨树重挂载导致底层位图被清空的缺陷，新增鼠标右键按住拖动平移漫游画板，并将扩图画幅模拟台直接整合进底图面板（fix: retain canvas bitmap on fullscreen toggle, add right-click pan, and unify outpaint stage into base image panel）。
 - **Antigravity (Gemini 3.7 Flash)**：扩图新增自动双向同步与动态填充机制，在选择画幅比例或拖拽原图时即时自动计算并填充上/下/左/右各方向所需的扩展像素数值（fix: auto-fill directional outpaint expansions upon ratio and position changes）。
 - **Antigravity (Gemini 3.7 Flash)**：修复画幅模拟台舞台容器折叠为 0 导致原图极小且无法拖拽的缺陷，引入动态几何计算与触控指针优化（fix: repair outpaint stage container sizing and pointer drag capture）。
@@ -1047,6 +1060,7 @@
 - **Antigravity (Gemini 3.7 Flash)**：图生图、局部重绘与扩图全面接入 NovelAI 流式生成（SSE）与过程图即时预览，支持异常平滑降级与蒙版/选区自动合成（feat: enable streamed generation and live preview for image edit modes）。
 
 ## 2026-08-31
+
 - **Codex (GPT-5)**：通过 npm override 将 AI SDK、jsdom 与 Miniflare 共用的 ws 统一升级至 8.21.0，清除两条运行时 WebSocket 安全告警且不升级 Wrangler 工具链（fix: override ws to patched 8.21.0）。
 - **Codex (GPT-5)**：将 Vite 升级至 6.4.3，并刷新 Rollup、PostCSS、Picomatch、Nanoid 与 Babel Core 安全补丁，清除 Vite 构建链 14 条 Dependabot 告警且不触碰 Wrangler 依赖链（fix: update Vite toolchain security patches）。
 - **Codex (GPT-5)**：精简 pre-commit 为密钥扫描、ESLint 与 TypeScript 三项基础门禁，移除每次提交的全量 Gateway/Vitest 和重复仓库密钥扫描，并校准 AI 分级验证规则（chore: streamline pre-commit verification）。
@@ -1061,6 +1075,7 @@
 - **Antigravity (Gemini 3.7 Flash)**：风格串批量导入增加「自动清理无用素材」与「导入后删除本地源文件（收件箱模式）」开关，支持 localStorage 偏好记忆与导入联动物理删除，消除二级弹窗确认并彻底解决源文件残留导致的重复垃圾问题（feat: support auto cleaning junk and imported source files in batch import）。
 
 ## 2026-08-29
+
 - **ZCode (GLM-5.3)**：vite dev server 由 0.0.0.0 改绑 127.0.0.1——Dependabot 报告的 4 条 vite 漏洞全部只在 dev server 运行时暴露，绑回环后局域网暴露面归零，替代 vite 6→7 大版本升级的安全收益（fix: bind vite dev server to loopback only）。
 - **ZCode (GLM-5.3)**：依赖安全升级第三项——npm overrides 强制 shell-quote 1.8.3 → 1.10.0（concurrently 的传递依赖，清除 critical+high 两条告警；本项目无攻击者可控输入，实际不可利用）；concurrently 冒烟通过，顺手重建了安装残留损坏的 rxjs 包（chore: force-upgrade shell-quote via npm overrides）。
 - **ZCode (GLM-5.3)**：依赖安全升级第二项——sharp 0.34.5 → 0.35.4（libvips 8.18.6），消除不可信图片缩略图处理的 4 个内存安全 CVE；网关同款操作冒烟（resize+webp）与网关测试 140/140 通过（fix: upgrade sharp to 0.35.4 to clear libvips memory-safety advisories）。
@@ -1110,6 +1125,7 @@
 - **ZCode (GLM-5.3)**：按用户确认的意图完成全项目 bug 排查（12 轮只读审计，未改代码）；随后开始逐项修复。第一项：README「项目定位」增加适用范围声明——本项目仅面向 NovelAI Opus 档位会员，其他档位与第三方服务未做适配；顺带补上 CHANGELOG 缺失的 2026-08-28 日期节标题（docs: note opus-only subscription scope in readme）。
 
 ## 2026-08-28
+
 - **ZCode (GLM-5.3)**：与用户讨论后修复手机端实验室导航死角——实验室顶栏模式导航左侧新增返回箭头（仅 <md 窄屏显示，与侧边栏互斥不造重复入口），返回记录的进入前内容页并兜底风格串列表，补断点与回调回归测试（fix: add mobile lab back arrow to exit playground dead end）。
 - **ZCode (GLM-5.3)**：排查「启动本地服务时快时慢/卡住数分钟」——用带时间戳的对照实验定位为 wrangler 横幅前的 npm 更新检查（update-check 库无视代理环境变量直连 registry 被黑洞，实测阻塞 36 秒+且失败不缓存），经 npm_config_registry 注入快速失败端口后实测启动降至 1 秒内（fix: short-circuit wrangler npm update check to unblock local server startup）。
 - **ZCode (GLM-5.3)**：按用户选择重构手机端编辑器工具栏——低频操作（导入/引用预设/反推/Tag 辅助/重置/保存）全部收进模式导航行右侧 ⋯ 底部动作面板（复用 MobileBottomSheet），平板与桌面保持原布局，新增面板交互与断点回归测试（feat: collapse editor toolbar into mobile more menu sheet）。
@@ -1133,6 +1149,7 @@
 - **Gemini (Flash)**：规范角色库来源筛选下拉文案为「自定义角色」并为卡片增加「Tag 词库/自定义」来源徽标（fix: clean character library filter labels and add card source badges）。
 
 ## 2026-08-27
+
 - **Gemini (Flash)**：将画师库与角色库顶栏搜索框自适应拉长铺满，操作控件右移消除空位（feat: elongate search bar and right-shift controls in character and artist libraries）。
 - **Gemini (Flash)**：彻底清理画师库与角色库中显示设置关联的死代码（refactor: purge dead layout and display state/views in character and artist libraries）。
 - **Gemini (Flash)**：移除角色库与画师库顶栏冗余的显示设置按钮与弹窗（feat: remove redundant display settings button and popovers from character and artist libraries）。
@@ -1196,6 +1213,7 @@
 - **Gemini (Flash)**：支持从本地文件夹批量读取原图为风格串，智能识别 NovelAI 元数据并直出封面，引入「待实测」状态与生成后自动销标闭环（feat: add folder batch import to style chains with untested tag lifecycle）。
 
 ## 2026-08-26
+
 - **Gemini (Flash)**：全面重构与净化前端文案体系，消除底层字段/Git/SaaS技术术语泄露，统一全局资产/提示词/模式概念，精简冗余操作说明（refactor: overhaul user-facing copywriting and unify terminology across frontend）。
 
 - **Gemini (Flash)**：将实验室角色参考与 Vibe 氛围参考从全屏覆盖层重构为精致居中模态大弹窗，支持磨砂遮罩透光、点击外部/ESC关闭与底部快捷应用（refactor: convert character reference and vibe managers from full-screen overlays to centered modal dialogs）。
@@ -1238,14 +1256,12 @@
 
 - **Gemini (Flash)**：为风格串与角色串新增设为封面/上传封面时自动保存全部改动的功能，消除更换封面后的二次保存负担（feat: auto-save chain on cover update）。
 
-
 - **Gemini (Flash)**：优化 AITag 页面在模型筛选（如 V5）时的瀑布流加载机制，增加自适应多页自动批拉填充（凑满 15 张目标增量或最多连拉 4 页），消除稀疏命中时的串行等待（perf: auto-fill batches on sparse aitag model filter）。
 
 - **DeepSeek (V4 Flash)**：将 ChainEditor 巨石组件（2849 行）拆分为 components/chain 下 6 个模块化子组件（Header/PromptInputs/Modules/Characters/PresetModal/ForkModal），共享展示件与 PromptAgentOverlayController 移入 PresetSourceBadges.tsx，主组件瘦身为编排器，纯结构重构行为不变，tsc、191 个前端测试与 130 个 gateway 测试全部通过（refactor: split ChainEditor monolith into modular chain subcomponents）。
 - **DeepSeek (V4 Flash)**：将生图实验室重置按钮的作用域严格限定为当前激活的页面——文生图仅重置提示词/模块/参数与预设来源徽章，图生图/局部重绘/扩图仅清空当前模式的底图、蒙版与草稿，并补充默认参数常量与重置定向单测（fix: scope laboratory reset to active mode）。
 - **DeepSeek (V4 Flash)**：将 Worker 后端 4481 行超级文件按业务域拆分为 8 个路由模块（settings/history/vibe/aitag/danbooru/stBridge/pixiv/types），`worker/index.ts` 精简至约 200 行仅保留初始化、CORS、错误捕获与按原顺序分发，纯结构重构行为不变，130 个 gateway 测试与 tsc、esbuild 全部通过（refactor: split worker/index.ts into domain route modules）。
 - **Gemini (Flash)**：在 AGENTS.md 中新增 AI 协作生命周期与会话管理规范（Director-Worker 规范），约束跨会话上下文继承基于项目文档、同模块连续调整禁止随意销毁 Worker、新建任务保持 Brief 自包含（docs: codify agent lifecycle and session management rules）。
-
 
 - **Gemini (Flash)**：在 VIBER_INTENT.md 与 AGENTS.md 中补充 AI 协作效率与分级验证梯度准绳（Pragmatic Verification），确立轻量敏捷反馈与重型全流程验收的边界，并强调避免断点逻辑倒置与单测假阳性（docs: document verification gradient and efficiency principles）。
 - **DeepSeek (V4 Flash)**：彻底修正移动端生成按钮逻辑倒置——`hideGenerateButtonOnMobile` 由错误的 `lg:hidden`（手机显示）改为 `hidden lg:flex`（手机隐藏）；编辑模式悬浮胶囊改为 `onGenerateBarChange` 回调驱动父组件状态，费用标签与禁用态即时同步；移动端编辑预览卡壳按内容自适应，修复塌缩为 1px 与遮挡底图控制区的问题（fix: fix mobile generate button inversion and capsule sync）。
@@ -1255,8 +1271,6 @@
 ## 2026-08-25
 
 - **OpenAI (GPT-5.6)**：为实验室图片编辑新增拖拽底图导入，为文生图增加 Opus 免费像素联动的自定义分辨率，并隔离编辑请求中的文生图多角色参数（feat: enhance laboratory image workflows）。
-
-## 2026-08-25
 
 - **Codex (GPT-5)**：修正返回位置修复记录的日期归档，并同步递增项目补丁版本至 0.114.4。
 

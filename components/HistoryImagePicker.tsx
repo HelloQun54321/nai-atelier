@@ -13,6 +13,11 @@ interface HistoryImagePickerProps {
   onClose: () => void;
   /** 选中历史图后回调；importParams 表示是否同时载入该图的提示词与参数（默认仅替换底图）。 */
   onSelect: (item: LocalGenItem, importParams: boolean) => void;
+  /**
+   * 只列某个库条目自己生成过的图（来自 `prompt_library_links` 关联）。
+   * 之后用这条提示词生成的图会自动出现在这里，方便换封面。
+   */
+  scopeChainId?: string | null;
 }
 
 const HISTORY_THUMBNAIL_VARIANT = 'thumb-960';
@@ -32,7 +37,7 @@ const getHistoryTypeLabel = (item: LocalGenItem) => {
   return '扩图';
 };
 
-export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect }) => {
+export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect, scopeChainId = null }) => {
   useLanguage();
   const [items, setItems] = useState<LocalGenItem[]>([]);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
@@ -50,6 +55,33 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
     setLoading(true);
     setError('');
     try {
+      if (scopeChainId) {
+        // 只看这条库条目自己生成过的图：后续用同一提示词生成的图会自动出现在这里。
+        const fetchScoped = async (page: number) => {
+          const offset = (page - 1) * pageSize;
+          const response = await fetch(`/api/prompt-library-links/images?chainId=${encodeURIComponent(scopeChainId)}&limit=${pageSize}&offset=${offset}`);
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          return await response.json() as { items?: Array<{ id: string; imageUrl?: string; createdAt?: number; prompt?: string; sourceChainName?: string }>; count?: number };
+        };
+        let target = nextPage;
+        let data = await fetchScoped(target);
+        const count = Number(data.count || (data.items || []).length);
+        const maxPage = Math.max(1, Math.ceil(count / pageSize));
+        if (target > maxPage) {
+          target = maxPage;
+          data = await fetchScoped(target);
+        }
+        setItems((data.items || []).map(row => ({
+          id: String(row.id),
+          imageUrl: String(row.imageUrl || `/api/local-history/${row.id}/image`),
+          createdAt: Number(row.createdAt || 0),
+          prompt: String(row.prompt || ''),
+          params: {},
+        } as unknown as LocalGenItem)));
+        setTotalCount(count);
+        setPage(target);
+        return;
+      }
       const result = await localHistory.getPage(nextPage - 1, pageSize, undefined, true);
       const count = Number(result.count || 0);
       const maxPage = Math.max(1, Math.ceil(count / pageSize));
@@ -70,14 +102,15 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
     } finally {
       setLoading(false);
     }
-  }, [pageSize]);
+  }, [pageSize, scopeChainId]);
 
   useEffect(() => {
     if (!open) return;
     void loadPage(1);
+    if (scopeChainId) return;
     const unsubscribe = localHistory.subscribe(() => { void loadPage(1); });
     return unsubscribe;
-  }, [loadPage, open]);
+  }, [loadPage, open, scopeChainId]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,8 +138,13 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-gray-900 dark:text-white">{t("选择历史图片")}</h2>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">{t("全部 {0} 张", [totalCount])}</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+                {scopeChainId ? t("这条目的生成图 {0} 张", [totalCount]) : t("全部 {0} 张", [totalCount])}
+              </span>
             </div>
+            {scopeChainId ? (
+              <p className="mt-1 text-micro text-gray-400">{t("只显示这条提示词自己生成过的图，之后用它的图会自动出现。")}</p>
+            ) : null}
           </div>
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t("关闭历史图片选择")}><X className="h-5 w-5" /></button>
@@ -119,7 +157,9 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           ) : error ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={() => void loadPage(page)} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
           ) : items.length === 0 ? (
-            <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">{t("历史页面中还没有生成图片")}</div>
+            <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {scopeChainId ? t("这条提示词还没有生成过的图") : t("历史页面中还没有生成图片")}
+            </div>
           ) : (
             <div className="operation-card-grid grid items-start gap-3">
               {items.map(item => (
@@ -142,7 +182,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
           <span className="text-xs text-gray-500 dark:text-gray-400">{t("第 {0} / {1} 页 · 每页 {2} 张", [page, totalPages, pageSize])}</span>
-          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300" title={t("开启后同时载入该图的提示词与生成参数")}>
+          <label className={`flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 ${scopeChainId ? 'invisible' : ''}`} title={t("开启后同时载入该图的提示词与生成参数")}>
             <input type="checkbox" checked={importParams} onChange={event => setImportParams(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
             {t("同时导入该图参数")}</label>
           <div className="flex items-center gap-2">

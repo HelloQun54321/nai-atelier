@@ -183,3 +183,17 @@ CREATE INDEX IF NOT EXISTS idx_local_usage_events_user_created
 CREATE INDEX IF NOT EXISTS idx_local_usage_events_category
   ON local_usage_events(user_id, category, action, created_at);
 
+-- 提示词库条目 ↔ 生成历史的关联（保存历史时按文本匹配推断，删除历史或条目时一并清理）
+-- 结构以 worker/routes/promptLibraryLinkRoutes.ts 的 ensurePromptLibraryLinkSchema 为准
+CREATE TABLE IF NOT EXISTS prompt_library_links (
+  history_id TEXT NOT NULL,
+  chain_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  chain_name TEXT,
+  matched_length INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (history_id, chain_id)
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_library_links_chain ON prompt_library_links(chain_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prompt_library_links_history ON prompt_library_links(history_id);
+

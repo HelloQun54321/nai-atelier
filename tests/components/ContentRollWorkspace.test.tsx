@@ -65,3 +65,23 @@ it('仅有全局内容的已存搭配载入后自动采用全局范围，保留�
   await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
   expect(onApplyRoll.mock.calls[0][0]).toMatchObject({ globalSections: { scene: 'night' }, globalNegatives: { scene: 'day' } });
 });
+
+it('Roll 写入已有串保留未分栏主体，并传递角色与全局分类负面', async () => {
+  const onWriteRollToChain = vi.fn(async (_payload: unknown) => 'style-1');
+  const style = { ...chains[0], id: 'style-1', type: 'style' as const, variableValues: { subject: 'beside a red car' } };
+  const picks = {
+    wardrobe: { kind: 'wardrobe', filled: true, text: 'white dress', negative: 'black dress' },
+    scene: { kind: 'scene', filled: true, text: 'night', negative: 'day' },
+  };
+  render(<ContentRollWorkspace active chains={[...chains, style]} notify={vi.fn()}
+    seedRecord={{ picks, seed: 'saved', seeds: {} }} onSeedConsumed={vi.fn()} onWriteRollToChain={onWriteRollToChain} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的风格串' }), { target: { value: 'style-1' } });
+  fireEvent.click(screen.getByRole('button', { name: '写入风格串…' }));
+  fireEvent.click(screen.getByRole('button', { name: '写入这条风格串' }));
+  await waitFor(() => expect(onWriteRollToChain).toHaveBeenCalledOnce());
+  expect(onWriteRollToChain.mock.calls[0][0]).toMatchObject({
+    variableValues: { subject: 'night, beside a red car' },
+    params: { characters: [{ sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'black dress' } }],
+      _promptSections: { scene: 'night', sectionNegatives: { scene: 'day' } } },
+  });
+});

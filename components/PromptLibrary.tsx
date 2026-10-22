@@ -52,6 +52,11 @@ import { PressRevealSurface } from './PressRevealSurface';
 import { OriginalImage, SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
+import { PromptLibraryBundleDialog } from './PromptLibraryBundleDialog';
+import type { PromptLibraryBundleChainWrite } from './PromptLibraryBundleDialog';
+import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey } from '../services/labWorkspace';
+import { PromptLibraryUsageBadge, PromptLibraryUsageSection } from './PromptLibraryUsage';
+import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
@@ -230,6 +235,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const [viewer, setViewer] = useState<{ items: ViewerEntry[]; index: number } | null>(null);
 
   const [genOpen, setGenOpen] = useState(false);
+  const [bundleOpen, setBundleOpen] = useState(false);
+  /* 六库结果写进风格串：只列风格串当目标，写完清掉该串的编辑器草稿 */
+  const styleChains = useMemo(
+    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && chain.type === 'style'),
+    [chains],
+  );
+  const writeBundleToChain = useCallback<PromptLibraryBundleChainWrite>(async ({ chain, name, params, variableValues }) => {
+    if (chain) {
+      await onUpdateChain(chain.id, { params, variableValues });
+      deleteLabWorkspaceSession(getLabWorkspaceSessionKey(chain.id));
+      return chain.id;
+    }
+    return onCreate(name, t('来自一键六库内容'), 'style', { params, variableValues });
+  }, [onCreate, onUpdateChain]);
   const [brief, setBrief] = useState('');
   const [facets, setFacets] = useState<Record<string, string | string[]>>({});
   const [count, setCount] = useState(1);
@@ -257,6 +276,30 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   useEffect(() => {
     setFacets(Object.fromEntries(config.facets.map(facet => [facet.key, facet.multiple ? [] : ''])));
   }, [config]);
+
+  /* ---------------- 图墙计数（生成记录） ---------------- */
+
+  const [usageById, setUsageById] = useState<Map<string, number>>(() => new Map());
+
+  /** 汇总失败只是没有胶囊，不影响库的读写，因此不弹提示。 */
+  const refreshUsage = useCallback(async () => {
+    try {
+      const summary = await fetchPromptLibraryUsageSummary();
+      if (!aliveRef.current) return;
+      setUsageById(new Map(summary.items.map(row => [row.chainId, row.count])));
+    } catch (error) {
+      console.warn('Prompt library usage summary failed:', error);
+    }
+  }, []);
+
+  useEffect(() => { void refreshUsage(); }, [refreshUsage]);
+
+  /* 生成新图不会实时推给前端：切回页面时重读一次，卡片角标才不会停在旧数字。 */
+  useEffect(() => {
+    const handleVisibility = () => { if (!document.hidden) void refreshUsage(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [refreshUsage]);
 
   const items = useMemo(
     () => (Array.isArray(chains) ? chains : []).filter(chain => chain && (Array.isArray(config.type) ? config.type.includes(chain.type) : chain.type === config.type)),
@@ -349,13 +392,16 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       tone: 'danger',
     })) return false;
     setDetail(null);
+    // 详情关闭时顺手刷新图墙计数：详情内的保存/删除/改名都发生在离开之后才可见。
+    void refreshUsage();
     return true;
-  }, [config.title, confirmAction, draftDirty, savingDetail]);
+  }, [config.title, confirmAction, draftDirty, refreshUsage, savingDetail]);
 
   useEffect(() => registerLeaveGuard?.(async () => {
     if (generating || savingDrafts || creating || renamePending.current) return false;
     if (!await closeDetail()) return false;
     setGenOpen(false);
+    setBundleOpen(false);
     setPicker(null);
     setViewer(null);
     return true;
@@ -390,6 +436,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       if (detail.coverChanged) updates.previewImage = detail.cover;
       await onUpdateChain(detail.id, updates);
       notify(t('{0}已保存', [t(config.itemNoun)]));
+      void refreshUsage();
       setDetail(null);
     } catch (error) {
       console.warn('Prompt library save failed:', error);
@@ -415,6 +462,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     }
     setDetail(current => (current?.id === id ? null : current));
     setViewer(null);
+    void refreshUsage();
     notify(t('已删除该{0}', [t(config.itemNoun)]));
   };
 
@@ -428,6 +476,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         notify(t('创建失败，请稍后重试'), 'error');
         return;
       }
+      void refreshUsage();
       setDetail({
         id: newId,
         name: t(config.defaultName),
@@ -586,6 +635,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     setDrafts(remaining.map(({ item }) => item));
     setPicked(new Set(remaining.flatMap(({ index }, position) => failures.has(index) ? [position] : [])));
     if (saved > 0) {
+      if (aliveRef.current) void refreshUsage();
       notify(failures.size
         ? t('已保存 {0} 条{1}，{2} 条失败', [saved, t(config.itemNoun), failures.size])
         : t('已保存 {0} 条{1}到{2}', [saved, t(config.itemNoun), t(config.title)]));
@@ -606,7 +656,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (!nextName || nextName === chain.name) { setRenamingId(null); return; }
     renamePending.current = true;
     setSavingRename(true);
-    try { await onUpdateChain(chain.id, { name: nextName }); setRenamingId(current => current === chain.id ? null : current); }
+    try {
+      await onUpdateChain(chain.id, { name: nextName });
+      setRenamingId(current => current === chain.id ? null : current);
+      void refreshUsage();
+    }
     catch { notify(t('改名失败，请重试'), 'error'); }
     finally { renamePending.current = false; setSavingRename(false); }
   };
@@ -658,6 +712,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {references.length > 0 && (
             <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [references.length])}</span>
           )}
+          <PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />
           <div data-card-action="true" className="hover-reveal-md absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
             <button
               type="button"
@@ -709,6 +764,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const itemActions = !config.hideActions && <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t(config.title)} <span className="ml-1 text-xs font-normal tabular-nums text-gray-400">{shown.length}</span></span>
+        <ToolbarButton onClick={() => setBundleOpen(true)} aria-label={t('AI 一键六库')} title={t('AI 一键六库')} className="mobile-touch !px-2.5 md:!px-3">
+          <Wand2 /><span className="content-library-action-label hidden sm:inline">{t('AI 一键六库')}</span>
+        </ToolbarButton>
         <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
           <Sparkles /><span className="content-library-action-label hidden sm:inline">{t(generatorTitle)}</span>
         </ToolbarButton>
@@ -940,6 +998,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           <ToolbarButton onClick={() => setPicker('reference')} className="mobile-touch mt-2 w-full"><ImagePlus /><span>{t('从历史导入参考图')}</span></ToolbarButton>
           <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('参考图复用本地原件，删除历史后仍保留；点图片可看原图。')}</p>
         </div>
+
+        <PromptLibraryUsageSection chainId={detail.id} notify={notify} />
       </div>
     </div>
   ) : null;
@@ -1218,7 +1278,21 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         {detail ? detailBody : <>{itemActions}{listBody}</>}
       </div>
       {generator}
-      <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} />
+      <PromptLibraryBundleDialog
+        open={bundleOpen}
+        onClose={() => setBundleOpen(false)}
+        notify={notify}
+        onCreate={onCreate}
+        onSaved={() => { void refreshUsage(); }}
+        styleChains={styleChains}
+        onWriteToChain={writeBundleToChain}
+      />
+      <HistoryImagePicker
+        open={picker !== null}
+        onClose={() => setPicker(null)}
+        onSelect={handleHistorySelect}
+        scopeChainId={picker === 'cover' && detail && detail.id ? detail.id : null}
+      />
       {viewerModal}
     </div>
   );

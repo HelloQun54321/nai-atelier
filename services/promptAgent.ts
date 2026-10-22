@@ -282,6 +282,37 @@ export interface PromptLibraryResult {
   filteredCount?: number;
 }
 
+/** AI 一键六库：一段话一次生成六类库，每条带自己的领域 kind。 */
+export interface PromptLibraryBundleItem {
+  kind: PromptLibraryKind;
+  label: string;
+  name: string;
+  prompt: string;
+  bilingual: string;
+  negativePrompt: string;
+  tags: string[];
+  note: string;
+}
+
+export interface PromptLibraryBundleResult {
+  items: PromptLibraryBundleItem[];
+  /** 本次没能生成出来的库（模型输出缺失或校验未通过），可重试。 */
+  missing: string[];
+  provider: string;
+  model: string;
+  count: number;
+  filteredCount?: number;
+}
+
+export interface PromptLibraryBundleInput {
+  brief: string;
+  hint?: string;
+  detail?: 'strict' | 'moderate' | 'detailed';
+  keepEmpty?: boolean;
+  singleColor?: boolean;
+  dryRun?: boolean;
+}
+
 /** 库生成时置顶追加的两段自定义提示词。 */
 export interface PromptLibraryPrompts {
   spec: string;
@@ -355,6 +386,22 @@ export const promptAgentService = {
   }): Promise<PromptLibraryResult> => {
     const operationId = stableOperationId('library-generate', input);
     const response = await fetch('/api/prompt-agent/library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...input, operationId }),
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  /**
+   * AI 一键六库：一段话一次生成人物形象 / 服饰 / 姿势 / 表情状态 / 场景 / 镜头六类提示词。
+   *
+   * 与 generateLibraryPrompt 同一套路：带 operationId 仅用于追踪，客户端不自动重发，
+   * 避免连接中断后重复消耗模型调用。用户主动触发，使用当前助手模型，不消耗生图额度。
+   */
+  generateLibraryBundle: async (input: PromptLibraryBundleInput): Promise<PromptLibraryBundleResult> => {
+    const operationId = stableOperationId('library-bundle', input);
+    const response = await fetch('/api/prompt-agent/library-bundle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, operationId }),

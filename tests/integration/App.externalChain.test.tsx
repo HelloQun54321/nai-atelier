@@ -158,6 +158,27 @@ it('旧组合库入口映射到组合库，载入打开面板，关闭保留原�
   expect(document.querySelector('[data-content-roll-row="scene"]')?.textContent).toContain('night');
 });
 
+it('内容库 Roll 弹窗可将组合写入已有风格串并保留原主体', async () => {
+  mocks.getAllChains.mockResolvedValue([
+    { ...saved, variableValues: { subject: 'beside a red car' } },
+    { ...saved, id: 'saved-content', type: 'preset', name: '合成内容组合', params: {
+      _rollContentSnapshot: contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', negative: 'day', filled: true } } }, '2026-10-21'),
+    } },
+  ]);
+  await setup('prompts');
+  fireEvent.click(screen.getByRole('button', { name: 'content-roll-library' }));
+  fireEvent.click(await screen.findByRole('button', { name: '载入组合' }));
+  await screen.findByRole('dialog', { name: 'Roll 组合' });
+  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的风格串' }), { target: { value: saved.id } });
+  fireEvent.click(screen.getByRole('button', { name: '写入风格串…' }));
+  fireEvent.click(screen.getByRole('button', { name: '写入这条风格串' }));
+  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledWith(saved.id, expect.objectContaining({
+    variableValues: { subject: 'night, beside a red car' },
+    params: expect.objectContaining({ _promptSections: expect.objectContaining({ scene: 'night', sectionNegatives: { scene: 'day' } }) }),
+  })));
+  expect(screen.getByRole('dialog', { name: 'Roll 组合' })).toBeTruthy();
+});
+
 it('提示词库创建使用完整回执并留在当前库，不重新下载整库或打开实验室', async () => {
   await setup('prompts');
   const readsBeforeCreate = mocks.getAllChains.mock.calls.length;
