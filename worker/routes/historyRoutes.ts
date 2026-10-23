@@ -1,3 +1,5 @@
+import { ensureArtistHistoryIndex, recordArtistHistory, deactivateArtistHistory, readArtistHistorySnapshots, readArtistGenerationCounts, loadArtistUsageDictionary } from './artistUsageIndex';
+import { ensureArtistChainUsage, readArtistChainCounts } from './artistChainUsage';
 // Local generation history (D1 + R2), inspiration boards/library, and the
 // lightweight agent overview endpoints.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
@@ -321,6 +323,19 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
 export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, url, path, method, db, currentUser } = ctx;
 
+  if (path === '/api/artist-usage' && method === 'GET') {
+    await ensureLocalHistorySchema(db);
+    const known = await loadArtistUsageDictionary(env);
+    await Promise.all([ensureArtistHistoryIndex(db, currentUser.id, env), ensureArtistChainUsage(db, known)]);
+    const [generated, chainCounts, count] = await Promise.all([
+      readArtistGenerationCounts(db, currentUser.id), readArtistChainCounts(db),
+      db.prepare('SELECT COUNT(*) AS total FROM local_generation_history WHERE user_id = ?').bind(currentUser.id).first<{ total: number }>(),
+    ]);
+    const artists = new Map(generated.map(row => [row.name, { ...row, chains: chainCounts[row.name] || 0 }]));
+    for (const [name, chains] of Object.entries(chainCounts)) if (!artists.has(name)) artists.set(name, { name, chains, images: 0, lastAt: 0 });
+    return json({ artists: [...artists.values()], indexed: Number(count?.total || 0), total: Number(count?.total || 0), complete: true });
+  }
+
   if (path === '/api/local-history/status' && method === 'GET') {
     const enabled = localHistoryEnabled(env) && Boolean(env.BUCKET);
     if (enabled) await ensureLocalHistorySchema(db);
@@ -434,9 +449,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     await ensureInspirationSchema(db);
 
     const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
+      await deactivateArtistHistory(db, currentUser.id, rows, env);
       for (const row of rows) {
-        await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
-          .bind(row.id, currentUser.id).run();
         // 历史消失后归属也失去意义；表缺失时自愈创建，不阻塞删除主流程。
         await deletePromptLibraryLinksByHistory(db, row.id);
         if (row.image_key) await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db);
@@ -515,6 +529,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         AND COALESCE(source_chain_name, '') NOT LIKE '%.gif'`;
       const rangeValues = [currentUser.id, from, to];
 
+      await ensureArtistHistoryIndex(db, currentUser.id, env);
       const [totals, dailyResult, chainsResult, uniqueChains, parameterGroups, artistRows] = await Promise.all([
         db.prepare(`SELECT COUNT(*) AS images,
           COUNT(DISTINCT ${dayExpr}) AS activeDays,
@@ -550,12 +565,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           FROM local_generation_history WHERE ${creativeWhere}
           GROUP BY attributes`)
           .bind(...rangeValues).all<{ attributes: string; images: number }>(),
-        // 画师使用量从完整 Prompt 派生；限制扫描最近 4000 张，避免一次性拉取整段历史。
-        db.prepare(`SELECT prompt, base_prompt, subject_prompt,
-          CASE WHEN json_valid(params) THEN json_extract(params, '$.characters') END AS characters, created_at
-          FROM local_generation_history WHERE ${creativeWhere}
-          ORDER BY created_at DESC LIMIT 4000`)
-          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; characters: string | null; created_at: number }>(),
+        readArtistHistorySnapshots(db, currentUser.id, from, to).then(results => ({ results })),
       ]);
 
       const modelMap = new Map<string, { model: string; images: number }>();
@@ -587,40 +597,20 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         if (row.referenceEnabled === 1) { referenceUsage.images += row.images; referenceUsage.slots += row.images * row.referenceSlots; }
       }
 
-      const artistPattern = /(?:^|[\s,])artist:([^\s,}]+)/gi;
       const artistMap = new Map<string, { name: string; images: number; lastAt: number }>();
-      for (const row of artistRows.results) {
-        const text = [row.prompt, row.base_prompt, row.subject_prompt].filter(Boolean).join(' ');
-        const seen = new Set<string>();
-        for (const match of text.matchAll(artistPattern)) {
-          const name = match[1].replace(/^[\{\[]+/, '').replace(/^[:]+|[:.,;]+$/g, '').trim().toLowerCase();
-          if (!name || seen.has(name)) continue;
-          seen.add(name);
-          const current = artistMap.get(name);
-          const createdAt = Number(row.created_at) || 0;
-          if (current) {
-            current.images += 1;
-            current.lastAt = Math.max(current.lastAt, createdAt);
-          } else artistMap.set(name, { name, images: 1, lastAt: createdAt });
-        }
+      for (const row of artistRows.results) for (const name of row.artists) {
+        const current = artistMap.get(name);
+        if (current) { current.images++; current.lastAt = Math.max(current.lastAt, row.at); }
+        else artistMap.set(name, { name, images: 1, lastAt: row.at });
       }
       const artists = [...artistMap.values()]
         .sort((left, right) => right.images - left.images || right.lastAt - left.lastAt)
         .slice(0, 12);
       const tagMap = new Map<string, { name: string; images: number }>();
-      for (const row of artistRows.results) {
-        const text = [row.prompt, row.base_prompt, row.subject_prompt].filter(Boolean).join('\n');
-        const seen = new Set<string>();
-        for (const raw of text.split(/[,\n]/)) {
-          let tag = raw.trim().toLowerCase();
-          tag = tag.replace(/^[\{\[]+/, '').replace(/[\}\]]+$/, '');
-          tag = tag.replace(/^[\d.]+::/, '').replace(/::$/, '').trim();
-          if (!tag || tag.startsWith('artist:') || tag.length > 80 || seen.has(tag)) continue;
-          seen.add(tag);
-          const current = tagMap.get(tag);
-          if (current) current.images += 1;
-          else tagMap.set(tag, { name: tag, images: 1 });
-        }
+      for (const row of artistRows.results) for (const name of row.tags) {
+        const current = tagMap.get(name);
+        if (current) current.images++;
+        else tagMap.set(name, { name, images: 1 });
       }
       const tags = [...tagMap.values()]
         .sort((left, right) => right.images - left.images || left.name.localeCompare(right.name))
@@ -628,24 +618,10 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
 
       // 结构化角色存在 params.characters；按角色提示词派生，不依赖历史来源是否为角色库。
       const characterMap = new Map<string, { id: string; name: string; images: number; lastAt: number }>();
-      for (const row of artistRows.results) {
-        const parsed = parseStoredJson(row.characters, []);
-        const characters = Array.isArray(parsed) ? parsed : [];
-        const seen = new Set<string>();
-        for (const character of characters) {
-          if (!character || character.enabled === false) continue;
-          const prompt = String(character.prompt || '').trim();
-          if (!prompt) continue;
-          const name = prompt.replace(/\s+/g, ' ').trim().slice(0, 100);
-          if (!name || seen.has(name)) continue;
-          seen.add(name);
-          const createdAt = Number(row.created_at) || 0;
-          const current = characterMap.get(name);
-          if (current) {
-            current.images += 1;
-            current.lastAt = Math.max(current.lastAt, createdAt);
-          } else characterMap.set(name, { id: name, name, images: 1, lastAt: createdAt });
-        }
+      for (const row of artistRows.results) for (const character of row.characters) {
+        const current = characterMap.get(character.name);
+        if (current) { current.images++; current.lastAt = Math.max(current.lastAt, row.at); }
+        else characterMap.set(character.name, { ...character, images: 1, lastAt: row.at });
       }
       const derivedCharacters = [...characterMap.values()]
         .sort((left, right) => right.images - left.images || right.lastAt - left.lastAt)
@@ -690,7 +666,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         operations: [...operationMap.values()].sort((a, b) => b.images - a.images || String(a.operation).localeCompare(String(b.operation))),
         uniqueChains: Number(uniqueChains?.count || 0),
         uniqueArtists: artistMap.size,
-        artistScan: { scanned: artistRows.results.length, truncated: artistRows.results.length >= 4000 },
+        artistScan: { scanned: artistRows.results.length, truncated: false },
         generatedAt: now,
       });
     }
@@ -958,7 +934,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         console.error('提示词库关联识别失败，生成历史按原样保存', cause);
       }
       const imageKey = `local-history/${currentUser.id}/${id}.${extension}`;
-      const existing = await db.prepare('SELECT image_key, is_favorite, favorite_at, external_source, external_id FROM local_generation_history WHERE id = ? AND user_id = ?')
+      const existing = await db.prepare('SELECT * FROM local_generation_history WHERE id = ? AND user_id = ?')
         .bind(id, currentUser.id).first<{image_key: string, is_favorite: number, favorite_at: number | null, external_source: string | null, external_id: string | null}>();
       const isFavorite = body.isFavorite === undefined ? Number(existing?.is_favorite || 0) === 1 : Boolean(body.isFavorite);
       const favoriteAt = isFavorite ? Number(body.favoriteAt || existing?.favorite_at || Date.now()) : null;
@@ -969,6 +945,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         await env.BUCKET.put(editMaskKey, exactArrayBuffer(editMask.bytes), { httpMetadata: { contentType: editMask.contentType } });
       }
       const createdAt = Number.isFinite(Number(body.createdAt)) ? Number(body.createdAt) : Date.now();
+      let artistDictionary: ReadonlySet<string> | undefined;
+      try {
+        artistDictionary = await loadArtistUsageDictionary(env);
+        if (existing) await recordArtistHistory(db, currentUser.id, existing, artistDictionary);
+      } catch (cause) { console.error('画师统计暂不可用，历史保存继续', cause); }
       await db.prepare(`
         INSERT OR REPLACE INTO local_generation_history (
           id, user_id, image_key, image_type, prompt, negative_prompt, params,
@@ -988,6 +969,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         body.externalSource || existing?.external_source || null,
         body.externalId || existing?.external_id || null
       ).run();
+      try { if (artistDictionary) await recordArtistHistory(db, currentUser.id, {
+        id, prompt: body.prompt || '', base_prompt: body.basePrompt || '', subject_prompt: body.subjectPrompt || '',
+        params: normalizedParams, created_at: createdAt, source_chain_id: body.sourceChainId,
+        external_source: body.externalSource || existing?.external_source,
+      }, artistDictionary); }
+      catch (cause) { console.error('画师统计写入失败，生成历史已保存', cause); }
       try {
         // 重存同一条历史时，本次没命中也要清掉过期归属（INSERT OR REPLACE 会留下旧行）。
         if (linkHint) {

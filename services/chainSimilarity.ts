@@ -84,7 +84,7 @@ export function parseChainPromptTokens(value: string): ChainPromptToken[] {
       index++; continue;
     }
     if (!parentheses && '{}[]'.includes(char)) {
-      if ((char === '{' || char === '[') && /^artists?\s*:\s*$/i.test(current)) {
+      if ((char === '{' || char === '[') && /^\s*artists?\s*:\s*$/i.test(current)) {
         current = ''; artistDepth = path.length + 1;
       } else flush();
       if (path.at(-1) === closing[char]) path.pop(); else path.push(char);

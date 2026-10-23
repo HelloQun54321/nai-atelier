@@ -1,7 +1,9 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
+import { localHistory } from '../services/localHistory';
 import { loadRollBlocklist, ROLL_BLOCKLIST_CHANGED, saveRollBlocklist } from '../services/styleRollApi';
 import { normalizeRollArtistKey } from '../services/styleRollSeed';
+import { artistUsageCount, compareArtistUsage, getArtistUsage, isArtistUsageSort, matchesArtistUsage, type ArtistBrowseSort, type ArtistUsageFilter, type ArtistUsageIndex } from '../services/artistUsage';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useImageRatios } from './useImageRatios';
@@ -53,6 +55,9 @@ interface ArtistLibraryProps {
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
+type ArtistLibrarySort = ArtistBrowseSort;
+type ArtistUsageState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; index: ArtistUsageIndex };
+const dictionarySort = (sort: ArtistLibrarySort): ArtistDictionarySort => isArtistUsageSort(sort) ? 'popular' : sort;
 type SampleSettingsTarget = { tag?: string; pack: ArtistSamplePack; generateAfterSave: false } | { tag: string; pack: ArtistSamplePack; generateAfterSave: true; regenerate?: boolean };
 const SAMPLE_PACKS = ['v45', 'v5'] as const;
 const SEARCH_RESULT_LIMIT = 200;
@@ -145,7 +150,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
       const ratio = artistRatios[`${cardPacks[artist.name] || samplePack}:${artist.name}`] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-      return imageHeight + (frostedCaption ? 2 : 78);
+      return imageHeight + (frostedCaption ? 2 : 92);
     }, [artistRatios, frostedCaption, cardPacks, samplePack]);
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
@@ -206,6 +211,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                         <div data-safe-mode-title="true" title={artist.name} className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
                                         {artist.chinese && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
                                         {typeof artist.postCount === 'number' && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
+                                        <div className="gallery-card-meta mt-0.5 truncate text-micro tabular-nums text-gray-500" title={usageIndex ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usageIndex, 'chains'), artistUsageCount(artist.name, usageIndex, 'images')]) : usageState.status === 'loading' ? t('正在统计画师使用…') : undefined}>
+                                            {usageIndex
+                                                ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usageIndex, 'chains'), artistUsageCount(artist.name, usageIndex, 'images')])
+                                                : t('收录 — 串 · 生成 — 张')}
+                                        </div>
                                     </div>
                                     {(busy || generation?.error || generation?.phase === 'save_failed') && <div data-card-action="true" className="appearance-group flex flex-wrap items-center justify-center gap-1 border-t border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
                                         {busy && <span role="status" className="flex min-w-0 items-center gap-1"><LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />{t(generation?.session?.connectionError || (generation?.session?.awaiting ? '等待费用确认' : generation?.session?.state === 'paused' ? '任务已暂停' : generation?.phase === 'saving' ? '正在保存样张…' : '正在生成样张…'))}</span>}
@@ -232,6 +242,23 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const active = useContext(ImageActivityContext);
     const activeRef = useRef(active); activeRef.current = active;
     useEffect(() => { activeRef.current = active; return () => { activeRef.current = false; }; }, [active]);
+    const [usageState, setUsageState] = useState<ArtistUsageState>({ status: 'loading' });
+    const usageIndexRef = useRef<ArtistUsageIndex | null>(null);
+    const usageIndex = usageState.status === 'ready' ? usageState.index : usageIndexRef.current;
+    const [usageRetry, setUsageRetry] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const controller = new AbortController();
+        let current = true;
+        setUsageState({ status: 'loading' });
+        void getArtistUsage(controller.signal).then(index => {
+            if (current) { usageIndexRef.current = index; setUsageState({ status: 'ready', index }); }
+        }).catch(() => {
+            if (current && !controller.signal.aborted) setUsageState({ status: 'error' });
+        });
+        return () => { current = false; controller.abort(); };
+    }, [active, usageRetry]);
+    useEffect(() => active ? localHistory.subscribe(() => setUsageRetry(current => current + 1)) : undefined, [active]);
     useEffect(() => { if (!active || cart.length !== 1 || cart[0].name !== sampleToolsTag) closeSampleTools(); }, [active, cart, sampleToolsTag, closeSampleTools]);
     useEffect(() => {
         let cancelled = false;
@@ -339,11 +366,17 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [searchError, setSearchError] = useState('');
     const [searchRetry, setSearchRetry] = useState(0);
     const [loadMoreError, setLoadMoreError] = useState('');
-    const [artistSort, setArtistSort] = useState<ArtistDictionarySort>(() => {
+    const [artistSort, setArtistSort] = useState<ArtistLibrarySort>(() => {
         const saved = localStorage.getItem('nai_artist_sort');
-        return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' ? saved : 'popular';
+        return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' || isArtistUsageSort(saved || '') ? saved as ArtistLibrarySort : 'popular';
     });
-    const resultKey = JSON.stringify([searchTerm, onlySamples, showFavOnly, artistSort, samplePack]);
+    const [chainUsageFilter, setChainUsageFilter] = useState<ArtistUsageFilter>('all');
+    const [imageUsageFilter, setImageUsageFilter] = useState<ArtistUsageFilter>('all');
+    const serverArtistSort = dictionarySort(artistSort);
+    const statsSortReady = usageState.status === 'ready' && sampleDictionary.length > 0;
+    const usageFiltersActive = chainUsageFilter !== 'all' || imageUsageFilter !== 'all';
+    const localUsageBrowse = isArtistUsageSort(artistSort) || usageFiltersActive;
+    const resultKey = JSON.stringify([searchTerm, onlySamples, showFavOnly, artistSort, chainUsageFilter, imageUsageFilter, samplePack]);
     const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
     const catalogSearchRequestRef = useRef(0);
     const catalogSentinelRef = useRef<HTMLDivElement>(null);
@@ -351,7 +384,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const catalogPageCountRef = useRef(0);
     const catalogPageLoadingRef = useRef(false);
     const catalogLoadGenerationRef = useRef(0);
-    const artistSortRef = useRef<ArtistDictionarySort>(artistSort);
+    const artistSortRef = useRef<ArtistDictionarySort>(serverArtistSort);
 
     // 抽卡偏好
     const [gachaCount, setGachaCount] = useState<6 | 12 | 24>(() => {
@@ -364,6 +397,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     });
     const [gachaArtists, setGachaArtists] = useState<ArtistDictionaryEntry[] | null>(null);
     const [isGachaLoading, setIsGachaLoading] = useState(false);
+    const usageSortedArtists = useMemo(() => {
+        if (!localUsageBrowse || !sampleDictionary.length) return null;
+        const samplePool = gachaArtists || sampledArtists;
+        const sampledNames = onlySamples ? new Set(samplePool.map(entry => entry.name)) : null;
+        const query = normalizeArtistSearch(searchTerm);
+        return sampleDictionary.filter(entry => (!sampledNames || sampledNames.has(entry.name)) &&
+            (!showFavOnly || favoriteKeys.has(normalizeRollArtistKey(entry.name))) &&
+            (!query || normalizeArtistSearch(entry.name).includes(query) || normalizeArtistSearch(entry.chinese || '').includes(query)) &&
+            (!usageFiltersActive || !usageIndex || matchesArtistUsage(entry.name, usageIndex, chainUsageFilter, imageUsageFilter)))
+            .slice().sort((left, right) => usageIndex
+                ? compareArtistUsage(left, right, artistSort, usageIndex)
+                : compareLibraryTags(left, right, 'popular'));
+    }, [artistSort, sampleDictionary, onlySamples, gachaArtists, sampledArtists, searchTerm, showFavOnly, favoriteKeys, usageIndex, localUsageBrowse, usageFiltersActive, chainUsageFilter, imageUsageFilter]);
     const recentGachaIndicesRef = useRef<number[][]>([]);
     const catalogScrollTopRef = useRef(0);
     const gachaGenerationRef = useRef(0);
@@ -414,8 +460,18 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     }, []);
 
     useEffect(() => {
-        artistSortRef.current = artistSort;
+        artistSortRef.current = serverArtistSort;
         localStorage.setItem('nai_artist_sort', artistSort);
+        setSampleLimit(100);
+        if (localUsageBrowse) {
+            catalogLoadGenerationRef.current++;
+            catalogPageLoadingRef.current = false;
+            setIsCatalogLoading(false);
+            setIsLoadingMoreCatalog(false);
+            setHasMoreCatalog(false);
+            setLoadMoreError('');
+            return;
+        }
         const generation = ++catalogLoadGenerationRef.current;
         catalogPageLoadingRef.current = true;
         nextCatalogPageRef.current = 0;
@@ -427,7 +483,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         setCatalogError('');
         setLoadMoreError('');
         let cancelled = false;
-        getArtistDictionaryPage(0, artistSort)
+        getArtistDictionaryPage(0, serverArtistSort)
             .then(result => {
                 if (cancelled || generation !== catalogLoadGenerationRef.current) return;
                 setLoadedCatalogArtists(result.entries);
@@ -450,9 +506,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 }
             });
         return () => { cancelled = true; };
-    }, [artistSort, catalogRetry]);
+    }, [artistSort, serverArtistSort, catalogRetry, localUsageBrowse]);
 
     useEffect(() => {
+        if (localUsageBrowse) {
+            catalogSearchRequestRef.current++;
+            setCatalogSearchResults([]);
+            setSearchError('');
+            setIsCatalogLoading(false);
+            return;
+        }
         const query = onlySamples || showFavOnly ? '' : searchTerm.trim();
         const requestId = ++catalogSearchRequestRef.current;
         if (!query) {
@@ -466,7 +529,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         setIsCatalogLoading(true);
         setSearchError('');
         const timer = window.setTimeout(() => {
-            searchArtistDictionary(query, SEARCH_RESULT_LIMIT + 1, artistSort)
+            searchArtistDictionary(query, SEARCH_RESULT_LIMIT + 1, serverArtistSort)
                 .then(results => {
                     if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults(results);
                 })
@@ -482,12 +545,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 });
         }, 180);
         return () => window.clearTimeout(timer);
-    }, [artistSort, searchTerm, onlySamples, showFavOnly, searchRetry]);
+    }, [artistSort, serverArtistSort, searchTerm, onlySamples, showFavOnly, searchRetry, localUsageBrowse]);
 
     const hasMoreSamples = (showFavOnly ? sampledArtists.filter(entry => favoriteKeys.has(normalizeRollArtistKey(entry.name))).length : sampledArtists.length) > sampleLimit;
-    const hasMoreVisible = onlySamples ? hasMoreSamples : !showFavOnly && hasMoreCatalog;
-    const loadMore = () => { if (onlySamples) setSampleLimit(current => current + 100); else void loadNextCatalogPage(); };
-    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px', onlySamples ? sampleLimit : nextCatalogPageRef.current);
+    const hasMoreVisible = localUsageBrowse
+        ? !searchTerm.trim() && (usageSortedArtists?.length || 0) > sampleLimit
+        : onlySamples ? hasMoreSamples : !showFavOnly && hasMoreCatalog;
+    const loadMore = () => { if (localUsageBrowse || onlySamples) setSampleLimit(current => current + 100); else void loadNextCatalogPage(); };
+    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px', onlySamples || localUsageBrowse ? sampleLimit : nextCatalogPageRef.current);
 
     useEffect(() => {
         const sync = () => setFavorites(new Set(collectionSnapshot()
@@ -532,14 +597,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
     const availableArtists = useMemo(() => {
         const query = normalizeArtistSearch(searchTerm);
+        if (usageSortedArtists) return usageSortedArtists.slice(0, searchTerm.trim() ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
         if (onlySamples) return (gachaArtists || sampledArtists)
             .filter(entry => (!showFavOnly || favoriteKeys.has(normalizeRollArtistKey(entry.name))) && (!query || normalizeArtistSearch(entry.name).includes(query) || normalizeArtistSearch(entry.chinese || '').includes(query)))
-            .slice().sort((left, right) => compareLibraryTags(left, right, artistSort))
+            .slice().sort((left, right) => compareLibraryTags(left, right, dictionarySort(artistSort)))
             .slice(0, gachaArtists ? gachaArtists.length : searchTerm.trim() ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
         // 收藏只筛选真实词库，全目录已读取，不从旧收藏快照补造条目或受已展示分页限制。
-        if (showFavOnly) return sampleDictionary.slice().sort((left, right) => compareLibraryTags(left, right, artistSort));
+        if (showFavOnly) return sampleDictionary.slice().sort((left, right) => compareLibraryTags(left, right, dictionarySort(artistSort)));
         return searchTerm.trim() ? catalogSearchResults : (gachaArtists || loadedCatalogArtists);
-    }, [catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm, onlySamples, sampledArtists, sampleDictionary, artistSort, showFavOnly, favoriteKeys, sampleLimit]);
+    }, [catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm, onlySamples, sampledArtists, sampleDictionary, artistSort, showFavOnly, favoriteKeys, sampleLimit, usageSortedArtists]);
 
     const matchedArtists = useMemo(() => availableArtists.filter(artist => {
         if (showFavOnly && !favoriteKeys.has(normalizeRollArtistKey(artist.name))) return false;
@@ -657,15 +723,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师名称或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
                     {isCatalogLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
                 </div>
-                <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(showFavOnly) + Number(!onlySamples)}>
+                <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(showFavOnly) + Number(!onlySamples) + Number(chainUsageFilter !== 'all') + Number(imageUsageFilter !== 'all')}>
                     <div className="space-y-3">
                         <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}</p>
+                        {usageState.status === 'loading' && <p role="status" className="text-xs text-gray-500">{t('正在统计画师使用…')}</p>}
+                        {usageState.status === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(current => current + 1)}>{t('重试统计')}</button></p>}
                         <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { updateOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
-                        <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
+                        <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistLibrarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
                             <option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option>
+                            <option value="usage-chains" disabled={!statsSortReady}>{t('收录串数从高到低')}</option><option value="usage-chains-asc" disabled={!statsSortReady}>{t('收录串数从低到高')}</option><option value="usage-images" disabled={!statsSortReady}>{t('生成图片数从高到低')}</option><option value="usage-images-asc" disabled={!statsSortReady}>{t('生成图片数从低到高')}</option>
                         </select></label>
+                        <label className="block text-sm font-semibold dark:text-white">{t('风格串收录')}<select aria-label={t('风格串收录')} value={chainUsageFilter} disabled={!statsSortReady} onChange={event => { setChainUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option></select></label>
+                        <label className="block text-sm font-semibold dark:text-white">{t('图片生成')}<select aria-label={t('图片生成')} value={imageUsageFilter} disabled={!statsSortReady} onChange={event => { setImageUsageFilter(event.target.value as ArtistUsageFilter); setSampleLimit(100); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option></select></label>
                         <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏画师")}</label>
-                        <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); updateOnlySamples(true); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+                        <button type="button" onClick={() => { setArtistSort('popular'); setChainUsageFilter('all'); setImageUsageFilter('all'); setShowFavOnly(false); updateOnlySamples(true); setSampleLimit(100); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
                 <ToolbarButton aria-label={gachaArtists ? t("再选一批") : t("随机选画师")} title={sampledArtists.length ? undefined : t('先下载样张图包或生成样张')} onClick={() => void drawGacha()} disabled={isGachaLoading || sampledArtists.length <= 0} className="mobile-touch" tone="neutral">
@@ -685,10 +756,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             {!isCatalogLoading && !catalogError && !searchError && !((onlySamples || showFavOnly) && currentSampleError) && ((!onlySamples && !showFavOnly && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{searchTerm.trim()
                 ? t(searchTruncated ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
                 : gachaArtists ? t('本次抽取 {0} 位', [filteredArtists.length])
+                : localUsageBrowse ? usageFiltersActive || showFavOnly
+                    ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
+                    : t(hasMoreVisible ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
                 : showFavOnly ? t(hasMoreSamples ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
                 : onlySamples ? t(hasMoreSamples ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
                 : hasMoreCatalog ? t('已加载 {0} 位', [loadedCatalogArtists.length])
-                : t('共 {0} 位', [artistCatalogCount])}</ToolbarCountCaption>}
+                : t('共 {0} 位', [artistCatalogCount])}
+            </ToolbarCountCaption>}
 
             {gachaArtists && (
                 <GalleryActiveStateBanner
@@ -705,12 +780,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             </WorkspaceChrome>
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-canvas workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {showFavOnly && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
-                    <p>{t('还没有收藏画师')}</p>
+                    <p>{usageFiltersActive ? t('没有匹配的画师') : t('还没有收藏画师')}</p>
                     <button type="button" className="mobile-touch mt-3 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setShowFavOnly(false)}>{t('关闭只看收藏')}</button>
                     {onlySamples && <button type="button" className="mobile-touch mt-3 ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}
                 </div>}
                 {!showFavOnly && onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">
-                    {!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
+                    {usageFiltersActive ? t('没有匹配的画师') : !currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
                     {searchTerm.trim() && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
                     {!searchTerm.trim() && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
@@ -725,7 +800,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     </> : searchTerm.trim() ? <>
                         {t('没有匹配的画师')}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSearchTerm('')}>{t('清除搜索')}</button>
-                    </> : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
+                    </> : usageFiltersActive ? t('没有匹配的画师') : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
                 </div>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>

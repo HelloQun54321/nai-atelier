@@ -7,6 +7,20 @@ import { projectRoot } from '../support/workspace.mjs';
 import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths } from '../../scripts/media-gateway.mjs';
 import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 
+test('手机Worker读取统计词库走已下载的本地路由，其他资源保持原读取方式', async () => {
+  const { transform } = await import('esbuild');
+  const source = extractAndroidShared(join(projectRoot, 'mobile/entry.ts'), ['env'], `
+    const db = {}, bucket = {}, location = { origin: 'https://localhost' };
+    const calls = [];
+    const webFetch = async request => { calls.push(['web', request.url]); return new Response('{}'); };
+  `, { phoneFetch: "const phoneFetch = async request => { calls.push(['phone', request.url]); return new Response('{}'); };" });
+  const transformed = await transform(source + '\nexport { calls };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  await mobile.env.ASSETS.fetch(new Request('https://atelier.local/tag-data/manifest.json'));
+  await mobile.env.ASSETS.fetch(new Request('https://atelier.local/assets/app.js'));
+  assert.deepEqual(mobile.calls, [['phone', 'https://localhost/tag-data/manifest.json'], ['web', 'https://atelier.local/assets/app.js']]);
+});
+
 test('Android 默认规则和官方提取复用电脑声明，不能带入 Node 文件系统',async()=>{
   const billing=join(projectRoot,'worker/naiBilling.mjs').replace(/\\/g,'/');
   const source=extractAndroidShared(join(projectRoot,'scripts/media-gateway.mjs'),['DEFAULT_NAI_RUNTIME','computeNaiRuntimeSync','extractNaiRuntimeChunkPaths'],`import {DEFAULT_NAI_BILLING,isNaiBillingRules} from 'file:///${billing}';`);

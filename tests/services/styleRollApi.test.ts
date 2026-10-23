@@ -1,11 +1,36 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
-const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), getBrowseOrder: vi.fn(), getPage: vi.fn() }));
-vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put } }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), delete: vi.fn(), getBrowseOrder: vi.fn(), getPage: vi.fn() }));
+vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put, delete: mocks.delete } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: mocks }));
-import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment, saveRollBlocklist, ROLL_BLOCKLIST_CHANGED } from '../../services/styleRollApi';
+import { deleteRollPreset, loadRollPresets, saveRollPreset, loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment, saveRollBlocklist, ROLL_BLOCKLIST_CHANGED } from '../../services/styleRollApi';
 beforeEach(() => vi.clearAllMocks());
+
+it('预设列表不缓存、完整模板保存并带版本独立删除', async () => {
+  const preset = { id: 'one', name: '质量词', revision: 0, createdAt: 1, updatedAt: 1, template: { ...rollFixture().template, characterPrompt: '角色原文' } };
+  mocks.get.mockResolvedValue({ presets: [preset] });
+  expect(await loadRollPresets()).toEqual([preset]);
+  expect(mocks.get).toHaveBeenCalledWith('/style-roll/presets', { cache: 'no-store' });
+  const saved = { ...preset, revision: 1 };
+  mocks.put.mockResolvedValue({ preset: saved });
+  expect(await saveRollPreset(preset)).toEqual(saved);
+  expect(mocks.put).toHaveBeenCalledWith('/style-roll/presets', preset);
+  mocks.delete.mockResolvedValue({ deleted: preset.id });
+  await deleteRollPreset(saved);
+  expect(mocks.delete).toHaveBeenCalledWith('/style-roll/presets/one?revision=1');
+});
+
+it('预设坏回执和请求错误均抛出，不转成空列表或成功删除', async () => {
+  const preset = { id: 'one', name: '质量词', revision: 1, createdAt: 1, updatedAt: 1, template: rollFixture().template };
+  mocks.get.mockResolvedValueOnce({ presets: [null] }); await expect(loadRollPresets()).rejects.toThrow();
+  mocks.get.mockResolvedValueOnce({}); await expect(loadRollPresets()).rejects.toThrow('Roll 预设读取失败');
+  mocks.get.mockRejectedValueOnce(new Error('读取失败')); await expect(loadRollPresets()).rejects.toThrow('读取失败');
+  mocks.put.mockResolvedValueOnce({ preset: null }); await expect(saveRollPreset(preset)).rejects.toThrow();
+  mocks.put.mockRejectedValueOnce(new Error('版本冲突')); await expect(saveRollPreset(preset)).rejects.toThrow('版本冲突');
+  mocks.delete.mockResolvedValueOnce({ deleted: 'other' }); await expect(deleteRollPreset(preset)).rejects.toThrow('删除回执无效');
+  mocks.delete.mockRejectedValueOnce(new Error('删除冲突')); await expect(deleteRollPreset(preset)).rejects.toThrow('删除冲突');
+});
 
 it('全局屏蔽只在保存成功并校验回执后通知画师库和 Roll', async () => {
   const changed = vi.fn(); window.addEventListener(ROLL_BLOCKLIST_CHANGED, changed);

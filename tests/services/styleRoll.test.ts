@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollTemplate } from '../../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate } from '../../services/styleRoll';
+import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
+
+it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
+  const template = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME);
+  expect(template.prompt).toBe(DEFAULT_ROLL_PROMPT);
+  expect(template.prompt).not.toMatch(/\b(?:1girl|solo|upper body|looking at viewer)\b/);
+  expect(template.characterPrompt).toBe(DEFAULT_ROLL_CHARACTER_PROMPT);
+  expect(template.negativePrompt).toBe(DEFAULT_ROLL_NEGATIVE);
+  expect(template.params).toMatchObject({ width: 832, height: 1216, steps: DEFAULT_NAI_RUNTIME.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', seed: 0, qualityToggle: false, ucPreset: 4, characters: [] });
+  validateRollTemplate(template);
+  const next = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME);
+  expect(next.params).not.toBe(template.params);
+  expect(next.params.characters).not.toBe(template.params.characters);
+  expect(rollPrompt(template, [{ tag: 'alpha', weight: 1 }])).toBe('masterpiece, very aesthetic, best quality, absurdres, highres, no text, 1.0::artist:alpha ::, 1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025');
+});
+
+it('预设验证复用完整生成模板边界，不接受无名、旧版本或缺少style位置', () => {
+  const preset = { id: 'quality-one', name: '自定义质量词', revision: 0, createdAt: 1, updatedAt: 1, template: rollFixture().template };
+  expect(() => validateRollPreset(preset)).not.toThrow();
+  for (const patch of [{ id: '../other' }, { name: ' ' }, { revision: -1 }, { revision: 0.5 }, { createdAt: NaN }]) expect(() => validateRollPreset({ ...preset, ...patch })).toThrow('Roll 预设资料无效');
+  expect(() => validateRollPreset({ ...preset, template: { ...preset.template, prompt: 'no placeholder' } })).toThrow('公共提示词');
+});
 
 it('每条串从人数范围抽取，锁定计入总数且权重仍随机', () => {
   const e = rollFixture(); e.pinnedArtists = ['alpha', 'beta']; e.rules = { ...e.rules, minArtists: 4, maxArtists: 6 };

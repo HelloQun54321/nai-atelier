@@ -7,17 +7,96 @@ import { DEFAULT_ROLL_RULES } from '../../services/styleRoll';
 import { installPointerEvents } from '../support/touchEvents';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 
-const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), items: [] as any[] }));
+const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
+vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: mocks.urls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: mocks.favorite }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt }: any) => <img src={src} alt={alt} /> }));
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
+beforeEach(() => { vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })) }: { library?: ArtistDictionaryEntry[] }) => {
   const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(DEFAULT_ROLL_RULES);
   return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
 };
+
+it('使用量升降序和收录生成交集包含零值，保留锁定与偏好并重置分页', async () => {
+  const library = Array.from({ length: 65 }, (_, i) => ({ name: `artist${String(i).padStart(2, '0')}`, chinese: '', postCount: 100 - i }));
+  mocks.items = [{ sourceType: 'artist', sourceId: 'artist00' }];
+  mocks.usage.mockResolvedValue({ byTag: new Map([
+    ['artist00', { chains: 2, images: 0, lastAt: 1 }], ['artist01', { chains: 1, images: 4, lastAt: 1 }],
+    ['artist64', { chains: 3, images: 7, lastAt: 1 }],
+  ]), indexed: 7, total: 7 });
+  localStorage.setItem('nai_artist_sort', 'usage-images');
+  render(<Fixture library={library} />);
+  await waitFor(() => expect(screen.getByText('收录 3 串 · 生成 7 张')).toBeTruthy());
+  const order = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')?.split('：')[1]);
+  expect(order().slice(0, 2)).toEqual(['artist64', 'artist01']);
+  fireEvent.click(screen.getByRole('button', { name: '锁定画师：artist00' }));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' })); expect(order()).toHaveLength(65);
+  const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!; gallery.scrollTop = 500;
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-chains' } });
+  expect(order().slice(0, 3)).toEqual(['artist64', 'artist00', 'artist01']); expect(order()).toHaveLength(60); expect(gallery.scrollTop).toBe(0);
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-chains-asc' } });
+  expect(order()[0]).toBe('artist02');
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-images-asc' } });
+  expect(order()[0]).toBe('artist00');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
+  expect(order()).toEqual(['artist00']);
+  expect(screen.getByRole('button', { name: '锁定画师：artist00' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '取消偏好画师：artist00' })).toBeTruthy();
+  expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
+});
+
+it('统计未知显示横杠且禁用筛选，失败重试和历史刷新不阻止普通选择', async () => {
+  let reject!: (error: Error) => void;
+  mocks.usage.mockReturnValueOnce(new Promise((_resolve, no) => { reject = no; }));
+  render(<Fixture />); await screen.findByAltText('alpha');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.getByText('正在统计画师使用…')).toBeTruthy();
+  expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(true);
+  expect(screen.getAllByText('收录 — 串 · 生成 — 张')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: '锁定画师：beta' }));
+  reject(new Error('unavailable')); await screen.findByText('画师使用统计暂不可用');
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'name-desc' } });
+  expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '重试统计' }));
+  await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(false));
+  expect(screen.getAllByText('收录 0 串 · 生成 0 张')).toHaveLength(2);
+  mocks.refresh?.(); await waitFor(() => expect(mocks.usage).toHaveBeenCalledTimes(3));
+});
+
+it('使用筛选有可见标题，刷新等待和失败时继续保留上次完整排序及筛选', async () => {
+  mocks.usage.mockResolvedValueOnce({ byTag: new Map([['beta', { chains: 2, images: 3, lastAt: 1 }]]), indexed: 1, total: 1 });
+  localStorage.setItem('nai_artist_sort', 'usage-images');
+  render(<Fixture />); await screen.findByText('收录 2 串 · 生成 3 张');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.getByText('风格串收录').tagName).toBe('P');
+  expect(screen.getByText('图片生成').tagName).toBe('P');
+  const filter = screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement;
+  fireEvent.change(filter, { target: { value: 'used' } });
+  expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '锁定画师：beta' }));
+  let reject!: (error: Error) => void;
+  mocks.usage.mockReturnValueOnce(new Promise((_resolve, no) => { reject = no; }));
+  mocks.refresh?.(); await screen.findByText('正在统计画师使用…');
+  expect(filter.disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
+  reject(new Error('refresh failed')); await screen.findByText('画师使用统计暂不可用');
+  expect(filter.disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
+  expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
+  const sort = screen.getByRole('combobox', { name: '画师排序' });
+  expect(sort.parentElement?.classList.contains('max-w-[44vw]')).toBe(true);
+  expect(sort.classList.contains('truncate')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+  expect(screen.getByRole('button', { name: '锁定画师：alpha' })).toBeTruthy();
+  expect(filter.value).toBe('all');
+  expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
+});
 
 it.each([390, 1280])('宽度 %s：爱心下面切单卡版本，保留另一张图片、滚动、锁定及偏好，不刷新目录', async width => {
   vi.stubGlobal('innerWidth', width);
@@ -155,7 +234,7 @@ it('卡片复用角色卡图文结构和图库动效，点击名字与键盘选�
   expect(card.classList.contains('press-reveal-surface')).toBe(true);
   expect(image.closest('.mobile-gallery-frame')).toBeTruthy();
   expect(card.classList.contains('gallery-card-visual')).toBe(true);
-  expect(card.querySelector(':scope > .gallery-card-caption')?.textContent).toBe('alpha');
+  expect(card.querySelector(':scope > .gallery-card-caption > p')?.textContent).toBe('alpha');
   expect(card.querySelector(':scope > .mobile-gallery-frame')).toBeTruthy();
   fireEvent.pointerEnter(card, { pointerType: 'mouse' });
   expect(card.getAttribute('data-press-input')).toBe('mouse');

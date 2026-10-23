@@ -1,11 +1,14 @@
 import type { NAIParams, PromptChain } from '../types';
 import { createUuid } from './id';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
+import type { NaiRuntimeConfig } from './naiRuntime';
 
 export interface RollArtist { tag: string; weight: number; locked: boolean; excluded: boolean }
 /** 候选只记录本次抽到的画师与权重，不保存来源关系或代数。 */
 export interface RollTag { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number }
 export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
+export interface RollPreset { id: string; name: string; template: RollTemplate; revision: number; createdAt: number; updatedAt: number }
 /** 只读取旧记录的模式字段；新轮次统一使用固定 Tag 列表。 */
 interface LegacyRollDrawPlan {
   mode: 'random' | 'pinnedArtists' | 'fixedWeight';
@@ -49,9 +52,24 @@ export interface RollExperiment {
 }
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 4, maxArtists: 4, minWeight: 0.7, maxWeight: 1.4 };
-/** 新建记录的公共提示词：质量词包围画师串，主体固定，细节与光影修饰，年份收尾。 */
-export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}, 1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025';
+/** 默认画面内容独立编辑，生成时仍按原顺序接在画师串之后。 */
+export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}';
+export const DEFAULT_ROLL_CHARACTER_PROMPT = '1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025';
 export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg artifacts, very displeasing, logo, chromatic aberration, scan artifacts, film grain, artistic error, multiple views, dithering, halftone, too many watermarks, blank page, screentone, negative space, watermark, signature, bad anatomy, bad hands, blurry';
+export function createDefaultRollTemplate(runtime: NaiRuntimeConfig): RollTemplate {
+  return { prompt: DEFAULT_ROLL_PROMPT, characterPrompt: DEFAULT_ROLL_CHARACTER_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE,
+    params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) };
+}
+
+/** 预设只保存生成模板，抽取规则与历史仍属于各自的 Roll 记录。 */
+export function validateRollPreset(value: unknown): asserts value is RollPreset {
+  const preset = value as RollPreset;
+  if (!preset || typeof preset.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(preset.id) ||
+    typeof preset.name !== 'string' || !preset.name.trim() || preset.name.length > 120 ||
+    !Number.isSafeInteger(preset.revision) || preset.revision < 0 ||
+    ![preset.createdAt, preset.updatedAt].every(Number.isFinite)) throw new Error('Roll 预设资料无效');
+  validateRollTemplate(preset.template);
+}
 /** 历史默认模板：仍原样保存且没有候选时升级为新默认，用户改过的内容不动。 */
 export const LEGACY_ROLL_PROMPTS = ['{style}, 1girl, solo, upper body, simple background, looking at viewer'];
 export const ROLL_CANDIDATE_LIMIT = 240;

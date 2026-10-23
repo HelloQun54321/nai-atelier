@@ -1,12 +1,60 @@
-import { validateRollBlocklist, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
+import { validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
 
 const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
 
 /** 复用私人 settings，无表结构变更；版本比较避免两端静默覆盖同一次实验。 */
 export async function handleStyleRollRoute({ path, method, request, db, currentUser }: RouteContext): Promise<Response | null> {
-  if (path !== '/api/style-roll' && path !== '/api/style-roll/blocklist') return null;
+  const presetCollection = path === '/api/style-roll/presets';
+  const presetItem = path.match(/^\/api\/style-roll\/presets\/([^/]+)$/);
+  if (path !== '/api/style-roll' && path !== '/api/style-roll/blocklist' && !presetCollection && !presetItem) return null;
   if (currentUser.role === 'guest') return error('访客无法访问 Roll 串实验', 403);
+
+  if (presetCollection || presetItem) {
+    const prefix = `style_roll_preset_v1:${currentUser.id}:`;
+    if (presetCollection && method === 'GET') {
+      const rows = await db.prepare('SELECT value FROM settings WHERE key >= ? AND key < ?').bind(prefix, prefix + '\uffff').all<{ value: string }>();
+      try {
+        const presets = rows.results.map(row => { const value: unknown = JSON.parse(row.value); validateRollPreset(value); return value; });
+        return json({ presets: presets.sort((a, b) => b.updatedAt - a.updatedAt) });
+      } catch { return error('Roll 预设读取失败，请保留资料并检查备份', 500); }
+    }
+    if (presetItem) {
+      if (method !== 'DELETE') return error('Method not allowed', 405);
+      const id = presetItem[1], revisionText = new URL(request.url).searchParams.get('revision');
+      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id) || !revisionText || !/^\d+$/.test(revisionText) || !Number.isSafeInteger(Number(revisionText))) return error('Roll 预设版本无效', 400);
+      const key = prefix + id;
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      if (!row) return error('Roll 预设不存在', 404);
+      let previous: RollPreset;
+      try { const value: unknown = JSON.parse(row.value); validateRollPreset(value); previous = value; }
+      catch { return error('Roll 预设读取失败，请保留资料并检查备份', 500); }
+      if (previous.revision !== Number(revisionText)) return error('预设已在其他页面更新，请重新加载后继续', 409);
+      const deleted = await db.prepare('DELETE FROM settings WHERE key = ? AND value = ? RETURNING key').bind(key, row.value).first();
+      if (!deleted) return error('预设已在其他页面更新，请重新加载后继续', 409);
+      return json({ deleted: id });
+    }
+    if (method !== 'PUT') return error('Method not allowed', 405);
+    const raw = await request.text();
+    if (raw.length > 1_000_000) return error('Roll 预设过大', 413);
+    let preset: RollPreset;
+    try { const value: unknown = JSON.parse(raw); validateRollPreset(value); preset = value; }
+    catch (cause) { return error(cause instanceof Error ? cause.message : 'Roll 预设资料无效', 400); }
+    const key = prefix + preset.id;
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+    let previous: RollPreset | undefined;
+    if (row) {
+      try { const value: unknown = JSON.parse(row.value); validateRollPreset(value); previous = value; }
+      catch { return error('Roll 预设读取失败，请保留资料并检查备份', 500); }
+    }
+    if ((previous?.revision ?? 0) !== preset.revision || (!previous && preset.revision !== 0)) return error('预设已在其他页面更新，请重新加载后继续', 409);
+    const saved: RollPreset = { id: preset.id, name: preset.name, template: preset.template, revision: preset.revision + 1, createdAt: previous?.createdAt ?? preset.createdAt, updatedAt: Date.now() };
+    const result = row
+      ? await db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ? RETURNING key').bind(JSON.stringify(saved), key, row.value).first()
+      : await db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?) RETURNING key').bind(key, JSON.stringify(saved)).first();
+    if (!result) return error('预设已在其他页面更新，请重新加载后继续', 409);
+    return json({ preset: saved });
+  }
 
   if (path === '/api/style-roll/blocklist') {
     const key = blocklistKey(currentUser.id);

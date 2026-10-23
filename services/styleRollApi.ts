@@ -1,7 +1,27 @@
 import type { LocalGenItem } from '../types';
 import { api } from './api';
 import { localHistory } from './localHistory';
-import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollBlocklist, validateRollExperiment, type RollExperiment } from './styleRoll';
+import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from './styleRoll';
+
+export async function loadRollPresets(): Promise<RollPreset[]> {
+  const result = await api.get('/style-roll/presets', { cache: 'no-store' });
+  if (!Array.isArray(result?.presets)) throw new Error('Roll 预设读取失败');
+  for (const preset of result.presets) validateRollPreset(preset);
+  return result.presets;
+}
+
+export async function saveRollPreset(preset: RollPreset): Promise<RollPreset> {
+  validateRollPreset(preset);
+  const result = await api.put('/style-roll/presets', preset);
+  validateRollPreset(result?.preset);
+  return result.preset;
+}
+
+export async function deleteRollPreset(preset: RollPreset): Promise<void> {
+  validateRollPreset(preset);
+  const result = await api.delete(`/style-roll/presets/${encodeURIComponent(preset.id)}?revision=${preset.revision}`);
+  if (result?.deleted !== preset.id) throw new Error('Roll 预设删除回执无效');
+}
 
 export async function loadRollExperiments(): Promise<RollExperiment[]> {
   const result = await api.get('/style-roll', { cache: 'no-store' });

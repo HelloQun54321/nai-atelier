@@ -9,6 +9,7 @@ import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../wo
 
 const sqlite = new DatabaseSync(':memory:');
 let failArchive = false;
+let pendingBatch = Promise.resolve<unknown>(undefined);
 const db = { prepare(query: string) {
   let values: any[] = [];
   return {
@@ -20,6 +21,18 @@ const db = { prepare(query: string) {
       return { success: true, meta: sqlite.prepare(query).run(...values) };
     },
   };
+}, async batch(statements: { run(): Promise<unknown> }[]) {
+  const result = pendingBatch.then(async () => {
+    sqlite.exec('BEGIN');
+    try {
+      const output = [];
+      for (const statement of statements) output.push(await statement.run());
+      sqlite.exec('COMMIT');
+      return output;
+    } catch (cause) { sqlite.exec('ROLLBACK'); throw cause; }
+  });
+  pendingBatch = result.catch(() => {});
+  return result;
 } } as unknown as D1Database;
 const images = new Map<string, Uint8Array>();
 const bucket = {

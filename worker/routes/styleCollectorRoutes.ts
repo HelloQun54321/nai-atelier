@@ -3,6 +3,8 @@ import { extractPngMetadata, hasCollectibleNaiMetadata } from '../../services/pn
 import { readImageDimensions } from '../imageDimensions.mjs';
 import { UNTESTED_CHAIN_TAG } from '../../services/chainStatus';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
+import { syncArtistChainUsage } from './artistChainUsage';
+import { loadArtistUsageDictionary } from './artistUsageIndex';
 import { json, error, MAX_MANAGED_IMAGE_BYTES, parseStoredJson, type RouteContext } from './types';
 
 const SESSION_KEY = 'style_collector_session_v1';
@@ -61,6 +63,8 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
       if (!existing || existing.user_id !== currentUser.id || existing.base_prompt !== data.basePrompt || existing.type !== data.type
         || parseStoredJson(existing.params, {})._collectedCategory !== (data.params as unknown as Record<string, unknown>)._collectedCategory) return error('收集已结束或记录冲突', 409);
     }
+    try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
+    catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
     return json({ outcome: 'saved', id });
   }
   const collection = path.endsWith('/collection');
@@ -145,6 +149,8 @@ export async function handleStyleCollectorRoute(ctx: RouteContext): Promise<Resp
     ]);
     committed = Number(results[0]?.meta?.changes) > 0;
     if (!committed) return await isActive() ? json({ outcome: 'skipped', reason: '图片已收集' }) : error('收集已结束', 409);
+    try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
+    catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
     return json({ outcome: 'saved', id });
   } finally {
     // 只回滚本次新分配的封面，绝不触及既有资产。

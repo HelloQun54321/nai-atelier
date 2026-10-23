@@ -4,6 +4,7 @@ import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { beginRollRound } from '../../services/styleRollWorkflow';
+import type { RollPreset } from '../../services/styleRoll';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -14,10 +15,61 @@ const fixture = () => {
     async run() { return { success: true, meta: sqlite.prepare(query).run(...values) }; } }; } } as unknown as D1Database;
   const invoke = (body?: unknown, id = 'owner', role = 'admin', method = body === undefined ? 'GET' : 'PUT', path = '/api/style-roll') => {
     const request = new Request('http://localhost' + path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    return handleStyleRollRoute({ path, method, request, db, currentUser: { id, role } } as RouteContext);
+    return handleStyleRollRoute({ path: new URL(request.url).pathname, method, request, db, currentUser: { id, role } } as RouteContext);
   };
   return { sqlite, invoke };
 };
+
+const presetFixture = (id = 'one'): RollPreset => ({ id, name: `质量词 ${id}`, template: { ...rollFixture().template, characterPrompt: '独立角色提示词',
+  params: { ...rollFixture().template.params, qualityToggle: true, ucPreset: 2, cfgRescale: 0.25, characters: [{ id: 'role', prompt: 'person', negativePrompt: 'sad', x: 0.2, y: 0.7 }] } }, revision: 0, createdAt: 1, updatedAt: 1 });
+const presetPath = '/api/style-roll/presets';
+
+it('多套预设完整回读与独立更新删除，不携带抽取规则或影响记录和其他用户', async () => {
+  const f = fixture(), first = presetFixture(), second = presetFixture('two');
+  const invoke = (body?: unknown, owner = 'owner', method = body === undefined ? 'GET' : 'PUT', path = presetPath) => f.invoke(body, owner, 'admin', method, path);
+  const saved = (await (await invoke({ ...first, rules: rollFixture().rules, candidates: [] }))!.json() as any).preset as RollPreset;
+  await invoke(second);
+  await f.invoke({ ...rollFixture(), revision: 0 });
+  expect(saved.revision).toBe(1);
+  expect(saved.template).toEqual(first.template);
+  expect(saved).not.toHaveProperty('rules'); expect(saved).not.toHaveProperty('candidates');
+  const updated = (await (await invoke({ ...saved, name: '更新', template: { ...saved.template, negativePrompt: 'new negative' } }))!.json() as any).preset as RollPreset;
+  const presets = (await (await invoke())!.json() as any).presets as RollPreset[];
+  expect(presets).toHaveLength(2);
+  expect(presets.find(preset => preset.id === 'two')!.template).toEqual(second.template);
+  expect(updated.revision).toBe(2); expect(updated.createdAt).toBe(first.createdAt);
+  expect(await (await invoke(undefined, 'other'))!.json()).toEqual({ presets: [] });
+  expect((await invoke(undefined, 'other', 'DELETE', `${presetPath}/one?revision=2`))!.status).toBe(404);
+  expect(await (await invoke(undefined, 'owner', 'DELETE', `${presetPath}/one?revision=2`))!.json()).toEqual({ deleted: 'one' });
+  expect((await (await invoke())!.json() as any).presets.map((preset: RollPreset) => preset.id)).toEqual(['two']);
+  expect((await (await f.invoke())!.json() as any).experiments).toHaveLength(1);
+});
+
+it('预设旧版本覆盖或删除均冲突，CAS阻止同时更新静默覆盖', async () => {
+  const f = fixture(), preset = presetFixture();
+  const invoke = (body?: unknown, method = body === undefined ? 'GET' : 'PUT', path = presetPath) => f.invoke(body, 'owner', 'admin', method, path);
+  const saved = (await (await invoke(preset))!.json() as any).preset as RollPreset;
+  expect((await invoke(preset))!.status).toBe(409);
+  expect((await invoke(undefined, 'DELETE', `${presetPath}/one?revision=0`))!.status).toBe(409);
+  const results = await Promise.all([invoke({ ...saved, name: '同时更新一' }), invoke({ ...saved, name: '同时更新二' })]);
+  expect(results.map(result => result!.status).sort()).toEqual([200, 409]);
+  expect((await invoke(undefined, 'DELETE', `${presetPath}/one?revision=1`))!.status).toBe(409);
+  expect((await (await invoke())!.json() as any).presets).toHaveLength(1);
+});
+
+it('预设无效模板、访客、坏存档和缺少删除版本均拒绝且不破坏资料', async () => {
+  const f = fixture(), preset = presetFixture();
+  expect((await f.invoke(preset, 'owner', 'guest', 'PUT', presetPath))!.status).toBe(403);
+  expect((await f.invoke(undefined, 'owner', 'guest', 'GET', presetPath))!.status).toBe(403);
+  expect((await f.invoke(undefined, 'owner', 'guest', 'DELETE', `${presetPath}/one?revision=1`))!.status).toBe(403);
+  expect((await f.invoke({ ...preset, template: { ...preset.template, prompt: 'missing style' } }, 'owner', 'admin', 'PUT', presetPath))!.status).toBe(400);
+  expect((await f.invoke(undefined, 'owner', 'admin', 'DELETE', `${presetPath}/one`))!.status).toBe(400);
+  f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('style_roll_preset_v1:owner:one', '{');
+  expect((await f.invoke(undefined, 'owner', 'admin', 'GET', presetPath))!.status).toBe(500);
+  expect((await f.invoke(preset, 'owner', 'admin', 'PUT', presetPath))!.status).toBe(500);
+  expect((await f.invoke(undefined, 'owner', 'admin', 'DELETE', `${presetPath}/one?revision=1`))!.status).toBe(500);
+  expect(f.sqlite.prepare('SELECT value FROM settings').get()?.value).toBe('{');
+});
 
 it('人数范围与偏好条件持久保存，无效保底和倍率被拒绝', async () => {
   const f = fixture(), experiment = { ...rollFixture(), revision: 0 };

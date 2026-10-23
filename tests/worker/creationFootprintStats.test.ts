@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { encode } from 'fast-png';
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { handleHistoryRoute } from '../../worker/routes/historyRoutes';
 import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../worker/routes/types';
@@ -39,6 +40,33 @@ beforeAll(async () => { sqlite.exec(INIT_SQL); await invoke('/api/local-history/
 beforeEach(() => { sqlite.exec('DELETE FROM local_generation_history; DELETE FROM local_usage_events; DELETE FROM settings; DELETE FROM vibe_encodings; DELETE FROM vibe_assets; DELETE FROM vibe_groups'); readBytes = 0; });
 afterAll(() => sqlite.close());
 
+it('词库不可用不把已保存历史回执变为失败，之后可补索引', async () => {
+  env.ASSETS = { fetch: async () => new Response('', { status: 500 }) };
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const png = encode({ width: 8, height: 8, channels: 4, data: new Uint8Array(8 * 8 * 4).fill(255) });
+    const response = await invoke('/api/local-history', 'POST', { id: 'dictionary-failed',
+      imageUrl: `data:image/png;base64,${Buffer.from(png).toString('base64')}`, prompt: 'artist:alpha', createdAt: TO });
+    expect(response.status).toBe(200);
+    expect(sqlite.prepare("SELECT id FROM local_generation_history WHERE id = 'dictionary-failed'").get()).toBeTruthy();
+    expect(sqlite.prepare("SELECT key FROM settings WHERE key LIKE 'artist_usage_v1:%:history:%'").get()).toBeUndefined();
+  } finally { delete (env as Partial<Env>).ASSETS; log.mockRestore(); }
+  const payload = await (await invoke(`/api/local-history/stats?days=all&to=${TO}`)).json();
+  expect(payload.artists).toEqual([{ name: 'alpha', images: 1, lastAt: TO }]);
+});
+
+it('导入历史保留足迹的画师标签角色，但不增加本机画师生成数量', async () => {
+  insert('external', 'owner', TO, 'artist:alpha, solo', { params: JSON.stringify({ characters: [{ prompt: 'girl' }] }) });
+  sqlite.prepare("UPDATE local_generation_history SET external_source='import' WHERE id='external'").run();
+  const payload = await (await invoke(`/api/local-history/stats?days=all&to=${TO}`)).json();
+  expect(payload.totals.images).toBe(1);
+  expect(payload.artists).toEqual([{ name: 'alpha', images: 1, lastAt: TO }]);
+  expect(payload.tags).toContainEqual({ name: 'solo', images: 1 });
+  expect(payload.characters).toEqual([{ id: 'girl', name: 'girl', images: 1, lastAt: TO }]);
+  const usage = await (await invoke('/api/artist-usage')).json();
+  expect(usage.artists).toEqual([]);
+});
+
 it('聚合本地历史的活动、风格串、画师与参数，并按用户隔离', async () => {
   insert('one', 'owner', TO, 'solo, artist:alpha_artist, artist:beta_artist', { favorite: 1 });
   insert('two', 'owner', TO - DAY, 'solo, artist:alpha_artist');
@@ -61,8 +89,8 @@ it('聚合本地历史的活动、风格串、画师与参数，并按用户隔�
   ]);
   expect(payload.uniqueChains).toBe(2);
   expect(payload.artists).toEqual([
-    { name: 'alpha_artist', images: 2, lastAt: TO },
-    { name: 'beta_artist', images: 2, lastAt: TO },
+    { name: 'alpha artist', images: 2, lastAt: TO },
+    { name: 'beta artist', images: 2, lastAt: TO },
   ]);
   expect(payload.uniqueArtists).toBe(2);
   expect(payload.artistScan).toEqual({ scanned: 3, truncated: false });
@@ -86,7 +114,7 @@ it('时间范围之外的作品不进入当前统计', async () => {
   insert('old', 'owner', TO - 40 * DAY, 'artist:beta_artist');
   const payload = await (await invoke(`/api/local-history/stats?days=30&tzOffset=480&to=${TO}`)).json();
   expect(payload.totals.images).toBe(1);
-  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha artist']);
 });
 
 it('画师样张补全等辅助生成不进入创作足迹', async () => {
@@ -96,7 +124,7 @@ it('画师样张补全等辅助生成不进入创作足迹', async () => {
   expect(payload.totals.images).toBe(1);
   expect(payload.daily).toEqual([{ date: '2026-10-17', images: 1 }]);
   expect(payload.chains.map((row: { id: string }) => row.id)).toEqual(['chain-a']);
-  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha artist']);
   expect(payload.uniqueChains).toBe(1);
   expect(payload.uniqueArtists).toBe(1);
   expect(payload.artistScan.scanned).toBe(1);
@@ -110,7 +138,7 @@ it('自由实验室与导入文件名不进入风格串排行', async () => {
   expect(payload.totals.images).toBe(3);
   expect(payload.chains.map((row: { id: string }) => row.id)).toEqual(['chain-a']);
   expect(payload.uniqueChains).toBe(1);
-  expect(payload.artists.map((row: { name: string }) => row.name).sort()).toEqual(['alpha_artist', 'beta_artist', 'gamma_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name).sort()).toEqual(['alpha artist', 'beta artist', 'gamma artist']);
 });
 
 it('失败与取消事件写入轻量账本并按范围聚合', async () => {
@@ -143,7 +171,7 @@ it('按月范围只统计所选月份', async () => {
   insert('september', 'owner', Date.UTC(2026, 8, 30, 12), 'artist:beta_artist');
   const payload = await (await invoke(`/api/local-history/stats?days=month&month=2026-10&tzOffset=480&to=${TO + 86400000}`)).json();
   expect(payload.totals.images).toBe(1);
-  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha artist']);
 });
 
 it('年份筛选只统计所选年份', async () => {
@@ -151,7 +179,7 @@ it('年份筛选只统计所选年份', async () => {
   insert('last-year', 'owner', Date.UTC(2025, 11, 30, 12), 'artist:beta_artist');
   const payload = await (await invoke(`/api/local-history/stats?days=all&year=2026&tzOffset=480&to=${TO}`)).json();
   expect(payload.totals.images).toBe(1);
-  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha artist']);
 });
 
 it('显式 from/to 优先于 days，用于周视图', async () => {
@@ -161,7 +189,7 @@ it('显式 from/to 优先于 days，用于周视图', async () => {
   const to = TO + 3600000;
   const payload = await (await invoke(`/api/local-history/stats?days=7&from=${from}&to=${to}&tzOffset=480`)).json();
   expect(payload.totals.images).toBe(1);
-  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha artist']);
 });
 
 it('没有历史时返回空聚合而不是错误', async () => {

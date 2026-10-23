@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, ImageIcon, SlidersHorizontal, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
-import type { ArtistDictionaryEntry, ArtistDictionarySort } from '../../services/tagDictionary';
-import { compareLibraryTags } from '../../services/tagLibrary';
+import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
+import { getArtistUsage, isArtistUsageSort, artistUsageCount, compareArtistUsage, matchesArtistUsage, type ArtistBrowseSort, type ArtistUsageFilter, type ArtistUsageIndex } from '../../services/artistUsage';
+import { localHistory } from '../../services/localHistory';
 import type { RollRules } from '../../services/styleRoll';
 import { normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
 import { loadArtistSampleUrls } from '../../services/artistSampleUrls';
@@ -39,10 +40,23 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
-  const [sort, setSort] = useState<ArtistDictionarySort>(() => {
+  const [sort, setSort] = useState<ArtistBrowseSort>(() => {
     const saved = localStorage.getItem('nai_roll_artist_sort') || localStorage.getItem('nai_artist_sort');
-    return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' ? saved : 'popular';
+    return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' || isArtistUsageSort(saved || '') ? saved as ArtistBrowseSort : 'popular';
   });
+  const [usage, setUsage] = useState<ArtistUsageIndex | null>(null), [usageStatus, setUsageStatus] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [usageRetry, setUsageRetry] = useState(0), [usageOpen, setUsageOpen] = useState(false);
+  const [chainsFilter, setChainsFilter] = useState<ArtistUsageFilter>('all'), [imagesFilter, setImagesFilter] = useState<ArtistUsageFilter>('all');
+  const usageAnchor = useRef<HTMLDivElement>(null);
+  const closeUsage = React.useCallback(() => setUsageOpen(false), []);
+  const usageReady = usageStatus === 'ready' && usage !== null;
+  useEffect(() => {
+    const controller = new AbortController(); let current = true; setUsageStatus('loading');
+    void getArtistUsage(controller.signal).then(index => { if (current) { setUsage(index); setUsageStatus('ready'); } })
+      .catch(() => { if (current && !controller.signal.aborted) setUsageStatus('error'); });
+    return () => { current = false; controller.abort(); };
+  }, [usageRetry]);
+  useEffect(() => localHistory.subscribe(() => setUsageRetry(value => value + 1)), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const gallery = useRef<HTMLDivElement>(null);
   const settingsAnchor = useRef<HTMLDivElement>(null);
@@ -66,11 +80,13 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     const entries = new Map(library.map(entry => [normalizeRollArtistKey(entry.name), entry]));
     for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!entries.has(normalizeRollArtistKey(tag))) entries.set(normalizeRollArtistKey(tag), { name: tag, chinese: '', postCount: 0 });
     const search = normalizeRollArtistKey(query);
+    const index = usage || { byTag: new Map(), indexed: 0, total: 0 };
+    const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
     return [...entries.values()].filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
-      return (!search || key.includes(search) || entry.chinese?.includes(query.trim())) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
-    }).sort((left, right) => compareLibraryTags(left, right, sort));
-  }, [library, pinned, blocked, excluded, collection, query, filter, pinnedKeys, preferred, blockedKeys, sort]);
+      return (!search || key.includes(search) || entry.chinese?.includes(query.trim())) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
+    }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
+  }, [library, pinned, blocked, excluded, collection, query, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const perform = async (action: () => Promise<void>) => {
     if (busy) return; setBusy(true); setError('');
@@ -94,9 +110,9 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
       <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
         <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight sm:flex-none">{t('管理画师与偏好')}</h2>
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师 Tag 或中文名')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
-        <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
+        <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || query.trim() ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
+        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || query.trim() ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
@@ -104,16 +120,33 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <span className="hidden text-xs tabular-nums text-gray-400 lg:block">{t('{0} 位画师', [artists.length])}</span>
-          <ToolbarSelect label="画师排序" value={sort} className="!text-xs" onChange={event => {
-            const value = event.target.value as ArtistDictionarySort; setSort(value); setLimit(60);
+          <div ref={usageAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={usageOpen} active={chainsFilter !== 'all' || imagesFilter !== 'all'} onClick={() => { setSettingsOpen(false); setUsageOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('筛选')}</span></ToolbarButton></div>
+          <ToolbarSelect label="画师排序" value={sort} containerClassName="min-w-0 max-w-[44vw] sm:max-w-none" className="truncate !text-xs" onChange={event => {
+            const value = event.target.value as ArtistBrowseSort; setSort(value); setLimit(60);
             if (gallery.current) gallery.current.scrollTop = 0;
             try { localStorage.setItem('nai_roll_artist_sort', value); } catch { /* 无法持久保存时仍保留本次选择。 */ }
           }}>
             <option value="popular">{t('热度从高到低')}</option><option value="least">{t('热度从低到高')}</option><option value="name-asc">{t('名称 A → Z')}</option><option value="name-desc">{t('名称 Z → A')}</option>
+            <option value="usage-chains" disabled={!usageReady}>{t('收录串数从高到低')}</option><option value="usage-chains-asc" disabled={!usageReady}>{t('收录串数从低到高')}</option>
+            <option value="usage-images" disabled={!usageReady}>{t('生成图片数从高到低')}</option><option value="usage-images-asc" disabled={!usageReady}>{t('生成图片数从低到高')}</option>
           </ToolbarSelect>
         </div>
       </div>
       {error && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error)}</p>}
+      {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
+        <div className="space-y-3">
+          {usageStatus === 'loading' && <p role="status" className="text-xs text-gray-500">{t('正在统计画师使用…')}</p>}
+          {usageStatus === 'error' && <p role="alert" className="flex items-center justify-between gap-2 text-xs text-red-500">{t('画师使用统计暂不可用')}<button type="button" className="shrink-0 underline" onClick={() => setUsageRetry(value => value + 1)}>{t('重试统计')}</button></p>}
+          <div className="space-y-1"><p className="text-xs font-medium">{t('风格串收录')}</p><ToolbarSelect containerClassName="w-full" label={t('风格串收录')} value={chainsFilter} disabled={!usageReady} onChange={event => { setChainsFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
+            <option value="all">{t('全部')}</option><option value="used">{t('已收录')}</option><option value="unused">{t('未收录')}</option>
+          </ToolbarSelect>
+          </div>
+          <div className="space-y-1"><p className="text-xs font-medium">{t('图片生成')}</p><ToolbarSelect containerClassName="w-full" label={t('图片生成')} value={imagesFilter} disabled={!usageReady} onChange={event => { setImagesFilter(event.target.value as ArtistUsageFilter); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>
+            <option value="all">{t('全部')}</option><option value="used">{t('已生成')}</option><option value="unused">{t('未生成')}</option>
+          </ToolbarSelect></div>
+          {(chainsFilter !== 'all' || imagesFilter !== 'all') && <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setChainsFilter('all'); setImagesFilter('all'); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }}>{t('重置筛选')}</button>}
+        </div>
+      </AnchoredToolbarPopover>}
       {settingsOpen && <AnchoredToolbarPopover anchorRef={settingsAnchor} title={t('抽取设置')} width={320} allowMobile onClose={closeSettings}>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t('抽取设置')}</strong><IconButton label="关闭" className="!h-7 !w-7 !border-transparent !bg-transparent" onClick={closeSettings}><X /></IconButton></div>
@@ -135,7 +168,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
                 </div>
                 <ArtistPreferenceActions tag={artist.name} pack={pack} onPackChange={value => setCardPacks(current => ({ ...current, [key]: value }))} blocked={banned} preferred={favorite} disabled={busy} onBlock={() => void block(artist.name)} onFavorite={() => void perform(async () => { await toggleArtistPreference(artist.name, url || ''); })} />
               </div>
-              <div className="gallery-card-caption !min-h-0 !px-2 !py-1.5 text-center before:!top-[-0.75rem]"><p data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={artist.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 text-indigo-500" strokeWidth={3} />}{artist.name}</p>{(banned || artist.chinese && artist.chinese !== artist.name) && <p className={`gallery-card-meta mt-0.5 truncate text-micro ${banned ? 'text-red-500' : 'text-gray-500'}`} data-safe-mode-title="true">{banned ? t('已屏蔽 · 不参与 Roll') : artist.chinese}</p>}</div>
+              <div className="gallery-card-caption !min-h-0 !px-2 !py-1.5 text-center before:!top-[-0.75rem]"><p data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={artist.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 text-indigo-500" strokeWidth={3} />}{artist.name}</p>{(banned || artist.chinese && artist.chinese !== artist.name) && <p className={`gallery-card-meta mt-0.5 truncate text-micro ${banned ? 'text-red-500' : 'text-gray-500'}`} data-safe-mode-title="true">{banned ? t('已屏蔽 · 不参与 Roll') : artist.chinese}</p>}<p className="gallery-card-meta mt-0.5 truncate text-micro tabular-nums text-gray-500">{usageReady ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usage!, 'chains'), artistUsageCount(artist.name, usage!, 'images')]) : t('收录 — 串 · 生成 — 张')}</p></div>
             </PressRevealSurface>;
           })}
         </div>

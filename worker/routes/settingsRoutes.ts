@@ -8,6 +8,8 @@ import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services
 import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
 import { deletePromptLibraryLinksByChain, queuePromptLibraryLinkBackfill, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
 import { ensureLocalHistorySchema } from './historyRoutes';
+import { syncArtistChainUsage } from './artistChainUsage';
+import { loadArtistUsageDictionary } from './artistUsageIndex';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type R2ObjectBody, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -782,6 +784,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     }
     try { await queuePromptLibraryLinkBackfill(db, currentUser.id, id, type); }
     catch (cause) { console.error('提示词库回填标记更新失败，条目已保存', cause); }
+    try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
+    catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
     // 保留旧调用方的 id，同时返回实际落库内容；打开新条目无需重新读取整库。
     return json({ id, chain: {
       id, userId: currentUser.id, username: currentUser.username, type,
@@ -859,7 +863,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(normalizeChainTags(updates.tags))); }
     if (updates.guestHidden !== undefined) { fields.push('guest_hidden = ?'); values.push(updates.guestHidden ? 1 : 0); }
     if (fields.length > 0) {
-      fields.push('updated_at = ?');
+      fields.push('updated_at = MAX(COALESCE(updated_at, 0) + 1, ?)');
       values.push(Date.now());
       values.push(id);
       try {
@@ -873,6 +877,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         }
       }
     }
+    try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
+    catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
     // Delete only after the new reference has committed.  This covers
     // replacement, clearing a cover, and future non-base64 cover sources.
     if (updates.previewImage !== undefined && chain.preview_image && chain.preview_image !== updates.previewImage) {
@@ -901,6 +907,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (chain) {
         if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
         await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
+        try { await syncArtistChainUsage(db, id); }
+        catch (cause) { console.error('画师收录统计更新失败，条目已删除', cause); }
         // 条目删除后不再有归属：清掉指向它的关联（表缺失时自愈创建，不阻塞删除）。
         try { await deletePromptLibraryLinksByChain(db, id); }
         catch (cause) { console.error('提示词库关联清理失败，条目已删除', cause); }

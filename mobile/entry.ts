@@ -10,7 +10,11 @@ import { mobileDictionary } from './dictionary';
 
 Object.assign(globalThis, { Buffer });
 initMobileClipboard();
-const env = { DB: db, BUCKET: bucket, PERSONAL_MODE_ENABLED: 'true', LOCAL_HISTORY_ENABLED: 'true', AITAG_LOCAL_PROXY_URL: 'https://localhost/__internal/aitag-fetch', DANBOORU_LOCAL_PROXY_URL: 'https://localhost/__internal/danbooru-fetch', ASSETS: { fetch: webFetch } };
+const env = { DB: db, BUCKET: bucket, PERSONAL_MODE_ENABLED: 'true', LOCAL_HISTORY_ENABLED: 'true', AITAG_LOCAL_PROXY_URL: 'https://localhost/__internal/aitag-fetch', DANBOORU_LOCAL_PROXY_URL: 'https://localhost/__internal/danbooru-fetch', ASSETS: { fetch: (request: Request) => {
+  const url = new URL(request.url);
+  // Worker 派生统计与页面共用本机已下载词库，不能把内部资源域名当外站请求。
+  return url.pathname.startsWith('/tag-data/') ? phoneFetch(new Request(new URL(url.pathname + url.search, location.origin), request)) : webFetch(request);
+} } };
 await initNativeNetwork();
 async function phoneFetch(input: RequestInfo | URL, options?: RequestInit): Promise<Response> {
   const request = new Request(input instanceof Request ? input : new URL(String(input), location.origin), options);

@@ -1,10 +1,10 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Dice5, FlaskConical, ImagePlus, Layers, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, LEGACY_ROLL_PROMPTS, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { getArtistSampleDictionary, normalizeArtistSampleTag } from '../services/artistSamples';
@@ -12,14 +12,14 @@ import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
 import type { ArtistDictionaryEntry } from '../services/tagDictionary';
 import { loadRollBlocklist, loadRollExperiments, loadRollHistory, ROLL_BLOCKLIST_CHANGED, rollCandidateImages, saveRollBlocklist, saveRollExperiment } from '../services/styleRollApi';
-import { normalizeRollArtistKey, rollSeedFromChain } from '../services/styleRollSeed';
+import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
 import { parseHttpError } from '../services/httpErrors.mjs';
 import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { useNaiRuntime } from '../services/naiRuntime';
-import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from '../services/naiModels';
+import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { approveGenerationSeries, getGenerationSeriesSession, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
 import { setGenerationQueuePaused } from '../services/generationTask';
 import { localHistory } from '../services/localHistory';
@@ -42,7 +42,6 @@ import { StyleRollArtistDialog } from './roll/StyleRollArtistDialog';
 import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
 import { collectionSnapshot, ensureCollection } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
-import { StyleRollChainSeedDialog } from './roll/StyleRollChainSeedDialog';
 import { rollChipColor } from './roll/rollPalette';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -88,7 +87,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
   const [pinnedArtists, setPinnedArtists] = useState<string[]>([]);
   const [blocklist, setBlocklist] = useState<string[]>([]);
-  const [chainSeedOpen, setChainSeedOpen] = useState(false);
   const [sampledOnly, setSampledOnly] = useState(false);
   const [sampledTags, setSampledTags] = useState<Set<string> | null>(null);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -108,7 +106,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
   const effectiveLibrary = sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library;
   const chineseNames = useMemo(() => new Map(libraryEntries.map(entry => [normalizeArtistSampleTag(entry.name), entry.chinese || ''])), [libraryEntries]);
-  const knownArtistKeys = useMemo(() => new Set(library.map(normalizeRollArtistKey)), [library]);
   const roundNumbers = useMemo(() => {
     const map = new Map<string, number>();
     experiment?.rounds.forEach((item, index) => item.candidateIds.forEach(id => map.set(id, index + 1)));
@@ -212,12 +209,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   };
   const makeExperiment = () => {
     const now = Date.now();
-    const template = experiment ? structuredClone(experiment.template) : { prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE,
-      params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) };
-    // 继承旧记录的模板时，若仍是未改过的历史默认，换成本版质量词模板。
-    if (LEGACY_ROLL_PROMPTS.includes(template.prompt) && !template.negativePrompt.trim()) {
-      template.prompt = DEFAULT_ROLL_PROMPT; template.negativePrompt = DEFAULT_ROLL_NEGATIVE;
-    }
+    const template = createDefaultRollTemplate(runtime);
     const next: RollExperiment = {
       version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
       artists: structuredClone(artistOverrides), rules: roundRules, sampledOnly,
@@ -397,6 +389,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const createPinnedRecord = (candidate: RollCandidate) => void perform(async () => {
     if (!experiment) return;
     const draft = makeExperiment();
+    draft.template = structuredClone(experiment.template);
     const pinned = candidate.tags.map(tag => tag.tag);
     draft.name = t('固定画师组 {0} 位', [pinned.length]);
     draft.pinnedArtists = pinned;
@@ -408,39 +401,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
     notify(t('已新建记录，之后每轮只随机权重'), 'success');
   });
-  const resetWorkspaceView = () => {
-    setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId('');
-  };
-  const createFromChain = async (chain: PromptChain) => {
-    if (busyRef.current || loadingRef.current) throw new Error('正在加载，请稍候');
-    busyRef.current = true; setBusy(true); setError('');
-    try {
-      const base = makeExperiment();
-      const fallbackSeed = typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 4294967296);
-      const seed = rollSeedFromChain(chain, fallbackSeed, knownArtistKeys);
-      const next: RollExperiment = {
-        ...base,
-        name: t('{0} · Roll', [chain.name]).slice(0, 120),
-        template: seed.template,
-        artists: seed.artists,
-        rules: seed.rules,
-        pinnedArtists: seed.pinnedArtists,
-        sampledOnly: false,
-        candidates: [],
-        rounds: [],
-      };
-      const saved = await store(next);
-      selectedExperimentRef.current = saved.id;
-      setExperimentId(saved.id);
-      setPinnedArtists(seed.pinnedArtists);
-      resetWorkspaceView();
-      setChainSeedOpen(false);
-      notify(t('已从风格串「{0}」新建 Roll 记录', [chain.name]), 'success');
-    } catch (cause) {
-      if (mounted.current) setError((cause as Error).message);
-      throw cause;
-    } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
-  };
   const selectedSavedChain = selected?.savedChainId && chains.some(chain => chain.id === selected.savedChainId);
   const detail = experiment && selected ? <div className="space-y-4 p-4">
     {selectedImage ? <PressRevealSurface className="appearance-group group relative overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-950" data-safe-mode-work="true">
@@ -603,7 +563,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               </form>}
               <div className="space-y-1">
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setSetup(makeExperiment()); close(); }}><Plus />{t('新建记录')}</button>
-                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setChainSeedOpen(true); close(); }}><Layers />{t('从风格串开始')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
                 {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
               </div>
@@ -668,15 +627,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     {working && <div role="status" className="flex flex-none flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-xs text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"><LoaderCircle className="h-4 w-4 animate-spin" /><span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>{session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}{session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}{session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}</div>}
     {!working && historyReady && experiment && roundPending.length > 0 && <div className="flex flex-none items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 md:px-5"><span className="min-w-0 flex-1">{t('本轮已出图 {0}/{1}', [round!.candidateIds.filter(id => images.has(id)).length, round!.candidateIds.length])}{!continuousGenerationEnabled && roundPending.length > 1 ? ` · ${t('连续生成已关闭，本次生成 1 张')}` : ''}</span><ToolbarButton data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus />{t(continuousGenerationEnabled ? '补齐剩余 {0} 张' : '生成本轮 1 张', [continuousGenerationEnabled ? Math.min(24, roundPending.length) : 1])}</ToolbarButton></div>}
     </WorkspaceChrome>
-    {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport flex-1 overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton>{chains.some(chain => chain.type === 'style') && <ToolbarButton onClick={() => setChainSeedOpen(true)}><Layers />{t('从风格串开始')}</ToolbarButton>}</div>} />
+    {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport flex-1 overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
         <StyleRollGallery experiment={experiment} candidates={visible} images={images} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
-    {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {setup && <StyleRollSetup initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
     {artistDialogOpen && <StyleRollArtistDialog library={libraryEntries} loading={libraryLoading} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={artistOverrides.filter(artist => artist.excluded).map(artist => artist.tag)} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
-    {chainSeedOpen && <StyleRollChainSeedDialog chains={chains} knownArtists={knownArtistKeys} createOptions={createFromChain} onClose={() => setChainSeedOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;
 };

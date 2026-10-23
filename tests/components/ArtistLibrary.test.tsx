@@ -8,7 +8,13 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
 import { ImageActivityContext } from '../../components/SmartImage';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
-const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
+vi.mock('../../services/localHistory', async original => {
+  const module = await original<typeof import('../../services/localHistory')>();
+  const history = Object.assign(Object.create(Object.getPrototypeOf(module.localHistory)), module.localHistory, { subscribe: mocks.historySubscribe });
+  return { ...module, localHistory: history };
+});
 vi.mock('../../services/anlasBudget', async original => ({ ...await original<typeof import('../../services/anlasBudget')>(), useAnlasBudget: () => ({ remaining: 100 }), estimateV45GenerationCost: () => 3 }));
 vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => undefined }));
@@ -40,11 +46,15 @@ const status = (phase = 'ready', error?: string) => ({ available: true, canManag
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear();
   mocks.key = 'synthetic-key'; mocks.begin.mockResolvedValue(undefined); mocks.confirm.mockResolvedValue(true); mocks.states.clear(); mocks.generationListeners.clear(); mocks.generationRevision = 0; mocks.generatedSamples = [];
-  mocks.collection = []; mocks.collectionListeners.clear();
+  mocks.collection = []; mocks.collectionListeners.clear(); mocks.historyListeners.clear();
+  mocks.historySubscribe.mockImplementation((listener: (change: any) => void) => { mocks.historyListeners.add(listener); return () => { mocks.historyListeners.delete(listener); }; });
   mocks.blockLoad.mockResolvedValue([]); mocks.blockSave.mockImplementation(async tags => tags);
   mocks.status.mockResolvedValue(status());
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack + '-one', tags: pack === 'v45' ? ['alpha_artist', 'unknown archive key'] : ['alpha_artist', 'beta artist'] }));
   mocks.dictionary.mockResolvedValue(entries); mocks.data.mockResolvedValue({ templates: {}, samples: [] });
+  mocks.usage.mockResolvedValue({ byTag: new Map([
+    ['alpha artist', { chains: 4, images: 2, lastAt: 30 }], ['beta artist', { chains: 2, images: 7, lastAt: 20 }], ['missing artist', { chains: 0, images: 1, lastAt: 10 }],
+  ]), indexed: 3, total: 3 });
   mocks.page.mockResolvedValue({ entries, page: 0, pageCount: 1, pageSize: 100, total: entries.length });
   mocks.search.mockImplementation(async (query: string) => entries.filter(entry => entry.name.includes(query)));
   vi.stubGlobal('innerWidth', 1280);
@@ -627,4 +637,186 @@ it('一个画师被选中才提供样张工具，模型切换与偏好同步不�
   expect(cover.getAttribute('data-preferred')).toBe('true'); expect(cover.getAttribute('data-tools')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '选择画师：alpha artist' }));
   expect(screen.queryByRole('button', { name: '样张操作' })).toBeNull(); expect(cover.getAttribute('data-tools')).toBe('false');
+});
+
+it('画师卡片显示留存风格串与图片统计，缺图 Tag 也有统计行', async () => {
+  setup();
+  await screen.findByText('收录 4 串 · 生成 2 张');
+  disableSampleFilter();
+  const card = await screen.findByRole('button', { name: '选择画师：missing artist' });
+  expect(within(card).getByText('收录 0 串 · 生成 1 张')).toBeTruthy();
+  expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it('统计排序基于全量词库而不是当前已加载的目录页', async () => {
+  mocks.page.mockResolvedValue({ entries: entries.slice(0, 1), page: 0, pageCount: 3, pageSize: 1, total: 3 });
+  setup();
+  await screen.findByText('收录 4 串 · 生成 2 张');
+  disableSampleFilter();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const select = screen.getByRole('combobox', { name: '画师排序' });
+  expect((screen.getByRole('option', { name: '生成图片数从高到低' }) as HTMLOptionElement).disabled).toBe(false);
+  fireEvent.change(select, { target: { value: 'usage-images' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：beta artist', '选择画师：alpha artist', '选择画师：missing artist',
+  ]));
+  fireEvent.change(select, { target: { value: 'usage-chains' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：alpha artist', '选择画师：beta artist', '选择画师：missing artist',
+  ]));
+  fireEvent.change(select, { target: { value: 'usage-images-asc' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：missing artist', '选择画师：alpha artist', '选择画师：beta artist',
+  ]));
+  fireEvent.change(select, { target: { value: 'usage-chains-asc' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：missing artist', '选择画师：beta artist', '选择画师：alpha artist',
+  ]));
+  expect(mocks.page).toHaveBeenCalledTimes(1);
+});
+
+it('使用统计筛选先筛完整目录，支持零值交集并保留搜索与收藏条件', async () => {
+  const allEntries = [
+    ...entries,
+    { name: 'unused artist', chinese: '未收录画师', postCount: 1 },
+  ];
+  mocks.dictionary.mockResolvedValue(allEntries);
+  mocks.page.mockResolvedValue({ entries: allEntries.slice(0, 1), page: 0, pageCount: 4, pageSize: 1, total: allEntries.length });
+  mocks.usage.mockResolvedValue({ byTag: new Map([
+    ['alpha artist', { chains: 4, images: 2, lastAt: 30 }],
+    ['beta artist', { chains: 2, images: 7, lastAt: 20 }],
+    ['missing artist', { chains: 0, images: 0, lastAt: 10 }],
+  ]), indexed: 4, total: 4 });
+  mocks.search.mockResolvedValue(allEntries);
+  setup(); await screen.findByText('收录 4 串 · 生成 2 张'); disableSampleFilter();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const chains = screen.getByRole('combobox', { name: '风格串收录' });
+  const images = screen.getByRole('combobox', { name: '图片生成' });
+  expect((screen.getByRole('option', { name: '收录串数从低到高' }) as HTMLOptionElement).disabled).toBe(false);
+  fireEvent.change(chains, { target: { value: 'unused' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：missing artist', '选择画师：unused artist',
+  ]));
+  fireEvent.change(images, { target: { value: 'unused' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist', '选择画师：unused artist']));
+  fireEvent.change(images, { target: { value: 'used' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([]));
+  expect(screen.getByText('没有匹配的画师')).toBeTruthy();
+  fireEvent.change(chains, { target: { value: 'all' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual([
+    '选择画师：alpha artist', '选择画师：beta artist',
+  ]));
+  fireEvent.change(images, { target: { value: 'all' } });
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+  act(() => { mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }]; mocks.collectionListeners.forEach(listener => listener()); });
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  fireEvent.change(chains, { target: { value: 'used' } });
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']));
+  fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
+  expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).value).toBe('all');
+  expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).value).toBe('all');
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+});
+
+it('统计筛选后的样张计数使用匹配数，不沿用未筛选样张池的分页状态', async () => {
+  const allEntries = Array.from({ length: 150 }, (_, index) => ({ name: `sample artist ${index}`, chinese: '', postCount: 1 }));
+  mocks.dictionary.mockResolvedValue(allEntries);
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack + '-one', tags: allEntries.map(entry => entry.name) }));
+  mocks.page.mockResolvedValue({ entries: allEntries.slice(0, 100), page: 0, pageCount: 2, pageSize: 100, total: allEntries.length });
+  mocks.usage.mockResolvedValue({ byTag: new Map([
+    ['sample artist 0', { chains: 1, images: 0, lastAt: 2 }],
+    ['sample artist 1', { chains: 2, images: 0, lastAt: 1 }],
+  ]), indexed: 150, total: 150 });
+  setup(); await screen.findByRole('button', { name: '选择画师：sample artist 0' });
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(false));
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
+  await waitFor(() => expect(sampleCards()).toHaveLength(2));
+  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  expect(screen.queryByText('已加载 2 位')).toBeNull();
+});
+
+it('统计筛选切换重置首批分页上限', async () => {
+  const allEntries = Array.from({ length: 500 }, (_, index) => ({ name: `paged artist ${index}`, chinese: '', postCount: 1 }));
+  mocks.dictionary.mockResolvedValue(allEntries);
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack + '-one', tags: allEntries.map(entry => entry.name) }));
+  mocks.usage.mockResolvedValue({ byTag: new Map(allEntries.slice(0, 250).map((entry, index) => [entry.name, { chains: 1, images: 0, lastAt: index }])), indexed: 500, total: 500 });
+  setup(); await screen.findByRole('button', { name: '选择画师：paged artist 0' });
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  await waitFor(() => expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(false));
+  const chains = screen.getByRole('combobox', { name: '风格串收录' });
+  fireEvent.change(chains, { target: { value: 'used' } });
+  await waitFor(() => expect(sampleCards()).toHaveLength(100));
+  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  await waitFor(() => expect(sampleCards()).toHaveLength(200));
+  fireEvent.change(chains, { target: { value: 'unused' } });
+  await waitFor(() => expect(sampleCards()).toHaveLength(100));
+  expect(screen.getByText('已加载中匹配 100 位')).toBeTruthy();
+});
+
+it('统计读取失败保持未知并可重试；重新进入时重新读取，不触发生成', async () => {
+  mocks.usage.mockRejectedValueOnce(new Error('合成统计读取失败'));
+  setup();
+  const card = await screen.findByRole('button', { name: '选择画师：alpha artist' });
+  expect(within(card).getByText('收录 — 串 · 生成 — 张')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '重试统计' }));
+  await screen.findByText('收录 4 串 · 生成 2 张');
+  expect(mocks.usage).toHaveBeenCalledTimes(2);
+});
+
+it('页面重新进入时重新读取统计，废弃请求不会覆盖新结果或触发生成', async () => {
+  let finishOld!: (value: { byTag: Map<string, { chains: number; images: number; lastAt: number }>; indexed: number; total: number }) => void;
+  mocks.usage.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  mocks.usage.mockResolvedValueOnce({ byTag: new Map([['alpha artist', { chains: 9, images: 8, lastAt: 40 }]]), indexed: 3, total: 3 });
+  const view = render(<ImageActivityContext.Provider value><ArtistLibrary notify={vi.fn()} /></ImageActivityContext.Provider>);
+  await waitFor(() => expect(mocks.usage).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect((screen.getByRole('option', { name: '生成图片数从高到低' }) as HTMLOptionElement).disabled).toBe(true);
+  expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).disabled).toBe(true);
+  expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).disabled).toBe(true);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  const oldSignal = mocks.usage.mock.calls[0][0] as AbortSignal;
+  view.rerender(<ImageActivityContext.Provider value={false}><ArtistLibrary notify={vi.fn()} /></ImageActivityContext.Provider>);
+  expect(oldSignal.aborted).toBe(true);
+  view.rerender(<ImageActivityContext.Provider value><ArtistLibrary notify={vi.fn()} /></ImageActivityContext.Provider>);
+  await screen.findByText('收录 9 串 · 生成 8 张');
+  await act(async () => finishOld({ byTag: new Map([['alpha artist', { chains: 1, images: 1, lastAt: 1 }]]), indexed: 3, total: 3 }));
+  expect(screen.getByText('收录 9 串 · 生成 8 张')).toBeTruthy();
+  await waitFor(() => expect(mocks.usage).toHaveBeenCalledTimes(2));
+  expect(mocks.begin).not.toHaveBeenCalled(); expect(mocks.confirm).not.toHaveBeenCalled();
+});
+
+it('删除生成图片后重新读取当前留存数，不触发生成', async () => {
+  mocks.usage.mockResolvedValueOnce({ byTag: new Map([['alpha artist', { chains: 4, images: 2, lastAt: 30 }]]), indexed: 3, total: 3 });
+  mocks.usage.mockResolvedValueOnce({ byTag: new Map([['alpha artist', { chains: 4, images: 1, lastAt: 20 }]]), indexed: 3, total: 3 });
+  setup();
+  await screen.findByText('收录 4 串 · 生成 2 张');
+  act(() => mocks.historyListeners.forEach(listener => listener({ type: 'delete' })));
+  await screen.findByText('收录 4 串 · 生成 1 张');
+  expect(mocks.usage).toHaveBeenCalledTimes(2);
+  expect(mocks.begin).not.toHaveBeenCalled(); expect(mocks.confirm).not.toHaveBeenCalled();
+});
+
+it('统计刷新期间沿用上次完整快照，完成后按最新数据更新筛选结果', async () => {
+  let finishRefresh!: (value: { byTag: Map<string, { chains: number; images: number; lastAt: number }>; indexed: number; total: number }) => void;
+  mocks.usage.mockResolvedValueOnce({ byTag: new Map([
+    ['alpha artist', { chains: 4, images: 2, lastAt: 30 }],
+    ['beta artist', { chains: 2, images: 7, lastAt: 20 }],
+  ]), indexed: 3, total: 3 });
+  mocks.usage.mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }));
+  setup(); await screen.findByText('收录 4 串 · 生成 2 张'); disableSampleFilter();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const images = screen.getByRole('combobox', { name: '图片生成' });
+  fireEvent.change(images, { target: { value: 'used' } });
+  await waitFor(() => expect(sampleCards()).toHaveLength(2));
+  act(() => mocks.historyListeners.forEach(listener => listener({ type: 'delete' })));
+  expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).disabled).toBe(true);
+  expect(sampleCards()).toHaveLength(2);
+  await act(async () => finishRefresh({ byTag: new Map(), indexed: 3, total: 3 }));
+  await waitFor(() => expect(sampleCards()).toHaveLength(0));
+  expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).value).toBe('used');
 });

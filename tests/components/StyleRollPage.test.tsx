@@ -3,7 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
-import type { RollExperiment, RollRules } from '../../services/styleRoll';
+import { DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_NEGATIVE, type RollExperiment, type RollRules } from '../../services/styleRoll';
 import type { PromptChain } from '../../types';
 import { StyleRollPage } from '../../components/StyleRollPage';
 import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
@@ -30,7 +30,6 @@ vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => 
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, previewTransform, containerClassName }: any) => <img src={src} alt={alt} className={className} data-preview-transform={previewTransform} data-container-class={containerClassName} />, OriginalImage: (props: any) => <img {...props} /> }));
 vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
-vi.mock('../../components/roll/StyleRollChainSeedDialog', () => ({ StyleRollChainSeedDialog: ({ chains, createOptions, onClose }: any) => <div role="dialog" aria-label="从风格串开始"><button onClick={async () => { await createOptions(chains[0]); onClose(); }}>合成从风格串新建</button></div> }));
 
 const preferredItems: any[] = [];
 let experiment: RollExperiment;
@@ -493,12 +492,15 @@ it('卡片画师标签使用小号磨砂徽章，编号只保留在左上角', a
   expect(card.querySelectorAll('.gallery-card-meta')).toHaveLength(0);
 });
 
-it('可从候选新建记录并预置固定画师，之后只抽权重', async () => {
+it('可从候选新建记录并预置固定画师，保留自定义公共配置与Seed', async () => {
+  experiment.template = { ...experiment.template, prompt: '{style}, custom source', negativePrompt: 'custom negative', characterPrompt: 'custom character', params: { ...experiment.template.params, seed: 42 } };
+  const originalTemplate = structuredClone(experiment.template);
   await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details();
   fireEvent.click(screen.getByRole('button', { name: '新建记录 · 固定这些画师' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   const created = mocks.save.mock.calls[0][0];
   expect(created.pinnedArtists).toEqual(['alpha']);
+  expect(created.template).toEqual(originalTemplate);
   expect(created.rules).toMatchObject({ minArtists: 1, maxArtists: 1 });
   expect(created.candidates).toEqual([]);
   expect(created.name).not.toContain('权重');
@@ -583,49 +585,34 @@ it('候选编号旁显示所属轮次，便于区分新一轮结果', async () =
   expect(screen.getByText('R1')).toBeTruthy();
 });
 
-it('可从已有风格串新建 Roll 记录并保留提示词、参数与固定 Seed', async () => {
-  const chain = {
-    id: 'source', userId: 'u', type: 'style', name: '合成画风', description: '', tags: [], modules: [], createdAt: 1, updatedAt: 1,
-    basePrompt: 'masterpiece, 1.2::artist:alpha ::, 1girl, artist:beta, solo', negativePrompt: 'lowres',
-    params: { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: 42, qualityToggle: false, ucPreset: 4 },
-    variableValues: { subject: '' },
-  } as PromptChain;
-  experiment.candidates = []; mocks.load.mockResolvedValue([]);
-  await setup({ chains: [chain] });
-  fireEvent.click(screen.getAllByRole('button', { name: '从风格串开始' })[0]);
-  fireEvent.click(screen.getByRole('button', { name: '合成从风格串新建' }));
+it('普通新建使用推荐模板与默认参数，不继承当前记录且无风格串导入入口', async () => {
+  experiment.template = { ...experiment.template, prompt: '{style}, custom source', negativePrompt: 'custom negative', characterPrompt: 'custom character', params: { ...experiment.template.params, seed: 42, width: 1024, height: 1024 } };
+  const original = structuredClone(experiment);
+  await setup({ chains: [{ id: 'source', type: 'style', name: '库中风格串' } as PromptChain] });
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  expect(screen.queryByRole('button', { name: '从风格串开始' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-  const created = mocks.save.mock.calls[0][0];
-  expect(created.name).toBe('合成画风 · Roll');
-  expect(created.template.prompt).toBe('masterpiece, {style}, 1girl, solo');
-  expect(created.template.params.seed).toBe(42);
-  expect(created.pinnedArtists).toEqual(['alpha', 'beta']);
-  expect(created.drawPlan).toBeUndefined();
-  expect(created.artists).toEqual([
-    expect.objectContaining({ tag: 'alpha', weight: 1, locked: false }),
-    expect.objectContaining({ tag: 'beta', weight: 1, locked: false }),
-  ]);
-  expect(created.rules).toMatchObject({ minArtists: 2, maxArtists: 2 });
+  const created = mocks.save.mock.calls[0][0] as RollExperiment;
+  expect(created.id).not.toBe(original.id);
+  expect(created.template.prompt).toBe(DEFAULT_ROLL_PROMPT);
+  expect(created.template.negativePrompt).toBe(DEFAULT_ROLL_NEGATIVE);
+  expect(created.template.characterPrompt).toBe(DEFAULT_ROLL_CHARACTER_PROMPT);
+  expect(created.template.params).toMatchObject({ seed: 0, width: 832, height: 1216, scale: 5, qualityToggle: false, characters: [] });
+  expect(experiment).toEqual(original);
+  expect(mocks.generate).not.toHaveBeenCalled();
 });
 
-it('从风格串开始时用画师词库识别裸画师名', async () => {
-  const chain = {
-    id: 'bare', userId: 'u', type: 'style', name: '裸画师串', description: '', tags: [], modules: [], createdAt: 1, updatedAt: 1,
-    basePrompt: 'dishwasher1910, 1.2::akita_hika::, year 2026', negativePrompt: '',
-    params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: 7, qualityToggle: false, ucPreset: 4 },
-    variableValues: { subject: '' },
-  } as PromptChain;
+it('空记录仍可直接开始第一轮，但不再提供从风格串开始', async () => {
   experiment.candidates = []; mocks.load.mockResolvedValue([]);
-  mocks.dictionary.mockResolvedValue([{ name: 'dishwasher1910', chinese: '', postCount: 1 }, { name: 'akita_hika', chinese: '', postCount: 1 }]);
-  await setup({ chains: [chain] });
-  await waitFor(() => expect(mocks.dictionary).toHaveBeenCalled());
-  await act(async () => {});
-  fireEvent.click(screen.getAllByRole('button', { name: '从风格串开始' })[0]);
-  fireEvent.click(screen.getByRole('button', { name: '合成从风格串新建' }));
-  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-  expect(mocks.save.mock.calls[0][0].artists.map((artist: any) => artist.tag)).toEqual(['dishwasher1910', 'akita_hika']);
+  const { container } = await setup({ chains: [{ id: 'source', type: 'style', name: '库中风格串' } as PromptChain] });
+  expect(screen.getByRole('button', { name: '开始第一轮' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '从风格串开始' })).toBeNull();
+  expect(getAgentCommands(container).some(command => /from_chain|chain_seed/.test(command.name))).toBe(false);
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(mocks.generate).not.toHaveBeenCalled();
 });
-
 
 it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保底', async () => {
   preferredItems.push({ sourceType: 'artist', sourceId: 'beta', archived: false });
