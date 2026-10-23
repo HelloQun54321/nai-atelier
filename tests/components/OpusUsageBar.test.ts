@@ -54,6 +54,25 @@ describe('OpusUsageBar', () => {
     setLanguage('zh-CN');
     vi.unstubAllGlobals();
   });
+  it.each([
+    { label: '侧栏展开', props: { collapsed: false }, percent: 12.7773534897032, visible: '12.78', images: 221 },
+    { label: '侧栏折叠', props: { collapsed: true }, percent: 12.7773534897032, visible: '12.78', images: 221 },
+    { label: '设置与手机详情', props: { collapsed: false, showDetails: true }, percent: 12.7773534897032, visible: '12.78', images: 221 },
+    { label: '整数补零', props: { collapsed: false }, percent: 12, visible: '12.00', images: 208 },
+    { label: '零额度', props: { collapsed: false }, percent: 0, visible: '0.00', images: 0 },
+    { label: '超过百分之百', props: { collapsed: false }, percent: 196.123456789, visible: '196.12', images: 3393 },
+    { label: '估算保留原始精度', props: { collapsed: false, showDetails: true }, percent: 2.5148, visible: '2.51', images: 44 },
+  ])('成员额度$label统一显示两位小数，估算不使用显示值', async ({ props, percent, visible, images }) => {
+    sessionStorage.setItem('nai_api_key', `STA1N-decimal-${percent}-${props.collapsed}-${Boolean(props.showDetails)}`);
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', tier: 3, active: true, usage: { percent, isNegative: false, timeUntilNextPercent: 0 } })));
+    render(React.createElement(OpusUsageBar, props));
+    const card = await screen.findByRole('status', { name: `成员生成额度 ${visible}%` });
+    expect(screen.getByText(`${visible}%`)).toBeTruthy();
+    expect(card.title).toContain(`成员额度：${visible}%（约 ${images} 张）`);
+    if (!props.collapsed) expect(screen.getByText(`≈${images} 张`)).toBeTruthy();
+  });
   it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
     sessionStorage.setItem('nai_api_key', 'opus-details-synthetic-key');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')

@@ -50,7 +50,7 @@ describe('手机实验室账户资源', () => {
       act(() => setLanguage(language.code));
       const footer = screen.getByRole('button');
       expect(footer.textContent).toContain(t('成员额度'));
-      expect(footer.textContent).toContain(state === '耗尽' ? '0%' : '196%');
+      expect(footer.textContent).toContain(state === '耗尽' ? '0.00%' : '196.00%');
       if (language.code === 'en') expect(footer.getAttribute('aria-label')).not.toMatch(/[\u3400-\u9fff]/);
     }
   });
@@ -66,13 +66,29 @@ describe('手机实验室账户资源', () => {
   it('成员 Key 摘要和详情都显示成员来源', async () => {
     fixture.subscription!.info!.source = 'gateway';
     render(<MobileGenerationResources {...props('STA1N-mobile-member')} />);
-    const footer = screen.getByRole('button', { name: /成员额度 196%/ });
-    expect(footer.textContent).toContain('成员额度 196%');
+    const footer = screen.getByRole('button', { name: /成员额度 196\.00%/ });
+    expect(footer.textContent).toContain('成员额度 196.00%');
     expect(footer.textContent).not.toContain('Opus');
     openPanel();
     expect(await screen.findByText('网关余额')).toBeTruthy();
     expect(screen.getByText('网关成员')).toBeTruthy();
     expect(screen.queryByText('官方余额')).toBeNull();
+  });
+  it.each([false, true])('成员小数额度在底栏、摘要和详情统一保留两位，刷新失败=%s', failed => {
+    fixture.subscription!.info!.source = 'gateway';
+    fixture.subscription!.usage!.percent = 12.7773534897032;
+    if (failed) fixture.subscription!.error = '合成网络断开';
+    render(<MobileGenerationResources {...props('STA1N-mobile-decimal')} />);
+    const footer = screen.getByRole('button', { name: /成员额度 12\.78%/ });
+    expect(footer.textContent).toContain('成员额度 12.78%');
+    expect(footer.getAttribute('aria-label')).not.toContain('12.7773534897032');
+    openPanel();
+    if (failed) expect(screen.getByText('上次额度 12.78%（≈221 张）：合成网络断开')).toBeTruthy();
+    else {
+      expect(screen.getByText('12.78%')).toBeTruthy();
+      expect(screen.getByRole('status').title).toContain('成员额度：12.78%（约 221 张）');
+    }
+    expect(fixture.subscription!.usage!.percent).toBe(12.7773534897032);
   });
   it('摘要紧凑显示来源，触屏展开保留完整点数、196% 真实额度、张数、备注、同步时间与刷新', async () => {
     render(<MobileGenerationResources {...props()} />);

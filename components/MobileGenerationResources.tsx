@@ -55,12 +55,14 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   const { info, usage, loading, error, fetchedAt } = subscription;
   const gateway = info?.source === 'gateway';
   const quotaName = gateway ? '成员额度' : 'Opus';
+  const percent = usage ? usageRemainingPercent(usage) : 0;
+  const displayPercent = gateway ? percent.toFixed(2) : percent;
   const total = officialAnlasBalance(info);
   const runtimeBroken = isNaiRuntimeSyncUnhealthy(runtime);
   const opusText = info?.active === false ? gateway ? '网关权益不可用' : '订阅过期'
-    : error ? isActiveOpusSubscription(info) && usage ? `${quotaName} ${usageRemainingPercent(usage)}% · 旧值` : '额度查询失败'
+    : error ? isActiveOpusSubscription(info) && usage ? `${quotaName} ${displayPercent}% · 旧值` : '额度查询失败'
       : loading ? '额度同步中'
-        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? `${quotaName} 已用尽` : `${quotaName} ${usageRemainingPercent(usage)}%` : '额度未知'
+        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? `${quotaName} 已用尽` : `${quotaName} ${displayPercent}%` : '额度未知'
           : info?.active === true ? '非 Opus' : '额度未知';
   const balanceText = total === null ? loading ? '…' : t('未知') : `${compactPoints(total)}${error ? t('（旧值）') : ''}`;
   const summary = !apiKey ? t('未配置 Key')
@@ -68,11 +70,11 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   // 收起时只保留两组标签和数值；旧值／过期／失败用颜色与符号标记，说明放入详情。
   const footerBudget = !apiKey ? '—' : budget.loading ? '…' : compactPoints(budget.remaining);
   const footerBalance = !apiKey || total === null ? '—' : compactPoints(total);
-  const footerQuota = apiKey && isActiveOpusSubscription(info) && usage ? `${usageRemainingPercent(usage)}%` : '—';
+  const footerQuota = apiKey && isActiveOpusSubscription(info) && usage ? `${displayPercent}%` : '—';
   const warning = Boolean(apiKey && (error || runtimeBroken || info?.active === false));
   const footerTone = warning ? 'text-amber-600 dark:text-amber-400'
     : usage?.isNegative ? 'text-red-600 dark:text-red-400'
-      : usage && usageRemainingPercent(usage) <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
+      : usage && percent <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400';
   const openSettings = () => {
     const navigate = () => {
       settingsAfterBackRef.current = null;
