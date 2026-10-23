@@ -7,6 +7,7 @@ import { LocalGenItem } from '../types';
 import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 
 interface HistoryImagePickerProps {
   open: boolean;
@@ -134,7 +135,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
       <section className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-        <header className="flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
+        <header data-toolbar-caption-host="true" className="relative flex flex-none items-center justify-between gap-4 border-b border-gray-200 px-4 py-3 dark:border-gray-800 sm:px-5">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-gray-900 dark:text-white">{t("选择历史图片")}</h2>
@@ -149,6 +150,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t("关闭历史图片选择")}><X className="h-5 w-5" /></button>
           </div>
+          <ToolbarCountCaption>{t(scopeChainId ? '当前 {0} 张' : '共 {0} 张', [loading || error ? '—' : totalCount])}</ToolbarCountCaption>
         </header>
 
         <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">

@@ -15,6 +15,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
@@ -63,7 +64,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -425,6 +426,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
   const filterCount = Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly) + selectedTags.size;
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
+  const countCaptionFiltered = filterCount > 0 || !!searchTerm || syncSelection.open && syncSelection.view !== 'pick';
+  const countCaptionTotal = syncSelection.open && syncSelection.view !== 'pick'
+    ? typeChains.filter(chain => syncSelection.accepts(chain.id)).length
+    : typeChains.length;
   const resetFilters = () => {
     setSelectedModel(''); setFavOnly(false); setUntestedOnly(false); setSortOption('updated_desc'); setSelectedTags(new Set()); setTagSearch('');
   };
@@ -493,6 +498,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>}
           </>}
         </WorkspaceToolbar>
+        {!isLoading && <ToolbarCountCaption>{countCaptionFiltered
+          ? t('匹配 {0} 条 · 共 {1} 条', [filteredChains.length, countCaptionTotal])
+          : t('共 {0} 条', [filteredChains.length])}</ToolbarCountCaption>}
 
         {!selecting && canSync && syncSelection.open && <WisdomSyncToolbar sync={syncSelection} filteredIds={filteredChains.map(chain => chain.id)} />}
 

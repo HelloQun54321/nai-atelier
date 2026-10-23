@@ -10,6 +10,16 @@ import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
 import type { PromptChain } from '../../types';
 
 afterEach(cleanup);
+it('在取用弹窗标题栏下沿显示当前可选条目数', async () => {
+  const entry = { id: 'entry', type: 'appearance', name: '银发', basePrompt: 'silver hair', params: {}, tags: [] } as unknown as PromptChain;
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}>
+    <PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} />
+  </PromptLibraryContext.Provider>);
+  const caption = await screen.findByText('共 1 条');
+  expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+  expect(caption.closest('header')).not.toBeNull();
+});
+
 it('切换到其他页面时隐藏取用弹窗并释放 Escape，回来保留草稿', () => {
   const close = vi.fn();
   const view = (active: boolean) => <ImageActivityProvider active={active}><LibraryDialog title="取用提示词" onClose={close}><input aria-label="草稿" defaultValue="选择中的内容" /></LibraryDialog></ImageActivityProvider>;

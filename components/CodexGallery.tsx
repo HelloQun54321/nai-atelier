@@ -10,6 +10,7 @@ import { collectionRevision, collectionTargetActive, subscribeCollection, type C
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
 import { SmartImage } from './SmartImage';
@@ -289,6 +290,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
     {(error || result?.error || boot?.offline || progress) && <div role="status" className="flex-none border-b border-gray-200 px-3 py-2 text-xs text-amber-700 dark:border-gray-800 dark:text-amber-300">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</div>}
+    <ToolbarCountCaption>{t('{0} 条结果', [result && !loading ? filtered.length.toLocaleString() : '—'])}</ToolbarCountCaption>
     </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">

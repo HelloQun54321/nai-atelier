@@ -1,4 +1,5 @@
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -1461,6 +1462,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         </div>
       )}
 
+      <ToolbarCountCaption>{t(hasLocalFilter ? '已加载中匹配 {0} 条' : '已加载 {0} 条', [hasLoadedRef.current ? formatCount(visibleItems.length) : '—'])}{' · '}{t('共 {0} 条', [hasLoadedRef.current && !isOfflineCache ? formatCount(total) : '—'])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main

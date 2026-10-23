@@ -4,6 +4,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GenHistory } from '../../components/GenHistory';
+import { HistoryImagePicker } from '../../components/HistoryImagePicker';
 import { localHistory } from '../../services/localHistory';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
 import type { LocalGenItem } from '../../types';
@@ -80,6 +81,29 @@ const setup = async (width = 1280, expectedCount = 2) => {
 it('足迹带入的画师筛选应用到历史浏览查询', async () => {
     render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} initialQuery={{ query: { search: 'artist:alpha_artist', sort: 'newest' }, token: 1 }} />);
     await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.some(([query]) => query.search === 'artist:alpha_artist')).toBe(true));
+});
+
+it('历史仅追加下沿数量小字，原数量与手机浏览控件保留', async () => {
+    const { container } = await setup(390);
+    const caption = container.querySelector('[data-toolbar-count-caption]');
+    expect(caption?.textContent).toBe('共 2 张 · 已加载 2 张');
+    expect(container.querySelector('.history-result-count')?.textContent).toBe('2 张');
+    expect(screen.getByRole('button', { name: '随机浏览' })).toBeTruthy();
+    expect(container.querySelectorAll('[data-toolbar-count-caption]')).toHaveLength(1);
+});
+
+it('历史下沿小字按查询范围显示匹配数', async () => {
+    const view = render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()}
+        initialQuery={{ query: { search: 'synthetic' }, token: 1 }} />);
+    await waitFor(() => expect(view.container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('匹配 2 张 · 已加载 2 张'));
+});
+
+it('历史图片选择器只追加下沿小字，保留原数量与关闭按钮', async () => {
+    render(<HistoryImagePicker open onClose={() => {}} onSelect={() => {}} />);
+    await waitFor(() => expect(screen.getByText('共 2 张').closest('[data-toolbar-count-caption]')).toBeTruthy());
+    expect(screen.getByText('全部 2 张')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '关闭历史图片选择' })).toBeTruthy();
+    expect(screen.getByText('共 2 张').closest('header')?.hasAttribute('data-toolbar-caption-host')).toBe(true);
 });
 
 describe('历史缩略图就地操作', () => {
@@ -428,7 +452,7 @@ describe('历史连续浏览会话', () => {
         fireEvent.keyDown(input, { key: 'ArrowRight' });
         expect(screen.getByText('20 / 25')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: '下一张图片' }));
-        expect(screen.getByRole('status').textContent).toContain('正在加载图片');
+        expect(within(screen.getByRole('dialog', { name: '历史图片查看器' })).getByRole('status').textContent).toContain('正在加载图片');
         fireEvent.keyDown(window, { key: 'Escape' });
         expect(screen.queryByRole('dialog', { name: '历史图片查看器' })).toBeNull();
         await act(async () => resolve({ items: data.slice(20) }));

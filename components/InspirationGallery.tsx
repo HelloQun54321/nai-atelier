@@ -11,6 +11,7 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { PressRevealSurface } from './PressRevealSurface';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImageActivityContext, SmartImage } from './SmartImage';
@@ -473,6 +474,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <ToolbarButton tone="primary" aria-label={t("加入收藏库")} disabled={currentUser.role === 'guest' || Boolean(busy)} onClick={() => openImport()} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("加入收藏库")}</span></ToolbarButton>
       </>}
     </WorkspaceToolbar>
+    {inspirationsData !== null && <ToolbarCountCaption>{t(activeFilterCount || debouncedSearch.trim() ? '匹配 {0} 组' : '共 {0} 组', [groups.length])} · {t('当前 {0} 张', [filtered.length])}</ToolbarCountCaption>}
 
     </WorkspaceChrome>
     <div className="flex min-h-0 flex-1">

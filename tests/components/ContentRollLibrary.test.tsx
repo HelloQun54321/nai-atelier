@@ -14,6 +14,12 @@ const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', filled: tr
 const record = { id: 'saved', type: 'style', name: '夜游', tags: [], params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: snapshot }, updatedAt: 1 } as unknown as PromptChain;
 const props = () => ({ active: true, chains: [record], notify: vi.fn(), onLoad: vi.fn(), onRename: vi.fn(async () => {}), onDelete: vi.fn(async () => {}), onSetCover: vi.fn(async () => {}) });
 
+it('在顶栏下沿显示当前组合分区条目数', async () => {
+  render(<ContentRollLibrary {...props()} />);
+  const caption = await screen.findByText('共 1 条');
+  expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+});
+
 it('原文与组合分区独立，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
   const text = '  {{winter}}, 1.2::hair::\r\n[smile]  ';
   const collected = { ...record, ...prepareCollectedPrompt(text, '冬日'), type: 'preset', id: 'collected' } as PromptChain;

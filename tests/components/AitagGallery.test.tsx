@@ -658,14 +658,18 @@ it('画师串与风格串筛选即时生效，条件标签可单独移除，清�
   const items = promptWorks(['artist:synthetic painter, 1girl', 'synthetic_bare, scenery', 'plain, scenery']);
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 3, page: options.page, page_size: 60 }));
   await setup('portrait', true, [{ id: 'chain', type: 'style', description: 'Imported from aitag #2' } as PromptChain]);
+  const caption = document.querySelector('[data-toolbar-count-caption]');
+  expect(caption?.textContent).toBe('已加载 3 条 · 共 3 条');
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
 
   fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
   await waitFor(() => expect(visibleIds()).toEqual([1, 2]));
+  expect(caption?.textContent).toBe('已加载中匹配 2 条 · 共 3 条');
   expect(screen.getByRole('button', { name: '移除筛选：含画师串' })).toBeTruthy();
 
   fireEvent.change(screen.getByLabelText('风格串'), { target: { value: 'unsaved' } });
   expect(visibleIds()).toEqual([1]);
+  expect(caption?.textContent).toBe('已加载中匹配 1 条 · 共 3 条');
   expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
 
   fireEvent.click(screen.getByRole('button', { name: '移除筛选：含画师串' }));

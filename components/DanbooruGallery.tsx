@@ -18,6 +18,7 @@ import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -515,6 +516,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
+      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : rating !== 'all' || ratio !== 'all' || soloOnly ? t('已加载中匹配 {0} 件', [loadedRef.current ? formatCount(displayedItems.length) : '—']) : t('已加载 {0} 件{1}', [loadedRef.current ? formatCount(displayedItems.length) : '—', ''])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>

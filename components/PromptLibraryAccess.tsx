@@ -12,6 +12,7 @@ import { IconButton, ToolbarButton } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageActivityContext } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ContentRollWorkspace } from './ContentRollWorkspace';
@@ -54,7 +55,7 @@ export function PromptLibraryWorkspace({ state, onChange, active = true, childre
   </WorkspaceContext.Provider>;
 }
 
-export function LibraryDialog({ title, onClose, children, busy = false, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; busy?: boolean; wide?: boolean }) {
+export function LibraryDialog({ title, onClose, children, busy = false, wide = false, caption }: { title: string; onClose: () => void; children: React.ReactNode; busy?: boolean; wide?: boolean; caption?: React.ReactNode }) {
   const active = useContext(ImageActivityContext);
   const ref = useModalA11y<HTMLDivElement>(active);
   useMobileHistoryLayer(active, () => { if (busy) return false; onClose(); }, 'prompt-library');
@@ -68,7 +69,7 @@ export function LibraryDialog({ title, onClose, children, busy = false, wide = f
   }, [active, busy, onClose, ref]);
   return <ImagePreviewPortal><div hidden={!active} className={active ? 'fixed inset-0 z-[1900] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm' : 'hidden'}>
     <div ref={ref} role="dialog" aria-modal="true" aria-label={t(title)} className={`content-library appearance-panel flex max-h-[90dvh] w-full ${wide ? 'max-w-[1400px]' : 'max-w-2xl'} flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900`}>
-      <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><h2 className="flex-1 font-semibold">{t(title)}</h2><IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
+      <header data-toolbar-caption-host={caption ? 'true' : undefined} className={`flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700 ${caption ? 'relative' : ''}`}><h2 className="flex-1 font-semibold">{t(title)}</h2>{caption}<IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
       <div className="space-y-3 overflow-y-auto p-4">{children}</div>
     </div>
   </div></ImagePreviewPortal>;
@@ -106,6 +107,11 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   const tags = [...new Set(entries.flatMap(item => item.tags || []))].sort();
   const shown = entries.filter(item => (libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)) && (!kind || section !== 'items' || fragmentKindOf(item) === kind) && (!tag || item.tags?.includes(tag))
     && [item.name, item.basePrompt, ...(item.tags || []), libraryEntryText(item)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const captionTotal = entries.filter(item => libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)).length;
+  const captionFiltered = !!(query || section === 'items' && kind || tag);
+  const countCaption = (library?.chains.length || 0) > 0 ? <ToolbarCountCaption>{captionFiltered
+    ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, captionTotal])
+    : t('共 {0} 条', [captionTotal])}</ToolbarCountCaption> : null;
   const apply = () => {
     if (!entry) return;
     try {
@@ -136,7 +142,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
       }
     } catch (cause) { setError((cause as Error).message); }
   };
-  return <LibraryDialog title="取用提示词" onClose={onClose}>
+  return <LibraryDialog title="取用提示词" onClose={onClose} caption={countCaption}>
     <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
     <div className="flex gap-2">{section === 'items' && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}

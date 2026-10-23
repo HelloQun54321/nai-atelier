@@ -18,6 +18,7 @@ import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMa
 import { Check, Dice5, ImageIcon, LoaderCircle, Settings2 } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { ArtistSampleSettingsDialog } from './ArtistSampleSettingsDialog';
 import { ArtistSampleCover } from './ArtistSampleCover';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleCatalog, getArtistSampleDictionary, getArtistSampleStatus, matchArtistSampleTags, normalizeArtistSampleTag, type ArtistOwnSample, type ArtistSampleCatalog, type ArtistSamplePack, type ArtistSampleStatus, type ArtistSampleTemplate } from '../services/artistSamples';
@@ -681,6 +682,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 {cart.length === 1 && filteredArtists.some(artist => artist.name === cart[0].name) && <div ref={sampleToolsAnchor} className="flex-none"><ToolbarButton aria-haspopup="dialog" aria-expanded={Boolean(sampleToolsTag)} onClick={() => setSampleToolsTag(current => current ? '' : cart[0].name)}><ImageIcon />{t('样张操作')}</ToolbarButton></div>}
                 </div>
             </WorkspaceToolbar>
+            {!isCatalogLoading && !catalogError && !searchError && !((onlySamples || showFavOnly) && currentSampleError) && ((!onlySamples && !showFavOnly && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{searchTerm.trim()
+                ? t(searchTruncated ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
+                : gachaArtists ? t('本次抽取 {0} 位', [filteredArtists.length])
+                : showFavOnly ? t(hasMoreSamples ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
+                : onlySamples ? t(hasMoreSamples ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
+                : hasMoreCatalog ? t('已加载 {0} 位', [loadedCatalogArtists.length])
+                : t('共 {0} 位', [artistCatalogCount])}</ToolbarCountCaption>}
 
             {gachaArtists && (
                 <GalleryActiveStateBanner

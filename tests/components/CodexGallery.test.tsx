@@ -42,6 +42,8 @@ it('手机明确当前来源，全书卡片保留书名，目录和筛选独立�
   mocks.bootstrap.mockResolvedValue({ ...boot, books: [book, { ...book, id: 'second', title: '另一本书' }] });
   mocks.book.mockImplementation(async value => ({ entries: [{ ...entry, key: value.id, bookId: value.id, bookTitle: value.title, title: value.id === 'second' ? '另一个词条' : entry.title, path: ['绘画', value.id === 'second' ? '白天' : '夜景'] }] }));
   setup(); await screen.findByRole('status', { name: '1 条结果' });
+  const caption = document.querySelector('[data-toolbar-count-caption]');
+  expect(caption?.textContent).toBe('1 条结果');
   expect(screen.getByTitle('法典来源').textContent).toBe('合成书目');
   expect(screen.getByTitle('法典来源').parentElement!.className).toContain('[&>button>span]:inline');
   expect(screen.getByRole('button', { name: '刷新' }).parentElement!.className).toBe('hidden sm:block');
@@ -60,6 +62,7 @@ it('手机明确当前来源，全书卡片保留书名，目录和筛选独立�
   fireEvent.click(screen.getByRole('button', { name: '确认' }));
   expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
   expect(screen.getByRole('status', { name: '0 条结果' })).toBeTruthy();
+  expect(caption?.textContent).toBe('0 条结果');
   fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
   expect(screen.getByRole('status', { name: '2 条结果' })).toBeTruthy();
   expect(screen.getByTitle('法典来源').textContent).toBe('全部书目');

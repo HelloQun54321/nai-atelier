@@ -30,6 +30,7 @@ import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Tag, Trash2, Use
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DanbooruCover } from './DanbooruCover';
 import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
@@ -676,6 +677,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
          <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
        </WorkspaceToolbar>
+       {!isLoading && !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0) && <ToolbarCountCaption>{searchTerm.trim()
+         ? t(tab === 'custom' ? '匹配 {0} 位' : '已加载中匹配 {0} 位', [visibleCards.length])
+         : gachaCards ? t('本次抽取 {0} 位', [visibleCards.length])
+         : showFavOnly ? t('匹配 {0} 位', [visibleCards.length])
+         : tab !== 'custom' && nextPage < pageCount ? t('已加载 {0} 位', [visibleCards.length])
+         : t('共 {0} 位', [visibleCards.length])}</ToolbarCountCaption>}
 
        {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 

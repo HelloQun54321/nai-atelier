@@ -23,6 +23,7 @@ import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPrefer
 import { Inspiration, NAIParams, User } from '../types';
 import { externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
 import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ExternalImageTools } from './ExternalImageTools';
@@ -995,6 +996,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         </div>
       )}
 
+      <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : t('已加载 {0} 件{1}', [loadedRef.current ? formatCount(items.length) : '—', ''])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>

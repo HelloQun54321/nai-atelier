@@ -45,6 +45,7 @@ import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
@@ -842,6 +843,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           containerClassName="md:max-w-none!"
         />
       </div>
+      {chains.length > 0 && <ToolbarCountCaption>{query.trim() || selectedTags.size
+        ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, items.length])
+        : t('共 {0} 条', [items.length])}</ToolbarCountCaption>}
 
     </>
   );

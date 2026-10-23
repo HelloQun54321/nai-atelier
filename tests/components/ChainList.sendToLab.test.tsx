@@ -93,6 +93,12 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串发送到实验室', () => {
+  it('在顶栏下沿显示当前类型的精确结果数', async () => {
+    render(<ChainList {...props([styleChain, characterChain])} />);
+    const caption = await screen.findByText('共 1 条');
+    expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
+  });
+
   it('把所有提示词结构、模块、角色槽位与生成参数投递到导入通道并跳转实验室', () => {
     const viewProps = props([styleChain]);
     render(<ChainList {...viewProps} />);

@@ -82,7 +82,9 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
     title: '足迹作品 ' + index, artistName: 'synthetic artist', previewUrl: '', sampleUrl: '', tags: [], viewedAt: 1,
   })));
   const { container } = await setup();
+  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('已加载 0 件');
   fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
+  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('共 4 条');
   const cards = Array.from(container.querySelectorAll<HTMLElement>('article'));
   expect(cards).toHaveLength(4);
   cards.forEach(card => {

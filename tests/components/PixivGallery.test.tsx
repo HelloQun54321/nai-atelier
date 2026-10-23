@@ -74,8 +74,10 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
   })));
   const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
   await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('已加载 1 件');
   expect(container.querySelector('article')!.style.contentVisibility).toBe('');
   fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
+  expect(container.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('共 4 条');
   const cards = Array.from(container.querySelectorAll<HTMLElement>('article'));
   expect(cards).toHaveLength(4);
   cards.forEach(card => {

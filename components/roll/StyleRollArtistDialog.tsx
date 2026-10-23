@@ -17,6 +17,7 @@ import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { ArtistPreferenceActions } from '../ArtistPreferenceActions';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
+import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
 interface Props {
   library: ArtistDictionaryEntry[]; loading?: boolean;
@@ -90,11 +91,12 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   });
   return <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 p-0 backdrop-blur-sm sm:p-4 lg:p-6">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('Roll 画师')} className="appearance-panel flex h-dvh w-full max-w-7xl flex-col overflow-hidden border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:h-[92dvh] sm:rounded-2xl">
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
+      <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
         <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight sm:flex-none">{t('管理画师与偏好')}</h2>
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师 Tag 或中文名')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => setSettingsOpen(value => !value)}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
+        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || query.trim() ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">

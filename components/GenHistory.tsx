@@ -29,6 +29,7 @@ import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { type HistoryBrowseOrder, type HistoryBrowseQuery } from '../services/historyBrowse';
 import { HistoryBrowseControls } from './HistoryBrowseControls';
 import { HistoryImageViewer } from './HistoryImageViewer';
+import { ToolbarCountCaption } from './ToolbarCountCaption';
 
 interface GenHistoryProps {
     currentUser: User;
@@ -1092,6 +1093,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </>}
                 </div>
+                <ToolbarCountCaption>{t(browseQuery.from !== undefined || browseQuery.to !== undefined || browseQuery.favoriteOnly || browseQuery.search?.trim() || browseQuery.model || browseQuery.operation || browseQuery.source ? '匹配 {0} 张' : '共 {0} 张', [isLoading || loadFailed ? '—' : totalCount])}{' · '}{t('已加载 {0} 张', [isLoading || loadFailed ? '—' : items.length])}</ToolbarCountCaption>
             </WorkspaceToolbar>
 
             <ImagePreviewPortal><MobileBottomSheet open={showCleanMenu && isMobileViewport} title={t("历史管理")} onClose={() => setShowCleanMenu(false)}>
