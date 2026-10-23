@@ -49,6 +49,12 @@ const isArtistToken = (token: { start?: number; end?: number; displayTag: string
   return Boolean(knownArtists?.has(normalizeRollArtistKey(token.displayTag)));
 };
 
+/** 提示词是否含可识别的画师 Tag；外部作品筛选与 Roll 导入使用同一套识别规则。 */
+export function promptHasArtistTags(prompt: string, knownArtists?: ReadonlySet<string>): boolean {
+  const text = prompt.trim();
+  return Boolean(text) && parsePromptTags(text).some(token => isArtistToken(token, text, knownArtists));
+}
+
 /** 列表预览用的画师数量；与真正导入使用同一套识别规则。 */
 export function countRollChainArtists(chain: PromptChain, knownArtists?: ReadonlySet<string>): number {
   const prompt = compilePrompt(chain, chain.variableValues?.subject || '').trim();

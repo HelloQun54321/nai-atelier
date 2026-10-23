@@ -9,16 +9,25 @@ import {
   AitagImage,
   AitagWorkDetail,
   AitagWorkSummary,
+  aitagPromptHasArtistTags,
   aitagService,
+  buildAitagChainDescription,
   buildAitagImageUrl,
   buildAitagPreviewUrl,
   extractAitagPrompt,
   getAitagGenerationLabels,
   getAitagMetadataText,
   getAitagModelLabel,
+  getAitagSavedChainWorkIds,
   getAitagType,
+  getAitagWorkPromptTexts,
+  hasAitagLocalPromptTerms,
+  matchesAitagPromptQuery,
   parseAitagAiJson,
+  parseAitagPromptQuery,
 } from '../services/aitagService';
+import { getArtistSampleDictionary } from '../services/artistSamples';
+import { normalizeRollArtistKey } from '../services/styleRollSeed';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata, type BaseImageImport } from '../services/metadataService';
 import { NAIParams, PromptChain, User, type ImageEditOperation } from '../types';
 import { SmartImage } from './SmartImage';
@@ -27,7 +36,7 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
+import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -48,10 +57,14 @@ interface AitagGalleryProps {
   onNavigateToPlayground: () => void;
   onCreateArtistChain: (chain: PromptChain) => Promise<void>;
   onRefreshInspiration?: () => void;
+  /** 当前风格串列表，用于筛选已保存到风格串的作品。 */
+  chains?: PromptChain[];
 }
 
 const PAGE_SIZE = 60;
 const FIRST_IMAGE_IDLE_DELAYS_MS = [1500, 3000, 6000];
+/** 依赖元数据的筛选等待后台补齐首图信息的上限；超时后按无法判断处理，不再阻挡后续加载。 */
+const METADATA_WAIT_MS = 120_000;
 /** 追加式自动加载的软上限：超过后停止自动追加，按钮可继续手动加载。 */
 const AITAG_APPEND_LIMIT = 800;
 
@@ -67,6 +80,12 @@ const getAitagUrl = (work: AitagWorkSummary) => `https://aitag.win/i/${work.id}`
 type AitagSort = 'new' | 'monthly';
 type AitagCardCacheLevel = 'full' | 'first-image' | 'none';
 type AitagCacheFilter = 'all' | 'full' | 'first-image' | 'favorite';
+type AitagArtistFilter = 'all' | 'with' | 'without';
+type AitagChainFilter = 'all' | 'saved' | 'unsaved';
+
+/** 服务端查询条件签名：追加加载只接在同一组条件的结果之后。 */
+const buildAitagQuerySignature = (q: string, prompt: string, sort: string, rankMonth: string, cacheFilter: string) =>
+  `${q}|${prompt}|${sort}|${rankMonth}|${cacheFilter}`;
 
 const normalizeAitagRankMonth = (value?: string) => {
   const raw = String(value || '').trim().toLowerCase();
@@ -144,6 +163,15 @@ const needsFirstImageCacheRefresh = (work: AitagWorkSummary) => {
   // 批量缓存侧有连续失败熔断，不会因此轰炸 aitag.win。
   return true;
 };
+
+/**
+ * aitag.win 列表不带首图元数据，由后端逐个补齐；补齐前模型、画师串和提示词细筛无法判断。
+ * 首图缓存失败（error）视为已有结论，不再等待。
+ */
+const isAitagMetadataPending = (work: AitagWorkSummary) => (
+  !(work.firstImage || work.first_image)
+  && String(work.firstImageStatus || work.cover_status || '').toLowerCase() !== 'error'
+);
 
 const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {
   const firstImage = work.firstImage || work.first_image;
@@ -256,6 +284,12 @@ interface AitagPageCache {
   rankMonth: string;
   availableMonths: string[];
   cacheFilter: AitagCacheFilter;
+  /** 最近一次实际检索使用的关键词与提示词条件；输入框未提交的修改不显示为生效条件，也不参与本地细筛。 */
+  appliedQ: string;
+  appliedPrompt: string;
+  modelFilter: string;
+  artistFilter: AitagArtistFilter;
+  chainFilter: AitagChainFilter;
   page: number;
   total: number;
   error: string | null;
@@ -274,6 +308,11 @@ let aitagPageCache: AitagPageCache = {
   rankMonth: 'current',
   availableMonths: [],
   cacheFilter: 'all',
+  appliedQ: '',
+  appliedPrompt: '',
+  modelFilter: '',
+  artistFilter: 'all',
+  chainFilter: 'all',
   page: 1,
   total: 0,
   error: null,
@@ -299,7 +338,7 @@ const defaultParams: NAIParams = {
   cfgRescale: 0,
 };
 
-export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
+export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration, chains }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences('aitag');
   const mainScrollRef = useRef<HTMLElement | null>(null);
@@ -324,6 +363,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [rankMonth, setRankMonth] = useState(() => aitagPageCache.rankMonth);
   const [availableMonths, setAvailableMonths] = useState<string[]>(() => aitagPageCache.availableMonths);
   const [cacheFilter, setCacheFilter] = useState<AitagCacheFilter>(() => aitagPageCache.cacheFilter);
+  const [appliedQ, setAppliedQ] = useState(() => aitagPageCache.appliedQ);
+  const [appliedPrompt, setAppliedPrompt] = useState(() => aitagPageCache.appliedPrompt);
+  const [artistFilter, setArtistFilter] = useState<AitagArtistFilter>(() => aitagPageCache.artistFilter);
+  const [chainFilter, setChainFilter] = useState<AitagChainFilter>(() => aitagPageCache.chainFilter);
+  const [knownArtists, setKnownArtists] = useState<ReadonlySet<string> | null>(null);
   const [page, setPage] = useState(() => aitagPageCache.page);
   const [total, setTotal] = useState(() => aitagPageCache.total);
   const [cacheStatus, setCacheStatus] = useState<AitagCacheStatus | null>(() => aitagPageCache.cacheStatus);
@@ -356,8 +400,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   };
   const closeMobileDetail = useMobileHistoryLayer(active && Boolean(selectedWork), closeDetail, 'aitag-detail');
 
-  // 模型版本筛选：与「收藏」一致，作用于已加载/已缓存的条目（按首图元数据判断）。
-  const [modelFilter, setModelFilter] = useState('');
+  // 模型、画师串、风格串与提示词细筛作用于已加载/已缓存的条目（按首图或已加载详情的元数据判断），
+  // 选项改变即时生效；服务端检索条件（关键词、提示词主条件、缓存、排序、月份）仍按页拉取。
+  const [modelFilter, setModelFilter] = useState(() => aitagPageCache.modelFilter);
   const getWorkModelLabel = (work: AitagWorkSummary) => {
     const image = work.firstImage || work.first_image;
     return image ? getAitagModelLabel(image) : '';
@@ -366,9 +411,44 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     () => Array.from(new Set(items.map(getWorkModelLabel).filter(Boolean))).sort(),
     [items],
   );
-  const visibleItems = modelFilter
-    ? items.filter(work => getWorkModelLabel(work) === modelFilter)
-    : items;
+  const savedChainWorkIds = useMemo(() => getAitagSavedChainWorkIds(chains), [chains]);
+  const promptQuery = useMemo(() => parseAitagPromptQuery(appliedPrompt), [appliedPrompt]);
+  const remotePrompt = useMemo(() => parseAitagPromptQuery(prompt).remote, [prompt]);
+  const hasLocalPromptTerms = hasAitagLocalPromptTerms(promptQuery);
+  const metadataFilterActive = Boolean(modelFilter) || artistFilter !== 'all' || hasLocalPromptTerms;
+  const hasLocalFilter = metadataFilterActive || chainFilter !== 'all';
+  // 等待超时仍未补齐元数据的作品不再计为待定，避免一直暂停后续加载。
+  const [metadataGiveUpIds, setMetadataGiveUpIds] = useState<ReadonlySet<number>>(() => new Set());
+  const isWorkMetadataPending = (work: AitagWorkSummary) => (
+    metadataFilterActive && isAitagMetadataPending(work) && !metadataGiveUpIds.has(Number(work.id))
+  );
+  const pendingMetadataItems = metadataFilterActive ? items.filter(isWorkMetadataPending) : [];
+  // 轮询循环跨多批运行，从这里读取最新的待补齐作品，补入尚未轮询的部分。
+  const pendingMetadataIdsRef = useRef<number[]>([]);
+  useEffect(() => {
+    pendingMetadataIdsRef.current = pendingMetadataItems.map(item => Number(item.id)).filter(Number.isFinite);
+  });
+  // 裸画师名需要词库识别；只在启用画师串筛选时读取一次，读取前先按 artist: 等显式前缀判断。
+  useEffect(() => {
+    if (artistFilter === 'all' || knownArtists) return;
+    let current = true;
+    getArtistSampleDictionary()
+      .then(entries => { if (current) setKnownArtists(new Set(entries.map(entry => normalizeRollArtistKey(entry.name)))); })
+      .catch(() => { if (current) setKnownArtists(new Set()); });
+    return () => { current = false; };
+  }, [artistFilter, knownArtists]);
+  const matchesLocalFilters = (work: AitagWorkSummary) => {
+    const detail = details[work.id];
+    // 没有任何元数据时无法判断模型、画师串或提示词，先隐藏，补齐后再按条件显示。
+    if (metadataFilterActive && !(work.firstImage || work.first_image) && !(detail && !detail.isPreviewOnly && detail.images.length)) return false;
+    if (modelFilter && getWorkModelLabel(work) !== modelFilter) return false;
+    if (chainFilter !== 'all' && savedChainWorkIds.has(Number(work.id)) !== (chainFilter === 'saved')) return false;
+    if (artistFilter === 'all' && !hasLocalPromptTerms) return true;
+    const texts = getAitagWorkPromptTexts(work, detail);
+    if (artistFilter !== 'all' && texts.some(text => aitagPromptHasArtistTags(text, knownArtists)) !== (artistFilter === 'with')) return false;
+    return matchesAitagPromptQuery(texts, promptQuery);
+  };
+  const visibleItems = hasLocalFilter ? items.filter(matchesLocalFilters) : items;
   // 筛选或取消收藏移走当前作品时，不留下找不到目标的暗态与详情。
   useEffect(() => {
     if (!isLoading && selectedId !== null && !visibleItems.some(work => work.id === selectedId)) {
@@ -482,7 +562,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   };
   const cacheNeedsMoreData = isOfflineCache && visibleItems.length === 0;
   const isAitagConnected = !isOfflineCache && !error;
-  const hasPendingFirstImageCache = visibleItems.some(needsFirstImageCacheRefresh);
+  const hasPendingFirstImageCache = visibleItems.some(needsFirstImageCacheRefresh) || pendingMetadataItems.length > 0;
+  // 一整页作品仍在等待元数据时暂停自动追加：继续拉页只会让后端排队补齐更多作品、频繁请求 aitag.win。
+  const metadataBacklogFull = pendingMetadataItems.length >= PAGE_SIZE;
   const allowBackgroundChecks = active && documentVisible;
 
   useEffect(() => {
@@ -508,7 +590,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
   const appendingRef = useRef(false);
   const appendSentinelRef = useRef<HTMLDivElement>(null);
-  const querySignatureRef = useRef('');
+  const querySignatureRef = useRef(aitagPageCache.hasLoaded
+    ? buildAitagQuerySignature(aitagPageCache.q, aitagPageCache.prompt, aitagPageCache.sort, aitagPageCache.rankMonth, aitagPageCache.cacheFilter)
+    : '');
   // 每次 loadWorks 递增的序号：非追加路径（搜索/筛选/跳页）此前无竞态守卫，慢的旧响应
   // 会覆盖新结果并污染模块级 aitagPageCache；卸载后迟到的响应同样不该再写。
   const loadGuard = useStaleGuard();
@@ -516,24 +600,27 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 把 JSON 往返从滚动路径上移走。签名与页码都匹配才可消费，过期预取自然作废。
   const prefetchedPageRef = useRef<{ signature: string; page: number; promise: Promise<any> } | null>(null);
 
-  const buildPrefetchSignature = (sort: string, rankMonthValue: string, cacheFilterValue: string) =>
-    `${q}|${prompt}|${sort}|${rankMonthValue}|${cacheFilterValue}`;
-  const getQuerySignature = () => `${q}|${prompt}|${sort}|${rankMonth}|${cacheFilter}`;
+  // 签名使用已生效的关键词与提示词：输入框里尚未提交的草稿不影响当前结果的追加加载。
+  const getQuerySignature = () => buildAitagQuerySignature(appliedQ, appliedPrompt, sort, rankMonth, cacheFilter);
+  const appliedRemotePrompt = useMemo(() => parseAitagPromptQuery(appliedPrompt).remote, [appliedPrompt]);
   const appendNextPage = async (force = false) => {
     if (appendingRef.current || isLoading) return;
     if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
+    if (!force && metadataBacklogFull) return;
     appendingRef.current = true;
     try {
       // 追加循环只在开头取一次守卫序号，且每页让位给用户触发的新加载：
       // 此前每页都 begin()，会持续作废在途的用户搜索，导致搜索结果被静默丢弃
       const appendSeq = loadGuard.begin();
-      // 当开启模型筛选（如 V5）时，稀疏命中文档会导致单页有效结果过少。
+      // 开启本地筛选（模型、画师串、风格串或提示词细筛）时，稀疏命中会导致单页有效结果过少。
       // 采用自适应自动连拉（最多连续批拉 4 页，或满足新增至少 15 个符合筛选的作品），填补视口空白。
       let currentPageToLoad = page + 1;
       let currentTotalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      const currentVisibleCount = visibleItems.length;
-      const targetVisibleCount = modelFilter ? currentVisibleCount + 15 : currentVisibleCount + 1;
-      const maxBatchPages = modelFilter ? 4 : 1;
+      // 待补齐元数据的作品可能命中，计入潜在结果，避免为凑数连续拉取更多同样待定的页面。
+      const countPotentialItems = (list: AitagWorkSummary[]) => list.filter(work => matchesLocalFilters(work) || isWorkMetadataPending(work)).length;
+      const currentVisibleCount = hasLocalFilter ? countPotentialItems(items) : visibleItems.length;
+      const targetVisibleCount = hasLocalFilter ? currentVisibleCount + 15 : currentVisibleCount + 1;
+      const maxBatchPages = hasLocalFilter ? 4 : 1;
       // 无有效 prompt 的作品被过滤后，整页可能零贡献；此时突破 maxBatchPages 继续连拉，
       // 直到拿到至少一条有效条目（另有上限保护），避免列表空白卡住。
       const maxSkippedPages = 6;
@@ -554,7 +641,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           continue;
         }
         // 如果在筛选模式下已凑足目标增量，则停止连续拉取
-        if (!modelFilter || (aitagPageCache.items.filter(work => getWorkModelLabel(work) === modelFilter).length >= targetVisibleCount)) {
+        if (!hasLocalFilter || countPotentialItems(aitagPageCache.items) >= targetVisibleCount) {
           break;
         }
         currentTotalPages = Math.max(1, Math.ceil(aitagPageCache.total / PAGE_SIZE));
@@ -563,7 +650,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       appendingRef.current = false;
     }
   };
-  useGalleryLoadMore(mainScrollRef, appendSentinelRef, hasNextPage && !isLoading && visibleItems.length < AITAG_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px');
+  // 页码前进即重新监听：本地筛选可能让新一页全部被隐藏，卡片不变也要能继续追加。
+  useGalleryLoadMore(mainScrollRef, appendSentinelRef, hasNextPage && !isLoading && !metadataBacklogFull && visibleItems.length < AITAG_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px', page);
 
   const loadWorks = async (
     targetPage = page,
@@ -572,6 +660,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       sortOverride?: AitagSort;
       rankMonthOverride?: string;
       cacheFilterOverride?: AitagCacheFilter;
+      qOverride?: string;
+      promptOverride?: string;
       silent?: boolean;
       /** 追加模式：下一页内容接到当前列表下方（连续滚动），不替换不回顶。 */
       append?: boolean;
@@ -590,7 +680,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const targetRankMonth = options.rankMonthOverride || rankMonth;
     const targetTimeRange = getAitagTimeRange(targetSort, targetRankMonth);
     const targetCacheFilter = options.cacheFilterOverride || cacheFilter;
-    const prefetchSignature = buildPrefetchSignature(targetSort, targetRankMonth, targetCacheFilter);
+    // 追加、静默刷新沿用已生效条件接续当前结果；主动检索才提交输入框里的草稿。
+    const keepAppliedQuery = isAppend || options.silent === true;
+    const targetQ = options.qOverride ?? (keepAppliedQuery ? appliedQ : q);
+    const targetPrompt = options.promptOverride ?? (keepAppliedQuery ? appliedPrompt : prompt);
+    const targetRemotePrompt = options.promptOverride !== undefined
+      ? parseAitagPromptQuery(targetPrompt).remote
+      : keepAppliedQuery ? appliedRemotePrompt : remotePrompt;
+    // 签名按本次实际条件生成：覆盖值在下一次渲染才进入状态，旧值签名会让后续追加全部被丢弃。
+    const prefetchSignature = buildAitagQuerySignature(targetQ, targetPrompt, targetSort, targetRankMonth, targetCacheFilter);
     if (!options.silent) setIsLoading(true);
     aitagPageCache = { ...aitagPageCache, error: null };
     setError(null);
@@ -609,8 +707,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           data = await aitagService.search({
             page: targetPage,
             pageSize: PAGE_SIZE,
-            q,
-            prompt,
+            q: targetQ,
+            prompt: targetRemotePrompt,
             sort: targetSort,
             timeRange: targetTimeRange,
           });
@@ -618,8 +716,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           data = await aitagService.searchCache({
             page: targetPage,
             pageSize: PAGE_SIZE,
-            q,
-            prompt,
+            q: targetQ,
+            prompt: targetRemotePrompt,
             sort: targetSort,
             cacheFilter: targetCacheFilter,
             timeRange: targetTimeRange,
@@ -629,8 +727,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         data = await aitagService.searchCache({
           page: targetPage,
           pageSize: PAGE_SIZE,
-          q,
-          prompt,
+          q: targetQ,
+          prompt: targetRemotePrompt,
           sort: targetSort,
           cacheFilter: targetCacheFilter,
           timeRange: targetTimeRange,
@@ -662,9 +760,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         hasLoaded: true,
         cacheStatus: nextStatus,
         isOfflineCache: offline,
+        ...(isAppend ? {} : { appliedQ: targetQ, appliedPrompt: targetPrompt }),
       };
 
-      if (!isAppend) querySignatureRef.current = getQuerySignature();
+      if (!isAppend) {
+        querySignatureRef.current = prefetchSignature;
+        setMetadataGiveUpIds(new Set());
+        setAppliedQ(targetQ);
+        setAppliedPrompt(targetPrompt);
+      }
       setItems(previous => (isAppend ? [...previous, ...nextItems] : nextItems));
       setTotal(nextTotal);
       setPage(nextPage);
@@ -676,8 +780,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       // 当前页稳定后后台预取下一页：追加触底时直接消费，省掉 JSON 往返等待
       if (nextItems.length > 0) {
         const fetchPrefetchPage = (pageNumber: number) => targetCacheFilter === 'all'
-          ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, timeRange: targetTimeRange })
-          : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q, prompt, sort: targetSort, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
+          ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q: targetQ, prompt: targetRemotePrompt, sort: targetSort, timeRange: targetTimeRange })
+          : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q: targetQ, prompt: targetRemotePrompt, sort: targetSort, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
         prefetchedPageRef.current = {
           signature: prefetchSignature,
           page: nextPage + 1,
@@ -749,8 +853,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const data = await aitagService.searchCache({
       page,
       pageSize: PAGE_SIZE,
-      q,
-      prompt,
+      q: appliedQ,
+      prompt: appliedRemotePrompt,
       sort,
       cacheFilter,
       timeRange: getAitagTimeRange(sort, rankMonth),
@@ -797,22 +901,46 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   }, []);
 
   useEffect(() => {
-    if (!allowBackgroundChecks || isLoading || isOfflineCache || visibleItems.length === 0 || !hasPendingFirstImageCache) return;
+    // 筛选把作品全部隐藏时仍要轮询待补齐元数据的作品，否则它们永远无法按条件显示。
+    if (!allowBackgroundChecks || isLoading || isOfflineCache || (visibleItems.length === 0 && pendingMetadataItems.length === 0) || !hasPendingFirstImageCache) return;
 
     let cancelled = false;
     let idleRounds = 0;
     let pollRounds = 0;
     let cancelIdleDelay = () => {};
     const controller = new AbortController();
-    const pendingIds = new Set(
-      visibleItems
-        .filter(needsFirstImageCacheRefresh)
-        .map(item => Number(item.id))
-        .filter(Number.isFinite)
-    );
+    // 被筛选暂时隐藏、等待元数据的作品优先轮询。接口单次最多一页，每批有结果后从最新列表补入
+    // 尚未轮询的作品，超过一页的待补齐作品也会依次轮到；等待上限按作品各自计算。
+    const metadataWaitIds = new Set<number>();
+    const metadataWaitStartedAt = new Map<number, number>();
+    const pendingIds = new Set<number>();
+    const refillMetadataWaits = () => {
+      for (const id of pendingMetadataIdsRef.current) {
+        if (pendingIds.size >= PAGE_SIZE) break;
+        if (metadataWaitIds.has(id)) continue;
+        metadataWaitIds.add(id);
+        metadataWaitStartedAt.set(id, Date.now());
+        pendingIds.add(id);
+      }
+    };
+    refillMetadataWaits();
+    for (const item of visibleItems) {
+      if (pendingIds.size >= PAGE_SIZE) break;
+      const id = Number(item.id);
+      if (Number.isFinite(id) && needsFirstImageCacheRefresh(item)) pendingIds.add(id);
+    }
+    const hasMetadataWaits = () => [...pendingIds].some(id => metadataWaitIds.has(id));
+    const giveUpMetadata = (ids: number[]) => {
+      ids.forEach(id => pendingIds.delete(id));
+      if (!cancelled && ids.length) setMetadataGiveUpIds(previous => new Set([...previous, ...ids]));
+    };
+    const expireMetadataWaits = () => giveUpMetadata([...pendingIds].filter(id => (
+      metadataWaitIds.has(id) && Date.now() - (metadataWaitStartedAt.get(id) ?? 0) >= METADATA_WAIT_MS
+    )));
+    const giveUpRemainingMetadata = () => giveUpMetadata([...pendingIds].filter(id => metadataWaitIds.has(id)));
 
     const waitForFirstImages = async () => {
-      while (!cancelled && pendingIds.size > 0 && pollRounds < 4) {
+      while (!cancelled && pendingIds.size > 0 && (pollRounds < 4 || hasMetadataWaits())) {
         pollRounds++;
         try {
           const data = await aitagService.waitForFirstImageCache({
@@ -829,6 +957,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             idleRounds = 0;
             nextItems.forEach(item => pendingIds.delete(Number(item.id)));
             mergeCachedFirstImageItems(nextItems);
+            // 已有首图缓存却仍缺元数据的作品无法再等到结果，按无法判断处理，不占用待补齐名额。
+            giveUpMetadata(nextItems.filter(isAitagMetadataPending).map(item => Number(item.id)).filter(id => metadataWaitIds.has(id)));
             if (data.status) {
               setCacheStatus(data.status);
               aitagPageCache = { ...aitagPageCache, cacheStatus: data.status };
@@ -837,8 +967,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             }
           } else {
             if (idleRounds >= FIRST_IMAGE_IDLE_DELAYS_MS.length) {
-              await refreshCurrentPageFromCache().catch(console.error);
-              return;
+              if (hasMetadataWaits()) {
+                // 后端仍在逐个补齐：沿用最长间隔继续等待，不提前放弃隐藏的作品。
+                idleRounds = FIRST_IMAGE_IDLE_DELAYS_MS.length - 1;
+              } else {
+                await refreshCurrentPageFromCache().catch(console.error);
+                giveUpRemainingMetadata();
+                return;
+              }
             }
             const delay = FIRST_IMAGE_IDLE_DELAYS_MS[idleRounds++];
             await new Promise<void>(resolve => {
@@ -855,13 +991,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             });
             cancelIdleDelay = () => {};
           }
+          expireMetadataWaits();
+          refillMetadataWaits();
         } catch (e) {
           if (cancelled) return;
           await refreshCurrentPageFromCache().catch(console.error);
+          giveUpRemainingMetadata();
           return;
         }
       }
       if (!cancelled && pendingIds.size > 0) await refreshCurrentPageFromCache().catch(console.error);
+      giveUpRemainingMetadata();
     };
 
     waitForFirstImages().catch(console.error);
@@ -871,7 +1011,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       cancelIdleDelay();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, q, prompt, sort, rankMonth, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, allowBackgroundChecks]);
+  }, [page, appliedQ, appliedPrompt, sort, rankMonth, cacheFilter, isLoading, isOfflineCache, hasPendingFirstImageCache, metadataFilterActive, allowBackgroundChecks]);
 
   useEffect(() => {
     if (!allowBackgroundChecks || !selectedId || !selectedDetail || selectedDetail.isPreviewOnly || detailHasFullyCachedImages(selectedDetail)) return;
@@ -961,6 +1101,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       rankMonth,
       availableMonths,
       cacheFilter,
+      appliedQ,
+      appliedPrompt,
+      modelFilter,
+      artistFilter,
+      chainFilter,
       page,
       total,
       error,
@@ -968,7 +1113,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       isOfflineCache,
       hasLoaded: hasLoadedRef.current,
     };
-  }, [items, details, selectedId, q, prompt, sort, rankMonth, availableMonths, cacheFilter, page, total, error, cacheStatus, isOfflineCache]);
+  }, [items, details, selectedId, q, prompt, sort, rankMonth, availableMonths, cacheFilter, appliedQ, appliedPrompt, modelFilter, artistFilter, chainFilter, page, total, error, cacheStatus, isOfflineCache]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1001,6 +1146,38 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     aitagPageCache = { ...aitagPageCache, selectedId: null };
     setSelectedId(null);
     loadWorks(1, { resetScroll: true });
+  };
+
+  /** 本地筛选即时生效；主动改变条件时从新结果顶部开始浏览。 */
+  const changeLocalFilter = (apply: () => void) => {
+    apply();
+    resetScrollPositions();
+  };
+
+  /** 清除单个服务端检索条件并立即重新检索；另一项回到已生效的值，不顺带提交未应用的草稿。 */
+  const clearSearchText = (field: 'q' | 'prompt') => {
+    aitagPageCache = { ...aitagPageCache, selectedId: null };
+    setSelectedId(null);
+    const nextQ = field === 'q' ? '' : appliedQ;
+    const nextPrompt = field === 'prompt' ? '' : appliedPrompt;
+    setQ(nextQ);
+    setPrompt(nextPrompt);
+    loadWorks(1, { resetScroll: true, qOverride: nextQ, promptOverride: nextPrompt });
+  };
+
+  const resetFilters = () => {
+    aitagPageCache = { ...aitagPageCache, selectedId: null };
+    setSelectedId(null);
+    setQ('');
+    setPrompt('');
+    setCacheFilter('all');
+    setSort('new');
+    setRankMonth('current');
+    setModelFilter('');
+    setArtistFilter('all');
+    setChainFilter('all');
+    loadWorks(1, { resetScroll: true, qOverride: '', promptOverride: '', cacheFilterOverride: 'all', sortOverride: 'new', rankMonthOverride: 'current' });
+    refreshCacheStatus('new', 'current').catch(console.error);
   };
 
   const handleCacheFilterChange = (nextCacheFilter: AitagCacheFilter) => {
@@ -1178,7 +1355,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         username: currentUser.username,
         type: 'style',
         name: getImageTitle(image, index),
-        description: `Imported from aitag #${image.work_id}`,
+        description: buildAitagChainDescription(image.work_id),
         tags: [],
         previewImage: buildAitagImageUrl(image),
         basePrompt: importData.prompt,
@@ -1200,7 +1377,31 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     }
   };
 
-  const activeFilterCount = Number(Boolean(prompt.trim())) + Number(cacheFilter !== 'all') + Number(sort !== 'new') + Number(Boolean(modelFilter)) + Number(sort === 'monthly' && rankMonth !== 'current');
+  const activeFilterCount = Number(Boolean(appliedPrompt.trim())) + Number(cacheFilter !== 'all') + Number(sort !== 'new') + Number(Boolean(modelFilter)) + Number(sort === 'monthly' && rankMonth !== 'current') + Number(artistFilter !== 'all') + Number(chainFilter !== 'all');
+  const cacheFilterLabels: Record<AitagCacheFilter, string> = { all: '全部', favorite: '收藏', full: '已缓存全部', 'first-image': '已缓存首图' };
+  const rankMonthLabel = rankMonth === 'older' ? t('更早') : rankMonth === 'current' ? t('当前月份') : rankMonth.replace(/^m/, '');
+  // 已生效条件：关键词与提示词按最近一次实际检索显示，输入中的草稿不提前出现。
+  const filterChips: Array<{ key: string; label: string; onRemove: () => void }> = [
+    ...(appliedQ.trim() ? [{ key: 'q', label: t('关键词：{0}', [appliedQ.trim()]), onRemove: () => clearSearchText('q') }] : []),
+    ...(appliedPrompt.trim() ? [{ key: 'prompt', label: t('提示词：{0}', [appliedPrompt.trim()]), onRemove: () => clearSearchText('prompt') }] : []),
+    ...(cacheFilter !== 'all' ? [{ key: 'cache', label: t('缓存：{0}', [t(cacheFilterLabels[cacheFilter])]), onRemove: () => handleCacheFilterChange('all') }] : []),
+    ...(sort === 'monthly' ? [{ key: 'sort', label: t('月榜：{0}', [rankMonthLabel]), onRemove: () => handleSortChange('new') }] : []),
+    ...(modelFilter ? [{ key: 'model', label: t('模型：{0}', [t(modelFilter)]), onRemove: () => changeLocalFilter(() => setModelFilter('')) }] : []),
+    ...(artistFilter !== 'all' ? [{ key: 'artist', label: artistFilter === 'with' ? t('含画师串') : t('无画师串'), onRemove: () => changeLocalFilter(() => setArtistFilter('all')) }] : []),
+    ...(chainFilter !== 'all' ? [{ key: 'chain', label: chainFilter === 'saved' ? t('已存风格串') : t('未存风格串'), onRemove: () => changeLocalFilter(() => setChainFilter('all')) }] : []),
+  ];
+  const canResetFilters = filterChips.length > 0 || Boolean(q.trim()) || Boolean(prompt.trim());
+  const renderLocalFilterSelects = (mobile: boolean) => {
+    const labelClass = mobile ? 'text-sm font-bold dark:text-white' : 'text-xs text-gray-500 dark:text-gray-400';
+    const selectClass = mobile
+      ? 'mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800'
+      : 'mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white';
+    return <>
+      <label className={`${labelClass} ${mobile ? 'col-span-2' : ''}`}>{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => changeLocalFilter(() => setModelFilter(event.target.value))} disabled={(!mobile && isLoading) || modelOptions.length === 0} className={selectClass}><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
+      <label className={labelClass}>{t("画师串")}<select value={artistFilter} onChange={event => changeLocalFilter(() => setArtistFilter(event.target.value as AitagArtistFilter))} className={selectClass}><option value="all">{t("全部")}</option><option value="with">{t("含画师串")}</option><option value="without">{t("无画师串")}</option></select></label>
+      <label className={labelClass}>{t("风格串")}<select value={chainFilter} onChange={event => changeLocalFilter(() => setChainFilter(event.target.value as AitagChainFilter))} className={selectClass}><option value="all">{t("全部")}</option><option value="saved">{t("已保存")}</option><option value="unsaved">{t("未保存")}</option></select></label>
+    </>;
+  };
 
   return (
     <div className="workspace-canvas aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -1219,31 +1420,46 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title={t("AITag 筛选")} width={544} onClose={() => setShowDesktopFilters(false)}>
 
             <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">{t("AITag 筛选")}</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="appearance-group flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
-            <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder={t("搜索 NovelAI 元数据提示词")} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
+            <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder={t("逗号分隔多个条件，- 开头排除")} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
             <div className="grid grid-cols-3 gap-3">
               <label className="text-xs text-gray-500 dark:text-gray-400">{t("缓存")}<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
               <label className="text-xs text-gray-500 dark:text-gray-400">{t("排序")}<select value={sort} onChange={e => handleSortChange(e.target.value as AitagSort)} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
               <label className="text-xs text-gray-500 dark:text-gray-400">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} onChange={e => handleRankMonthChange(e.target.value)} disabled={isLoading || sort !== 'monthly'} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">{t("无需月份")}</option><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
             </div>
-            <label className="mt-3 block text-xs text-gray-500 dark:text-gray-400">{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={e => setModelFilter(e.target.value)} disabled={isLoading || modelOptions.length === 0} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
-            <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">{t("应用筛选")}</button>
+            <div className="mt-3 grid grid-cols-3 gap-3">{renderLocalFilterSelects(false)}</div>
+            <div className="mt-4 flex items-center gap-3">
+              <button type="button" onClick={resetFilters} disabled={!canResetFilters} className="px-1 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button>
+              <button type="button" onClick={() => { handleSearch(); setShowDesktopFilters(false); }} className="h-10 flex-1 rounded-lg bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-500">{t("应用筛选")}</button>
+            </div>
             </AnchoredToolbarPopover>}
           </div>
           <div className="ml-auto hidden items-center gap-2 text-xs text-gray-500 xl:flex"><span>{t("已加载 {0} 条", [formatCount(visibleItems.length)])}</span><span>{t("共 {0} 条", [formatCount(total)])}</span></div>
         </div>
       </WorkspaceToolbar>
-      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<button onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch w-full rounded-xl bg-indigo-600 font-bold text-white">{t("应用筛选")}</button>}>
+      <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("AITag 筛选")} onClose={() => setShowMobileFilters(false)} footer={<div className="flex items-center gap-3"><button type="button" onClick={() => { resetFilters(); setShowMobileFilters(false); }} disabled={!canResetFilters} className="mobile-touch px-2 text-sm font-bold text-indigo-600 disabled:opacity-40 dark:text-indigo-300">{t("重置筛选")}</button><button type="button" onClick={() => { handleSearch(); setShowMobileFilters(false); }} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">{t("应用筛选")}</button></div>}>
         <div className="space-y-4">
-          <label className="block text-sm font-bold dark:text-white">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t("搜索 NovelAI 元数据提示词")} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>
+          <label className="block text-sm font-bold dark:text-white">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t("逗号分隔多个条件，- 开头排除")} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal dark:border-gray-800 dark:bg-gray-800" /></label>
           <div className="grid grid-cols-2 gap-3">
             <label className="text-sm font-bold dark:text-white">{t("缓存")}<select value={cacheFilter} onChange={event => handleCacheFilterChange(event.target.value as AitagCacheFilter)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
             <label className="text-sm font-bold dark:text-white">{t("排序")}<select value={sort} onChange={event => handleSortChange(event.target.value as AitagSort)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal dark:border-gray-800 dark:bg-gray-800"><option value="new">{t("最新")}</option><option value="monthly">{t("月榜")}</option></select></label>
             <label className="text-sm font-bold dark:text-white">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
           </div>
-            <label className="text-sm font-bold dark:text-white">{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
+          <div className="grid grid-cols-2 gap-3">{renderLocalFilterSelects(true)}</div>
           <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t("已加载 {0} 条 · 共 {1} 条", [formatCount(visibleItems.length), formatCount(total)])}</div>
         </div>
       </MobileBottomSheet></ImagePreviewPortal>
+      {filterChips.length > 0 && (
+        <div role="group" aria-label={t("已生效的筛选条件")} className="flex h-11 flex-none items-center gap-2 border-b border-indigo-100 bg-indigo-50/70 px-3 text-xs dark:border-indigo-900/40 dark:bg-indigo-950/30 md:h-9 md:px-5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+            {filterChips.map(chip => (
+              <button key={chip.key} type="button" onClick={chip.onRemove} disabled={isLoading && (chip.key === 'cache' || chip.key === 'sort')} aria-label={t("移除筛选：{0}", [chip.label])} title={chip.label} className="inline-flex h-8 max-w-[16rem] flex-none items-center gap-1 rounded-full border border-indigo-200 bg-white/70 pl-2.5 pr-1.5 font-medium text-indigo-700 hover:border-indigo-300 hover:bg-white disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50 md:h-6">
+                <span className="truncate">{chip.label}</span><X aria-hidden="true" className="h-3.5 w-3.5 flex-none opacity-70" />
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={resetFilters} className="flex-none font-bold text-indigo-600 hover:underline dark:text-indigo-400">{t("清空全部")}</button>
+        </div>
+      )}
 
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
@@ -1270,7 +1486,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : t("没有匹配结果")}</div>
+              <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : pendingMetadataItems.length > 0 ? t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length]) : t("没有匹配结果")}</div>
+              {filterChips.length > 0 && <ToolbarButton onClick={resetFilters} className="mt-3">{t("清除筛选")}</ToolbarButton>}
             </div>
           ) : (
             imageDisplay.layout === 'masonry' ? (
@@ -1297,6 +1514,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             )}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
               <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
+              {pendingMetadataItems.length > 0 && <span className="inline-flex items-center gap-1"><LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />{t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])}</span>}
               {isPageInputOpen ? (
                 <input
                   type="number"
