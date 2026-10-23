@@ -9,6 +9,14 @@ import {
   buildAitagPreviewUrl,
   extractAitagPrompt,
   hasAitagImagePrompt,
+  aitagPromptHasArtistTags,
+  buildAitagChainDescription,
+  getAitagPositivePromptText,
+  getAitagSavedChainWorkIds,
+  getAitagWorkPromptTexts,
+  matchesAitagPromptQuery,
+  parseAitagPromptQuery,
+  type AitagImage,
 } from '../../services/aitagService';
 
 describe('parseMaybeJsonArray', () => {
@@ -185,5 +193,54 @@ describe('aitagService', () => {
     } finally {
       fetchMock.mockRestore();
     }
+  });
+});
+
+describe('AITag 本地筛选辅助', () => {
+  const image = (aiJson: Record<string, unknown>): AitagImage => ({ id: 1, work_id: 7, author_id: 1, image_type: 'nai', file_name: '7_p0.png', ai_json: aiJson });
+
+  it('提示词检索：逗号分隔多条件，最长包含条件交给服务端，其余与排除条件本地判定', () => {
+    expect(parseAitagPromptQuery('long_hair， blue eyes, -Smile, -smile,')).toEqual({ remote: 'long_hair', localInclude: ['blue eyes'], exclude: ['smile'] });
+    expect(parseAitagPromptQuery('1girl')).toEqual({ remote: '1girl', localInclude: [], exclude: [] });
+    expect(parseAitagPromptQuery('-nsfw')).toEqual({ remote: '', localInclude: [], exclude: ['nsfw'] });
+    expect(parseAitagPromptQuery('  ')).toEqual({ remote: '', localInclude: [], exclude: [] });
+  });
+
+  it('本地细筛按下划线／大小写归一化，排除命中即剔除，单条件不重复判定', () => {
+    const query = parseAitagPromptQuery('masterpiece, long hair, -smile');
+    expect(matchesAitagPromptQuery(['Masterpiece, LONG_HAIR, blue eyes'], query)).toBe(true);
+    expect(matchesAitagPromptQuery(['masterpiece, long hair, smile'], query)).toBe(false);
+    expect(matchesAitagPromptQuery(['masterpiece'], query)).toBe(false);
+    expect(matchesAitagPromptQuery([], parseAitagPromptQuery('-smile'))).toBe(true);
+    expect(matchesAitagPromptQuery([], parseAitagPromptQuery('anything'))).toBe(true);
+  });
+
+  it('正向提示词包含基础与角色提示词，不混入负面；详情加载后覆盖全部页', () => {
+    const first = image({ Comment: { prompt: 'base tag', uc: 'bad hands', v4_prompt: { caption: { base_caption: 'base tag', char_captions: [{ char_caption: 'girl, red hair' }] } } } });
+    expect(getAitagPositivePromptText(first)).toBe('base tag, girl, red hair');
+    const second = image({ prompt: 'artist:synthetic, scenery' });
+    const work = { id: 7, firstImage: first };
+    expect(getAitagWorkPromptTexts(work)).toEqual(['base tag, girl, red hair']);
+    expect(getAitagWorkPromptTexts(work, { work, images: [first, second] })).toEqual(['base tag, girl, red hair', 'artist:synthetic, scenery']);
+    expect(getAitagWorkPromptTexts(work, { work, images: [second], isPreviewOnly: true })).toEqual(['base tag, girl, red hair']);
+  });
+
+  it('画师串识别 artist: 前缀与词库中的裸画师名，普通 Tag 不误判', () => {
+    expect(aitagPromptHasArtistTags('1girl, artist:synthetic painter, solo')).toBe(true);
+    expect(aitagPromptHasArtistTags('1girl, 1.2::Artist:synthetic::, solo')).toBe(true);
+    expect(aitagPromptHasArtistTags('1girl, artistic, solo')).toBe(false);
+    expect(aitagPromptHasArtistTags('1girl, synthetic_painter, solo')).toBe(false);
+    expect(aitagPromptHasArtistTags('1girl, synthetic_painter, solo', new Set(['synthetic painter']))).toBe(true);
+  });
+
+  it('只按保存时写入的 AITag 来源说明识别已保存风格串，角色条目不计入', () => {
+    const chains = [
+      { type: 'style' as const, description: buildAitagChainDescription(11) },
+      { type: 'style' as const, description: `备注 ${buildAitagChainDescription(12)}` },
+      { type: 'character' as const, description: buildAitagChainDescription(13) },
+      { type: 'style' as const, description: 'aitag 14' },
+    ];
+    expect([...getAitagSavedChainWorkIds(chains)].sort()).toEqual([11, 12]);
+    expect(getAitagSavedChainWorkIds(undefined).size).toBe(0);
   });
 });
