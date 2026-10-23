@@ -158,6 +158,12 @@ const capture = () => {
   return { ...page, snapshotId: `page-${bootId}-${revision}`, descriptors, text, busy, scroll, notifications, commands, exports };
 };
 export const getLastAgentPageRead = () => lastRead;
+/** 面板只展示阅读对象，不为标题扫描全部控件、正文与滚动容器。 */
+export const readAgentPageHeading = () => {
+  styles = new WeakMap();
+  const { title } = pageScope();
+  return { title, capturedAt: Date.now() };
+};
 export const getAgentPageClientId = () => {
   try { let id = sessionStorage.getItem('nai-agent-page-client'); if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('nai-agent-page-client', id); } return id; } catch { return bootId; }
 };
@@ -187,9 +193,15 @@ export const readAgentPage = (options: AgentPageReadOptions = {}): AgentPageSnap
 export const observeAgentPage = (refresh: () => void) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const schedule = () => { if (!timer) timer = setTimeout(() => { timer = undefined; refresh(); }, 100); };
-  const observer = new MutationObserver(records => { if (records.some(record => { const element = record.target instanceof HTMLElement ? record.target : record.target.parentElement; return element && !element.closest('.agent-overlay,[data-agent-surface]'); })) schedule(); });
+  const ignored = (node: Node) => {
+    const element = node instanceof Element ? node : node.parentElement;
+    return Boolean(element?.closest('.agent-overlay,[data-agent-surface],.nai-theme-light'));
+  };
+  const observer = new MutationObserver(records => {
+    if (records.some(record => !ignored(record.target) && (record.type !== 'childList' || [...record.addedNodes, ...record.removedNodes].some(node => !ignored(node))))) schedule();
+  });
   observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-agent-command-scope', 'data-agent-canvas-state', 'data-agent-action', 'data-agent-interaction', 'data-agent-object', 'data-agent-view', 'data-agent-page-scope', 'data-agent-page-title', 'role', 'aria-label', 'aria-modal', 'aria-expanded', 'aria-checked', 'aria-selected', 'aria-pressed', 'aria-disabled', 'aria-busy', 'hidden', 'aria-hidden', 'style', 'class', 'open', 'disabled', 'checked', 'value'] });
-  const input = (event: Event) => { if (event.target instanceof HTMLElement && !event.target.closest(privateSelector)) schedule(); };
+  const input = (event: Event) => { if (event.target instanceof HTMLElement && !event.target.closest(privateSelector) && !ignored(event.target)) schedule(); };
   const pointer = (event: Event) => { if (event.isTrusted && hoveredGroup && event.target instanceof Node && !hoveredGroup.contains(event.target)) { clearAgentPageHover(); schedule(); } };
   for (const name of ['input', 'change', 'focusin', 'focusout', 'scroll']) document.addEventListener(name, input, true);
   window.addEventListener('resize', schedule); window.addEventListener('nai-agent-capabilities-changed', schedule);

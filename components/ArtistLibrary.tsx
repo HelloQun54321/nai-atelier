@@ -486,7 +486,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const hasMoreSamples = (showFavOnly ? sampledArtists.filter(entry => favoriteKeys.has(normalizeRollArtistKey(entry.name))).length : sampledArtists.length) > sampleLimit;
     const hasMoreVisible = onlySamples ? hasMoreSamples : !showFavOnly && hasMoreCatalog;
     const loadMore = () => { if (onlySamples) setSampleLimit(current => current + 100); else void loadNextCatalogPage(); };
-    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px');
+    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px', onlySamples ? sampleLimit : nextCatalogPageRef.current);
 
     useEffect(() => {
         const sync = () => setFavorites(new Set(collectionSnapshot()

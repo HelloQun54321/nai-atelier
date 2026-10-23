@@ -341,6 +341,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
 
   const selectedDetail = selectedId ? details[selectedId] : null;
+  const selectedImages = useMemo(() => {
+    if (!selectedDetail) return [];
+    const favorites = aitagCollectionImages(selectedDetail);
+    return selectedDetail.images
+      .map((image, index) => ({ image, favorite: favorites[index] }))
+      .sort((a, b) => a.image.file_name.localeCompare(b.image.file_name, undefined, { numeric: true }));
+  }, [selectedDetail]);
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
   const closeDetail = () => {
     selectionAnchor.preserveOnClose();
@@ -1360,10 +1367,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                 <ToolbarLink href={getAitagUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("aitag 原页")}</ToolbarLink>
                 <ToolbarLink href={getPixivUrl(selectedWork)} target="_blank" rel="noreferrer"><ExternalLink />{t("Pixiv 原页")}</ToolbarLink>
               </div>
-              {selectedDetail.images
-                .slice()
-                .sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }))
-                .map((image, index) => {
+              {selectedImages.map(({ image, favorite }, index) => {
                     const promptText = extractAitagPrompt(image);
                     const generationLabels = getAitagGenerationLabels(image);
                     const modelLabel = getAitagModelLabel(image);
@@ -1371,8 +1375,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                     return (
                       <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-content appearance-card rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
                         <PressRevealSurface className="appearance-media group relative">
-                          <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
-                          <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} />
+                          <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
+                          <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={favorite} notify={notify} />
                         </PressRevealSurface>
                         <div className="appearance-group p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">

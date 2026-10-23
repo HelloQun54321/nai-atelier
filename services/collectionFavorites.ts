@@ -235,15 +235,48 @@ export async function removeCollection(ids: string[]): Promise<void> {
   await updateCollection(ids, { archived: true });
 }
 
-export function collectionTargetActive(target: CollectionTarget): boolean {
-  if (target.getGroup) {
-    const userId = target.collectionId ? items.find(item => item.id === target.collectionId)?.userId : owner?.id;
-    const group = items.filter(item => item.userId === userId && item.sourceType === target.sourceType && item.sourceId === target.sourceId);
-    if (target.collectionId) return group.some(item => !item.archived);
-    const size = Math.max(Number(group.find(item => item.analysis?.collectionGroupSize)?.analysis?.collectionGroupSize) || 1, target.groupSize || 1);
-    return new Set(group.filter(item => !item.archived).map(item => item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? item.imageUrl)).size >= size;
+const collectionKey = (...parts: unknown[]) => JSON.stringify(parts);
+let activeIndex: ReturnType<typeof buildActiveIndex> | undefined;
+function buildActiveIndex() {
+  const byId = new Map<string, Inspiration>();
+  const ids = new Set<string>(), urls = new Set<string>(), sources = new Set<string>(), artistTags = new Set<string>();
+  const groups = new Map<string, { size: number; hasSize: boolean; identities: Set<unknown> }>();
+  for (const item of items) {
+    if (!byId.has(item.id)) byId.set(item.id, item);
+    const key = collectionKey(item.userId, item.sourceType, item.sourceId);
+    let group = groups.get(key);
+    if (!group) { group = { size: 1, hasSize: false, identities: new Set() }; groups.set(key, group); }
+    const declaredSize = item.analysis?.collectionGroupSize;
+    if (!group.hasSize && declaredSize) { group.size = Number(declaredSize) || 1; group.hasSize = true; }
+    if (item.archived) continue;
+    group.identities.add(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? item.imageUrl);
+    ids.add(item.id);
+    if (item.imageUrl) urls.add(item.imageUrl);
+    const original = item.analysis?.collectionOriginalUrl;
+    if (typeof original === 'string' && original) urls.add(original);
+    if (!item.imageUrl && item.sourceType === 'artist' && item.sourceId) artistTags.add(item.sourceId);
+    if (item.sourceType && item.sourceId) sources.add(collectionKey(item.sourceType, item.sourceId,
+      item.sourceType === 'history' || item.sourceType === 'danbooru' ? '' : String(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? '')));
   }
-  return items.some(item => !item.archived && matchesCollectionImage(item, target));
+  return { snapshot: items, byId, ids, urls, sources, artistTags, groups };
+}
+
+export function collectionTargetActive(target: CollectionTarget): boolean {
+  // 所有写入与加载均替换快照；同一快照的各卡片共用索引，owner 切换在查询时读取。
+  if (activeIndex?.snapshot !== items) activeIndex = buildActiveIndex();
+  const index = activeIndex;
+  if (target.getGroup) {
+    const userId = target.collectionId ? index.byId.get(target.collectionId)?.userId : owner?.id;
+    const group = index.groups.get(collectionKey(userId, target.sourceType, target.sourceId));
+    if (target.collectionId) return Boolean(group?.identities.size);
+    return (group?.identities.size || 0) >= Math.max(group?.size || 1, target.groupSize || 1);
+  }
+  if (target.collectionId) return index.ids.has(target.collectionId);
+  if (!target.imageUrl) return target.sourceType === 'artist' && Boolean(target.sourceId) && index.artistTags.has(target.sourceId!);
+  if (index.urls.has(target.imageUrl)) return true;
+  if (!target.sourceType || !target.sourceId) return false;
+  if (target.sourceType === 'history' || target.sourceType === 'danbooru') return index.sources.has(collectionKey(target.sourceType, target.sourceId, ''));
+  return target.imageId !== undefined && index.sources.has(collectionKey(target.sourceType, target.sourceId, target.imageId));
 }
 
 const pendingTargets = new Map<string, Promise<boolean>>();

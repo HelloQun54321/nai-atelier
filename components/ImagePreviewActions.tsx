@@ -53,25 +53,59 @@ export const ImagePreviewActions: React.FC<Props> = ({
   useLayoutEffect(() => {
     const stage = actionsRef.current?.parentElement;
     if (!stage) return;
-    const groups = [...actionsRef.current!.querySelectorAll<HTMLElement>('.image-preview-action-group')];
-    const items = groups.map(group => [...group.querySelectorAll<HTMLButtonElement>('button')]);
-    const navigation = [...stage.querySelectorAll<HTMLElement>('[data-image-preview-navigation]')];
-    const footers = [...(stage.closest('[role="dialog"]') || stage).querySelectorAll<HTMLElement>('[data-image-preview-footer]')];
+    const root = actionsRef.current!;
+    const surface = stage.closest('[role="dialog"]') || stage;
+    let groups: HTMLElement[] = [], items: HTMLButtonElement[][] = [], navigation: HTMLElement[] = [], footers: HTMLElement[] = [];
+    let observed = new Set<HTMLElement>();
+    const originalRows = new Map<HTMLElement, string>();
     const originalMinHeight = stage.style.minHeight;
     const update = () => {
+      if (!items.flat().length) {
+        if (stage.style.minHeight !== originalMinHeight) stage.style.minHeight = originalMinHeight;
+        return;
+      }
       const size = Math.max(0, ...items.flat().map(item => item.offsetHeight));
       if (!size || !stage.clientWidth || !stage.clientHeight) return;
       const footer = Math.max(0, ...footers.map(item => item.offsetHeight ? item.offsetHeight + (parseFloat(getComputedStyle(item).bottom) || 0) : 0));
       const style = getComputedStyle(groups[0]);
       const layout = previewActionLayout(stage.clientWidth, stage.clientHeight, items.map(group => group.length), items.map(group => Math.max(0, ...group.map(item => item.offsetWidth))), size, Math.max(0, ...navigation.map(item => item.offsetHeight)), footer, parseFloat(style.rowGap) || 8, parseFloat(style.top) || 16);
-      groups.forEach((group, index) => { group.style.gridTemplateRows = `repeat(${Math.min(layout.rows, items[index].length)}, ${size}px)`; });
-      stage.style.minHeight = originalMinHeight ? `max(${originalMinHeight}, ${layout.minHeight}px)` : `${layout.minHeight}px`;
+      groups.forEach((group, index) => {
+        const rows = `repeat(${Math.min(layout.rows, items[index].length)}, ${size}px)`;
+        if (group.style.gridTemplateRows !== rows) group.style.gridTemplateRows = rows;
+      });
+      const minHeight = originalMinHeight ? `max(${originalMinHeight}, ${layout.minHeight}px)` : `${layout.minHeight}px`;
+      if (stage.style.minHeight !== minHeight) stage.style.minHeight = minHeight;
     };
-    update();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
-    for (const element of [stage, ...items.flat(), ...navigation, ...footers]) observer?.observe(element);
-    return () => { observer?.disconnect(); stage.style.minHeight = originalMinHeight; };
-  }, [imageUrl, canManageHistoryGroup, onBack, onSetCover, onUploadCover, onSaveArtistSample]);
+    // 回调与忙碌图标不影响排布，只同步真正参与测量的节点。
+    const syncTargets = () => {
+      groups = [...root.querySelectorAll<HTMLElement>('.image-preview-action-group')];
+      items = groups.map(group => [...group.querySelectorAll<HTMLButtonElement>('button')]);
+      navigation = [...stage.querySelectorAll<HTMLElement>('[data-image-preview-navigation]')];
+      footers = [...surface.querySelectorAll<HTMLElement>('[data-image-preview-footer]')];
+      const next = new Set([stage, ...groups, ...items.flat(), ...navigation, ...footers]);
+      if (next.size === observed.size && [...next].every(element => observed.has(element))) return;
+      for (const [group, rows] of originalRows) if (!groups.includes(group)) {
+        group.style.gridTemplateRows = rows;
+        originalRows.delete(group);
+      }
+      for (const group of groups) if (!originalRows.has(group)) originalRows.set(group, group.style.gridTemplateRows);
+      for (const element of observed) if (!next.has(element)) observer?.unobserve(element);
+      for (const element of next) if (!observed.has(element)) observer?.observe(element);
+      observed = next;
+      update();
+    };
+    syncTargets();
+    const mutation = new MutationObserver(syncTargets);
+    mutation.observe(surface, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-image-preview-navigation', 'data-image-preview-footer'] });
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect(); mutation.disconnect();
+      window.removeEventListener('resize', update);
+      stage.style.minHeight = originalMinHeight;
+      for (const [group, rows] of originalRows) group.style.gridTemplateRows = rows;
+    };
+  }, []);
   return <div ref={actionsRef} className="contents">
     {(onBack || (imageUrl && canManageHistoryGroup)) && <div data-card-action="true" className="image-preview-action-group pointer-events-none absolute top-4 left-4 z-30 gap-2" onClick={event => event.stopPropagation()}>
       {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label={t("返回小图")} title={t("返回小图")} className={`${IMAGE_PREVIEW_BUTTON_CLASS} pointer-events-auto !h-12 !w-12`}>

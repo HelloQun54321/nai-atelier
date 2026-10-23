@@ -439,3 +439,91 @@ it('批量保存第二批失败只更新成功批次快照，后续可重试；�
   await service.updateCollection([], { tags: [] });
   expect(mocks.post.mock.calls.length + mocks.put.mock.calls.length).toBe(requestCount);
 });
+
+it('活动索引与逐项匹配保持一致：原地址、旧页码、无图画师、显式 ID 与归档', async () => {
+  const service = await import('../../services/collectionFavorites');
+  const make = (id: string, updates: Partial<Inspiration>): Inspiration => ({ id, userId: user.id, title: id, prompt: '', imageUrl: '', createdAt: 1, ...updates });
+  stored = [
+    make('alias', { imageUrl: '/saved.png', sourceType: 'pixiv', sourceId: 'work', analysis: { collectionOriginalUrl: '/original.png', externalSourcePage: 0 } }),
+    make('artist', { sourceType: 'artist', sourceId: 'alpha' }),
+    make('history', { imageUrl: '/history.png', sourceType: 'history', sourceId: 'history' }),
+    make('danbooru', { imageUrl: '/danbooru.png', sourceType: 'danbooru', sourceId: 'post' }),
+    make('other', { userId: 'other-owner', imageUrl: '/other.png', sourceType: 'pixiv', sourceId: 'other', analysis: { collectionImageId: '2' } }),
+    make('archived', { imageUrl: '/archived.png', sourceType: 'artist', sourceId: 'archived', archived: true }),
+    make('missing-page', { imageUrl: '/missing-page.png', sourceType: 'pixiv', sourceId: 'missing-page' }),
+  ];
+  await service.loadCollection(user);
+  const targets = [
+    { imageUrl: '/original.png', sourceType: 'character' as const, sourceId: 'unrelated' },
+    ...['0', '1', ''].map(imageId => ({ imageUrl: '/different.png', sourceType: 'pixiv' as const, sourceId: 'work', imageId })),
+    ...['alpha', 'beta', 'archived'].map(sourceId => ({ imageUrl: '', sourceType: 'artist' as const, sourceId })),
+    { imageUrl: '' }, { imageUrl: '/different.png', sourceType: 'history' as const, sourceId: 'history' },
+    { imageUrl: '/different.png', sourceType: 'danbooru' as const, sourceId: 'post' },
+    { imageUrl: '/different.png', sourceType: 'pixiv' as const, sourceId: 'missing-page', imageId: '' },
+    ...['alias', 'other', 'archived', 'absent'].map(collectionId => ({ imageUrl: '/original.png', collectionId })),
+    { imageUrl: '/archived.png' }, { imageUrl: '/other.png' },
+  ];
+  for (const target of targets) expect(service.collectionTargetActive(target)).toBe(service.collectionSnapshot().some(item => !item.archived && service.matchesCollectionImage(item, target)));
+});
+
+it('组索引保留所属用户、首个声明页数、原始身份去重及收藏库部分组语义', async () => {
+  const service = await import('../../services/collectionFavorites');
+  const make = (id: string, updates: Partial<Inspiration>): Inspiration => ({ id, userId: user.id, title: id, prompt: '', imageUrl: '/' + id, sourceType: 'pixiv', sourceId: 'group', createdAt: 1, ...updates });
+  stored = [
+    make('archived', { archived: true, analysis: { collectionGroupSize: 3 } }),
+    make('one', { analysis: { collectionImageId: '1', collectionGroupSize: 1 } }),
+    make('duplicate', { analysis: { collectionImageId: '1' } }),
+    make('two', { analysis: { externalSourcePage: 2 } }),
+    make('foreign', { userId: 'other-owner', analysis: { collectionImageId: '3' } }),
+  ];
+  await service.loadCollection(user);
+  const target = { imageUrl: '/one', sourceType: 'pixiv' as const, sourceId: 'group', getGroup: async () => [], groupSize: 2 };
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'one' })).toBe(true);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'foreign' })).toBe(true);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'absent' })).toBe(false);
+  await service.updateCollection(['duplicate'], { analysis: { collectionImageId: 1 } });
+  expect(service.collectionTargetActive(target)).toBe(true);
+  await service.updateCollection(['foreign'], { archived: true });
+  expect(service.collectionTargetActive({ ...target, collectionId: 'foreign' })).toBe(false);
+  await service.loadCollection({ ...user, id: 'other-owner' });
+  expect(service.collectionTargetActive(target)).toBe(false);
+});
+
+it('活动索引随成功更新和重新加载失效，失败更新保留已有状态', async () => {
+  const service = await import('../../services/collectionFavorites');
+  stored = [{ id: 'one', userId: user.id, title: 'one', prompt: '', imageUrl: '/old.png', createdAt: 1 }];
+  await service.loadCollection(user);
+  expect(service.collectionTargetActive({ imageUrl: '/old.png' })).toBe(true);
+  mocks.put.mockRejectedValueOnce(new Error('合成失败'));
+  await expect(service.updateCollection(['one'], { imageUrl: '/failed.png', archived: true })).rejects.toThrow('合成失败');
+  expect(service.collectionTargetActive({ imageUrl: '/old.png' })).toBe(true);
+  expect(service.collectionTargetActive({ imageUrl: '/failed.png' })).toBe(false);
+  await service.updateCollection(['one'], { imageUrl: '/new.png' });
+  expect(service.collectionTargetActive({ imageUrl: '/old.png' })).toBe(false);
+  expect(service.collectionTargetActive({ imageUrl: '/new.png' })).toBe(true);
+  stored = []; await service.loadCollection(user);
+  expect(service.collectionTargetActive({ imageUrl: '/new.png' })).toBe(false);
+});
+
+it('1000 条收藏的索引只读一次，100 张不同卡片及重复渲染不再扫描快照', async () => {
+  const service = await import('../../services/collectionFavorites');
+  stored = Array.from({ length: 1000 }, (_, index) => ({ id: 'indexed-' + index, userId: user.id, title: '图片', prompt: '', imageUrl: '/indexed-' + index, sourceType: 'pixiv', sourceId: 'work-' + index, createdAt: 1, analysis: { collectionImageId: '0', collectionGroupSize: 1 } }));
+  await service.loadCollection(user);
+  let reads = 0;
+  for (const item of service.collectionSnapshot()) {
+    const sourceId = item.sourceId;
+    Object.defineProperty(item, 'sourceId', { enumerable: true, get() { reads++; return sourceId; } });
+  }
+  expect(service.collectionTargetActive({ imageUrl: '/indexed-0' })).toBe(true);
+  const initialReads = reads;
+  expect(initialReads).toBeGreaterThanOrEqual(1000);
+  expect(initialReads).toBeLessThan(10000);
+  for (let render = 0; render < 2; render++) for (let index = 0; index < 100; index++) {
+    const target = { imageUrl: '/unmatched', sourceType: 'pixiv' as const, sourceId: 'work-' + index, imageId: '0' };
+    expect(service.collectionTargetActive(target)).toBe(true);
+    expect(service.collectionTargetActive({ ...target, getGroup: async () => [], groupSize: 1 })).toBe(true);
+    expect(service.collectionTargetActive({ ...target, collectionId: 'indexed-' + index })).toBe(true);
+  }
+  expect(reads).toBe(initialReads);
+});

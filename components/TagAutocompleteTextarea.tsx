@@ -125,6 +125,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [target, setTarget] = useState<CompletionTarget | null>(null);
   const [completionSource, setCompletionSource] = useState<'prompt' | 'tag'>('prompt');
   const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
+  const popupStyleRef = useRef(popupStyle);
   const [isLoading, setIsLoading] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const [translations, setTranslations] = useState<PromptTagTranslation[]>([]);
@@ -507,10 +508,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       const viewportHeight = window.visualViewport?.height || window.innerHeight;
       const below = viewportHeight - rect.bottom;
       const showUp = below < 240 && rect.top > below;
-      setDropUp(showUp);
       const width = Math.min(560, Math.max(280, rect.width));
       // 浮层跟随当前输入位置，限制在视口内，避免末尾输入框的候选溢出右侧。
-      setPopupStyle({
+      const next: React.CSSProperties = {
         position: 'fixed',
         left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
         top: showUp ? undefined : rect.bottom + 4,
@@ -518,7 +518,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         width,
         maxHeight: 'min(18rem, 42dvh)',
         zIndex: 9999,
-      });
+      };
+      if (Object.entries(next).every(([key, value]) => popupStyleRef.current[key as keyof React.CSSProperties] === value)) return;
+      popupStyleRef.current = next;
+      setPopupStyle(next);
+      setDropUp(showUp);
     };
     updatePosition();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);

@@ -326,7 +326,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
   // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
   const appendSentinelRef = useRef<HTMLDivElement>(null);
-  useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && items.length < DANBOORU_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px');
+  useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && items.length < DANBOORU_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px', page);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);

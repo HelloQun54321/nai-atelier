@@ -244,6 +244,8 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
   it('页面读取栏跟随当前页面，移除恢复和撤销，回答用量常驻展开', async () => {
     stubServices();
     const workspace = document.createElement('main'); workspace.dataset.agentView = 'history'; document.body.append(workspace);
+    workspace.innerHTML = '<button>打开作品</button>';
+    const controlRect = vi.spyOn(workspace.querySelector('button')!, 'getBoundingClientRect');
     try {
       vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ role: 'agent', id: 'a', text: '收到', model: 'model', usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12 } }]);
       renderPanel(true);
@@ -253,6 +255,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
       expect((await screen.findByLabelText('回答用量')).closest('details')).toBeNull();
       workspace.dataset.agentView = 'characters'; fireEvent(window, new Event('nai-workspace-changed'));
       expect(screen.getByText(/已读取：角色库/)).toBeTruthy();
+      expect(controlRect).not.toHaveBeenCalled();
     } finally { workspace.remove(); }
   });
   it.each([true, false])('实际面板生成回调批准 %s 时发送正确确认与完成顺序', async accepted => {

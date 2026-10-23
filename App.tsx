@@ -1,6 +1,6 @@
 import { t, useLanguage } from './services/i18n';
 
-import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { ChainList } from './components/ChainList';
 import { useConfirmDialog } from './components/ConfirmDialog';
@@ -60,8 +60,15 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
 const isKeepAliveView = (targetView: ViewState): targetView is KeepAliveView => targetView !== 'edit';
 
+// 缓存的页面事件始终使用最近已提交的状态，废弃的并发渲染不会替换回调。
+function useCommittedCallback<Args extends unknown[], Result>(callback: (...args: Args) => Result) {
+  const committed = useRef(callback);
+  useLayoutEffect(() => { committed.current = callback; });
+  return React.useCallback((...args: Args) => committed.current(...args), []);
+}
+
 const App = () => {
-  useLanguage();
+  const language = useLanguage();
   const confirmAction = useConfirmDialog();
   const agentViewScope = () => document.querySelector<HTMLElement>('[data-agent-view]');
   const agentApiKey = () => { try { return (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '').trim(); } catch { return ''; } };
@@ -263,7 +270,7 @@ const App = () => {
     });
   }, []);
 
-  // Agent 事件桥接：handleNavigate 每次渲染都会重建，经 ref 转发以保持监听只注册一次。
+  // Agent 事件桥接：导航实现在下方定义，经 ref 接入以保持监听只注册一次。
   const handleNavigateRef = useRef<(view: ViewState, id?: string, options?: { externalImport?: boolean; refreshData?: boolean }) => Promise<void>>(async () => {});
   useEffect(() => {
     const applyPreferences = (event: Event) => {
@@ -299,7 +306,7 @@ const App = () => {
   const refreshDataSeqRef = useRef(0);
   const chainCreateRevisionRef = useRef(0);
   const recentCreatedChainsRef = useRef(new Map<string, { chain: PromptChain; revision: number }>());
-  const refreshData = async (force = false) => {
+  const refreshData = useCommittedCallback(async (force = false) => {
     // 加载全部串，供列表过滤和角色库就地引用使用。
     if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
 
@@ -331,9 +338,9 @@ const App = () => {
     } finally {
       if (refreshSeq === refreshDataSeqRef.current) setLoading(false);
     }
-  };
+  });
 
-  const loadInspirations = async (force = false) => {
+  const loadInspirations = useCommittedCallback(async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
     try {
       const data = await db.getAllInspirations(currentUser || undefined);
@@ -343,7 +350,7 @@ const App = () => {
       console.error('加载收藏库失败', e);
       notify('收藏库加载失败，请稍后重试', 'error');
     }
-  };
+  });
 
   useEffect(() => {
     if (!currentUser) return;
@@ -590,7 +597,7 @@ const App = () => {
     setPlaygroundAgentOpenToken(value => value + 1);
   };
 
-  const handleNavigate = async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean } = {}) => {
+  const handleNavigate = useCommittedCallback(async (newView: ViewState, id?: string, options: { externalImport?: boolean; refreshData?: boolean } = {}) => {
     if (isEditorDirty) {
       const editor = editorSaveRef.current;
       let saved = false;
@@ -639,7 +646,7 @@ const App = () => {
     if (['list', 'characters', 'content-library', 'prompts'].includes(newView) && options.refreshData !== false) refreshData();
     if (newView === 'inspiration') loadInspirations();
 
-  };
+  });
   handleNavigateRef.current = handleNavigate;
 
   // 足迹页的排行与热力图都落到同一份真实历史；打开时带上筛选并复用历史页已有查询能力。
@@ -882,26 +889,8 @@ const App = () => {
     void handleNavigate(chainLibraryView(selectedChain?.type), selectedChain?.id || selectedId, { refreshData: false });
   };
 
-  if (!currentUser && !dbConfigError) {
-    return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
-  }
-
-  // --- Database Setup Guide ---
-  if (dbConfigError) {
-    return (
-      <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">{t("本地服务未连接")}</h2>
-          <p>{t("请启动本地服务")}</p>
-          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">{t("刷新")}</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentUser) return null;
-
   const renderViewContent = (targetView: ViewState) => {
+    if (!currentUser) return null;
     switch (targetView) {
       case 'list':
         return <ChainList
@@ -1132,6 +1121,50 @@ const App = () => {
     }
   };
 
+  // 页面元素只随实际资料、外观和激活状态更新，实验室输入及 toast 不重建其他保活页。
+  const cachedViews = useMemo(() => Object.fromEntries(
+    (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll'] as const)
+      .map(target => [target, renderViewContent(target)]),
+  ), [view, chains, currentUser, loading, selectedId, appearancePreferences, inspirationsCache, historyEntry, libraryEntry, rollPinnedEntry, language]);
+  const playgroundContent = useMemo(() => renderViewContent('playground'), [
+    view, playgroundChain, chains, currentUser, playgroundImportToken, contentRollRevision, playgroundAgentOpenToken,
+    appearancePreferences, safeMode, language,
+  ]);
+  const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
+    view, chains, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
+    playgroundChain, contentRollUndo, contentRollSeed, language,
+  ]);
+  const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
+    if (data.id) { await handleUpdateChain(data.id, data); return; }
+    const id = await createLibraryChain(data.name || '', data.description || '', data.type || 'preset', data);
+    if (!id) throw new Error(t('保存失败，请稍后重试'));
+    notify(t('已存入提示词库'));
+  });
+  const useLibraryEntry = useCommittedCallback((entry: PromptChain) => { void handleNavigate('playground').then(() => setLibraryEntryRequest(entry)); });
+  const clearLibraryRequest = React.useCallback(() => setLibraryEntryRequest(null), []);
+  const promptLibrary = useMemo(() => ({ chains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
+    save: saveLibraryEntry, useEntry: useLibraryEntry,
+  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, useLibraryEntry]);
+
+  if (!currentUser && !dbConfigError) {
+    return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
+  }
+
+  // --- Database Setup Guide ---
+  if (dbConfigError) {
+    return (
+      <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">{t("本地服务未连接")}</h2>
+          <p>{t("请启动本地服务")}</p>
+          <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded">{t("刷新")}</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) return null;
+
   const renderContent = () => {
     const viewsToRender = isKeepAliveView(view) && !mountedViews.includes(view)
       ? [...mountedViews, view]
@@ -1146,7 +1179,7 @@ const App = () => {
               className={view === mountedView ? 'flex flex-1 min-h-0 flex-col overflow-hidden' : 'hidden'}
             >
               <ImageActivityProvider active={view === mountedView}>
-                {renderViewContent(mountedView)}
+                {mountedView === 'playground' ? playgroundContent : mountedView === 'content-library' ? contentLibraryContent : cachedViews[mountedView]}
               </ImageActivityProvider>
             </div>
           ))}
@@ -1169,15 +1202,7 @@ const App = () => {
       className={`agent-stage flex flex-col h-screen ${safeMode ? 'safe-mode' : ''} ${safeMode && safeModeHideTitles ? 'safe-mode-hide-titles' : ''}`}
       onClickCapture={handleSafeModeClickCapture}
     >
-      <PromptLibraryContext.Provider value={{ chains, requestedEntry: libraryEntryRequest, clearRequest: () => setLibraryEntryRequest(null),
-        save: async data => {
-          if (data.id) { await handleUpdateChain(data.id, data); return; }
-          const id = await createLibraryChain(data.name || '', data.description || '', data.type || 'preset', data);
-          if (!id) throw new Error(t('保存失败，请稍后重试'));
-          notify(t('已存入提示词库'));
-        },
-        useEntry: entry => { void handleNavigate('playground').then(() => setLibraryEntryRequest(entry)); },
-      }}>
+      <PromptLibraryContext.Provider value={promptLibrary}>
       <Layout
         onNavigate={handleNavigate}
         currentView={view}

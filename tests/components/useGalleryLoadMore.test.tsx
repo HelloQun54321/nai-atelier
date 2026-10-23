@@ -16,16 +16,16 @@ class EndObserver {
   }
 }
 
-const List = ({ loadMore, enabled = true, grid = false, pendingWidth = false, groups = 1 }: {
-  loadMore: () => void; enabled?: boolean; grid?: boolean; pendingWidth?: boolean; groups?: number;
+const List = ({ loadMore, enabled = true, grid = false, pendingWidth = false, groups = 1, count = 1, progress }: {
+  loadMore: () => void; enabled?: boolean; grid?: boolean; pendingWidth?: boolean; groups?: number; count?: number; progress?: number;
 }) => {
   const root = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
-  useGalleryLoadMore(root, sentinel, enabled, loadMore, '600px 0px');
+  useGalleryLoadMore(root, sentinel, enabled, loadMore, '600px 0px', progress);
   return <div ref={root} data-testid="scroll">
-    {grid ? <div className="workspace-card-grid" /> : Array.from({ length: groups }, (_, group) => <div className="chain-masonry" key={group}>
+    {grid ? <div className="workspace-card-grid">{Array.from({ length: count }, (_, index) => <article key={index}>{index}</article>)}</div> : Array.from({ length: groups }, (_, group) => <div className="chain-masonry" key={group}>
       {!pendingWidth && Array.from({ length: 5 }, (_, column) => <div className="chain-masonry-column" key={column}>
-        <article>{group}-{column}</article><div data-masonry-load-end="true" data-group={group} />
+        {Array.from({ length: count }, (_, index) => <article key={index}>{group}-{column}-{index}</article>)}<div data-masonry-load-end="true" data-group={group} />
       </div>)}
     </div>)}
     <div ref={sentinel} data-testid="bottom" />
@@ -87,4 +87,79 @@ it('没有IntersectionObserver时保留页面的手动更多入口且不启动�
   delete (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
   render(<List loadMore={vi.fn()} />);
   expect(EndObserver.instances).toHaveLength(0);
+});
+
+it('十次无关渲染保留同一观察器并调用最新回调，图标更新不重新订阅或释放锁', async () => {
+  const first = vi.fn();
+  const latest = vi.fn();
+  const { container, rerender } = render(<List loadMore={() => first()} />);
+  const observer = EndObserver.instances[0];
+  const observe = vi.spyOn(observer, 'observe');
+  const disconnect = vi.spyOn(observer, 'disconnect');
+  for (let index = 0; index < 10; index++) rerender(<List loadMore={() => latest()} />);
+  act(() => observer.intersect([true, true]));
+  expect(first).not.toHaveBeenCalled();
+  expect(latest).toHaveBeenCalledTimes(1);
+  await act(async () => { container.querySelector('article')!.replaceChildren(document.createElement('svg')); });
+  act(() => observer.intersect([true]));
+  expect(latest).toHaveBeenCalledTimes(1);
+  expect(EndObserver.instances).toHaveLength(1);
+  expect(observe).not.toHaveBeenCalled();
+  expect(disconnect).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('真实追加卡片后继续加载，复用列尾／网格哨兵（grid=%s）', async grid => {
+  const loadMore = vi.fn();
+  const { rerender } = render(<List loadMore={loadMore} grid={grid} />);
+  const observer = EndObserver.instances[0];
+  const originalTargets = [...observer.targets];
+  act(() => observer.intersect([true]));
+  rerender(<List loadMore={loadMore} grid={grid} count={2} />);
+  await act(async () => {});
+  expect(observer.targets).toEqual(originalTargets);
+  act(() => observer.intersect([true, true]));
+  act(() => observer.intersect([true, true]));
+  expect(loadMore).toHaveBeenCalledTimes(2);
+  expect(EndObserver.instances).toHaveLength(1);
+});
+
+it('末组改变后解绑旧目标；卸载后迟到通知不再请求', async () => {
+  const loadMore = vi.fn();
+  const { rerender, unmount } = render(<List loadMore={loadMore} groups={2} />);
+  const observer = EndObserver.instances[0];
+  rerender(<List loadMore={loadMore} groups={1} />);
+  await waitFor(() => expect(observer.targets.every(target => target.getAttribute('data-group') === '0')).toBe(true));
+  const targets = [...observer.targets];
+  unmount();
+  expect(observer.disconnected).toBe(true);
+  observer.targets = targets;
+  act(() => observer.intersect([true]));
+  expect(loadMore).not.toHaveBeenCalled();
+});
+
+it('请求失败且没有新卡片时保持锁，手动重试追加成功后恢复连续加载', async () => {
+  const loadMore = vi.fn();
+  const { rerender } = render(<List loadMore={loadMore} />);
+  const observer = EndObserver.instances[0];
+  act(() => observer.intersect([true]));
+  rerender(<List loadMore={() => loadMore()} />);
+  act(() => observer.intersect([true]));
+  expect(loadMore).toHaveBeenCalledTimes(1);
+  rerender(<List loadMore={loadMore} count={2} />);
+  await act(async () => {});
+  act(() => observer.intersect([true]));
+  expect(loadMore).toHaveBeenCalledTimes(2);
+});
+
+it('成功游标前进但空页／筛选／去重没有新增DOM时仍能继续；同进度重渲染不释放锁', () => {
+  const loadMore = vi.fn();
+  const { rerender } = render(<List loadMore={loadMore} grid count={0} progress={1} />);
+  act(() => EndObserver.instances.at(-1)!.intersect([true]));
+  rerender(<List loadMore={() => loadMore()} grid count={0} progress={1} />);
+  act(() => EndObserver.instances.at(-1)!.intersect([true]));
+  expect(loadMore).toHaveBeenCalledTimes(1);
+  rerender(<List loadMore={loadMore} grid count={0} progress={2} />);
+  act(() => EndObserver.instances.at(-1)!.intersect([true]));
+  act(() => EndObserver.instances.at(-1)!.intersect([true]));
+  expect(loadMore).toHaveBeenCalledTimes(2);
 });

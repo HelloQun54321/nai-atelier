@@ -361,7 +361,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     }
   }, [gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
 
-  useGalleryLoadMore(scrollRef, sentinelRef, !searchTerm.trim() && !gachaCards && nextPage < pageCount, () => { void loadMore(); }, '800px');
+  useGalleryLoadMore(scrollRef, sentinelRef, !searchTerm.trim() && !gachaCards && nextPage < pageCount, () => { void loadMore(); }, '800px', nextPage);
 
   const catalogToCard = useCallback((entry: CharacterDictionaryEntry): CharacterCard => {
     const chain = persistedCatalog.get(entry.name.toLowerCase());

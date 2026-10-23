@@ -9,6 +9,10 @@ import type { AitagWorkSummary } from '../../services/aitagService';
 import type { User } from '../../types';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
+vi.mock('../../services/metadataService', async original => {
+  const actual = await original<typeof import('../../services/metadataService')>();
+  return { ...actual, parseNovelAIMetadata: vi.fn(actual.parseNovelAIMetadata) };
+});
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(),
@@ -578,6 +582,52 @@ it('详情逐张收藏保持实际图片与元数据，爱心忙碌时阻止重�
   await act(async () => finish(true));
   expect(notify).toHaveBeenCalledWith('已加入收藏库', 'success');
   expect(mocks.navigate).not.toHaveBeenCalled(); expect(mocks.createChain).not.toHaveBeenCalled();
+});
+
+it('40 页详情只准备一遍收藏元数据，排序后保存和无关状态不重复解析整组', async () => {
+  const images = Array.from({ length: 40 }, (_, index) => ({
+    ...works[0].firstImage!, id: 0, file_name: `page-${40 - index}.png`,
+    local_image_url: `/synthetic/page-${40 - index}.png`,
+    ai_json: { prompt: `page prompt ${40 - index}`, seed: 40 - index },
+  }));
+  mocks.getWork.mockResolvedValue({ work: works[0], images });
+  let finish!: () => void;
+  mocks.createChain.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+  const { container } = await setup(); fireEvent.click(card(1));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(40));
+  const { parseNovelAIMetadata } = await import('../../services/metadataService');
+  const parseCount = vi.mocked(parseNovelAIMetadata).mock.calls.length;
+  expect(parseCount).toBe(41);
+  const surfaces = () => Array.from(container.querySelectorAll('img[alt="AITAG 作品图片"]')).map(image => image.closest('.press-reveal-surface') as HTMLElement);
+  expect(surfaces()).toHaveLength(40);
+  fireEvent.click(within(surfaces()[0]).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledOnce());
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[0][0]).toMatchObject({ imageId: 'page-1.png', prompt: 'page prompt 1', imageUrl: '/synthetic/page-1.png' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(parseCount);
+  fireEvent.click(screen.getAllByRole('button', { name: '保存到风格串' })[0]);
+  expect(mocks.createChain.mock.calls[0][0]).toMatchObject({ name: '合成作品 1 P1', basePrompt: 'page prompt 1', params: { seed: 1 } });
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(parseCount + 1);
+  await act(async () => finish());
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(parseCount + 1);
+});
+
+it('同一作品预览升级完整详情及切换作品时收藏记录跟随新元数据', async () => {
+  let finish!: (detail: unknown) => void;
+  mocks.getWork.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const { container } = await setup(); fireEvent.click(card(1));
+  const favorite = () => within(container.querySelector('img[alt="AITAG 作品图片"]')!.closest('.press-reveal-surface') as HTMLElement).getByRole('button', { name: '收藏' });
+  fireEvent.click(favorite());
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[0][0]).toMatchObject({ prompt: 'synthetic prompt 1' });
+  await act(async () => finish({ work: works[0], images: [{ ...works[0].firstImage!, ai_json: { prompt: 'updated prompt', seed: 456 } }] }));
+  fireEvent.click(favorite());
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[1][0]).toMatchObject({ imageId: '1.png', prompt: 'updated prompt', params: { seed: 456 } });
+  fireEvent.click(card(2)); await screen.findByText('synthetic prompt 2');
+  fireEvent.click(favorite());
+  await waitFor(() => expect(toggleCollectionTarget).toHaveBeenCalledTimes(3));
+  expect(vi.mocked(toggleCollectionTarget).mock.calls[2][0]).toMatchObject({ imageId: '2.png', sourceId: '2', prompt: 'synthetic prompt 2' });
 });
 
 it('手机 AITag 卡片长按显露收藏，松手不打开详情，收藏不选择作品', async () => {

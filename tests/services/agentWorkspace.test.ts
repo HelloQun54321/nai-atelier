@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { clearAgentPageHover, observeAgentPage, operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
+import { clearAgentPageHover, getLastAgentPageRead, observeAgentPage, operateAgentPage, readAgentPage, readAgentPageHeading } from '../../services/agentWorkspace';
 import { registerAgentCommand } from '../../services/agentCommands';
 import { promptAgentService } from '../../services/promptAgent';
 beforeEach(() => {
@@ -137,6 +137,32 @@ it('状态与滚动变化触发实时读取，Agent 自身不会形成循环', a
   const changed = vi.fn(), stop = observeAgentPage(changed);
   try { document.querySelector('button')!.setAttribute('aria-expanded', 'true'); await new Promise(resolve => setTimeout(resolve, 130)); expect(changed).toHaveBeenCalledTimes(1); document.querySelector('aside')!.textContent = 'Agent 新回复'; await new Promise(resolve => setTimeout(resolve, 130)); expect(changed).toHaveBeenCalledTimes(1); }
   finally { stop(); }
+});
+it('装饰追光的挂载、连续样式更新和移除不触发读取，真实输入、滚动和浮层仍触发', async () => {
+  vi.useFakeTimers();
+  const refresh = vi.fn(), stop = observeAgentPage(refresh);
+  const flush = async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(110); };
+  try {
+    const light = document.createElement('div'); light.className = 'nai-theme-light'; light.setAttribute('aria-hidden', 'true'); document.body.append(light); await flush();
+    for (let i = 0; i < 3; i++) { light.style.left = `${i}px`; await flush(); }
+    light.remove(); await flush(); expect(refresh).not.toHaveBeenCalled();
+    const input = document.querySelector('input')!; input.value = '新内容'; input.dispatchEvent(new Event('input', { bubbles: true })); await flush(); expect(refresh).toHaveBeenCalledTimes(1);
+    document.querySelector('main')!.dispatchEvent(new Event('scroll')); await flush(); expect(refresh).toHaveBeenCalledTimes(2);
+    const popup = document.createElement('section'); popup.setAttribute('role', 'dialog'); popup.setAttribute('aria-label', '真实弹层'); popup.innerHTML = '<button>关闭</button>'; document.body.append(popup); await flush(); expect(refresh).toHaveBeenCalledTimes(3);
+    popup.style.display = 'none'; await flush(); expect(refresh).toHaveBeenCalledTimes(4);
+  } finally { stop(); vi.useRealTimers(); }
+});
+it('面板标题读取不扫描控件或正文，也不替换动作快照；后续显式读取仍完整且拒绝旧动作', async () => {
+  const main = document.querySelector('main')!;
+  main.innerHTML = Array.from({ length: 40 }, (_, i) => `<article><h2>作品${i}</h2><button>打开${i}</button><button>收藏${i}</button><button>查看${i}</button></article>`).join('');
+  const before = readAgentPage({ limit: 1 }), last = getLastAgentPageRead();
+  const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect'), walker = vi.spyOn(document, 'createTreeWalker');
+  expect(readAgentPageHeading().title).toBe('生成历史'); expect(rect).not.toHaveBeenCalled(); expect(walker).not.toHaveBeenCalled(); expect(getLastAgentPageRead()).toBe(last);
+  const popup = document.createElement('section'); popup.setAttribute('role', 'dialog'); popup.setAttribute('aria-label', '前景窗口'); popup.innerHTML = '<button>关闭</button>'; document.body.append(popup);
+  expect(readAgentPageHeading().title).toBe('前景窗口');
+  await expect(operateAgentPage({ action: 'click', snapshotId: before.snapshotId, controlId: before.controls[0].id })).rejects.toThrow('页面已变化');
+  popup.remove(); main.querySelectorAll('button')[119].textContent = '更新末尾';
+  const complete = readAgentPage({ query: '更新末尾' }); expect(complete.totalControls).toBe(1); expect(complete.controls[0].label).toBe('更新末尾'); expect(complete.snapshotId).not.toBe(before.snapshotId);
 });
 it('侧栏详情身份属性的变化触发实时刷新，不需再点一次读取', async () => {
   const aside = document.createElement('aside'); aside.textContent = '作品详情'; document.querySelector('main')!.append(aside);

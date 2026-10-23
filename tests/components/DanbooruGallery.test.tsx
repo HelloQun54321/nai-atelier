@@ -54,8 +54,12 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   vi.stubGlobal('IntersectionObserver', class {
-    constructor(callback: typeof observers[number]) { observers.push(callback); }
-    observe() {} disconnect() {}
+    targets: Element[] = [];
+    constructor(callback: typeof observers[number]) {
+      observers.push(entries => callback(entries.flatMap(entry => this.targets.map(target => ({ ...entry, target })))));
+    }
+    observe(target: Element) { this.targets.push(target); }
+    disconnect() { this.targets = []; }
   });
   search.mockImplementation(async options => result(options?.query, [], options?.page));
   resolve.mockImplementation(async value => value);
@@ -256,9 +260,11 @@ it('筛选后的空页仍可继续读取后续页，不因条目数量未变而�
   search.mockImplementation(async options => result(options?.query, [], options?.page, (options?.page || 1) < 3));
   await setup();
   await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 2, limit: 40 })));
-  const previousObservers = observers.length;
   await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
-  await waitFor(() => expect(observers.length).toBeGreaterThan(previousObservers));
+  await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ page: 3 })));
+  await act(async () => observers.at(-1)?.([{ isIntersecting: true }]));
+  await screen.findByText('已加载 0 件 · 已全部加载');
+  expect(search).not.toHaveBeenCalledWith(expect.objectContaining({ page: 4 }));
   expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 3, limit: 40 }));
 });
 

@@ -1,4 +1,4 @@
-import { PromptLibraryWorkspace } from '../../components/PromptLibraryAccess';
+import { PromptLibraryContext, PromptLibraryWorkspace } from '../../components/PromptLibraryAccess';
 import { normalizeAppearancePreferences, saveAppearancePreferences } from '../../services/appearancePreferences';
 // @vitest-environment jsdom
 import React from 'react';
@@ -9,9 +9,12 @@ import { api, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
 import { localHistory } from '../../services/localHistory';
 import { consumeEditorSessionDiscarded } from '../../services/labWorkspace';
 import { contentSnapshotOf } from '../../services/contentRoll';
+import { ImageActivityContext } from '../../components/SmartImage';
+import { getLanguage, setLanguage } from '../../services/i18n';
 import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 
 const mocks = vi.hoisted(() => ({
+  artistRenders: 0,
   getMe: vi.fn(), getAllChains: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
   updateChain: vi.fn(),
@@ -22,10 +25,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../services/dbService', () => ({ db: mocks }));
 vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
-vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
+vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast, appearancePreferences, setAppearancePreferences }: any) => <>
   <div data-testid="view">{currentView}</div>
   {['aitag', 'inspiration', 'list', 'prompts', 'roll', 'library', 'playground', 'content-roll', 'content-roll-library'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
+  <button onClick={() => setAppearancePreferences({ ...appearancePreferences, gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })}>切换合成选中聚焦</button>
 </> }));
 vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
   try { await onReloadTags(); notify('合成标签已回读'); }
@@ -59,7 +63,26 @@ const ExternalGallery = ({ onCreateArtistChain, onImportRefresh, notify }: any) 
   catch (error: any) { notify(error.message, 'error'); }
 }}>回读合成导入图片</button>}</>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
-vi.mock('../../components/ArtistLibrary', () => ({ ArtistLibrary: (props: any) => <div data-testid="artist-library" data-legacy-prop={String(Object.hasOwn(props, 'artistsData'))}>画师词库</div> }));
+vi.mock('../../components/ArtistLibrary', () => ({ ArtistLibrary: (props: any) => {
+  mocks.artistRenders++;
+  const library = React.useContext(PromptLibraryContext);
+  const active = React.useContext(ImageActivityContext);
+  const [draft, setDraft] = React.useState('');
+  const [progress, setProgress] = React.useState(0);
+  React.useEffect(() => {
+    const advance = () => setProgress(value => value + 1);
+    window.addEventListener('synthetic-artist-progress', advance);
+    return () => window.removeEventListener('synthetic-artist-progress', advance);
+  }, []);
+  return <div data-testid="artist-library" data-legacy-prop={String(Object.hasOwn(props, 'artistsData'))}>
+    画师词库<input aria-label="合成画师筛选" value={draft} onChange={event => setDraft(event.target.value)} />
+    <span data-testid="artist-chain-count">{library?.chains.length}</span>
+    <span data-testid="artist-focus">{String(props.selectionFocusEnabled)}</span>
+    <span data-testid="artist-active">{String(active)}</span>
+    <span data-testid="artist-progress">{progress}</span>
+    <button onClick={props.onNavigateToPlayground}>画师进入实验室</button>
+  </div>;
+} }));
 vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 vi.mock('../../components/StyleRollPage', () => ({ StyleRollPage: ({ onSaveChain, onNavigateToPlayground, chains }: any) => <div><span data-testid="roll-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span><button onClick={() => void onSaveChain(source)}>保存 Roll 候选</button><button onClick={onNavigateToPlayground}>Roll 送往实验室</button></div> }));
 vi.mock('../../components/PromptLibrary', () => ({ PromptLibraryHub: ({ chains, onCreate }: any) => <div>
@@ -524,4 +547,43 @@ it('共享收藏已加载时直接进入收藏库，跨页面爱心保存或取�
     await act(async () => { window.dispatchEvent(new Event('nai-project-data-changed')); });
     expect(mocks.getAllInspirations).toHaveBeenCalledOnce();
   } finally { get.mockRestore(); post.mockRestore(); put.mockRestore(); history.mockRestore(); }
+});
+
+it('实验室输入及通知不刷新保活画师页，真实资料更新并保留草稿及最新返回目标', async () => {
+  await setup('aitag');
+  fireEvent.click(screen.getByRole('button', { name: 'library' }));
+  await screen.findByTestId('artist-library');
+  fireEvent.change(screen.getByRole('textbox', { name: '合成画师筛选' }), { target: { value: '保留筛选' } });
+  fireEvent.click(screen.getByRole('button', { name: 'playground' }));
+  await screen.findByTestId('editor');
+  const before = mocks.artistRenders;
+  for (const subject of ['a', 'ab', 'abc']) {
+    await act(async () => { await mocks.updatePlayground!('playground', { variableValues: { subject } }); });
+  }
+  expect(mocks.artistRenders - before, '三次实验室输入造成的隐藏画师页渲染').toBe(0);
+  await act(async () => { window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, { detail: { message: '合成无关通知' } })); });
+  expect(mocks.artistRenders).toBe(before);
+  expect(screen.getByTestId('artist-active').textContent).toBe('false');
+  await act(async () => { window.dispatchEvent(new Event('synthetic-artist-progress')); });
+  expect(screen.getByTestId('artist-progress').textContent).toBe('1');
+  expect(mocks.artistRenders).toBe(before + 1);
+  mocks.getAllChains.mockResolvedValue([saved]);
+  await act(async () => { window.dispatchEvent(new Event('nai-project-data-changed')); });
+  await waitFor(() => expect(screen.getByTestId('artist-chain-count').textContent).toBe('1'));
+  const focusBefore = screen.getByTestId('artist-focus').textContent;
+  fireEvent.click(screen.getByRole('button', { name: '切换合成选中聚焦' }));
+  expect(screen.getByTestId('artist-focus').textContent).not.toBe(focusBefore);
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-agent-safe-mode-change', { detail: false })); });
+  expect(document.querySelector('[data-agent-view]')?.classList.contains('safe-mode')).toBe(false);
+  const language = getLanguage();
+  await act(async () => { setLanguage(language === 'en' ? 'zh-CN' : 'en'); });
+  expect(document.documentElement.lang).not.toBe(language);
+  await act(async () => { setLanguage(language); });
+  fireEvent.click(screen.getByRole('button', { name: 'library' }));
+  expect(screen.getByTestId('artist-active').textContent).toBe('true');
+  expect((screen.getByRole('textbox', { name: '合成画师筛选' }) as HTMLInputElement).value).toBe('保留筛选');
+  fireEvent.click(screen.getByRole('button', { name: '画师进入实验室' }));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('playground'));
+  fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('library'));
 });

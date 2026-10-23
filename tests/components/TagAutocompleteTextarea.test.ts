@@ -38,6 +38,36 @@ const openSuggestions = async (textarea: HTMLTextAreaElement, value: string, car
 };
 
 describe('TagAutocompleteTextarea 输入优先交互', () => {
+  it('候选内部滚动与重复视口事件不新增提交，输入框实际移动和尺寸变化立即定位', async () => {
+    let top = 100, left = 40, width = 360;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+      top, left, width, right: left + width, bottom: top + 80, height: 80, x: left, y: top, toJSON() {},
+    }));
+    const commits = vi.fn();
+    render(React.createElement(React.Profiler, { id: 'completion', onRender: commits }, React.createElement(Harness)));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    await openSuggestions(textarea, 'ma');
+    const popup = screen.getByRole('listbox');
+    await waitFor(() => expect(popup.style.top).toBe('184px'));
+    const stableCommits = commits.mock.calls.length;
+    for (let index = 0; index < 10; index++) { fireEvent.scroll(popup); fireEvent.resize(window); }
+    expect(commits).toHaveBeenCalledTimes(stableCommits);
+    top = 130; left = 60;
+    fireEvent.scroll(textarea.parentElement!);
+    expect(popup.style.top).toBe('214px');
+    expect(popup.style.left).toBe('60px');
+    width = 420;
+    fireEvent.resize(window);
+    expect(popup.style.width).toBe('420px');
+    top = window.innerHeight - 100;
+    fireEvent.scroll(textarea.parentElement!);
+    expect(popup.style.top).toBe('');
+    expect(popup.style.bottom).toBe('104px');
+    fireEvent.click(screen.getAllByRole('option')[0]);
+    expect(textarea.value).toContain('masterpiece');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    vi.restoreAllMocks();
+  });
   it('空 Tag 辅助区收紧，填入和清空恢复对应高度且保留手动调整', async () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;

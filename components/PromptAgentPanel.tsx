@@ -1,7 +1,7 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import './AgentSurface.css';
-import { getLastAgentPageRead, observeAgentPage, readAgentPage, type AgentPageSnapshot } from '../services/agentWorkspace';
+import { getLastAgentPageRead, observeAgentPage, readAgentPage, readAgentPageHeading, type AgentPageSnapshot } from '../services/agentWorkspace';
 import { normalizeAgentGenerationResult, agentGenerationFailure, agentOperationError } from '../services/agentOperation.mjs';
 import { getAgentContextUsage } from '../services/agentContextUsage';
 import { AgentProjectImage } from './AgentProjectImage';
@@ -252,7 +252,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const confirmAction = useConfirmDialog();
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
   const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
-  const [pageRead, setPageRead] = useState<AgentPageSnapshot | null>(getLastAgentPageRead);
+  const [pageRead, setPageRead] = useState<Pick<AgentPageSnapshot, 'title' | 'capturedAt'> | null>(getLastAgentPageRead);
   const currentDraftRef = useRef(props.draft);
   currentDraftRef.current = props.draft;
   const currentPropsRef = useRef(props);
@@ -262,7 +262,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   useEffect(() => {
     if (!props.open) return;
     const update = (event: Event) => setPageRead((event as CustomEvent<AgentPageSnapshot>).detail);
-    const refresh = () => { readAgentPage(); };
+    const refresh = () => { setPageRead(readAgentPageHeading()); };
     window.addEventListener('nai-agent-page-read', update);
     window.addEventListener('nai-workspace-changed', refresh);
     const stopObserving = observeAgentPage(refresh);

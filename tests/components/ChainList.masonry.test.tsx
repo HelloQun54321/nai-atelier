@@ -22,7 +22,7 @@ vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => sync
 vi.mock('../../services/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
-vi.mock('../../services/naiModels', () => ({ DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full', getNaiModelDisplayLabel: () => 'V4.5', getSelectableNaiModels: () => [] }));
+vi.mock('../../services/naiModels', async original => ({ ...await original<typeof import('../../services/naiModels')>(), getNaiModelDisplayLabel: () => 'V4.5', getSelectableNaiModels: () => [] }));
 vi.mock('../../services/imageDisplayPreferences', () => ({
   useMobileImageDisplayPreferences: () => ({ layout: 'masonry' }),
   mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}),
@@ -192,12 +192,17 @@ describe('ChainList 最短列筛选与加载', () => {
 
     const activeObserver = GalleryIntersectionObserver.instances.at(-1)!;
     await waitFor(() => expect(activeObserver.targets).toHaveLength(5));
-    act(() => activeObserver.intersect([false, false, true, false, false]));
+    act(() => {
+      activeObserver.intersect([false, false, true, false, false]);
+      activeObserver.intersect([true, true, true, true, true]);
+    });
     await waitFor(() => expect(columnIds(container).flat()).toHaveLength(120));
     expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(card);
     expect(root.scrollTop).toBe(700);
     act(() => activeObserver.intersect([true, true, true, true, true]));
-    expect(columnIds(container).flat()).toHaveLength(120);
+    await waitFor(() => expect(columnIds(container).flat()).toHaveLength(130));
+    expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(card);
+    expect(root.scrollTop).toBe(700);
   });
 
   it('迟到的横竖图与无封面混合时，下一批补实际短列；数据刷新不缩回第一页或滚回顶部', async () => {

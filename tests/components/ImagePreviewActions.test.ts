@@ -161,3 +161,85 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+it('回调及忙碌状态连续更新不重新测量或创建观察器，点击使用最新回调', async () => {
+  const callbacks: Array<() => void> = [];
+  const disconnect = vi.fn(), observe = vi.fn(), unobserve = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback); } observe = observe; unobserve = unobserve; disconnect = disconnect; });
+  const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(44);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(44);
+  const previous = vi.fn(), latest = vi.fn();
+  const element = (callback: () => void, busy = false) => React.createElement('div', null, React.createElement(ImagePreviewActions, {
+    imageUrl: '/synthetic.png', filename: 'test.png', onBack: callback, onSetCover: callback,
+    onSaveArtistSample: callback, onUploadCover: callback, savingArtistSample: busy,
+  }));
+  const view = render(element(previous));
+  const reads = width.mock.calls.length, targets = observe.mock.calls.length;
+  const group = screen.getByRole('button', { name: '设为封面' }).parentElement!;
+  const rowSetter = vi.spyOn(group.style, 'gridTemplateRows', 'set');
+  for (let i = 0; i < 10; i++) {
+    view.rerender(element(i === 9 ? latest : vi.fn(), i % 2 === 0));
+    await act(async () => {});
+  }
+  expect(callbacks).toHaveLength(1);
+  expect(disconnect).not.toHaveBeenCalled();
+  expect(observe).toHaveBeenCalledTimes(targets);
+  expect(width).toHaveBeenCalledTimes(reads);
+  expect(rowSetter).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '设为封面' }));
+  fireEvent.click(screen.getByRole('button', { name: '返回小图' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存为画师样张' }));
+  fireEvent.change(screen.getByLabelText('上传作品封面'), { target: { files: [new File(['test'], 'cover.png')] } });
+  expect(latest).toHaveBeenCalledTimes(4);
+  expect(previous).not.toHaveBeenCalled();
+  act(() => callbacks[0]());
+  expect(rowSetter).not.toHaveBeenCalled();
+  view.unmount();
+  expect(disconnect).toHaveBeenCalledOnce();
+});
+
+it('实际按钮增减及迟到导航和底栏重新排布，无图和卸载还原原高度', async () => {
+  let height = 300;
+  const callbacks: Array<() => void> = [];
+  const unobserve = vi.fn(), disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback); } observe() {} unobserve = unobserve; disconnect = disconnect; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300);
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => height);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(44);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute('data-image-preview-navigation') ? 56 : this.hasAttribute('data-image-preview-footer') ? 80 : this.tagName === 'BUTTON' ? 44 : 0;
+  });
+  const element = (image = true, extras = false) => React.createElement('div', { style: { minHeight: '100px' } },
+    React.createElement(ImagePreviewActions, { imageUrl: image ? '/synthetic.png' : null, filename: 'test.png', onSetCover: extras ? vi.fn() : undefined, onSaveArtistSample: extras ? vi.fn() : undefined }),
+    extras && React.createElement('button', { 'data-image-preview-navigation': true }, '上一张'),
+    extras && React.createElement('div', { 'data-image-preview-footer': true, style: { bottom: 16 } }));
+  const view = render(element());
+  const stage = view.container.firstElementChild as HTMLElement;
+  const group = stage.querySelector<HTMLElement>('.image-preview-action-group')!;
+  expect(group.style.gridTemplateRows).toBe('repeat(3, 44px)');
+  view.rerender(element(true, true));
+  await act(async () => {});
+  expect(group.style.gridTemplateRows).toBe('repeat(2, 44px)');
+  expect(stage.style.minHeight).toBe('max(100px, 296px)');
+  height = 700;
+  act(() => callbacks[0]());
+  expect(group.style.gridTemplateRows).toBe('repeat(5, 44px)');
+  view.rerender(element(true));
+  await act(async () => {});
+  expect(group.style.gridTemplateRows).toBe('repeat(3, 44px)');
+  expect(stage.style.minHeight).toBe('max(100px, 76px)');
+  view.rerender(element(false));
+  await act(async () => {});
+  expect(stage.style.minHeight).toBe('100px');
+  expect(group.style.gridTemplateRows).toBe('');
+  expect(unobserve).toHaveBeenCalledWith(group);
+  expect(callbacks).toHaveLength(1);
+  view.rerender(element(true, true));
+  await act(async () => {});
+  expect(stage.style.minHeight).toBe('max(100px, 296px)');
+  view.unmount();
+  expect(stage.style.minHeight).toBe('100px');
+  expect(disconnect).toHaveBeenCalledOnce();
+});

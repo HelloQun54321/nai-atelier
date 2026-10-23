@@ -1,10 +1,11 @@
-import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 
 /** 输入区浮层向可用空间展开，适配窄屏、字号变化与软键盘。 */
 export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>, width = 360, align: 'start' | 'center' | 'end' = 'start', placement: 'auto' | 'right' = 'auto') => {
   const [position, setPosition] = useState<CSSProperties>();
+  const positionRef = useRef<CSSProperties | undefined>(undefined);
   useLayoutEffect(() => {
-    if (!open) { setPosition(undefined); return; }
+    if (!open) { positionRef.current = undefined; setPosition(undefined); return; }
     const place = () => {
       const anchor = anchorRef.current?.getBoundingClientRect();
       if (!anchor) return;
@@ -26,7 +27,10 @@ export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTML
       const panelTop = Math.max(top + 8, Math.min(desiredTop, top + viewportHeight - height - 8));
       const originX = placement === 'right' ? panelLeft >= anchor.right ? 0 : actualWidth : Math.max(0, Math.min(actualWidth, anchor.left + anchor.width / 2 - panelLeft));
       const originY = placement === 'right' ? `${Math.max(0, Math.min(height, anchor.top + anchor.height / 2 - panelTop))}px` : upward ? 'bottom' : 'top';
-      setPosition({ position: 'fixed', width: actualWidth, maxHeight, left: panelLeft, top: panelTop, transformOrigin: `${originX}px ${originY}` });
+      const next: CSSProperties = { position: 'fixed', width: actualWidth, maxHeight, left: panelLeft, top: panelTop, transformOrigin: `${originX}px ${originY}` };
+      if (Object.entries(next).every(([key, value]) => positionRef.current?.[key as keyof CSSProperties] === value)) return;
+      positionRef.current = next;
+      setPosition(next);
     };
     place();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
