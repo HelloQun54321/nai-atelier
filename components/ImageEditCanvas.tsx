@@ -84,10 +84,11 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         ? Math.min(node.clientHeight, window.innerHeight * 0.85)
         : Math.min(node.clientHeight, window.innerHeight * 0.62);
       const scale = Math.min(node.clientWidth / width, availableHeight / height);
-      setDisplaySize({
+      const next = {
         width: Math.max(1, Math.floor(width * scale)),
         height: Math.max(1, Math.floor(height * scale)),
-      });
+      };
+      setDisplaySize(previous => previous?.width === next.width && previous.height === next.height ? previous : next);
     };
     update();
     if (typeof ResizeObserver === 'undefined') {
@@ -257,7 +258,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       >
         {/* 缩放与全屏悬浮工具条 */}
         {width > 0 && height > 0 && (
-          <div className="appearance-surface absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg border border-gray-200/80 bg-white/90 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90">
+          <div className="appearance-panel appearance-overlay absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg border border-gray-200/80 bg-white/90 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90">
             <button
               type="button"
               title={t("缩小")}

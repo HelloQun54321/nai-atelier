@@ -999,11 +999,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         setLightbox(item);
     }, []);
 
-    const handleCardFavorite = (item: LocalGenItem) => handleFavorite(item);
+    // 卡片保留稳定回调，同时使用最新筛选、待处理状态与删除确认逻辑。
+    const cardActionsRef = useRef({ favorite: handleFavorite, delete: handleDelete });
+    cardActionsRef.current = { favorite: handleFavorite, delete: handleDelete };
+    const handleCardFavorite = useCallback((item: LocalGenItem) => cardActionsRef.current.favorite(item), []);
 
     const handleCardDelete = useCallback((item: LocalGenItem, event: React.MouseEvent) => {
-        void handleDelete(item.id, event);
-    }, [handleDelete]);
+        void cardActionsRef.current.delete(item.id, event);
+    }, []);
 
     const handleImageLoadRatio = useCallback((itemId: string, ratio: number) => {
         setActualImageRatios(previous => (previous[itemId] === ratio ? previous : { ...previous, [itemId]: ratio }));
@@ -1148,7 +1151,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             )}
                           </section>)}
                         </div>
-                        {selectionMode && <div className="appearance-surface mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
+                        {selectionMode && <div className="appearance-panel appearance-overlay mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <>

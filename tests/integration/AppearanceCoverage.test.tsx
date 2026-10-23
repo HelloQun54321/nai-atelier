@@ -73,6 +73,59 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it.each(['glass', 'frosted'])('%s 的嵌套浮层保留承托，设置内层内容仍不重复铺底', material => {
+    document.documentElement.dataset.themeDetails = 'true';
+    document.documentElement.dataset.themeMaterial = material;
+    const detailCss = readFileSync('components/themeDetails.css', 'utf8');
+    const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
+    const flattened = `${root} :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) .appearance-surface`;
+    expect(declarations(flattened, undefined, detailCss)['background-color']).toBe('transparent');
+    const overlay = "html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.appearance-popover, .appearance-overlay)";
+    expect(declarations(overlay, undefined, detailCss)['--nai-layer-opacity']).toBe('max(82%, var(--nai-global-opacity, var(--nai-panel-opacity, var(--nai-glass-opacity, 85%))))');
+    const view = render(<div className="settings-dialog"><div className="settings-content">
+      <div className="appearance-panel"><div className="appearance-surface" data-testid="inner-content" />
+        <aside className="appearance-panel appearance-overlay" data-testid="drawer">
+          <div className="appearance-panel appearance-overlay" data-testid="nested-menu" />
+        </aside>
+      </div>
+    </div></div>);
+    const clearRules: string[] = [];
+    parse(detailCss).walkRules(rule => {
+      if (rule.parent?.type !== 'root') return;
+      if (rule.nodes.some(node => node.type === 'decl' && node.prop === 'background-color' && node.value === 'transparent')) clearRules.push(...rule.selectors);
+    });
+    for (const dark of [false, true]) {
+      document.documentElement.classList.toggle('dark', dark);
+      for (const id of ['drawer', 'nested-menu']) {
+        const element = view.getByTestId(id);
+        expect(clearRules.filter(selector => element.matches(selector)), `${material}/${dark}/${id}`).toEqual([]);
+        expect(element.matches(flattened)).toBe(false);
+        expect(element.matches(overlay)).toBe(true);
+      }
+      expect(view.getByTestId('inner-content').matches(flattened)).toBe(true);
+    }
+  });
+  it('独立抽屉、菜单与工具条标明阅读承托，内层设置表单不冒充浮层', () => {
+    const expected: Record<string, string> = {
+      PromptAgentPanel: 'showSessions', PromptAgentSettings: 'agent-settings-subview',
+      AgentModelControl: 'agent-model-popover', AgentPermissionSelect: 'z-[1300]', AgentContextRing: 'agent-context-tooltip',
+      TagAutocompleteTextarea: 'touch-pan-y', TagSelectionBar: 'pointer-events-auto',
+      'inspiration/InspirationDetail': 'bottom-12', InspirationGallery: 'hover-reveal-md absolute right-1',
+      ImageEditCanvas: 'top-2 right-2', GenHistory: 'mobile-safe-bottom fixed', Layout: 'absolute bottom-',
+    };
+    for (const [file, token] of Object.entries(expected)) {
+      const matches = classes.filter(item => item.file.replaceAll('\\', '/') === `components/${file}.tsx` && item.text.includes(token));
+      expect(matches.length, file).toBe(1);
+      expect(matches[0].text, file).toContain('appearance-panel appearance-overlay');
+    }
+    const agentMenus = classes.filter(item => item.file === 'components/PromptAgentPanel.tsx' && item.text.includes('appearance-panel absolute right-'));
+    expect(agentMenus).toEqual([]);
+    const agentSettingsPanels = classes.filter(item => item.file === 'components/PromptAgentSettings.tsx' && item.text.includes('appearance-panel'));
+    expect(agentSettingsPanels).toHaveLength(1);
+    expect(agentSettingsPanels[0].text).toContain('agent-settings-subview');
+    expect(sources.find(item => item.file === 'components/AgentConnectionForm.tsx')!.text).toContain('agent-theme appearance-surface');
+    expect(sources.find(item => item.file === 'components/PromptLibrarySettings.tsx')!.text).not.toContain('appearance-panel');
+  });
   it('助手挤窄时不再由 1180px 容器查询强制纵排，字段和生成栏按剩余宽度收纳', () => {
     expect(css).not.toContain('@container workspace (max-width: 1180px)');
     expect(declarations('.chain-editor-model-grid', undefined, css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 18rem), 1fr))');
@@ -411,7 +464,7 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(backdrop, '(prefers-reduced-transparency: reduce)', detailCss)['background-color']).toBe('rgb(0 0 0 / .55)');
     expect(declarations(translucent, undefined, detailCss)['background-color']).toBe('transparent');
     const groupsRoot = translucent.replace('html[', 'html:root[');
-    const groups = declarations(`${groupsRoot} :is(.appearance-group, .appearance-panel, .appearance-control-panel, .atelier-theme-card)`, undefined, detailCss);
+    const groups = declarations(`${groupsRoot} :is(.appearance-group, .appearance-control-panel, .atelier-theme-card)`, undefined, detailCss);
     expect(groups['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) calc(var(--nai-global-opacity, 100%) * .18), transparent)');
     expect(groups['backdrop-filter']).toBeUndefined();
     expect(declarations(`${groupsRoot} :is(.appearance-group[data-active='true'], .atelier-theme-card[aria-pressed='true'])`, undefined, detailCss)['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 8%, transparent)');
@@ -715,6 +768,20 @@ describe('全局外观覆盖审计', () => {
     expect(css).not.toContain('.bg-red-600.text-white');
     expect(css).not.toContain("[class~='bg-white/10']");
   });
+  it('主导航内部过渡跟随原有宽度动效，折叠与拖宽不借助工作区缩放或位移', () => {
+    expect(declarations('.app-sidebar-nav', undefined, css).transition).toContain('padding 200ms');
+    const item = declarations('.app-sidebar[data-collapsed] .app-sidebar-nav-item', undefined, css);
+    expect(item['transition-property']).toContain('padding');
+    expect(item['transition-duration']).toBe('200ms');
+    expect(declarations(".app-sidebar[data-collapsed='true'] .app-sidebar-label", undefined, css)).toMatchObject({ 'max-width': '0', opacity: '0' });
+    expect(declarations(".app-sidebar[data-collapsed='true'] .app-sidebar-sources", undefined, css)['grid-template-rows']).toBe('0fr');
+    expect(declarations('.app-sidebar-sources:not([hidden])', undefined, css)['grid-template-rows']).toBe('1fr');
+    expect(declarations(".app-sidebar[data-resizing='true'] :is(.app-sidebar-nav, .app-sidebar-nav-item, .app-sidebar-label, .app-sidebar-group-label, .app-sidebar-sources)", undefined, css).transition).toBe('none');
+    const workspace = declarations('.app-workspace', undefined, css);
+    expect(workspace.transform).toBeUndefined();
+    expect(workspace.scale).toBeUndefined();
+  });
+
   it('Agent 侧栏保留桌面让位，但任何动效时长都不再让整个工作区逐帧改变宽度', () => {
     expect(declarations('.agent-stage')['transition-property']).toBe('none');
     const docked = '.agent-panel-docked .agent-stage';

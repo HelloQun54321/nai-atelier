@@ -20,7 +20,7 @@ export const TagSelectionBar: React.FC<TagSelectionBarProps> = ({ count, unit, o
   useLanguage();
   if (!count) return null;
   return <ImagePreviewPortal><div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom)+0.75rem)] z-[60] flex justify-center px-4 md:bottom-6">
-    <div className="appearance-panel pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2.5 shadow-xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+    <div className="appearance-panel appearance-overlay pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white/95 px-3 py-2.5 shadow-xl backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
       <span aria-live="polite" className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} {1}", [count, unit])}</span>
       <div className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
       <button type="button" onClick={onClear} className="mobile-touch rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">{t("清空")}</button>

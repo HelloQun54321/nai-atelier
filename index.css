@@ -743,6 +743,17 @@ body,
 /* 工作区一次让位，避免整页卡片逐帧重排；全局动效时长也不能重新开启挤压动画。 */
 .agent-stage { transition-property: none; }
 
+/* 主导航保留宽度过渡；内外边距反向变化，让图标横向位置保持稳定。 */
+.app-sidebar-nav { transition: padding 200ms var(--default-transition-timing-function, ease); }
+.app-sidebar[data-collapsed] .app-sidebar-nav-item { transition-property: padding, color, background-color, border-color, box-shadow; transition-duration: 200ms; transition-timing-function: var(--default-transition-timing-function, ease); }
+.app-sidebar-label { max-width: 20rem; transition: max-width 200ms var(--default-transition-timing-function, ease), margin-left 200ms var(--default-transition-timing-function, ease), opacity 200ms var(--default-transition-timing-function, ease), transform 200ms var(--default-transition-timing-function, ease); }
+.app-sidebar-group-label { max-height: 2em; transition: max-height 200ms var(--default-transition-timing-function, ease), margin-bottom 200ms var(--default-transition-timing-function, ease), opacity 200ms var(--default-transition-timing-function, ease); }
+.app-sidebar-sources:not([hidden]) { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 200ms var(--default-transition-timing-function, ease); }
+.app-sidebar[data-collapsed='true'] .app-sidebar-label { max-width: 0; margin-left: 0; opacity: 0; }
+.app-sidebar[data-collapsed='true'] .app-sidebar-group-label { max-height: 0; margin-bottom: 0; opacity: 0; }
+.app-sidebar[data-collapsed='true'] .app-sidebar-sources { grid-template-rows: 0fr; }
+.app-sidebar[data-resizing='true'] :is(.app-sidebar-nav, .app-sidebar-nav-item, .app-sidebar-label, .app-sidebar-group-label, .app-sidebar-sources) { transition: none; }
+
 .ui-backdrop-enter { animation: ui-fade-in 140ms ease-out; }
 .ui-modal-enter { animation: ui-modal-in 180ms cubic-bezier(.2,.8,.2,1); }
 .ui-sheet-enter { animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }

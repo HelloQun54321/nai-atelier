@@ -511,7 +511,11 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect(button.classList.contains('bg-emerald-700')).toBe(true);
   expect(button.classList.contains('dark:bg-emerald-700/90')).toBe(true);
   expect(button.classList.contains('text-white')).toBe(true);
+  await act(async () => {});
+  const observersBeforeSaving = [...callbacks];
   fireEvent.click(button); fireEvent.click(button);
+  await act(async () => {});
+  expect([...callbacks]).toEqual(observersBeforeSaving);
   expect(mocks.createChain).toHaveBeenCalledTimes(1);
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(button.getAttribute('aria-busy')).toBe('true');
@@ -526,6 +530,7 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
   expect((button as HTMLButtonElement).disabled).toBe(false);
   expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
+  expect([...callbacks]).toEqual(observersBeforeSaving);
 });
 
 it('蓝色导入直接使用已有配置，取图失败或完整详情仍在等待也立即进入文生图', async () => {

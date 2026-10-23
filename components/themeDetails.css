@@ -245,7 +245,8 @@ html:root[data-theme-details='true'][data-theme-material='glass'] :is(.app-sideb
     backdrop-filter: var(--nai-glass-filter) var(--nai-glass-contour, );
   }
 }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) :is(.appearance-surface, .appearance-panel),
+/* 只去掉内层内容承托；覆盖原内容的独立面板仍须保留自己的背景。 */
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) .appearance-surface,
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog) .workspace-command-bar {
   --nai-glass-surface-reflection: none;
   -webkit-backdrop-filter: none;
@@ -255,8 +256,8 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
   background-image: none;
 }
 html[data-theme-details='true'][data-theme-material='glass'] .settings-navigation { --nai-glass-surface-reflection: none; background-color: color-mix(in srgb, var(--nai-sidebar-surface) calc(var(--nai-global-opacity, 100%) * .2), transparent) !important; }
-/* 文字密集的独立浮层略厚，窗口和导航仍使用各自的透明度。 */
-html[data-theme-details='true'][data-theme-material='glass'] .appearance-popover { --nai-layer-opacity: max(82%, var(--nai-global-opacity, var(--nai-panel-opacity, var(--nai-glass-opacity, 85%)))); }
+/* 菜单、抽屉与覆盖子页保留阅读承托，普通窗口和导航仍使用各自的透明度。 */
+html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.appearance-popover, .appearance-overlay) { --nai-layer-opacity: max(82%, var(--nai-global-opacity, var(--nai-panel-opacity, var(--nai-glass-opacity, 85%)))); }
 html[data-theme-material='glass'] [data-appearance='control'][data-tone='neutral'] {
   border-color: color-mix(in srgb, var(--nai-panel-border) 65%, transparent);
   background-color: transparent;
@@ -380,7 +381,7 @@ html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-ma
   }
 }
 html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content { background-color: transparent; }
-html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content :is(.appearance-group, .appearance-panel, .appearance-control-panel, .atelier-theme-card) { background-color: color-mix(in srgb, var(--nai-panel-solid-surface) calc(var(--nai-global-opacity, 100%) * .18), transparent) !important; }
+html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content :is(.appearance-group, .appearance-control-panel, .atelier-theme-card) { background-color: color-mix(in srgb, var(--nai-panel-solid-surface) calc(var(--nai-global-opacity, 100%) * .18), transparent) !important; }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content :is(.appearance-group[data-active='true'], .atelier-theme-card[aria-pressed='true']) { background-color: color-mix(in srgb, var(--nai-accent) 8%, transparent) !important; }
 html[data-control-style='filled'] :is(.appearance-control-panel, .atelier-theme-card) { border-radius: var(--nai-panel-radius, 14px); }
 html[data-control-style='filled'] [role='switch'] { border-color: var(--nai-control-border); }

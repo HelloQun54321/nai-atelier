@@ -11,11 +11,11 @@ import { db } from '../../services/dbService';
 import { buildBrowserHistoryOrder } from '../../services/historyBrowse';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
-const { confirmAction, listeners } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
+const { confirmAction, listeners, imageRender } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), imageRender: vi.fn(), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../components/SmartImage', () => ({
     ImageActivityContext: React.createContext(true),
-    SmartImage: ({ src, alt, className, onLoad }: { src: string; alt: string; className?: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} className={className} onLoad={onLoad} />,
+    SmartImage: ({ src, alt, className, onLoad }: { src: string; alt: string; className?: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => { imageRender(src); return <img src={src} alt={alt} className={className} onLoad={onLoad} />; },
     OriginalImage: ({ src, alt, className, onLoad, onError, style }: React.ImgHTMLAttributes<HTMLImageElement>) => <img src={src} alt={alt} className={className} onLoad={onLoad} onError={onError} style={style} />,
 }));
 
@@ -83,6 +83,46 @@ it('足迹带入的画师筛选应用到历史浏览查询', async () => {
 });
 
 describe('历史缩略图就地操作', () => {
+    it('打开关闭详情不重绘列表，单图尺寸及收藏更新只重绘当前卡片', async () => {
+        const { cards } = await setup();
+        await act(async () => {});
+        imageRender.mockClear();
+        fireEvent.click(cards[0]);
+        expect(screen.getByRole('dialog', { name: '历史图片查看器' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: '返回历史列表' }));
+        expect(imageRender).not.toHaveBeenCalled();
+        const image = within(cards[0]).getByRole('img');
+        Object.defineProperties(image, { naturalWidth: { configurable: true, value: 1200 }, naturalHeight: { configurable: true, value: 800 } });
+        fireEvent.load(image);
+        expect(imageRender).toHaveBeenCalledWith(items[0].imageUrl);
+        expect(imageRender).not.toHaveBeenCalledWith(items[1].imageUrl);
+        imageRender.mockClear();
+        fireEvent.click(within(cards[0]).getByRole('button', { name: '收藏' }));
+        await waitFor(() => expect(within(cards[0]).getByRole('button', { name: '取消收藏' })).toBeTruthy());
+        expect(imageRender).toHaveBeenCalledWith(items[0].imageUrl);
+        expect(imageRender).not.toHaveBeenCalledWith(items[1].imageUrl);
+        fireEvent.click(within(cards[0]).getByRole('button', { name: '取消收藏' }));
+        await waitFor(() => expect(localHistory.setFavorite).toHaveBeenLastCalledWith(items[0].id, false));
+    });
+
+    it('稳定卡片回调仍读取最新页面回调，删除确认继续有效', async () => {
+        const notify = vi.fn(), beforeRefresh = vi.fn(), afterRefresh = vi.fn();
+        const props = { currentUser: { id: 'local', username: 'owner', role: 'user' as const, createdAt: 1 }, chains: [], notify, onRefreshInspiration: beforeRefresh };
+        const view = render(<GenHistory {...props} />);
+        await waitFor(() => expect(view.container.querySelectorAll('.mobile-gallery-item')).toHaveLength(2));
+        await act(async () => {});
+        imageRender.mockClear();
+        view.rerender(<GenHistory {...props} onRefreshInspiration={afterRefresh} />);
+        expect(imageRender).not.toHaveBeenCalled();
+        const card = view.container.querySelector<HTMLElement>('.mobile-gallery-item')!;
+        fireEvent.click(within(card).getByRole('button', { name: '收藏' }));
+        await waitFor(() => expect(afterRefresh).toHaveBeenCalledOnce());
+        expect(beforeRefresh).not.toHaveBeenCalled();
+        fireEvent.click(within(card).getByRole('button', { name: '删除历史图片' }));
+        expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'history.delete' }));
+        expect(localHistory.delete).not.toHaveBeenCalled();
+    });
+
     it.each(['masonry', 'portrait'])('历史 %s 布局仅在瀑布流测量前完整显示图片', async layout => {
         localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2 }));
         const { cards } = await setup();

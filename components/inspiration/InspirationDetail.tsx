@@ -427,7 +427,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 {labMenuOpen && (
                   <>
                     <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                    <div role="menu" aria-label={t("选择底图模式")} className="appearance-panel absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                    <div role="menu" aria-label={t("选择底图模式")} className="appearance-panel appearance-overlay absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
                       <button
                         type="button"
                         disabled={Boolean(busy)}

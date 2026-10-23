@@ -42,7 +42,7 @@ export const AgentConnectionForm: React.FC<{
   const ready = Boolean(value.baseUrl.trim() && value.models.some(model => model.id.trim()));
   const matched = discovered.filter(model => `${model.id} ${model.name || ''}`.toLowerCase().includes(search.toLowerCase()));
   return <div className="min-h-0 flex-1 overflow-y-auto py-3">
-    <div className="agent-theme appearance-panel mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:p-5">
+    <div className="agent-theme appearance-surface mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:p-5">
       {presetEnabled && <div role="tablist" aria-label={t("API 连接方式")} className="mb-4 flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
         {(['preset', 'custom'] as const).map(mode => <button key={mode} type="button" role="tab" aria-selected={tab === mode} onClick={() => setTab(mode)} className={tab === mode ? 'appearance-group flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'flex-1 rounded-lg px-3 py-2 text-sm text-gray-500 dark:text-gray-400'}>{mode === 'preset' ? t("第三方模型提供商") : t("自定义模型 API")}</button>)}
       </div>}

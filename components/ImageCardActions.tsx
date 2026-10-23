@@ -24,12 +24,21 @@ export const ImageCardActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = 
     const frame = root.closest<HTMLElement>('.mobile-gallery-frame')
       ?? root.parentElement.querySelector<HTMLElement>('.mobile-gallery-frame') ?? root.parentElement;
     const card = frame.closest<HTMLElement>('.gallery-image-card, .press-reveal-surface') ?? root.parentElement;
-    const captions = [...card.querySelectorAll<HTMLElement>('.gallery-card-caption, [data-image-action-caption]')];
-    const left = [...card.querySelectorAll<HTMLElement>(`[data-image-action-left]${frostedCaption ? ', .gallery-cover-source' : ''}`)];
-    const navigation = [...frame.querySelectorAll<HTMLElement>('.gallery-cover-navigation')];
-    const items = [...root.querySelectorAll<HTMLElement>('button, [data-image-action-item]')];
+    let captions: HTMLElement[] = [], left: HTMLElement[] = [], navigation: HTMLElement[] = [], items: HTMLElement[] = [];
+    let observed = new Set<HTMLElement>();
     const originalMinHeight = frame.style.minHeight;
+    const restoreFrame = () => {
+      frame.style.minHeight = originalMinHeight;
+      frame.style.removeProperty('--image-card-caption-height');
+      frame.removeAttribute('data-image-action-frame');
+    };
     const update = () => {
+      if (!items.length) {
+        restoreFrame();
+        root.style.removeProperty('grid-template-rows');
+        root.style.removeProperty('top');
+        return;
+      }
       const bounds = frame.getBoundingClientRect();
       const buttonWidth = Math.max(0, ...items.map(item => item.offsetWidth));
       const buttonHeight = Math.max(0, ...items.map(item => item.offsetHeight));
@@ -49,23 +58,38 @@ export const ImageCardActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = 
         leftWidth: Math.max(0, ...leftRects.map(rect => rect.right - bounds.left + gap - inset)),
         leftBottom: Math.max(0, ...leftRects.map(rect => rect.bottom - bounds.top)),
       });
-      root.style.gridTemplateRows = `repeat(${layout.rows}, ${buttonHeight}px)`;
-      root.style.top = `${layout.top}px`;
-      frame.style.minHeight = originalMinHeight ? `max(${originalMinHeight}, ${Math.ceil(layout.minHeight)}px)` : `${Math.ceil(layout.minHeight)}px`;
-      frame.style.setProperty('--image-card-caption-height', `${captionHeight}px`);
-      frame.setAttribute('data-image-action-frame', 'true');
+      const rows = `repeat(${layout.rows}, ${buttonHeight}px)`, top = `${layout.top}px`;
+      const minHeight = originalMinHeight ? `max(${originalMinHeight}, ${Math.ceil(layout.minHeight)}px)` : `${Math.ceil(layout.minHeight)}px`;
+      if (root.style.gridTemplateRows !== rows) root.style.gridTemplateRows = rows;
+      if (root.style.top !== top) root.style.top = top;
+      if (frame.style.minHeight !== minHeight) frame.style.minHeight = minHeight;
+      if (frame.style.getPropertyValue('--image-card-caption-height') !== `${captionHeight}px`) frame.style.setProperty('--image-card-caption-height', `${captionHeight}px`);
+      if (frame.getAttribute('data-image-action-frame') !== 'true') frame.setAttribute('data-image-action-frame', 'true');
     };
-    update();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
-    for (const element of new Set([frame, ...captions, ...left, ...navigation, ...items])) observer?.observe(element);
+    // JSX 引用、收藏色及忙碌图标变化不重测；只同步实际参与排布的节点。
+    const syncTargets = () => {
+      captions = [...card.querySelectorAll<HTMLElement>('.gallery-card-caption, [data-image-action-caption]')];
+      left = [...card.querySelectorAll<HTMLElement>(`[data-image-action-left]${frostedCaption ? ', .gallery-cover-source' : ''}`)];
+      navigation = [...frame.querySelectorAll<HTMLElement>('.gallery-cover-navigation')];
+      items = [...root.querySelectorAll<HTMLElement>('button, [data-image-action-item]')];
+      const next = new Set([frame, ...captions, ...left, ...navigation, ...items]);
+      if (next.size === observed.size && [...next].every(element => observed.has(element))) return;
+      for (const element of observed) if (!next.has(element)) observer?.unobserve(element);
+      for (const element of next) if (!observed.has(element)) observer?.observe(element);
+      observed = next;
+      update();
+    };
+    syncTargets();
+    const mutation = new MutationObserver(syncTargets);
+    mutation.observe(card, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-image-action-item', 'data-image-action-caption', 'data-image-action-left'] });
     window.addEventListener('resize', update);
     return () => {
       observer?.disconnect();
+      mutation.disconnect();
       window.removeEventListener('resize', update);
-      frame.style.minHeight = originalMinHeight;
-      frame.style.removeProperty('--image-card-caption-height');
-      frame.removeAttribute('data-image-action-frame');
+      restoreFrame();
     };
-  }, [children, frostedCaption]);
+  }, [frostedCaption]);
   return <div {...props} ref={ref} data-card-action="true" className={`image-card-actions absolute right-2 top-2 z-20 gap-2 ${className}`}>{children}</div>;
 };

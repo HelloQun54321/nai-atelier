@@ -191,3 +191,60 @@ it('手机底栏仍是五个入口，资源面板可达提示词库与原有资�
   expect(within(resources).getByRole('button', { name: 'Roll 串' })).toBeTruthy();
   expect(within(resources).getByRole('button', { name: 'AITag' })).toBeTruthy();
 });
+
+it('反复收展保留主工作区与菜单文字节点，折叠子菜单退出交互，宽度仍连续过渡', () => {
+  localStorage.setItem('nai_sidebar_width', '260');
+  localStorage.setItem('nai_sidebar_external_gallery_expanded', 'true');
+  const props = { ...createProps(), children: <div><input aria-label="创作草稿" defaultValue="保留文字" /><img alt="作品" src="/synthetic/work.png" /></div> };
+  const { container } = render(<Layout {...props} />);
+  const sidebar = getSidebar(container);
+  const workspace = container.querySelector('main')!;
+  const image = within(workspace).getByAltText('作品');
+  const draft = within(workspace).getByRole('textbox');
+  const navigation = within(sidebar).getByRole('button', { name: '实验室' });
+  const label = navigation.querySelector('.app-sidebar-label')!;
+  const sourceLinks = sidebar.querySelector('#external-gallery-links')!;
+  fireEvent.change(draft, { target: { value: '正在编辑的内容' } });
+  workspace.scrollTop = 240;
+  for (let index = 0; index < 3; index += 1) {
+    fireEvent.click(within(sidebar).getByRole('button', { name: '折叠侧边栏' }));
+    expect(sidebar.style.width).toBe('68px');
+    expect(sidebar.classList.contains('transition-[width]')).toBe(true);
+    expect(navigation.querySelector('.app-sidebar-label')).toBe(label);
+    expect(label.getAttribute('aria-hidden')).toBe('true');
+    expect(sourceLinks.hasAttribute('inert')).toBe(true);
+    expect(within(sidebar).queryByRole('button', { name: 'AITag' })).toBeNull();
+    fireEvent.click(within(sidebar).getAllByRole('button', { name: '展开侧边栏' })[0]);
+    expect(sidebar.style.width).toBe('260px');
+    expect(label.getAttribute('aria-hidden')).toBe('false');
+    expect(sourceLinks.hasAttribute('inert')).toBe(false);
+    expect(within(sidebar).getByRole('button', { name: 'AITag' })).toBeTruthy();
+    expect(within(workspace).getByAltText('作品')).toBe(image);
+    expect(within(workspace).getByRole('textbox')).toBe(draft);
+    expect((draft as HTMLInputElement).value).toBe('正在编辑的内容');
+    expect(workspace.scrollTop).toBe(240);
+  }
+});
+
+it('拖宽时关闭内外过渡，结束恢复；拖到折叠阈值后保留此前展开宽度', () => {
+  const { container } = renderLayout();
+  const sidebar = getSidebar(container);
+  const handle = within(sidebar).getByRole('button', { name: '调整侧边栏宽度' });
+  fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 216 }));
+  expect(sidebar.dataset.resizing).toBe('true');
+  expect(sidebar.classList.contains('transition-[width]')).toBe(false);
+  fireEvent(window, new MouseEvent('pointermove', { clientX: 280 }));
+  fireEvent(window, new MouseEvent('pointerup'));
+  expect(sidebar.style.width).toBe('280px');
+  expect(sidebar.dataset.resizing).toBe('false');
+  expect(sidebar.classList.contains('transition-[width]')).toBe(true);
+  expect(localStorage.getItem('nai_sidebar_width')).toBe('280');
+  fireEvent(handle, new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 280 }));
+  fireEvent(window, new MouseEvent('pointermove', { clientX: 100 }));
+  fireEvent(window, new MouseEvent('pointerup'));
+  expect(sidebar.style.width).toBe('68px');
+  fireEvent.click(within(sidebar).getAllByRole('button', { name: '展开侧边栏' })[0]);
+  expect(sidebar.style.width).toBe('280px');
+  fireEvent.doubleClick(within(sidebar).getByRole('button', { name: '调整侧边栏宽度' }));
+  expect(sidebar.style.width).toBe('216px');
+});

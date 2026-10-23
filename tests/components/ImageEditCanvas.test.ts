@@ -1,12 +1,55 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImageEditCanvas } from '../../components/ImageEditCanvas';
 
 afterEach(cleanup);
 
 describe('ImageEditCanvas', () => {
+  it('侧栏伸缩不重复提交相同显示尺寸，真正缩窄时同步更新且保留画布', () => {
+    let availableWidth = 800;
+    let resize = () => {};
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    const widthSpy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => availableWidth);
+    const heightSpy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
+    const commits = vi.fn();
+    const imageCanvasRef = React.createRef<HTMLCanvasElement>();
+    const maskCanvasRef = React.createRef<HTMLCanvasElement>();
+    const overlayCanvasRef = React.createRef<HTMLCanvasElement>();
+    const { unmount } = render(React.createElement(React.Profiler, { id: 'canvas', onRender: commits }, React.createElement(ImageEditCanvas, {
+      imageCanvasRef, maskCanvasRef, overlayCanvasRef, width: 800, height: 800,
+      focusedRect: null, focused: false, isLoading: false, onPointerDown: vi.fn(), onPointerMove: vi.fn(), onPointerUp: vi.fn(),
+    })));
+    try {
+      const canvas = imageCanvasRef.current!;
+      const display = canvas.parentElement!;
+      act(() => resize());
+      commits.mockClear();
+      for (const width of [780, 760, 740, 720]) {
+        availableWidth = width;
+        act(() => resize());
+      }
+      expect(commits).not.toHaveBeenCalled();
+      const initialStyle = display.getAttribute('style');
+      availableWidth = 300;
+      act(() => resize());
+      expect(commits).toHaveBeenCalled();
+      expect(display.getAttribute('style')).not.toBe(initialStyle);
+      expect(imageCanvasRef.current).toBe(canvas);
+      expect(maskCanvasRef.current?.parentElement).toBe(display);
+    } finally {
+      unmount();
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('聚焦选区的移动与缩放操作统一中文名称', () => {
     const onFocusedInteractionStart = vi.fn();
     render(React.createElement(ImageEditCanvas, {

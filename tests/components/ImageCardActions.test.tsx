@@ -2,11 +2,11 @@
 import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ImageCardActions, imageCardActionLayout } from '../../components/ImageCardActions';
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); delete document.documentElement.dataset.galleryFrostedCaption; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const base = { width: 320, height: 180, count: 5, buttonWidth: 32, buttonHeight: 32, gap: 8, inset: 8, bottom: 60, leftWidth: 40, leftBottom: 40 };
 
@@ -61,20 +61,114 @@ function mockGeometry({ siblingActions = false, navigation = false, aspectRatio 
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.matches('button, [data-image-action-item]') ? size : 0; });
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.matches('button, [data-image-action-item]') ? size : 0; });
   const callbacks: Array<() => void> = [];
-  const observe = vi.fn(), disconnect = vi.fn();
-  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback); } observe = observe; disconnect = disconnect; });
-  const actions = <ImageCardActions><div className="image-share-actions"><button>收藏</button><button>下载</button><button>复制</button></div><button>实验室</button><span data-image-action-item>已保存</span></ImageCardActions>;
-  const view = render(<div className="gallery-image-card"><div className="gallery-card-visual">
-    <div className="mobile-gallery-frame"><button data-image-action-left>删除</button>{!siblingActions && <div className="absolute inset-0">{actions}</div>}{navigation && <button className="gallery-cover-navigation">翻图</button>}</div>
-    <div className="gallery-card-caption">名称和模型</div>
-  </div>{siblingActions && actions}</div>);
+  const observe = vi.fn(), unobserve = vi.fn(), disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { callbacks.push(callback); } observe = observe; unobserve = unobserve; disconnect = disconnect; });
+  const draw = ({ busy = false, count = 5, saved = true, hasCaption = true, hasLeft = true, hasNavigation = navigation, children }: {
+    busy?: boolean; count?: number; saved?: boolean; hasCaption?: boolean; hasLeft?: boolean; hasNavigation?: boolean; children?: React.ReactNode;
+  } = {}) => {
+    const actions = <ImageCardActions>{children ?? <><div className="image-share-actions">{['收藏', '下载', '复制', '实验室'].slice(0, count).map(label => <button key={label} disabled={busy} className={busy ? 'busy' : ''}>{busy ? <i /> : <b />}{label}</button>)}</div>{count > 4 && (saved ? <span data-image-action-item>已保存</span> : <button>保存</button>)}</>}</ImageCardActions>;
+    return <div className={`gallery-image-card ${busy ? 'selected' : ''}`}><div className="gallery-card-visual">
+      <div className="mobile-gallery-frame">{hasLeft && <button data-image-action-left>删除</button>}{!siblingActions && <div className="absolute inset-0">{actions}</div>}{hasNavigation && <button className="gallery-cover-navigation">翻图</button>}</div>
+      <div className={hasCaption ? 'gallery-card-caption' : 'plain-caption'}>名称和模型</div>
+    </div>{siblingActions && actions}</div>;
+  };
+  const view = render(draw());
   const frame = view.container.querySelector<HTMLElement>('.mobile-gallery-frame')!;
   const group = view.container.querySelector<HTMLElement>('.image-card-actions')!;
-  return { ...view, frame, group, observe, disconnect, resize: (next: { width?: number; height?: number; caption?: number; size?: number }) => {
+  return { ...view, draw, frame, group, observe, unobserve, disconnect, callbacks, resize: (next: { width?: number; height?: number; caption?: number; size?: number }) => {
     width = next.width ?? width; height = next.height ?? height; caption = next.caption ?? caption; size = next.size ?? size;
     act(() => callbacks.forEach(callback => callback()));
   } };
 }
+
+it('选中、保存状态与图标更新不重建观察器、不测尺寸或写布局，相同尺寸通知也不重复写入', async () => {
+  const view = mockGeometry();
+  const favorite = screen.getByRole('button', { name: '收藏' });
+  favorite.focus();
+  const rectRead = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  rectRead.mockClear(); view.observe.mockClear();
+  const changes: MutationRecord[] = [];
+  const writes = new MutationObserver(records => changes.push(...records));
+  writes.observe(view.container, { attributes: true, subtree: true, attributeFilter: ['style', 'data-image-action-frame'] });
+  view.rerender(view.draw({ busy: true }));
+  await act(async () => {});
+  expect(view.callbacks).toHaveLength(1);
+  expect(view.disconnect).not.toHaveBeenCalled();
+  expect(view.observe).not.toHaveBeenCalled();
+  expect(rectRead).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: '收藏' })).toBe(favorite);
+  expect(document.activeElement).toBe(favorite);
+  view.resize({});
+  expect([...changes, ...writes.takeRecords()]).toHaveLength(0);
+  writes.disconnect();
+});
+
+it('按钮增减与保存按钮替换为状态标记只调整当前观察目标，空操作恢复封面高度', async () => {
+  const view = mockGeometry();
+  view.resize({ width: 120, height: 80, size: 44 });
+  const originalFavorite = screen.getByRole('button', { name: '收藏' });
+  view.rerender(view.draw({ count: 3 }));
+  await act(async () => {});
+  expect(view.frame.style.minHeight).toBe('224px');
+  expect(view.group.style.gridTemplateRows).toBe('repeat(3, 44px)');
+  expect(view.unobserve).toHaveBeenCalled();
+  view.rerender(view.draw({ saved: false }));
+  await act(async () => {});
+  const save = screen.getByRole('button', { name: '保存' });
+  expect(view.observe).toHaveBeenCalledWith(save);
+  view.rerender(view.draw());
+  await act(async () => {});
+  expect(view.unobserve).toHaveBeenCalledWith(save);
+  expect(view.observe).toHaveBeenCalledWith(screen.getByText('已保存'));
+  expect(screen.getByRole('button', { name: '收藏' })).toBe(originalFavorite);
+  view.rerender(view.draw({ count: 0 }));
+  await act(async () => {});
+  expect(view.frame.style.minHeight).toBe('');
+  expect(view.frame.hasAttribute('data-image-action-frame')).toBe(false);
+  expect(view.group.style.gridTemplateRows).toBe('');
+  expect(view.callbacks).toHaveLength(1);
+  expect(view.disconnect).not.toHaveBeenCalled();
+});
+
+it('子组件自身增添按钮、标题类型切换和翻图按钮出现仍更新换列与避让', async () => {
+  const view = mockGeometry({ siblingActions: true });
+  const Sharing = () => {
+    const [extra, setExtra] = React.useState(false);
+    return <><button onClick={() => setExtra(value => !value)}>切换操作</button>{extra && <button>新增操作</button>}</>;
+  };
+  view.rerender(view.draw({ children: <Sharing /> }));
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: '切换操作' }));
+  await act(async () => {});
+  expect(view.observe).toHaveBeenCalledWith(screen.getByRole('button', { name: '新增操作' }));
+  view.rerender(view.draw({ hasNavigation: true }));
+  await act(async () => {});
+  expect(view.group.style.gridTemplateRows).toBe('repeat(1, 32px)');
+  expect(view.frame.style.minHeight).toBe('148px');
+  view.rerender(view.draw({ hasCaption: false, hasLeft: false }));
+  await act(async () => {});
+  expect(view.group.style.gridTemplateRows).toBe('repeat(4, 32px)');
+  expect(view.frame.style.minHeight).toBe('48px');
+  view.rerender(view.draw());
+  await act(async () => {});
+  expect(view.frame.style.minHeight).toBe('108px');
+  expect(view.callbacks).toHaveLength(1);
+});
+
+it('磨砂信息栏开关仍重新取避让范围，卸载释放全部观察与布局', () => {
+  const view = mockGeometry();
+  act(() => {
+    document.documentElement.dataset.galleryFrostedCaption = 'false';
+    window.dispatchEvent(new Event('nai-gallery-caption-change'));
+  });
+  expect(view.callbacks).toHaveLength(2);
+  expect(view.disconnect).toHaveBeenCalledTimes(1);
+  expect(view.frame.style.minHeight).toBe('108px');
+  view.unmount();
+  expect(view.disconnect).toHaveBeenCalledTimes(2);
+  expect(view.frame.style.minHeight).toBe('');
+  expect(view.frame.hasAttribute('data-image-action-frame')).toBe(false);
+});
 
 it.each([false, true])('实测图片与标题布局，支持操作在图片内部或卡片外层（%s）', siblingActions => {
   const view = mockGeometry({ siblingActions });

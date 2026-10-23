@@ -201,7 +201,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     {view === 'home' && (
       <div data-agent-surface className="agent-theme mt-3 space-y-4">
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
-      <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
           <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       {config?.credentialWarning && <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{config.credentialWarning}</div>}
 
       {/* 阶段二：层级 3 - 模型服务管理区 */}
-      <div className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div>
             <b className="block text-sm text-gray-900 dark:text-white">{t("API 连接")}</b>
@@ -260,7 +260,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           )}
         </div>
       </div>
-      <section aria-label={t('联网搜索')} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section aria-label={t('联网搜索')} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
         <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
           <span className="text-sm font-bold text-gray-900 dark:text-white">{t('使用搜索 API')}</span>
           <input type="checkbox" checked={config?.searchEnabled === true}
@@ -283,12 +283,12 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         </div>
         <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key。') : config?.searchApiKeyConfigured ? t('将使用同地址的已配置连接。') : t('未检测到可用 Key，开启后仍使用免费搜索。')}</p>
       </section>
-      <section aria-label={t("生图协作")} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section aria-label={t("生图协作")} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
         <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("生图协作")}</h3>
         <AgentGenerationOptions />
       </section>
       <PromptLibrarySettings />
-      <section aria-label={t('破限模式')} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <section aria-label={t('破限模式')} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
         <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
           <span className="text-sm font-bold text-gray-900 dark:text-white">{t('破限模式')}</span>
           <input type="checkbox" checked={config?.creativeDirect === true}
@@ -329,7 +329,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         aria-modal="true"
         aria-label={view === 'model' ? t("选择助手模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}
         data-agent-surface
-        className="appearance-group agent-theme agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
+        className="appearance-panel appearance-overlay agent-theme agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>

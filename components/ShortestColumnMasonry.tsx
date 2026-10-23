@@ -139,6 +139,7 @@ export const ShortestColumnMasonry = <T,>({
 }: ShortestColumnMasonryProps<T>) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const latestWidth = useRef(0);
   const committed = useRef({ count: 0, keys: [] as string[], placement: new Map<string, number>(), resetKey });
 
   useEffect(() => {
@@ -148,11 +149,17 @@ export const ShortestColumnMasonry = <T,>({
       const width = entries[0]?.contentRect.width ?? 0;
       // 详情覆盖或 keep-alive 隐藏时宽度为 0；保留已有卡片，避免清空列表及滚动锚点。
       if (width <= 0) return;
-      setContainerWidth(previous => (Math.abs(previous - width) > 0.5 ? width : previous));
+      const firstMeasurement = latestWidth.current === 0;
+      latestWidth.current = width;
+      // 固定分列时由 CSS 连续伸缩；保留最新宽度供增删内容使用，不逐帧重渲染整批卡片。
+      if (firstMeasurement) setContainerWidth(width);
+      else if (!stableColumns) {
+        setContainerWidth(previous => (Math.abs(previous - width) > 0.5 ? width : previous));
+      }
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [stableColumns]);
 
   // 请求列数：决定网格轨道数与列宽，防御 NaN/Infinity/<1 后至少为 1
   const requestedColumns = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 1;
@@ -161,7 +168,7 @@ export const ShortestColumnMasonry = <T,>({
 
   // 列宽必须按 requestedColumns 计算：少图分组不能通过减少轨道数来放大卡片
   const columnWidth =
-    containerWidth > 0 ? (containerWidth - (requestedColumns - 1) * gap) / requestedColumns : 0;
+    containerWidth > 0 ? (latestWidth.current - (requestedColumns - 1) * gap) / requestedColumns : 0;
 
   const computed = useMemo(() => {
     const keys = items.map(getItemKey);
