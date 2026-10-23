@@ -142,7 +142,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     <LabModuleSection
         moduleId="characters"
         label={t("角色专属提示词")}
-        order={activeLabLayout.order.indexOf('characters')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >

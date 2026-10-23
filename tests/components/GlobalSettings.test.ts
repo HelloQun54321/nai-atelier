@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, readAppearancePresetImport } from '../../services/appearancePreferences';
+import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, DEFAULT_LAB_PAGE_LAYOUTS, readAppearancePresetImport } from '../../services/appearancePreferences';
 import { downloadFile } from '../../services/fileDownload';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { GlobalSettings } from '../../components/GlobalSettings';
@@ -593,18 +593,18 @@ describe('GlobalSettings', () => {
   it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 
-    expect(await screen.findByText('实验室模块布局')).toBeTruthy();
+    expect(await screen.findByText('实验室模块默认展开')).toBeTruthy();
     const details = container.querySelectorAll('details');
     expect(details).toHaveLength(4);
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getAllByText(/^\d+\. 角色参考$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('角色参考')).toHaveLength(4);
 
     // 验证文生图与其他三项一致，默认均处于收起状态
     details.forEach(d => expect(d.open).toBe(false));
 
     fireEvent.click(details[0].querySelector('summary')!);
     await waitFor(() => expect(details[0].open).toBe(true));
-    expect(screen.getByText('实验室模块布局')).toBeTruthy();
+    expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
   });
 
   it('支持 6 分类独立导航且各区专属内容正常展示与切换', async () => {
@@ -629,7 +629,7 @@ describe('GlobalSettings', () => {
     expect(await screen.findByText('生成过程预览')).toBeTruthy();
     expect(screen.getByText('强制清空随机种子（始终随机）')).toBeTruthy();
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getByText('实验室模块布局')).toBeTruthy();
+    expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /隐私与分享/ }));
     expect(await screen.findByRole('button', { name: /^安全模式/ })).toBeTruthy();
@@ -866,24 +866,29 @@ describe('GlobalSettings', () => {
     expect(indigoBtn.className).toContain('rounded-full');
   });
 
-  it('在移动视图下实验室模块布局显示已锁定且操作按钮处于禁用状态', async () => {
+  it.each([false, true])('手机视图=%s 时四模式可设置默认展开，恢复操作彼此独立且没有排序入口', async mobile => {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
-      matches: query.includes('1023px') || query.includes('767px'),
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
+      matches: mobile && query.includes('767px'), media: query, onchange: null,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
     })));
-
-    render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
-
-    expect(await screen.findByText('手机端固定')).toBeTruthy();
-    expect(screen.queryByText(/三段式标签流|当前设备处于移动视图/)).toBeNull();
-    const resetBtn = screen.getByRole('button', { name: /全部推荐/ }) as HTMLButtonElement;
-    expect(resetBtn.disabled).toBe(true);
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation', onAppearancePreferencesChange: changed }));
+    expect(await screen.findByText('实验室模块默认展开')).toBeTruthy();
+    expect(screen.queryByText('手机端固定')).toBeNull();
+    expect(screen.queryByText('拖动排序')).toBeNull();
+    expect(screen.queryByRole('button', { name: /上移|下移|推荐顺序/ })).toBeNull();
+    expect(container.querySelector('[draggable="true"]')).toBeNull();
+    for (const [pageId, label] of [['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const) {
+      fireEvent.click(screen.getByText(label).closest('summary')!);
+      fireEvent.click(await screen.findByRole('button', { name: `${label} · 全局提示词 · 默认展开` }));
+      expect(changed.mock.lastCall?.[0].labPageLayouts[pageId].collapsed.prompt).toBe(true);
+      expect(screen.getByRole('button', { name: `${label} · 全局提示词 · 默认收起` }).getAttribute('aria-pressed')).toBe('true');
+    }
+    fireEvent.click(screen.getByRole('button', { name: '文生图 · 恢复默认' }));
+    expect(changed.mock.lastCall?.[0].labPageLayouts['text-to-image']).toEqual(DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']);
+    expect(changed.mock.lastCall?.[0].labPageLayouts.inpaint.collapsed.prompt).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '全部默认' }));
+    expect(changed.mock.lastCall?.[0].labPageLayouts).toEqual(DEFAULT_LAB_PAGE_LAYOUTS);
   });
 it('Agent 能看到普通外观设置和关闭入口，NovelAI 密钥区域仍不可读取', async () => {
   render(React.createElement(SettingsHarness, { initialSection: 'appearance' }));

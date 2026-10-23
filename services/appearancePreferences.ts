@@ -17,7 +17,6 @@ export type LabModuleCollapsedPreferences = Record<LabModuleId, boolean>;
 export type LabPageId = 'text-to-image' | 'image-to-image' | 'inpaint' | 'outpaint';
 export type LabPageModuleId = LabModuleId | 'baseImage' | 'editSettings';
 export interface LabPageLayout {
-  order: LabPageModuleId[];
   collapsed: Partial<Record<LabPageModuleId, boolean>>;
 }
 export type LabPageLayouts = Record<LabPageId, LabPageLayout>;
@@ -40,66 +39,42 @@ export const DEFAULT_GENERATION_MEMORY_PREFERENCES: GenerationMemoryPreferences 
 
 export const LAB_PAGE_IDS: LabPageId[] = ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'];
 
-export const DEFAULT_LAB_MODULE_ORDER: LabModuleId[] = [
-  'prompt',
-  'characters',
-  'params',
-  'negative',
-  'characterReference',
-  'vibe',
-];
-
 export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
   prompt: false,
-  characters: false,
-  params: false,
   negative: false,
-  characterReference: true,
   vibe: true,
+  characters: false,
+  characterReference: true,
+  params: false,
 };
 
-const DEFAULT_LAB_EDIT_MODULE_ORDER: LabPageModuleId[] = [
-  'baseImage',
-  'prompt',
-  'characters',
-  'editSettings',
-  'params',
-  'characterReference',
-  'vibe',
-];
-
 const DEFAULT_LAB_EDIT_MODULE_COLLAPSED: LabPageLayout['collapsed'] = {
+  baseImage: false,
   prompt: false,
   characters: false,
-  baseImage: false,
-  params: false,
-  editSettings: false,
   characterReference: true,
   vibe: true,
+  editSettings: false,
+  params: false,
 };
 
 export const DEFAULT_LAB_PAGE_LAYOUTS: LabPageLayouts = {
   'text-to-image': {
-    order: [...DEFAULT_LAB_MODULE_ORDER],
     collapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
   },
   'image-to-image': {
-    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
     collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
   },
   inpaint: {
-    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
     collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
   },
   outpaint: {
-    order: [...DEFAULT_LAB_EDIT_MODULE_ORDER],
     collapsed: { ...DEFAULT_LAB_EDIT_MODULE_COLLAPSED },
   },
 };
 
 export const cloneDefaultLabPageLayouts = (): LabPageLayouts => Object.fromEntries(
   LAB_PAGE_IDS.map(pageId => [pageId, {
-    order: [...DEFAULT_LAB_PAGE_LAYOUTS[pageId].order],
     collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS[pageId].collapsed },
   }]),
 ) as LabPageLayouts;
@@ -175,9 +150,7 @@ export interface AppearancePreferences {
   forceEmptySeed: boolean;
   /** 免费步数上限开关；开启时生成步数输入锁定在官方同步的 freeMaxSteps（默认 28）内，关闭后允许探索付费步数（至多 50）。 */
   enforceFreeStepLimit: boolean;
-  labModuleOrder: LabModuleId[];
-  labModuleCollapsed: LabModuleCollapsedPreferences;
-  /** 四种实验室模式各自独立的模块顺序与默认展开状态。 */
+  /** 四种实验室模式各自独立的模块默认展开状态。 */
   labPageLayouts: LabPageLayouts;
   customPresets: AppearancePreset[];
   activePresetId?: string;
@@ -206,8 +179,6 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   continuousGenerationEnabled: true,
   forceEmptySeed: false,
   enforceFreeStepLimit: true,
-  labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
-  labModuleCollapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED },
   labPageLayouts: cloneDefaultLabPageLayouts(),
   customPresets: [],
   activePresetId: 'builtin-default',
@@ -218,52 +189,24 @@ const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value 
 
 const normalizeLabPageLayout = (value: unknown, defaults: LabPageLayout): LabPageLayout => {
   const input = value && typeof value === 'object' ? value as Partial<LabPageLayout> : {};
-  const persistedOrder = Array.isArray(input.order)
-    ? input.order.filter((item): item is LabPageModuleId => isOneOf(item, defaults.order))
-    : [];
-  const order = [
-    ...new Set(persistedOrder),
-    ...defaults.order.filter(item => !persistedOrder.includes(item)),
-  ];
-  // 旧编辑模式布局没有角色模块：补在提示词后，保留其他模块的自定义顺序。
-  if (defaults.order.includes('characters') && !persistedOrder.includes('characters')) {
-    order.splice(order.indexOf('characters'), 1);
-    order.splice(order.indexOf('prompt') + 1, 0, 'characters');
-  }
   const persistedCollapsed = input.collapsed && typeof input.collapsed === 'object'
     ? input.collapsed as Partial<Record<LabPageModuleId, boolean>>
     : {};
-  const collapsed = Object.fromEntries(defaults.order.map(moduleId => [
+  const collapsed = Object.fromEntries((Object.keys(defaults.collapsed) as LabPageModuleId[]).map(moduleId => [
     moduleId,
     typeof persistedCollapsed[moduleId] === 'boolean'
       ? persistedCollapsed[moduleId]
       : Boolean(defaults.collapsed[moduleId]),
   ])) as Partial<Record<LabPageModuleId, boolean>>;
-  return { order, collapsed };
+  return { collapsed };
 };
 
 export const normalizeAppearancePreferences = (value: unknown): AppearancePreferences => {
-  const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> : {};
+  const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> & { labModuleCollapsed?: unknown } : {};
   const workspaceBackgrounds = normalizeWorkspaceBackgrounds(input.workspaceBackgrounds);
   const legacyBackground = normalizeThemeBackground(input.background);
   const backgroundPresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim() || 'builtin-default';
   if (legacyBackground && !Object.hasOwn(workspaceBackgrounds, backgroundPresetId)) workspaceBackgrounds[backgroundPresetId] = { light: legacyBackground, dark: legacyBackground };
-  const persistedOrder = Array.isArray(input.labModuleOrder)
-    ? input.labModuleOrder.filter((item): item is LabModuleId => isOneOf(item, DEFAULT_LAB_MODULE_ORDER))
-    : [];
-  const labModuleOrder = [
-    ...new Set(persistedOrder),
-    ...DEFAULT_LAB_MODULE_ORDER.filter(item => !persistedOrder.includes(item)),
-  ];
-  const persistedCollapsed = input.labModuleCollapsed && typeof input.labModuleCollapsed === 'object'
-    ? input.labModuleCollapsed as Partial<LabModuleCollapsedPreferences>
-    : {};
-  const labModuleCollapsed = Object.fromEntries(DEFAULT_LAB_MODULE_ORDER.map(moduleId => [
-    moduleId,
-    typeof persistedCollapsed[moduleId] === 'boolean'
-      ? persistedCollapsed[moduleId]
-      : DEFAULT_LAB_MODULE_COLLAPSED[moduleId],
-  ])) as LabModuleCollapsedPreferences;
   const persistedPageLayouts = input.labPageLayouts && typeof input.labPageLayouts === 'object'
     ? input.labPageLayouts as Partial<Record<LabPageId, unknown>>
     : {};
@@ -274,7 +217,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
       hasPersistedPageLayouts
         ? persistedPageLayouts[pageId]
         : pageId === 'text-to-image'
-          ? { order: labModuleOrder, collapsed: labModuleCollapsed }
+          ? { collapsed: input.labModuleCollapsed }
           : undefined,
       DEFAULT_LAB_PAGE_LAYOUTS[pageId],
     ),
@@ -323,8 +266,6 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     enforceFreeStepLimit: typeof input.enforceFreeStepLimit === 'boolean'
       ? input.enforceFreeStepLimit
       : DEFAULT_APPEARANCE_PREFERENCES.enforceFreeStepLimit,
-    labModuleOrder: labPageLayouts['text-to-image'].order as LabModuleId[],
-    labModuleCollapsed: labPageLayouts['text-to-image'].collapsed as LabModuleCollapsedPreferences,
     labPageLayouts,
     customPresets: Array.isArray(input.customPresets)
       ? input.customPresets

@@ -12,7 +12,6 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../../services/appearancePreferences';
 import { ImageEditOperation, Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
@@ -32,7 +31,6 @@ interface Props {
   item: Inspiration;
   items: Inspiration[];
   tagNames?: string[];
-  labModuleOrder?: LabPageModuleId[];
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
@@ -44,7 +42,6 @@ export const InspirationDetail: React.FC<Props> = ({
   item,
   items,
   tagNames = [],
-  labModuleOrder = DEFAULT_LAB_MODULE_ORDER,
   currentUser,
   notify,
   onClose,
@@ -192,7 +189,7 @@ export const InspirationDetail: React.FC<Props> = ({
   const SourceIcon = sourceIcon(draft.sourceType);
 
 
-  const detailSections: Partial<Record<LabPageModuleId, React.ReactNode>> = {
+  const detailSections = {
     prompt: (<details data-collection-section="prompt" className="appearance-group group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
       <summary className="flex cursor-pointer items-center justify-between select-none">
         <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
@@ -394,7 +391,12 @@ export const InspirationDetail: React.FC<Props> = ({
               {reverseTags && <details><summary className="cursor-pointer text-xs font-bold">{t("反推 Tag · 模型预测")}</summary><p className="my-2 break-words font-mono text-xs text-gray-500">{reverseTags.prompt}</p><ToolbarButton disabled={!reverseTags.prompt.trim()} onClick={() => void copyTagText(reverseTags.prompt).then(() => notify('已复制反推 Tag'), () => notify('复制失败', 'error'))}><Copy />{t("复制反推 Tag")}</ToolbarButton></details>}
             </section>}
 
-            {labModuleOrder.map(module => <React.Fragment key={module}>{detailSections[module]}</React.Fragment>)}
+            {detailSections.prompt}
+            {detailSections.characters}
+            {detailSections.negative}
+            {detailSections.characterReference}
+            {detailSections.vibe}
+            {detailSections.params}
 
 
           </div>

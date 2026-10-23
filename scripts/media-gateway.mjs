@@ -594,10 +594,10 @@ const readJsonBody = async (req, limit) => {
   }
 };
 
-const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, headers = {}, signal } = {}) => new Promise((resolve, reject) => {
+const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, headers = {}, signal, timeoutMs = 30_000 } = {}) => new Promise((resolve, reject) => {
   const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
   const upstream = httpRequest({
-    hostname: '127.0.0.1', port: workerPort, path, method, signal,
+    hostname: '127.0.0.1', port: workerPort, path, method, signal, agent: false,
     headers: {
       accept: 'application/json', 'content-type': 'application/json', cookie: req.headers.cookie || '',
       host: getForwardHost(req), 'user-agent': req.headers['user-agent'] || 'NAI-Atelier-MediaGateway',
@@ -607,18 +607,20 @@ const requestWorkerJson = (path, req, workerPort, { method = 'GET', body, header
       ...(payload ? { 'content-length': payload.length } : {}),
     },
   }, async upstreamRes => {
-    const chunks = [];
-    for await (const chunk of upstreamRes) chunks.push(chunk);
-    const text = Buffer.concat(chunks).toString('utf8');
-    let parsed;
-    try { parsed = JSON.parse(text || '{}'); } catch { parsed = { error: text || '电脑数据服务返回异常' }; }
-    if ((upstreamRes.statusCode || 500) >= 400) {
-      const error = new Error(parsed.error || '电脑数据服务请求失败');
-      error.status = upstreamRes.statusCode || 500;
-      reject(error);
-    } else resolve(parsed);
+    try {
+      const chunks = [];
+      for await (const chunk of upstreamRes) chunks.push(chunk);
+      const text = Buffer.concat(chunks).toString('utf8');
+      let parsed;
+      try { parsed = JSON.parse(text || '{}'); } catch { parsed = { error: text || '电脑数据服务返回异常' }; }
+      if ((upstreamRes.statusCode || 500) >= 400) {
+        const error = new Error(parsed.error || '电脑数据服务请求失败');
+        error.status = upstreamRes.statusCode || 500;
+        reject(error);
+      } else resolve(parsed);
+    } catch (error) { reject(error); }
   });
-  upstream.setTimeout(30_000, () => upstream.destroy(Object.assign(new Error('电脑数据服务超时'), { code: 'ETIMEDOUT' })));
+  upstream.setTimeout(timeoutMs, () => upstream.destroy(Object.assign(new Error('电脑数据服务超时'), { code: 'ETIMEDOUT' })));
   upstream.on('error', reject);
   if (payload) upstream.write(payload);
   upstream.end();
@@ -820,35 +822,22 @@ export const computeGenerationPersonalUsage = (payload, estimatedCost, usageExha
   };
 };
 
-const spendAnlasBudget = async (req, workerPort, amount, reason, personal = null) => {
-  const hasAmount = Number.isFinite(amount) && amount > 0;
-  const hasPersonal = personal && /^[0-9a-f]{16,128}$/.test(String(personal.keyHash || ''));
-  if (!hasAmount && !hasPersonal) return null;
-  const budget = await requestWorkerJson('/api/anlas-budget', req, workerPort, {
-      method: 'POST',
-      body: {
-        amount: hasAmount ? Math.floor(amount) : 0,
-        reason,
-        ...(hasPersonal ? {
-          keyHash: personal.keyHash,
-          anlasDelta: Math.max(0, Math.floor(Number(personal.anlasDelta) || 0)),
-          opusImagesDelta: Math.max(0, Math.floor(Number(personal.opusImagesDelta) || 0)),
-        } : {}),
-      },
-  });
-  if (!Number.isFinite(budget?.remaining) || budget.remaining < 0) throw new Error('本地用量记账回执无效');
-  return budget;
-};
-
-/** 成功消费在后端记一次；不依赖前台观察、历史保存或之后是否删图。 */
-const recordNaiUsage = async (req, workerPort, keyHash, action, model, images, cost, opusImages) => {
-  const result = await requestWorkerJson('/api/local-usage/events', req, workerPort, {
-    method: 'POST', body: {
-      category: 'nai', action, target: keyHash, amount: images, value: cost,
-      meta: { model, billingKnown: Number.isFinite(cost), opusImages },
-    },
-  });
-  if (result?.inserted !== 1) throw new Error('本地 Key 用量记录回执无效');
+/** 唯一凭据只在本次成功产物内复用；只补交本地事务，不重试生图或恢复旧账。 */
+const commitNaiAccounting = async (req, workerPort, input) => {
+  const body = { receiptId: randomUUID(), ...input };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await requestWorkerJson('/api/nai-accounting', req, workerPort, { method: 'POST', body, timeoutMs: 5000 });
+      if (result?.receiptId !== body.receiptId || result.budget !== null && (!Number.isFinite(result.budget?.remaining) || result.budget.remaining < 0)) {
+        throw new Error('本地结算回执无效');
+      }
+      return result.budget;
+    } catch (error) {
+      const transient = [502, 503, 504].includes(error.status) || ['ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT'].includes(error.code);
+      if (!transient || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
 };
 
 // 只返回阶段和状态，不把 Key、请求正文或数据库异常原文带入提示与日志。
@@ -1036,18 +1025,14 @@ const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, worker
   const personalUsage = billing.subscription
     ? computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber) : undefined;
   const images = Math.max(1, Math.floor(Number(payload.parameters?.n_samples) || 1));
-  // 两份本地记录分别落下；一处故障不能阻止另一处，也不能重发生图。
-  const [recorded, budget] = await Promise.allSettled([
-    recordNaiUsage(req, workerPort, keyHash, 'generation', payload.model, images, estimatedCost, personalUsage?.opusImagesDelta),
-    estimatedCost > 0 || personalUsage?.opusImagesDelta > 0
-      ? spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage }) : null,
-  ]);
-  const accountingError = [
-    recorded.status === 'rejected' ? describeAccountingFailure('用量记录写入', recorded.reason) : '',
-    budget.status === 'rejected' ? describeAccountingFailure('本地预算更新', budget.reason) : '',
-  ].filter(Boolean).join('；');
-  return { estimatedCost, personalUsage, anlasBudget: budget.status === 'fulfilled' ? budget.value : null,
-    accountingFailed: Boolean(accountingError), ...(accountingError ? { accountingError } : {}) };
+  try {
+    const anlasBudget = await commitNaiAccounting(req, workerPort, { keyHash, action: 'generation', model: payload.model,
+      images, cost: estimatedCost, opusImages: personalUsage?.opusImagesDelta });
+    return { estimatedCost, personalUsage, anlasBudget, accountingFailed: false };
+  } catch (cause) {
+    return { estimatedCost, personalUsage, anlasBudget: null, accountingFailed: true,
+      accountingError: describeAccountingFailure('本地用量结算', cause) };
+  }
 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
@@ -1740,6 +1725,11 @@ const commitVibeRecovery = async (recovery, req, workerPort) => {
     method: 'POST',
     body: { informationExtracted: recovery.informationExtracted, encodingBase64: recovery.encodingBase64 },
   });
+  // 确认对应编码确已入库，才能丢弃已付费产物的恢复记录。
+  if (stored?.item?.id !== recovery.vibeId || !Array.isArray(stored.item.encodings) || !stored.item.encodings.some(item =>
+    item?.id && item.model === 'nai-diffusion-4-5-full' && Math.abs(Number(item.informationExtracted) - recovery.informationExtracted) < 0.001)) {
+    throw Object.assign(new Error('Vibe 编码保存失败（未收到有效回执）'), { status: 502 });
+  }
   if (recovery.file) await unlink(recovery.file).catch(() => {});
   const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
   pendingVibeRecoveries.delete(key);
@@ -2333,17 +2323,13 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           throw error;
         }
         const encodeKeyHash = createHash('sha256').update(authorization.slice(7)).digest('hex');
-        const [recorded, budget] = await Promise.allSettled([
-          recordNaiUsage(req, workerPort, encodeKeyHash, 'encoding', 'nai-diffusion-4-5-full', 0, cost, 0),
-          spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 }),
-        ]);
+        let anlasBudget, anlasAccountingError;
+        try {
+          anlasBudget = await commitNaiAccounting(req, workerPort, { keyHash: encodeKeyHash, action: 'encoding',
+            model: 'nai-diffusion-4-5-full', images: 0, cost, opusImages: 0 });
+        } catch (cause) { anlasAccountingError = describeAccountingFailure('本地用量结算', cause); }
         // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
-        const anlasBudget = budget.status === 'fulfilled' ? budget.value : undefined;
-        const anlasAccountingFailed = recorded.status === 'rejected' || budget.status === 'rejected';
-        const anlasAccountingError = [
-          recorded.status === 'rejected' ? describeAccountingFailure('用量记录写入', recorded.reason) : '',
-          budget.status === 'rejected' ? describeAccountingFailure('本地预算更新', budget.reason) : '',
-        ].filter(Boolean).join('；');
+        const anlasAccountingFailed = Boolean(anlasAccountingError);
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
@@ -2467,7 +2453,7 @@ const readLimitedResponse = async response => {
 
 const requestWorkerBuffer = (source, req, workerPort, signal) => new Promise((resolve, reject) => {
   const upstream = httpRequest({
-    signal, hostname: '127.0.0.1',
+    signal, hostname: '127.0.0.1', agent: false,
     port: workerPort,
     path: source,
     method: 'GET',
@@ -3016,7 +3002,7 @@ export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
   // X-Forwarded-For on every attempt and bypass the PIN lockout.
   headers['x-forwarded-for'] = normalizeIp(req.socket.remoteAddress);
   headers['x-nai-client-ip'] = normalizeIp(req.socket.remoteAddress);
-  const upstream = httpRequest({ hostname: '127.0.0.1', port: workerPort, path: req.url, method: req.method, headers }, upstreamRes => {
+  const upstream = httpRequest({ hostname: '127.0.0.1', port: workerPort, path: req.url, method: req.method, headers, agent: false }, upstreamRes => {
     const responseHeaders = { ...upstreamRes.headers };
     // Node 将上游头名转为小写；覆盖时同样规范化，避免生成重复的 CORS 响应头。
     for (const [name, value] of Object.entries(extraHeaders)) responseHeaders[name.toLowerCase()] = value;

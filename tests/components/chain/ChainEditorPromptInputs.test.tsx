@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorPromptInputs, ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
 
-vi.mock('../../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
 afterEach(cleanup);
 
 const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
@@ -12,13 +11,18 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
     prompt: 'original prompt', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
     promptClassificationEnabled: true,
     copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
-    activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global', ...overrides,
+    activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global', ...overrides,
   };
   render(<ChainEditorPromptInputs {...props} />);
   return props;
 };
 
 describe('提示词上下文工具隔离', () => {
+  it.each([false, true])('全局提示词沿用模块默认收起=%s，编辑内容保持挂载', collapsed => {
+    setup({ activeLabLayout: { collapsed: { prompt: collapsed } } });
+    expect(document.querySelector('details')?.open).toBe(!collapsed);
+    expect(screen.getByDisplayValue('original prompt')).toBeTruthy();
+  });
   it.each([[false, true, false], [true, true, true], [true, false, false]])('分类编辑=%s、可编辑=%s 时场景镜头 Roll 入口显示=%s', (promptClassificationEnabled, canEdit, visible) => {
     const onContentRollForGlobal = vi.fn();
     const props = setup({ promptClassificationEnabled, canEdit, onContentRollForGlobal });
@@ -39,7 +43,7 @@ describe('提示词上下文工具隔离', () => {
         prompt={prompt} setPrompt={setPrompt} supplementPrompt={subject} setSupplementPrompt={setSubject}
         sections={sections} setSections={setSections} promptClassificationEnabled={classified} presetSources={{}} tagAssistEnabled={false} canEdit
         copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
-        activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" /></>;
+        activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" /></>;
     };
     render(<Harness />);
     expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('artist:test, blue dress');
@@ -57,7 +61,7 @@ describe('提示词上下文工具隔离', () => {
       const [prompt, setPrompt] = useState('global prompt');
       return <ChainEditorPromptInputs promptClassificationEnabled prompt={prompt} setPrompt={setPrompt} presetSources={{}} tagAssistEnabled={false} canEdit
         copyPromptToClipboard={vi.fn()} markPresetSectionModified={preset} markChange={mark}
-        activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" />;
+        activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />;
     };
     render(<Harness />);
     const group = within(screen.getByRole('group', { name: '画师串' }));
@@ -98,7 +102,7 @@ describe('提示词上下文工具隔离', () => {
         prompt: 'artist', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
         promptClassificationEnabled: true,
         copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
-        activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global' as const,
+        activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global' as const,
       }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} />
       <output>{subject}</output></>;
     };

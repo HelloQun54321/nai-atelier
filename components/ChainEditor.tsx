@@ -2233,7 +2233,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
                             label={t("角色参考")}
-                            order={activeLabLayout.order.indexOf('characterReference')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
                             className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
                         >
@@ -2245,27 +2244,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             />
                         </LabModuleSection>}
 
-                        {activeModelInfo.supportsVibes && <LabModuleSection
-                            moduleId="vibe"
-                            label="Vibe Transfer"
-                            order={activeLabLayout.order.indexOf('vibe')}
-                            defaultCollapsed={Boolean(activeLabLayout.collapsed.vibe)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
-                        >
-                            <VibeManager
-                                params={params}
-                                setParams={setParams}
-                                markChange={markChange}
-                                apiKey={apiKey}
-                                notify={notify}
-                            />
-                        </LabModuleSection>}
-
                         {/* Negative Prompt */}
                         <LabModuleSection
                             moduleId="negative"
                             label={t("全局负面提示词")}
-                            order={activeLabLayout.order.indexOf('negative')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
                             className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
                         >
@@ -2292,11 +2274,25 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         </section>
                         </LabModuleSection>
 
+                        {activeModelInfo.supportsVibes && <LabModuleSection
+                            moduleId="vibe"
+                            label="Vibe Transfer"
+                            defaultCollapsed={Boolean(activeLabLayout.collapsed.vibe)}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
+                        >
+                            <VibeManager
+                                params={params}
+                                setParams={setParams}
+                                markChange={markChange}
+                                apiKey={apiKey}
+                                notify={notify}
+                            />
+                        </LabModuleSection>}
+
                         {/* Params Component */}
                         <LabModuleSection
                             moduleId="params"
                             label={t("参数设置")}
-                            order={activeLabLayout.order.indexOf('params')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.params)}
                             className={mobileEditorTab === 'params' ? 'block' : 'hidden'}
                         >

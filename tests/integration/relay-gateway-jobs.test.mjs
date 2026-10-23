@@ -46,8 +46,11 @@ async function fixture(t, { status, member = true, stale = false }) {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/api/nai-key-vault/connection') return res.end(JSON.stringify({ gatewayUrl: member ? 'https://gateway.example/v1' : '' }));
     if (req.url === '/api/local-history') return res.end(JSON.stringify({ item: { id: `saved-${++saved}`, imageUrl: '/synthetic.png' } }));
-    if (req.url === '/api/local-usage/events') { events.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"inserted":1}'); }
-    if (req.url === '/api/anlas-budget/spend') spent++;
+    if (req.url === '/api/nai-accounting') {
+      const body = JSON.parse(Buffer.concat(chunks)); events.push(body);
+      if (body.cost > 0) spent++;
+      return res.end(JSON.stringify({ receiptId: body.receiptId, budget: body.cost > 0 ? { remaining: 1000 } : null }));
+    }
     res.end('{"remaining":1000}');
   });
   worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
@@ -94,7 +97,8 @@ for (const status of [404, 405, 501]) test(`成员网关 ${status}：确认保�
   assert.equal(result.completedCount, 3);
   assert.deepEqual(f.counts(), { generations: 3, saved: 3, spent: 0 });
   assert.equal(f.events.length, 3);
-  assert.ok(f.events.every(event => event.meta.billingKnown === false && event.amount === 1), '缺少订阅时保留成功张数，费用不能沿用旧快照');
+  assert.ok(f.events.every(event => event.cost === undefined && event.images === 1), '缺少订阅时保留成功张数，费用不能沿用旧快照');
+  assert.equal(new Set(f.events.map(event => event.receiptId)).size, 3, '每张成功图片使用独立凭据');
 });
 
 test('网关不支持额度接口时丢弃旧免费权益，零费用授权必须等待重新确认', async t => {
@@ -106,7 +110,7 @@ test('网关不支持额度接口时丢弃旧免费权益，零费用授权必�
   await f.approve();
   const done = await until(f.read, value => ['failed', 'succeeded'].includes(value.state));
   assert.equal(done.state, 'succeeded'); assert.equal(done.completedCount, 3);
-  assert.ok(f.events.every(event => event.meta.billingKnown === false));
+  assert.ok(f.events.every(event => event.cost === undefined));
   assert.equal(f.counts().spent, 0);
 });
 

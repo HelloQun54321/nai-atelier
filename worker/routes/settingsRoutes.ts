@@ -7,6 +7,7 @@ import { normalizeChainTags } from '../../services/chainTags';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
 import { buildAitagImageFetch, getAitagImageCacheKeys } from './aitagRoutes';
 import { deletePromptLibraryLinksByChain, queuePromptLibraryLinkBackfill, recomputePromptLibraryLinksForChain } from './promptLibraryLinkRoutes';
+import { ensureLocalHistorySchema } from './historyRoutes';
 import { json, error, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type Env, type R2ObjectBody, type RouteContext } from './types';
 
 const LAN_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
@@ -478,7 +479,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   }
 
   // --- Local Anlas budget tracker + per-account personal usage ---
-  if (path === '/api/anlas-budget') {
+  if (path === '/api/anlas-budget' || path === '/api/nai-accounting') {
     const legacyKey = 'anlas_budget_remaining_v1';
     // 新版本每把 Key 使用独立 settings 行，扣减可以继续走 SQL 原子更新，
     // 避免多个设备同时生成时 JSON 读改写互相覆盖。
@@ -565,6 +566,55 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       const map = await readPersonalMap();
       return map[keyHash] ? { [keyHash]: map[keyHash] } : {};
     };
+
+    if (path === '/api/nai-accounting') {
+      if (method !== 'POST') return error('Method not allowed', 405);
+      const input = await request.json().catch(() => null) as any;
+      const known = input?.cost !== undefined;
+      if (!input || typeof input.receiptId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(input.receiptId)
+        || typeof input.keyHash !== 'string' || !/^[0-9a-f]{64}$/.test(input.keyHash)
+        || !['generation', 'encoding'].includes(input.action) || typeof input.model !== 'string' || !input.model || input.model.length > 160
+        || !Number.isSafeInteger(input.images) || input.images < 0 || input.images > 1_000_000
+        || (input.action === 'generation' ? input.images < 1 : input.images !== 0 || !known)
+        || (known && (!Number.isSafeInteger(input.cost) || input.cost < 0 || input.cost > 1_000_000
+          || !Number.isSafeInteger(input.opusImages) || input.opusImages < 0 || input.opusImages > input.images))
+        || (!known && input.opusImages !== undefined)) return error('Invalid accounting receipt', 400);
+      await ensureLocalHistorySchema(db);
+      const eventId = `nai:${currentUser.id}:${input.keyHash}:${input.receiptId}`;
+      const meta = JSON.stringify({ model: input.model, billingKnown: known, opusImages: known ? input.opusImages : null });
+      const charge = known && (input.cost > 0 || input.opusImages > 0);
+      const now = Date.now();
+      const statements = [];
+      const unrecorded = 'NOT EXISTS (SELECT 1 FROM local_usage_events WHERE id = ?)';
+      if (charge) {
+        await ensureScopedRemaining(input.keyHash);
+        statements.push(db.prepare(`UPDATE settings SET value = CAST(MAX(0, CAST(value AS INTEGER) - ?) AS TEXT)
+          WHERE key = ? AND ${unrecorded}`).bind(input.cost, scopedBudgetKey(input.keyHash), eventId));
+        statements.push(db.prepare(`INSERT INTO settings (key, value) SELECT ?, '{}' WHERE ${unrecorded}
+          ON CONFLICT(key) DO NOTHING`).bind(personalKey, eventId));
+        const document = "CASE WHEN json_valid(value) THEN CASE WHEN json_type(value) = 'object' THEN value ELSE '{}' END ELSE '{}' END";
+        const entry = `$."${input.keyHash}"`;
+        statements.push(db.prepare(`UPDATE settings SET value = json_set(${document}, ?, json_object(
+          'anlasSpent', MAX(0, CAST(COALESCE(json_extract(${document}, ?), 0) AS INTEGER)) + ?,
+          'opusImages', MAX(0, CAST(COALESCE(json_extract(${document}, ?), 0) AS INTEGER)) + ?, 'updatedAt', ?))
+          WHERE key = ? AND ${unrecorded}`).bind(
+          entry, `${entry}.anlasSpent`, input.cost,
+          `${entry}.opusImages`, input.opusImages, now, personalKey, eventId));
+      }
+      // 凭据最后写入，同一 D1 事务内所有增量受它保护；回执丢失后重交不会重复扣减。
+      statements.push(db.prepare(`INSERT INTO local_usage_events
+        (id, user_id, category, action, target, amount, value, meta, created_at)
+        SELECT ?, ?, 'nai', ?, ?, ?, ?, ?, ? WHERE ${unrecorded}`).bind(
+        eventId, currentUser.id, input.action, input.keyHash, input.images, known ? input.cost : null, meta, now, eventId));
+      await db.batch(statements);
+      const receipt = await db.prepare('SELECT action, amount, value, meta FROM local_usage_events WHERE id = ?')
+        .bind(eventId).first<{ action: string; amount: number; value: number | null; meta: string }>();
+      if (!receipt || receipt.action !== input.action || receipt.amount !== input.images || receipt.value !== (known ? input.cost : null) || receipt.meta !== meta) {
+        return error('Accounting receipt conflict', 409);
+      }
+      return json({ receiptId: input.receiptId, budget: charge
+        ? { remaining: await readRemaining(input.keyHash), personal: await readPersonalForKey(input.keyHash), updatedAt: now } : null });
+    }
 
     const body = method === 'GET' ? {} : await request.json() as any;
     const keyHashValue = body.keyHash || url.searchParams.get('keyHash') || '';

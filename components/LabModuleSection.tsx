@@ -6,14 +6,13 @@ import { LabPageModuleId } from '../services/appearancePreferences';
 interface LabModuleSectionProps {
   moduleId: LabPageModuleId;
   label: string;
-  order: number;
   defaultCollapsed: boolean;
   className?: string;
   children: React.ReactNode;
 }
 
-/** 实验室四种模式共用的可排序、可记忆初始展开状态容器。 */
-export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, label, order, defaultCollapsed, className = '', children }) => {
+/** 实验室四种模式共用的可折叠、可设置初始展开状态容器。 */
+export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, label, defaultCollapsed, className = '', children }) => {
   useLanguage();
   const [open, setOpen] = useState(!defaultCollapsed);
 
@@ -23,7 +22,6 @@ export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, la
     open={open}
     onToggle={event => setOpen(event.currentTarget.open)}
     data-lab-module={moduleId}
-    style={{ order }}
     className={`lab-module-section appearance-reading-surface appearance-card appearance-group group min-w-0 rounded-xl border border-gray-200 bg-white/70 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-900/60 overflow-hidden ${className}`}
   >
     <summary className="appearance-group flex cursor-pointer list-none items-center justify-between gap-3 bg-gray-50/70 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-100/80 hover:text-indigo-600 dark:bg-gray-800/45 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-indigo-300 group-open:border-b group-open:border-gray-200/80 group-open:bg-gray-50/90 dark:group-open:border-gray-800 dark:group-open:bg-gray-800/60 [&::-webkit-details-marker]:hidden">

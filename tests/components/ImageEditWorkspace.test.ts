@@ -33,7 +33,8 @@ vi.mock('../../components/CloudQueueStatus', () => ({
   useCloudQueueStatus: () => null,
 }));
 
-vi.mock('../../components/SmartImage', () => ({
+vi.mock('../../components/SmartImage', async original => ({
+  ...await original<typeof import('../../components/SmartImage')>(),
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
   SmartImage: ({ thumbnailVariant: _thumbnailVariant, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { thumbnailVariant?: string }) => React.createElement('img', props),
 }));
@@ -153,7 +154,7 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将�
   const Harness = () => {
     const [forceEmptySeed, setForceEmptySeed] = React.useState(true);
     return React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft,
-      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
+      layout: { collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
       forceEmptySeed, onForceEmptySeedChange: setForceEmptySeed,
       onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
       onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false });
@@ -201,7 +202,7 @@ describe('ImageEditControls', () => {
     const onDraftChange = vi.fn();
     render(React.createElement(ImageEditPanel, {
       baseImage: null, previewImage: null, operation: 'inpaint', draft,
-      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings', 'characterReference'], collapsed: {} },
+      layout: { collapsed: {} },
       generationCostLabel: () => '零点数', apiKey: 'test-key', notify: vi.fn(), onPromptChange: vi.fn(),
       onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(),
       onCanvasChange: vi.fn(), onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false,
@@ -320,7 +321,9 @@ describe('ImageEditControls', () => {
     expect(onDraftChange).toHaveBeenLastCalledWith({ params: expect.objectContaining({ characters: [] }) });
     const module = screen.getByText('角色专属提示词').closest('details')!;
     expect(module.classList.contains('block')).toBe(true);
-    expect(module.style.order).toBe('2');
+    expect(module.style.order).toBe('');
+    const promptModules = Array.from(module.parentElement!.querySelectorAll<HTMLElement>('[data-lab-module]')).filter(node => !node.classList.contains('hidden'));
+    expect(promptModules.slice(0, 2).map(node => node.dataset.labModule)).toEqual(['prompt', 'characters']);
     expect(character.prompt).toBe('girl, blue hair');
   });
 
@@ -603,7 +606,7 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('Agent 的 %s 缺少
   // Agent 生成回调类型直接取组件真实 props 签名，不硬写旧布尔返回。
   let request!: Parameters<NonNullable<React.ComponentProps<typeof ImageEditPanel>['onAgentGenerateReady']>>[0];
   render(React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft,
-    layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} }, generationCostLabel: () => '估算', apiKey: 'synthetic', notify: vi.fn(),
+    layout: { collapsed: {} }, generationCostLabel: () => '估算', apiKey: 'synthetic', notify: vi.fn(),
     onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
     onGenerate: generate, onAgentGenerateReady: value => { request = value; }, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false }));
   await expect(request({ basePrompt: 'synthetic', subjectPrompt: '', negativePrompt: '', modules: [], params })).rejects.toMatchObject({ outcome: 'blocked', code: 'missing_base_image' });
@@ -727,7 +730,7 @@ describe('ImageEditPreview', () => {
         previewImage: null,
         operation: 'image-to-image',
         draft,
-        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        layout: { collapsed: {} } as any,
         generationCostLabel: () => '14 点',
         apiKey: 'test-key',
         notify: vi.fn(),
@@ -754,7 +757,7 @@ describe('ImageEditPreview', () => {
         previewImage: null,
         operation: 'inpaint',
         draft: createLabImageEditDraft('inpaint', 'test prompt', 'low quality', params),
-        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        layout: { collapsed: {} } as any,
         generationCostLabel: () => '14 点',
         apiKey: 'test-key',
         notify: vi.fn(),
@@ -779,7 +782,7 @@ describe('ImageEditPreview', () => {
         previewImage: null,
         operation: 'outpaint',
         draft: createLabImageEditDraft('outpaint', 'test prompt', 'low quality', params),
-        layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} } as any,
+        layout: { collapsed: {} } as any,
         generationCostLabel: () => '14 点',
         apiKey: 'test-key',
         notify: vi.fn(),
@@ -882,6 +885,9 @@ describe('ImageEditPreview', () => {
       expect(paramsSection?.classList.contains('hidden')).toBe(false);
       expect(editSettingsSection?.className).toContain('block');
       expect(editSettingsSection?.classList.contains('hidden')).toBe(false);
+      const visibleModules = Array.from(container.querySelectorAll<HTMLElement>('[data-lab-module]')).filter(node => !node.classList.contains('hidden'));
+      expect(visibleModules.map(node => node.dataset.labModule)).toEqual(['editSettings', 'params']);
+      expect(visibleModules.every(node => node.style.order === '')).toBe(true);
     });
   });
 });

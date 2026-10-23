@@ -1042,7 +1042,6 @@ const App = () => {
           currentUser={currentUser}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           inspirationsData={inspirationsCache}
-          labModuleOrder={appearancePreferences.labPageLayouts['text-to-image'].order}
           onRefresh={() => loadInspirations(true)}
           onImportRefresh={async () => {
             const items = await db.getAllInspirations(currentUser);

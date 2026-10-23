@@ -126,6 +126,6 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
             </div>
         </section>;
     return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局提示词')}
-        order={activeLabLayout.order.indexOf('prompt')} defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
+        defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
         className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{content}</LabModuleSection>;
 };

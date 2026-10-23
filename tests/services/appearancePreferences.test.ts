@@ -149,19 +149,9 @@ describe('appearance preferences', () => {
       continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,
-      labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
-      labModuleCollapsed: {
-        prompt: true,
-        characters: false,
-        params: true,
-        negative: false,
-        characterReference: false,
-        vibe: true,
-      },
       labPageLayouts: {
         ...DEFAULT_LAB_PAGE_LAYOUTS,
         'text-to-image': {
-          order: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
           collapsed: {
             prompt: true,
             characters: false,
@@ -194,66 +184,48 @@ describe('appearance preferences', () => {
     })).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
   });
 
-  it('repairs duplicated, unknown and incomplete laboratory module preferences', () => {
+  it('忽略旧排序并保留有效的旧默认展开偏好，保存后不再写回排序', () => {
     const normalized = normalizeAppearancePreferences({
       labModuleOrder: ['vibe', 'unknown', 'prompt', 'vibe'],
-      labModuleCollapsed: { vibe: false, prompt: 'yes' },
+      labModuleCollapsed: { vibe: false, prompt: 'yes', unknown: true },
     });
-
-    expect(normalized.labModuleOrder).toEqual([
-      'vibe',
-      'prompt',
-      'characters',
-      'params',
-      'negative',
-      'characterReference',
-    ]);
-    expect(normalized.labModuleCollapsed).toEqual({
-      ...DEFAULT_LAB_MODULE_COLLAPSED,
-      vibe: false,
+    expect(normalized.labPageLayouts['text-to-image']).toEqual({
+      collapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED, vibe: false },
     });
+    expect(normalized).not.toHaveProperty('labModuleOrder');
+    expect(normalized).not.toHaveProperty('labModuleCollapsed');
+    saveAppearancePreferences(normalized);
+    expect(localStorageValues.get('nai_appearance_preferences')).not.toMatch(/labModuleOrder|labModuleCollapsed|"order"/);
+    expect(loadAppearancePreferences().labPageLayouts).toEqual(normalized.labPageLayouts);
   });
 
-  it('keeps legacy text layout and creates independent edit layouts', () => {
+  it('旧默认展开偏好只用于文生图，各编辑模式独立补齐默认值', () => {
     const normalized = normalizeAppearancePreferences({
       labModuleOrder: ['negative', 'prompt'],
       labModuleCollapsed: { negative: true },
     });
-
-    expect(normalized.labPageLayouts['text-to-image'].order).toEqual([
-      'negative',
-      'prompt',
-      'characters',
-      'params',
-      'characterReference',
-      'vibe',
-    ]);
     expect(normalized.labPageLayouts['text-to-image'].collapsed.negative).toBe(true);
     expect(normalized.labPageLayouts['image-to-image']).toEqual(DEFAULT_LAB_PAGE_LAYOUTS['image-to-image']);
-    expect(normalized.labPageLayouts.inpaint).not.toBe(normalized.labPageLayouts.outpaint);
+    normalized.labPageLayouts.inpaint.collapsed.prompt = true;
+    expect(normalized.labPageLayouts.outpaint.collapsed.prompt).toBe(false);
+    expect(DEFAULT_LAB_PAGE_LAYOUTS.inpaint.collapsed.prompt).toBe(false);
   });
 
-  it('repairs each persisted laboratory page independently', () => {
+  it('四模式忽略旧顺序，各自保留默认展开并过滤未知或无效字段', () => {
     const normalized = normalizeAppearancePreferences({
       labPageLayouts: {
-        inpaint: {
-          order: ['editSettings', 'prompt', 'unknown', 'prompt'],
-          collapsed: { editSettings: true },
-        },
+        'text-to-image': { order: ['vibe', 'negative', 'prompt'], collapsed: { negative: true } },
+        'image-to-image': { order: ['params', 'prompt'], collapsed: { prompt: true } },
+        inpaint: { order: ['editSettings', 'unknown', 'prompt'], collapsed: { editSettings: true, prompt: 'yes', negative: true, unknown: true } },
+        outpaint: { order: ['vibe', 'params'], collapsed: { baseImage: true } },
       },
     });
-
-    expect(normalized.labPageLayouts.inpaint.order).toEqual([
-      'editSettings',
-      'prompt',
-      'characters',
-      'baseImage',
-      'params',
-      'characterReference',
-      'vibe',
-    ]);
-    expect(normalized.labPageLayouts.inpaint.collapsed.editSettings).toBe(true);
-    expect(normalized.labPageLayouts.outpaint.order).toEqual(DEFAULT_LAB_PAGE_LAYOUTS.outpaint.order);
+    expect(normalized.labPageLayouts).toEqual({
+      'text-to-image': { collapsed: { ...DEFAULT_LAB_MODULE_COLLAPSED, negative: true } },
+      'image-to-image': { collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS['image-to-image'].collapsed, prompt: true } },
+      inpaint: { collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS.inpaint.collapsed, editSettings: true } },
+      outpaint: { collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS.outpaint.collapsed, baseImage: true } },
+    });
   });
 
   it('validates and normalizes appearance presets', () => {

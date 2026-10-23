@@ -128,8 +128,9 @@ test('Android 复用成功消费记录，免费 V4.5 也计张数，未知费用
   const billing = new URL('../../worker/naiBilling.mjs', import.meta.url).href;
   const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['settleSuccessfulNovelAiGeneration', 'DEFAULT_NAI_RUNTIME'], `
     import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '${billing}';
+    const randomUUID = () => crypto.randomUUID();
     const writes = [];
-    const requestWorkerJson = async (path, req, port, options) => { writes.push({ path, ...options }); return { inserted: 1, remaining: 99 }; };
+    const requestWorkerJson = async (path, req, port, options) => { writes.push({ path, ...options }); return { receiptId: options.body.receiptId, budget: null }; };
   `, { requestWorkerJson: '' });
   const mobile = await import('data:text/javascript;base64,' + Buffer.from(source + '\nexport { writes };').toString('base64'));
   assert.doesNotMatch(source, /httpRequest|node:fs/);
@@ -137,13 +138,16 @@ test('Android 复用成功消费记录，免费 V4.5 也计张数，未知费用
     billing: { runtime: mobile.DEFAULT_NAI_RUNTIME, subscription: { active: true, tier: 3 }, opusSubscriber: true, exhausted: false } };
   const result = await mobile.settleSuccessfulNovelAiGeneration(options);
   assert.equal(result.estimatedCost, 0); assert.equal(result.accountingFailed, false);
-  assert.equal(mobile.writes.length, 1); assert.equal(mobile.writes[0].path, '/api/local-usage/events');
-  assert.deepEqual(mobile.writes[0].body, { category: 'nai', action: 'generation', target: 'a'.repeat(64), amount: 1, value: 0,
-    meta: { model: options.payload.model, billingKnown: true, opusImages: 0 } });
+  assert.equal(mobile.writes.length, 1); assert.equal(mobile.writes[0].path, '/api/nai-accounting');
+  const { receiptId, ...body } = mobile.writes[0].body;
+  assert.match(receiptId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(body, { action: 'generation', keyHash: 'a'.repeat(64), images: 1, cost: 0,
+    model: options.payload.model, opusImages: 0 });
   await mobile.settleSuccessfulNovelAiGeneration({ ...options, billing: { runtime: mobile.DEFAULT_NAI_RUNTIME } });
   assert.equal(mobile.writes.length, 2);
-  assert.equal(mobile.writes[1].body.value, undefined);
-  assert.equal(mobile.writes[1].body.meta.billingKnown, false);
+  assert.equal(mobile.writes[1].body.cost, undefined);
+  assert.equal(mobile.writes[1].body.opusImages, undefined);
+  assert.notEqual(mobile.writes[1].body.receiptId, receiptId);
 });
 
 test('Android 提取后的角色参考与额度降级共用桌面实现，构建显式导出判定函数', async () => {

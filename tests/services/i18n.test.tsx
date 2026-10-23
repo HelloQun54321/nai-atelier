@@ -23,6 +23,14 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('实验室默认展开与恢复入口具备四种译文', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['实验室模块默认展开', '全部默认', '恢复默认', '默认收起', '默认展开']) {
+        expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+        expect(translate(language.code, key), key).not.toBe(key);
+      }
+    }
+  });
   it('破限模式名称、规则编辑和生效说明具有四种完整译文', () => {
     for (const [language, name] of [['zh-CN', '破限模式'], ['zh-TW', '破限模式'], ['en', 'Unrestricted mode'], ['ja', '制限解除モード'], ['ko', '제한 해제 모드']] as const) {
       expect(translate(language, '破限模式')).toBe(name);

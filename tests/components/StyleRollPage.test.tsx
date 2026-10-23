@@ -212,6 +212,21 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   expect(mocks.generate).toHaveBeenCalledTimes(2); expect(mocks.generate.mock.calls[1][0]).toEqual(before);
   expect(mocks.generate.mock.calls[1][1]).toEqual(before.candidates[5]); expect(mocks.save).not.toHaveBeenCalled();
 });
+it('Roll 成图记账异常仍显示已保存结果与结算原因，不自动补图', async () => {
+  experiment.candidates = [candidateFixture('a', 'alpha')];
+  experiment.rounds = [{ id: 'accounting-round', candidateIds: ['a'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  const saved = rollImageFixture(experiment, experiment.candidates[0]);
+  mocks.generate.mockImplementationOnce(async () => {
+    mocks.history.mockResolvedValue([saved]);
+    return { session: { accountingFailed: true, accountingError: '本地用量结算失败（HTTP 503）', lastSavedItem: saved }, settle: Promise.resolve({ success: true }) };
+  });
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
+  expect((await screen.findByRole('alert')).textContent).toContain('图片已保存，但本地记账异常，请核对额度后再继续：本地用量结算失败（HTTP 503）');
+  await waitFor(() => expect(screen.queryByRole('button', { name: '补齐剩余 1 张' })).toBeNull());
+  expect(mocks.generate).toHaveBeenCalledOnce(); expect(mocks.upload).not.toHaveBeenCalled();
+});
 it('保存轮次冲突不提交生图，保留现有图片和候选', async () => {
   await setup(); mocks.save.mockRejectedValueOnce(new Error('合成保存冲突'));
   fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('合成保存冲突'));

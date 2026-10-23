@@ -9,6 +9,7 @@ export const NODE_RUNTIME_VERSION = '24.19.0';
 export const PUBLIC_ICONS = ['nai-atelier.ico', 'app-icon.ico', 'app-icon.png', 'artist-palette-3d.ico', 'artist-palette-3d.png'];
 // 明确列出公开运行文件，禁止将开发目录中的新增文件自动带入分发包。
 export const RUNTIME_FILES = [
+  'scripts/wrangler-local-transport.cjs',
   ...['agent-web', 'agent-ui-bridge', 'agent-runtime', 'agent-page-tools', 'agent-local-images', 'artist-samples', 'collector-download', 'danbooru-loading', 'desktop-launcher', 'export-locations', 'storage-locations', 'generation-gateway', 'generation-output', 'image-tagger', 'local-backup', 'local-server', 'local-server-runtime', 'media-gateway', 'media-memory-cache', 'novelai-agent-knowledge', 'pixiv-local', 'pixiv-scheme-handler', 'pixiv-web-login', 'prompt-agent', 'st-chatu8-bridge', 'style-collector', 'tag-update-server', 'tagger-model-download', 'update-tag-dictionary'].map(name => `scripts/${name}.mjs`),
   'scripts/style-collector-window.ps1', 'scripts/style-collector-window.cs', 'scripts/style-collector-view.cs', 'scripts/style-collector-wallpaper.cs', 'scripts/pixiv-edge-callback-watcher.ps1', 'scripts/pixiv-login-complete.html',
   'public/themes/wallpapers/cupertino-day.webp', 'public/themes/wallpapers/cupertino-night.webp',

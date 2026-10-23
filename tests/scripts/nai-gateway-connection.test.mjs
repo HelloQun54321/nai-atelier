@@ -79,7 +79,7 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
     assert.equal(body.parameters.stream, undefined); calls.push(options.path); return 'synthetic-zip';
   }, { headers: { 'content-type': 'application/zip' } }).times(2);
   member.intercept({ path: '/v1/ai/encode-vibe', method: 'POST' }).reply(200, Buffer.alloc(128, 2));
-  const worker = createServer((req, res) => {
+  const worker = createServer(async (req, res) => {
     if (req.url === '/api/nai-key-vault/connection') {
       const key = req.headers.authorization;
       if (key === 'Bearer STA1N-http') return res.end('{"gatewayUrl":"https://gateway.example/v1"}');
@@ -89,7 +89,14 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
     if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
     res.setHeader('content-type', 'application/json');
     if (req.url === '/api/vibes/http-vibe') return res.end('{"item":{"id":"http-vibe","encodings":[]}}');
-    if (req.url.endsWith('/encoding-result')) return res.end('{"item":{"id":"http-encoding"}}');
+    if (req.url.endsWith('/encoding-result')) return res.end(JSON.stringify({ item: { id: 'http-vibe', encodings: [
+      { id: 'http-encoding', model: 'nai-diffusion-4-5-full', informationExtracted: 1 },
+    ] } }));
+    if (req.url === '/api/nai-accounting') {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks));
+      return res.end(JSON.stringify({ receiptId: body.receiptId, budget: { remaining: 1666 } }));
+    }
     res.end('{"remaining":1666}');
   });
   worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
@@ -108,7 +115,7 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
       assert.equal(response.status, 200, await response.clone().text()); assert.equal(await response.text(), 'synthetic-zip');
     }
     const encoded = await request('/api/vibes/http-vibe/encodings', 'STA1N-http', { informationExtracted: 1 });
-    assert.equal(encoded.status, 200, await encoded.clone().text()); assert.equal((await encoded.json()).item.id, 'http-encoding');
+    assert.equal(encoded.status, 200, await encoded.clone().text()); assert.equal((await encoded.json()).item.id, 'http-vibe');
     const rejected = await request('/api/generate', 'STA1N-missing', { model: 'nai-diffusion-5-full-medium', parameters: {} });
     assert.equal(rejected.status, 400); assert.equal(calls.filter(path => path.endsWith('/ai/generate-image')).length, 2);
     mock.assertNoPendingInterceptors();
@@ -138,9 +145,10 @@ test('第三方网关的精确参考改写为附原图的缓存形式，官方�
   const worker = createServer(async (req, res) => {
     if (req.url === '/api/nai-key-vault/connection') return res.end(req.headers.authorization === 'Bearer STA1N-ref' ? '{"gatewayUrl":"https://gateway.example/v1"}' : '{"gatewayUrl":""}');
     if (req.url === '/api/character-references/ref-1/image') { res.setHeader('etag', '"synthetic"'); return res.end(reference); }
-    if (req.url === '/api/local-usage/events') {
+    if (req.url === '/api/nai-accounting') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
-      events.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"inserted":1}');
+      const body = JSON.parse(Buffer.concat(chunks)); events.push(body);
+      return res.end(JSON.stringify({ receiptId: body.receiptId, budget: { remaining: 1666 } }));
     }
     res.setHeader('content-type', 'application/json'); res.end('{"remaining":1666}');
   });
@@ -169,7 +177,7 @@ test('第三方网关的精确参考改写为附原图的缓存形式，官方�
     assert.equal(bodies.official.director_reference_images.length, 1);
     assert.equal(bodies.official.director_reference_images[0], bodies.gateway.director_reference_images_cached[0].data);
     assert.equal(events.length, 2);
-    assert.ok(events.every(event => event.meta.billingKnown && event.value > 0 && event.amount === 1));
+    assert.ok(events.every(event => event.cost > 0 && event.images === 1 && event.receiptId));
     mock.assertNoPendingInterceptors();
   } finally {
     server?.closeAllConnections(); worker.closeAllConnections();

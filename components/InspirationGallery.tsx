@@ -1,5 +1,4 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -34,7 +33,6 @@ interface InspirationGalleryProps {
   selectionFocusEnabled?: boolean;
   currentUser: User;
   inspirationsData: Inspiration[] | null;
-  labModuleOrder?: LabPageModuleId[];
   onRefresh: () => Promise<void>;
   onImportRefresh?: () => Promise<void>;
   notify: (msg: string, type?: 'success' | 'error') => void;
@@ -46,7 +44,7 @@ interface InspirationGalleryProps {
 
 const isLocalFileDrag = (data: DataTransfer) => Array.from(data.types || []).includes('Files') || Boolean(data.files?.length);
 
-export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, onImportRefresh, notify, onNavigateToPlayground, labModuleOrder = DEFAULT_LAB_MODULE_ORDER, selectionFocusEnabled = true }) => {
+export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, onImportRefresh, notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences('favorites');
@@ -513,7 +511,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
       </main>
       {openedGroup && <DetailSidePanel key={workGroup} open title={openedGroup.length > 1 || Number(openedGroup[0].analysis?.collectionGroupSize) > 1 ? openedGroup[0].title.replace(/ · \d+$/, '') : openedGroup[0].title} sensitiveTitle subInfo={t('{0}页', [openedGroup.length])} sourceUrl={openedGroup[0].sourceUrl} onBack={closeGroup} onClose={closeGroup}>
-        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} items={items} tagNames={tagNames || []} labModuleOrder={labModuleOrder} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
+        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} items={items} tagNames={tagNames || []} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
       </DetailSidePanel>}
       </div>
     </div>

@@ -34,7 +34,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
         image = { bytes: composed.bytes, mime: composed.mime || output.mime };
         const response = await fetch(`http://127.0.0.1:${workerPort}/api/local-history`, {
           method: 'POST', headers: {
-            cookie: job.context.cookie, host: job.context.host,
+            cookie: job.context.cookie, host: job.context.host, Connection: 'close',
             'x-forwarded-for': job.context.ip, 'x-nai-client-ip': job.context.ip,
           }, body: generationHistoryForm(image, metadata, job.descriptor.editMask), signal: AbortSignal.timeout(30_000),
         });

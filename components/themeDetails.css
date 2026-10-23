@@ -1,6 +1,6 @@
 /* 高级主题接管共用控件与界面材质；作品、画布、语义色和触控底线保持原义。 */
 .atelier-theme-card { container-type: inline-size; }
-@container (min-width: 960px) {
+@container (min-width: 480px) {
   .atelier-theme-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @layer theme-accessibility, theme-state;

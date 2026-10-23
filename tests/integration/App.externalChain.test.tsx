@@ -83,7 +83,7 @@ vi.mock('../../components/ArtistLibrary', () => ({ ArtistLibrary: (props: any) =
     <button onClick={props.onNavigateToPlayground}>画师进入实验室</button>
   </div>;
 } }));
-vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
+vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-has-lab-order={String(Object.hasOwn(props, 'labModuleOrder'))}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 vi.mock('../../components/StyleRollPage', () => ({ StyleRollPage: ({ onSaveChain, onNavigateToPlayground, chains }: any) => <div><span data-testid="roll-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span><button onClick={() => void onSaveChain(source)}>保存 Roll 候选</button><button onClick={onNavigateToPlayground}>Roll 送往实验室</button></div> }));
 vi.mock('../../components/PromptLibrary', () => ({ PromptLibraryHub: ({ chains, onCreate }: any) => <div>
   <span data-testid="prompt-library-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span>
@@ -534,7 +534,7 @@ it('共享收藏已加载时直接进入收藏库，跨页面爱心保存或取�
     const order = ['negative', 'params', 'prompt', 'characters', 'vibe', 'characterReference'];
     saveAppearancePreferences(normalizeAppearancePreferences({ labPageLayouts: { 'text-to-image': { order } } }));
     await setup('inspiration');
-    expect(JSON.parse(screen.getByTestId('collection-items').dataset.moduleOrder!)).toEqual(order);
+    expect(screen.getByTestId('collection-items').dataset.hasLabOrder).toBe('false');
     expect(mocks.getAllInspirations).not.toHaveBeenCalled();
     const image = { imageUrl: '/synthetic/instant.png', title: '立即显示的新收藏', sourceType: 'character' as const, sourceId: 'instant' };
     const reads = get.mock.calls.length;

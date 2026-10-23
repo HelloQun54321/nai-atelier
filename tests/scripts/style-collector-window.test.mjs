@@ -38,7 +38,7 @@ test('native counters and collapsed detail follow the selected mode through the 
   assert.doesNotMatch(latest.titleTooltip, /图片超过存储大小上限/);
   await manager.command('mode', 'content'); await flush();
   assert.deepEqual(latest.counters, { pending: 0, saved: 1, skipped: 1, failed: 0 });
-  assert.match(latest.titleTooltip, /内容库 · 已保存 1/);
+  assert.match(latest.titleTooltip, /提示词库 · 已保存 1/);
   assert.match(latest.detail, /这段提示词已经收录/);
 });
 
@@ -99,7 +99,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
 
   const longDetail = '失败：连接中断，' + '请检查网络后重新复制。'.repeat(10);
   await setState({ failed: 1, detail: longDetail }); assert.equal(window().detailTooltip, longDetail); assert.equal(window().foreground, false);
-  await send('collapse'); assert.equal(window().height, 44); assert.equal(window().detailVisible, false); assert.match(window().titleTooltip, /失败：连接中断/); assert.equal(window().title, '收集中 · 内容库');
+  await send('collapse'); assert.equal(window().height, 44); assert.equal(window().detailVisible, false); assert.match(window().titleTooltip, /失败：连接中断/); assert.equal(window().title, '收集中 · 提示词库');
   await send('collapse'); assert.equal(window().height, 232); assert.equal(window().visiblePosition, true);
   await setState({ saved: 4, pending: 2, skipped: 1, failed: 1, stage: '正在收录提示词', detail: '已收录：雪天' });
   assert.equal(window().processing, true); assert.deepEqual(window().counters, { pending: 2, saved: 4, skipped: 1, failed: 1 });
@@ -129,7 +129,7 @@ test('native collector: fixed modes, automatic text intake, file copies and both
   await setState({ appearance: { ...defaults, themeMode: 'light', isDark: false, motion: 'off' }, stage: '正在收录提示词' });
   await send('system-theme', { dark: true }); assert.equal(window().appearance.dark, false); assert.equal(window().appearance.background, '#FFFFFF'); assert.equal(window().breathing, false);
   for (const language of LANGUAGES) {
-    const labels = Object.fromEntries(['收集中', '已暂停', ' · 已保存 ', '失败：', '暂停', '继续', '待处理', '已保存', '跳过', '失败', '风格串', '收藏库', '内容库', '存入', '组合库'].map(message => [message, translate(language.code, message)]));
+    const labels = Object.fromEntries(['收集中', '已暂停', ' · 已保存 ', '失败：', '暂停', '继续', '待处理', '已保存', '跳过', '失败', '风格串', '收藏库', '提示词库', '存入', '组合库'].map(message => [message, translate(language.code, message)]));
     const failure = translate(language.code, '失败：保存失败，请重新复制');
     await setState({ failed: 1, detail: failure, rawStage: '正在收录提示词', stage: translate(language.code, '正在收录提示词'), appearance: { ...defaults, labels } });
     assert.equal(window().title, translate(language.code, '收集中')); assert.equal(window().processing, true); assert.equal(window().labelsFit, true, language.code + ' labels'); assert.equal(window().foreground, false);

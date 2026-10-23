@@ -77,7 +77,7 @@ describe('主题卡片独立预览', () => {
       expect(preview.style.aspectRatio).toBe('8 / 5');
       expect(preview.style.gridTemplateColumns).toBe('22% minmax(0, 1fr)');
       expect(preview.querySelector<HTMLElement>('[data-preview-part="workspace"]')?.style.gridTemplateColumns).toBe('50% minmax(0, 1fr)');
-      for (const label of ['风格串', '实验室', '内容库', '收藏库', '安全模式', '全局设置', '文生图', '图生图', '局部重绘', '扩图', '全局', '角色', '参数', '暂无生成结果']) {
+      for (const label of ['风格串', '实验室', '提示词库', '收藏库', '安全模式', '全局设置', '文生图', '图生图', '局部重绘', '扩图', '全局', '角色', '参数', '暂无生成结果']) {
         expect(preview.textContent).toContain(label);
       }
       expect(preview.querySelectorAll('[data-preview-part="field"]')).toHaveLength(3);

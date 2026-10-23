@@ -376,15 +376,13 @@ it.each([390, 1280])('宽度 %s：旧来源 Tag 不进入卡片、搜索或标�
   await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());
 });
 
-it('收藏搜索不再匹配备注；详情接收文生图排序，调整后即时生效', async () => {
+it('收藏搜索不再匹配备注；详情采用固定顺序', async () => {
   const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
-  const view = render(React.createElement(InspirationGallery, { ...props, labModuleOrder: ['negative', 'params', 'prompt'] }));
+  const view = render(React.createElement(InspirationGallery, props));
   const card = screen.getByText(mockInspirations[0].title).closest('article')!;
   fireEvent.click(within(card).getByRole('img').closest('button')!);
   const sections = () => Array.from(view.container.querySelectorAll('[data-collection-section]'), element => element.getAttribute('data-collection-section'));
-  expect(sections()).toEqual(['tags', 'negative', 'params', 'prompt']);
-  view.rerender(React.createElement(InspirationGallery, { ...props, labModuleOrder: ['prompt', 'params', 'negative'] }));
-  expect(sections()).toEqual(['tags', 'prompt', 'params', 'negative']);
+  expect(sections()).toEqual(['tags', 'prompt', 'negative', 'params']);
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '自动收录' } });
   await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());

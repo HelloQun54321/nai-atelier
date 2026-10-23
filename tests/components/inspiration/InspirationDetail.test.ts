@@ -272,7 +272,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByTitle('复制图片')).toBeTruthy();
   });
 
-  it('开启清洗后保持两个分享按钮，图片右上竖排且脱离工作区隔离层', () => {
+  it('开启清洗后保持两个分享按钮，共用图片右上排布且脱离工作区隔离层', () => {
     setCleanSharedImages(true);
     render(React.createElement(InspirationDetail, {
       item: mockItem, items: [mockItem], currentUser: mockUser,
@@ -282,9 +282,9 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
     expect(screen.getByTitle('复制图片').closest('article')).toBeTruthy();
     expect(document.querySelector('.ui-backdrop-enter')).toBeNull();
-    const group = screen.getByTitle('复制图片').parentElement!;
+    const group = screen.getByTitle('复制图片').closest('.image-card-actions')!;
     expect(group.className).toContain('absolute right-2 top-2');
-    expect(group.classList.contains('flex-col')).toBe(true);
+    expect(group.contains(screen.getByRole('button', { name: '下载图片' }))).toBe(true);
     expect(group.closest('footer')).toBeNull();
     const footer = document.querySelector('footer');
     expect(footer?.firstElementChild?.classList.contains('flex-wrap')).toBe(true);
@@ -386,7 +386,7 @@ it('侧栏刷新保留当前未保存的输入，未编辑的生成参数仍随�
   expect((screen.getByRole('textbox', { name: '提示词' }) as HTMLTextAreaElement).value).toBe('另一张原词');
 });
 
-it('标签始终在最前，其余已有模块实时跟随文生图顺序，切换排序不丢编辑草稿', () => {
+it('详情固定按标签、正向、角色、负面、参考、参数排列，刷新不丢编辑草稿', () => {
   const item: Inspiration = { ...mockItem, params: {
     ...DEFAULT_PARAMS,
     characters: [{ id: 'character', prompt: 'blue hair', x: 0.5, y: 0.5 }],
@@ -396,10 +396,10 @@ it('标签始终在最前，其余已有模块实时跟随文生图顺序，切�
   const props = { item, items: [item], currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) };
   const view = render(React.createElement(InspirationDetail, props));
   const order = () => Array.from(view.container.querySelectorAll('[data-collection-section]'), element => element.getAttribute('data-collection-section'));
-  expect(order()).toEqual(['tags', 'prompt', 'characters', 'params', 'negative', 'characterReference', 'vibe']);
+  expect(order()).toEqual(['tags', 'prompt', 'characters', 'negative', 'characterReference', 'vibe', 'params']);
   fireEvent.change(screen.getByLabelText('提示词'), { target: { value: '尚未保存' } });
-  view.rerender(React.createElement(InspirationDetail, { ...props, labModuleOrder: ['vibe', 'negative', 'params', 'characterReference', 'characters', 'prompt'] }));
-  expect(order()).toEqual(['tags', 'vibe', 'negative', 'params', 'characterReference', 'characters', 'prompt']);
+  view.rerender(React.createElement(InspirationDetail, { ...props, item: { ...item, title: '更新标题' } }));
+  expect(order()).toEqual(['tags', 'prompt', 'characters', 'negative', 'characterReference', 'vibe', 'params']);
   expect((screen.getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('尚未保存');
   expect(db.updateInspiration).not.toHaveBeenCalled();
 });

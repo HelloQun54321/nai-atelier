@@ -65,7 +65,7 @@ import { normalizeThemeDetails, resolveThemeDetails } from '../services/themeDet
 import { resolveWorkspaceBackground, type BackgroundMode } from '../services/themeBackground';
 import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
 import { useSharedAppearancePresets } from './useSharedAppearancePresets';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -186,9 +186,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
   const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
-  const [isLabMobile, setIsLabMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
-  const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
   const changeImageDisplayScope = (scope: 'global' | ImageDisplayPage) => {
     setImageDisplayScope(scope);
@@ -248,12 +246,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     const query = window.matchMedia('(max-width: 767px)');
     const update = () => setIsMobile(query.matches);
     query.addEventListener('change', update);
-    const labQuery = window.matchMedia('(max-width: 1023px)');
-    const updateLab = () => setIsLabMobile(labQuery.matches);
-    labQuery.addEventListener('change', updateLab);
     return () => {
       query.removeEventListener('change', update);
-      labQuery.removeEventListener('change', updateLab);
     };
   }, []);
 
@@ -508,29 +502,6 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     });
   };
 
-  const moveLabModule = (pageId: LabPageId, moduleId: LabPageModuleId, offset: -1 | 1) => {
-    const layout = getLabPageLayout(pageId);
-    const currentIndex = layout.order.indexOf(moduleId);
-    const targetIndex = currentIndex + offset;
-    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= layout.order.length) return;
-    const next = [...layout.order];
-    [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
-    updateLabPageLayout(pageId, current => ({ ...current, order: next }));
-  };
-
-  const dropLabModule = (pageId: LabPageId, targetId: LabPageModuleId) => {
-    if (!draggingLabModule || draggingLabModule.pageId !== pageId || draggingLabModule.moduleId === targetId) {
-      setDraggingLabModule(null);
-      return;
-    }
-    const layout = getLabPageLayout(pageId);
-    const next = layout.order.filter(moduleId => moduleId !== draggingLabModule.moduleId);
-    const targetIndex = layout.order.indexOf(targetId);
-    next.splice(targetIndex, 0, draggingLabModule.moduleId);
-    updateLabPageLayout(pageId, current => ({ ...current, order: next }));
-    setDraggingLabModule(null);
-  };
-
   const toggleLabModuleCollapsed = (pageId: LabPageId, moduleId: LabPageModuleId) => {
     updateLabPageLayout(pageId, current => ({
       ...current,
@@ -541,11 +512,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     }));
   };
 
-  const recommendedLabLayout = (pageId: LabPageId): LabPageLayout => {
-    const defaults = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-    return { order: [...defaults.order], collapsed: { ...defaults.collapsed } };
-  };
-  const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => recommendedLabLayout(pageId));
+  const resetLabPageLayout = (pageId: LabPageId) => updateLabPageLayout(pageId, () => ({
+    collapsed: { ...DEFAULT_LAB_PAGE_LAYOUTS[pageId].collapsed },
+  }));
 
   const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
 
@@ -1106,72 +1075,45 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <div className={`appearance-group rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
+              <div className="appearance-group rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("实验室模块布局")}</h4>
-                      {isLabMobile && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-micro font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                          <Lock className="h-3 w-3" />{t("手机端固定")}</span>
-                      )}
-                    </div>
-
-                  </div>
+                  <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("实验室模块默认展开")}</h4>
                   <button
                     type="button"
-                    disabled={isLabMobile}
                     onClick={resetAllLabPageLayouts}
                     className="appearance-group mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
                   >
-                    <RotateCcw className="h-3 w-3" />{t("全部推荐")}</button>
+                    <RotateCcw className="h-3 w-3" />{t("全部默认")}</button>
                 </div>
 
-                <div className={`space-y-2 ${isLabMobile ? 'pointer-events-none select-none opacity-50' : ''}`}>
+                <div className="space-y-2">
                   {LAB_PAGE_IDS.map(pageId => {
                     const pageMeta = LAB_PAGE_META[pageId];
                     const layout = getLabPageLayout(pageId);
-                    const visibleOrder = layout.order;
                     const defaultLayout = DEFAULT_LAB_PAGE_LAYOUTS[pageId];
-                    const isCustom = JSON.stringify(layout) !== JSON.stringify(defaultLayout);
+                    const modules = Object.keys(defaultLayout.collapsed) as LabPageModuleId[];
+                    const isCustom = modules.some(moduleId => Boolean(layout.collapsed[moduleId]) !== Boolean(defaultLayout.collapsed[moduleId]));
                     return <details key={pageId} open={expandedLabPages[pageId]} onToggle={event => {
                       // React 的 currentTarget 只在事件回调执行期间有效；状态更新器可能延迟执行。
                       const expanded = event.currentTarget.open;
                       setExpandedLabPages(current => current[pageId] === expanded ? current : { ...current, [pageId]: expanded });
                     }} className="appearance-group group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
-                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [visibleOrder.length])}</span></span>
+                        <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [modules.length])}</span></span>
                         <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
                       </summary>
                       <div className="border-t border-gray-100 p-2.5 dark:border-gray-800">
-                        <div className="mb-2 flex items-center justify-between gap-2"><span className="text-micro text-gray-400">{t("拖动排序")}</span><button type="button" onClick={() => resetLabPageLayout(pageId)} className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><RotateCcw className="h-3 w-3" />{t("推荐顺序")}</button></div>
+                        <div className="mb-2 flex justify-end"><button type="button" onClick={() => resetLabPageLayout(pageId)} aria-label={`${t(pageMeta.label)} · ${t("恢复默认")}`} className="mobile-touch flex items-center gap-1 rounded-lg px-2 py-1 text-micro font-bold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><RotateCcw className="h-3 w-3" />{t("恢复默认")}</button></div>
                         <div className="space-y-2">
-                          {visibleOrder.map((moduleId, index) => {
+                          {modules.map(moduleId => {
                             const meta = LAB_MODULE_META[moduleId];
                             const collapsed = Boolean(layout.collapsed[moduleId]);
-                            const dragging = draggingLabModule?.pageId === pageId && draggingLabModule.moduleId === moduleId;
                             return <div
                               key={moduleId}
-                              draggable
-                              onDragStart={event => {
-                                setDraggingLabModule({ pageId, moduleId });
-                                event.dataTransfer.effectAllowed = 'move';
-                                event.dataTransfer.setData('text/plain', moduleId);
-                              }}
-                              onDragEnd={() => setDraggingLabModule(null)}
-                              onDragOver={event => {
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = 'move';
-                              }}
-                              onDrop={event => {
-                                event.preventDefault();
-                                dropLabModule(pageId, moduleId);
-                              }}
-                              className={`appearance-group flex items-center gap-2 rounded-xl border bg-gray-50/60 p-2 transition dark:bg-gray-800/50 ${dragging ? 'border-indigo-400 opacity-55 dark:border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+                              className="appearance-group flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/60 p-2 dark:border-gray-700 dark:bg-gray-800/50"
                             >
-                              <GripVertical className="h-4 w-4 flex-none cursor-grab text-gray-300 active:cursor-grabbing dark:text-gray-600" aria-hidden="true" />
-                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {t(meta.label)}</div></div>
-                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={t("上移{0}", [t(meta.label)])} title={t("上移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={t("下移{0}", [meta.label])} title={t("下移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
+                              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{t(meta.label)}</div></div>
+                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-label={`${t(pageMeta.label)} · ${t(meta.label)} · ${collapsed ? t("默认收起") : t("默认展开")}`} aria-pressed={collapsed} className={`mobile-touch rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
                             </div>;
                           })}
                         </div>

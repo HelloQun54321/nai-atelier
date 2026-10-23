@@ -419,7 +419,7 @@ async function startServer() {
   console.log('\x1b[36m核心页面服务正在启动，请稍候（需恢复本地 D1/R2 存储，数据量越大耗时越长）...\x1b[0m');
   const wranglerSeen = { value: false };
   const spawnWrangler = () => {
-    const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
+    const child = spawn(process.execPath, ['--no-warnings', '--experimental-vm-modules', '--require', resolvePath(APP_ROOT, 'scripts/wrangler-local-transport.cjs'), wranglerCli, ...args], { stdio: ['inherit', 'pipe', 'inherit'], shell: false, env: { ...process.env, ...wranglerEnv } });
     // 默认过滤高频请求日志；NAI_WRANGLER_LOG=all 透传完整输出（仍持续消费管道并推进看门狗）
     if (process.env.NAI_WRANGLER_LOG === 'all') fullWranglerLog(child.stdout, wranglerSeen);
     else quietWranglerRequests(child.stdout, wranglerSeen);
