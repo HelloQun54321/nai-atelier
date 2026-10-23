@@ -21,7 +21,7 @@ vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => sync
 vi.mock('../../services/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
-vi.mock('../../services/naiModels', () => ({ DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full', getNaiModelDisplayLabel: () => 'V5 Curated', getSelectableNaiModels: () => [] }));
+vi.mock('../../services/naiModels', async original => ({ ...await original<typeof import('../../services/naiModels')>(), getNaiModelDisplayLabel: () => 'V5 Curated', getSelectableNaiModels: () => [] }));
 vi.mock('../../services/imageDisplayPreferences', () => ({
   useMobileImageDisplayPreferences: () => ({ layout: 'grid' }),
   mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}),

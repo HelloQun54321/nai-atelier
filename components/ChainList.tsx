@@ -9,10 +9,11 @@ import { MobileBottomSheet, MobileIconButton } from './MobileUI';
 import { SmartImage } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
+import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -33,6 +34,8 @@ import { getCustomChainTags } from '../services/chainTags';
 import { useConfirmDialog } from './ConfirmDialog';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
+
+const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -75,6 +78,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [tagSearch, setTagSearch] = useState('');
   const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [similarityOpen, setSimilarityOpen] = useState(false);
+  const similaritySession = useRef<ChainSimilaritySession | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
   const [untestedOnly, setUntestedOnly] = useState(false);
@@ -101,6 +106,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     bulkDeletingRef.current = false;
     setSelectionMode(false); setSelectedIds(new Set()); setBulkDeleteBusy(false); setDeleteProgress(null);
     setTagManagerOpen(false);
+    setSimilarityOpen(false);
+    similaritySession.current = null;
   }, [type, isGuest]);
 
   const legacyFavorites = useRef(new Set<string>());
@@ -166,11 +173,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       message: type === 'character' ? t('该自定义角色将被永久删除，此操作无法撤销。') : t('该风格串将被永久删除，此操作无法撤销。'),
       confirmLabel: t('确认删除'),
       tone: 'danger',
-    })) return;
+    })) return false;
     try {
       await onDelete(chain.id);
+      return true;
     } catch {
       notify('删除失败，请稍后重试', 'error');
+      return false;
     }
   };
 
@@ -468,6 +477,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {!isGuest && type === 'style' && onBulkDelete && <ToolbarButton aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
             <ListChecks className="h-4 w-4" /><span className="hidden xl:inline">{t('多选')}</span>
           </ToolbarButton>}
+          {!isGuest && type === 'style' && <ToolbarButton aria-label={t('查找相似')} title={t('查找相似')} onClick={() => setSimilarityOpen(true)}>
+            <ScanSearch className="h-4 w-4" /><span className="hidden xl:inline">{t('查找相似')}</span>
+          </ToolbarButton>}
           {!isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
             {type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
             <div className="hidden items-center gap-2 md:flex">
@@ -517,6 +529,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       {/* Simple Create Modal */}
+      {similarityOpen && <React.Suspense fallback={null}><ChainSimilarityDialog chains={typeChains} filteredChains={filteredChains} onClose={() => setSimilarityOpen(false)} onOpenChain={onSelect} onDelete={handleDelete} sessionRef={similaritySession} /></React.Suspense>}
       {isModalOpen && (
         <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={t(createLabel)} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="appearance-panel bg-white dark:bg-gray-800 rounded-xl p-6 md:p-8 w-full max-w-md border border-gray-200 dark:border-gray-700 shadow-2xl">

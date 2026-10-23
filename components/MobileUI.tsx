@@ -27,7 +27,9 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
 
   useEffect(() => {
     // 手机与平板窗口注册返回关闭，历史／灵感等模态同样适用；后台视图不参与返回。
-    if (!open || !active || typeof window === 'undefined' || !window.matchMedia?.('(max-width: 1279px)').matches) return;
+    if (!open || !active || typeof window === 'undefined') return;
+    // 窄窗打开父层后放宽窗口，子层仍沿用该返回栈，避免一次返回连带关闭父层。
+    if (!window.matchMedia?.('(max-width: 1279px)').matches && !window.history.state?.__naiMobileLayers?.length) return;
     const marker = markerRef.current;
     if (window.history.state?.__naiMobileLayer !== marker) {
       window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker,

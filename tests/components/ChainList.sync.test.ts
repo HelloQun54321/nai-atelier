@@ -25,7 +25,7 @@ vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount
 vi.mock('../../components/useRestoreListAnchor', () => ({ useRestoreListAnchor: () => {} }));
 vi.mock('../../components/useKeepAliveScrollRestore', () => ({ useKeepAliveScrollRestore: () => () => {} }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({}) }));
-vi.mock('../../services/naiModels', () => ({ DEFAULT_NAI_MODEL: 'nai-diffusion-4-5-full', getNaiModelDisplayLabel: (model: string) => model?.startsWith('nai-diffusion-5-') ? 'V5' : 'V4.5', getSelectableNaiModels: () => [{ id: 'nai-diffusion-4-5-full', label: 'V4.5 Full' }, { id: 'nai-diffusion-5-full', label: 'V5 Full' }] }));
+vi.mock('../../services/naiModels', async original => ({ ...await original<typeof import('../../services/naiModels')>(), getNaiModelDisplayLabel: (model: string) => model?.startsWith('nai-diffusion-5-') ? 'V5' : 'V4.5', getSelectableNaiModels: () => [{ id: 'nai-diffusion-4-5-full', label: 'V4.5 Full' }, { id: 'nai-diffusion-5-full', label: 'V5 Full' }] }));
 
 const chain = (id: string, name: string, model = 'nai-diffusion-4-5-full'): PromptChain => ({
   id, userId: 'test-owner', name, type: 'style', description: '', tags: [], basePrompt: '', negativePrompt: '', modules: [],
@@ -489,11 +489,11 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
-    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['筛选', '智慧姬同步', '收集模式', '批量导入', '新建风格串']);
+    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['筛选', '智慧姬同步', '查找相似', '收集模式', '批量导入', '新建风格串']);
     expect(header.firstElementChild?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();
-    fireEvent.click(desktop[3]);
+    fireEvent.click(desktop[4]);
     expect(p.onRefresh).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '完成测试导入' }));
     expect(p.onRefresh).toHaveBeenCalledOnce();
