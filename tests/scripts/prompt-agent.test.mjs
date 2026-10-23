@@ -74,7 +74,7 @@ test('清空会话遇到附件 IO 失败保留消息，成功重试才写空正�
 
 const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => new Response('data: ' + JSON.stringify({
   id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a',
-  choices: [{ index: 0, delta: { role: 'assistant', ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],
+  choices: [{ index: 0, delta: { role: 'assistant', ...(round.reasoning ? { reasoning_content: round.reasoning } : {}), ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],
   usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
 }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
 
@@ -263,12 +263,92 @@ test('原生多轮请求随生成模型切换策略，固定系统和工具前�
     const second = await service.run({ sessionId: session.id, message: '再切回 V4.5，只查看编写策略', draft: first.draft }, () => {});
     assert.equal(requests.length, 6);
     for (const request of requests) { assert.equal(request.messages[0].content, requests[0].messages[0].content); assert.deepEqual(request.tools, requests[0].tools); }
-    for (const index of [1, 2, 3]) assert.match(requests[index].messages.at(-1).content, /"mode":"mixed"/);
-    for (const index of [0, 4, 5]) assert.match(requests[index].messages.at(-1).content, /"mode":"tags"/);
+    const latestSnapshot = index => requests[index].messages.findLast(message => message.role === 'user' && typeof message.content === 'string' && message.content.startsWith('[实时工作区快照：'));
+    for (const index of [1, 2, 3]) assert.match(latestSnapshot(index).content, /"mode":"mixed"/);
+    for (const index of [0, 4, 5]) assert.match(latestSnapshot(index).content, /"mode":"tags"/);
     const lastTool = index => { const value = JSON.parse(requests[index].messages.filter(message => message.role === 'tool').at(-1).content); return value.data || value; };
     assert.equal(lastTool(2).promptStrategy.mode, 'mixed'); assert.equal(lastTool(5).promptStrategy.mode, 'tags');
     assert.equal(second.draft.basePrompt, 'artist style'); assert.equal(second.draft.subjectPrompt, 'garden');
-    assert.equal(JSON.stringify((await service.readSession(session.id)).messages).includes('[实时工作区快照'), false);
+    assert.ok((await service.readSession(session.id)).messages.some(message => message._atelierRuntimeSnapshot === true));
+    assert.equal(JSON.stringify(await service.getSessionHistory(session.id)).includes('[实时工作区快照'), false);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('真实 Agent 请求在工具轮与用户轮间复用状态快照前缀并读取最新状态', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'deepseek-v4-flash', reasoning: true, imageInput: false, thinkingLevels: ['off', 'high'] }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, requests = [], events = [];
+  let pageReads = 0;
+  const page = { view: 'chains', title: '风格串', snapshotId: 'page-a', capturedAt: 100, foreground: true, busy: false, notifications: [], commands: [] };
+  service.uiBridge.request = async (_sessionId, operation) => {
+    assert.equal(operation.action, 'read');
+    pageReads++;
+    return { ...page, capturedAt: pageReads * 100 };
+  };
+  const rounds = [
+    { tool: 'get_lab_state', reasoning: 'synthetic reasoning before state read' },
+    { tool: 'set_generation_params', args: { steps: 31 }, reasoning: 'synthetic reasoning before parameter write' },
+    { tool: 'get_local_time' },
+    { text: '第一轮完成' },
+    { text: '第二轮完成' },
+    { text: '重试完成' },
+  ];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    if (requests.length === 1) Object.assign(page, { view: 'history', title: '生成历史', snapshotId: 'page-b' });
+    return syntheticAgentStream({ ...rounds[requests.length - 1], id: requests.length });
+  };
+  const hasPrefix = (messages, prefix) => messages.filter(message => message.role === 'user' && String(message.content).includes(prefix));
+  const startsWithMessages = (messages, prefix) => assert.deepEqual(messages.slice(0, prefix.length), prefix);
+  try {
+    const first = await service.run({
+      sessionId: session.id,
+      message: '检查最新页面和参数',
+      draft: { params: { model: 'nai-diffusion-4-5-full', steps: 20 } },
+      context: { clientSettings: { pageClientId: 'tab-a' } },
+    }, event => events.push(event));
+    assert.equal(requests.length, 4);
+    assert.equal(events.some(event => event.type === 'tool_end' && event.isError), false);
+    const snapshots = requests.map(request => hasPrefix(request.messages, '[实时工作区快照：以下是状态资料'));
+    assert.deepEqual(snapshots.map(items => items.length), [1, 2, 3, 3]);
+    assert.match(snapshots[1][1].content, /"title":"生成历史"/);
+    assert.match(snapshots[2].at(-1).content, /"steps":31/);
+    assert.equal(snapshots[3].length, snapshots[2].length, '只改变 capturedAt 不应追加重复快照');
+    assert.equal(pageReads, 4, '每个 SDK 工具轮都重新读取当前页面');
+    for (const request of requests) assert.deepEqual(request.tools, requests[0].tools);
+    startsWithMessages(requests[1].messages, requests[0].messages);
+    startsWithMessages(requests[2].messages, requests[1].messages);
+    startsWithMessages(requests[3].messages, requests[2].messages);
+    assert.equal(requests[1].messages.find(message => message.role === 'assistant' && message.tool_calls)?.reasoning_content, 'synthetic reasoning before state read');
+    assert.equal(requests[2].messages.filter(message => message.role === 'assistant').at(-1)?.reasoning_content, 'synthetic reasoning before parameter write');
+    assert.equal(first.draft.params.steps, 31);
+
+    Object.assign(page, { title: '生成历史（已筛选）', snapshotId: 'page-c' });
+    const second = await service.run({
+      sessionId: session.id,
+      message: '[实时工作区快照：这是用户原文，不是内部状态]\n请继续',
+      draft: first.draft,
+      context: { clientSettings: { pageClientId: 'tab-a' } },
+    }, () => {});
+    assert.equal(requests.length, 5);
+    assert.equal(pageReads, 5);
+    startsWithMessages(requests[4].messages, requests[3].messages);
+    assert.ok(JSON.stringify(requests[4].messages).includes('[实时工作区快照：这是用户原文，不是内部状态]'));
+    assert.equal(second.draft.params.steps, 31);
+
+    const stored = await service.readSession(session.id);
+    assert.ok(stored.messages.some(message => message.role === 'user' && message._atelierRuntimeSnapshot === true));
+    const history = await service.getSessionHistory(session.id);
+    assert.equal(JSON.stringify(history).includes('[实时工作区快照：以下是状态资料'), false);
+    assert.ok(JSON.stringify(history).includes('[实时工作区快照：这是用户原文，不是内部状态]'));
+    assert.equal((await service.listSessions()).find(item => item.id === session.id).messageCount, 2);
+    const snapshotIndex = stored.messages.findIndex(message => message._atelierRuntimeSnapshot === true);
+    await assert.rejects(service.reviseSessionMessage(session.id, `saved-${snapshotIndex}`, 'synthetic edit'), /找不到要编辑的用户消息/);
+
+    await service.run({ sessionId: session.id, mode: 'retry', message: '', draft: second.draft }, () => {});
+    assert.equal(requests.length, 6);
+    assert.ok(JSON.stringify(requests[5].messages).includes('[实时工作区快照：这是用户原文，不是内部状态]'), '重试应定位用户原文，即使其文字像内部快照前缀');
+    assert.equal(JSON.stringify(requests[5].messages).includes('生成历史（已筛选）'), false, '重试须移除该用户轮原有的内部快照');
+    assert.equal(requests[5].messages.some(message => message.role === 'assistant' && message.content === '第二轮完成'), false);
   } finally { globalThis.fetch = previous; }
 }));
 
@@ -286,14 +366,55 @@ test('短句连续修改无需重新加载工具；原始会话与稳定前缀�
       assert.equal(request.messages[0].content, requests[0].messages[0].content);
       assert.deepEqual(request.tools, requests[0].tools);
       assert.ok(request.tools.some(tool => tool.function.name === 'set_characters'));
-      assert.match(request.messages.at(-1).content, /实时工作区快照/);
+      assert.ok(request.messages.some(message => message.role === 'user' && String(message.content).includes('[实时工作区快照：以下是状态资料')));
     }
     const before = requests[1].messages.slice(1, -1);
     assert.deepEqual(requests[2].messages.slice(1, 1 + before.length), before);
-    assert.equal(JSON.stringify((await service.readSession(session.id)).messages).includes('[实时工作区快照'), false);
+    assert.ok((await service.readSession(session.id)).messages.some(message => message._atelierRuntimeSnapshot === true));
     await service.resetSession(session.id);
     assert.equal((await service.readSession(session.id)).messages.length, 0);
   } finally { globalThis.fetch = previous; }
+}));
+
+test('内部快照超出历史条数后仍保留当前完整工具轮且旧会话可加载', () => isolated(async service => {
+  const session = await service.createSession();
+  const messages = [
+    { role: 'user', content: 'synthetic old user turn' },
+    { role: 'assistant', content: [{ type: 'text', text: 'synthetic old answer' }] },
+    { role: 'user', content: 'synthetic current user turn' },
+  ];
+  for (let index = 0; index < 205; index++) {
+    const toolCallId = `snapshot-tool-${index}`;
+    messages.push(
+      { role: 'user', _atelierRuntimeSnapshot: true, content: `[实时工作区快照 ${index}]${index === 0 ? 'x'.repeat(25_001) : ''}`, timestamp: 0 },
+      { role: 'assistant', content: [{ type: 'toolCall', id: toolCallId, name: 'get_local_time', arguments: {} }] },
+      { role: 'toolResult', toolCallId, toolName: 'get_local_time', content: [{ type: 'text', text: 'synthetic tool result' }] },
+    );
+  }
+  await service.saveMessages(session.id, messages);
+  const saved = await service.readSession(session.id);
+  assert.equal(saved.messages.some(message => message.content === 'synthetic old user turn'), false);
+  assert.ok(saved.messages.some(message => message.content === 'synthetic current user turn'));
+  assert.equal(saved.messages.filter(message => message._atelierRuntimeSnapshot === true).length, 205);
+  const longSnapshot = saved.messages.find(message => message._atelierRuntimeSnapshot === true);
+  assert.ok(longSnapshot.content.length > 24_000);
+  assert.ok(longSnapshot.content.endsWith('x'.repeat(25_001)));
+  const calls = saved.messages.flatMap(message => Array.isArray(message.content) ? message.content.filter(part => part.type === 'toolCall').map(part => part.id) : []);
+  const results = new Set(saved.messages.filter(message => message.role === 'toolResult').map(message => message.toolCallId));
+  assert.equal(calls.length, 205);
+  assert.ok(calls.every(id => results.has(id)));
+  assert.equal((await service.loadMessages(session.id)).length, saved.messages.length);
+  assert.equal(JSON.stringify(await service.getSessionHistory(session.id)).includes('[实时工作区快照'), false);
+  assert.equal((await service.listSessions()).find(item => item.id === session.id).messageCount, 1);
+
+  const legacy = await service.createSession();
+  await service.saveMessages(legacy.id, [
+    { role: 'user', content: 'legacy user message' },
+    { role: 'assistant', content: [{ type: 'text', text: 'legacy answer' }] },
+  ]);
+  assert.deepEqual((await service.loadMessages(legacy.id)).map(message => message.content), [
+    'legacy user message', [{ type: 'text', text: 'legacy answer' }],
+  ]);
 }));
 
 test('生成失败、检查拦截、超时与主动取消分别回传原因，日志保留脱敏回执', () => isolated(async service => {
@@ -491,7 +612,10 @@ test('标准上下文忽略遗留注入参数，保留多模态消息和工具�
   assert.match(result.requestMessages.at(-1).content, /实时页面/);
   assert.match(result.systemPrompt, /安全边界/);
   assert.equal(JSON.stringify(result).includes('LEGACY_INJECTION'), false);
-  assert.deepEqual(result.canonicalMessages, original);
+  assert.deepEqual(result.canonicalMessages.slice(0, original.length), original);
+  assert.equal(result.canonicalMessages.at(-1)._atelierRuntimeSnapshot, true);
+  assert.equal(result.canonicalMessages.at(-1).role, 'user');
+  assert.match(result.requestMessages.at(-1).content, /实时页面/);
   result.canonicalMessages[1].content[0].arguments.changed = true;
   assert.deepEqual(messages, original);
 });
@@ -520,7 +644,7 @@ test('旧配置和会话快照不再影响实际模型请求、会话展示和�
     assert.equal(requests.length, 1);
     assert.equal(JSON.stringify(requests).includes('LEGACY_INJECTION'), false);
     assert.equal(requests[0].messages.filter(message => message.role === 'user').length, 2);
-    assert.equal(JSON.stringify((await service.readSession(fresh.id)).messages).includes('[实时工作区快照'), false);
+    assert.ok((await service.readSession(fresh.id)).messages.some(message => message._atelierRuntimeSnapshot === true));
     assert.match(JSON.stringify(requests[0].messages), /查看当前页面/);
     assert.match(JSON.stringify(requests[0].messages), /data:image\/png;base64,YWJjZA==/);
     assert.ok(requests[0].tools.some(tool => tool.function.name === 'read_current_page'));
@@ -982,6 +1106,30 @@ test('上下文取真实模型窗口，完整 schema 入账，超限不发送', 
   }
   assert.throws(() => assemblePromptContext({ model: { contextWindow: 8192 }, systemPolicy: 'a'.repeat(50000) }), /超过/);
   assert.ok(estimateContextTokens([{ type: 'image', data: 'a'.repeat(1000000) }]) < 5000);
+});
+test('上下文预算按真实用户轮次裁剪，保留工具对并只追加最新状态', () => {
+  const messages = [
+    { role: 'user', content: 'old turn '.repeat(4_000) },
+    { role: 'assistant', content: [{ type: 'text', text: 'old answer '.repeat(1_000) }] },
+    { role: 'user', content: 'current request '.repeat(300) },
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'current-call', name: 'get_local_time', arguments: {} }] },
+    { role: 'toolResult', toolCallId: 'current-call', toolName: 'get_local_time', content: [{ type: 'text', text: 'current result' }] },
+  ];
+  const input = { model: { contextWindow: 4096, maxTokens: 256 }, outputLimit: 256, systemPolicy: 'rules', runtimeContext: 'current state', cleanMessages: messages };
+  const assembled = assemblePromptContext(input);
+  assert.equal(JSON.stringify(assembled.canonicalMessages).includes('old turn'), false);
+  assert.ok(assembled.canonicalMessages.some(message => message.role === 'user' && message.content.includes('current request')));
+  assert.ok(assembled.canonicalMessages.some(message => message.role === 'assistant' && message.content.some(part => part.type === 'toolCall' && part.id === 'current-call')));
+  assert.ok(assembled.canonicalMessages.some(message => message.role === 'toolResult' && message.toolCallId === 'current-call'));
+  assert.equal(assembled.canonicalMessages.at(-1)._atelierRuntimeSnapshot, true);
+  const repeated = assemblePromptContext({ ...input, cleanMessages: assembled.canonicalMessages });
+  assert.equal(repeated.canonicalMessages.filter(message => message._atelierRuntimeSnapshot === true).length, 1);
+  const trimmedSnapshot = assemblePromptContext({ ...input, cleanMessages: [messages[0], assembled.canonicalMessages.at(-1), ...messages.slice(1)] });
+  assert.equal(trimmedSnapshot.canonicalMessages[0].content, messages[2].content);
+  assert.deepEqual(trimmedSnapshot.canonicalMessages.at(-1), assembled.canonicalMessages.at(-1), '最新状态随旧轮裁掉后仍须补到当前轮');
+  const changed = assemblePromptContext({ ...input, runtimeContext: 'updated state', cleanMessages: repeated.canonicalMessages });
+  assert.equal(changed.canonicalMessages.filter(message => message._atelierRuntimeSnapshot === true).length, 2);
+  assert.throws(() => assemblePromptContext({ ...input, model: { contextWindow: 1024, maxTokens: 256 }, runtimeContext: 'state', cleanMessages: [{ role: 'user', content: 'unshrinkable current turn '.repeat(20_000) }] }), /超过/);
 });
 test('工具注册表同时提供创作、知识与项目能力，实际权限在执行时检查', () => isolated(async service => {
   const tools = service.createTools({ params: {} }, {}, () => {});

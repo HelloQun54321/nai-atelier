@@ -1,4 +1,4 @@
-import { promptAgentService, type AgentPageRequest, type PromptAgentEvent, type PromptAgentTask } from './promptAgent';
+import { promptAgentService, type AgentPageRequest, type PromptAgentEvent, type PromptAgentTask, type PromptAgentSession } from './promptAgent';
 import type { PromptAgentDraft } from '../types';
 import { clearAgentPageHover, getAgentPageClientId, observeAgentPage, operateAgentPage, readAgentPage, type AgentPageSnapshot } from './agentWorkspace';
 import { diffAgentClientDraft } from './agentLabSync.mjs';
@@ -6,6 +6,8 @@ import { diffAgentClientDraft } from './agentLabSync.mjs';
 type RunInput = Parameters<typeof promptAgentService.run>[0];
 const active = new Map<string, Promise<void>>();
 const composers = new Map<string, { text: string; attachments: Array<{ data: string; mimeType: string; name: string }> }>();
+let selectedSession: PromptAgentSession | undefined;
+let initialSession: Promise<PromptAgentSession> | undefined;
 type PageClient = { clientId: string; baseline: PromptAgentDraft; getDraft: () => PromptAgentDraft; stop: () => void; queue: Promise<void> };
 const clients = new Map<string, PageClient>();
 const executing = new Map<string, AbortController>();
@@ -65,6 +67,22 @@ const handlePageRequest = async (sessionId: string, request: AgentPageRequest) =
 
 /** 标签页内统一持有任务，编辑器卸载不会关闭请求；电脑服务负责跨设备恢复。 */
 export const promptAgentCoordinator = {
+  selectedSessionId: () => selectedSession?.id || '',
+  selectSession(session?: PromptAgentSession) { selectedSession = session; },
+  async ensureSession(items: PromptAgentSession[]) {
+    if (!selectedSession) {
+      // 多个编辑器与 StrictMode 共用本页首次创建，不恢复上次启动的会话。
+      initialSession ||= promptAgentService.createSession().then(created => {
+        selectedSession ||= created;
+        return created;
+      }).finally(() => { initialSession = undefined; });
+      await initialSession;
+    }
+    const current = selectedSession!;
+    const latest = items.find(item => item.id === current.id);
+    if (latest) selectedSession = latest;
+    return latest ? items : [current, ...items];
+  },
   running: (sessionId: string) => active.has(sessionId),
   run(input: RunInput, onEvent: (event: PromptAgentEvent) => void, getDraft: () => PromptAgentDraft = () => input.draft) {
     if (active.has(input.sessionId)) return Promise.reject(new Error('这个会话已有任务在执行'));

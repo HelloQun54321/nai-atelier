@@ -7,6 +7,7 @@ import { PromptAgentPanel } from '../../components/PromptAgentPanel';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { NAIParams } from '../../types';
 import { promptAgentService } from '../../services/promptAgent';
+import { promptAgentCoordinator } from '../../services/promptAgentCoordinator';
 
 vi.mock('../../components/MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
@@ -33,12 +34,21 @@ const mockSession = {
   updatedAt: 1000,
 };
 
-const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: unknown } = {}) => {
+const stubServices = (
+  sessionOverrides: { imageInput?: boolean; [key: string]: unknown } = {},
+  sessionSetup: { sessions?: typeof mockSession[]; createdSession?: typeof mockSession; createFailures?: number } = {},
+) => {
   const currentSession = { ...mockSession, ...sessionOverrides };
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+  let createCount = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/api/prompt-agent/sessions') && !url.includes('audit-log')) {
-      return responseFor({ items: [currentSession] });
+      if (init?.method === 'POST') {
+        createCount++;
+        if (createCount <= (sessionSetup.createFailures || 0)) return responseFor({ error: 'synthetic create failure' }, 500);
+        return responseFor(sessionSetup.createdSession || currentSession);
+      }
+      return responseFor({ items: sessionSetup.sessions || [currentSession] });
     }
     if (url.includes('/api/prompt-agent/config')) {
       return responseFor({
@@ -64,6 +74,7 @@ const stubServices = (sessionOverrides: { imageInput?: boolean; [key: string]: u
     }
     return responseFor({});
   }));
+  return { createCount: () => createCount };
 };
 
 const panelElement = (canUndo = false, overrides = {}) => {
@@ -106,6 +117,67 @@ const panelElement = (canUndo = false, overrides = {}) => {
 const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
+  it('首次启动忽略旧会话偏好并发创建一次，严格模式和重挂载沿用本次会话', async () => {
+    const old = { ...mockSession, id: 'old-session', title: '旧历史对话' };
+    const fresh = { ...mockSession, id: 'fresh-session', title: '本次新对话' };
+    localStorage.setItem('nai_prompt_agent_session', old.id);
+    const stub = stubServices({}, { sessions: [old], createdSession: fresh });
+    const loaded: string[] = [];
+    vi.spyOn(promptAgentService, 'getSession').mockImplementation(async id => { loaded.push(id); return []; });
+    const view = render(React.createElement(React.StrictMode, null, React.createElement(React.Fragment, null, panelElement(), panelElement())));
+    expect((await screen.findAllByRole('heading', { name: '本次新对话' })).length).toBe(2);
+    await waitFor(() => expect(stub.createCount()).toBe(1));
+    expect(promptAgentCoordinator.selectedSessionId()).toBe(fresh.id);
+    expect(loaded).not.toContain(old.id);
+
+    view.rerender(React.createElement(React.StrictMode, null, panelElement()));
+    expect(await screen.findByRole('heading', { name: '本次新对话' })).toBeTruthy();
+    expect(stub.createCount()).toBe(1);
+    expect(loaded).not.toContain(old.id);
+  });
+
+  it('用户手选历史会话后，卸载重开仍沿用所选会话且不创建新对话', async () => {
+    const old = { ...mockSession, id: 'old-session', title: '手选历史' };
+    const fresh = { ...mockSession, id: 'fresh-session', title: '本次新对话' };
+    const stub = stubServices({}, { sessions: [old], createdSession: fresh });
+    const loaded: string[] = [];
+    vi.spyOn(promptAgentService, 'getSession').mockImplementation(async id => { loaded.push(id); return []; });
+    const view = renderPanel();
+    expect(await screen.findByRole('heading', { name: fresh.title })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    fireEvent.click(screen.getByRole('button', { name: /手选历史/ }));
+    expect(await screen.findByRole('heading', { name: old.title })).toBeTruthy();
+    expect(promptAgentCoordinator.selectedSessionId()).toBe(old.id);
+    view.unmount();
+
+    const reopened = renderPanel();
+    expect(await screen.findByRole('heading', { name: old.title })).toBeTruthy();
+    expect(promptAgentCoordinator.selectedSessionId()).toBe(old.id);
+    expect(stub.createCount()).toBe(1);
+    expect(loaded).toContain(old.id);
+    reopened.unmount();
+  });
+
+  it('新会话创建失败不退回旧历史，重试成功后进入新会话', async () => {
+    const old = { ...mockSession, id: 'old-session', title: '不能自动恢复' };
+    const fresh = { ...mockSession, id: 'fresh-session', title: '恢复后的新会话' };
+    const stub = stubServices({}, { sessions: [old], createdSession: fresh, createFailures: 1 });
+    const loaded: string[] = [];
+    localStorage.setItem('nai_prompt_agent_session', old.id);
+    vi.spyOn(promptAgentService, 'getSession').mockImplementation(async id => { loaded.push(id); return []; });
+    renderPanel();
+    expect(await screen.findByText('无法连接助手服务，请确认本地服务正在运行')).toBeTruthy();
+    expect(stub.createCount()).toBe(1);
+    expect(loaded).not.toContain(old.id);
+    expect(screen.queryByRole('heading', { name: old.title })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByRole('heading', { name: fresh.title })).toBeTruthy();
+    expect(promptAgentCoordinator.selectedSessionId()).toBe(fresh.id);
+    expect(stub.createCount()).toBe(2);
+    expect(loaded).not.toContain(old.id);
+  });
+
   it('删除失败显示实际错误，保留会话与当前选中项', async () => {
     stubServices();
     vi.spyOn(promptAgentService, 'listSessions').mockResolvedValue([mockSession, { ...mockSession, id: 'session-2', title: '第二条对话' }]);
@@ -123,6 +195,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
   });
   beforeEach(() => {
     Element.prototype.scrollTo = vi.fn();
+    promptAgentCoordinator.selectSession(undefined);
   });
 
   afterEach(() => {
@@ -130,6 +203,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    promptAgentCoordinator.selectSession(undefined);
     sessionStorage.clear(); localStorage.clear();
   });
 

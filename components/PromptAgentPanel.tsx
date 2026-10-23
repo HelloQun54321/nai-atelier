@@ -369,13 +369,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     localStorage.setItem('nai_agent_panel_width', String(next));
   };
 
-  const refreshSessions = async (preferredId?: string) => {
-    let items = await promptAgentService.listSessions();
-    if (!items.length) items = [await promptAgentService.createSession()];
+  const refreshSessions = async () => {
+    const items = await promptAgentCoordinator.ensureSession(await promptAgentService.listSessions());
     setSessions(items);
-    const stored = localStorage.getItem('nai_prompt_agent_session') || '';
-    const next = preferredId || activeSessionId || (items.some(item => item.id === stored) ? stored : items[0]?.id) || '';
-    if (next) setActiveSessionId(next);
+    setActiveSessionId(promptAgentCoordinator.selectedSessionId());
   };
 
   useEffect(() => {
@@ -392,7 +389,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (!props.open) return;
     const refreshRuntime = () => {
       void Promise.all([
-        refreshSessions(activeSessionId),
+        refreshSessions(),
         promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); }),
         promptAgentService.getConfig().then(config => setRuntimeWarning(agentRuntimeWarning(config))),
       ]).catch(() => {});
@@ -408,7 +405,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     forceBottomAfterLoadRef.current = true;
     followBottomRef.current = true;
     setFollowingBottom(true);
-    localStorage.setItem('nai_prompt_agent_session', activeSessionId);
     const switchingSession = loadedSessionIdRef.current !== activeSessionId;
     if (switchingSession) {
       setMessages([]);
@@ -467,7 +463,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
           if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail }] : [])]);
-          void refreshSessions(activeSessionId);
+          void refreshSessions();
         }
         wasRunning = isRunning;
       } catch { /* task polling is best effort */ }
@@ -771,7 +767,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       }
     } finally {
       setRunning(false);
-      void refreshSessions(activeSessionId);
+      void refreshSessions();
     }
   };
 
@@ -786,7 +782,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setBusySessionAction(true);
     try {
       const created = await promptAgentService.createSession();
-      await refreshSessions(created.id);
+      promptAgentCoordinator.selectSession(created);
+      await refreshSessions();
       setMessages([]);
       setShowSessions(false);
     } finally { setBusySessionAction(false); }
@@ -808,7 +805,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       await promptAgentService.deleteSession(session.id);
       const remaining = sessions.filter(item => item.id !== session.id);
       setSessions(remaining);
-      if (activeSessionId === session.id) setActiveSessionId(remaining[0]?.id || '');
+      if (promptAgentCoordinator.selectedSessionId() === session.id) {
+        promptAgentCoordinator.selectSession(remaining[0]);
+        setActiveSessionId(remaining[0]?.id || '');
+      }
     } catch (error) { reportControlError(error); }
   };
 
@@ -898,7 +898,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-400">{t("没有找到匹配的对话")}</div>
         ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
+          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { promptAgentCoordinator.selectSession(session); setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} · {1} 轮 · {2}", [displayModelName(session.model), session.messageCount || 0, new Date(session.updatedAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })])}</span>
             <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">{t("工作中")}</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">{t("上次中断")}</span> : session.taskStatus === 'failed' ? <span className="text-red-500">{t("上次失败")}</span> : <span className="text-emerald-700 dark:text-emerald-400">{t("就绪")}</span>}</span>
