@@ -1,4 +1,6 @@
 import { api } from './api';
+import { promptHasArtistTags } from './styleRollSeed';
+import type { PromptChain } from '../types';
 
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
 const AITAG_SOURCE_TYPE = 'nai';
@@ -401,6 +403,109 @@ export const hasAitagImagePrompt = (image: AitagImage): boolean => {
   if (typeof parsed?.prompt === 'string' && parsed.prompt.trim()) return true;
   if (typeof parsed?.Description === 'string' && parsed.Description.trim()) return true;
   return typeof image.prompt_text === 'string' && image.prompt_text.trim().length > 0;
+};
+
+/** 作品图片的正向提示词全文（基础提示词与角色提示词），用于本地细筛和画师识别。 */
+export const getAitagPositivePromptText = (image?: AitagImage | null) => {
+  if (!image) return '';
+  const parsed = parseAitagAiJson(image.ai_json);
+  const comment = getAitagCommentObject(parsed);
+  const parts = [extractAitagPrompt(image)];
+  for (const source of [comment?.v4_prompt, parsed?.v4_prompt]) {
+    const characters = source?.caption?.char_captions;
+    if (!Array.isArray(characters)) continue;
+    for (const character of characters) {
+      if (typeof character?.char_caption === 'string' && character.char_caption.trim()) parts.push(character.char_caption);
+    }
+  }
+  return Array.from(new Set(parts.map(part => part.trim()).filter(Boolean))).join(', ');
+};
+
+/** 作品已知图片的正向提示词：详情已加载时覆盖全部页，否则只能依据首图。 */
+export const getAitagWorkPromptTexts = (work: AitagWorkSummary, detail?: AitagWorkDetail | null) => {
+  const images = detail && !detail.isPreviewOnly && detail.images.length
+    ? detail.images
+    : [work.firstImage || work.first_image];
+  return images.map(getAitagPositivePromptText).filter(Boolean);
+};
+
+const artistDetectionCache = new WeakMap<ReadonlySet<string>, Map<string, boolean>>();
+const prefixedArtistDetectionCache = new Map<string, boolean>();
+/** 画师识别按提示词与词库缓存结果，滚动重渲染时不重复解析整段提示词。 */
+export const aitagPromptHasArtistTags = (text: string, knownArtists?: ReadonlySet<string> | null) => {
+  let cache = prefixedArtistDetectionCache;
+  if (knownArtists) {
+    cache = artistDetectionCache.get(knownArtists) || new Map();
+    artistDetectionCache.set(knownArtists, cache);
+  }
+  const cached = cache.get(text);
+  if (cached !== undefined) return cached;
+  const result = promptHasArtistTags(text, knownArtists || undefined);
+  if (cache.size > 5000) cache.clear();
+  cache.set(text, result);
+  return result;
+};
+
+export interface AitagPromptQuery {
+  /** 交给服务端检索的单个条件（最长的包含条件，保留原文）。 */
+  remote: string;
+  /** 服务端未覆盖、需在已加载条目上本地判定的包含条件（已归一化）。 */
+  localInclude: string[];
+  /** 排除条件（已归一化），只在本地判定。 */
+  exclude: string[];
+}
+
+const normalizeAitagPromptTerm = (value: string) => value.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * 提示词检索语法：逗号（含中文逗号）分隔多个条件，需同时包含；以「-」开头表示排除。
+ * 最长的包含条件交给服务端缩小范围，其余条件只在已加载条目的正向提示词上细筛；
+ * 只有一个包含条件时保持原有服务端检索语义，不在本地重复判定。
+ */
+export const parseAitagPromptQuery = (value: string): AitagPromptQuery => {
+  const include: Array<{ raw: string; term: string }> = [];
+  const exclude: string[] = [];
+  for (const part of String(value || '').split(/[,，\n]/)) {
+    const raw = part.trim();
+    if (!raw) continue;
+    if (raw.startsWith('-')) {
+      const term = normalizeAitagPromptTerm(raw.slice(1));
+      if (term && !exclude.includes(term)) exclude.push(term);
+      continue;
+    }
+    const term = normalizeAitagPromptTerm(raw);
+    if (term && !include.some(item => item.term === term)) include.push({ raw, term });
+  }
+  const remote = include.reduce<{ raw: string; term: string } | null>((longest, item) => (!longest || item.term.length > longest.term.length ? item : longest), null);
+  return {
+    remote: remote?.raw || '',
+    localInclude: include.filter(item => item !== remote).map(item => item.term),
+    exclude,
+  };
+};
+
+export const hasAitagLocalPromptTerms = (query: AitagPromptQuery) => query.localInclude.length > 0 || query.exclude.length > 0;
+
+/** 本地细筛：全部包含条件命中且没有排除条件命中；无提示词的作品无法满足包含条件。 */
+export const matchesAitagPromptQuery = (texts: string[], query: AitagPromptQuery) => {
+  if (!hasAitagLocalPromptTerms(query)) return true;
+  const haystack = normalizeAitagPromptTerm(texts.join('\n'));
+  return query.localInclude.every(term => haystack.includes(term)) && !query.exclude.some(term => haystack.includes(term));
+};
+
+const AITAG_CHAIN_DESCRIPTION_PREFIX = 'Imported from aitag #';
+/** 「保存到风格串」写入的来源说明，同时作为识别已保存作品的依据。 */
+export const buildAitagChainDescription = (workId: number | string) => `${AITAG_CHAIN_DESCRIPTION_PREFIX}${workId}`;
+
+/** 从风格串列表中找出已由 AITag 作品保存的作品编号。 */
+export const getAitagSavedChainWorkIds = (chains: ReadonlyArray<Pick<PromptChain, 'type' | 'description'>> = []) => {
+  const ids = new Set<number>();
+  for (const chain of chains) {
+    if (chain.type !== 'style') continue;
+    const match = String(chain.description || '').match(/Imported from aitag #(\d+)/);
+    if (match) ids.add(Number(match[1]));
+  }
+  return ids;
 };
 
 export const formatAitagJson = (image: AitagImage) => {
