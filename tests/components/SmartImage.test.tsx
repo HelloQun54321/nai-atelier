@@ -31,13 +31,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); abortMobileThumbnailRequests(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('共用缩略图加载', () => {
-  it.each(['v45', 'v5'])('%s 图包显式预览透传裁后尺寸，取用地址保持原图，切回默认预览不复用旧地址', pack => {
+  it.each(['v45', 'v5'].flatMap(pack => ['default', 'glass'].map(theme => [pack, theme])))('%s 图包在 %s 主题显式预览透传裁后尺寸，取用地址保持原图，切回默认预览不复用旧地址', (pack, theme) => {
+    const root = document.documentElement;
+    const material = root.dataset.themeMaterial, customPalette = root.dataset.customPalette;
+    root.dataset.themeMaterial = theme === 'glass' ? 'glass' : 'solid';
+    root.dataset.customPalette = String(theme === 'glass');
     const source = `/api/artist-samples/image?pack=${pack}&tag=synthetic&index=0&revision=${'a'.repeat(24)}`;
     const dimensions = vi.fn();
     const onLoad: React.ReactEventHandler<HTMLImageElement> = event => dimensions(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
-    const view = render(<SmartImage eager src={source} thumbnailVariant="thumb-960" previewTransform="artist-sample-padding-v1" alt="图包预览" onLoad={onLoad} />);
+    const view = render(<SmartImage eager src={source} thumbnailVariant="thumb-960" previewTransform="artist-sample-padding-v2" alt="图包预览" onLoad={onLoad} />);
     const image = screen.getByRole('img');
-    expect(image.getAttribute('src')).toBe(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1'));
+    expect(image.getAttribute('src')).toBe(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v2'));
     expect(image.getAttribute('data-agent-original-src')).toBe(source);
     Object.defineProperties(image, { naturalWidth: { value: 610 }, naturalHeight: { value: 768 } });
     fireEvent.load(image);
@@ -47,6 +51,8 @@ describe('共用缩略图加载', () => {
     expect(screen.getByRole('img')).not.toBe(image);
     fireEvent.error(screen.getByRole('img'));
     expect(screen.getByRole('img').getAttribute('src')).toBe(source);
+    if (material === undefined) delete root.dataset.themeMaterial; else root.dataset.themeMaterial = material;
+    if (customPalette === undefined) delete root.dataset.customPalette; else root.dataset.customPalette = customPalette;
   });
 
   it.each([1, 2])('侧栏缩窄与同档宽度变化不重渲染已加载图片，放大仍按 %s 倍像素升级', dpr => {

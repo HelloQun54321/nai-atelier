@@ -18,8 +18,8 @@ const move=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerMov
 
 it('详情可显式使用图包裁边预览，大图仍读取原地址；其他调用保持原图',()=>{
   const source='/api/inspirations/synthetic-artist/image';
-  const view=render(<ViewableImage src={source} alt="图包收藏" previewTransform="artist-sample-padding-v1"/>);
-  expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source,'thumb-960','artist-sample-padding-v1'));
+  const view=render(<ViewableImage src={source} alt="图包收藏" previewTransform="artist-sample-padding-v2"/>);
+  expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source,'thumb-960','artist-sample-padding-v2'));
   expect(screen.getByRole('img').getAttribute('data-agent-original-src')).toBe(source);
   fireEvent.click(screen.getByRole('button',{name:'放大查看：图包收藏'}));
   expect(within(screen.getByRole('dialog',{name:'图片预览'})).getByRole('img').getAttribute('src')).toBe(source);

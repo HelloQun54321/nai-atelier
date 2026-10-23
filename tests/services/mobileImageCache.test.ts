@@ -59,18 +59,18 @@ describe('getMobileOriginalUrl', () => {
   it.each(['v45', 'v5'])('仅显式的 %s 图包预览使用独立缓存地址，原图和其他来源不附加裁边', pack => {
     const source = `/api/artist-samples/image?pack=${pack}&tag=synthetic&index=0&revision=${'a'.repeat(24)}`;
     const plain = buildMediaUrl(source, 'thumb-960');
-    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1')).toBe(`${plain}&preview=artist-sample-padding-v1`);
-    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v1')).toBe(buildMediaUrl(source, 'original'));
+    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v2')).toBe(`${plain}&preview=artist-sample-padding-v2`);
+    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v2')).toBe(buildMediaUrl(source, 'original'));
     expect(getMobileOriginalUrl(source)).toBe(source);
     for (const other of ['/api/local-history/synthetic/image', 'https://ai-img.10118899.xyz/NAI/123/456.webp']) {
-      expect(buildMediaUrl(other, 'thumb-960', 'artist-sample-padding-v1')).toBe(buildMediaUrl(other, 'thumb-960'));
+      expect(buildMediaUrl(other, 'thumb-960', 'artist-sample-padding-v2')).toBe(buildMediaUrl(other, 'thumb-960'));
     }
   });
 
   it.each(['/api/assets/saved-artist.jpg', '/api/inspirations/saved-artist/image'])('已保存本地图包收藏%s的显式预览与原缓存分开，原图请求不带变换', source => {
     const plain = buildMediaUrl(source, 'thumb-960');
-    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1')).toBe(plain + '&preview=artist-sample-padding-v1');
-    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v1')).toBe(buildMediaUrl(source, 'original'));
+    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v2')).toBe(plain + '&preview=artist-sample-padding-v2');
+    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v2')).toBe(buildMediaUrl(source, 'original'));
     expect(getMobileOriginalUrl(source)).toBe(source);
   });
 

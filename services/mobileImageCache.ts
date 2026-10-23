@@ -15,7 +15,7 @@ const ACCESS_FLUSH_DELAY_MS = 5_000;
 const PRUNE_DELAY_MS = 2_000;
 
 export type MediaVariant = 'thumb-160' | 'thumb-240' | 'thumb-320' | 'thumb-480' | 'thumb-640' | 'thumb-960' | 'original';
-export type MediaPreviewTransform = 'artist-sample-padding-v1';
+export type MediaPreviewTransform = 'artist-sample-padding-v2';
 
 interface CacheStats {
   count: number;

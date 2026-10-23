@@ -12,7 +12,8 @@ import { setLanguage } from '../../services/i18n';
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
 vi.mock('../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
-vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => new Map() }));
+const sampleUrls = new Map<string, string>();
+vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
 vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: async () => new Set(['alpha']) }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
@@ -27,7 +28,7 @@ vi.mock('../../services/api', async original => ({ ...await original<typeof impo
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
-vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className }: any) => <img src={src} alt={alt} className={className} />, OriginalImage: (props: any) => <img {...props} /> }));
+vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, previewTransform, containerClassName }: any) => <img src={src} alt={alt} className={className} data-preview-transform={previewTransform} data-container-class={containerClassName} />, OriginalImage: (props: any) => <img {...props} /> }));
 vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
 vi.mock('../../components/roll/StyleRollChainSeedDialog', () => ({ StyleRollChainSeedDialog: ({ chains, createOptions, onClose }: any) => <div role="dialog" aria-label="从风格串开始"><button onClick={async () => { await createOptions(chains[0]); onClose(); }}>合成从风格串新建</button></div> }));
 
@@ -35,6 +36,7 @@ const preferredItems: any[] = [];
 let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
+  sampleUrls.clear();
   preferredItems.length = 0; vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
@@ -648,4 +650,26 @@ it('助手临时开启样张过滤时按真实样张集合抽取，旧覆盖项�
   const saved = mocks.save.mock.calls.at(-1)![0];
   expect(saved.sampledOnly).toBe(true);
   expect(saved.candidates.slice(2).every((candidate: any) => candidate.tags.length === 1 && candidate.tags[0].tag === 'alpha')).toBe(true);
+});
+
+it.each([
+  ['/api/artist-samples/image?pack=v45&tag=alpha&index=0&revision=synthetic', 'artist-sample-padding-v2'],
+  ['/api/artist-samples/image?pack=v5&tag=alpha&index=0&revision=synthetic', 'artist-sample-padding-v2'],
+  ['/api/assets/own-sample.png', null],
+  ['/api/history/synthetic/image', null],
+  ['https://synthetic.invalid/unknown.jpg', null],
+])('候选详情小头像仅为已知图包来源启用共用裁边预览：%s', async (url, transform) => {
+  sampleUrls.set('alpha', url!);
+  const onOpenArtistLibrary = vi.fn();
+  const { container } = await setup({ onOpenArtistLibrary });
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  await waitFor(() => expect(container.querySelector(`img[src="${url}"]`)).toBeTruthy());
+  const image = container.querySelector<HTMLImageElement>(`img[src="${url}"]`)!;
+  expect(image.getAttribute('data-preview-transform')).toBe(transform);
+  expect(image.getAttribute('data-container-class')).toContain('h-8 w-8 shrink-0');
+  expect(image.classList.contains('object-cover')).toBe(true);
+  fireEvent.click(image);
+  expect(onOpenArtistLibrary).toHaveBeenCalledWith('alpha');
+  expect(image.getAttribute('src')).toBe(url);
+  for (const candidate of screen.getAllByAltText('候选 1')) expect(candidate.getAttribute('data-preview-transform')).toBeNull();
 });

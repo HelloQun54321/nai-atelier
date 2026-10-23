@@ -27,7 +27,7 @@ const setup = (ownSamples: ArtistOwnSample[] = [], hasPackSample = true) => {
 it('只在卡片可视时lookup，翻图同步分享身份，不伪造图包模型或配方；离屏保持已载图片', async () => {
   setup(); expect(mocks.lookup).not.toHaveBeenCalled(); visible();
   await screen.findByRole('img', { name: '合成画师' });
-  expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBe('artist-sample-padding-v1');
+  expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBe('artist-sample-padding-v2');
   expect(mocks.lookup).toHaveBeenCalledOnce();
   const first = mocks.share.mock.calls.at(-1)![0];
   expect(first.favorite.analysis.artistSample).toEqual({ pack: 'v45', tag: 'synthetic artist', revision: 'one', index: 0 });

@@ -14,8 +14,8 @@ describe('收藏图包预览来源', () => {
   const artistSample = { pack: 'v45', tag: 'synthetic artist', revision: 'a'.repeat(24), index: 0 };
   const original = `/api/artist-samples/image?pack=v5&tag=synthetic&index=3&revision=${'b'.repeat(24)}`;
   it.each(['v45', 'v5'])('既有%s图包收藏凭来源快照启用预览，不需要原图包地址仍有效', pack => {
-    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { artistSample: { ...artistSample, pack } } })).toBe('artist-sample-padding-v1');
-    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { collectionOriginalUrl: original } })).toBe('artist-sample-padding-v1');
+    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { artistSample: { ...artistSample, pack } } })).toBe('artist-sample-padding-v2');
+    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { collectionOriginalUrl: original } })).toBe('artist-sample-padding-v2');
   });
   it('普通画师、其他来源与有自建标记的收藏不裁；自建标记优先于原地址回退', () => {
     expect(getCollectionPreviewTransform({ sourceType: 'artist' })).toBeUndefined();

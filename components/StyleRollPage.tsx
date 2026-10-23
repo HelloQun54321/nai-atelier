@@ -457,7 +457,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         const chinese = chineseNames.get(normalizeArtistSampleTag(entry.tag));
         return <div key={entry.tag} className="flex min-w-0 items-center gap-2 text-sm">
           <button type="button" disabled={!onOpenArtistLibrary} onClick={() => onOpenArtistLibrary?.(entry.tag)} title={onOpenArtistLibrary ? t('在画师库查看 {0}', [entry.tag]) : undefined} className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default">
-            {sampleUrl ? <img src={sampleUrl} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" /> : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-micro font-bold text-white" style={{ backgroundColor: chipColor }}>{entry.tag.slice(0, 1)}</span>}
+            {sampleUrl ? <SmartImage src={sampleUrl} alt="" thumbnailVariant="thumb-160" containerClassName="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg" className="h-full w-full object-cover" previewTransform={sampleUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-micro font-bold text-white" style={{ backgroundColor: chipColor }}>{entry.tag.slice(0, 1)}</span>}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={entry.tag}>{entry.tag}</span>
               {chinese && <span className="block truncate text-micro text-gray-400" title={chinese}>{chinese}</span>}

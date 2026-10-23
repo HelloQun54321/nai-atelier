@@ -2797,17 +2797,27 @@ const getArtistSamplePreviewCrop = async image => {
     || (metadata.orientation && metadata.orientation !== 1)) return null;
   const { data, info } = await image.clone().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
   if (info.width !== 768 || info.height !== 768 || info.channels !== 3) return null;
-  // shortcut: 仅支持已核实的 768 方形 JPEG 及两侧各 79px 纯黑列，图包换规格时重新抽样再扩展，不追裁画面深色背景。
+  // shortcut: 仅支持已核实的 768 方形 JPEG、79px 纯黑列及左85/右86px内的压缩过渡，图包换规格时重新抽样，不追裁深色画面。
   for (let y = 0; y < 768; y++) {
     for (let x = 0; x < 79; x++) {
       const left = (y * 768 + x) * 3, right = (y * 768 + 767 - x) * 3;
       if (data[left] || data[left + 1] || data[left + 2] || data[right] || data[right + 1] || data[right + 2]) return null;
     }
   }
+  const contentEdge = (right, limit) => {
+    for (let offset = 79; offset <= limit; offset++) {
+      for (let y = 0; y < 768; y++) {
+        const pixel = (y * 768 + (right ? 767 - offset : offset)) * 3;
+        if (Math.max(data[pixel], data[pixel + 1], data[pixel + 2]) > 32) return offset;
+      }
+    }
+    return 79;
+  };
+  const left = contentEdge(false, 85), right = contentEdge(true, 86);
   for (let y = 0; y < 768; y++) {
     for (let x = 79; x < 689; x++) {
       const pixel = (y * 768 + x) * 3;
-      if (data[pixel] || data[pixel + 1] || data[pixel + 2]) return { left: 79, top: 0, width: 610, height: 768 };
+      if (data[pixel] || data[pixel + 1] || data[pixel + 2]) return { left, top: 0, width: 768 - left - right, height: 768 };
     }
   }
   return null;
@@ -2978,7 +2988,7 @@ class ThumbnailCache {
       }
       const { default: sharp } = await import('sharp');
       const image = sharp(original.buffer, { failOn: 'warning', limitInputPixels: 100_000_000 }).rotate();
-      const crop = previewTransform === 'artist-sample-padding-v1' ? await getArtistSamplePreviewCrop(image) : null;
+      const crop = /^artist-sample-padding-v[12]$/.test(previewTransform) ? await getArtistSamplePreviewCrop(image) : null;
       if (crop) image.extract(crop);
       const output = await image
         .resize({ width: THUMB_WIDTHS.get(variant), height: THUMB_WIDTHS.get(variant), fit: 'inside', withoutEnlargement: true })
@@ -4078,7 +4088,7 @@ const serveDistFile = async (req, res, url) => {
       const validated = getValidatedSource(url.searchParams.get('source'));
       const previewTransform = url.searchParams.get('preview') || '';
       const supportsArtistPreview = validated.type === 'artist-sample' || (validated.type === 'local' && /^\/api\/(?:assets\/[^?#]+|inspirations\/[^/?#]+\/image)(?:\?[^#]*)?$/.test(validated.source));
-      if (previewTransform && (previewTransform !== 'artist-sample-padding-v1' || !supportsArtistPreview)) {
+      if (previewTransform && (!/^artist-sample-padding-v[12]$/.test(previewTransform) || !supportsArtistPreview)) {
         return sendJson(res, 400, { error: 'Invalid image preview transform' });
       }
       const loadOriginal = () => validated.type === 'local'

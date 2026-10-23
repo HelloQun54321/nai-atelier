@@ -102,7 +102,7 @@ it.each(['v45', 'v5'])('%s图包收藏列表与详情预览裁边按实际比例
   const onRefresh = vi.fn(async () => {});
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [item, own, legacy, other], onRefresh, notify: vi.fn() }));
   const image = screen.getByRole('img', { name: item.title });
-  expect(image.getAttribute('data-preview-transform')).toBe('artist-sample-padding-v1');
+  expect(image.getAttribute('data-preview-transform')).toBe('artist-sample-padding-v2');
   for (const title of [own.title, legacy.title, other.title]) expect(screen.getByRole('img', { name: title }).getAttribute('data-preview-transform')).toBeNull();
   Object.defineProperties(image, { naturalWidth: { value: 254 }, naturalHeight: { value: 320 } });
   fireEvent.load(image);
@@ -112,7 +112,7 @@ it.each(['v45', 'v5'])('%s图包收藏列表与详情预览裁边按实际比例
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(item.imageUrl, false));
   fireEvent.click(image.closest('button')!);
   const detail = container.querySelector<HTMLElement>('[data-agent-page-scope="detail"]')!;
-  expect(within(detail).getByRole('img', { name: item.title }).getAttribute('src')).toBe(buildMediaUrl(item.imageUrl, 'thumb-960', 'artist-sample-padding-v1'));
+  expect(within(detail).getByRole('img', { name: item.title }).getAttribute('src')).toBe(buildMediaUrl(item.imageUrl, 'thumb-960', 'artist-sample-padding-v2'));
   fireEvent.click(within(detail).getByRole('button', { name: '复制图片' }));
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(item.imageUrl, false));
   fireEvent.click(within(detail).getByRole('button', { name: '放大查看：' + item.title }));

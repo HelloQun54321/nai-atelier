@@ -12,14 +12,14 @@ export const getCollectionPreviewTransform = (item: Pick<Inspiration, 'sourceTyp
     return (data.pack === 'v45' || data.pack === 'v5') && typeof data.tag === 'string' && Boolean(data.tag.trim()) && data.tag.length <= 4096 &&
       typeof data.revision === 'string' && /^[a-f0-9]{24}$/.test(data.revision) && Number.isSafeInteger(data.index) && Number(data.index) >= 0 && Number(data.index) <= 999999;
   };
-  if (isPackSample(sample)) return 'artist-sample-padding-v1';
+  if (isPackSample(sample)) return 'artist-sample-padding-v2';
   const original = item.analysis?.collectionOriginalUrl;
   if (typeof original !== 'string' || !original.startsWith('/api/artist-samples/image?')) return undefined;
   const url = new URL(original, 'http://collection.local'), params = url.searchParams;
   const keys = ['pack', 'tag', 'index', 'revision'];
   if (url.hash || [...params.keys()].some(key => !keys.includes(key)) || keys.some(key => params.getAll(key).length !== 1)) return undefined;
   return isPackSample({ pack: params.get('pack'), tag: params.get('tag'), revision: params.get('revision'), index: /^\d+$/.test(params.get('index') || '') ? Number(params.get('index')) : undefined })
-    ? 'artist-sample-padding-v1' : undefined;
+    ? 'artist-sample-padding-v2' : undefined;
 };
 
 const KEYWORDS = [
