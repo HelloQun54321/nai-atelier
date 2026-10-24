@@ -10,7 +10,7 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { installPointerEvents, longPress } from '../support/touchEvents';
-const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', async original => {
   const module = await original<typeof import('../../services/localHistory')>();
@@ -26,7 +26,7 @@ const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleDictionary: mocks.dictionary, controlArtistSamplePack: mocks.control }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, prepareArtistSampleImport: mocks.prepare }));
 vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, generateAfterSave, enforceFreeStepLimit, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置" data-free-step-limit={enforceFreeStepLimit}><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{generateAfterSave ? '保存并生成样张' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
-vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page, searchArtistDictionary: mocks.search }));
+vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page }));
 vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
 vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ blocked, preferred, onBlock, notify, tag, pack, packTag, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-blocked={blocked} data-preferred={preferred} data-pack={pack} data-pack-tag={packTag} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
   <button aria-label={'屏蔽 ' + tag} onClick={event => { event.stopPropagation(); void onBlock().catch((error: Error) => notify(error.message, 'error')); }}>屏蔽</button>
@@ -58,7 +58,6 @@ beforeEach(() => {
     ['alpha artist', { chains: 4, images: 2, lastAt: 30 }], ['beta artist', { chains: 2, images: 7, lastAt: 20 }], ['missing artist', { chains: 0, images: 1, lastAt: 10 }],
   ]), indexed: 3, total: 3 });
   mocks.page.mockResolvedValue({ entries, page: 0, pageCount: 1, pageSize: 100, total: entries.length });
-  mocks.search.mockImplementation(async (query: string) => entries.filter(entry => entry.name.includes(query)));
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: false, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
@@ -299,14 +298,13 @@ it('图包独有画师可在全部目录搜索、收藏和使用统计交集筛�
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: ['pack_only'] }));
   mocks.collection = [{ sourceType: 'artist', sourceId: 'pack only' }];
   mocks.usage.mockResolvedValue({ byTag: new Map([['pack only', { chains: 8, images: 0, lastAt: 1 }]]), indexed: 1, total: 1 });
-  mocks.search.mockResolvedValue([]);
   setup(); await screen.findByText('收录 8 串 · 生成 0 张');
   const cover = screen.getByTestId('cover-pack_only');
   expect(cover.getAttribute('data-preferred')).toBe('true');
   expect(within(screen.getByRole('button', { name: '选择画师：pack_only' })).queryByText('作品 0')).toBeNull();
   disableSampleFilter();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pack only' } });
-  await waitFor(() => expect(mocks.search).toHaveBeenCalledWith('pack only', 201, 'popular'));
+  await screen.findByText('匹配 1 位');
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_only']);
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
@@ -314,7 +312,7 @@ it('图包独有画师可在全部目录搜索、收藏和使用统计交集筛�
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_only']);
-  expect(mocks.dictionary).toHaveBeenCalledOnce(); expect(mocks.begin).not.toHaveBeenCalled();
+  expect(mocks.begin).not.toHaveBeenCalled();
 });
 
 it('归一化冲突时保留图包原名，pack图片与精确自建图都不会串给相似词库名称', async () => {
@@ -759,6 +757,92 @@ it('搜索忽略首尾空格与下划线，粘贴带空格的画师名不会清�
   expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
 });
 
+it('逗号OR搜索统一匹配当前版本有图池、图包独有名、收藏及统计筛选', async () => {
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: ['alpha_artist', 'beta artist', 'pack_or'] }));
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }, { sourceType: 'artist', sourceId: 'pack_or' }];
+  mocks.usage.mockResolvedValue({ byTag: new Map([['alpha artist', { chains: 1, images: 0, lastAt: 1 }], ['pack or', { chains: 2, images: 0, lastAt: 1 }]]), indexed: 2, total: 2 });
+  render(<ArtistLibrary notify={vi.fn()} initialSearch={{ query: 'alpha_artist，画师乙, pack_or, alpha artist, ,unknown', token: 1 }} />);
+  await screen.findByTestId('cover-pack_or');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist', '选择画师：pack_or']);
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：pack_or']);
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-chains' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_or', '选择画师：alpha artist']);
+  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' }));
+  expect(sampleCards()).toHaveLength(2);
+  expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it('逗号OR全词库搜索支持英文和中文中间子串，重复命中去重且未知词不阻断图包独有结果', async () => {
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: ['alpha artist', 'pack_or'] }));
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  mocks.dictionary.mockResolvedValue([...entries, entries[0]]);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' pha，师乙, pha, unknown,pack_or, , ' } });
+  await waitFor(() => expect(screen.getByText('匹配 3 位')).toBeTruthy());
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist', '选择画师：pack_or']);
+  expect(screen.getByRole('searchbox').getAttribute('placeholder')).toBe('搜索画师，多个词用逗号分隔');
+});
+
+it('样张状态不可用时完整词库缓存仍能独立搜索英文和中文中间子串', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  mocks.status.mockRejectedValue(new Error('本地图包仅支持电脑端及局域网访问'));
+  setup(); await screen.findByTestId('cover-missing artist');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pha，师乙,pha' } });
+  await screen.findByText('匹配 2 位');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist']);
+  expect(mocks.catalog).not.toHaveBeenCalled(); expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it('逗号OR搜索忽略迟到的旧整组响应，只有逗号空项时回普通目录并恢复计数和加载入口', async () => {
+  let resolveOld!: (result: typeof entries) => void;
+  mocks.page.mockResolvedValue({ entries: entries.slice(0, 2), page: 0, pageCount: 2, pageSize: 2, total: 3 });
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  mocks.dictionary.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha,beta' } });
+  await waitFor(() => expect(resolveOld).toBeTypeOf('function'));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } });
+  await waitFor(() => expect(screen.getByText('匹配 1 位')).toBeTruthy());
+  expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
+  await act(async () => { resolveOld(entries); });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist']);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' ， ,   ,，' } });
+  await waitFor(() => expect(screen.getByText('已加载 2 位')).toBeTruthy());
+  expect(sampleCards()).toHaveLength(2); expect(screen.getByRole('button', { name: '继续向下滚动加载更多' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull();
+});
+
+it('逗号OR结果全局去重排序后仍只展示200位并提示截断', async () => {
+  const pool = Array.from({ length: 250 }, (_, index) => ({ name: `multi artist ${String(index).padStart(3, '0')}`, chinese: '', postCount: index + 1 }));
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  mocks.dictionary.mockResolvedValue([...pool, ...pool.slice(100, 150)]);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'multi，artist,multi,unknown' } });
+  expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
+  expect(sampleCards()).toHaveLength(200);
+  expect(new Set(sampleCards().map(card => card.getAttribute('aria-label'))).size).toBe(200);
+  expect(sampleCards()[0].getAttribute('aria-label')).toBe('选择画师：multi artist 249');
+  expect(sampleCards()[199].getAttribute('aria-label')).toBe('选择画师：multi artist 050');
+});
+
+it('逗号空项在有图池按普通目录分页，清空和随机后不会残留搜索语义', async () => {
+  const pool = Array.from({ length: 150 }, (_, index) => ({ name: `comma artist ${index}`, chinese: '', postCount: 1 }));
+  mocks.dictionary.mockResolvedValue(pool);
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pool.map(entry => entry.name) }));
+  setup(); await waitFor(() => expect(sampleCards()).toHaveLength(100));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: ',， , ' } });
+  expect(screen.getByText('已加载 100 位')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  expect(sampleCards()).toHaveLength(150); expect(screen.getByText('共 150 位')).toBeTruthy();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'not found,artist 149' } });
+  expect(sampleCards()).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  expect(sampleCards()).toHaveLength(12); expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+});
+
 it('只看样张搜不到时可直接在全部画师中继续搜索', async () => {
   setup(); await screen.findByTestId('cover-alpha artist');
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
@@ -779,8 +863,8 @@ it('全目录搜索无结果时给出空态并可直接清除搜索', async () =
 });
 
 it('全目录搜索失败显示错误，重试后恢复真实结果', async () => {
-  mocks.search.mockRejectedValueOnce(new Error('合成搜索失败'));
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  mocks.dictionary.mockRejectedValueOnce(new Error('合成搜索失败'));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
   expect(await screen.findByText('搜索画师失败，请稍后重试')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -815,8 +899,8 @@ it('画师卡片名称保留完整 title，长名称可悬浮查看', async () =
 });
 
 it('搜索结果超过展示上限时明确提示，不静默截断', async () => {
-  mocks.search.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  mocks.dictionary.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
   expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
   expect(sampleCards()).toHaveLength(200);
@@ -917,7 +1001,6 @@ it('使用统计筛选先筛完整目录，支持零值交集并保留搜索与�
     ['beta artist', { chains: 2, images: 7, lastAt: 20 }],
     ['missing artist', { chains: 0, images: 0, lastAt: 10 }],
   ]), indexed: 4, total: 4 });
-  mocks.search.mockResolvedValue(allEntries);
   setup(); await screen.findByText('收录 4 串 · 生成 2 张'); disableSampleFilter();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   const chains = screen.getByRole('combobox', { name: '风格串收录' });

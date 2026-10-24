@@ -23,6 +23,14 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('画师目录的逗号多词搜索提示具备四种译文', () => {
+    const key = '搜索画师，多个词用逗号分隔';
+    expect((messages as Record<string, string[]>)[key]).toHaveLength(4);
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      expect(translate(language.code, key)).not.toBe(key);
+      expect(translate(language.code, key)).not.toMatch(/\{\d+\}/);
+    }
+  });
   it('实验室默认展开与恢复入口具备四种译文', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       for (const key of ['实验室模块默认展开', '全部默认', '恢复默认', '默认收起', '默认展开']) {

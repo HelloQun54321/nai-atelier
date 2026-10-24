@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } fro
 import { Check, ImageIcon, SlidersHorizontal, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
+import { matchesArtistSearch, parseArtistSearchTerms } from '../../services/tagLibrary';
 import { getArtistUsage, isArtistUsageSort, artistUsageCount, compareArtistUsage, matchesArtistUsage, type ArtistBrowseSort, type ArtistUsageFilter, type ArtistUsageIndex } from '../../services/artistUsage';
 import { localHistory } from '../../services/localHistory';
 import type { RollRules } from '../../services/styleRoll';
@@ -42,6 +43,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
+  const searchTerms = useMemo(() => parseArtistSearchTerms(query), [query]);
   const [sort, setSort] = useState<ArtistBrowseSort>(() => {
     const saved = localStorage.getItem('nai_roll_artist_sort') || localStorage.getItem('nai_artist_sort');
     return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' || isArtistUsageSort(saved || '') ? saved as ArtistBrowseSort : 'popular';
@@ -93,14 +95,13 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     const entries = new Map(library.map(entry => [entry.name, entry]));
     const known = new Set(library.map(entry => normalizeRollArtistKey(entry.name)));
     for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!known.has(normalizeRollArtistKey(tag))) { entries.set(tag, { name: tag, chinese: '', postCount: 0, postCountKnown: false }); known.add(normalizeRollArtistKey(tag)); }
-    const search = normalizeRollArtistKey(query);
     const index = usage || { byTag: new Map(), indexed: 0, total: 0 };
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
     return [...entries.values()].filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
-      return (!search || key.includes(search) || entry.chinese?.includes(query.trim())) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
+      return matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
     }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
-  }, [library, pinned, blocked, excluded, collection, query, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
+  }, [library, pinned, blocked, excluded, collection, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const perform = async (action: () => Promise<void>) => {
     if (busy) return; setBusy(true); setError('');
@@ -123,10 +124,10 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('Roll 画师')} className="appearance-panel flex h-dvh w-full max-w-7xl flex-col overflow-hidden border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:h-[92dvh] sm:rounded-2xl">
       <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
         <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight sm:flex-none">{t('管理画师与偏好')}</h2>
-        <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师 Tag 或中文名')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
+        <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || query.trim() ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
+        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">

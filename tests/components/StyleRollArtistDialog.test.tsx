@@ -317,3 +317,41 @@ it('归一化冲突时仅精确图包Tag显示图片，另一原名安全无图'
   expect(ambiguous.querySelector('img')).toBeNull();
   expect(within(ambiguous).getByText('暂无样张')).toBeTruthy();
 });
+
+it('逗号多词按OR合并原名，支持中英文逗号与译名并忽略重复空项', async () => {
+  const alpha = { name: 'alpha_tag', chinese: '蓝色画家', postCount: 30 };
+  const library = [alpha, { name: 'beta_tag', chinese: '红色画家', postCount: 20 }, { name: 'gamma', chinese: '', postCount: 10 }, { ...alpha }];
+  render(<Fixture library={library} />);
+  const search = screen.getByRole('searchbox', { name: '搜索画师' });
+  expect(search.getAttribute('placeholder')).toBe('搜索画师，多个词用逗号分隔');
+  const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
+  fireEvent.change(search, { target: { value: ' ALPHA TAG ，红色, alpha_tag, alpha， , ' } });
+  expect(names()).toEqual(['alpha_tag', 'beta_tag']);
+  expect(screen.getByText('匹配 2 位')).toBeTruthy();
+  fireEvent.change(search, { target: { value: '红色' } }); expect(names()).toEqual(['beta_tag']);
+  fireEvent.change(search, { target: { value: '， , ， ' } }); expect(names()).toEqual(['alpha_tag', 'beta_tag', 'gamma']);
+  expect(screen.getByText('共 3 位')).toBeTruthy();
+  expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
+});
+
+it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改任何状态', async () => {
+  const library = ['alpha_tag', 'beta_tag', 'gamma'].map((name, index) => ({ name, chinese: '', postCount: 30 - index }));
+  mocks.items = [{ sourceType: 'artist', sourceId: 'alpha_tag' }, { sourceType: 'artist', sourceId: 'beta_tag' }];
+  mocks.usage.mockResolvedValue({ byTag: new Map([['alpha tag', { chains: 2, images: 0, lastAt: 1 }], ['beta tag', { chains: 1, images: 1, lastAt: 1 }]]), indexed: 2, total: 2 });
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
+  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  await screen.findByText('收录 2 串 · 生成 0 张');
+  const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: ' ALPHA TAG，beta_tag, gamma ' } });
+  fireEvent.click(screen.getByRole('button', { name: '偏好画师' })); expect(names()).toEqual(['alpha_tag', 'beta_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '已锁定' })); expect(names()).toEqual(['beta_tag']);
+  expect(screen.getByRole('button', { name: '锁定画师：beta_tag' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['alpha_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '全部画师' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
+  expect(names()).toEqual(['alpha_tag']);
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange]) expect(callback).not.toHaveBeenCalled();
+  expect(mocks.favorite).not.toHaveBeenCalled();
+});

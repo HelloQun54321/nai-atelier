@@ -147,6 +147,7 @@
   "人数包含固定画师；两端相同即固定，权重仍逐串随机。": ["人數包含固定畫師；兩端相同即固定，權重仍逐串隨機。","Counts include pinned artists. Equal bounds fix the count; weights remain random per mix.","固定画師も人数に含みます。上下限が同じなら人数は固定、重みは組ごとにランダムです。","고정 작가도 인원에 포함됩니다. 양 끝이 같으면 인원은 고정되며 가중치는 조합마다 무작위입니다."],
   "管理画师与偏好": ["管理畫師與偏好","Manage artists and preferences","画師と好みを管理","작가 및 선호 관리"],
   "搜索画师": ["搜尋畫師","Search artists","画師を検索","작가 검색"],
+  "搜索画师，多个词用逗号分隔": ["搜尋畫師，多個詞以逗號分隔","Search artists; separate multiple terms with commas","画師を検索（複数の語はカンマ区切り）","작가 검색, 여러 단어는 쉼표로 구분"],
   "搜索画师 Tag 或中文名": ["搜尋畫師 Tag 或中文名","Search artist tags or Chinese names","画師 Tag・中国語名で検索","작가 Tag 또는 중국어 이름 검색"],
   "画师范围": ["畫師範圍","Artist filter","画師の絞り込み","작가 필터"],
   "全部画师": ["全部畫師","All artists","すべての画師","모든 작가"],
