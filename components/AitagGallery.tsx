@@ -56,7 +56,8 @@ interface AitagGalleryProps {
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onNavigateToPlayground: () => void;
-  onCreateArtistChain: (chain: PromptChain) => Promise<void>;
+  onNavigateToChains?: () => void;
+  onCreateArtistChain: (chain: PromptChain, options?: { openEditor?: boolean }) => Promise<void>;
   onRefreshInspiration?: () => void;
   /** 当前风格串列表，用于筛选已保存到风格串的作品。 */
   chains?: PromptChain[];
@@ -339,7 +340,7 @@ const defaultParams: NAIParams = {
   cfgRescale: 0,
 };
 
-export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration, chains }) => {
+export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onNavigateToChains, onCreateArtistChain, onRefreshInspiration, chains }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences('aitag');
   const mainScrollRef = useRef<HTMLElement | null>(null);
@@ -376,6 +377,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const savingImageRef = useRef<string | null>(null);
   const [savingImage, setSavingImage] = useState<string | null>(null);
+  const savedBatchImages = useRef(new Set<string>());
+  const batchDetailWork = useRef<number | null>(null);
+  const [navigateAfterSave, setNavigateAfterSave] = useState(() => {
+    try { return localStorage.getItem('nai_aitag_navigate_after_save') !== 'false'; } catch { return true; }
+  });
+  const [batchProgress, setBatchProgress] = useState<{ workId: number; completed: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(() => aitagPageCache.error);
   const [isOfflineCache, setIsOfflineCache] = useState(() => aitagPageCache.isOfflineCache);
   const [isPageInputOpen, setIsPageInputOpen] = useState(false);
@@ -395,6 +402,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   }, [selectedDetail]);
   const selectedWork = selectedDetail?.work || items.find(item => item.id === selectedId) || null;
   const closeDetail = () => {
+    batchDetailWork.current = null;
     selectionAnchor.preserveOnClose();
     aitagPageCache = { ...aitagPageCache, selectedId: null };
     setSelectedId(null);
@@ -438,21 +446,23 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       .catch(() => { if (current) setKnownArtists(new Set()); });
     return () => { current = false; };
   }, [artistFilter, knownArtists]);
-  const matchesLocalFilters = (work: AitagWorkSummary) => {
+  const matchesLocalFilters = (work: AitagWorkSummary, ignoreChainFilter = false) => {
     const detail = details[work.id];
     // 没有任何元数据时无法判断模型、画师串或提示词，先隐藏，补齐后再按条件显示。
     if (metadataFilterActive && !(work.firstImage || work.first_image) && !(detail && !detail.isPreviewOnly && detail.images.length)) return false;
     if (modelFilter && getWorkModelLabel(work) !== modelFilter) return false;
-    if (chainFilter !== 'all' && savedChainWorkIds.has(Number(work.id)) !== (chainFilter === 'saved')) return false;
+    if (!ignoreChainFilter && chainFilter !== 'all' && savedChainWorkIds.has(Number(work.id)) !== (chainFilter === 'saved')) return false;
     if (artistFilter === 'all' && !hasLocalPromptTerms) return true;
     const texts = getAitagWorkPromptTexts(work, detail);
     if (artistFilter !== 'all' && texts.some(text => aitagPromptHasArtistTags(text, knownArtists)) !== (artistFilter === 'with')) return false;
     return matchesAitagPromptQuery(texts, promptQuery);
   };
-  const visibleItems = hasLocalFilter ? items.filter(matchesLocalFilters) : items;
+  const visibleItems = hasLocalFilter ? items.filter(work => matchesLocalFilters(work)) : items;
   // 筛选或取消收藏移走当前作品时，不留下找不到目标的暗态与详情。
   useEffect(() => {
     if (!isLoading && selectedId !== null && !visibleItems.some(work => work.id === selectedId)) {
+      // 本轮保存只改变「未存」归属时保留详情，供查看结果与重试；其他筛选仍正常清选。
+      if (chainFilter === 'unsaved' && batchDetailWork.current === selectedId && items.some(work => work.id === selectedId && matchesLocalFilters(work, true))) return;
       selectionAnchor.clearAnchor();
       aitagPageCache = { ...aitagPageCache, selectedId: null };
       setSelectedId(null);
@@ -1151,6 +1161,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
   /** 本地筛选即时生效；主动改变条件时从新结果顶部开始浏览。 */
   const changeLocalFilter = (apply: () => void) => {
+    batchDetailWork.current = null;
     apply();
     resetScrollPositions();
   };
@@ -1252,9 +1263,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     }
   };
 
-  const getDetail = async (work: AitagWorkSummary) => {
+  const getDetail = async (work: AitagWorkSummary, requireComplete = false) => {
     const cached = details[work.id];
-    if (cached && !cached.isPreviewOnly) return cached;
+    if (cached && !cached.isPreviewOnly && (!requireComplete || cached.images.length >= Math.max(getAitagWorkImageCount(work), getAitagWorkImageCount(cached.work)))) return cached;
 
     const detail = await aitagService.getWork(work.id);
     setDetails(prev => {
@@ -1287,16 +1298,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     return parseNovelAIMetadata(metadataText, defaultParams);
   };
 
-  const getImageTitle = (image: AitagImage, index?: number) => {
-    const title = selectedWork?.title?.trim() || `aitag-${image.work_id}`;
-    return index === undefined ? title : `${title} P${index + 1}`;
-  };
-
   const loadDetail = async (work: AitagWorkSummary) => {
     if (work.id === selectedId) {
       closeMobileDetail();
       return;
     }
+    batchDetailWork.current = null;
     aitagPageCache = { ...aitagPageCache, selectedId: work.id };
     selectionAnchor.prepareSelection(work.id);
     setSelectedId(work.id);
@@ -1342,39 +1349,77 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     }
   };
 
+  const buildImageChain = (image: AitagImage, index: number, work: AitagWorkSummary): PromptChain => {
+    const importData = parseImageImportData(image);
+    const now = Date.now();
+    return {
+      id: `aitag-${image.work_id}-${image.file_name}`, userId: currentUser.id, username: currentUser.username, type: 'style',
+      name: `${work.title?.trim() || `aitag-${image.work_id}`} P${index + 1}`,
+      description: buildAitagChainDescription(image.work_id), tags: [], previewImage: buildAitagImageUrl(image),
+      basePrompt: importData.prompt, negativePrompt: importData.negativePrompt, modules: [], params: importData.params,
+      variableValues: { subject: '' }, createdAt: now, updatedAt: now,
+    };
+  };
+
   const saveAsArtistChain = async (image: AitagImage, index: number) => {
     if (savingImageRef.current !== null) return;
     const imageKey = `${image.work_id}-${image.file_name}`;
+    const openEditor = navigateAfterSave;
     savingImageRef.current = imageKey;
     setSavingImage(imageKey);
     try {
-      const importData = parseImageImportData(image);
-      const now = Date.now();
-      const chain: PromptChain = {
-        id: `aitag-${image.work_id}-${image.file_name}`,
-        userId: currentUser.id,
-        username: currentUser.username,
-        type: 'style',
-        name: getImageTitle(image, index),
-        description: buildAitagChainDescription(image.work_id),
-        tags: [],
-        previewImage: buildAitagImageUrl(image),
-        basePrompt: importData.prompt,
-        negativePrompt: importData.negativePrompt,
-        modules: [],
-        params: importData.params,
-        variableValues: { subject: '' },
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      await onCreateArtistChain(chain);
+      const chain = buildImageChain(image, index, selectedWork!);
+      await onCreateArtistChain(chain, { openEditor });
       notify('已保存到风格串');
     } catch (e: any) {
       notify(e.message || '保存失败', 'error');
     } finally {
       savingImageRef.current = null;
       setSavingImage(null);
+    }
+  };
+
+  const saveWorkAsArtistChains = async () => {
+    if (savingImageRef.current !== null || !selectedWork) return;
+    const summary = items.find(item => item.id === selectedWork.id);
+    const expectedCount = Math.max(getAitagWorkImageCount(selectedWork), summary ? getAitagWorkImageCount(summary) : 0);
+    const work = { ...selectedWork, image_count: expectedCount };
+    batchDetailWork.current = work.id;
+    const navigateOnSuccess = navigateAfterSave;
+    const navigateToChains = onNavigateToChains;
+    savingImageRef.current = `batch-${work.id}`;
+    setSavingImage(savingImageRef.current);
+    setBatchProgress({ workId: work.id, completed: 0, total: 0 });
+    try {
+      const detail = await getDetail(work, true);
+      const images = [...detail.images].sort((a, b) => a.file_name.localeCompare(b.file_name, undefined, { numeric: true }));
+      if (detail.isPreviewOnly || images.length === 0 || images.length < Math.max(getAitagWorkImageCount(work), getAitagWorkImageCount(detail.work))) throw new Error(t('作品图片尚未完整加载，请稍后重试'));
+      let successful = 0, failed = 0;
+      const failedPages: string[] = [];
+      let firstError = '';
+      setBatchProgress({ workId: work.id, completed: 0, total: images.length });
+      for (const [index, image] of images.entries()) {
+        const key = `${work.id}-${image.file_name}`;
+        if (savedBatchImages.current.has(key)) successful++;
+        else {
+          try {
+            await onCreateArtistChain(buildImageChain(image, index, work), { openEditor: false });
+            savedBatchImages.current.add(key); successful++;
+          } catch (cause) {
+            failed++; failedPages.push(`P${index + 1}`);
+            if (!firstError) firstError = cause instanceof Error ? cause.message : t('保存失败');
+          }
+        }
+        setBatchProgress({ workId: work.id, completed: index + 1, total: images.length });
+      }
+      if (failed === 0) for (const image of images) savedBatchImages.current.delete(`${work.id}-${image.file_name}`);
+      const summary = t('批量保存完成：成功 {0} 张，失败 {1} 张', [successful, failed]);
+      notify(failed ? `${summary} · ${failedPages.join(', ')} · ${t('保存失败：{0}', [firstError])}` : summary, failed ? 'error' : 'success');
+      if (failed === 0 && navigateOnSuccess) navigateToChains?.();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : t('保存失败'), 'error');
+    } finally {
+      savingImageRef.current = null; setSavingImage(null); setBatchProgress(null);
     }
   };
 
@@ -1570,6 +1615,39 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           open={Boolean(selectedWork)}
           title={selectedWork?.title || t("作品详情")}
           sensitiveTitle
+          headerActions={selectedWork && <>
+            <IconButton
+              label={batchProgress?.workId === selectedWork.id && batchProgress.total > 0 ? t('批量保存风格串 {0}/{1}', [batchProgress.completed, batchProgress.total]) : t('批量保存风格串')}
+              data-appearance={undefined}
+              className="!border-transparent !bg-transparent !text-emerald-600 !shadow-none hover:!bg-transparent dark:!bg-transparent dark:!text-emerald-400 [&>svg]:!h-5 [&>svg]:!w-5"
+              disabled={savingImage !== null}
+              aria-busy={batchProgress?.workId === selectedWork.id}
+              onClick={() => void saveWorkAsArtistChains()}
+            >
+              {batchProgress?.workId === selectedWork.id ? <LoaderCircle className="animate-spin" /> :
+                <svg data-aitag-icon="batch-save" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 3H5a2 2 0 0 0-2 2v9M18 7H9a2 2 0 0 0-2 2v9" />
+                  <path d="M12 11h7l3 3v7H12zM15 11v5h4v-5M15 21v-3h4v3" />
+                </svg>}
+            </IconButton>
+            <IconButton
+              label={t('保存后跳转')}
+              data-appearance={undefined}
+              className={`!border-transparent !bg-transparent !shadow-none hover:!bg-transparent dark:!bg-transparent [&>svg]:!h-5 [&>svg]:!w-5 ${navigateAfterSave ? '!text-indigo-600 dark:!text-indigo-400' : '!text-gray-400 dark:!text-gray-500'}`}
+              aria-pressed={navigateAfterSave}
+              disabled={savingImage !== null}
+              onClick={() => {
+                const next = !navigateAfterSave;
+                setNavigateAfterSave(next);
+                try { localStorage.setItem('nai_aitag_navigate_after_save', String(next)); }
+                catch { /* 存储不可用时保留当前选择。 */ }
+              }}
+            >
+              <svg data-aitag-icon="save-navigate" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 20H3V3h11l4 4v4M6 3v6h7V3M6 20v-7h5v7M14 16h9m-4-4 4 4-4 4" />
+              </svg>
+            </IconButton>
+          </>}
           subInfo={selectedWork ? `#${selectedWork.id} · ${getAitagType(selectedWork)}` : undefined}
           onBack={closeMobileDetail}
           onClose={closeMobileDetail}

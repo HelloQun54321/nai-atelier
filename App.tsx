@@ -840,14 +840,14 @@ const App = () => {
     }
   };
 
-  const handleCreateChainFromAitag = async (chain: PromptChain) => {
+  const handleCreateChainFromAitag = async (chain: PromptChain, options?: { openEditor?: boolean }) => {
     const entrySession = viewSessionRef.current;
     const saved = await db.createChainWithData(chain.name, chain.description, chain, 'style');
     recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
     setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
     setLastChainFetch(0);
     // 保存期间主动离开来源页时保留用户的位置；当前页保存则等待实际导航完成。
-    if (viewSessionRef.current === entrySession) {
+    if (options?.openEditor !== false && viewSessionRef.current === entrySession) {
       await handleNavigateRef.current('edit', saved.id);
     }
   };
@@ -1011,7 +1011,8 @@ const App = () => {
           onOpenRoll={openRollWithArtists}
           initialSearch={libraryEntry}
         />;
-      case 'aitag':
+      case 'aitag': {
+        const entrySession = viewSessionRef.current;
         return <AitagGallery
           active={view === 'aitag'}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
@@ -1019,9 +1020,13 @@ const App = () => {
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           onCreateArtistChain={handleCreateChainFromAitag}
+          onNavigateToChains={() => {
+            if (viewSessionRef.current === entrySession) void handleNavigate('list');
+          }}
           onRefreshInspiration={() => loadInspirations(true)}
           chains={chains}
         />;
+      }
       case 'danbooru':
         return <DanbooruGallery
           active={view === 'danbooru'}

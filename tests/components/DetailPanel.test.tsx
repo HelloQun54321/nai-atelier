@@ -37,6 +37,15 @@ it('未传来源的其他详情仍保留原正文和关闭行为，不出现空�
   expect(screen.queryByRole('link', { name: '查看原帖' })).toBeNull();
   expect(screen.getByText('已有详情')).toBeTruthy();
   expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '批量保存风格串' })).toBeNull();
+});
+
+it('可选标题操作紧邻关闭按钮，窄屏不隐藏且不进入滚动正文', () => {
+  render(<DetailSidePanel open title="作品" onClose={vi.fn()} headerActions={<button>批量保存风格串</button>}><p>正文</p></DetailSidePanel>);
+  const action = screen.getByRole('button', { name: '批量保存风格串' });
+  expect(action.nextElementSibling).toBe(screen.getByRole('button', { name: '关闭' }));
+  expect(action.closest('header')).toBeTruthy();
+  expect(action.parentElement?.className).not.toContain('hidden');
 });
 
 it.each(['aitag', 'pixiv', 'danbooru'])('%s 的详情优先于长列表，换作品更新身份、关闭恢复列表', view => {

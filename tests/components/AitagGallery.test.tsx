@@ -16,7 +16,7 @@ vi.mock('../../services/metadataService', async original => {
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(), searchCache: vi.fn(), getWork: vi.fn(), getMonths: vi.fn(), getCacheStatus: vi.fn(), setFavorite: vi.fn(), waitForFirstImageCache: vi.fn(),
-  masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), saveInspiration: vi.fn(), getInspirationBoards: vi.fn(),
+  masonry: vi.fn(), createChain: vi.fn(), navigate: vi.fn(), navigateChains: vi.fn(), saveInspiration: vi.fn(), getInspirationBoards: vi.fn(),
   realMasonry: false,
 }));
 vi.mock('../../services/aitagService', async original => ({
@@ -98,13 +98,166 @@ const setup = async (layout = 'masonry', selectionFocusEnabled = true, chains?: 
   const { AitagGallery } = await import('../../components/AitagGallery');
   const { ImageActivityContext } = await import('../../components/SmartImage');
   const notify = vi.fn();
-  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} selectionFocusEnabled={selectionFocusEnabled} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} chains={chains} /></ImageActivityContext.Provider>;
+  const draw = (active: boolean, currentChains = chains) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} selectionFocusEnabled={selectionFocusEnabled} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onNavigateToChains={mocks.navigateChains} onCreateArtistChain={mocks.createChain} chains={currentChains} /></ImageActivityContext.Provider>;
   const view = render(draw(true));
   await screen.findByRole('button', { name: '查看作品 合成作品 1' });
   return { ...view, draw, notify, main: view.container.querySelector('main')! };
 };
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+
+const batchImages = () => [
+  { ...works[0].firstImage!, id: 12, file_name: 'page10.png', local_image_url: '/api/assets/page10.png', ai_json: { prompt: 'second recipe', uc: 'second negative', seed: 22, steps: 19 } },
+  { ...works[0].firstImage!, id: 11, file_name: 'page2.png', local_image_url: '/api/assets/page2.png', ai_json: { prompt: 'first recipe', uc: 'first negative', seed: 11, steps: 25, v4_prompt: { caption: { base_caption: 'first recipe', char_captions: [{ char_caption: 'character one', centers: [{ x: 0.2, y: 0.7 }] }] } } } },
+];
+
+it.each([false, true])('未存筛选下自身批量保存不关闭详情，部分失败=%s仍能原位处理', async partial => {
+  localStorage.setItem('nai_aitag_navigate_after_save', 'false');
+  const images = batchImages();
+  if (partial) images[0] = { ...images[0], prompt_text: '', ai_json: undefined as any };
+  mocks.getWork.mockResolvedValue({ work: works[0], images });
+  let finish!: () => void; mocks.createChain.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const view = await setup('portrait', true, []);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByLabelText('风格串'), { target: { value: 'unsaved' } });
+  fireEvent.click(card(1)); await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledOnce());
+  view.rerender(view.draw(true, [mocks.createChain.mock.calls[0][0]]));
+  expect(screen.getByRole('button', { name: /批量保存风格串/ }).closest('aside')?.getAttribute('aria-hidden')).toBe('false');
+  await act(async () => finish());
+  await waitFor(() => expect(view.notify).toHaveBeenCalledWith(expect.stringContaining(`批量保存完成：成功 ${partial ? 1 : 2} 张，失败 ${partial ? 1 : 0} 张`), partial ? 'error' : 'success'));
+  expect(screen.getByRole('button', { name: '批量保存风格串' }).closest('aside')?.getAttribute('aria-hidden')).toBe('false');
+  if (partial) {
+    images[0].ai_json = { prompt: 'recovered', uc: '', seed: 22, steps: 19 };
+    fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+    await waitFor(() => expect(mocks.createChain).toHaveBeenCalledTimes(2));
+  }
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(screen.queryByRole('button', { name: '批量保存风格串' })).toBeNull();
+});
+
+it.each([true, false])('保存后跳转=%s时单项按偏好打开编辑器，偏好按本端恢复且按钮纯图标', async enabled => {
+  if (!enabled) localStorage.setItem('nai_aitag_navigate_after_save', 'false');
+  await setup(); fireEvent.click(card(1));
+  const toggle = await screen.findByRole('button', { name: '保存后跳转' });
+  expect(toggle.getAttribute('aria-pressed')).toBe(String(enabled)); expect(toggle.textContent).toBe('');
+  expect(toggle.hasAttribute('data-appearance')).toBe(false);
+  expect(toggle.getAttribute('data-control-kind')).toBe('icon');
+  expect(toggle.className).toContain('!bg-transparent'); expect(toggle.className).toContain('!border-transparent');
+  expect(toggle.className).toContain(enabled ? '!text-indigo-600' : '!text-gray-400');
+  expect(toggle.querySelector('svg[data-aitag-icon="save-navigate"]')?.getAttribute('fill')).toBe('none');
+  expect(toggle.querySelector('svg')?.getAttribute('stroke')).toBe('currentColor');
+  fireEvent.click(await screen.findByRole('button', { name: '保存到风格串' }));
+  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledWith(expect.any(Object), { openEditor: enabled }));
+  expect(mocks.navigateChains).not.toHaveBeenCalled();
+});
+
+it('切换保存后跳转会记住关闭偏好，批量关闭时不跳列表', async () => {
+  mocks.getWork.mockResolvedValue({ work: works[0], images: batchImages() });
+  const { notify } = await setup(); fireEvent.click(card(1));
+  const toggle = await screen.findByRole('button', { name: '保存后跳转' }); fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-pressed')).toBe('false'); expect(localStorage.getItem('nai_aitag_navigate_after_save')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.navigateChains).not.toHaveBeenCalled();
+  expect(mocks.createChain.mock.calls.every(call => call[1].openEditor === false)).toBe(true);
+});
+
+it.each(['count', 'urls'] as const)('批量保留原列表%s总数，短详情无计数也不能误报完整，重试重新取全', async source => {
+  const sourceWork = { ...works[0], ...(source === 'urls' ? { image_count: undefined, original_urls: ['one.png', 'two.png'] } : {}) };
+  mocks.search.mockResolvedValue({ items: [sourceWork], total: 1, page: 1, page_size: 60 });
+  const incompleteWork = { id: 1, title: '合成作品 1', AI_type: 'NAI' };
+  mocks.getWork.mockResolvedValue({ work: incompleteWork, images: [batchImages()[0]] });
+  const { notify } = await setup(); fireEvent.click(card(1));
+  await screen.findByRole('button', { name: '保存到风格串' });
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('作品图片尚未完整加载，请稍后重试', 'error'));
+  expect(mocks.createChain).not.toHaveBeenCalled();
+  const reads = mocks.getWork.mock.calls.length;
+  mocks.getWork.mockResolvedValue({ work: incompleteWork, images: batchImages() });
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.getWork.mock.calls.length).toBeGreaterThan(reads); expect(mocks.createChain).toHaveBeenCalledTimes(2);
+});
+
+it('标题批量按钮逐图按自然顺序保存不同配方和封面，全程不导航或打开编辑', async () => {
+  mocks.getWork.mockResolvedValue({ work: works[0], images: batchImages() });
+  const { notify } = await setup(); fireEvent.click(card(1));
+  const button = await screen.findByRole('button', { name: '批量保存风格串' });
+  expect(button.closest('header')).toBeTruthy(); expect(button.nextElementSibling?.getAttribute('aria-label')).toBe('保存后跳转');
+  expect(button.nextElementSibling?.nextElementSibling?.getAttribute('aria-label')).toBe('关闭');
+  expect(button.className).toContain('!bg-transparent'); expect(button.className).toContain('!border-transparent');
+  expect(button.className).toContain('!text-emerald-600'); expect(button.className).not.toContain('hidden');
+  expect(button.hasAttribute('data-appearance')).toBe(false); expect(button.getAttribute('data-control-kind')).toBe('icon');
+  const icon = button.querySelector('svg[data-aitag-icon="batch-save"]');
+  expect(icon?.getAttribute('fill')).toBe('none'); expect(icon?.getAttribute('stroke')).toBe('currentColor');
+  expect(icon?.querySelectorAll('path')).toHaveLength(2);
+  await screen.findAllByRole('button', { name: '保存到风格串' }); fireEvent.click(button);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.createChain.mock.calls.map(call => [call[0].name, call[0].basePrompt, call[0].negativePrompt, call[0].previewImage, call[0].params.seed, call[1]])).toEqual([
+    ['合成作品 1 P1', 'first recipe', 'first negative', '/api/assets/page2.png', 11, { openEditor: false }],
+    ['合成作品 1 P2', 'second recipe', 'second negative', '/api/assets/page10.png', 22, { openEditor: false }],
+  ]);
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  expect(mocks.navigateChains).toHaveBeenCalledOnce();
+  expect(mocks.createChain.mock.calls[0][0].params.characters).toEqual([expect.objectContaining({ prompt: 'character one', x: 0.2, y: 0.7 })]);
+});
+
+it('整组成功后再次主动批量保存会重新写入，不把重试记录变成会话去重', async () => {
+  mocks.getWork.mockResolvedValue({ work: works[0], images: batchImages() });
+  const { notify } = await setup(); fireEvent.click(card(1));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.createChain).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledTimes(4));
+});
+
+it('批量与单项共享锁并显示进度，缺元数据逐图失败后只重试未成功项', async () => {
+  const images = batchImages(); images[1] = { ...images[1], prompt_text: '', ai_json: undefined as any };
+  mocks.getWork.mockResolvedValue({ work: works[0], images });
+  let finish!: () => void; mocks.createChain.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const { notify } = await setup(); fireEvent.click(card(1));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledOnce());
+  expect(screen.getByRole('button', { name: '批量保存风格串 1/2' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByText('1/2')).toBeNull();
+  expect(screen.getByRole('button', { name: '批量保存风格串 1/2' }).textContent).toBe('');
+  expect(screen.getByRole('button', { name: '保存后跳转' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getAllByRole('button', { name: '保存到风格串' })[0]); expect(mocks.createChain).toHaveBeenCalledOnce();
+  await act(async () => finish());
+  await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('批量保存完成：成功 1 张，失败 1 张 · P1 · 保存失败：没有可导入的图片元数据'), 'error'));
+  expect(mocks.navigateChains).not.toHaveBeenCalled();
+  images[1].ai_json = { prompt: 'recovered recipe', uc: '', seed: 22, steps: 19 };
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.createChain).toHaveBeenCalledTimes(2); expect(mocks.createChain.mock.lastCall![0].basePrompt).toBe('recovered recipe');
+});
+
+it('预览未完整时不保存半组，取得完整作品后才保存', async () => {
+  let finish!: (detail: any) => void;
+  mocks.getWork.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const { notify } = await setup(); fireEvent.click(card(1));
+  fireEvent.click(await screen.findByRole('button', { name: '批量保存风格串' }));
+  expect(mocks.createChain).not.toHaveBeenCalled();
+  await act(async () => finish({ work: works[0], images: [works[0].firstImage], isPreviewOnly: true }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('作品图片尚未完整加载，请稍后重试', 'error'));
+  expect(mocks.createChain).not.toHaveBeenCalled();
+});
+
+it('批量进行时切换作品仍使用捕获的标题和图片，不串入新作品', async () => {
+  mocks.getWork.mockImplementation(async id => ({ work: works[id - 1], images: id === 1 ? batchImages() : [works[1].firstImage] }));
+  let finish!: () => void; mocks.createChain.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  const { notify } = await setup(); fireEvent.click(card(1));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存风格串' })); await waitFor(() => expect(mocks.createChain).toHaveBeenCalledOnce());
+  fireEvent.click(card(2)); await act(async () => finish());
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('批量保存完成：成功 2 张，失败 0 张', 'success'));
+  expect(mocks.createChain.mock.calls.map(call => call[0].name)).toEqual(['合成作品 1 P1', '合成作品 1 P2']); expect(mocks.navigate).not.toHaveBeenCalled();
+});
 it('瀑布流先用首图元数据比例，未知比例时完整显示图片并在加载后修正卡片高度', async () => {
   const items = [works[0], { ...works[1], firstImage: { ...works[1].firstImage!, ai_json: undefined } }];
   mocks.search.mockResolvedValue({ items, total: items.length, page: 1, page_size: 60 });

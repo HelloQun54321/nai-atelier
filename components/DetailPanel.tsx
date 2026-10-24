@@ -22,6 +22,7 @@ interface DetailSidePanelProps {
   subInfo?: string;
   /** 原帖入口固定在标题栏，与作品身份相邻，不随正文滚出视野。 */
   sourceUrl?: string;
+  headerActions?: React.ReactNode;
   onClose: () => void;
   /** 覆盖形态下的返回按钮（移动端历史层） */
   onBack?: () => void;
@@ -32,7 +33,7 @@ interface DetailSidePanelProps {
   children: React.ReactNode;
 }
 
-export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, sourceUrl, onClose, onBack, bodyRef, onBodyScroll, children }) => (
+export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, sensitiveTitle = false, subInfo, sourceUrl, headerActions, onClose, onBack, bodyRef, onBodyScroll, children }) => (
   <aside
     data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     data-agent-page-scope={open ? 'detail' : undefined}
@@ -51,6 +52,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
       </div>
       <div className="flex flex-none items-center gap-2">
         {sourceUrl && <IconLink label={t("查看原帖")} href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink /></IconLink>}
+        {headerActions}
         <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
       </div>
     </header>

@@ -58,10 +58,23 @@ const source: PromptChain = {
   previewImage: '/api/assets/aitag/source.png', createdAt: 1, updatedAt: 1,
 };
 const saved = { ...source, id: 'server-saved', previewImage: '/api/assets/covers/server-saved.png' };
-const ExternalGallery = ({ onCreateArtistChain, onImportRefresh, notify }: any) => <><button onClick={async () => {
+const ExternalGallery = ({ onCreateArtistChain, onNavigateToChains, onImportRefresh, notify }: any) => <><button onClick={async () => {
   try { await onCreateArtistChain(source); notify('已保存到风格串'); }
   catch (error: any) { notify(error.message, 'error'); }
-}}>保存合成作品</button>{onImportRefresh && <button onClick={async () => {
+}}>保存合成作品</button><button onClick={async () => {
+  try {
+    await onCreateArtistChain(source, { openEditor: false });
+    await onCreateArtistChain({ ...source, id: 'aitag-synthetic-2', name: '合成作品 P2', basePrompt: 'second synthetic prompt' }, { openEditor: false });
+    notify('合成组已保存');
+  } catch (error: any) { notify(error.message, 'error'); }
+}}>批量保存合成作品</button>{onNavigateToChains && <button onClick={async () => {
+  const complete = onNavigateToChains;
+  try {
+    await onCreateArtistChain(source, { openEditor: false });
+    await onCreateArtistChain({ ...source, id: 'aitag-synthetic-2', name: '合成作品 P2' }, { openEditor: false });
+    complete();
+  } catch (error: any) { notify(error.message, 'error'); }
+}}>批量保存后跳转</button>}{onImportRefresh && <button onClick={async () => {
   try { await onImportRefresh(); notify('合成导入已刷新'); }
   catch (error: any) { notify(error.message, 'error'); }
 }}>回读合成导入图片</button>}</>;
@@ -469,6 +482,53 @@ it.each(['aitag', 'inspiration'])('%s 保存后直接打开服务端条目，无
   fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('list'));
   expect(screen.getByTestId('list').textContent).toContain(saved.id);
+});
+
+it('外部组内连续保存独立风格串时更新本地列表，不跳编辑器也不等整库刷新', async () => {
+  await setup();
+  const secondSaved = { ...saved, id: 'server-saved-2', name: '合成作品 P2', basePrompt: 'second synthetic prompt' };
+  mocks.createChainWithData.mockResolvedValueOnce(saved).mockResolvedValueOnce(secondSaved);
+  mocks.getAllChains.mockImplementation(() => new Promise(() => {}));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存合成作品' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('合成组已保存'));
+  expect(mocks.createChainWithData).toHaveBeenCalledTimes(2);
+  expect(mocks.createChainWithData).toHaveBeenNthCalledWith(1, source.name, source.description, source, 'style');
+  expect(mocks.createChainWithData).toHaveBeenNthCalledWith(2, secondSaved.name, source.description, expect.objectContaining({ id: 'aitag-synthetic-2', basePrompt: secondSaved.basePrompt }), 'style');
+  expect(screen.getByTestId('view').textContent).toBe('aitag');
+  expect(screen.queryByTestId('editor')).toBeNull();
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  await screen.findByTestId('list');
+  expect(screen.getByTestId('list').textContent).toContain(saved.id);
+  expect(screen.getByTestId('list').textContent).toContain(secondSaved.id);
+  expect(screen.queryByTestId('editor')).toBeNull();
+});
+
+it.each(['stay', 'leave', 'return'] as const)('批量完成导航仅作用于原来源会话：%s', async route => {
+  await setup();
+  mocks.getAllChains.mockImplementation(() => new Promise(() => {}));
+  let resolveSecond!: (value: PromptChain) => void;
+  const secondSaved = { ...saved, id: 'server-saved-2', name: '合成作品 P2' };
+  mocks.createChainWithData.mockResolvedValueOnce(saved).mockImplementationOnce(() => new Promise<PromptChain>(done => { resolveSecond = done; }));
+  fireEvent.click(screen.getByRole('button', { name: '批量保存后跳转' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledTimes(2));
+  expect(screen.getByTestId('view').textContent).toBe('aitag');
+  expect(screen.queryByTestId('editor')).toBeNull();
+  if (route !== 'stay') {
+    fireEvent.click(screen.getByRole('button', { name: 'inspiration' }));
+    await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('inspiration'));
+    if (route === 'return') {
+      fireEvent.click(screen.getByRole('button', { name: 'aitag' }));
+      await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('aitag'));
+    }
+  }
+  await act(async () => resolveSecond(secondSaved));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe(route === 'stay' ? 'list' : route === 'leave' ? 'inspiration' : 'aitag'));
+  expect(screen.queryByTestId('editor')).toBeNull();
+  if (route !== 'stay') fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  await screen.findByTestId('list');
+  expect(screen.getByTestId('list').textContent).toContain(saved.id);
+  expect(screen.getByTestId('list').textContent).toContain(secondSaved.id);
 });
 
 it('写入失败保持来源页，只显示失败，不伪报已保存', async () => {
