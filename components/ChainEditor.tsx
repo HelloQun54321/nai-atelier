@@ -1,4 +1,5 @@
 import { LabEditorTabs } from './LabEditorTabs';
+import type { PromptToolbarSlot } from './PromptLibraryAccess';
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
@@ -289,6 +290,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [classificationPending, setClassificationPending] = useState(false);
     const [classificationResult, setClassificationResult] = useState<{ before: PromptAgentDraft; after: PromptAgentDraft; applied: boolean } | null>(null);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
+    const [promptToolbarSlot, setPromptToolbarSlot] = useState<PromptToolbarSlot | null>(null);
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
     const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement) => Promise<PromptAgentGenerationResult | boolean>) | null>(null);
@@ -2113,6 +2115,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 hasChanges={hasChanges}
                 hasPendingPreviewCover={hasPendingPreviewCover}
                 tagAssistEnabled={tagAssistEnabled}
+                promptClassificationEnabled={promptClassificationEnabled}
+                onPromptClassificationEnabledChange={onPromptClassificationEnabledChange}
+                onPromptToolbarSlotChange={setPromptToolbarSlot}
                 onTagAssistEnabledChange={onTagAssistEnabledChange}
                 activeGenerationMode={activeGenerationMode}
                 selectGenerationMode={selectGenerationMode}
@@ -2124,8 +2129,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 handleImportImage={handleImportImage}
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
-                promptClassificationEnabled={promptClassificationEnabled}
-                onPromptClassificationEnabledChange={onPromptClassificationEnabledChange}
                 notify={notify}
             />
 
@@ -2193,6 +2196,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             setPrompt={setBasePrompt}
                             sections={params._promptSections}
                             onContentRollForGlobal={onContentRollForGlobal}
+                            toolbarSlot={promptToolbarSlot}
                             setSections={next => setParams(previous => ({ ...previous, _promptSections: next }))}
                             supplementPrompt={subjectPrompt}
                             setSupplementPrompt={setSubjectPrompt}
@@ -2351,6 +2355,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             </div>
 
             </> : activeEditOperation && activeEditDraft ? <ImageEditPanel
+                promptToolbarSlot={promptToolbarSlot}
                 promptClassificationEnabled={promptClassificationEnabled}
                 favorite={imageEditPreviewItem ? { imageUrl: imageEditPreviewItem.imageUrl, sourceType: 'history', sourceId: imageEditPreviewItem.id } : undefined}
                 key={chain.id}

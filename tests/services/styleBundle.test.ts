@@ -12,7 +12,7 @@ vi.mock('../../services/characterReferenceService', () => ({ characterReferenceS
 vi.mock('../../services/imageSharing', () => ({ prepareImageBlob: vi.fn(async (blob: Blob) => blob), getCleanSharedImages: () => false, getSharedImageCustomText: () => '', getSharedImageCleanContent: () => 'all' }));
 const createChain = vi.fn();
 const png = new Uint8Array(24); png.set([137, 80, 78, 71, 13, 10, 26, 10]); new DataView(png.buffer).setUint32(16, 1); new DataView(png.buffer).setUint32(20, 1);
-const options = { coverMode: 'none' as const, author: '分享者', sourceUrl: 'https://example.org/free', note: '请保留免费来源' };
+const options = { allChainIds: ['private-id'], coverMode: 'none' as const, author: '分享者', sourceUrl: 'https://example.org/free', note: '请保留免费来源' };
 const chain = (id = 'private-id'): PromptChain => ({ id, userId: 'private-owner', username: '私人账号', type: 'style', name: '配方', description: '说明', tags: ['自定义'], previewImage: '/api/assets/covers/private.png', basePrompt: '1.2::artist:sample::, anime', negativePrompt: 'bad hands', modules: [{ id: 'module', name: '模块', content: 'watercolor', isActive: true, position: 'post', group: '媒介' }], params: { model: 'nai-diffusion-4-5-full', sampler: 'k_euler_ancestral', width: 832, height: 1216, scale: 5, steps: 28, seed: 42, characters: [{ id: 'role', enabled: true, prompt: 'girl', negativePrompt: 'hat', x: 0.3, y: 0.5, sections: { appearance: 'blue eyes' } }], _promptSections: { scene: 'park', sectionMeta: { scene: { entryId: 'private-entry', entryName: '场景名' } } }, _styleBundleSources: [{ author: '原作者', sourceUrl: '', note: '原声明' }] }, variableValues: { subject: 'standing' }, createdAt: 1, updatedAt: 2 });
 beforeEach(() => {
   createChain.mockReset().mockResolvedValue({ ...chain('new-id') });
@@ -38,6 +38,45 @@ async function replaceManifest(file: Blob, change: (value: Record<string, unknow
 }
 
 describe('.naia 风格串分享包', () => {
+  it.each([
+    { name: '完整库乱序且参考 ID 重复', exported: ['private-a', 'private-b'], all: ['private-b', 'private-a', 'private-a'], coverage: 'full' },
+    { name: '实际子集', exported: ['private-a'], all: ['private-a', 'private-b'], coverage: 'partial' },
+    { name: '数量相同但成员不同', exported: ['private-a', 'private-c'], all: ['private-a', 'private-b'], coverage: 'partial' },
+    { name: '筛选或勾选实际覆盖全部', exported: ['private-b', 'private-a'], all: ['private-a', 'private-b'], coverage: 'full' },
+    { name: '导出集合重复不改变覆盖意义', exported: ['private-a', 'private-a'], all: ['private-a'], coverage: 'full' },
+  ])('按真实集合自动标记：$name', async ({ exported, all, coverage }) => {
+    const file = await exportStyleBundle(exported.map(id => chain(id)), { ...options, allChainIds: all });
+    expect((await readStyleBundle(file)).coverage).toBe(coverage);
+    let manifest = '';
+    await replaceManifest(file, raw => { manifest = JSON.stringify(raw); expect(raw.coverage).toBe(coverage); });
+    for (const id of new Set([...exported, ...all])) expect(manifest).not.toContain(id);
+    expect(manifest).not.toContain('allChainIds');
+    expect(manifest).not.toContain('totalCount');
+  });
+
+  it('旧包没有标记显示未记录，存在但非法的范围标记一律拒绝', async () => {
+    const file = await exportStyleBundle([chain()], options);
+    const legacy = await replaceManifest(file, raw => { delete raw.coverage; });
+    expect((await readStyleBundle(legacy)).coverage).toBe('unrecorded');
+    for (const coverage of ['unrecorded', 'all', '', null, false, 1, {}]) {
+      const invalid = await replaceManifest(file, raw => { raw.coverage = coverage; });
+      await expect(readStyleBundle(invalid)).rejects.toThrow('打包范围');
+    }
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('再次分享按当前工坊重新计算，不沿用此前包的范围或传入伪造选项', async () => {
+    const file = await exportStyleBundle([chain()], { ...options, coverage: 'partial' } as Parameters<typeof exportStyleBundle>[1]);
+    const preview = await readStyleBundle(file); expect(preview.coverage).toBe('full');
+    await importStyleBundle(preview, ['s0']);
+    const imported = createChain.mock.calls[0][0];
+    expect(imported.params).not.toHaveProperty('coverage');
+    const local = { ...chain(), ...imported, id: 'imported-local-id' };
+    const reexported = await exportStyleBundle([local], { ...options, allChainIds: [local.id, 'another-local-id'] });
+    expect((await readStyleBundle(reexported)).coverage).toBe('partial');
+    await expect(exportStyleBundle([chain()], { ...options, allChainIds: undefined } as unknown as Parameters<typeof exportStyleBundle>[1])).rejects.toThrow('打包范围');
+  });
+
   it('完整往返正文、模块、参数、多角色和主体，保留来源且不携带账号与未知本机字段', async () => {
     const original = chain(); Object.assign(original.params, { apiKey: 'secret', localPath: 'D:/private.png' });
     const file = await exportStyleBundle([original], options), preview = await readStyleBundle(file);
@@ -59,7 +98,7 @@ describe('.naia 风格串分享包', () => {
       item.params.vibes = { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'old-vibe', encodingId: 'old-encoding', informationExtracted: 0.7, strength: 0.6 }] };
     }
     vi.mocked(api.get).mockImplementation(async path => String(path).endsWith('/data') ? { encoding: btoa('x'.repeat(64)), variant: { model: 'nai-diffusion-4-5-full', modelKey: 'v4-5full', informationExtracted: 0.7 } } : { item: { sourceHash: 'a'.repeat(64), name: 'Vibe' } });
-    const file = await exportStyleBundle([first, second], options), preview = await readStyleBundle(file);
+    const file = await exportStyleBundle([first, second], { ...options, allChainIds: [first.id, second.id] }), preview = await readStyleBundle(file);
     expect(fetch).toHaveBeenCalledTimes(1); expect(api.get).toHaveBeenCalledTimes(2);
     const mismatched = await replaceManifest(file, raw => { (raw.encodings as Array<Record<string, unknown>>)[0].model = 'bogus'; });
     await expect(readStyleBundle(mismatched)).rejects.toThrow('不一致');
@@ -93,7 +132,7 @@ describe('.naia 风格串分享包', () => {
   });
 
   it('导入失败可重试，成功条目在同包内不重复创建，先验证全部选择', async () => {
-    const preview = await readStyleBundle(await exportStyleBundle([chain(), chain('second')], options));
+    const preview = await readStyleBundle(await exportStyleBundle([chain(), chain('second')], { ...options, allChainIds: ['private-id', 'second'] }));
     await expect(importStyleBundle(preview, ['unknown'])).rejects.toThrow('未知');
     createChain.mockResolvedValueOnce(chain('one')).mockRejectedValueOnce(new Error('保存失败')).mockResolvedValueOnce(chain('two'));
     expect(await importStyleBundle(preview, ['s0', 's1'])).toMatchObject({ importedEntryIds: ['s0'], failed: [{ id: 's1', error: '保存失败' }] });
@@ -124,7 +163,7 @@ describe('.naia 风格串分享包', () => {
     const original = chain(); original.name = '长'.repeat(201); original.description = '说明'.repeat(33000);
     original.basePrompt = 'tag,'.repeat(17000); original.previewImage = `data:image/png;base64,${btoa(String.fromCharCode(...png))}`;
     const legacy = { ...chain('legacy'), description: null, basePrompt: null, negativePrompt: null, modules: null } as unknown as PromptChain;
-    const preview = await readStyleBundle(await exportStyleBundle([original, legacy], { ...options, coverMode: 'original' }));
+    const preview = await readStyleBundle(await exportStyleBundle([original, legacy], { ...options, allChainIds: [original.id, legacy.id], coverMode: 'original' }));
     expect(preview.entries[0]).toMatchObject({ name: original.name, description: original.description, cover: true });
     await importStyleBundle(preview, ['s0', 's1']);
     expect(createChain.mock.calls[0][0].basePrompt).toBe(original.basePrompt);
@@ -187,9 +226,9 @@ describe('.naia 风格串分享包', () => {
   it('来源已达数量上限时，留空或重复分享声明仍可再次导出且不丢原出处', async () => {
     const item = chain(); item.params._styleBundleSources = Array.from({ length: 100 }, (_, index) => ({ author: `作者${index}`, sourceUrl: '', note: '' }));
     for (const author of ['', '作者0']) {
-      const preview = await readStyleBundle(await exportStyleBundle([item], { coverMode: 'none', author, sourceUrl: '', note: '' }));
+      const preview = await readStyleBundle(await exportStyleBundle([item], { allChainIds: [item.id], coverMode: 'none', author, sourceUrl: '', note: '' }));
       expect(preview.entries[0].sources).toEqual(item.params._styleBundleSources);
     }
-    await expect(exportStyleBundle([item], { coverMode: 'none', author: '新作者', sourceUrl: '', note: '' })).rejects.toThrow('数量');
+    await expect(exportStyleBundle([item], { allChainIds: [item.id], coverMode: 'none', author: '新作者', sourceUrl: '', note: '' })).rejects.toThrow('数量');
   });
 });

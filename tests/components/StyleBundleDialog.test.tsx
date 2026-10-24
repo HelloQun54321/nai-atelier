@@ -6,7 +6,8 @@ import type { PromptChain } from '../../types';
 import { StyleBundleDialog } from '../../components/chain/StyleBundleDialog';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn(), getAllChains: vi.fn() }));
+vi.mock('../../services/dbService', () => ({ db: { getAllChains: mocks.getAllChains } }));
 vi.mock('../../services/styleBundle', () => ({ readStyleBundle: mocks.read, exportStyleBundle: mocks.export, importStyleBundle: mocks.import }));
 vi.mock('../../services/exportLocation', () => ({ beginExportTarget: mocks.target, openExportDirectory: mocks.openDirectory }));
 vi.mock('../../services/fileDownload', () => ({ downloadFile: mocks.download }));
@@ -17,7 +18,7 @@ const props = () => ({ chains, filteredChains: chains.slice(0, 63), selectedChai
 const preview = { entries: [
   { id: 'a', name: '水彩', description: '纸张', cover: true, sources: [{ author: '作者甲', sourceUrl: 'https://example.org/free', note: '免费分享' }] },
   { id: 'b', name: '素描', description: '铅笔', cover: false, sources: [] },
-], warnings: [] };
+], coverage: 'full' as const, warnings: [] };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -26,8 +27,41 @@ beforeEach(() => {
   mocks.download.mockResolvedValue({ saved: true, cancelled: false });
   mocks.target.mockReturnValue(undefined);
   mocks.openDirectory.mockResolvedValue(undefined);
+  mocks.getAllChains.mockResolvedValue(chains);
 });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); });
+
+it('导出前读取最新库识别另端新增，保持原选中集合且先请求目录权限', async () => {
+  const selected = chains.slice(0, 1), latest = chains.slice(0, 2);
+  mocks.getAllChains.mockResolvedValueOnce(latest);
+  render(<StyleBundleDialog {...props()} chains={selected} filteredChains={selected} selectedChains={selected} />);
+  fireEvent.click(screen.getByRole('button', { name: '导出 1 条' }));
+  await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(1));
+  expect(mocks.export.mock.calls[0][0]).toEqual(selected);
+  expect(mocks.export.mock.calls[0][1].allChainIds).toEqual(latest.map(chain => chain.id));
+  expect(mocks.target.mock.invocationCallOrder[0]).toBeLessThan(mocks.getAllChains.mock.invocationCallOrder[0]);
+  expect(mocks.getAllChains.mock.invocationCallOrder[0]).toBeLessThan(mocks.export.mock.invocationCallOrder[0]);
+});
+
+it('最新库删除旧项并混入角色时，只将当前风格串与缺省类型旧串算作完整库', async () => {
+  const legacy = { ...chains[2], type: undefined } as unknown as PromptChain;
+  mocks.getAllChains.mockResolvedValueOnce([chains[0], legacy, { ...chains[3], type: 'character' }]);
+  render(<StyleBundleDialog {...props()} chains={chains.slice(0, 2)} />);
+  fireEvent.click(screen.getByRole('button', { name: '导出 2 条' }));
+  await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(1));
+  expect(mocks.export.mock.calls[0][0]).toEqual(chains.slice(0, 2));
+  expect(mocks.export.mock.calls[0][1].allChainIds).toEqual([chains[0].id, legacy.id]);
+});
+
+it('最新完整库快照读取失败时拒绝打包和下载，不回退旧缓存标整库', async () => {
+  mocks.getAllChains.mockRejectedValueOnce(new Error('合成库读取失败'));
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导出 65 条' }));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '合成库读取失败');
+  expect(mocks.export).not.toHaveBeenCalled();
+  expect(mocks.download).not.toHaveBeenCalled();
+  expect((screen.getByRole('button', { name: '导出 65 条' }) as HTMLButtonElement).disabled).toBe(false);
+});
 
 it('导出旁可打开目录，导出后使用实际回执，取消或失败不丢失上次保存位置', async () => {
   const callbacks = props();
@@ -121,13 +155,27 @@ it('导出使用全部筛选集合而非首屏，并传递封面和来源字段�
   fireEvent.click(screen.getByRole('button', { name: '导出 63 条' }));
   await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(1));
   expect(mocks.export.mock.calls[0][0]).toEqual(chains.slice(0, 63));
-  expect(mocks.export.mock.calls[0][1]).toMatchObject({ coverMode: 'none', author: '合成作者', sourceUrl: 'https://example.org/free' });
+  expect(mocks.export.mock.calls[0][1]).toMatchObject({ allChainIds: chains.map(chain => chain.id), coverMode: 'none', author: '合成作者', sourceUrl: 'https://example.org/free' });
   expect(mocks.target).toHaveBeenCalledTimes(1);
   expect(mocks.target.mock.invocationCallOrder[0]).toBeLessThan(mocks.export.mock.invocationCallOrder[0]);
   fireEvent.change(screen.getByLabelText('导出范围'), { target: { value: 'selected' } });
   fireEvent.click(screen.getByRole('button', { name: '导出 4 条' }));
   await waitFor(() => expect(mocks.export).toHaveBeenCalledTimes(2));
   expect(mocks.export.mock.calls[1][0]).toEqual(chains.slice(61));
+  expect(mocks.export.mock.calls[1][1].allChainIds).toEqual(chains.map(chain => chain.id));
+});
+
+it.each([['full', '整库打包'], ['partial', '部分打包'], ['unrecorded', '未记录']])('导入预览显示 %s 包的打包范围，筛选不会改变包内统计', async (coverage, label) => {
+  mocks.read.mockResolvedValueOnce({ ...preview, coverage });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], 'styles.naia')] } });
+  expect(await screen.findByText(label)).toBeTruthy();
+  expect(screen.getByText('包内风格串：2 条')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '水彩' } });
+  expect(screen.queryByRole('checkbox', { name: '素描' })).toBeNull();
+  expect(screen.getByText(label)).toBeTruthy();
+  expect(screen.getByText('包内风格串：2 条')).toBeTruthy();
 });
 
 it('预览来源并按搜索导入，部分失败后重试不重复成功项', async () => {

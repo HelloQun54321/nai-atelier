@@ -227,7 +227,7 @@ describe('元数据导入后自动分类', () => {
       characters: [{ id: 'role', prompt: 'smile', x: 0.2, y: 0.8, sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }] } };
     const view = setup(sectioned);
     view.rerender(<ChainEditor {...view.props} promptClassificationEnabled={false} />);
-    await waitFor(() => expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('saved style, forest'));
+    await waitFor(() => expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('saved style, forest'));
     fireEvent.click(screen.getByTitle('复制全局负面提示词'));
     expect(writeText).toHaveBeenCalledWith('saved negative, city');
     fireEvent.click(screen.getByRole('button', { name: '翻译所有未翻译提示词' }));

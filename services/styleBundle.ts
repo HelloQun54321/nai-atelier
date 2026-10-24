@@ -10,6 +10,7 @@ export type StyleBundleCoverMode = 'none' | 'compressed' | 'original';
 export interface StyleBundleProgress { phase: 'export' | 'read' | 'import'; completed: number; total: number; name?: string }
 type Progress = (value: StyleBundleProgress) => void;
 export interface StyleBundlePreview {
+  coverage: 'full' | 'partial' | 'unrecorded';
   entries: Array<{ id: string; name: string; description: string; cover: boolean; sources: StyleBundleSource[] }>;
   sources: StyleBundleSource[];
   warnings: string[];
@@ -17,7 +18,7 @@ export interface StyleBundlePreview {
 interface Asset { id: string; offset: number; size: number; mime: string; hash: string }
 interface Encoding { id: string; asset: string; sourceHash: string; name: string; model: string; modelKey: string; information: number }
 interface Entry extends Pick<PromptChain, 'name' | 'description' | 'tags' | 'basePrompt' | 'negativePrompt' | 'modules' | 'params' | 'variableValues'> { id: string; cover?: string }
-interface Manifest { entries: Entry[]; assets: Asset[]; encodings: Encoding[] }
+interface Manifest { coverage?: 'full' | 'partial'; entries: Entry[]; assets: Asset[]; encodings: Encoding[] }
 interface Parsed { manifest: Manifest; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string }>; busy: boolean }
 const parsedBundles = new WeakMap<StyleBundlePreview, Parsed>();
 const MAGIC = new Uint8Array([78, 65, 73, 65, 13, 10, 26, 10]);
@@ -204,8 +205,11 @@ const encodeBase64 = async (blob: Blob) => {
   return btoa(binary);
 };
 
-export async function exportStyleBundle(chains: PromptChain[], options: { coverMode: StyleBundleCoverMode; author: string; sourceUrl: string; note: string; onProgress?: Progress }): Promise<Blob> {
+export async function exportStyleBundle(chains: PromptChain[], options: { allChainIds: readonly string[]; coverMode: StyleBundleCoverMode; author: string; sourceUrl: string; note: string; onProgress?: Progress }): Promise<Blob> {
   if (!chains.length || chains.length > STYLE_BUNDLE_LIMITS.entries) fail('一次可导出 1～10000 条风格串');
+  if (!Array.isArray(options.allChainIds) || options.allChainIds.some(id => typeof id !== 'string' || !id)) fail('分享包打包范围无效');
+  const allIds = new Set(options.allChainIds), exportedIds = new Set(chains.map(chain => chain.id));
+  const coverage = allIds.size === exportedIds.size && [...allIds].every(id => exportedIds.has(id)) ? 'full' : 'partial';
   if (!['none', 'compressed', 'original'].includes(options.coverMode)) fail('封面导出选项无效');
   const declaration = source(options), assets: Asset[] = [], blobs: Blob[] = [], entries: Entry[] = [], encodings: Encoding[] = [];
   const referenceIds = new Map<string, string>(), encodingIds = new Map<string, string>(), assetHashes = new Map<string, string>(); let total = 0;
@@ -246,7 +250,7 @@ export async function exportStyleBundle(chains: PromptChain[], options: { coverM
     }
     entries.push(entry); options.onProgress?.({ phase: 'export', completed: index + 1, total: chains.length, name: chain.name });
   }
-  const json = new TextEncoder().encode(JSON.stringify({ entries, assets, encodings } satisfies Manifest));
+  const json = new TextEncoder().encode(JSON.stringify({ coverage, entries, assets, encodings } satisfies Manifest));
   if (json.length > STYLE_BUNDLE_LIMITS.manifestBytes) fail('配方文字超过 64 MiB，请分批导出');
   const compressed = await boundedBytes(new Blob([json.buffer]).stream().pipeThrough(new CompressionStream('gzip')), STYLE_BUNDLE_LIMITS.compressedManifestBytes);
   // 可逆混淆只避免被普通 JSON/ZIP 工具直接打开，不是保密或身份验证。
@@ -265,6 +269,8 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
   if (hex(sha256(compressed)) !== hex(header.subarray(16))) fail('分享包清单已损坏');
   const decoded = await boundedBytes(new Blob([compressed.map(byte => byte ^ 0xa7).buffer]).stream().pipeThrough(new DecompressionStream('gzip')), STYLE_BUNDLE_LIMITS.manifestBytes);
   let raw: Record<string, unknown>; try { raw = object(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decoded))); } catch { return fail('分享包清单损坏'); }
+  const coverage = Object.hasOwn(raw, 'coverage') ? raw.coverage : 'unrecorded';
+  if (coverage !== 'full' && coverage !== 'partial' && !(coverage === 'unrecorded' && !Object.hasOwn(raw, 'coverage'))) fail('分享包打包范围无效');
   const entries = list(raw.entries, STYLE_BUNDLE_LIMITS.entries).map(cleanEntry); if (!entries.length) fail('分享包没有风格串');
   const assets: Asset[] = list(raw.assets, STYLE_BUNDLE_LIMITS.assets).map(value => {
     const asset = object(value); return { id: text(asset.id, 200), offset: finite(asset.offset), size: finite(asset.size), mime: text(asset.mime, 100), hash: text(asset.hash, 64) };
@@ -304,7 +310,7 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
     onProgress?.({ phase: 'read', completed: index + 1, total: assets.length });
   }
   const allSources = [...new Map(entries.flatMap(entry => entry.params._styleBundleSources || []).map(item => [JSON.stringify(item), item])).values()];
-  const preview: StyleBundlePreview = { entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
+  const preview: StyleBundlePreview = { coverage, entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
   parsedBundles.set(preview, { manifest: { entries, assets, encodings }, file, offset: HEADER + length, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
   return preview;
 }

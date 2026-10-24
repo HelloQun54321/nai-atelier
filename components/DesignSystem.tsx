@@ -321,3 +321,29 @@ export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
     {children}
   </button>
 );
+
+export const ToolbarActionRow: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    detail?: string;
+    tone?: 'default' | 'danger' | 'primary';
+    disabled?: boolean;
+    onClick: () => void;
+}> = ({ icon, label, detail, tone = 'default', disabled = false, onClick }) => (
+    <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        className={`mobile-touch flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+            tone === 'danger'
+                ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
+                : tone === 'primary'
+                    ? 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
+        }`}
+    >
+        <span className="flex-none">{icon}</span>
+        <span className="min-w-0 flex-1">{t(label)}</span>
+        {detail && <span className="flex-none text-xs font-normal text-gray-400">{detail}</span>}
+    </button>
+);

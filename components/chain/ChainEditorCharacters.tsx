@@ -226,7 +226,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         </div>
                         <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
                         <div className="min-w-0 space-y-2">
-                                <div className="flex justify-end"><PromptLibraryRandomButton roleId={char.id} disabled={!canEdit} fallback={promptClassificationEnabled && canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} /></div>
+                                {promptClassificationEnabled && <div className="flex justify-end"><PromptLibraryRandomButton roleId={char.id} disabled={!canEdit} fallback={canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} /></div>}
                                 <div>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
                                     <TagAutocompleteTextarea

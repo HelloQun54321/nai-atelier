@@ -91,8 +91,8 @@ it.each(['original', 'none', 'original-retry', 'vibe-conflict'] as const)('%s �
     const created = await api.post('/chains', { name, description: '合成说明', tags: ['夜景'], basePrompt: '1.2::artist:synthetic::', negativePrompt: 'bad hands', modules: [{ id: 'module', name: '材质', content: 'watercolor', isActive: true, position: 'post', group: '媒介' }], params, variableValues: { subject: 'standing' }, previewImage: cover.url, type: 'style' });
     originals.push(await api.get(`/chains/${created.id}`));
   }
-  const blob = await exportStyleBundle(originals, { coverMode, author: '分享者', sourceUrl: 'https://example.org/free', note: '保留来源' });
-  const preview = await readStyleBundle(blob); active = target; now.mockReturnValue(1_700_000_100_000);
+  const blob = await exportStyleBundle(originals, { allChainIds: originals.map(chain => chain.id), coverMode, author: '分享者', sourceUrl: 'https://example.org/free', note: '保留来源' });
+  const preview = await readStyleBundle(blob); expect(preview.coverage).toBe('full'); active = target; now.mockReturnValue(1_700_000_100_000);
   let conflictingVibe: any;
   const otherEncoding = btoa('different-existing-encoding'.repeat(5));
   if (scenario === 'vibe-conflict') {

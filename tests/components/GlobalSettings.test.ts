@@ -880,9 +880,9 @@ describe('GlobalSettings', () => {
     expect(container.querySelector('[draggable="true"]')).toBeNull();
     for (const [pageId, label] of [['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const) {
       fireEvent.click(screen.getByText(label).closest('summary')!);
-      fireEvent.click(await screen.findByRole('button', { name: `${label} · 全局提示词 · 默认展开` }));
+      fireEvent.click(await screen.findByRole('button', { name: `${label} · 全局正面提示词 · 默认展开` }));
       expect(changed.mock.lastCall?.[0].labPageLayouts[pageId].collapsed.prompt).toBe(true);
-      expect(screen.getByRole('button', { name: `${label} · 全局提示词 · 默认收起` }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('button', { name: `${label} · 全局正面提示词 · 默认收起` }).getAttribute('aria-pressed')).toBe('true');
     }
     fireEvent.click(screen.getByRole('button', { name: '文生图 · 恢复默认' }));
     expect(changed.mock.lastCall?.[0].labPageLayouts['text-to-image']).toEqual(DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']);

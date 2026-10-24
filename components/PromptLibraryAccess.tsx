@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { BookOpen, BookmarkPlus, Dice5, RotateCcw, X } from 'lucide-react';
 import type { NAIParams, PromptChain } from '../types';
 import { t } from '../services/i18n';
@@ -7,8 +8,8 @@ import { applyLibraryText, createCombinationData, createFragmentData, fragmentKi
 import { applyLibrarySelection, planLibrarySelection, type LibraryCompletionEdit, type PromptLibraryWorkspaceState } from '../services/promptLibraryApply';
 import { prepareCollectedPrompt } from '../services/collectedPrompt';
 import type { PromptApplyMode } from '../services/promptApply';
-import type { ContentRollTarget } from '../services/contentRollApply';
-import { IconButton, ToolbarButton } from './DesignSystem';
+import type { ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
+import { IconButton, ToolbarButton, ToolbarActionRow } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageActivityContext } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -212,18 +213,31 @@ export function PromptLibraryFieldActions({ value, onText, field, disabled }: { 
   </>;
 }
 
-export function PromptLibraryRandomButton({ roleId, disabled, fallback }: { roleId?: string; disabled?: boolean; fallback?: () => void }) {
+export interface PromptToolbarSlot { element: HTMLDivElement; variant: 'icon' | 'menu' }
+
+export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant = 'toolbar', toolbarSlot: triggerSlot }: { roleId?: string; disabled?: boolean; fallback?: () => void; variant?: 'toolbar' | 'icon' | 'menu'; toolbarSlot?: PromptToolbarSlot | null }) {
   const library = usePromptLibrary();
   const workspace = useContext(WorkspaceContext);
   const active = useContext(ImageActivityContext);
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
-  if (!library || !workspace) return fallback ? <ToolbarButton disabled={disabled} onClick={fallback}><Dice5 /><span>{t('随机搭配')}</span></ToolbarButton> : null;
+  const entryTarget = useMemo<ContentRollEntryTarget>(() => roleId ? { mode: 'existing', id: roleId } : { mode: 'global' }, [roleId]);
+  if (workspace && !workspace.state.classified) return null;
+  if ((!library || !workspace) && !fallback) return null;
+  variant = triggerSlot?.variant || variant;
+  const onClick = () => { if (library && workspace) setOpen(true); else fallback?.(); };
+  const trigger = variant === 'menu' ? <ToolbarActionRow icon={<Dice5 className="h-4 w-4" />} label={t('随机搭配')} disabled={disabled} onClick={onClick} />
+    : variant === 'icon' ? <IconButton label={t('随机搭配')} disabled={disabled} onClick={onClick}><Dice5 /></IconButton>
+    : <ToolbarButton aria-label={t('随机搭配')} title={t('随机搭配')} disabled={disabled} onClick={onClick}><Dice5 /><span>{t('随机搭配')}</span></ToolbarButton>;
+  const placeTrigger = (content: React.ReactNode) => triggerSlot ? createPortal(content, triggerSlot.element) : triggerSlot === null ? null : content;
+  if (!library || !workspace) return placeTrigger(trigger);
   const params = { ...workspace.state.params, _promptSections: resolvePromptSections(workspace.state.params._promptSections, workspace.state.subject) };
-  return <>{!roleId && workspace.canUndo && <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>}<ToolbarButton disabled={disabled} onClick={() => setOpen(true)}><Dice5 /><span>{t('随机搭配')}</span></ToolbarButton>
+  return <>{placeTrigger(<>{!roleId && workspace.canUndo && (variant === 'menu'
+    ? <ToolbarActionRow icon={<RotateCcw className="h-4 w-4" />} label="撤销上次填入" onClick={workspace.undo} />
+    : <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>)}{trigger}</>)}
     {open && <LibraryDialog wide title="随机搭配" onClose={() => setOpen(false)}><div ref={setToolbarSlot} className="flex items-center gap-2" /><ContentRollWorkspace active={active} chains={library.chains} embedded toolbarSlot={toolbarSlot} notify={setNotice}
-      playgroundParams={params} entryTarget={roleId ? { mode: 'existing', id: roleId } : { mode: 'global' }}
+      playgroundParams={params} entryTarget={entryTarget}
       onApplyRoll={async plan => { workspace.change(applyLibrarySelection({ before: workspace.state, params, plan })); return true; }}
       canUndo={workspace.canUndo} onUndoApply={async () => { workspace.undo(); return true; }}
       onSaveRoll={async (name, picks) => { await library.save(createCombinationData(name, picks)); return name; }} />

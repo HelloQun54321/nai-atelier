@@ -4,7 +4,7 @@ import { LabPageLayout } from '../../services/appearancePreferences';
 import { mergePromptSections, resolvePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
+import { PromptLibraryRandomButton, type PromptToolbarSlot } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptFragmentKind } from '../../services/promptLibraryEntries';
 import type { PromptSectionSource, PromptSections } from '../../types';
@@ -65,6 +65,7 @@ export interface ChainEditorPromptInputsProps {
     sections?: PromptSections | null;
     /** 就地发起「随机搭配」 */
     onContentRollForGlobal?: () => void;
+    toolbarSlot?: PromptToolbarSlot | null;
     setSections?: (sections: PromptSections) => void;
     supplementPrompt?: string;
     setSupplementPrompt?: (value: string) => void;
@@ -82,7 +83,7 @@ export interface ChainEditorPromptInputsProps {
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal,
+    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal, toolbarSlot,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     promptClassificationEnabled = false, onPlainPromptChange, embedded = false,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
@@ -106,8 +107,8 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
-                <div className="flex justify-end"><PromptLibraryRandomButton disabled={!canEdit} fallback={promptClassificationEnabled && canEdit ? onContentRollForGlobal : undefined} /></div>
-                {!promptClassificationEnabled ? <PromptField label="全局正向提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局提示词" disabled={!canEdit}
+                {promptClassificationEnabled && <PromptLibraryRandomButton toolbarSlot={toolbarSlot ?? null} disabled={!canEdit} fallback={canEdit ? onContentRollForGlobal : undefined} />}
+                {!promptClassificationEnabled ? <PromptField label="全局正面提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }
@@ -125,7 +126,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                 </>}
             </div>
         </section>;
-    return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局提示词')}
+    return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局正面提示词')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
         className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>{content}</LabModuleSection>;
 };

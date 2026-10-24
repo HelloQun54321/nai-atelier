@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorPromptInputs, ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
+import { PromptLibraryContext, PromptLibraryWorkspace } from '../../../components/PromptLibraryAccess';
+import { LAB_DEFAULT_PARAMS } from '../../../services/labWorkspace';
 
 afterEach(cleanup);
 
@@ -13,11 +15,80 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
     copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
     activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global', ...overrides,
   };
-  render(<ChainEditorPromptInputs {...props} />);
+  const slot = document.createElement('div');
+  props.toolbarSlot = { element: slot, variant: 'icon' };
+  render(<><div data-testid="prompt-tools" ref={element => { element?.appendChild(slot); }} /><ChainEditorPromptInputs {...props} /></>);
   return props;
 };
 
 describe('提示词上下文工具隔离', () => {
+  it('顶栏槽位替换或临时移除不丢失随机搭配的真实候选编辑', async () => {
+    const first = document.createElement('div'), second = document.createElement('div');
+    document.body.append(first, second);
+    const changed = vi.fn();
+    const content = (element: HTMLDivElement | null) => <PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}>
+      <PromptLibraryWorkspace state={{ params: LAB_DEFAULT_PARAMS, base: 'artist', subject: '', negative: '', classified: true }} onChange={changed}>
+        <ChainEditorPromptInputs promptClassificationEnabled prompt="artist" setPrompt={changed} presetSources={{}} tagAssistEnabled={false} canEdit
+          toolbarSlot={element ? { element, variant: element === first ? 'icon' : 'menu' } : null}
+          copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
+          activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
+      </PromptLibraryWorkspace>
+    </PromptLibraryContext.Provider>;
+    const view = render(content(first));
+    try {
+      fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+      const dialog = await screen.findByRole('dialog', { name: '随机搭配' });
+      const candidate = within(dialog).getByRole('textbox', { name: '场景内容' }) as HTMLTextAreaElement;
+      fireEvent.change(candidate, { target: { value: '保留这次候选 night forest' } });
+      const participate = within(dialog).getByRole('checkbox', { name: '参与「场景」的抽取' }) as HTMLInputElement;
+      fireEvent.click(participate);
+      expect(participate.checked).toBe(false);
+      view.rerender(content(second));
+      expect(within(screen.getByRole('dialog', { name: '随机搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
+      expect(candidate.value).toBe('保留这次候选 night forest');
+      expect(participate.checked).toBe(false);
+      expect(second.contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(true);
+      view.rerender(content(null));
+      expect(screen.getByRole('dialog', { name: '随机搭配' })).toBe(dialog);
+      expect(candidate.value).toBe('保留这次候选 night forest');
+      expect(participate.checked).toBe(false);
+      expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
+      view.rerender(content(first));
+      expect(within(screen.getByRole('dialog', { name: '随机搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
+      expect(candidate.value).toBe('保留这次候选 night forest');
+      expect(changed).not.toHaveBeenCalled();
+    } finally { view.unmount(); first.remove(); second.remove(); }
+  });
+  it('有真实词库上下文时整段也不显示随机入口，分类按钮移入顶栏且不改提示词', () => {
+    const slot = document.createElement('div'), changed = vi.fn();
+    const props: ChainEditorPromptInputsProps = { prompt: '保留原文', setPrompt: changed, presetSources: {}, tagAssistEnabled: false, canEdit: true,
+      toolbarSlot: { element: slot, variant: 'icon' }, copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(), activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global' };
+    const content = (classified: boolean, canEdit = true) => <PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}>
+      <PromptLibraryWorkspace state={{ params: LAB_DEFAULT_PARAMS, base: props.prompt, subject: '', negative: '', classified }} onChange={changed}>
+        <div data-testid="topbar" ref={element => { element?.appendChild(slot); }} />
+        <ChainEditorPromptInputs {...props} canEdit={canEdit} promptClassificationEnabled={classified} />
+      </PromptLibraryWorkspace></PromptLibraryContext.Provider>;
+    const view = render(content(false));
+    expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
+    expect(screen.getByPlaceholderText('全局正面提示词')).toBeTruthy();
+    expect(screen.getByLabelText('全局正面提示词', { selector: 'textarea' })).toBe(screen.getByPlaceholderText('全局正面提示词'));
+    view.rerender(content(true));
+    expect(screen.getByTestId('topbar').contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(true);
+    expect(screen.getByRole('button', { name: '随机搭配' }).textContent).toBe('');
+    expect(screen.getByRole('button', { name: '随机搭配' }).querySelector('.lucide-dice-5')).not.toBeNull();
+    expect(document.querySelector('.lab-module-section')?.contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(false);
+    props.toolbarSlot = { element: slot, variant: 'menu' };
+    view.rerender(content(true));
+    const menuButton = screen.getByRole('button', { name: '随机搭配' });
+    expect(menuButton.textContent).toBe('随机搭配');
+    expect(menuButton.classList.contains('w-full')).toBe(true);
+    expect(menuButton.classList.contains('text-left')).toBe(true);
+    view.rerender(content(true, false));
+    expect((screen.getByRole('button', { name: '随机搭配' }) as HTMLButtonElement).disabled).toBe(true);
+    view.rerender(content(false)); expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
+    expect((screen.getByPlaceholderText('全局正面提示词') as HTMLTextAreaElement).value).toBe(props.prompt);
+    expect(changed).not.toHaveBeenCalled();
+  });
   it.each([false, true])('全局提示词沿用模块默认收起=%s，编辑内容保持挂载', collapsed => {
     setup({ activeLabLayout: { collapsed: { prompt: collapsed } } });
     expect(document.querySelector('details')?.open).toBe(!collapsed);
@@ -28,7 +99,7 @@ describe('提示词上下文工具隔离', () => {
     const props = setup({ promptClassificationEnabled, canEdit, onContentRollForGlobal });
     const button = screen.queryByRole('button', { name: '随机搭配' });
     expect(Boolean(button)).toBe(visible);
-    if (button) { fireEvent.click(button); expect(onContentRollForGlobal).toHaveBeenCalledOnce(); }
+    if (button) { expect(screen.getByTestId('prompt-tools').contains(button)).toBe(true); fireEvent.click(button); expect(onContentRollForGlobal).toHaveBeenCalledOnce(); }
     else expect(onContentRollForGlobal).not.toHaveBeenCalled();
     expect(props.setPrompt).not.toHaveBeenCalled();
     expect(props.markChange).not.toHaveBeenCalled();
@@ -46,12 +117,12 @@ describe('提示词上下文工具隔离', () => {
         activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" /></>;
     };
     render(<Harness />);
-    expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('artist:test, blue dress');
+    expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('artist:test, blue dress');
     fireEvent.click(screen.getByText('切换'));
     expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('blue dress');
     fireEvent.click(screen.getByText('切换'));
-    fireEvent.change(screen.getByRole('textbox', { name: '全局正向提示词' }), { target: { value: 'red dress, \n' } });
-    expect((screen.getByRole('textbox', { name: '全局正向提示词' }) as HTMLTextAreaElement).value).toBe('red dress, \n');
+    fireEvent.change(screen.getByRole('textbox', { name: '全局正面提示词' }), { target: { value: 'red dress, \n' } });
+    expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('red dress, \n');
     fireEvent.click(screen.getByText('切换'));
     expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
   });

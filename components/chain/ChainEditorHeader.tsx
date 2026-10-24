@@ -1,38 +1,13 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Copy, FileDown, Languages, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
+import { AlignLeft, Copy, FileDown, Languages, ListTree, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
-import { IconButton, SegmentedControl } from '../DesignSystem';
+import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
+import type { PromptToolbarSlot } from '../PromptLibraryAccess';
 import { MobileBottomSheet } from '../MobileUI';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
-
-const ActionRow: React.FC<{
-    icon: React.ReactNode;
-    label: string;
-    detail?: string;
-    tone?: 'default' | 'danger' | 'primary';
-    disabled?: boolean;
-    onClick: () => void;
-}> = ({ icon, label, detail, tone = 'default', disabled = false, onClick }) => (
-    <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        className={`mobile-touch flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
-            tone === 'danger'
-                ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30'
-                : tone === 'primary'
-                    ? 'text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'
-        }`}
-    >
-        <span className="flex-none">{icon}</span>
-        <span className="min-w-0 flex-1">{t(label)}</span>
-        {detail && <span className="flex-none text-xs font-normal text-gray-400">{detail}</span>}
-    </button>
-);
 
 export interface ChainEditorHeaderProps {
     chainId: string;
@@ -48,6 +23,7 @@ export interface ChainEditorHeaderProps {
     tagAssistEnabled: boolean;
     promptClassificationEnabled?: boolean;
     onPromptClassificationEnabledChange?: (enabled: boolean) => void;
+    onPromptToolbarSlotChange?: (slot: PromptToolbarSlot | null) => void;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     activeGenerationMode: GenerationMode;
     selectGenerationMode: (mode: GenerationMode) => void | Promise<void>;
@@ -77,6 +53,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     tagAssistEnabled,
     promptClassificationEnabled = false,
     onPromptClassificationEnabledChange,
+    onPromptToolbarSlotChange,
     onTagAssistEnabledChange,
     activeGenerationMode,
     selectGenerationMode,
@@ -100,6 +77,9 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [compact, setCompact] = useState(() => window.innerWidth < 1024);
+    const setPromptToolbarSlot = React.useCallback((element: HTMLDivElement | null) => {
+        onPromptToolbarSlotChange?.(element ? { element, variant: compact ? 'menu' : 'icon' } : null);
+    }, [compact, onPromptToolbarSlotChange]);
     const [saveActionsOpen, setSaveActionsOpen] = useState(false);
     const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
     const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
@@ -166,7 +146,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
-                {renderPromptMode()}
+                {renderPromptTools()}
                 {canEdit && <>
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
                     <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
@@ -204,7 +184,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
     function renderActions() {
         return <div className="flex flex-col gap-1">
-                {renderPromptMode()}
+                {renderPromptTools()}
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 <ActionRow
@@ -223,11 +203,21 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             </div>;
     }
 
-    function renderPromptMode() {
-        return onPromptClassificationEnabledChange && <SegmentedControl size="sm" ariaLabel={t('提示词编辑方式')}
-            className="[&_button]:min-h-11 md:[&_button]:min-h-0"
-            options={[{ value: 'plain', label: '整段' }, { value: 'classified', label: '分类' }]}
-            value={promptClassificationEnabled ? 'classified' : 'plain'}
-            onChange={value => onPromptClassificationEnabledChange(value === 'classified')} />;
+    function renderPromptTools() {
+        const label = t(promptClassificationEnabled ? '切换为整段编辑' : '切换为分类编辑');
+        return <>
+            {onPromptClassificationEnabledChange && (compact ? <ActionRow
+                icon={promptClassificationEnabled ? <ListTree className="h-4 w-4" /> : <AlignLeft className="h-4 w-4" />}
+                label={label} detail={t(promptClassificationEnabled ? '分类' : '整段')}
+                onClick={() => onPromptClassificationEnabledChange(!promptClassificationEnabled)} /> : <IconButton label={label}
+                title={`${t('提示词编辑方式')}：${t(promptClassificationEnabled ? '分类' : '整段')} · ${label}`}
+                aria-pressed={promptClassificationEnabled}
+                onClick={() => onPromptClassificationEnabledChange(!promptClassificationEnabled)}
+                className={promptClassificationEnabled ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}>
+                {promptClassificationEnabled ? <ListTree /> : <AlignLeft />}
+            </IconButton>)}
+            <div ref={setPromptToolbarSlot} className={compact ? "flex flex-col gap-1" : "flex items-center gap-2"} />
+        </>;
     }
+
 };

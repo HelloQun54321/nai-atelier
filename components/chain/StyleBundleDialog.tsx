@@ -4,6 +4,7 @@ import type { PromptChain } from '../../types';
 import { exportStyleBundle, importStyleBundle, readStyleBundle, type StyleBundlePreview } from '../../services/styleBundle';
 import { beginExportTarget, openExportDirectory, type ExportReceipt } from '../../services/exportLocation';
 import { downloadFile } from '../../services/fileDownload';
+import { db } from '../../services/dbService';
 import { t, useLanguage } from '../../services/i18n';
 import { ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -75,7 +76,9 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     try {
       // 目录请求在点击时发起，保留浏览器的用户手势授权。
       const target = beginExportTarget();
-      const blob = await exportStyleBundle(exportChains, { coverMode, author, sourceUrl, note, onProgress: reportProgress });
+      const latestChains = await db.getAllChains();
+      const allChainIds = latestChains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id);
+      const blob = await exportStyleBundle(exportChains, { allChainIds, coverMode, author, sourceUrl, note, onProgress: reportProgress });
       const receipt = await downloadFile(blob, `NAI-Atelier-${new Date().toISOString().slice(0, 10)}.naia`, target);
       if (receipt.saved || receipt.browserDownload) setLastExport(receipt);
       if (receipt.saved) notify(t('已导出 {0} 条风格串', [exportChains.length]), 'success');
@@ -151,6 +154,10 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           <input ref={fileRef} type="file" accept=".naia" aria-label={t('选择 .naia 文件')} disabled={busy} className="sr-only" onChange={event => { void readBundle(event.target.files?.[0]); event.target.value = ''; }} />
           <ToolbarButton disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span>{t('选择 .naia 文件')}</span></ToolbarButton>
           {preview && <>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <p>{t('打包范围')}：<strong>{t(preview.coverage === 'full' ? '整库打包' : preview.coverage === 'partial' ? '部分打包' : '未记录')}</strong></p>
+              <p className="text-gray-500">{t('包内风格串：{0} 条', [entries.length])}</p>
+            </div>
             {!!sources.length && <h3 className="text-sm font-semibold">{t('分享声明')}</h3>}
             {sources.map((source, index) => <div key={index} className="appearance-group space-y-1 rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-800"><p className="break-words font-semibold">{source.author}</p>{source.sourceUrl && (/^https?:\/\//i.test(source.sourceUrl) ? <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="break-all text-indigo-600 underline dark:text-indigo-300">{source.sourceUrl}</a> : <p className="break-all">{source.sourceUrl}</p>)}{source.note && <p className="whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{source.note}</p>}</div>)}
             {preview.warnings.map((warning, index) => <p key={index} className="text-sm text-amber-700 dark:text-amber-300">{t(warning)}</p>)}

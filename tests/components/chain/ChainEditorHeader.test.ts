@@ -88,14 +88,40 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 };
 
 describe('ChainEditorHeader 工具栏', () => {
-  it('整段／分类入口修改共享偏好，外部设置变化同步选中状态', () => {
-    const changed = vi.fn();
-    const view = renderHeader({ promptClassificationEnabled: false, onPromptClassificationEnabledChange: changed });
-    expect(view.getByRole('tab', { name: '整段' }).getAttribute('aria-selected')).toBe('true');
-    view.getByRole('tab', { name: '分类' }).click();
-    expect(changed).toHaveBeenCalledWith(true);
-    view.rerenderHeader({ promptClassificationEnabled: true, onPromptClassificationEnabledChange: changed });
-    expect(view.getByRole('tab', { name: '分类' }).getAttribute('aria-selected')).toBe('true');
+  it('右上角图标切换编辑方式，保持无文字并同步外部偏好，随机槽位紧邻', () => {
+    const change = vi.fn(), slot = vi.fn();
+    const view = renderHeader({ onPromptClassificationEnabledChange: change, onPromptToolbarSlotChange: slot });
+    expect(view.queryByRole('tablist', { name: '提示词编辑方式' })).toBeNull();
+    const toggle = view.getByRole('button', { name: '切换为分类编辑' });
+    expect(toggle.textContent).toBe('');
+    expect(toggle.querySelector('.lucide-text-align-start')).not.toBeNull();
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.closest('.chain-editor-actions')).not.toBeNull();
+    expect(slot.mock.lastCall?.[0]?.element).toBe(toggle.nextElementSibling);
+    fireEvent.click(toggle); expect(change).toHaveBeenLastCalledWith(true);
+    view.rerenderHeader({ promptClassificationEnabled: true });
+    const classified = view.getByRole('button', { name: '切换为整段编辑' });
+    expect(classified.querySelector('.lucide-list-tree')).not.toBeNull();
+    expect(classified.textContent).toBe('');
+    expect(classified.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(classified); expect(change).toHaveBeenLastCalledWith(false);
+  });
+  it('窄屏编辑方式沿用独占一行的文字操作，随机槽位也使用菜单行，关闭后释放槽位', () => {
+    workWidth = 390; vi.stubGlobal('innerWidth', 390);
+    const slot = vi.fn(), change = vi.fn();
+    renderHeader({ promptClassificationEnabled: true, onPromptClassificationEnabledChange: change, onPromptToolbarSlotChange: slot });
+    expect(screen.queryByRole('button', { name: '切换为整段编辑' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const dialog = screen.getByRole('dialog', { name: '更多操作' });
+    const toggle = within(dialog).getByRole('button', { name: /^切换为整段编辑/ });
+    expect(toggle.textContent).toContain('切换为整段编辑');
+    expect(toggle.classList.contains('w-full')).toBe(true);
+    expect(slot.mock.lastCall?.[0]?.variant).toBe('menu');
+    expect(slot.mock.lastCall?.[0]?.element).toBe(toggle.nextElementSibling);
+    fireEvent.click(toggle); expect(change).toHaveBeenLastCalledWith(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
+    expect(slot.mock.lastCall?.[0]).toBeNull();
   });
   it('桌面宽栏直接显示动作，手机收纳且模式导航与更多保持同一行', () => {
     const { container, getByRole } = renderHeader();

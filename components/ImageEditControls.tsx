@@ -1,3 +1,4 @@
+import type { PromptToolbarSlot } from './PromptLibraryAccess';
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef } from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
@@ -12,7 +13,7 @@ import { ImageEditCanvas, ImageEditCanvasProps } from './ImageEditCanvas';
 import { LabModuleSection } from './LabModuleSection';
 import { OutpaintCanvasStage } from './OutpaintCanvasStage';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
-import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibraryAccess';
+import { PromptLibraryWorkspace } from './PromptLibraryAccess';
 import { VibeManager } from './VibeManager';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
 import { createUuid } from '../services/id';
@@ -42,6 +43,7 @@ interface ImageEditControlsProps {
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   promptClassificationEnabled?: boolean;
+  promptToolbarSlot?: PromptToolbarSlot | null;
   forceEmptySeed?: boolean;
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
@@ -85,7 +87,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, promptClassificationEnabled = false, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onPasteImage, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
-  mobileTab = 'canvas',
+  mobileTab = 'canvas', promptToolbarSlot,
 }) => {
   useLanguage();
   const promptClearActionSlotRef = useRef<HTMLSpanElement>(null);
@@ -156,10 +158,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
 
   return <PromptLibraryWorkspace state={{ params: selectableParams, base: classifiedBase, subject: sectionMatches ? sectionText : '', negative: draft.negativePrompt, classified: promptClassificationEnabled }} onChange={next => onDraftChange({ params: next.params, prompt: mergePromptFields(next.base, next.subject), negativePrompt: next.negative, promptSource: 'custom' })}><div className="appearance-content chain-editor-main order-2 flex min-w-0 min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="lab-editor-surface mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
-      <LabModuleSection moduleId="prompt" label={t("全局提示词")} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
+      <LabModuleSection moduleId="prompt" label={t("全局正面提示词")} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <section className="space-y-4">
-          {!promptClassificationEnabled && <div className="flex justify-end"><PromptLibraryRandomButton disabled={isBusy} /></div>}
           {promptClassificationEnabled ? <ChainEditorPromptInputs embedded promptClassificationEnabled
+            toolbarSlot={promptToolbarSlot}
             prompt={classifiedBase} supplementPrompt={sectionMatches ? sectionText : ''} sections={sectionMatches ? selectableParams._promptSections : undefined}
             setPrompt={value => onPromptChange(mergePromptFields(value, sectionMatches ? sectionText : ''))}
             setSupplementPrompt={value => onPromptChange(mergePromptFields(classifiedBase, value))}

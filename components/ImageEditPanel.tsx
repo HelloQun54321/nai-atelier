@@ -1,5 +1,6 @@
 import { LabEditorTabs } from './LabEditorTabs';
 import type { GenerationPlacement } from '../services/generationTask';
+import type { PromptToolbarSlot } from './PromptLibraryAccess';
 import { t, useLanguage } from '../services/i18n';
 import type { GenerationCountControlProps } from './GenerationCountControl';
 import type { CharacterParams, PromptAgentDraft, PromptAgentGenerationResult, NAIParams, PromptChain } from '../types';
@@ -56,6 +57,7 @@ interface ImageEditPanelProps {
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   promptClassificationEnabled?: boolean;
+  promptToolbarSlot?: PromptToolbarSlot | null;
   forceEmptySeed?: boolean;
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
@@ -125,6 +127,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   generationCostLabel,
   tagAssistEnabled,
   promptClassificationEnabled = false,
+  promptToolbarSlot,
   forceEmptySeed = false,
   onForceEmptySeedChange,
   enforceFreeStepLimit = true,
@@ -1158,6 +1161,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       >
         {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="appearance-media rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">{t("松手导入为当前编辑底图")}<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
         <ImageEditControls
+          promptToolbarSlot={promptToolbarSlot}
           operation={operation}
           draft={draft}
           layout={layout}

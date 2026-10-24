@@ -20,7 +20,7 @@ vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => 
 vi.mock('../../components/VibeManager', () => ({ VibeManager: () => null }));
 vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => null }));
 vi.mock('../../components/chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => null }));
-vi.mock('../../components/SmartImage', () => ({ OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
+vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
 vi.mock('../../components/ImageEditPreview', () => ({ ImageEditPreview: (props: { canGenerate: boolean; unavailableLabel?: string; generationCostLabel: string; onGenerate: () => void }) => <>
   <output data-testid="desktop-status">{props.unavailableLabel || '生成'}</output>
   <output data-testid="desktop-cost">{props.generationCostLabel}</output>

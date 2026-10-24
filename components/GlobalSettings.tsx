@@ -117,7 +117,7 @@ interface AppearanceOption {
 }
 
 const LAB_MODULE_META: Record<LabPageModuleId, { label: string }> = {
-  prompt: { label: '全局提示词' },
+  prompt: { label: '全局正面提示词' },
   characters: { label: '角色专属提示词' },
   params: { label: '参数设置' },
   negative: { label: '全局负面提示词' },
