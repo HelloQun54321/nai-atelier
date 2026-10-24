@@ -35,6 +35,10 @@ import { getCustomChainTags } from '../services/chainTags';
 import { useConfirmDialog } from './ConfirmDialog';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
+import { useChainFolders } from '../services/useChainFolders';
+import { folderContains } from '../services/chainFolders';
+import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMoveDialog, ChainFolderNavigation } from './chain/ChainFolders';
+import { FolderInput } from 'lucide-react';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
 const StyleBundleDialog = React.lazy(() => import('./chain/StyleBundleDialog').then(module => ({ default: module.StyleBundleDialog })));
@@ -42,7 +46,7 @@ const StyleBundleDialog = React.lazy(() => import('./chain/StyleBundleDialog').t
 interface ChainListProps {
   chains: PromptChain[];
   type: ChainType; // New Prop to filter view
-  onCreate: (name: string, desc: string, type: ChainType) => void;
+  onCreate: (name: string, desc: string, type: ChainType, folderId?: string) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => Promise<void> | void;
   onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<{ remainingIds: string[]; errorCount: number }>;
@@ -84,6 +88,24 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [similarityOpen, setSimilarityOpen] = useState(false);
   const [bundleScope, setBundleScope] = useState<'all' | 'filtered' | 'selected' | null>(null);
   const similaritySession = useRef<ChainSimilaritySession | null>(null);
+  const folderStore = useChainFolders(type === 'style' && !isGuest);
+  const [selectedFolder, setSelectedFolder] = useState(() => { try { return localStorage.getItem('nai-style-folder-selection') ?? '*'; } catch { return '*'; } });
+  const [moveIds, setMoveIds] = useState<string[] | null>(null);
+  const activeFolder = folderStore.ready && !folderStore.error ? selectedFolder : '*';
+  const matchingFolderIds = useMemo(() => new Set(folderStore.state.folders.filter(folder => folderContains(folderStore.state.folders, activeFolder, folder.id)).map(folder => folder.id)), [folderStore.state.folders, activeFolder]);
+  const selectFolder = (id: string) => { setSelectedFolder(id); try { localStorage.setItem('nai-style-folder-selection', id); } catch { /* 浏览仍可继续。 */ } };
+  useEffect(() => {
+    if (folderStore.ready && selectedFolder && selectedFolder !== '*' && !folderStore.state.folders.some(folder => folder.id === selectedFolder)) selectFolder('*');
+  }, [folderStore.ready, folderStore.state.folders, selectedFolder]);
+  const moveToFolder = async (ids: string[], folderId: string) => {
+    if (!ids.length) return;
+    const assignments = { ...folderStore.state.assignments };
+    for (const id of ids) { if (folderId) assignments[id] = folderId; else delete assignments[id]; }
+    try {
+      await folderStore.save({ ...folderStore.state, assignments }); setMoveIds(null);
+      notify(t('已移动 {0} 条风格串', [ids.length]), 'success');
+    } catch (cause) { notify(cause instanceof Error ? cause.message : '移动失败，请重试', 'error'); }
+  };
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
   const [untestedOnly, setUntestedOnly] = useState(false);
@@ -142,7 +164,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const handleCreate = () => {
     if (!newName.trim()) return;
-    onCreate(newName, newDesc, type);
+    if (type === 'style' && activeFolder && activeFolder !== '*') onCreate(newName, newDesc, type, activeFolder);
+    else onCreate(newName, newDesc, type);
     setIsModalOpen(false);
     setNewName('');
     setNewDesc('');
@@ -232,6 +255,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       .filter(c => !favOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
+      .filter(c => type !== 'style' || isGuest || activeFolder === '*' || (activeFolder === '' ? !folderStore.state.assignments[c.id] : matchingFolderIds.has(folderStore.state.assignments[c.id])))
       .filter(c => {
         if (selectedTags.size === 0) return true;
         const tags = new Set(getCustomChainTags(c.tags));
@@ -256,7 +280,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries]);
+  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
 
   // 批量删除只针对当前筛选；隐藏项与已消失项不保留选择。
   const selectedChains = filteredChains.filter(chain => selectedIds.has(chain.id));
@@ -269,7 +293,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     });
   }, [filteredChains, selecting, bulkDeleteBusy]);
   const toggleSelected = (id: string) => {
-    if (bulkDeletingRef.current) return;
+    if (bulkDeletingRef.current || folderStore.busy) return;
     setSelectedIds(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; });
   };
   const beginSelection = () => {
@@ -278,7 +302,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setSelectedIds(new Set()); setSelectionMode(true);
   };
   const deleteSelected = async () => {
-    if (!onBulkDelete || bulkDeletingRef.current || !selectedChains.length) return;
+    if (!onBulkDelete || bulkDeletingRef.current || folderStore.busy || !selectedChains.length) return;
     const ids = selectedChains.map(chain => chain.id);
     const operation = ++bulkOperationRef.current;
     bulkDeletingRef.current = true; setBulkDeleteBusy(true);
@@ -302,7 +326,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     }
   };
 
-  const resultKey = JSON.stringify([type, searchTerm, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
+  const resultKey = JSON.stringify([type, searchTerm, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open, type === 'style' ? activeFolder : '*']);
   useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [resultKey]);
   const expandedReturnTarget = useRef<string | undefined>(undefined);
   const returnResultKey = useRef(resultKey);
@@ -348,6 +372,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       aria-checked={selecting ? selectedIds.has(chain.id) : syncSelection.selecting ? syncSelection.selected.has(chain.id) : undefined}
       aria-disabled={selecting ? bulkDeleteBusy : syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
       tabIndex={0}
+      draggable={type === 'style' && !isGuest && !syncSelection.open && folderStore.ready && !folderStore.busy && !bulkDeleteBusy}
+      onDragStart={event => { event.dataTransfer.setData(CHAIN_FOLDER_DRAG_TYPE, JSON.stringify(selecting && selectedIds.has(chain.id) ? selectedChains.map(item => item.id) : [chain.id])); event.dataTransfer.effectAllowed = 'move'; }}
       onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (selecting) toggleSelected(chain.id); else if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => selecting ? toggleSelected(chain.id) : syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selecting && selectedIds.has(chain.id) || syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
@@ -368,6 +394,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
+            {!isGuest && type === 'style' && <button type="button" disabled={!folderStore.ready || folderStore.busy || Boolean(folderStore.error)} onClick={event => { event.stopPropagation(); setMoveIds([chain.id]); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:opacity-40`} title={t('移动到文件夹')} aria-label={t('移动到文件夹：{0}', [chain.name])}><FolderInput className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
@@ -468,6 +495,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('反选筛选结果')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t('清空选择')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span>{t('导出已选')}</span></ToolbarButton>
+              <ToolbarButton disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput />{t('移动到文件夹')}</ToolbarButton>
               <ToolbarButton tone="danger" disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t('删除')}</span></ToolbarButton>
             </div>
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
@@ -513,7 +541,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("筛选与排序")} onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet></ImagePreviewPortal>
 
         </WorkspaceChrome>
-        <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {type === 'style' && !isGuest && <ChainFolderNavigation store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} onMove={moveToFolder} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
+        <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
@@ -539,6 +569,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {visibleCount < filteredChains.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + RENDER_BATCH_SIZE)} className="appearance-group mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{t("加载更多（{0}）", [filteredChains.length - visibleCount])}</button><div ref={chainLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" /></div>}
             </>
           )}
+        </div>
         </div>
       </div>
 
@@ -580,6 +611,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </ImagePreviewPortal>)}
 
       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
+      {moveIds && type === 'style' && <ChainFolderMoveDialog store={folderStore} ids={moveIds} onMove={moveToFolder} onClose={() => setMoveIds(null)} />}
       {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={typeChains} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal

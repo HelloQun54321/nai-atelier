@@ -7,7 +7,8 @@ import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
-import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
+import { api, NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
+import { readChainFolders } from './services/chainFolders';
 import { useAgentCommand } from './services/agentCommands';
 import { listGenerationSeriesSessions, stopGenerationSeriesSession } from './services/generationSeries';
 import { cancelGenerationQueue, getGenerationQueue, setGenerationQueuePaused } from './services/generationTask';
@@ -783,10 +784,16 @@ const App = () => {
     return true;
   };
 
-  const handleCreateChain = async (name: string, desc: string, type: ChainType) => {
+  const handleCreateChain = async (name: string, desc: string, type: ChainType, folderId?: string) => {
     setLoading(true);
     try {
       const newId = await db.createChain(name, desc, undefined, type);
+      if (type === 'style' && folderId) {
+        try {
+          const folders = readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }));
+          await api.put('/chain-folders', { ...folders, assignments: { ...folders.assignments, [newId]: folderId } });
+        } catch { notify('风格串已创建，但移入文件夹失败；请在列表中重新移动', 'error'); }
+      }
       await refreshData(true);
       handleNavigate('edit', newId);
     } catch (e) {
