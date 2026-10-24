@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import React, { useContext, useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { flushSync } from 'react-dom';
-import { LoaderCircle } from 'lucide-react';
+import { CircleAlert, CircleDollarSign, CirclePause, LoaderCircle } from 'lucide-react';
 import { t } from '../services/i18n';
 import type { ArtistSamplePack, ArtistSampleRemoval, ArtistSampleTemplate } from '../services/artistSamples';
 import { deleteArtistSample, validateArtistSampleTemplate, type ArtistSampleData } from '../services/artistSampleDrafts';
@@ -13,6 +13,10 @@ import { approveGenerationSeries, stopGenerationSeriesSession } from '../service
 import { setGenerationQueuePaused } from '../services/generationTask';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ArtistSampleSettingsDialog } from './ArtistSampleSettingsDialog';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { InteractionPopover } from './InteractionPopover';
+import { ImageActivityContext } from './SmartImage';
+import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
 
 type SettingsTarget = { tag?: string; pack: ArtistSamplePack; generateAfterSave: false } | { tag: string; pack: ArtistSamplePack; generateAfterSave: true; regenerate?: boolean };
 
@@ -92,14 +96,29 @@ export function ArtistSampleGenerationStatus({ tag, pack, generation, busy, hasO
   supplementSample: (tag: string, pack: ArtistSamplePack) => unknown;
   manageGeneration: (tag: string, pack: ArtistSamplePack, action: 'approve' | 'resume') => Promise<void>;
 }) {
-  if (!busy && !generation?.error && generation?.phase !== 'save_failed') return null;
-  return <div data-card-action="true" className="appearance-group flex flex-wrap items-center justify-center gap-1 border-t border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-    {busy && <span role="status" className="flex min-w-0 items-center gap-1"><LoaderCircle className="h-3 w-3 shrink-0 animate-spin" />{t(generation?.session?.connectionError || (generation?.session?.awaiting ? '等待费用确认' : generation?.session?.state === 'paused' ? '任务已暂停' : generation?.phase === 'saving' ? '正在保存样张…' : '正在生成样张…'))}</span>}
+  const active = useContext(ImageActivityContext);
+  const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const visible = active && (busy || Boolean(generation?.error || generation?.session?.awaiting || generation?.session?.connectionError) || generation?.phase === 'save_failed' || generation?.session?.state === 'paused');
+  useEffect(() => { if (!visible) setOpen(false); }, [visible]);
+  useEffect(() => { setOpen(false); }, [tag, pack]);
+  if (!visible) return null;
+  const failed = Boolean(generation?.error || generation?.phase === 'save_failed' || generation?.session?.connectionError);
+  const awaiting = Boolean(generation?.session?.awaiting);
+  const paused = generation?.session?.state === 'paused';
+  const label = generation?.session?.connectionError || (awaiting ? '等待费用确认' : paused ? '任务已暂停' : generation?.phase === 'save_failed' ? '重试保存样张' : generation?.error || (generation?.phase === 'saving' ? '正在保存样张…' : '正在生成样张…'));
+  const Icon = failed ? CircleAlert : awaiting ? CircleDollarSign : paused ? CirclePause : LoaderCircle;
+  return <div data-card-action="true" data-artist-sample-status="true" className="absolute bottom-2 right-2 z-30" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
+    <button ref={anchor} type="button" aria-label={t(label)} title={t(label)} aria-haspopup="dialog" aria-expanded={open} className={`${IMAGE_CARD_ACTION_CLASS} flex items-center justify-center`} onClick={() => setOpen(value => !value)}><Icon aria-hidden="true" className={`h-4 w-4 ${!failed && !awaiting && !paused ? 'animate-spin' : ''}`} /></button>
+    {open && <ImagePreviewPortal><InteractionPopover id={id} label={t(label)} anchorRef={anchor} onClose={() => setOpen(false)} className="p-3"><div className="flex max-w-xs flex-wrap items-center gap-2 text-xs">
+    {label !== generation?.error && <span role="status" className="w-full">{t(label)}</span>}
     {generation?.error && <span role="alert" className="max-h-16 w-full overflow-y-auto break-words text-center text-red-600 dark:text-red-300">{t(generation.error)}</span>}
-    {generation?.phase === 'save_failed' && <button type="button" className="mobile-touch min-h-11 px-2 font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => void retryArtistSampleSave(tag, pack)}>{t('重试保存样张')}</button>}
-    {!busy && !hasOwnSamples && generation?.phase === 'failed' && generation.preview && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => supplementSample(tag, pack)}>{t('补充样张')}</button>}
-    {generation?.session?.awaiting && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 underline" onClick={() => void manageGeneration(tag, pack, 'approve')}>{t('确认费用')}</button>}
-    {generation?.session?.state === 'paused' && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 underline" onClick={() => void manageGeneration(tag, pack, 'resume')}>{t('继续')}</button>}
-    {generation?.session && <button type="button" className="mobile-touch min-h-11 px-2 underline" disabled={generation.session.stopped} onClick={() => stopGenerationSeriesSession(generation.session!)}>{t(generation.session.stopped ? '取消中…' : '取消')}</button>}
+    {generation?.phase === 'save_failed' && <button type="button" className="mobile-touch min-h-11 px-2 font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { flushSync(() => setOpen(false)); void retryArtistSampleSave(tag, pack); }}>{t('重试保存样张')}</button>}
+    {!busy && !hasOwnSamples && generation?.phase === 'failed' && generation.preview && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { flushSync(() => setOpen(false)); supplementSample(tag, pack); }}>{t('补充样张')}</button>}
+    {generation?.session?.awaiting && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 underline" onClick={() => { flushSync(() => setOpen(false)); void manageGeneration(tag, pack, 'approve'); }}>{t('确认费用')}</button>}
+    {generation?.session?.state === 'paused' && <button type="button" data-agent-action="business" className="mobile-touch min-h-11 px-2 underline" onClick={() => { flushSync(() => setOpen(false)); void manageGeneration(tag, pack, 'resume'); }}>{t('继续')}</button>}
+    {generation?.session && <button type="button" className="mobile-touch min-h-11 px-2 underline" disabled={generation.session.stopped} onClick={() => { flushSync(() => setOpen(false)); stopGenerationSeriesSession(generation.session!); }}>{t(generation.session.stopped ? '取消中…' : '取消')}</button>}
+    </div></InteractionPopover></ImagePreviewPortal>}
   </div>;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetTagDictionaryCache, searchTagDictionary } from '../../services/tagDictionary';
+import { lookupTagCatalogEntries, resetTagDictionaryCache, searchTagDictionary } from '../../services/tagDictionary';
 
 type ShardEntry = [name: string, chinese: string, category: number, postCount: number, source: number];
 
@@ -43,6 +43,22 @@ describe('tagDictionary reset 竞态', () => {
     status: 200,
     json: async () => payload,
   }) as Response;
+
+  it('批量精确识别画师和角色，不依赖中文，不把前缀或普通Tag当目录项，重复共享分片缓存', async () => {
+    const entries: ShardEntry[] = [
+      ['best_artist', '', 1, 42, 0], ['best_character', '', 4, 31, 0],
+      ['best artist extra', '其他画师', 1, 100, 0], ['beautiful', '美丽', 0, 99, 0],
+    ];
+    const fetchMock = vi.fn(async (url: string) => respondJson(String(url).includes('manifest.json') ? makeManifest('catalog') : entries));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await lookupTagCatalogEntries(['BEST ARTIST', 'best_artist', 'best_character', 'best', 'beautiful']);
+    expect([...result.keys()]).toEqual(['best artist', 'best character']);
+    expect(result.get('best artist')).toMatchObject({ name: 'best_artist', chinese: '', category: 1, postCount: 42 });
+    expect(result.get('best character')?.category).toBe(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await lookupTagCatalogEntries(['best_artist']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 
   /** 构造「旧 shard 在途时 reset」的真实竞态时序：旧 shard 挂起、放行后应作废并重试新 URL */
   it('reset 后在途旧分片请求作废：按新 manifest 的 URL 重试并返回新数据', async () => {

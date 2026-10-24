@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ArtistSampleSettingsDialog } from '../../components/ArtistSampleSettingsDialog';
 import type { ArtistSampleTemplate } from '../../services/artistSamples';
+import { ImageActivityContext } from '../../components/SmartImage';
 
 const mocks = vi.hoisted(() => ({ data: vi.fn(), save: vi.fn(), defaults: vi.fn(), runtime: vi.fn() }));
 vi.mock('../../services/artistSampleDrafts', () => ({
@@ -57,6 +58,26 @@ beforeEach(() => {
   mocks.runtime.mockReturnValue(runtime);
 });
 afterEach(cleanup);
+
+it('资料页隐藏再返回保留未保存模板，隐藏期间Escape不关闭，Portal焦点恢复', async () => {
+  const onClose = vi.fn(), onSaved = vi.fn();
+  const dialog = <ArtistSampleSettingsDialog pack="v45" generateAfterSave={false} onClose={onClose} onSaved={onSaved} />;
+  const view = render(<ImageActivityContext.Provider value={true}>{dialog}</ImageActivityContext.Provider>);
+  const editor = await screen.findByTestId('template-editor');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: '模拟修改角色栏' }));
+  view.rerender(<ImageActivityContext.Provider value={false}>{dialog}</ImageActivityContext.Provider>);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.getByRole('dialog', { hidden: true }).className).toBe('hidden');
+  fireEvent.keyDown(window, { key: 'Escape' }); expect(onClose).not.toHaveBeenCalled();
+  view.rerender(<ImageActivityContext.Provider value={true}>{dialog}</ImageActivityContext.Provider>);
+  expect(screen.getByTestId('template-editor')).toBe(editor);
+  expect(editor.getAttribute('data-character')).toBe('changed role content');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭' }));
+  expect(mocks.data).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled();
+  const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }); fireEvent(window, escape);
+  expect(escape.defaultPrevented).toBe(true); expect(onClose).toHaveBeenCalledOnce();
+});
 
 it.each(['v45', 'v5'] as const)('按%s读取推荐配置并将完整配置保存后交回调用方', async pack => {
   mocks.data.mockResolvedValue({ templates: {}, samples: [] });

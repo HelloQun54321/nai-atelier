@@ -196,6 +196,21 @@ export const lookupTagTranslations = async (rawTags: string[]): Promise<Map<stri
   return new Map(resolved.filter((item): item is readonly [string, TagSuggestion] => item !== null));
 };
 
+/** 当前提示词的精确目录身份；不依赖中文译名，也不受补全候选数量限制。 */
+export const lookupTagCatalogEntries = async (rawTags: string[]): Promise<Map<string, TagSuggestion>> => {
+  const tags = new Set(rawTags.map(normalizeTagQuery).filter(Boolean));
+  if (!tags.size) return new Map();
+  const manifest = await loadManifest();
+  const keys = [...new Set([...tags].map(tag => tag.slice(0, 2).padEnd(2, ' ')))];
+  const shards = await Promise.all(keys.map(key => loadShard(manifest, key, 'english')));
+  return new Map(shards.flatMap(entries => entries.flatMap(entry => {
+    const key = normalizeTagQuery(entry[0]);
+    return tags.has(key) && (entry[2] === 1 || entry[2] === 4) ? [[key, {
+      name: entry[0], chinese: entry[1], category: entry[2], categoryLabel: CATEGORY_LABELS[entry[2]], postCount: entry[3], isNovelAI: entry[4] === 1,
+    }] as const] : [];
+  })));
+};
+
 export interface ArtistDictionaryEntry {
   name: string;
   chinese: string;

@@ -47,6 +47,8 @@ it('真实瀑布流和封面沿服务订阅显示连续预览帧；完成后直�
   const button = await screen.findByRole('button', { name: '补充样张' });
   fireEvent.click(button);
   await waitFor(() => expect(mocks.begin).toHaveBeenCalledOnce());
+  const status = card.querySelector('[data-artist-sample-status]');
+  expect(status?.parentElement).toBe(card); expect(status?.classList.contains('absolute')).toBe(true);
   expect(card.getAttribute('aria-pressed')).toBe('false');
   expect(mocks.build.mock.calls[0][0].stream).toBe(true);
   act(() => { session.preview = { image: 'data:image/png;base64,Zmlyc3Q=', step: 1 }; mocks.changed?.(); });

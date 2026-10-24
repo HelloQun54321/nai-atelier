@@ -1,13 +1,14 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eraser, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Eraser, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InfoPopover } from './InfoPopover';
 import type { PromptChain } from '../types';
 import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
 import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
 import type { LibraryCompletionEdit } from '../services/promptLibraryApply';
-import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
+import { lookupTagCatalogEntries, normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
   parsePromptTags,
   PromptTagToken,
@@ -41,6 +42,7 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   libraryEnabled?: boolean;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
+const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
 
 const isPromptDelimiter = (character: string) => character === ',' || character === '，' || character === '\n' || character === '|';
 
@@ -173,6 +175,35 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     const cached = new Map(translations.map(item => [item.lookupTag, item]));
     return promptTokens.map(token => ({ ...token, chinese: cached.get(token.lookupTag)?.chinese, source: cached.get(token.lookupTag)?.source || 'missing' as const }));
   }, [promptTokens, translations]);
+  const [catalogEntries, setCatalogEntries] = useState<Map<string, TagSuggestion>>(new Map());
+  const [libraryInfo, setLibraryInfo] = useState<PromptTagLibraryTarget | null>(null);
+  useEffect(() => {
+    if (!tagAssistEnabled || !showTranslations || !parsedTokens.length) { setCatalogEntries(new Map()); return; }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void lookupTagCatalogEntries(parsedTokens.map(token => token.lookupTag)).then(entries => {
+        if (active) setCatalogEntries(entries);
+      }).catch(() => { if (active) setCatalogEntries(new Map()); });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [parsedTokens, tagAssistEnabled, showTranslations]);
+  const infoButton = (item: PromptTagToken) => {
+    const entry = catalogEntries.get(item.lookupTag);
+    if (!entry) return null;
+    return <button type="button" data-prompt-library-info aria-label={t('查看{0}资料：{1}', [t(entry.category === 1 ? '画师' : '角色'), item.displayTag])}
+      title={t('查看{0}资料：{1}', [t(entry.category === 1 ? '画师' : '角色'), item.displayTag])}
+      className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-[var(--nai-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nai-accent)] dark:hover:bg-gray-800"
+      onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
+      onKeyDown={event => event.stopPropagation()} draggable={false} onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}
+      onClick={event => { event.stopPropagation(); setLibraryInfo({ kind: entry.category === 1 ? 'artist' : 'character', name: entry.name, chinese: entry.chinese, postCount: entry.postCount }); }}>
+      <Info aria-hidden="true" className="h-3.5 w-3.5" />
+    </button>;
+  };
+  const selectUnitWithKeyboard = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.target === event.currentTarget && !event.nativeEvent.isComposing && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault(); event.currentTarget.click();
+    }
+  };
 
   useEffect(() => {
     if (historyRef.current.value === value) return;
@@ -552,6 +583,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
+      if (libraryInfo || (event.target as HTMLElement).closest('[data-prompt-library-info]')) return;
       if (event.nativeEvent.isComposing) return;
       const field = (event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]');
       const key = event.key.toLowerCase();
@@ -627,6 +659,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         }}
       />
 
+      {libraryInfo && <React.Suspense fallback={null}><PromptTagLibraryInfo target={libraryInfo} onClose={() => setLibraryInfo(null)} /></React.Suspense>}
+
       {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || editable) && (
         <div className="prompt-tag-assist appearance-group mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
           onCopy={event => copySelection(event)} onCut={event => copySelection(event, true)}
@@ -645,22 +679,23 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 if (deleteMode || !item.groupId) {
                   const selected = selectedTagIds.has(item.id);
                   nodes.push(
-                    <button
-                      type="button"
+                    <div
+                      role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
                       onClick={() => setSelectedTagIds(current => {
                         const next = new Set(current);
                         if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
                         return next;
                       })}
                       key={item.id}
-                      className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
+                      className={`relative inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                         : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
                       <span className={`max-w-52 truncate font-mono text-micro ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
                       <span className={`max-w-48 truncate text-xs font-medium ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
-                    </button>,
+                      {infoButton(item)}
+                    </div>,
                   );
                   cursor += 1;
                   continue;
@@ -682,8 +717,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 // 未选中时权重组与散 Tag 同为中性灰白，强调色只留给选中态。
                 const groupTextTone = groupSelected ? 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400';
                 nodes.push(
-                  <button
-                    type="button"
+                  <div
+                    role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
                     onClick={() => setSelectedTagIds(current => {
                       const groupIds = members.map(member => member.id);
                       const allSelected = groupIds.every(id => current.has(id));
@@ -699,13 +734,14 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   >
                     {openSyntax && <span className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => (
-                      <span key={member.id} className={`flex min-w-0 flex-col px-2 py-1 ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
+                      <span key={member.id} className={`relative flex min-w-0 flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
                         <span className={`max-w-52 truncate font-mono text-micro ${groupTextTone}`} title={member.displayTag}>{member.displayTag}</span>
                         <span className={`max-w-48 truncate text-xs font-medium ${groupTextTone}`} title={member.chinese || t("词库暂无翻译")}>{member.chinese || t("待翻译")}</span>
+                        {infoButton(member)}
                       </span>
                     ))}
                     {closeSyntax && <span className={`shrink-0 py-1 pr-2 font-mono text-micro font-bold ${groupTextTone}`}>{closeSyntax}</span>}
-                  </button>,
+                  </div>,
                 );
               }
               return nodes;

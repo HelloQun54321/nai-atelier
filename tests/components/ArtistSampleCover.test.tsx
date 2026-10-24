@@ -24,6 +24,15 @@ const setup = (ownSamples: ArtistOwnSample[] = [], hasPackSample = true) => {
   const view = render(<ArtistSampleCover {...actions} {...props} />); return { ...view, props };
 };
 
+it('资料弹窗状态图标预留右下空间，不移动封面或缩小翻图按钮', async () => {
+  const view = setup(); visible(); await screen.findByRole('img');
+  const props = view.props;
+  view.rerender(<ArtistSampleCover {...actions} {...props} ownSamples={[]} reserveStatusSpace />);
+  const next = screen.getByRole('button', { name: '下一张' });
+  expect(next.parentElement?.classList.contains('right-14')).toBe(true);
+  expect(next.classList.contains('h-11')).toBe(true);
+});
+
 it('只在卡片可视时lookup，翻图后偏好保存当前图片身份而不伪造配方；离屏保持已载图片', async () => {
   setup(); expect(mocks.lookup).not.toHaveBeenCalled(); visible();
   await screen.findByRole('img', { name: '合成画师' });

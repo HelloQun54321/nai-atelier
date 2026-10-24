@@ -4,8 +4,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTagDictionaryCache } from '../../services/tagDictionary';
+import * as tagDictionary from '../../services/tagDictionary';
 import { findCompletionTarget, TagAutocompleteTextarea } from '../../components/TagAutocompleteTextarea';
 import * as tagTranslations from '../../services/tagTranslations';
+import type { PromptTagLibraryTarget } from '../../components/PromptTagLibraryInfo';
+
+vi.mock('../../components/PromptTagLibraryInfo', () => ({ PromptTagLibraryInfo: ({ target, onClose }: { target: PromptTagLibraryTarget; onClose: () => void }) => React.createElement('div', { role: 'dialog', 'aria-label': 'Tag资料' },
+  React.createElement('span', null, `${target.kind}:${target.name}:${target.chinese || ''}`), React.createElement('button', { onClick: onClose }, '关闭资料')) }));
 
 const manifest = {
   generatedAt: 'test',
@@ -36,6 +41,99 @@ const openSuggestions = async (textarea: HTMLTextAreaElement, value: string, car
   fireEvent.click(textarea);
   return (await screen.findAllByRole('option'))[0];
 };
+
+describe('提示词单元目录信息', () => {
+  beforeEach(() => {
+    resetTagDictionaryCache();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('manifest.json')) return responseFor({ ...manifest, shards: { sa: 'sa.json', ha: 'ha.json' } });
+      if (url.includes('/shards/sa.json')) return responseFor([['sample_artist', '', 1, 25, 0], ['sample_artist_extra', '普通词', 0, 5, 0]]);
+      if (url.includes('/shards/ha.json')) return responseFor([['hakurei_reimu', '博丽灵梦', 4, 51, 0]]);
+      return responseFor([]);
+    }));
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it('无中文画师与角色精确匹配，普通或未知前缀不显示，信息弹窗只在点击后挂载', async () => {
+    render(React.createElement(Harness, { initial: 'artist:Sample_Artist, hakurei_reimu, sample_artist_extra, sample', showTranslations: true }));
+    expect(screen.queryByRole('dialog', { name: 'Tag资料' })).toBeNull();
+    const artist = await screen.findByRole('button', { name: '查看画师资料：Sample_Artist' });
+    expect(screen.getByRole('button', { name: '查看角色资料：hakurei_reimu' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /查看.*资料：/ })).toHaveLength(2);
+    expect(artist.closest('button button')).toBeNull();
+    const unit = artist.closest('[role="button"]')!;
+    expect(unit.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.pointerDown(artist, { pointerType: 'touch' }); fireEvent.touchStart(artist); fireEvent.click(artist);
+    await screen.findByText('artist:sample_artist:');
+    expect(unit.getAttribute('aria-pressed')).toBe('false');
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('artist:Sample_Artist, hakurei_reimu, sample_artist_extra, sample');
+    fireEvent.click(screen.getByRole('button', { name: '关闭资料' }));
+    fireEvent.click(screen.getByRole('button', { name: '查看角色资料：hakurei_reimu' }));
+    await screen.findByText('character:hakurei_reimu:博丽灵梦');
+  });
+
+  it('权重组内信息点击与键盘不选中或改写，原整组键盘选择及删除仍可用', async () => {
+    const initial = '1.2::artist:sample_artist, hakurei_reimu::';
+    render(React.createElement(Harness, { initial, showTranslations: true }));
+    const info = await screen.findByRole('button', { name: '查看画师资料：sample_artist' });
+    const group = info.closest('[role="button"]')!;
+    expect(group.contains(screen.getByRole('button', { name: '查看角色资料：hakurei_reimu' }))).toBe(true);
+    fireEvent.keyDown(info, { key: 'Enter' }); fireEvent.click(info);
+    await screen.findByRole('dialog', { name: 'Tag资料' });
+    expect(group.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: '关闭资料' }));
+    fireEvent.keyDown(group, { key: 'Enter' });
+    expect(group.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.keyDown(group, { key: ' ' });
+    expect(group.getAttribute('aria-pressed')).toBe('false');
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe(initial);
+    fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
+    const deleteInfo = screen.getByRole('button', { name: '查看角色资料：hakurei_reimu' });
+    fireEvent.click(deleteInfo);
+    await screen.findByRole('dialog', { name: 'Tag资料' });
+    expect((screen.getByRole('button', { name: '删除 0 个 Tag' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: '关闭资料' }));
+    fireEvent.click(deleteInfo.closest('[role="button"]')!);
+    fireEvent.click(screen.getByRole('button', { name: '删除 1 个 Tag' }));
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('1.2::artist:sample_artist::');
+  });
+
+  it('带信息按钮的选中权重组复制仍只输出完整原文，按钮空格及快捷键不改变选择', async () => {
+    const original = '1.2::artist:sample_artist, hakurei_reimu::, ordinary';
+    render(React.createElement(Harness, { initial: original, showTranslations: true }));
+    const info = await screen.findByRole('button', { name: '查看画师资料：sample_artist' });
+    const group = info.closest('[role="button"]')!;
+    fireEvent.click(group);
+    const clipboard = { setData: vi.fn() };
+    fireEvent.copy(screen.getByLabelText('提示词中文翻译'), { clipboardData: clipboard });
+    expect(clipboard.setData).toHaveBeenCalledExactlyOnceWith('text/plain', '1.2::artist:sample_artist, hakurei_reimu::');
+    fireEvent.keyDown(info, { key: ' ' });
+    fireEvent.keyDown(info, { key: 'Enter' });
+    fireEvent.keyDown(info, { key: 'a', ctrlKey: true });
+    expect(group.getAttribute('aria-pressed')).toBe('true');
+    const ordinary = screen.getByRole('button', { name: /^ordinary\s/ });
+    expect(ordinary.getAttribute('aria-pressed')).toBe('false');
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe(original);
+  });
+
+  it('旧值识别迟到不会覆盖当前值的目录入口', async () => {
+    let release!: (value: Map<string, tagDictionary.TagSuggestion>) => void;
+    const pending = new Promise<Map<string, tagDictionary.TagSuggestion>>(resolve => { release = resolve; });
+    const lookup = vi.spyOn(tagDictionary, 'lookupTagCatalogEntries').mockReturnValueOnce(pending).mockResolvedValueOnce(new Map([
+      ['hakurei reimu', { name: 'hakurei_reimu', chinese: '博丽灵梦', category: 4, categoryLabel: '角色', postCount: 51, isNovelAI: false }],
+    ]));
+    try {
+      render(React.createElement(Harness, { initial: 'sample_artist', showTranslations: true }));
+      await waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
+      fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: 'hakurei_reimu' } });
+      await screen.findByRole('button', { name: '查看角色资料：hakurei_reimu' });
+      await act(async () => { release(new Map([['sample artist', { name: 'sample_artist', chinese: '', category: 1, categoryLabel: '画师', postCount: 25, isNovelAI: false }]])); });
+      expect(screen.getByRole('button', { name: '查看角色资料：hakurei_reimu' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /查看画师资料/ })).toBeNull();
+    } finally { lookup.mockRestore(); }
+  });
+});
 
 describe('TagAutocompleteTextarea 输入优先交互', () => {
   it('候选内部滚动与重复视口事件不新增提交，输入框实际移动和尺寸变化立即定位', async () => {
