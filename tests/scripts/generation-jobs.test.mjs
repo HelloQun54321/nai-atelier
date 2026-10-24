@@ -26,6 +26,76 @@ const setup = (overrides = {}) => {
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
 
+for (const saveFails of [false, true]) test(`final 后立即保存且保存失败=${saveFails}仍等记账和清理，不提前交接`, async () => {
+  let finish, saves = 0, requests = 0;
+  const states = [];
+  const f = setup({
+    generate: async (_job, _payload, preview, final) => {
+      requests++;
+      preview({ image: 'data:image/png;base64,AQID' });
+      final({ seed: 7 }); final({ seed: 8 });
+      await new Promise(resolve => { finish = resolve; });
+      return { seed: 7, accountingFailed: true, accountingError: 'synthetic accounting', cleanupError: 'synthetic cleanup' };
+    },
+    save: async (_job, output, metadata) => {
+      saves++; assert.equal(output.seed, 7);
+      if (saveFails) throw Object.assign(new Error('synthetic save failure'), { preview: { image: 'data:image/png;base64,AQID' } });
+      return { ...metadata, imageUrl: '/synthetic.png' };
+    },
+  });
+  f.jobs.start('key', a, 2, undefined, descriptor(), {});
+  const job = f.jobs.get('key', a);
+  f.jobs.subscribe(job, snapshot => states.push(snapshot.state));
+  await until(() => saves === 1);
+  assert.equal(job.state, 'saving'); assert.ok(states.includes('saving'));
+  assert.equal(job.historyIds.length, 0); assert.equal(f.tasks.current('key').token, a);
+  assert.throws(() => f.tasks.reserve('key', b), { code: 'generation_busy' });
+  // 已取消的后续张数不能妨碍当前成图保存及流尾消费。
+  f.jobs.cancel('key', a); finish(); await job.running;
+  const snapshot = f.jobs.snapshot(job);
+  assert.equal(requests, 1); assert.equal(saves, 1);
+  assert.equal(snapshot.accountingError, 'synthetic accounting'); assert.equal(snapshot.cleanupError, 'synthetic cleanup');
+  assert.equal(snapshot.completedCount, saveFails ? 0 : 1);
+  assert.equal(snapshot.state, saveFails ? 'failed' : 'cancelled');
+  if (saveFails) assert.equal(snapshot.preview.image, 'data:image/png;base64,AQID');
+});
+
+test('final 后假409仍等待保存成功，保留历史回执并只提示收尾异常', async () => {
+  let finishSave, requests = 0;
+  const f = setup({ generate: async (_job, _payload, _preview, final) => {
+    requests++; final({ seed: 9 });
+    throw Object.assign(new Error('synthetic tail failure'), { status: 409, code: 'generation_waiting' });
+  }, save: async (_job, _output, metadata) => {
+    await new Promise(resolve => { finishSave = resolve; });
+    return { ...metadata, imageUrl: '/synthetic.png' };
+  } });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {}); const job = f.jobs.get('key', a);
+  await until(() => Boolean(finishSave));
+  assert.equal(job.state, 'saving'); assert.ok(job.context); assert.equal(f.tasks.current('key').token, a);
+  finishSave(); await job.running;
+  const snapshot = f.jobs.snapshot(job);
+  assert.equal(snapshot.state, 'succeeded'); assert.equal(snapshot.completedCount, 1); assert.equal(requests, 1);
+  assert.equal(snapshot.cleanupError, 'synthetic tail failure'); assert.equal(snapshot.accountingFailed, true);
+  assert.equal(snapshot.lastSavedItem.imageUrl, '/synthetic.png');
+});
+
+test('保存失败仍等公共清理释放内部在途锁，再发布失败终态及清理告警', async () => {
+  let finishCleanup, saves = 0, cleanupRead = false;
+  const f = setup({ generate: async (job, _payload, preview, final) => {
+    finishCleanup = f.tasks.enter(job.key, job.token);
+    preview({ image: 'data:image/png;base64,AQID' }); final({ queueTaskId: 'synthetic-task' });
+    return { queueTaskId: 'synthetic-task' };
+  }, save: async () => { saves++; throw new Error('synthetic save failure'); },
+  readCleanup: () => { cleanupRead = true; return 'synthetic late cleanup'; } });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {}); const job = f.jobs.get('key', a);
+  await until(() => saves === 1);
+  assert.equal(job.state, 'saving'); assert.ok(job.context); assert.equal(cleanupRead, false);
+  assert.equal(f.tasks.current('key').inFlight, true);
+  finishCleanup(); await job.running;
+  assert.equal(job.state, 'failed'); assert.equal(f.jobs.snapshot(job).cleanupError, 'synthetic late cleanup');
+  assert.equal(f.tasks.current('key'), undefined);
+});
+
 test('成图记账异常与原因随真实保存快照交付，不重复生成或保存', async () => {
   let generated = 0, saved = 0;
   const f = setup({ generate: async () => { generated++; return { accountingFailed: true, accountingError: '本地预算更新失败（HTTP 503）' }; },

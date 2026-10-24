@@ -847,7 +847,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // 后台任务的过程预览独立于成图：最终图到达后再由 lastSavedItem 接管。
             const preview = session.preview;
             const hasUnsavedPreview = session.state === 'failed' && Boolean(preview?.image);
-            const keepPreview = hasUnsavedPreview || (session.state === 'generating' && Boolean(preview?.image));
+            const keepPreview = hasUnsavedPreview || (['generating', 'saving'].includes(session.state) && Boolean(preview?.image));
             if (preview?.image && (preview.image !== lastSeriesStreamImageRef.current || hasUnsavedPreview)) {
                 lastSeriesStreamImageRef.current = preview.image;
                 // 保存失败的终态会带完整未保存成图：先展示，再按失败态标注为未保存。

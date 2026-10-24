@@ -88,3 +88,9 @@ it('任务完成后新任务和切换画师版本均不会自动打开旧状态�
   view.rerender(<ArtistSampleGenerationStatus {...view.props} pack="v45" tag="another-artist" />);
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+it('后台已开始保存时样张角标直接显示保存状态', () => {
+  setup({ phase: 'generating', session: { state: 'saving' } });
+  fireEvent.click(screen.getByRole('button', { name: '正在保存样张…' }));
+  expect(screen.getByRole('status').textContent).toBe('正在保存样张…');
+});

@@ -164,36 +164,55 @@ export class GenerationJobs {
         job.preview = undefined;
         job.previewVersion++;
         job.state = 'generating';
-        let output;
+        let output, saving;
+        const startSaving = finalOutput => {
+          if (saving) return;
+          output = finalOutput;
+          job.state = 'saving';
+          this.notify(job);
+          const seed = finalOutput.seed ?? payload.parameters.seed;
+          const history = {
+            ...job.descriptor.history, id: crypto.randomUUID(), createdAt: this.now(), isFavorite: false,
+            params: { ...job.descriptor.history.params, ...(seed === undefined ? {} : { seed }) },
+            ...(job.descriptor.history.edit ? { edit: { ...job.descriptor.history.edit, estimatedCost: finalOutput.estimatedCost ?? cost, settlementStatus: 'estimated' } } : {}),
+          };
+          // 立即接住保存失败，仍等待生成链路收齐记账及公共队列回执。
+          saving = Promise.resolve().then(() => this.save(job, finalOutput, history)).then(item => {
+            if (!item?.id || !item.imageUrl) throw failure('图片已生成，但历史保存回执无效，已停止后续生成', 'history_save_failed', 500);
+            return { item };
+          }).catch(error => ({ error }));
+        };
         try {
-          output = await this.generate(job, payload, preview => { job.preview = preview; job.previewVersion++; this.notify(job); });
+          output = await this.generate(job, payload, preview => { job.preview = preview; job.previewVersion++; this.notify(job); }, startSaving);
         } catch (error) {
-          // 只有后端明确在上游提交前拒绝的调度回执可以等待，不重试失败的真实生图。
-          if (error.status === 409 && ['generation_paused', 'generation_waiting', 'generation_interval'].includes(error.code)) { job.needsRefresh = true; await this.sleep(250); continue; }
-          throw error;
+          // 完整成图后必须等保存落定，收尾异常不能触发再次生成。
+          if (saving) {
+            job.cleanupError ||= error.message || '图片已收齐，但生成连接收尾失败';
+            job.accountingFailed = true;
+            job.accountingError ||= '图片已收齐，但未收到完整本地记账回执';
+          }
+          else {
+            // 只有后端明确在上游提交前拒绝的调度回执可以等待，不重试失败的真实生图。
+            if (error.status === 409 && ['generation_paused', 'generation_waiting', 'generation_interval'].includes(error.code)) { job.needsRefresh = true; await this.sleep(250); continue; }
+            throw error;
+          }
         }
-        job.state = 'saving';
         job.accountingFailed ||= output.accountingFailed;
         job.accountingError ||= output.accountingError;
         job.cleanupError ||= output.cleanupError;
-        const seed = output.seed ?? payload.parameters.seed;
-        const history = {
-          ...job.descriptor.history, id: crypto.randomUUID(), createdAt: this.now(), isFavorite: false,
-          params: { ...job.descriptor.history.params, ...(seed === undefined ? {} : { seed }) },
-          ...(job.descriptor.history.edit ? { edit: { ...job.descriptor.history.edit, estimatedCost: output.estimatedCost ?? cost, settlementStatus: 'estimated' } } : {}),
-        };
-        // 即使取消/关闭发起页，也先保存已经付费生成的产物。
-        const item = await this.save(job, output, history);
-        if (!item?.id || !item.imageUrl) throw failure('图片已生成，但历史保存回执无效，已停止后续生成', 'history_save_failed', 500);
+        // ZIP 与未使用 final 回调的适配器沿用返回后保存。
+        startSaving(output);
+        const { item, error: saveError } = await saving;
+        job.lastQueueTaskId = output.queueTaskId;
+        while (this.tasks.current(job.key)?.token === job.token && this.tasks.current(job.key).inFlight) await this.sleep(50);
+        job.cleanupError ||= this.readCleanup(job);
+        if (saveError) throw saveError;
         job.historyIds.push(item.id);
         job.lastSavedItem = item;
         job.preview = undefined;
         job.previewVersion++;
         this.notify(job);
-        job.lastQueueTaskId = output.queueTaskId;
         this.tasks.renew(job.key, job.token, job.historyIds.length);
-        while (this.tasks.current(job.key)?.token === job.token && this.tasks.current(job.key).inFlight) await this.sleep(50);
-        job.cleanupError ||= this.readCleanup(job);
         job.state = 'waiting';
       }
       job.state = job.cancelled ? 'cancelled' : 'succeeded';

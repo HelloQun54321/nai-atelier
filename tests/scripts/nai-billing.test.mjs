@@ -218,6 +218,9 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
           assert.equal(Object.hasOwn(record, 'cost'), known);
           if (known) assert.equal(record.cost, 0);
           else { assert.equal(record.cost, undefined); assert.equal(record.opusImages, undefined); }
+          if (handler === handleGenerateStreamRequest) {
+            assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], known ? String(record.cost) : undefined);
+          }
         }
       }
       assert.equal(usage.length, 3); assert.equal(generations, 4);
@@ -292,6 +295,9 @@ for (const handler of [handleGenerateRequest, handleGenerateStreamRequest]) {
         assert.equal(res.statusCode, 200);
         assert.deepEqual(withoutReceipt(spends.at(-1)), { action: 'generation', model: 'nai-diffusion-5-full', images: 1,
           keyHash: createHash('sha256').update(key).digest('hex'), cost: exhausted ? 26 : 0, opusImages: exhausted ? 0 : 1 });
+        if (handler === handleGenerateStreamRequest) {
+          assert.equal(res.headers['X-Nai-Anlas-Estimated-Spent'], String(spends.at(-1).cost), '提前保存的费用必须使用本轮快照，与流尾结算一致');
+        }
         applyNaiRuntimeOverride({ billing: DEFAULT_NAI_RUNTIME.billing });
       }
       assert.equal(calls.filter(url => url.endsWith('/user/subscription')).length, 0);

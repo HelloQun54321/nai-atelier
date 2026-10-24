@@ -107,7 +107,7 @@ export function ArtistSampleGenerationStatus({ tag, pack, generation, busy, hasO
   const failed = Boolean(generation?.error || generation?.phase === 'save_failed' || generation?.session?.connectionError);
   const awaiting = Boolean(generation?.session?.awaiting);
   const paused = generation?.session?.state === 'paused';
-  const label = generation?.session?.connectionError || (awaiting ? '等待费用确认' : paused ? '任务已暂停' : generation?.phase === 'save_failed' ? '重试保存样张' : generation?.error || (generation?.phase === 'saving' ? '正在保存样张…' : '正在生成样张…'));
+  const label = generation?.session?.connectionError || (awaiting ? '等待费用确认' : paused ? '任务已暂停' : generation?.phase === 'save_failed' ? '重试保存样张' : generation?.error || (generation?.phase === 'saving' || generation?.session?.state === 'saving' ? '正在保存样张…' : '正在生成样张…'));
   const Icon = failed ? CircleAlert : awaiting ? CircleDollarSign : paused ? CirclePause : LoaderCircle;
   return <div data-card-action="true" data-artist-sample-status="true" className="absolute bottom-2 right-2 z-30" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
     <button ref={anchor} type="button" aria-label={t(label)} title={t(label)} aria-haspopup="dialog" aria-expanded={open} className={`${IMAGE_CARD_ACTION_CLASS} flex items-center justify-center`} onClick={() => setOpen(value => !value)}><Icon aria-hidden="true" className={`h-4 w-4 ${!failed && !awaiting && !paused ? 'animate-spin' : ''}`} /></button>

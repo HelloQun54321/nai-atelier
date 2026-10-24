@@ -15,7 +15,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
       }
       if (descriptor.editMask) generationImageBytes(descriptor.editMask);
     },
-    generate: async (job, payload, onPreview) => {
+    generate: async (job, payload, onPreview, onFinal) => {
       const queueTaskId = job.lastQueueTaskId = crypto.randomUUID();
       const response = await fetch(`${gatewayUrl()}/api/generate${job.descriptor.stream ? '-stream' : ''}`, {
         method: 'POST', headers: {
@@ -24,7 +24,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
           cookie: job.context.cookie,
         }, body: JSON.stringify(payload),
       });
-      const output = await readGenerationResponse(response, onPreview);
+      const output = await readGenerationResponse(response, onPreview, output => onFinal({ ...output, queueTaskId }));
       return { ...output, queueTaskId };
     },
     save: async (job, output, metadata) => {

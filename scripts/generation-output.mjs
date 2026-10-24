@@ -15,7 +15,7 @@ export const generationImageBytes = value => {
 };
 
 /** 只认最终成图；SSE 已收齐 final 后连接/记账异常不能诱发再次生成。 */
-export async function readGenerationResponse(response, onPreview) {
+export async function readGenerationResponse(response, onPreview, onFinal) {
   if (!response.ok) {
     const error = parseHttpError(await response.text(), response.status, `生图请求失败 (${response.status})`);
     throw Object.assign(new Error(error.message), { code: error.code || 'generation_failed', status: response.status });
@@ -51,7 +51,7 @@ export async function readGenerationResponse(response, onPreview) {
     return result;
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = '', finalImage = '', finalSeed, streamError, usageReceived = false;
+  let buffer = '', finalImage = '', finalOutput, streamError, usageReceived = false;
   const frame = text => {
     const lines = text.split(/\r?\n/), event = lines.find(line => line.startsWith('event:'))?.slice(6).trim() || 'message';
     const encoded = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
@@ -75,9 +75,16 @@ export async function readGenerationResponse(response, onPreview) {
     }
     if (event === 'nai_queue_cleanup_error') result.cleanupError = data.message || '公共队列退出或释放失败，请检查队列状态';
     if ((event === 'intermediate' || event === 'final') && typeof data.image === 'string' && data.image) {
+      if (finalOutput) return;
       const image = data.image.startsWith('data:image/') ? data.image : `data:${data.image.replace(/\s/g, '').startsWith('/9j/') ? 'image/jpeg' : 'image/png'};base64,${data.image}`;
       onPreview?.({ image, ...(Number.isFinite(data.step_ix) ? { step: data.step_ix + 1 } : {}) });
-      if (event === 'final') { finalImage = image; finalSeed = data.seed; }
+      if (event === 'final' && !finalOutput) {
+        const { bytes, mime } = generationImageBytes(image);
+        finalImage = image;
+        finalOutput = { ...result, bytes, mime, ...(Number.isFinite(data.seed) ? { seed: data.seed } : {}) };
+        // 保存与流尾记账并行；调用方托管保存 Promise，读取器继续收齐回执。
+        onFinal?.(finalOutput);
+      }
     }
   };
   try {
@@ -94,6 +101,7 @@ export async function readGenerationResponse(response, onPreview) {
     }
   } catch (error) {
     if (!finalImage) throw error;
+    result.cleanupError ||= '图片已收齐，但连接收尾异常，请检查公共队列状态';
     // 成功回执之后的收尾断流不推翻记账；未拿到回执才保持未知告警。
     if (!usageReceived && !result.accountingFailed) {
       result.accountingFailed = true;
@@ -101,8 +109,8 @@ export async function readGenerationResponse(response, onPreview) {
     }
   } finally { reader.releaseLock(); }
   if (!finalImage) throw streamError || imageError('流式响应没有最终图片');
-  const { bytes, mime } = generationImageBytes(finalImage);
-  return { ...result, bytes, mime, ...(Number.isFinite(finalSeed) ? { seed: finalSeed } : {}) };
+  if (streamError) result.cleanupError ||= streamError.message;
+  return { ...finalOutput, ...result };
 }
 
 /** 按前端已经生成的羽化蒙版回贴，保留选区之外像素及透明度。 */

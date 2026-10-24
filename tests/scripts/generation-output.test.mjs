@@ -12,6 +12,50 @@ import { GenerationJobs } from '../../worker/generationJobs.mjs';
 const png = async (width, height, rgba) => sharp({ create: { width, height, channels: 4, background: { r: rgba[0], g: rgba[1], b: rgba[2], alpha: rgba[3] / 255 } } }).png().toBuffer();
 const uri = bytes => 'data:image/png;base64,' + bytes.toString('base64');
 
+test('首个完整 final 立即交付保存，流尾继续消费且迟到预览不能覆盖成图', async () => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  let controller, delivered, resolved = false;
+  const previews = [], stream = new ReadableStream({ start(value) { controller = value; } });
+  const reading = readGenerationResponse(new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }), preview => previews.push(preview), output => { delivered = output; }).then(output => { resolved = true; return output; });
+  const send = (event, data) => controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  send('final', { image: image.toString('base64'), seed: 17 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(delivered.bytes, image); assert.equal(resolved, false);
+  send('intermediate', { image: 'AQID', step_ix: 1 }); send('final', { image: 'AQID', seed: 18 });
+  send('nai_usage', { accountingFailed: true, accountingError: 'synthetic accounting', estimatedSpent: 3 });
+  send('nai_queue_cleanup_error', { message: 'synthetic cleanup' }); controller.close();
+  const result = await reading;
+  assert.equal(previews.length, 1); assert.equal(result.seed, 17); assert.deepEqual(result.bytes, image);
+  assert.equal(result.estimatedCost, 3); assert.equal(result.accountingError, 'synthetic accounting'); assert.equal(result.cleanupError, 'synthetic cleanup');
+});
+
+for (const saveFails of [false, true]) test(`电脑 SSE 实际保存先于流尾，保存失败=${saveFails}仍收取记账与退出回执`, async t => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  let controller, saves = 0, savedMetadata;
+  const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/api/generate-stream')) return new Response(new ReadableStream({ start(value) { controller = value; } }), { headers: { 'Content-Type': 'text/event-stream', 'X-Nai-Anlas-Estimated-Spent': '4' } });
+    assert.ok(String(url).endsWith('/api/local-history')); saves++;
+    savedMetadata = JSON.parse(options.body.get('metadata'));
+    return Response.json(saveFails ? { error: 'synthetic save failure' } : { item: { ...savedMetadata, imageUrl: '/synthetic.png' } }, { status: saveFails ? 500 : 200 });
+  };
+  const jobs = createDesktopGenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), gatewayUrl: () => 'http://synthetic', workerPort: 9999, estimate: async () => 2, readCleanup: () => undefined });
+  const descriptor = { payload: { model: 'synthetic', action: 'infill', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {}, edit: { operation: 'inpaint' } }, approvedCost: 4, stream: true };
+  jobs.start('key', 'synthetic-parallel-save-0001', 1, undefined, descriptor, {});
+  const job = jobs.get('key', 'synthetic-parallel-save-0001');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const send = (event, data) => controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  send('final', { image: image.toString('base64'), seed: 31 });
+  for (let i = 0; i < 100 && !saves; i++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(saves, 1); assert.equal(job.state, 'saving'); assert.equal(savedMetadata.params.seed, 31); assert.equal(savedMetadata.edit.estimatedCost, 4);
+  send('nai_usage', { accountingFailed: true, accountingError: 'synthetic accounting', estimatedSpent: 4 });
+  send('nai_queue_cleanup_error', { message: 'synthetic cleanup' }); controller.close(); await job.running;
+  const snapshot = jobs.snapshot(job);
+  assert.equal(snapshot.state, saveFails ? 'failed' : 'succeeded'); assert.equal(saves, 1);
+  assert.equal(snapshot.accountingError, 'synthetic accounting'); assert.equal(snapshot.cleanupError, 'synthetic cleanup');
+  if (saveFails) assert.equal(snapshot.preview.image, uri(image));
+});
+
 test('第六张返回502网页时停止任务并保留前五张，回执不暴露HTML，不自动重试', async () => {
   let requests = 0;
   const html = '<!DOCTYPE html><html><title>novelai.net | 502: Bad gateway</title><body>synthetic-ray-id</body></html>';

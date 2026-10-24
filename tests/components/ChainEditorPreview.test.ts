@@ -9,7 +9,8 @@ import { CloudQueueStatus } from '../../components/CloudQueueStatus';
 import { emitCloudQueueStatus, getCloudQueuePreferences, reportCloudQueueCleanupError } from '../../services/cloudQueue';
 import { setCleanSharedImages } from '../../services/imageSharing';
 
-vi.mock('../../components/SmartImage', () => ({
+vi.mock('../../components/SmartImage', async original => ({
+  ...await original<typeof import('../../components/SmartImage')>(),
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
 }));
 
@@ -341,4 +342,20 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   expect(button.disabled).toBe(false); fireEvent.click(button); expect(stop).toHaveBeenCalledOnce();
   view.rerender(element(true));
   expect((screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 保存期间保留完整成图，用保存状态替换末步采样', operation => {
+  const generate = vi.fn();
+  const control = { count: 1, onCountChange: vi.fn(), series: { current: 1, total: 1, stopping: false }, onStop: vi.fn(), continuousGenerationEnabled: false, generationState: 'saving' as const };
+  const common = { isGenerating: true, generationProgress: { step: 28, total: 28 }, generationCountControl: control, generationCostLabel: '免费', getDownloadFilename: () => 'synthetic.png' };
+  if (operation === 'text-to-image') render(React.createElement(ChainEditorPreview, {
+    ...common, handleGenerate: generate, errorMsg: null, generatedImage: '/synthetic-final.png', previewImage: undefined,
+    setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(),
+  }));
+  else render(React.createElement(ImageEditPreview, { ...common, operation, image: '/synthetic-final.png', error: null, canGenerate: true, onGenerate: generate, onOpenLightbox: vi.fn() }));
+  expect(screen.getByRole('img').getAttribute('src')).toBe('/synthetic-final.png');
+  expect(screen.getByRole('status').textContent).toBe('正在保存…');
+  expect(screen.queryByText('采样 28 / 28')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '正在保存…' }));
+  expect(generate).not.toHaveBeenCalled();
 });

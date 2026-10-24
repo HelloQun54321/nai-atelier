@@ -37,7 +37,7 @@ export interface GenerationJob<Context> {
 export class GenerationJobs<Context = unknown, Output extends GenerationJobOutput = GenerationJobOutput> {
   constructor(options: {
     tasks: GenerationTasks;
-    generate: (job: GenerationJob<Context>, payload: GenerationJobDescriptor['payload'], onPreview: (preview: { image: string; step?: number }) => void) => Promise<Output>;
+    generate: (job: GenerationJob<Context>, payload: GenerationJobDescriptor['payload'], onPreview: (preview: { image: string; step?: number }) => void, onFinal: (output: Output) => void) => Promise<Output>;
     save: (job: GenerationJob<Context>, output: Output, history: GenerationJobHistoryMetadata) => Promise<LocalGenItem>;
     estimate: (job: GenerationJob<Context>, fresh: boolean) => Promise<number>;
     validate: (descriptor: GenerationJobDescriptor) => void;

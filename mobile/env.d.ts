@@ -34,7 +34,7 @@ declare module 'mobile:gateway' {
 /** 手机后台任务的成图解析与历史表单：与电脑共用同一份纯实现，不含 Node 图像库。 */
 declare module 'mobile:generation-output' {
   export const generationImageBytes: (value: unknown) => { bytes: Uint8Array; mime: string };
-  export const readGenerationResponse: (response: Response, onPreview?: (preview: { image: string; step?: number }) => void) =>
+  export const readGenerationResponse: (response: Response, onPreview?: (preview: { image: string; step?: number }) => void, onFinal?: (output: { bytes: Uint8Array; mime: string; seed?: number; estimatedCost?: number; accountingFailed?: boolean; accountingError?: string; cleanupError?: string }) => void) =>
     Promise<{ bytes: Uint8Array; mime: string; seed?: number; estimatedCost?: number; accountingFailed?: boolean; accountingError?: string; cleanupError?: string }>;
   export const generationHistoryForm: (output: { bytes: Uint8Array; mime?: string }, metadata: import('../worker/generationJobs.mjs').GenerationJobHistoryMetadata, editMask?: string) => FormData;
 }

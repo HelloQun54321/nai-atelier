@@ -28,6 +28,38 @@ const descriptorOf = (approvedCost = 4): GenerationJobDescriptor => ({
   randomSeed: true, stream: false, approvedCost,
 });
 
+it('Android final 到达即并行保存并等待流尾，持有执行位且不重复提交', async () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  let finish = () => {}, saveStarted = () => {};
+  const save = vi.fn(async (_job: GenerationJob<RealContext>, output: RealOutput, metadata: Omit<LocalGenItem, 'imageUrl'>) => {
+    saveStarted();
+    expect(output.queueTaskId).toBe('synthetic-queue-task');
+    return { ...metadata, imageUrl: '/synthetic/saved.png' };
+  });
+  const jobs = new GenerationJobs<RealContext, RealOutput>({ tasks, validate: () => {}, estimate: async () => 0, readCleanup: () => undefined,
+    generate: async (_job, _payload, _onPreview, onFinal) => {
+      const output = { bytes: new Uint8Array([1, 2, 3]), mime: 'image/png', queueTaskId: 'synthetic-queue-task' };
+      onFinal(output);
+      await new Promise<void>(resolve => { finish = resolve; });
+      return output;
+    }, save,
+  });
+  jobs.start(KEY, TOKEN, 1, undefined, descriptorOf(), { authorization: `Bearer ${KEY}` });
+  const job = jobs.get(KEY, TOKEN);
+  await new Promise<void>(resolve => { saveStarted = resolve; });
+  await flush();
+  expect(job.state).toBe('saving');
+  expect(job.historyIds).toHaveLength(0);
+  expect(tasks.current(KEY)?.token).toBe(TOKEN);
+  expect(() => tasks.reserve(KEY, 'synthetic-other-task')).toThrow(expect.objectContaining({ code: 'generation_busy' }));
+  expect(save).toHaveBeenCalledOnce();
+  finish();
+  await job.running;
+  expect(save).toHaveBeenCalledOnce();
+  expect(job.state).toBe('succeeded');
+  expect(job.historyIds).toHaveLength(1);
+});
+
 const createFakeJobs = () => {
   const store = new Map<string, GenerationJob<FakeContext>>();
   const completions = new Map<string, () => void>();

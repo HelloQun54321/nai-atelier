@@ -2182,6 +2182,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
       'X-Accel-Buffering': 'no',
+      // 提前保存沿用本轮结算快照的估算，不能等流尾才补编辑历史的费用。
+      ...(billing.subscription ? { 'X-Nai-Anlas-Estimated-Spent': String(billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost) } : {}),
       ...(queueEnabled ? { 'X-Nai-Queue-Task-Id': queueTaskId } : {}),
     });
     const decoder = new TextDecoder();

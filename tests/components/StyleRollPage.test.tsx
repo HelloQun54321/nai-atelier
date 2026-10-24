@@ -779,3 +779,13 @@ it('图包广播刷新完整目录，迟到旧响应不覆盖新目录，失败�
   expect(screen.getByRole('button', { name: '锁定画师：pack_new' })).toBeTruthy();
   expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });
+
+it('保存阶段即使关闭过程预览仍展示最终图，状态条明确保存且不能发起新轮', async () => {
+  experiment.rounds = [{ id: 'live', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  mocks.session = { scope: 'style-roll:synthetic-experiment', key: 'synthetic-key', state: 'saving', progress: { current: 0, total: 2 }, preview: { image: 'data:image/png;base64,c3ludGhldGlj' } };
+  await setup({ generationStreamPreview: false });
+  expect(screen.getByAltText('生成预览').getAttribute('src')).toBe('data:image/png;base64,c3ludGhldGlj');
+  expect(screen.getByText('正在保存… 0/2')).toBeTruthy();
+  expect(mocks.generate).not.toHaveBeenCalled();
+});

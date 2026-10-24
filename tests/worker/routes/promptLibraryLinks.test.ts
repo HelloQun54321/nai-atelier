@@ -5,6 +5,8 @@ import worker from '../../../worker/index';
 import { handleHistoryRoute } from '../../../worker/routes/historyRoutes';
 import { handlePromptLibraryLinkRoute, normalizePromptLibraryText } from '../../../worker/routes/promptLibraryLinkRoutes';
 import { handleSettingsRoute } from '../../../worker/routes/settingsRoutes';
+import * as artistUsage from '../../../worker/routes/artistUsageIndex';
+import * as libraryLinks from '../../../worker/routes/promptLibraryLinkRoutes';
 import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../../worker/routes/types';
 
 // 内存 D1 + 真实 SQLite 事务及内存 R2：不读真实 local-data，也不写磁盘。
@@ -99,6 +101,104 @@ const progressOf = (f: Fixture, userId = 'owner') => {
   return row ? JSON.parse(row.value) : null;
 };
 const savedMeta = (f: Fixture, id: string) => JSON.parse(savedRow(f, id).params)._promptLibrary;
+
+it.each(['artist', 'library'])('保存并行启动统计与关联，%s 先完成仍等待另一支及自动封面', async first => {
+  const f = fixture();
+  addChain(f, { id: 'lib', basePrompt: 'silver hair' });
+  const gate = () => {
+    let release!: () => void;
+    const promise = new Promise<void>(resolve => { release = resolve; });
+    return { promise, release };
+  };
+  const artist = gate();
+  const library = gate();
+  const cover = gate();
+  const record = artistUsage.recordArtistHistory;
+  const write = libraryLinks.writePromptLibraryLinks;
+  const sync = libraryLinks.syncPromptLibraryCover;
+  const recordSpy = vi.spyOn(artistUsage, 'recordArtistHistory').mockImplementation(async (...args) => {
+    await artist.promise;
+    return record(...args);
+  });
+  const writeSpy = vi.spyOn(libraryLinks, 'writePromptLibraryLinks').mockImplementation(async (...args) => {
+    await library.promise;
+    return write(...args);
+  });
+  const coverSpy = vi.spyOn(libraryLinks, 'syncPromptLibraryCover').mockImplementation(async (...args) => {
+    await cover.promise;
+    return sync(...args);
+  });
+  let completed = false;
+  const saving = saveHistory(f, { id: 'parallel', prompt: 'silver hair' }).then(response => { completed = true; return response; });
+  await vi.waitFor(() => {
+    expect(recordSpy).toHaveBeenCalledOnce();
+    expect(writeSpy).toHaveBeenCalledOnce();
+  });
+  expect(savedRow(f, 'parallel')).toBeTruthy();
+  expect(completed).toBe(false);
+  (first === 'artist' ? artist : library).release();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(completed).toBe(false);
+  (first === 'artist' ? library : artist).release();
+  await vi.waitFor(() => expect(coverSpy).toHaveBeenCalledOnce());
+  expect(completed).toBe(false);
+  cover.release();
+  expect((await saving).status).toBe(200);
+  expect(linkIds(f, 'parallel')).toEqual(['lib']);
+  expect(f.sqlite.prepare('SELECT preview_image FROM chains WHERE id = ?').get('lib')?.preview_image)
+    .toBe('/api/assets/local-history%2Fowner%2Fparallel.png');
+  expect(f.sqlite.prepare('SELECT key FROM settings WHERE key = ?').get('artist_usage_v1:owner:history:parallel')).toBeTruthy();
+});
+
+it('并行统计失败仍等关联和封面落库后交付历史', async () => {
+  const f = fixture();
+  addChain(f, { id: 'lib', basePrompt: 'silver hair' });
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(artistUsage, 'recordArtistHistory').mockRejectedValue(new Error('synthetic stats failure'));
+  const response = await saveHistory(f, { id: 'stats-failure', prompt: 'silver hair' });
+  expect(response.status).toBe(200);
+  expect(savedRow(f, 'stats-failure')).toBeTruthy();
+  expect(linkIds(f, 'stats-failure')).toEqual(['lib']);
+  expect(f.sqlite.prepare('SELECT preview_image FROM chains WHERE id = ?').get('lib')?.preview_image)
+    .toBe('/api/assets/local-history%2Fowner%2Fstats-failure.png');
+});
+
+it('关联分支失败仍等待统计完成，不提前返回保存回执', async () => {
+  const f = fixture();
+  addChain(f, { id: 'lib', basePrompt: 'silver hair' });
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const record = artistUsage.recordArtistHistory;
+  vi.spyOn(artistUsage, 'recordArtistHistory').mockImplementation(async (...args) => {
+    await pending;
+    return record(...args);
+  });
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(libraryLinks, 'writePromptLibraryLinks').mockRejectedValue(new Error('synthetic link failure'));
+  let completed = false;
+  const saving = saveHistory(f, { id: 'links-failure', prompt: 'silver hair' }).then(response => { completed = true; return response; });
+  await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled());
+  expect(completed).toBe(false);
+  expect(savedRow(f, 'links-failure')).toBeTruthy();
+  release();
+  expect((await saving).status).toBe(200);
+  expect(f.sqlite.prepare('SELECT key FROM settings WHERE key = ?').get('artist_usage_v1:owner:history:links-failure')).toBeTruthy();
+});
+
+it('多条关联和旧归属清理使用同一批次，写入失败整体回滚', async () => {
+  const f = fixture();
+  await libraryLinks.ensurePromptLibraryLinkSchema(f.db);
+  const entry = (id: string) => ({ id, kind: 'pose', name: id, text: 'silver hair', createdAt: 1 });
+  await libraryLinks.writePromptLibraryLinks(f.db, { matches: [entry('old')] }, 'batch-links', 1);
+  f.sqlite.exec(`CREATE TRIGGER fail_link BEFORE INSERT ON prompt_library_links
+    WHEN NEW.chain_id = 'fail' BEGIN SELECT RAISE(ABORT, 'synthetic link failure'); END;`);
+  const batchSpy = vi.spyOn(f.db, 'batch');
+  await expect(libraryLinks.writePromptLibraryLinks(f.db, { matches: [entry('new'), entry('fail')] }, 'batch-links', 2))
+    .rejects.toThrow('synthetic link failure');
+  expect(batchSpy).toHaveBeenCalledOnce();
+  expect(batchSpy.mock.calls[0][0]).toHaveLength(3);
+  expect(linkIds(f, 'batch-links')).toEqual(['old']);
+});
 
 it('长条目优先命中，短正文与其它分类的正文不参与归属', async () => {
   const f = fixture();

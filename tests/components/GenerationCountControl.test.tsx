@@ -375,3 +375,13 @@ it('桌面菜单锚定整个生成按钮的中心，不以右侧箭头为中心'
   fireEvent.keyDown(button, { key: 'ArrowDown', altKey: true });
   expect(screen.getByRole('dialog', { name: '生成选项' }).style.left).toBe('700px');
 });
+
+it.each([1280, 390])('%s 保存末期计数已完成仍显示保存且不能再次生成', width => {
+  vi.stubGlobal('innerWidth', width);
+  const generate = vi.fn();
+  render(<GenerationCountControl {...props} continuousGenerationEnabled={false} onGenerate={generate} generationState="saving" series={{ current: 1, total: 1, stopping: false }} queueState={{ ...state, completed: 1, total: 1 }} />);
+  const button = screen.getByRole('button', { name: '正在保存…' });
+  expect(button.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(button);
+  expect(generate).not.toHaveBeenCalled();
+});

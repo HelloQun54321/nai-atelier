@@ -969,24 +969,28 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         body.externalSource || existing?.external_source || null,
         body.externalId || existing?.external_id || null
       ).run();
-      try { if (artistDictionary) await recordArtistHistory(db, currentUser.id, {
-        id, prompt: body.prompt || '', base_prompt: body.basePrompt || '', subject_prompt: body.subjectPrompt || '',
-        params: normalizedParams, created_at: createdAt, source_chain_id: body.sourceChainId,
-        external_source: body.externalSource || existing?.external_source,
-      }, artistDictionary); }
-      catch (cause) { console.error('画师统计写入失败，生成历史已保存', cause); }
-      try {
-        // 重存同一条历史时，本次没命中也要清掉过期归属（INSERT OR REPLACE 会留下旧行）。
-        if (linkHint) {
-          await writePromptLibraryLinks(db, linkHint, id, createdAt);
-          // 命中的库条目如果还没有封面，用最早关联到的那张图补上（手动换过的封面不动）。
-          await syncPromptLibraryCover(db, (linkHint.meta?.sources || []).map(source => source.id));
-        } else {
-          await deletePromptLibraryLinksByHistory(db, id);
+      // 统计与提示词归属互不依赖；两支都完成后才继续清理资源、交付保存回执。
+      await Promise.all([(async () => {
+        try { if (artistDictionary) await recordArtistHistory(db, currentUser.id, {
+          id, prompt: body.prompt || '', base_prompt: body.basePrompt || '', subject_prompt: body.subjectPrompt || '',
+          params: normalizedParams, created_at: createdAt, source_chain_id: body.sourceChainId,
+          external_source: body.externalSource || existing?.external_source,
+        }, artistDictionary); }
+        catch (cause) { console.error('画师统计写入失败，生成历史已保存', cause); }
+      })(), (async () => {
+        try {
+          // 重存同一条历史时，本次没命中也要清掉过期归属（INSERT OR REPLACE 会留下旧行）。
+          if (linkHint) {
+            await writePromptLibraryLinks(db, linkHint, id, createdAt);
+            // 命中的库条目如果还没有封面，用最早关联到的那张图补上（手动换过的封面不动）。
+            await syncPromptLibraryCover(db, (linkHint.meta?.sources || []).map(source => source.id));
+          } else {
+            await deletePromptLibraryLinksByHistory(db, id);
+          }
+        } catch (cause) {
+          console.error('提示词库关联写入失败，生成历史已保存', cause);
         }
-      } catch (cause) {
-        console.error('提示词库关联写入失败，生成历史已保存', cause);
-      }
+      })()]);
       if (existing?.image_key && existing.image_key !== imageKey) await deleteR2File(env, `/api/assets/${encodeURIComponent(existing.image_key)}`, db);
       if (!editMask) await env.BUCKET.delete(editMaskKey);
       const item = mapLocalHistoryRow({

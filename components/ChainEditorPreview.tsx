@@ -150,8 +150,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         ) : <p className="lab-preview-empty px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{emptyLabel}</p>
                     )}
 
-                    {isGenerating && generationProgress && (
-                        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-meta font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">{t("采样 {0} / {1}", [generationProgress.step, generationProgress.total])}</div>
+                    {isGenerating && (generationCountControl?.generationState === 'saving' || generationProgress) && (
+                        <div role={generationCountControl?.generationState === 'saving' ? 'status' : undefined} className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-meta font-semibold text-white shadow-lg backdrop-blur-sm pointer-events-none">{generationCountControl?.generationState === 'saving' ? t("正在保存…") : t("采样 {0} / {1}", [generationProgress!.step, generationProgress!.total])}</div>
                     )}
 
 

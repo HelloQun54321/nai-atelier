@@ -51,7 +51,8 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize);
   }, [mobile]);
   const waiting = queued.filter(task => task.progress.current < task.progress.total);
-  const occupied = Boolean(busy || (queueState && queueState.total > queueState.completed)
+  const saving = generationState === 'saving';
+  const occupied = Boolean(busy || saving || generationState === 'preparing' || generationState === 'generating' || (queueState && queueState.total > queueState.completed)
     || (series && series.current < series.total) || waiting.length > 0);
   const paused = Boolean(queueState?.paused);
   // 已保存后的短间隔延续动效；排队、暂停与费用待确认不能冒充正在执行。
@@ -92,6 +93,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const showPrimaryCost = !primaryUnavailable && (continuousGenerationEnabled || !primaryBlocked);
   const primaryLabel = primaryUnavailable ? unavailableLabel
     : !continuousGenerationEnabled && paused && occupied ? t("继续生成")
+      : !continuousGenerationEnabled && saving ? t("正在保存…")
       : !continuousGenerationEnabled && occupied ? t("生成中…")
         : t(occupied && continuousGenerationEnabled ? "加入队列" : "生成");
   const panel = <>
@@ -149,7 +151,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
       title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
       className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
-      <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{completed}/{total}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
+      <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <button ref={anchorRef} type="button" data-agent-action="business" aria-haspopup={hasMenuContent ? 'dialog' : undefined} aria-expanded={hasMenuContent ? open : undefined} aria-disabled={primaryBlocked}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}

@@ -214,13 +214,17 @@ export async function promptLibraryLinkHint(
 
 /** 写入单条归属（不动同一张图的其它条目归属）。 */
 async function upsertPromptLibraryLink(db: D1Database, historyId: string, entry: PromptLibraryEntry, createdAt: number) {
+  await preparePromptLibraryLink(db, historyId, entry, createdAt).run();
+}
+
+function preparePromptLibraryLink(db: D1Database, historyId: string, entry: PromptLibraryEntry, createdAt: number) {
   const at = Number.isFinite(Number(createdAt)) && Number(createdAt) > 0 ? Number(createdAt) : Date.now();
-  await db.prepare(`INSERT INTO prompt_library_links (history_id, chain_id, kind, chain_name, matched_length, created_at)
+  return db.prepare(`INSERT INTO prompt_library_links (history_id, chain_id, kind, chain_name, matched_length, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(history_id, chain_id) DO UPDATE SET
       kind = excluded.kind, chain_name = excluded.chain_name,
       matched_length = excluded.matched_length, created_at = excluded.created_at`)
-    .bind(historyId, entry.id, entry.kind, entry.name, entry.text.length, at).run();
+    .bind(historyId, entry.id, entry.kind, entry.name, entry.text.length, at);
 }
 
 /**
@@ -235,14 +239,15 @@ export async function writePromptLibraryLinks(
 ): Promise<number> {
   await ensurePromptLibraryLinkSchema(db);
   const ids = hint.matches.map(entry => entry.id);
-  for (const entry of hint.matches) await upsertPromptLibraryLink(db, historyId, entry, createdAt);
+  const statements = hint.matches.map(entry => preparePromptLibraryLink(db, historyId, entry, createdAt));
   if (ids.length) {
-    await db.prepare(`DELETE FROM prompt_library_links
+    statements.push(db.prepare(`DELETE FROM prompt_library_links
       WHERE history_id = ? AND chain_id NOT IN (${ids.map(() => '?').join(', ')})`)
-      .bind(historyId, ...ids).run();
+      .bind(historyId, ...ids));
   } else {
-    await db.prepare('DELETE FROM prompt_library_links WHERE history_id = ?').bind(historyId).run();
+    statements.push(db.prepare('DELETE FROM prompt_library_links WHERE history_id = ?').bind(historyId));
   }
+  await db.batch(statements);
   return ids.length;
 }
 

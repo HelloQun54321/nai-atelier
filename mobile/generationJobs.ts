@@ -69,7 +69,7 @@ export function createMobileGenerationJobs({ tasks, queue, readGatewayUrl }: {
       if (descriptor.editMask) generationImageBytes(descriptor.editMask);
     },
     // 生图复用同一手机网关处理器：公共队列、计费与单并发准入只有一份实现。
-    generate: async (job, payload, onPreview) => {
+    generate: async (job, payload, onPreview, onFinal) => {
       const queueTaskId = job.lastQueueTaskId = crypto.randomUUID();
       const response = await fetch(`/api/generate${job.descriptor.stream ? '-stream' : ''}`, {
         method: 'POST',
@@ -81,7 +81,7 @@ export function createMobileGenerationJobs({ tasks, queue, readGatewayUrl }: {
         },
         body: JSON.stringify(payload),
       });
-      const output = await readGenerationResponse(response, onPreview);
+      const output = await readGenerationResponse(response, onPreview, final => onFinal({ ...final, queueTaskId }));
       return { ...output, queueTaskId };
     },
     // 保存复用既有 history multipart 接口；缩略图与索引由该接口维护，不另建手机存储结构。
