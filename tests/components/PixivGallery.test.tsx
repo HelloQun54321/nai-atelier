@@ -14,7 +14,7 @@ import { db } from '../../services/dbService';
 import { api } from '../../services/api';
 import { galleryHistoryService } from '../../services/galleryHistoryService';
 import type { User } from '../../types';
-vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), startPixivLogin: vi.fn(), getPixivLoginStatus: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
+vi.mock('../../services/pixivService', async original => ({ ...await original<typeof import('../../services/pixivService')>(), pixivService: { status: vi.fn(), feed: vi.fn(), startPixivLogin: vi.fn(), getPixivLoginStatus: vi.fn(), completePixivLogin: vi.fn(), addBookmark: vi.fn(), deleteBookmark: vi.fn(), getRelated: vi.fn(async () => ({ items: [] })) }, importPixivImageAsFile: vi.fn() }));
 vi.mock('../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn(async () => []), getInspirationsBySource: vi.fn(), updateInspiration: vi.fn() } }));
 vi.mock('../../services/api', () => ({ api: { uploadFile: vi.fn(), post: vi.fn() } }));
 vi.mock('../../services/galleryHistoryService', () => ({ galleryHistoryService: { recordView: vi.fn(), getHistory: vi.fn(() => []) } }));
@@ -104,7 +104,27 @@ it.each([false, true])('自动回调=%s：登录提示显示真实后台阶段�
   fireEvent.click(await screen.findByRole('button', { name: '在默认浏览器登录' }));
   expect(await screen.findByText('正在完成连接…')).toBeTruthy();
   expect(screen.queryByText(/继续使用此账号/)).toBeNull();
-  expect(Boolean(screen.queryByRole('textbox', { name: 'Pixiv 登录完成地址' }))).toBe(!automaticCallback);
+  expect(screen.getByRole('textbox', { name: 'Pixiv 登录完成地址' })).toBeTruthy();
+});
+it('自动回调未接住时仍可用完整协议地址手动完成当前登录会话', async () => {
+  vi.mocked(pixivService.status).mockResolvedValue({ connected: false });
+  const session = { id: 'test-manual-fallback', state: 'awaiting-user' as const, automaticCallback: true, expiresAt: Date.now() + 300000, message: '请在默认浏览器完成登录' };
+  vi.mocked(pixivService.startPixivLogin).mockResolvedValue(session);
+  vi.mocked(pixivService.getPixivLoginStatus).mockResolvedValue(session);
+  vi.mocked(pixivService.completePixivLogin).mockResolvedValue({ ...session, state: 'connected', connected: true });
+  const notify = vi.fn();
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: '在默认浏览器登录' }));
+  const input = await screen.findByRole('textbox', { name: 'Pixiv 登录完成地址' });
+  const submit = screen.getByRole('button', { name: '完成连接' }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  const callback = 'pixiv://account/login?code=synthetic-test-code&via=login';
+  fireEvent.change(input, { target: { value: callback } });
+  vi.mocked(pixivService.status).mockResolvedValue({ connected: true });
+  fireEvent.click(submit);
+  await waitFor(() => expect(pixivService.completePixivLogin).toHaveBeenCalledWith(session.id, callback));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('Pixiv 登录成功'));
+  expect(screen.queryByRole('textbox', { name: 'Pixiv 登录完成地址' })).toBeNull();
 });
 it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情分享跟随当前页', async history => {
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([{ id: 'pixiv:100', source: 'pixiv', sourceId: '100', title: illust.title, artistName: illust.user.name, previewUrl: '', sampleUrl: illust.metaPages[0], tags: [], viewedAt: 1 }]);

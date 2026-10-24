@@ -6,6 +6,8 @@
 
 ## 2026-10-25
 
+- **deepseek-v4.1-flash（DSH）**：修复 Pixiv 自动回调模式隐藏手动备用入口的问题。`components/PixivGallery.tsx` 去掉包住备用回调表单的 `{!activeLogin.automaticCallback && (…)}` 条件，使「Pixiv 登录完成地址」输入框与「完成连接」按钮在自动回调模式下也始终显示，仍复用原 `handleCompleteLogin` → `completePixivLogin` 链路，认证协议、轮询、`pixiv://` 协议处理器与令牌保存方式均未改动；`tests/components/PixivGallery.test.tsx` 补齐 `completePixivLogin` mock，把原先按 `automaticCallback` 判定输入框有／无的断言改为登录进行中始终存在，并新增「自动回调未接住时仍可用完整协议地址手动完成当前登录会话」用例，覆盖未填写时按钮禁用、提交后按会话 id 调用、成功提示与表单收起。验证：`npm run test -- tests/components/PixivGallery.test.tsx` 共 19 项通过（日志 logs\tests\unit-1792868247670-75584.log）；未调用真实模型或 Pixiv 接口、未启动工坊服务、未触碰 local-data。
+
 - **Codex（主代理，GPT-6.1-sol／GPT-6-luna 子代理）**：按用户授权复核本批全部未提交改动，四路独立检查 AITag 前端连续加载／离线筛选、后台元数据与原图保存、画师图包身份及 Windows 重启边界、文档和五语言提示；主代理复核 Wrangler 冷启动回归、提交范围和远端状态，未发现阻断问题。复用当前代码已通过的前端／服务／共用钩子与词典 145 项、后端 Node 760 项及 Worker 309 项结果，不重复运行同一测试；统一脚本将版本从 1.121.0 递增至 1.121.1，同步包锁、README 与桥接扩展元数据，按授权提交并推送 origin/main。暂存区密钥扫描、ESLint 与 TypeScript 由实际提交钩子执行；未改产品宪法、存储结构或绑定，未操作私人资料、真实生图及收费接口，未做数千作品长时压力或手机真机验收。
 
 - **Codex（主代理，GPT-6.1-sol／GPT-6-luna 子代理）**：追查剩余 Wrangler 启动失败，确认 CLI 在 banner 输出前等待 npm 更新检查；隔离 TEMP 带来冷缓存，更新器的原生 HTTP(S) 又不走测试中为 Undici 配置的代理，因而可能在本地服务启动前超时。仅为 nai-runtime-chain 合成子进程设置官方 WRANGLER_HIDE_BANNER 开关，并在该测试临时目录生成定向 probe，阻止真实 npm 更新请求、模拟连接前持续等待及断言更新未发生。旧配置受控重现 ready 失败，修复后定向 16 项通过；真实 Pages／D1／R2、ZIP／SSE、跨 5 秒空闲结算、Roll、画师归档与 Vibe 全部断言及原超时保留。完整后端回归 Node 760 项、Worker 309 项全部通过，独立只读复核无阻断；同步 tests/README.md。日志见 node-1792860340134-37736.log、node-1792860371887-27544.log、gateway-1792860432765-36524.log。合成进程与临时内容由隔离入口清理，既有未提交改动保留；本次未改生产启动或产品原则，未递增版本、提交、推送、重启真实服务或操作私人资料及收费接口。
