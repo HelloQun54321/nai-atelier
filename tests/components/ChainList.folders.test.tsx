@@ -79,6 +79,39 @@ describe('风格串文件夹完整交互', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '创建' }));
     expect(props.onCreate).toHaveBeenCalledWith('新配方', '', 'style', created.id);
   });
+  it('手机等缺少 crypto.randomUUID 的环境里仍能创建并保存文件夹', async () => {
+    const { props } = await setup(); choose('root');
+    // 局域网 HTTP 属于非安全上下文：保留 crypto，但只提供 getRandomValues，逼真模拟缺少 randomUUID 的手机浏览器。
+    vi.stubGlobal('crypto', {
+      getRandomValues: (array: Uint8Array) => { for (let index = 0; index < array.length; index += 1) array[index] = (index * 7 + 3) % 256; return array; },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
+    fireEvent.change(within(screen.getByRole('dialog', { name: '新建文件夹' })).getByLabelText('文件夹名称'), { target: { value: '手机新建' } });
+    fireEvent.click(within(screen.getByRole('dialog', { name: '新建文件夹' })).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(stored.folders).toHaveLength(3));
+    const created = stored.folders[2];
+    expect(created.name).toBe('手机新建'); expect(created.parentId).toBe('root');
+    expect(created.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(put).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(props.notify).toHaveBeenCalledWith('文件夹已保存', 'success');
+    const picker = screen.getByLabelText('选择文件夹') as HTMLSelectElement;
+    expect(picker.value).toBe(created.id);
+    expect(picker.textContent).toContain('手机新建');
+  });
+  it('保存失败时给出错误提示、保留面板与输入，不清空目录', async () => {
+    const { props } = await setup(); choose('root');
+    put.mockRejectedValueOnce(Error('文件夹资料过大'));
+    fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
+    fireEvent.change(within(screen.getByRole('dialog', { name: '新建文件夹' })).getByLabelText('文件夹名称'), { target: { value: '失败目录' } });
+    fireEvent.click(within(screen.getByRole('dialog', { name: '新建文件夹' })).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(props.notify).toHaveBeenCalledWith('文件夹资料过大', 'error'));
+    expect(stored.folders).toHaveLength(2);
+    const dialog = screen.getByRole('dialog', { name: '新建文件夹' });
+    expect((within(dialog).getByLabelText('文件夹名称') as HTMLInputElement).value).toBe('失败目录');
+    expect((within(dialog).getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(false);
+    expect(props.notify).not.toHaveBeenCalledWith('文件夹已保存', 'success');
+  });
   it('单条与批量移动只写目录元数据，手机无需拖放', async () => {
     const { props } = await setup();
     fireEvent.click(screen.getByRole('button', { name: '移动到文件夹：风格 b' }));

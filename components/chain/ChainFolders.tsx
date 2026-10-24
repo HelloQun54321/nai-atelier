@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Folder, FolderInput, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { t } from '../../services/i18n';
+import { createUuid } from '../../services/id';
 import { folderContains, folderTree, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
 import type { useChainFolders } from '../../services/useChainFolders';
 import { ToolbarButton } from '../DesignSystem';
@@ -59,8 +60,11 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editing || blocked || !name.trim()) return;
-    const folder = { id: editing === 'new' ? crypto.randomUUID() : editing.id, name: name.trim(), parentId: parentId || null };
     try {
+      // 手机经局域网 HTTP 打开时属于非安全上下文，部分浏览器不提供 crypto.randomUUID；
+      // 这一句原本在 try 之外，同步抛错会绕过下方的错误反馈，表现为点「保存」毫无反应。
+      // 改用项目统一的 createUuid，并把 ID 构造一起放进 try，任何准备阶段失败都能提示。
+      const folder: ChainFolder = { id: editing === 'new' ? createUuid() : editing.id, name: name.trim(), parentId: parentId || null };
       await store.save({ ...store.state, folders: editing === 'new' ? [...folders, folder] : folders.map(item => item.id === folder.id ? folder : item) });
       setEditing(null); onSelect(folder.id); notify('文件夹已保存', 'success');
     } catch (cause) { notify(cause instanceof Error ? cause.message : '保存文件夹失败', 'error'); }
