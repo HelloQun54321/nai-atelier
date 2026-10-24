@@ -79,3 +79,45 @@ test('目录选择取消保留偏好，LAN请求无权读取或写入电脑导�
     assert.equal((await request(true,{action:'save',data:'!',filename:'x.png'})).status,400);
   }finally{removeWorkspace(root);}
 });
+test('二进制导出逐块写入真实系统目录，长度校验和授权失败不留文件', async () => {
+  const root = createWorkspace('export-binary-');
+  const request = async (chunks, headers = {}, canManage = true) => {
+    const req = Readable.from(chunks); req.method = 'POST'; req.url = '/api/local-maintenance/export-location';
+    req.headers = { 'content-type': 'application/octet-stream', 'x-nai-local-control': 'true', 'x-nai-export-filename': encodeURIComponent('分享.naia'), 'x-nai-export-size': '6', ...headers };
+    let status, result; const res = { writeHead(value) { status = value; }, end(value) { result = JSON.parse(value); } };
+    await handleExportLocationRequest(req, res, { workspace: root, canManage, systemDirectory: root });
+    return { status, result };
+  };
+  try {
+    assert.equal((await request([Buffer.from('abc'), Buffer.from('def')])).result.saved, true);
+    assert.equal(await readFile(join(root, '分享.naia'), 'utf8'), 'abcdef');
+    assert.equal((await request([Buffer.from('short')])).status, 400);
+    assert.equal((await request([Buffer.from('excess!')])).status, 400);
+    assert.equal((await request([], { 'x-nai-export-size': String(2 ** 31 + 1) })).status, 400);
+    assert.equal((await request([], {}, false)).status, 403);
+    assert.equal((await request([], { 'x-nai-local-control': '' })).status, 403);
+    assert.deepEqual(await readdir(root), ['分享.naia']);
+  } finally { removeWorkspace(root); }
+});
+test('流传输断开时清除部分文件且保留既有同名作品', async () => {
+  const root = createWorkspace('export-stream-abort-');
+  try {
+    await saveExportFile({ data: Buffer.from('original'), filename: 'work.naia', directory: root });
+    const controller = new AbortController();
+    async function* chunks() { yield Buffer.from('partial'); controller.abort(); yield Buffer.from('late'); }
+    await assert.rejects(saveExportFile({ data: chunks(), filename: 'work.naia', directory: root, signal: controller.signal, expectedLength: 11 }), /abort/i);
+    assert.deepEqual(await readdir(root), ['work.naia']);
+    assert.equal(await readFile(join(root, 'work.naia'), 'utf8'), 'original');
+  } finally { removeWorkspace(root); }
+});
+test('HTTP响应连接断开后中止流写，不保留迟到文件', async () => {
+  const root = createWorkspace('export-http-abort-');
+  try {
+    const res = new EventEmitter(); res.writeHead = () => {}; res.end = () => {};
+    async function* chunks() { yield Buffer.from('part'); res.destroyed = true; res.emit('close'); yield Buffer.from('late'); }
+    const req = Readable.from(chunks()); req.method = 'POST'; req.url = '/api/local-maintenance/export-location';
+    req.headers = { 'content-type': 'application/octet-stream', 'x-nai-local-control': 'true', 'x-nai-export-filename': 'work.naia', 'x-nai-export-size': '8' };
+    await handleExportLocationRequest(req, res, { workspace: root, canManage: true, systemDirectory: root });
+    assert.deepEqual(await readdir(root), []);
+  } finally { removeWorkspace(root); }
+});

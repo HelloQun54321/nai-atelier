@@ -13,7 +13,7 @@ import type { ChainSimilaritySession } from './chain/ChainSimilarityDialog';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
@@ -37,6 +37,7 @@ import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
+const StyleBundleDialog = React.lazy(() => import('./chain/StyleBundleDialog').then(module => ({ default: module.StyleBundleDialog })));
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -46,6 +47,7 @@ interface ChainListProps {
   onDelete: (id: string) => Promise<void> | void;
   onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<{ remainingIds: string[]; errorCount: number }>;
   onRefresh: () => void;
+  onBundleImported?: () => Promise<void>;
   onReloadTags?: () => Promise<void>;
   onUpdateChain: UpdateChainInfo;
   /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
@@ -64,7 +66,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -80,6 +82,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [similarityOpen, setSimilarityOpen] = useState(false);
+  const [bundleScope, setBundleScope] = useState<'all' | 'filtered' | 'selected' | null>(null);
   const similaritySession = useRef<ChainSimilaritySession | null>(null);
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -108,6 +111,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setSelectionMode(false); setSelectedIds(new Set()); setBulkDeleteBusy(false); setDeleteProgress(null);
     setTagManagerOpen(false);
     setSimilarityOpen(false);
+    setBundleScope(null);
     similaritySession.current = null;
   }, [type, isGuest]);
 
@@ -463,6 +467,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(new Set(filteredChains.map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('全选筛选结果')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('反选筛选结果')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t('清空选择')}</ToolbarButton>
+              <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span>{t('导出已选')}</span></ToolbarButton>
               <ToolbarButton tone="danger" disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t('删除')}</span></ToolbarButton>
             </div>
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
@@ -486,6 +491,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             <ScanSearch className="h-4 w-4" /><span className="hidden xl:inline">{t('查找相似')}</span>
           </ToolbarButton>}
           {!isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
+            {type === 'style' && <ToolbarButton onClick={() => setBundleScope('all')} title={t('风格串分享包')} aria-label={t('风格串分享包')}><Package className="h-4 w-4" /><span className="hidden xl:inline">{t('分享包')}</span></ToolbarButton>}
             {type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
             <div className="hidden items-center gap-2 md:flex">
               {type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title={t("从本地文件夹批量读取 NovelAI 原图为风格串")} aria-label={t("批量导入")}><FolderUp className="h-4 w-4" /><span className="hidden xl:inline">{t("批量导入")}</span></ToolbarButton>}
@@ -537,6 +543,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       {/* Simple Create Modal */}
+      {bundleScope && type === 'style' && !isGuest && <React.Suspense fallback={null}><StyleBundleDialog chains={typeChains} filteredChains={filteredChains} selectedChains={selectedChains} initialScope={bundleScope} onClose={() => setBundleScope(null)} onImported={onBundleImported || onRefresh} notify={notify} /></React.Suspense>}
       {similarityOpen && <React.Suspense fallback={null}><ChainSimilarityDialog chains={typeChains} filteredChains={filteredChains} onClose={() => setSimilarityOpen(false)} onOpenChain={onSelect} onDelete={handleDelete} sessionRef={similaritySession} /></React.Suspense>}
       {isModalOpen && (
         <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={t(createLabel)} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

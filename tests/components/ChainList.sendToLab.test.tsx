@@ -30,6 +30,7 @@ vi.mock('../../services/imageDisplayPreferences', () => ({
   mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}),
 }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
+vi.mock('../../components/chain/StyleBundleDialog', () => ({ StyleBundleDialog: ({ chains, filteredChains, selectedChains, initialScope, onClose, onImported }: { chains: PromptChain[]; filteredChains: PromptChain[]; selectedChains: PromptChain[]; initialScope: string; onClose: () => void; onImported: () => void }) => <div role="dialog" aria-label="风格串分享包"><span>{`${initialScope}/${chains.length}/${filteredChains.length}/${selectedChains.length}`}</span><button onClick={onClose}>关闭分享包</button><button onClick={onImported}>完成分享包导入</button></div> }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
 vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', () => ({
@@ -160,6 +161,30 @@ describe('风格串发送到实验室', () => {
   it('访客没有查找相似入口', () => {
     render(<ChainList {...props([styleChain])} isGuest />);
     expect(screen.queryByRole('button', { name: '查找相似' })).toBeNull();
+  });
+
+  it('分享包收到首屏外完整列表，关闭保留搜索，多选直接导出已选并复用刷新', async () => {
+    const items = Array.from({ length: 70 }, (_, index) => ({ ...styleChain, id: `bundle-${index}`, name: `分享串 ${index}` }));
+    const viewProps = { ...props([...items, characterChain]), onBulkDelete: vi.fn() };
+    render(<ChainList {...viewProps} />);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '分享串 6' } });
+    fireEvent.click(screen.getByRole('button', { name: '风格串分享包' }));
+    await screen.findByText('all/70/11/0');
+    fireEvent.click(screen.getByRole('button', { name: '完成分享包导入' }));
+    expect(viewProps.onRefresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '关闭分享包' }));
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('分享串 6');
+    fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+    fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出已选' }));
+    await screen.findByText('selected/70/11/11');
+  });
+
+  it('自定义角色与访客不提供风格串分享包', () => {
+    const view = render(<ChainList {...props([characterChain], 'character')} />);
+    expect(screen.queryByRole('button', { name: '风格串分享包' })).toBeNull();
+    view.rerender(<ChainList {...props([styleChain])} isGuest />);
+    expect(screen.queryByRole('button', { name: '风格串分享包' })).toBeNull();
   });
 
   it('对比悬浮删除复用单删确认，取消与失败保留，成功只移除指定风格串', async () => {

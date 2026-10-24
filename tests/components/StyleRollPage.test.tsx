@@ -11,12 +11,12 @@ import { executeAgentCommand, getAgentCommands } from '../../services/agentComma
 import { setLanguage } from '../../services/i18n';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false }));
-vi.mock('../../services/artistSamples', () => ({ ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
+vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
-vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: mocks.sampled }));
+vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: async () => ({ templates: {}, samples: [] }), getSampledArtistTags: mocks.sampled }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
@@ -648,6 +648,23 @@ it('空记录仍可直接开始第一轮，但不再提供从风格串开始', a
   expect(mocks.generate).not.toHaveBeenCalled();
 });
 
+it('连续调整偏好倍率不重新排序画师目录，真实搜索变化仍刷新结果', async () => {
+  const readPopularity = vi.fn(() => 1);
+  mocks.dictionary.mockResolvedValue(Array.from({ length: 1000 }, (_, index) => ({ name: `perf artist ${index}`, chinese: '', get postCount() { return readPopularity(); } })));
+  await setup(); openArtists();
+  await screen.findByText('共 1000 位');
+  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
+  await act(async () => {});
+  expect(readPopularity).toHaveBeenCalled(); readPopularity.mockClear();
+  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
+  for (let value = 2; value <= 12; value++) fireEvent.change(slider, { target: { value: String(value) } });
+  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' })).toHaveProperty('value', '12');
+  expect(readPopularity.mock.calls.length).toBe(0);
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'perf artist' } });
+  expect(readPopularity).toHaveBeenCalled();
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
+});
+
 it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保底', async () => {
   preferredItems.push({ sourceType: 'artist', sourceId: 'beta', archived: false });
   const { container } = await setup();
@@ -661,7 +678,8 @@ it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保�
   fireEvent.keyDown(window, { key: 'Escape' }); openArtists();
   fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
   fireEvent.change(screen.getByLabelText('每串偏好保底人数'), { target: { value: '1' } });
-  fireEvent.change(screen.getByLabelText('偏好抽中倍率'), { target: { value: '3' } });
+  fireEvent.change(screen.getByRole('slider', { name: '偏好抽中倍率滑条' }), { target: { value: '3' } });
+  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' })).toHaveProperty('value', '3');
   fireEvent.click(screen.getByRole('button', { name: '完成' }));
   await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 6, generate: false }, false); });
   const saved = mocks.save.mock.calls.at(-1)![0];

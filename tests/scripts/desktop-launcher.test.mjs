@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir, copyFile, stat, readdir } from
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   generateLauncherBatContent,
   getDesktopLauncherStatus,
@@ -120,6 +120,65 @@ describe('desktop-launcher service', () => {
     assert.equal((await createDesktopLauncher({ projectDir: tempProject, desktopDir: tempDesktop, os: 'linux' })).supported, false);
     assert.deepEqual(await readdir(tempDesktop), files);
     await assert.rejects(createDesktopLauncher({ projectDir: join(tempProject, 'missing'), desktopDir: tempDesktop, os: 'win32' }), /项目启动脚本或图标缺失/);
+  });
+
+  test('已有其他入口时返回保留状态，不校验成新目标或清理旧脚本', async () => {
+    const legacy = join(tempDesktop, 'NaiPromptManager.bat');
+    const content = generateLauncherBatContent({ projectDir: tempProject });
+    await writeFile(legacy, content);
+    const result = await createDesktopLauncher({ projectDir: tempProject, desktopDir: tempDesktop, os: 'win32', execFile: () => JSON.stringify({ preserved: true, changed: false, targetPath: 'D:\\other\\NAI Atelier.exe' }) });
+    assert.equal(result.success, false);
+    assert.equal(result.preserved, true);
+    assert.equal(result.changed, false);
+    assert.equal(result.shortcutCreated, false);
+    assert.equal(result.legacyBatRemoved, false);
+    assert.equal(result.message, '桌面已有安装版或自定义快捷方式，已保留，未覆盖。');
+    assert.equal(await readFile(legacy, 'utf8'), content);
+  });
+
+  test('实际创建失败只返回简短原因，不把 PowerShell 命令和堆栈传给日志或设置页', async () => {
+    const failure = Object.assign(new Error('Command failed: powershell.exe -Command\n完整命令正文'), { stderr: Buffer.from('Access is denied\r\nAt line: 12\r\n完整调用堆栈') });
+    await assert.rejects(createDesktopLauncher({ projectDir: tempProject, desktopDir: tempDesktop, os: 'win32', execFile: () => { throw failure; } }), error => {
+      assert.equal(error.message, 'Access is denied');
+      assert.equal(error.cause, failure);
+      return true;
+    });
+    const emptyStderr = Object.assign(new Error('PowerShell process failed\n完整命令正文'), { stderr: Buffer.alloc(0) });
+    await assert.rejects(createDesktopLauncher({ projectDir: tempProject, desktopDir: tempDesktop, os: 'win32', execFile: () => { throw emptyStderr; } }), error => error.message === 'PowerShell process failed');
+  });
+
+  test('Windows 实际保留安装版快捷方式原字节和目标，启动只打印一句提示', { skip: !IS_WINDOWS }, async context => {
+    const desktop = join(tempDesktop, 'installed-entry'), installed = join(tempProject, 'installed');
+    await mkdir(desktop); await mkdir(installed);
+    const target = join(installed, 'NAI Atelier.exe'), path = join(desktop, 'NAI Atelier.lnk');
+    await writeFile(target, 'synthetic executable placeholder');
+    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', String.raw`
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+try {
+  $shortcut = $shell.CreateShortcut($env:TEST_SHORTCUT_PATH)
+  $shortcut.TargetPath = $env:TEST_SHORTCUT_TARGET
+  $shortcut.WorkingDirectory = $env:TEST_SHORTCUT_DIRECTORY
+  $shortcut.Description = 'Installed application shortcut'
+  $shortcut.Save()
+  [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut)
+} finally { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
+`], { windowsHide: true, timeout: 10_000, stdio: 'pipe', env: { ...process.env, TEST_SHORTCUT_PATH: path, TEST_SHORTCUT_TARGET: target, TEST_SHORTCUT_DIRECTORY: installed } });
+    const before = await readFile(path), timestamp = (await stat(path)).mtimeMs;
+    const result = await createDesktopLauncher({ projectDir: tempProject, desktopDir: desktop });
+    assert.equal(result.preserved, true);
+    assert.deepEqual(await readFile(path), before);
+    assert.equal((await stat(path)).mtimeMs, timestamp);
+    const log = context.mock.method(console, 'log', () => {}), warn = context.mock.method(console, 'warn', () => {});
+    const ensured = await ensureDesktopLauncher({ projectDir: tempProject, desktopDir: desktop });
+    if (!process.env.CI && process.env.NAI_NO_DESKTOP_SHORTCUT !== '1') {
+      assert.equal(ensured.preserved, true);
+      assert.equal(log.mock.callCount(), 1);
+      assert.deepEqual(log.mock.calls[0].arguments, [result.message]);
+    }
+    assert.equal(warn.mock.callCount(), 0);
+    assert.deepEqual(await readFile(path), before);
+    assert.equal((await stat(path)).mtimeMs, timestamp);
   });
 
   test('Windows 实际创建、复读并重复复用快捷方式，支持中文与命令字符路径', { skip: !IS_WINDOWS }, async () => {

@@ -524,6 +524,8 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
 }
 @media (forced-colors: active) {
   html:root[data-design-theme] body { background: Canvas !important; color: CanvasText; }
+  html:root select :is(option, optgroup) { background-color: Canvas !important; color: CanvasText !important; }
+  html:root select :is(option, optgroup):disabled { color: GrayText !important; }
   html:root[data-design-theme] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .settings-navigation, .settings-dialog, .operation-dialog, .appearance-panel, .appearance-group, .appearance-reading-surface, .mobile-sheet, .chain-editor-main, .chain-editor-preview) {
     background: Canvas !important; color: CanvasText !important;
     border: 1px solid CanvasText !important;

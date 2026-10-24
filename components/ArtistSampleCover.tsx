@@ -118,12 +118,12 @@ export const ArtistSampleCover: React.FC<{
       {generation?.phase !== 'save_failed' && (!hasSample || onGenerate) && <button type="button" data-card-action="true" data-agent-action="business" aria-label={generateLabel} title={generateLabel} disabled={pending}
         onPointerDown={stopCardAction} onKeyDown={stopCardAction} onClick={event => { stopCardAction(event); (hasSample ? onGenerate : onSupplement)?.(); }}
         className={`${IMAGE_CARD_ACTION_CLASS} hover-reveal-md flex items-center justify-center`}>
-        <span className="relative" aria-hidden="true"><ImagePlus className="h-4 w-4" />{hasSample && <RefreshCw className="absolute -bottom-1.5 -right-1.5 h-3 w-3 rounded-full bg-gray-900 p-px" />}</span>
+        <span className="relative" aria-hidden="true"><ImagePlus className="h-4 w-4" />{hasSample && <RefreshCw className="appearance-contrast absolute -bottom-1.5 -right-1.5 h-3 w-3 rounded-full bg-gray-900 p-px" />}</span>
       </button>}
     </ArtistPreferenceActions>
     {onDelete && removal && imageUrl && !preview && generation?.phase !== 'save_failed' && generation?.phase !== 'saving' && <div data-card-action="true" data-image-action-left="true" className="absolute left-2 top-14 z-20 md:top-11" onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={stopCardAction}>
       <button type="button" aria-label={t('删除当前样张')} title={t('删除当前样张')} disabled={deleting || pending} onClick={() => void deleteCurrent()} className={`${IMAGE_CARD_ACTION_CLASS} hover-reveal-md flex items-center justify-center`}>
-        <span className="relative" aria-hidden="true"><ImageIcon className="h-4 w-4" /><Trash2 className="absolute -bottom-1.5 -right-1.5 h-3 w-3 rounded-full bg-gray-900 p-px" /></span>
+        <span className="relative" aria-hidden="true"><ImageIcon className="h-4 w-4" /><Trash2 className="appearance-contrast absolute -bottom-1.5 -right-1.5 h-3 w-3 rounded-full bg-gray-900 p-px" /></span>
       </button>
     </div>}
     {imageUrl && !imageError ? <>

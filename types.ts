@@ -107,6 +107,13 @@ export interface CharacterReferenceSelection {
   informationExtracted?: number;
 }
 
+/** 分享者声明的来源信息，不代表已核验的作者身份。 */
+export interface StyleBundleSource {
+  author: string;
+  sourceUrl: string;
+  note: string;
+}
+
 export interface NAIParams {
   /** NovelAI 模型标识，缺省 V4.5 Full（注册表见 services/naiModels.ts）。 */
   model?: string;
@@ -150,6 +157,8 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  /** 风格串分享来源快照，不进入 NovelAI 生成请求；再次分享时保留。 */
+  _styleBundleSources?: StyleBundleSource[];
 }
 
 /** 实验室提示词分栏原文；缺省或全为空表示尚未使用分栏（旧数据）。 */

@@ -334,6 +334,16 @@ html[data-design-theme='nai-atelier'].dark body {
   color: var(--color-gray-100);
 }
 
+/* 系统弹出的原生选项不能沿用玻璃控件的透明底，否则夜间会出现浅底白字。 */
+html:root select { color-scheme: light; }
+html:root.dark select { color-scheme: dark; }
+html:root select :is(option, optgroup) {
+  background-color: var(--nai-panel-solid-surface, Canvas);
+  color: var(--color-gray-900, CanvasText);
+}
+html:root.dark select :is(option, optgroup) { color: var(--color-gray-100, CanvasText); }
+html:root select :is(option, optgroup):disabled { color: var(--color-gray-500, GrayText); }
+
 /* 配色接管沿用现有工具类；语义色、图片遮罩和作品像素不变。 */
 html[data-design-theme='nai-atelier'] :where(.text-indigo-50, .text-violet-50) { color: var(--nai-accent-text-50); }
 html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-50'], [class~='dark:text-violet-50']) { color: var(--nai-accent-text-50); }

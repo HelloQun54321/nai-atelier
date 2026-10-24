@@ -105,6 +105,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   });
   selectedExperimentRef.current = experimentId;
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
+  const excludedArtistTags = useMemo(() => artistOverrides.filter(artist => artist.excluded).map(artist => artist.tag), [artistOverrides]);
   const effectiveLibrary = useMemo(() => sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library, [library, sampledTags]);
   const chineseNames = useMemo(() => new Map(libraryEntries.map(entry => [normalizeArtistSampleTag(entry.name), entry.chinese || ''])), [libraryEntries]);
   const roundNumbers = useMemo(() => {
@@ -637,7 +638,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {setup && <StyleRollSetup initial={setup} libraryCount={library.length} libraryLoading={libraryLoading} blockedTags={blocklist} library={libraryEntries} onBlockedChange={updateBlocklist} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
-    {artistDialogOpen && <StyleRollArtistDialog library={libraryEntries} loading={libraryLoading} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={artistOverrides.filter(artist => artist.excluded).map(artist => artist.tag)} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
+    {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={libraryEntries} loading={libraryLoading} pinned={pinnedArtists} onPinnedChange={setPinnedArtists} blocked={blocklist} onBlockedChange={updateBlocklist} excluded={excludedArtistTags} onExcludedChange={tags => setArtistOverrides(current => current.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })))} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={roundRules} onRulesChange={setRoundRules} onClose={() => setArtistDialogOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;
 };

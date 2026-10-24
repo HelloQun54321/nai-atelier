@@ -14,7 +14,14 @@ it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
   const next = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME);
   expect(next.params).not.toBe(template.params);
   expect(next.params.characters).not.toBe(template.params.characters);
-  expect(rollPrompt(template, [{ tag: 'alpha', weight: 1 }])).toBe('masterpiece, very aesthetic, best quality, absurdres, highres, no text, 1.0::artist:alpha ::, 1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025');
+  expect(rollPrompt(template, [{ tag: 'alpha', weight: 1 }])).toBe('masterpiece, very aesthetic, best quality, absurdres, highres, no text, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, year 2025, simple background, 1.0::artist:alpha ::, 1girl, solo, upper body, looking at viewer');
+});
+
+it('推荐重分栏保留全部原词且不增加重复项，背景归公共而角色只留人物姿态', () => {
+  const previous = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}, 1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025';
+  const words = (text: string) => text.split(',').map(word => word.trim()).sort();
+  expect(words(`${DEFAULT_ROLL_PROMPT}, ${DEFAULT_ROLL_CHARACTER_PROMPT}`)).toEqual(words(previous));
+  expect(DEFAULT_ROLL_CHARACTER_PROMPT).toBe('1girl, solo, upper body, looking at viewer');
 });
 
 it('预设验证复用完整生成模板边界，不接受无名、旧版本或缺少style位置', () => {

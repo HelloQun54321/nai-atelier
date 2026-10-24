@@ -1,9 +1,58 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { beginExportTarget, getExportLocation, pickExportDirectory, saveExportBlob, setExportMode } from '../../services/exportLocation';
+import { Capacitor } from '@capacitor/core';
+import { beginExportTarget, getExportLocation, openExportDirectory, pickExportDirectory, saveExportBlob, setExportMode } from '../../services/exportLocation';
 
 beforeEach(() => { localStorage.clear(); vi.stubGlobal('location', { hostname: 'phone-on-lan.invalid' }); });
 afterEach(() => { vi.useRealTimers(); delete window.atelierExports; delete (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it.each([
+  ['D:\\exports\\work.naia', 'D:\\exports'], ['C:\\work.naia', 'C:\\'], ['C:/work.naia', 'C:/'],
+  ['/exports/work.naia', '/exports'], ['/work.naia', '/'], ['\\\\server\\share\\work.naia', '\\\\server\\share'],
+])('打开本次真实回执的父目录 %s，不受后来设置变化影响', async (path, directory) => {
+  vi.stubGlobal('location', { hostname: 'localhost' });
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true }) }); vi.stubGlobal('fetch', fetch);
+  await openExportDirectory({ saved: true, cancelled: false, path });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ action: 'openDirectory', path: directory });
+});
+it('没有成功回执时复用实际配置目录，取消失败路径不冒充已保存位置', async () => {
+  vi.stubGlobal('location', { hostname: 'localhost' });
+  const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+  for (const receipt of [undefined, { saved: false, cancelled: true, path: 'Z:\\cancelled\\x.naia' }, { saved: false, cancelled: false, path: 'Z:\\failed\\x.naia' }]) {
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'directory', directory: 'E:\\configured' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+    await openExportDirectory(receipt);
+    expect(JSON.parse(fetch.mock.calls.at(-1)![1].body).path).toBe('E:\\configured');
+  }
+  fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'system', systemDirectory: 'E:\\Downloads' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+  await openExportDirectory(); expect(JSON.parse(fetch.mock.calls.at(-1)![1].body).path).toBe('E:\\Downloads');
+});
+it('未知浏览器下载、相对目录和每次询问不猜测路径，LAN及Android不请求电脑目录', async () => {
+  const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
+  await expect(openExportDirectory({ saved: true, cancelled: false, path: 'D:\\host\\x.naia' })).rejects.toThrow('当前设备');
+  expect(fetch).not.toHaveBeenCalled();
+  vi.stubGlobal('location', { hostname: 'localhost' });
+  await expect(openExportDirectory({ saved: false, cancelled: false, browserDownload: true })).rejects.toThrow('下载记录');
+  expect(fetch).not.toHaveBeenCalled();
+  for (const state of [{ mode: 'system' }, { mode: 'directory', directory: 'Handle name' }, { mode: 'ask', directory: 'E:\\old-choice' }]) {
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => state });
+    await expect(openExportDirectory()).rejects.toThrow('下载记录');
+  }
+  fetch.mockClear();
+  vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true); vi.spyOn(Capacitor, 'getPlatform').mockReturnValue('android');
+  await expect(openExportDirectory({ saved: true, cancelled: false, path: '/storage/downloads/x.naia' })).rejects.toThrow('当前设备');
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('文件夹打开失败透传错误，负回执也不算成功', async () => {
+  vi.stubGlobal('location', { hostname: 'localhost' });
+  const receipt = { saved: true, cancelled: false, path: '/exports/work.naia' };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) })
+    .mockResolvedValueOnce({ ok: false, status: 400, clone: () => ({ text: async () => JSON.stringify({ error: 'directory missing' }) }) }));
+  await expect(openExportDirectory(receipt)).rejects.toThrow('未打开');
+  await expect(openExportDirectory(receipt)).rejects.toThrow('directory missing');
+});
 
 it('桌面只展示后台实际下载目录，普通浏览器不猜测系统目录', async () => {
   vi.stubGlobal('location', { hostname: 'localhost' });
@@ -66,6 +115,21 @@ it('桌面只接受真实写入回执，取消和失败不返回完成', async (
   await expect(saveExportBlob(new Blob(['{}']), 'x.json')).rejects.toMatchObject({ name: 'AbortError' });
   save.mockResolvedValue({ saved: false, cancelled: false });
   await expect(saveExportBlob(new Blob(['{}']), 'x.json')).rejects.toThrow('未写入');
+});
+it('桌面大文件直接传Blob并沿用后台目录回执，取消不假成功', async () => {
+  vi.stubGlobal('location', { hostname: 'localhost' });
+  const save = vi.fn(); window.atelierExports = { save };
+  const blob = new Blob(['synthetic']); Object.defineProperty(blob, 'size', { value: 33 * 1024 * 1024, configurable: true });
+  const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'system', systemDirectory: 'E:\\exports' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ saved: true, cancelled: false, filename: '分享.naia' }) });
+  vi.stubGlobal('fetch', fetch);
+  expect(await saveExportBlob(blob, '分享.naia')).toMatchObject({ saved: true });
+  expect(fetch.mock.calls[1][1]).toMatchObject({ body: blob, headers: { 'content-type': 'application/octet-stream', 'x-nai-export-filename': encodeURIComponent('分享.naia'), 'x-nai-export-size': String(blob.size), 'x-nai-local-control': 'true' } });
+  expect(save).not.toHaveBeenCalled();
+  fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ mode: 'ask' }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ saved: false, cancelled: true }) });
+  await expect(saveExportBlob(blob, '分享.naia')).rejects.toMatchObject({ name: 'AbortError' });
+  Object.defineProperty(blob, 'size', { value: 2 * 1024 * 1024 * 1024 + 1 });
+  await expect(saveExportBlob(blob, '分享.naia')).rejects.toThrow('2 GiB');
 });
 it('目录写入失败清除本次不完整副本并返回错误', async () => {
   const abort = vi.fn().mockResolvedValue(undefined), removeEntry = vi.fn().mockResolvedValue(undefined);

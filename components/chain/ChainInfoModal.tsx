@@ -32,6 +32,8 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
   const dialogRef = useModalA11y<HTMLFormElement>(true);
   const nameRef = useRef<HTMLInputElement>(null);
   const label = chain.type === 'character' ? '自定义角色' : '风格串';
+  const sources = chain.type === 'style' && Array.isArray(chain.params._styleBundleSources)
+    ? chain.params._styleBundleSources.filter(source => source && ['author', 'sourceUrl', 'note'].every(key => typeof source[key as keyof typeof source] === 'string')) : [];
   const close = () => { if (!savingRef.current) onClose(); };
 
   useEffect(() => {
@@ -78,6 +80,16 @@ const ChainInfoForm: React.FC<ChainInfoModalProps> = ({ chain, onSave, onClose, 
       <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-base font-bold text-gray-900 dark:text-white">{t("编辑{0}信息", [t(label)])}</h2><IconButton label={t("关闭")} disabled={saving} onClick={close}><X /></IconButton></div>
       <label className="block text-xs font-semibold text-gray-500">{t("名称")}<input ref={nameRef} value={name} disabled={saving} onChange={event => setName(event.target.value)} className={fieldClass} /></label>
       <label className="mt-4 block text-xs font-semibold text-gray-500">{t("描述")}<textarea value={description} disabled={saving} onChange={event => setDescription(event.target.value)} className={`${fieldClass} min-h-20 resize-y`} /></label>
+      {sources.length > 0 && <section aria-label={t('分享来源')} className="mt-4 space-y-2 text-xs">
+        <h3 className="font-semibold text-gray-500">{t('分享来源（分享者声明）')}</h3>
+        {sources.map((source, index) => <div key={index} className="appearance-group space-y-1 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+          {source.author && <p className="break-words">{t('作者')}：{source.author}</p>}
+          {source.sourceUrl && <p className="break-all">{t('来源链接')}：{/^https?:\/\//i.test(source.sourceUrl)
+            ? <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline dark:text-indigo-300">{source.sourceUrl}</a>
+            : <span>{source.sourceUrl}</span>}</p>}
+          {source.note && <p className="whitespace-pre-wrap break-words">{source.note}</p>}
+        </div>)}
+      </section>}
       <div className="mt-4 text-xs font-semibold text-gray-500">{t("自定义标签")}</div>
       <div className="mt-2 flex flex-wrap gap-1.5">{tags.map(tag => <span key={tag} className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">{tag}<button type="button" aria-label={t("移除标签 {0}", [tag])} disabled={saving} onClick={() => setTags(previous => previous.filter(value => value !== tag))}><X className="h-3 w-3" /></button></span>)}</div>
       <input aria-label={t("添加标签")} value={newTag} disabled={saving} onChange={event => setNewTag(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); addTag(); } }} placeholder={t("添加标签，回车确认")} className={fieldClass} />

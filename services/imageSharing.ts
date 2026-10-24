@@ -284,7 +284,7 @@ const convertToPng = async (blob: Blob): Promise<Blob> => {
   } finally { bitmap.close(); }
 };
 
-const prepareImageBlob = async (original: Blob, clean: boolean, pngRequired: boolean, customText: string, content: SharedImageCleanContent) => {
+export const prepareImageBlob = async (original: Blob, clean: boolean, pngRequired: boolean, customText: string, content: SharedImageCleanContent) => {
   if (!clean && !pngRequired) return original;
   const png = await convertToPng(original);
   if (!clean) return png.type === 'image/png' ? png : new Blob([await png.arrayBuffer()], { type: 'image/png' });

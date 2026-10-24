@@ -31,7 +31,10 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
   <button onClick={() => setAppearancePreferences({ ...appearancePreferences, gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })}>切换合成选中聚焦</button>
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onBundleImported, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onBundleImported?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onBundleImported && <button onClick={async () => {
+  try { await onBundleImported(); notify('合成分享包已回读'); }
+  catch (error: any) { notify('风格串已保存，列表刷新失败：' + error.message, 'error'); }
+}}>回读合成分享包</button>}{onReloadTags && <button onClick={async () => {
   try { await onReloadTags(); notify('合成标签已回读'); }
   catch (error: any) { notify(error.message, 'error'); }
 }}>回读合成分类标签</button>}{onBulkDelete && <button onClick={async () => {
@@ -112,6 +115,18 @@ const setup = async (entry = 'aitag') => {
   fireEvent.click(screen.getByRole('button', { name: entry }));
   await screen.findByRole('button', { name: entry === 'prompts' ? '新建合成服饰' : '保存合成作品' });
 };
+
+it.each([false, true])('分享包回读使用真实刷新返回约定，刷新失败=%s 时明确报告已保存', async fails => {
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  await screen.findByRole('button', { name: '回读合成分享包' });
+  if (fails) mocks.getAllChains.mockRejectedValueOnce(new Error('合成列表查询失败'));
+  else mocks.getAllChains.mockResolvedValueOnce([saved]);
+  fireEvent.click(screen.getByRole('button', { name: '回读合成分享包' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(fails
+    ? '风格串已保存，列表刷新失败：风格串列表加载失败，请稍后重试'
+    : '合成分享包已回读'));
+});
 
 it('内容库粘贴原文直接创建组合并显示，保存不切库、不修改实验室或拆分提示词', async () => {
   const text = '  {{snow}}, 1.2::hair::\r\n[smile]  ';

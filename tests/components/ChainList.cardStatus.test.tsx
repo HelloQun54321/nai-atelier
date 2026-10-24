@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
@@ -28,6 +28,7 @@ vi.mock('../../services/imageDisplayPreferences', () => ({
 }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => null }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: () => null }));
+vi.mock('../../components/chain/StyleBundleDialog', () => ({ StyleBundleDialog: ({ onImported }: { onImported: () => Promise<void> }) => <button onClick={() => void onImported()}>合成分享包回读</button> }));
 vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: '', ImageShareActions: () => null }));
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
@@ -65,6 +66,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串卡片的待实测状态', () => {
+  it('分享包优先使用专用回读回调，不改变其他导入入口的旧刷新语义', async () => {
+    const callbacks = props([chain('plain', '普通风格', false)]), onBundleImported = vi.fn(async () => {});
+    render(<ChainList {...callbacks} onBundleImported={onBundleImported} />);
+    fireEvent.click(screen.getByRole('button', { name: '风格串分享包' }));
+    fireEvent.click(await screen.findByRole('button', { name: '合成分享包回读' }));
+    expect(onBundleImported).toHaveBeenCalledOnce();
+    expect(callbacks.onRefresh).not.toHaveBeenCalled();
+  });
   it('放在标题栏内并紧贴作品名，不再压在封面底部', () => {
     render(<ChainList {...props([chain('untested', '待测风格', true)])} />);
     const card = screen.getByRole('button', { name: '打开风格串：待测风格' });

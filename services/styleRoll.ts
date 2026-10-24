@@ -52,9 +52,9 @@ export interface RollExperiment {
 }
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 4, maxArtists: 4, minWeight: 0.7, maxWeight: 1.4 };
-/** 默认画面内容独立编辑，生成时仍按原顺序接在画师串之后。 */
-export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}';
-export const DEFAULT_ROLL_CHARACTER_PROMPT = '1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025';
+/** 推荐的通用质量、渲染和背景归公共栏，人物与姿态独立编辑。 */
+export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, year 2025, simple background, {style}';
+export const DEFAULT_ROLL_CHARACTER_PROMPT = '1girl, solo, upper body, looking at viewer';
 export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg artifacts, very displeasing, logo, chromatic aberration, scan artifacts, film grain, artistic error, multiple views, dithering, halftone, too many watermarks, blank page, screentone, negative space, watermark, signature, bad anatomy, bad hands, blurry';
 export function createDefaultRollTemplate(runtime: NaiRuntimeConfig): RollTemplate {
   return { prompt: DEFAULT_ROLL_PROMPT, characterPrompt: DEFAULT_ROLL_CHARACTER_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE,
@@ -70,8 +70,6 @@ export function validateRollPreset(value: unknown): asserts value is RollPreset 
     ![preset.createdAt, preset.updatedAt].every(Number.isFinite)) throw new Error('Roll 预设资料无效');
   validateRollTemplate(preset.template);
 }
-/** 历史默认模板：仍原样保存且没有候选时升级为新默认，用户改过的内容不动。 */
-export const LEGACY_ROLL_PROMPTS = ['{style}, 1girl, solo, upper body, simple background, looking at viewer'];
 export const ROLL_CANDIDATE_LIMIT = 240;
 /** 单条 Roll 配方最多包含的画师数；足够覆盖较长的风格串，同时保留数据与界面安全边界。 */
 export const ROLL_MAX_ARTISTS = 64;

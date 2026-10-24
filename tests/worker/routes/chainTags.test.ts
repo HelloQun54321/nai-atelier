@@ -50,6 +50,21 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
 };
 
 describe('风格串标签读写链路（隔离 SQLite）', () => {
+  it('分享来源随创建与读取保留，替换生成参数或普通编辑不会抹掉原出处', async () => {
+    const f = fixture();
+    const original = { author: '合成作者', sourceUrl: 'https://example.org/free', note: '免费分享' };
+    const curator = { author: '合成整理者', sourceUrl: '', note: '整理说明' };
+    const created = await (await f.invoke('/api/chains', 'POST', { name: '分享配方', params: { seed: 42, _styleBundleSources: [original] } })).json() as any;
+    expect(created.chain.params._styleBundleSources).toEqual([original]);
+    await f.invoke(`/api/chains/${created.id}`, 'PUT', { params: { seed: 17 } });
+    expect((await (await f.invoke(`/api/chains/${created.id}`)).json() as any).params).toMatchObject({ seed: 17, _styleBundleSources: [original] });
+    await f.invoke(`/api/chains/${created.id}`, 'PUT', { params: { seed: 18, _styleBundleSources: [original, curator] } });
+    await f.invoke(`/api/chains/${created.id}`, 'PUT', { name: '新名称', description: '新描述' });
+    const list = await (await f.invoke()).json() as any[];
+    expect(list[0]).toMatchObject({ name: '新名称', description: '新描述', params: { seed: 18, _styleBundleSources: [original, curator] } });
+    expect(f.initDB).not.toHaveBeenCalled();
+  });
+
   it('Agent 检索在数据库分页，转义通配符并只返回有界摘要', async () => {
     const f = fixture();
     const insert = f.sqlite.prepare('INSERT INTO chains (id, name, base_prompt, updated_at) VALUES (?, ?, ?, ?)');
@@ -64,8 +79,8 @@ describe('风格串标签读写链路（隔离 SQLite）', () => {
     expect(literal.chains.map((item: any) => item.id)).toEqual(['literal']);
     expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(206);
   });
-  it('同一 Agent 创建操作不重复落库，也不覆盖之后的手动修改', async () => {
-    const f = fixture(); const id = `agent-${'a'.repeat(64)}`;
+  it.each(['agent', 'naia'])('同一 %s 创建操作不重复落库，也不覆盖之后的手动修改', async prefix => {
+    const f = fixture(); const id = `${prefix}-${'a'.repeat(64)}`;
     await f.invoke('/api/chains', 'POST', { id, name: 'original' });
     await f.invoke(`/api/chains/${id}`, 'PUT', { name: 'manual' });
     const replay = await (await f.invoke('/api/chains', 'POST', { id, name: 'original' })).json() as any;

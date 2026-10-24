@@ -1479,6 +1479,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             ...m,
             isActive: activeModules[m.id] ?? true
         }));
+        const sources = [...(chain.params._styleBundleSources || []), ...(params._styleBundleSources || [])];
+        const shareSources = [...new Map(sources.map(source => [JSON.stringify(source), source])).values()];
         try {
             const cover = targetType === 'style'
                 ? await prepareCurrentPreviewCover(true)
@@ -1491,7 +1493,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 basePrompt,
                 negativePrompt,
                 modules: updatedModules,
-                params,
+                params: { ...params, ...(shareSources.length ? { _styleBundleSources: shareSources } : {}) },
                 variableValues: { 'subject': subjectPrompt },
                 previewImage: cover.previewImage,
             }, targetType);

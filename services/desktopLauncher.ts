@@ -17,6 +17,7 @@ export interface DesktopLauncherStatus {
 
 export interface CreateDesktopLauncherResult {
   success: boolean;
+  preserved?: boolean;
   batCreated: boolean;
   shortcutCreated: boolean;
   changed?: boolean;

@@ -1,8 +1,8 @@
 import GenerationTemplateEditor from '../GenerationTemplateEditor';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LockKeyhole, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
-import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, type RollExperiment } from '../../services/styleRoll';
+import { getRollArtistRange, getRollPinnedArtists, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
 import { StyleRollArtistDialog } from './StyleRollArtistDialog';
 import { StyleRollRuleFields } from './StyleRollRuleFields';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
@@ -19,13 +19,8 @@ export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><Set
 
 const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, onSave, onClose }) => {
   useLanguage();
-  const legacyUpgraded = !initial.candidates.length && LEGACY_ROLL_PROMPTS.includes(initial.template.prompt) && !initial.template.negativePrompt.trim()
-    && initial.template.characterPrompt === undefined && !initial.template.params.characters?.length;
-  const [draft, setDraft] = useState(() => {
-    const value = structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } });
-    if (legacyUpgraded) { value.template.prompt = DEFAULT_ROLL_PROMPT; value.template.negativePrompt = DEFAULT_ROLL_NEGATIVE; value.template.characterPrompt = DEFAULT_ROLL_CHARACTER_PROMPT; }
-    return value;
-  });
+  const [draft, setDraft] = useState(() => structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } }));
+  const excludedArtistTags = useMemo(() => draft.artists.filter(artist => artist.excluded).map(artist => artist.tag), [draft.artists]);
   const [artistDialogOpen, setArtistDialogOpen] = useState(false);
   const [section, setSection] = useState<'pool' | 'template'>('pool');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -63,7 +58,6 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
         </div>}
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
           {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}
-          {legacyUpgraded && draft.template.prompt === DEFAULT_ROLL_PROMPT && draft.template.negativePrompt === DEFAULT_ROLL_NEGATIVE && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">{t('已把旧的默认提示词换成质量词模板，保存后生效。')}</p>}
           <GenerationTemplateEditor value={draft.template} onChange={template => setDraft(current => ({ ...current, template }))} disabled={busy} readOnly={frozen} enforceFreeStepLimit={enforceFreeStepLimit} onBusyChange={setPresetBusy} />
         </div>
       </div>
@@ -72,7 +66,7 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
         <ToolbarButton disabled={busy || presetBusy} onClick={close}>{t('取消')}</ToolbarButton>
         <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy || presetBusy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
       </footer>
-      {artistDialogOpen && <StyleRollArtistDialog library={library} loading={libraryLoading} pinned={draft.pinnedArtists ?? []} onPinnedChange={pinnedArtists => setDraft(current => ({ ...current, pinnedArtists }))} blocked={blockedTags} onBlockedChange={onBlockedChange} excluded={draft.artists.filter(artist => artist.excluded).map(artist => artist.tag)} onExcludedChange={tags => setDraft(current => ({ ...current, artists: current.artists.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })) }))} sampledOnly={draft.sampledOnly ?? false} onSampledOnlyChange={sampledOnly => setDraft(current => ({ ...current, sampledOnly }))} rules={draft.rules} onRulesChange={rules => setDraft(current => ({ ...current, rules }))} onClose={() => setArtistDialogOpen(false)} />}
+      {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={library} loading={libraryLoading} pinned={draft.pinnedArtists ?? []} onPinnedChange={pinnedArtists => setDraft(current => ({ ...current, pinnedArtists }))} blocked={blockedTags} onBlockedChange={onBlockedChange} excluded={excludedArtistTags} onExcludedChange={tags => setDraft(current => ({ ...current, artists: current.artists.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })) }))} sampledOnly={draft.sampledOnly ?? false} onSampledOnlyChange={sampledOnly => setDraft(current => ({ ...current, sampledOnly }))} rules={draft.rules} onRulesChange={rules => setDraft(current => ({ ...current, rules }))} onClose={() => setArtistDialogOpen(false)} />}
 
     </div>
   </div>;

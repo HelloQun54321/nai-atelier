@@ -181,10 +181,22 @@ export async function createDesktopLauncher({
 
   if (!status.batExists || !status.iconExists) throw Object.assign(new Error('项目启动脚本或图标缺失，请检查项目文件完整性'), { status: 400 });
   // 路径通过环境变量传递，中文、空格、单引号和命令字符都不会进入 PowerShell 代码。
-  const result = JSON.parse(execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', shortcutScript], {
-    encoding: 'utf8', windowsHide: true, timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, NAI_SHORTCUT_PATH: status.shortcutPath, NAI_SHORTCUT_TARGET: status.batPath, NAI_SHORTCUT_PROJECT: status.projectDir, NAI_SHORTCUT_ICON: status.iconPath },
-  }));
+  let result;
+  try {
+    result = JSON.parse(execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', shortcutScript], {
+      encoding: 'utf8', windowsHide: true, timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NAI_SHORTCUT_PATH: status.shortcutPath, NAI_SHORTCUT_TARGET: status.batPath, NAI_SHORTCUT_PROJECT: status.projectDir, NAI_SHORTCUT_ICON: status.iconPath },
+    }));
+  } catch (error) {
+    // 子进程错误的 message 含完整命令；只向启动日志和设置页返回首行原因。
+    const reason = String(error.stderr || '').trim() || error.message;
+    throw new Error(reason.split(/\r?\n/)[0], { cause: error });
+  }
+  if (result.preserved === true) return {
+    success: false, preserved: true, changed: false, batCreated: false, shortcutCreated: false, legacyBatRemoved: false,
+    batPath: status.batPath, shortcutPath: status.shortcutPath,
+    message: '桌面已有安装版或自定义快捷方式，已保留，未覆盖。',
+  };
   if (normalize(result.targetPath || '').toLowerCase() !== status.batPath.toLowerCase()) throw new Error('快捷方式目标校验失败，已保留旧桌面脚本');
 
   let legacyBatRemoved = false;
@@ -221,7 +233,11 @@ try {
   $path = $env:NAI_SHORTCUT_PATH
   $exists = Test-Path -LiteralPath $path
   $shortcut = $shell.CreateShortcut($path)
-  if ($exists -and $shortcut.Description -ne 'NAI Atelier Launcher' -and $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET) { throw 'A custom desktop shortcut already exists; it has been preserved' }
+  if ($exists -and $shortcut.Description -ne 'NAI Atelier Launcher' -and $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET) {
+    @{ preserved = $true; changed = $false; targetPath = $shortcut.TargetPath } | ConvertTo-Json -Compress
+    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shortcut)
+    return
+  }
   $icon = $env:NAI_SHORTCUT_ICON + ',0'
   $changed = -not $exists -or $shortcut.TargetPath -ne $env:NAI_SHORTCUT_TARGET -or $shortcut.WorkingDirectory -ne $env:NAI_SHORTCUT_PROJECT -or $shortcut.IconLocation -ne $icon
   if ($changed) {
@@ -244,7 +260,8 @@ export async function ensureDesktopLauncher(options = {}) {
   if (platform() !== 'win32' || process.env.CI || process.env.NAI_NO_DESKTOP_SHORTCUT === '1') return;
   try {
     const result = await createDesktopLauncher(options);
-    if (result.changed || result.legacyBatRemoved) console.log('NAI Atelier 桌面快捷方式已创建／更新，启动脚本位于项目内。');
+    if (result.preserved) console.log(result.message);
+    else if (result.changed || result.legacyBatRemoved) console.log('NAI Atelier 桌面快捷方式已创建／更新，启动脚本位于项目内。');
     return result;
   } catch (error) { console.warn(`无法自动创建桌面快捷方式，可在「设置 → 数据与维护」重试：${error.message}`); }
 }

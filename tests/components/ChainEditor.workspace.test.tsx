@@ -1487,6 +1487,21 @@ describe('统一工作台真实状态链路', () => {
     expect(view.props.onFork).toHaveBeenCalledOnce();
   });
 
+  it('分享配方替换生成配置后另存新串，仍保留原作者与免费出处', async () => {
+    const source = { author: '合成作者', sourceUrl: 'https://example.org/free', note: '免费分享' };
+    const view = setup({ ...chain, params: { ...chain.params, _styleBundleSources: [source] } });
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', fullMetadata: true, targetMode: 'text-to-image', replace: true,
+      prompt: 'replacement recipe', negativePrompt: '', params: { ...chain.params, seed: 42 }, importSettings: true }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('replacement recipe'));
+    const actions = view.container.querySelector('.chain-editor-actions') as HTMLElement;
+    fireEvent.click(within(actions).getByRole('button', { name: '保存风格串' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '另存为新串' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '风格串' })); });
+    expect(view.props.onFork).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'replacement recipe', params: expect.objectContaining({ seed: 42, _styleBundleSources: [source] }) }), 'style');
+    expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+  });
+
   it('自由实验室草稿不受风格串编辑影响，文生图重置恢复已保存预设', async () => {
     saveLabWorkspaceSession('playground', { ...fallback(), textToImage: { ...fallback().textToImage, basePrompt: 'private playground draft' } });
     const view = setup();

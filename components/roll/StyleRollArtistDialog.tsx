@@ -1,23 +1,30 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Check, ImageIcon, SlidersHorizontal, X } from 'lucide-react';
+import React, { useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Check, SlidersHorizontal, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { matchesArtistSearch, parseArtistSearchTerms } from '../../services/tagLibrary';
 import { getArtistUsage, isArtistUsageSort, artistUsageCount, compareArtistUsage, matchesArtistUsage, type ArtistBrowseSort, type ArtistUsageFilter, type ArtistUsageIndex } from '../../services/artistUsage';
 import { localHistory } from '../../services/localHistory';
 import type { RollRules } from '../../services/styleRoll';
-import { ARTIST_SAMPLES_CHANGED, normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
-import { loadArtistSampleUrls } from '../../services/artistSampleUrls';
-import { collectionSnapshot, ensureCollection, subscribeCollection, toggleArtistPreference } from '../../services/collectionFavorites';
+import { ARTIST_SAMPLES_CHANGED, getArtistSampleCatalog, getArtistSampleStatus, isArtistSampleSourceForPack, normalizeArtistSampleTag, type ArtistSampleCatalog, type ArtistSamplePack, type ArtistSampleStatus } from '../../services/artistSamples';
+import { getArtistSampleData, type ArtistSampleData } from '../../services/artistSampleDrafts';
+import { artistSampleGenerationBusy, artistSampleGenerationRevision, getArtistSampleGeneration, getGeneratedArtistSamples, subscribeArtistSampleGeneration } from '../../services/artistSampleGeneration';
+import { indexArtistSampleGallery } from '../../services/artistSampleGallery';
+import { collectionSnapshot, ensureCollection, subscribeCollection } from '../../services/collectionFavorites';
+import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
+import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { normalizeRollArtistKey } from '../../services/styleRollSeed';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
-import { SmartImage } from '../SmartImage';
+import { ArtistSampleCover } from '../ArtistSampleCover';
+import { ImageActivityContext } from '../SmartImage';
+import { ArtistSampleGenerationStatus, useArtistSampleActions } from '../useArtistSampleActions';
+import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
+import { useImageRatios } from '../useImageRatios';
 import { IconButton, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
 import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from '../ToolbarPopover';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
-import { ArtistPreferenceActions } from '../ArtistPreferenceActions';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
@@ -28,22 +35,33 @@ interface Props {
   excluded: string[]; onExcludedChange: (tags: string[]) => void;
   sampledOnly: boolean; onSampledOnlyChange: (value: boolean) => void;
   rules: RollRules; onRulesChange: (rules: RollRules) => void;
+  enforceFreeStepLimit?: boolean;
   onClose: () => void;
 }
 
 export const StyleRollArtistDialog: React.FC<Props> = props => <ImagePreviewPortal><ArtistDialog {...props} /></ImagePreviewPortal>;
 
-const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, sampledOnly, onSampledOnlyChange, rules, onRulesChange, onClose }) => {
+const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, sampledOnly, onSampledOnlyChange, rules, onRulesChange, enforceFreeStepLimit, onClose }) => {
   useLanguage();
   const collection = useSyncExternalStore(subscribeCollection, collectionSnapshot);
   const preferred = useMemo(() => new Set(collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => normalizeRollArtistKey(item.sourceId!))), [collection]);
-  const [urls, setUrls] = useState<Record<ArtistSamplePack, Map<string, string>>>({ v45: new Map(), v5: new Map() }), [sampleLoading, setSampleLoading] = useState(true);
+  const [sampleData, setSampleData] = useState<ArtistSampleData>({ templates: {}, samples: [] });
+  const [sampleCatalogs, setSampleCatalogs] = useState<Partial<Record<ArtistSamplePack, ArtistSampleCatalog>>>({});
+  const [sampleStatus, setSampleStatus] = useState<ArtistSampleStatus | null>(null), [sampleLoading, setSampleLoading] = useState(true);
+  useSyncExternalStore(subscribeArtistSampleGeneration, artistSampleGenerationRevision);
+  const generatedSamples = getGeneratedArtistSamples();
   const [sampleRetry, setSampleRetry] = useState(0);
   useEffect(() => { const changed = () => setSampleRetry(value => value + 1); window.addEventListener(ARTIST_SAMPLES_CHANGED, changed); return () => window.removeEventListener(ARTIST_SAMPLES_CHANGED, changed); }, []);
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
   const searchTerms = useMemo(() => parseArtistSearchTerms(query), [query]);
+  const preferredMultiplier = rules.preferredMultiplier ?? 1;
+  const [preferredSliderMax, setPreferredSliderMax] = useState(() => Math.max(100, preferredMultiplier));
+  // 数字输入保留大倍率，扩展后的滑条范围在拖动期间不缩小。
+  useEffect(() => {
+    if (Number.isFinite(preferredMultiplier)) setPreferredSliderMax(max => Math.max(max, preferredMultiplier));
+  }, [preferredMultiplier]);
   const [sort, setSort] = useState<ArtistBrowseSort>(() => {
     const saved = localStorage.getItem('nai_roll_artist_sort') || localStorage.getItem('nai_artist_sort');
     return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' || isArtistUsageSort(saved || '') ? saved as ArtistBrowseSort : 'popular';
@@ -63,9 +81,16 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   useEffect(() => localHistory.subscribe(() => setUsageRetry(value => value + 1)), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const gallery = useRef<HTMLDivElement>(null);
+  const imageDisplay = useMobileImageDisplayPreferences('artists');
+  const columns = useMasonryColumnCount(imageDisplay, undefined, gallery);
+  const [artistRatios, updateImageRatio] = useImageRatios();
+  const frostedCaption = useGalleryFrostedCaption();
   const settingsAnchor = useRef<HTMLDivElement>(null);
   const closeSettings = React.useCallback(() => setSettingsOpen(false), []);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const notify = React.useCallback((message: string) => setError(message), []);
+  const active = useContext(ImageActivityContext);
+  const { requestingTarget, removeSample, supplementSample, manageGeneration, settingsDialog } = useArtistSampleActions({ active, data: sampleData, setData: setSampleData, notify, enforceFreeStepLimit });
   const dialog = useModalA11y<HTMLDivElement>(true);
   const close = useMobileHistoryLayer(true, () => { if (busy) return false; onClose(); }, 'roll-artists');
   useEffect(() => {
@@ -74,34 +99,47 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   }, [close, dialog]);
   useEffect(() => {
     let current = true;
-    void Promise.all([loadArtistSampleUrls('v45'), loadArtistSampleUrls('v5')]).then(([v45, v5]) => { if (current) setUrls({ v45, v5 }); }).catch(cause => { if (current) setError((cause as Error).message); }).finally(() => { if (current) setSampleLoading(false); });
+    void Promise.all([getArtistSampleStatus(), getArtistSampleData()]).then(async ([status, data]) => {
+      if (!current) return;
+      setSampleStatus(status);
+      setSampleData(previous => ({ ...data, removedSamples: [...new Map([...(previous.removedSamples || []), ...(data.removedSamples || [])].map(removal => [JSON.stringify(removal), removal])).values()] }));
+      setSampleCatalogs(previous => Object.fromEntries(Object.entries(previous).filter(([id, catalog]) => status.packs.some(pack => pack.id === id && pack.phase === 'ready' && pack.revision === catalog.revision && isArtistSampleSourceForPack(pack.id, pack) && isArtistSampleSourceForPack(pack.id, catalog)))));
+      const catalogs = await Promise.all((['v45', 'v5'] as const).map(async pack => {
+        const source = status.packs.find(item => item.id === pack);
+        if (source?.phase !== 'ready' || !isArtistSampleSourceForPack(pack, source)) return null;
+        try {
+          const catalog = await getArtistSampleCatalog(pack);
+          if (!isArtistSampleSourceForPack(pack, catalog)) throw new Error(t('当前图包未确认为 V5 Full，原文件已保留'));
+          return [pack, catalog] as const;
+        } catch (cause) { if (current) setError((cause as Error).message); return null; }
+      }));
+      if (current) setSampleCatalogs(Object.fromEntries(catalogs.filter(value => value !== null)));
+    }).catch(cause => { if (current) setError((cause as Error).message); }).finally(() => { if (current) setSampleLoading(false); });
     return () => { current = false; };
   }, [sampleRetry]);
+  useEffect(() => {
+    if (!sampleStatus?.packs.some(pack => pack.phase === 'indexing' || ['downloading', 'verifying'].includes(pack.download?.stage || ''))) return;
+    const timer = window.setInterval(() => setSampleRetry(value => value + 1), 2000);
+    return () => window.clearInterval(timer);
+  }, [sampleStatus]);
   useEffect(() => { void ensureCollection().catch(cause => setError((cause as Error).message)); }, []);
   const pinnedKeys = useMemo(() => new Set(pinned.map(normalizeRollArtistKey)), [pinned]);
   const blockedKeys = useMemo(() => new Set([...blocked, ...excluded].map(normalizeRollArtistKey)), [blocked, excluded]);
-  const sampleNameCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const name of new Set(library.map(entry => entry.name))) { const key = normalizeArtistSampleTag(name); counts.set(key, (counts.get(key) || 0) + 1); }
-    return counts;
-  }, [library]);
-  const sampleUrl = (name: string, pack: ArtistSamplePack) => {
-    const key = normalizeArtistSampleTag(name), url = urls[pack].get(key);
-    if (!url || (sampleNameCounts.get(key) || 0) < 2) return url;
-    // 归一冲突只接受地址明确记录的原 Tag；普通资产地址不能证明属于哪个别名。
-    return url.startsWith('/api/artist-samples/image?') && new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('tag') === name ? url : undefined;
-  };
-  const artists = useMemo(() => {
+  const catalogArtists = useMemo(() => {
     const entries = new Map(library.map(entry => [entry.name, entry]));
     const known = new Set(library.map(entry => normalizeRollArtistKey(entry.name)));
     for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!known.has(normalizeRollArtistKey(tag))) { entries.set(tag, { name: tag, chinese: '', postCount: 0, postCountKnown: false }); known.add(normalizeRollArtistKey(tag)); }
+    return [...entries.values()];
+  }, [library, pinned, blocked, excluded, collection]);
+  const samplesByPack = useMemo(() => indexArtistSampleGallery(catalogArtists, sampleData, sampleCatalogs, generatedSamples), [catalogArtists, sampleData, sampleCatalogs, generatedSamples]);
+  const artists = useMemo(() => {
     const index = usage || { byTag: new Map(), indexed: 0, total: 0 };
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
-    return [...entries.values()].filter(entry => {
+    return catalogArtists.filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
       return matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
     }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
-  }, [library, pinned, blocked, excluded, collection, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
+  }, [catalogArtists, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const perform = async (action: () => Promise<void>) => {
     if (busy) return; setBusy(true); setError('');
@@ -120,6 +158,26 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     if (active) onExcludedChange(excluded.filter(value => normalizeRollArtistKey(value) !== key));
     else onPinnedChange(pinned.filter(value => normalizeRollArtistKey(value) !== key));
   });
+  const visibleArtists = useMemo(() => artists.slice(0, limit), [artists, limit]);
+  const resultKey = JSON.stringify([query, filter, sort, chainsFilter, imagesFilter]);
+  const estimateCardHeight = React.useCallback((artist: ArtistDictionaryEntry, width: number) => {
+    const pack = cardPacks[artist.name] || defaultPack;
+    return Math.max(1, width) / Math.max(0.1, artistRatios[`${pack}:${artist.name}`] || 2 / 3) + (frostedCaption ? 2 : 92);
+  }, [cardPacks, defaultPack, artistRatios, frostedCaption]);
+  const renderArtist = (artist: ArtistDictionaryEntry) => {
+    const key = normalizeRollArtistKey(artist.name), selected = pinnedKeys.has(key), banned = blockedKeys.has(key), pack = cardPacks[artist.name] || defaultPack;
+    const samples = samplesByPack[pack], ratioKey = `${pack}:${artist.name}`;
+    const ownSamples = samples.ownNames.has(artist.name) ? samples.own.filter(sample => sample.tag === artist.name || (!samples.ownTags.has(artist.name) && normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name))) : [];
+    const generation = getArtistSampleGeneration(artist.name, pack), generating = artistSampleGenerationBusy(generation) || requestingTarget === ratioKey;
+    return <PressRevealSurface as="article" key={artist.name} pressResetKey={pack} pressDisabled={busy} data-gallery-work-id={artist.name} data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+      <div className="appearance-media mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[ratioKey] ? `${Math.round(artistRatios[ratioKey] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+        <ArtistSampleCover tag={artist.name} pack={pack} revision={sampleCatalogs[pack]?.revision || ''} hasPackSample={samples.packedNames.has(artist.name)} packTag={samples.packTagNames.has(artist.name) ? artist.name : samples.normalizedPackTags.get(normalizeArtistSampleTag(artist.name))} ownSamples={ownSamples} removedSamples={sampleData.removedSamples} alt={artist.chinese || artist.name} imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined} onImageLoad={(width, height) => updateImageRatio(ratioKey, width, height)} generation={generation} pending={generating} onGenerate={() => { supplementSample(artist.name, pack, true); }} onSupplement={() => { supplementSample(artist.name, pack); }} onDelete={removeSample} preferred={preferred.has(key)} blocked={banned} blockPending={busy} onBlock={() => block(artist.name)} onPackChange={value => setCardPacks(current => ({ ...current, [artist.name]: value }))} notify={notify} />
+        {selected && <div className="pointer-events-none absolute inset-0 border-4 border-indigo-500/80" />}
+      </div>
+      <div className="gallery-card-caption border-t border-gray-100 bg-white p-2 text-center dark:border-gray-700 dark:bg-gray-800 md:p-3"><p data-safe-mode-title="true" className="truncate text-xs font-bold text-gray-700 dark:text-gray-300 md:text-sm" title={artist.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-500" strokeWidth={4} />}{artist.name}</p>{(banned || artist.chinese && artist.chinese !== artist.name) && <p className={`gallery-card-meta mt-0.5 truncate text-micro ${banned ? 'text-red-500' : 'text-gray-500'}`} data-safe-mode-title="true">{banned ? t('已屏蔽 · 不参与 Roll') : artist.chinese}</p>}<p className="gallery-card-meta mt-0.5 truncate text-micro tabular-nums text-gray-500">{usageReady ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usage!, 'chains'), artistUsageCount(artist.name, usage!, 'images')]) : t('收录 — 串 · 生成 — 张')}</p></div>
+      <ArtistSampleGenerationStatus tag={artist.name} pack={pack} generation={generation} busy={generating} hasOwnSamples={ownSamples.length > 0} supplementSample={supplementSample} manageGeneration={manageGeneration} />
+    </PressRevealSurface>;
+  };
   return <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 p-0 backdrop-blur-sm sm:p-4 lg:p-6">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('Roll 画师')} className="appearance-panel flex h-dvh w-full max-w-7xl flex-col overflow-hidden border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:h-[92dvh] sm:rounded-2xl">
       <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
@@ -165,7 +223,12 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
       {settingsOpen && <AnchoredToolbarPopover anchorRef={settingsAnchor} title={t('抽取设置')} width={320} allowMobile onClose={closeSettings}>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t('抽取设置')}</strong><IconButton label="关闭" className="!h-7 !w-7 !border-transparent !bg-transparent" onClick={closeSettings}><X /></IconButton></div>
-          <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('偏好抽中倍率')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={1} step={0.1} value={rules.preferredMultiplier ?? 1} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} /><span aria-hidden="true">×</span></span></label>
+          <div>
+            <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('偏好抽中倍率')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={1} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} /><span aria-hidden="true">×</span></span></label>
+            <input type="range" aria-label={t('偏好抽中倍率滑条')} min={1} max={preferredSliderMax} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} className="mobile-touch block w-full accent-[var(--nai-accent)]" />
+            <div aria-hidden="true" className="flex justify-between text-micro tabular-nums text-gray-400"><span>1×</span><span>{preferredSliderMax}×</span></div>
+            <p className="mt-1 text-micro text-gray-400">{t('1× 不加成；倍率只影响收藏画师的抽取机会。')}</p>
+          </div>
           <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('每串偏好保底人数')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('每串偏好保底人数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={0} max={rules.maxArtists} step={1} value={rules.preferredMinArtists ?? 0} onChange={event => onRulesChange({ ...rules, preferredMinArtists: Number(event.target.value) })} /><span aria-hidden="true">{t('人')}</span></span></label>
           <label className="mobile-touch flex items-center gap-2 border-t border-gray-200 pt-3 text-xs dark:border-gray-800"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={sampledOnly} onChange={event => onSampledOnlyChange(event.target.checked)} />{t('只从有样张的画师中抽取')}</label>
           <details><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('手动添加固定 Tag')}</summary><div className="mt-2"><StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} /></div></details>
@@ -173,23 +236,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
       </AnchoredToolbarPopover>}
       <div ref={gallery} data-roll-artist-gallery className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
         {(loading || sampleLoading) && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取画师样张…')}</p>}
-        <div className="grid grid-cols-2 items-start gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
-          {artists.slice(0, limit).map(artist => {
-            const key = normalizeRollArtistKey(artist.name), selected = pinnedKeys.has(key), banned = blockedKeys.has(key), favorite = preferred.has(key), pack = cardPacks[key] || defaultPack, url = sampleUrl(artist.name, pack);
-            return <PressRevealSurface as="article" key={artist.name} pressResetKey={pack} pressDisabled={busy} data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group gallery-image-card gallery-card-visual relative min-w-0 cursor-pointer overflow-hidden rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-900 ${selected ? 'ring-2 ring-indigo-500' : ''}`}>
-              <div className="appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-100 dark:bg-gray-950">
-                <div className="absolute inset-0 h-full w-full">
-                  {url ? <SmartImage src={url} alt={artist.chinese || artist.name} className="h-full w-full object-contain" previewTransform={url.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-full flex-col items-center justify-center gap-2 text-xs text-gray-400"><ImageIcon className="h-7 w-7 opacity-40" strokeWidth={1.25} />{t('暂无样张')}</span>}
-                </div>
-                <ArtistPreferenceActions tag={artist.name} pack={pack} onPackChange={value => setCardPacks(current => ({ ...current, [key]: value }))} blocked={banned} preferred={favorite} disabled={busy} onBlock={() => void block(artist.name)} onFavorite={() => void perform(async () => { await toggleArtistPreference(artist.name, url || ''); })} />
-              </div>
-              <div className="gallery-card-caption !min-h-0 !px-2 !py-1.5 text-center before:!top-[-0.75rem]"><p data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={artist.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 text-indigo-500" strokeWidth={3} />}{artist.name}</p>{(banned || artist.chinese && artist.chinese !== artist.name) && <p className={`gallery-card-meta mt-0.5 truncate text-micro ${banned ? 'text-red-500' : 'text-gray-500'}`} data-safe-mode-title="true">{banned ? t('已屏蔽 · 不参与 Roll') : artist.chinese}</p>}<p className="gallery-card-meta mt-0.5 truncate text-micro tabular-nums text-gray-500">{usageReady ? t('收录 {0} 串 · 生成 {1} 张', [artistUsageCount(artist.name, usage!, 'chains'), artistUsageCount(artist.name, usage!, 'images')]) : t('收录 — 串 · 生成 — 张')}</p></div>
-            </PressRevealSurface>;
-          })}
-        </div>
+        {imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>}
         {artists.length > limit && <ToolbarButton className="mt-5 w-full" onClick={() => setLimit(current => current + 60)}>{t('加载更多')}</ToolbarButton>}
         {!loading && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
       </div>
     </div>
+    {settingsDialog}
   </div>;
 };

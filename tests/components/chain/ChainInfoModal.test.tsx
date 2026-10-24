@@ -14,6 +14,25 @@ const callbacks = () => ({ onSave: vi.fn(), onClose: vi.fn(), notify: vi.fn() })
 afterEach(cleanup);
 
 describe('卡片信息编辑', () => {
+  it('显示分享声明和来源链接，普通资料保存不改写来源，也不执行非网页链接', async () => {
+    const p = callbacks();
+    const sources = [
+      { author: '合成作者', sourceUrl: 'https://example.org/free-style', note: '免费分享，请勿购买' },
+      { author: '整理者', sourceUrl: 'javascript:alert(1)', note: '保留原作者' },
+    ];
+    render(<ChainInfoModal chain={{ ...chain, params: { ...chain.params, _styleBundleSources: sources } }} {...p} />);
+    expect(screen.getByRole('region', { name: '分享来源' }).textContent).toContain('合成作者');
+    expect(screen.getAllByText('来源链接：')).toHaveLength(2);
+    const link = screen.getByRole('link', { name: 'https://example.org/free-style' });
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.queryByRole('link', { name: 'javascript:alert(1)' })).toBeNull();
+    expect(screen.getByText('免费分享，请勿购买')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(p.onClose).toHaveBeenCalledOnce());
+    expect(p.onSave.mock.calls[0][1]).toEqual({ name: chain.name, description: chain.description, tags: chain.tags });
+    expect(sources[0].author).toBe('合成作者');
+  });
+
   it('打开后选中名称，弹层脱离工作区，保存仅提交名称、描述与标签', async () => {
     const p = callbacks();
     const view = render(<main className="isolate"><ChainInfoModal chain={chain} {...p} /></main>);

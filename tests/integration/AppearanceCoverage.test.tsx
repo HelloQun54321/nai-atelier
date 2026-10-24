@@ -73,6 +73,41 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it('原生下拉选项在所有入口共用实色配套前景，明暗和自定义主题均不继承玻璃透明底', () => {
+    const select = 'html:root select', items = `${select} :is(option, optgroup)`;
+    expect(declarations(select, undefined, css)['color-scheme']).toBe('light');
+    expect(declarations('html:root.dark select', undefined, css)['color-scheme']).toBe('dark');
+    expect(declarations(items, undefined, css)).toMatchObject({ 'background-color': 'var(--nai-panel-solid-surface, Canvas)', color: 'var(--color-gray-900, CanvasText)' });
+    expect(declarations('html:root.dark select :is(option, optgroup)', undefined, css).color).toBe('var(--color-gray-100, CanvasText)');
+    expect(declarations(`${items}:disabled`, undefined, css).color).toBe('var(--color-gray-500, GrayText)');
+    const view = render(<div><select aria-label="普通下拉"><option>普通选项</option></select><div className="appearance-popover"><select data-appearance="control" aria-label="工具栏下拉"><optgroup label="分组"><option>分组选项</option><option disabled>禁用选项</option></optgroup></select></div><aside className="agent-theme"><select aria-label="助手下拉"><option>助手选项</option></select></aside></div>);
+    for (const option of view.container.querySelectorAll('option, optgroup')) expect(option.matches(items)).toBe(true);
+    const [glass] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
+    for (const palette of [undefined, glass.palette, { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25', text: '#f5e8d3' } }]) {
+      for (const dark of [false, true]) for (const surfaces of ['solid', 'translucent'] as const) {
+        applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, palette, surfaces }, dark);
+        expect(document.documentElement.style.colorScheme).toBe(dark ? 'dark' : 'light');
+        const resolved = resolveThemePalette(palette, dark);
+        expect(themeContrast(resolved.text, resolved.panel)).toBeGreaterThanOrEqual(4.5);
+        if (palette) {
+          expect(document.documentElement.style.getPropertyValue('--nai-panel-solid-surface')).toBe(resolved.panel);
+          expect(document.documentElement.style.getPropertyValue(dark ? '--color-gray-100' : '--color-gray-900')).toBe(resolved.text);
+        }
+        for (const option of view.container.querySelectorAll('option, optgroup')) expect(option.matches('html:root.dark select :is(option, optgroup)')).toBe(dark);
+      }
+    }
+  });
+  it('原生下拉选项在系统强制颜色下优先使用系统文字、背景和禁用色', () => {
+    const source = readFileSync('components/themeDetails.css', 'utf8');
+    const items = 'html:root select :is(option, optgroup)';
+    expect(declarations(items, '(forced-colors: active)', source)).toMatchObject({ 'background-color': 'Canvas', color: 'CanvasText' });
+    expect(declarations(`${items}:disabled`, '(forced-colors: active)', source).color).toBe('GrayText');
+    parse(source).walkRules(rule => {
+      if (!rule.selectors.includes(items) && !rule.selectors.includes(`${items}:disabled`)) return;
+      expect((rule.parent?.parent as AtRule).params).toBe('theme-accessibility');
+      for (const declaration of rule.nodes) if (declaration.type === 'decl') expect(declaration.important).toBe(true);
+    });
+  });
   it.each(['glass', 'frosted'])('%s 的嵌套浮层保留承托，设置内层内容仍不重复铺底', material => {
     document.documentElement.dataset.themeDetails = 'true';
     document.documentElement.dataset.themeMaterial = material;

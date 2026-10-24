@@ -8,6 +8,15 @@ const baseParams = {
 };
 
 describe('NovelAI generation payload', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('分享来源不会进入 %s 生图请求', operation => {
+    const params = { ...baseParams, _styleBundleSources: [{ author: '合成作者', sourceUrl: 'https://example.org/free', note: '合成分享声明' }] };
+    const payload = operation === 'text-to-image'
+      ? buildNaiGenerationPayload('1girl', '', params)
+      : buildNaiImageEditPayload('1girl', '', params, { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0, runtimeModels: DEFAULT_NAI_RUNTIME.models });
+    expect(JSON.stringify(payload)).not.toMatch(/_styleBundleSources|合成作者|example\.org|合成分享声明/);
+    expect(params._styleBundleSources).toHaveLength(1);
+  });
+
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Medium %s 普通／流式只发送固定预设，保留 High 负面词草稿', operation => {
     const draft = { ...baseParams, model: 'nai-diffusion-5-full-medium', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'none',
       _promptSections: { scene: 'night', sectionNegatives: { scene: 'day' } },

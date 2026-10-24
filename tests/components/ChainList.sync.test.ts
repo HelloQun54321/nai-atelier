@@ -489,11 +489,11 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
-    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['筛选', '智慧姬同步', '查找相似', '收集模式', '批量导入', '新建风格串']);
+    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['筛选', '智慧姬同步', '查找相似', '风格串分享包', '收集模式', '批量导入', '新建风格串']);
     expect(header.firstElementChild?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();
-    fireEvent.click(desktop[4]);
+    fireEvent.click(desktop.find(button => button.getAttribute('aria-label') === '批量导入')!);
     expect(p.onRefresh).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '完成测试导入' }));
     expect(p.onRefresh).toHaveBeenCalledOnce();

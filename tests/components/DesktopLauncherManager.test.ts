@@ -101,4 +101,21 @@ describe('DesktopLauncherManager', () => {
     expect(screen.queryByText('项目内启动脚本:')).toBeNull();
     expect(screen.getByRole('button', { name: '创建桌面快捷方式' })).toBeTruthy();
   });
+
+  it('已有其他安装版入口时仅提示已保留，不误报创建成功', async () => {
+    const notify = vi.fn();
+    vi.spyOn(desktopLauncherService, 'getDesktopLauncherStatus').mockResolvedValue({
+      supported: true, launcherKind: 'script', platform: 'win32', projectDir: 'D:\\source', desktopDir: 'D:\\desktop', desktopExists: true,
+      batPath: 'D:\\source\\NaiPromptManager.bat', batExists: true, batMtime: null, shortcutPath: 'D:\\desktop\\NAI Atelier.lnk', shortcutExists: true, shortcutMtime: null, iconPath: 'D:\\source\\public\\nai-atelier.ico', iconExists: true,
+    });
+    vi.spyOn(desktopLauncherService, 'createDesktopLauncher').mockResolvedValue({
+      success: false, preserved: true, changed: false, batCreated: false, shortcutCreated: false,
+      batPath: 'D:\\source\\NaiPromptManager.bat', shortcutPath: 'D:\\desktop\\NAI Atelier.lnk', message: '桌面已有安装版或自定义快捷方式，已保留，未覆盖。',
+    });
+    render(React.createElement(DesktopLauncherManager, { notify }));
+    fireEvent.click(await screen.findByRole('button', { name: '修复桌面快捷方式' }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('桌面已有安装版或自定义快捷方式，已保留，未覆盖。'));
+    expect(notify).toHaveBeenCalledOnce();
+    expect(screen.queryByText('桌面启动器已成功创建')).toBeNull();
+  });
 });

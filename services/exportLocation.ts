@@ -1,5 +1,6 @@
 import { isAndroidApp } from './platform';
 import { captureAgentExport } from './agentTransfer';
+import { openStorageDirectory } from './storageLocations';
 
 export type ExportMode = 'system' | 'directory' | 'ask';
 export interface ExportLocation {
@@ -67,6 +68,23 @@ export async function getExportLocation(): Promise<ExportLocation> {
   if (isAndroidApp()) { const { native } = await import('../mobile/native'); return await native.exportLocation({ action: 'status' }) as unknown as ExportLocation; }
   if (isLocal()) return localRequest();
   return browserState();
+}
+/** 打开真实写入位置；浏览器目录句柄的显示名称不能当作电脑路径。 */
+export async function openExportDirectory(receipt?: ExportReceipt): Promise<void> {
+  if (isAndroidApp() || !isLocal()) throw new Error('当前设备不支持打开导出文件夹');
+  const absolute = (path: string) => !/[\x00-\x1f]/.test(path) && /^(?:[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+(?:[\\/]|$)|\/)/.test(path);
+  let directory = '';
+  if (receipt?.saved && !receipt.cancelled && !receipt.browserDownload && receipt.path && absolute(receipt.path)) {
+    const index = Math.max(receipt.path.lastIndexOf('/'), receipt.path.lastIndexOf('\\'));
+    if (index < receipt.path.length - 1) directory = receipt.path.slice(0, index === 0 ? 1 : /^[A-Za-z]:[\\/]/.test(receipt.path) && index === 2 ? 3 : index);
+  }
+  if (!directory && !receipt?.browserDownload) {
+    const state = await getExportLocation();
+    const path = state.mode === 'directory' ? state.directory : state.mode === 'system' ? state.systemDirectory : '';
+    if (path && absolute(path)) directory = path;
+  }
+  if (!directory) throw new Error('当前浏览器无法确定下载目录，请在浏览器下载记录中选择「在文件夹中显示」');
+  if (!(await openStorageDirectory(directory)).success) throw new Error('导出文件夹未打开');
 }
 export async function setExportMode(mode: ExportMode): Promise<ExportLocation> {
   if (isAndroidApp()) { const { native } = await import('../mobile/native'); return await native.exportLocation({ action: 'mode', mode }) as unknown as ExportLocation; }
@@ -149,6 +167,7 @@ const blobBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject
   reader.readAsDataURL(blob);
 });
 export async function saveExportBlob(blob: Blob, filename: string, target = beginExportTarget()): Promise<ExportReceipt> {
+  if (blob.size > 2 * 1024 * 1024 * 1024) throw new Error('导出文件超过 2 GiB 上限');
   if (isAndroidApp()) {
     const { native, writeBlob } = await import('../mobile/native');
     const path = `transfer/${crypto.randomUUID()}`;
@@ -163,7 +182,20 @@ export async function saveExportBlob(blob: Blob, filename: string, target = begi
     return { saved: true, cancelled: false };
   }
   let result: ExportReceipt | undefined;
-  if (window.atelierExports) result = await window.atelierExports.save({ data: await blobBase64(blob), filename });
+  if (isLocal() && blob.size > 32 * 1024 * 1024) {
+    const state = await getExportLocation();
+    if (state.mode !== 'system' || state.systemDirectory) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 310_000);
+      try {
+        const response = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-nai-local-control': 'true', 'x-nai-export-filename': encodeURIComponent(filename), 'x-nai-export-size': String(blob.size) }, body: blob, signal: controller.signal });
+        result = await response.json();
+        if (!response.ok) throw new Error((result as ExportReceipt & { error?: string }).error || `导出文件保存失败 (${response.status})`);
+      } catch (error) { if (controller.signal.aborted) throw new Error('导出文件传输超时，请重试'); throw error; }
+      finally { clearTimeout(timer); }
+    }
+  }
+  else if (window.atelierExports) result = await window.atelierExports.save({ data: await blobBase64(blob), filename });
   else if (isLocal()) {
     const state = await getExportLocation();
     if (state.mode !== 'system') result = await localRequest({ action: 'save', data: await blobBase64(blob), filename });

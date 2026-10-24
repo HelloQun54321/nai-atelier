@@ -8,6 +8,9 @@ import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { loadRollPresets, saveRollPreset, deleteRollPreset } from '../../services/styleRollApi';
 const collection: any[] = [];
+vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }) }));
+vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: async () => ({ templates: {}, samples: [] }) }));
+vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, renderItem }: any) => <div>{items.map(renderItem)}</div> }));
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => new Map() }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => collection, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
 const mocks = vi.hoisted(() => ({ search: vi.fn(), confirm: vi.fn() }));
@@ -110,22 +113,41 @@ it('新建配置使用总人数和可选固定 Tag，不再提供模式或权重
   expect(save.mock.calls[0][0].rules).toEqual({ minArtists: 4, maxArtists: 5, minWeight: 1.3, maxWeight: 1.3 });
 });
 
-it('打开仍有历史默认模板的记录时自动换成质量词模板并提示', async () => {
+it('完整配置入口连续调整偏好倍率不重新排序画师目录，保存仍使用最终值', async () => {
+  const readPopularity = vi.fn(() => 1);
+  const library = Array.from({ length: 1000 }, (_, index) => ({ name: `perf artist ${index}`, chinese: '', get postCount() { return readPopularity(); } }));
+  const initial = rollFixture(), blockedTags: string[] = [], save = vi.fn(async (_value: RollExperiment) => {});
+  render(<StyleRollSetup initial={initial} library={library} blockedTags={blockedTags} enforceFreeStepLimit onBlockedChange={async () => {}} onSave={save} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+  await screen.findByText('共 1000 位');
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
+  await act(async () => {});
+  expect(readPopularity).toHaveBeenCalled(); readPopularity.mockClear();
+  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
+  for (let value = 2; value <= 12; value++) fireEvent.change(slider, { target: { value: String(value) } });
+  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' })).toHaveProperty('value', '12');
+  expect(readPopularity.mock.calls.length).toBe(0);
+  fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].rules.preferredMultiplier).toBe(12);
+  expect(save.mock.calls[0][0].template).toEqual(initial.template);
+});
+
+it('打开并保存历史默认记录时保留原模板，不自动套用新版推荐', async () => {
   const initial = rollFixture(); initial.artists = [];
   initial.template.prompt = '{style}, 1girl, solo, upper body, simple background, looking at viewer';
   initial.template.negativePrompt = '';
   const save = vi.fn(async (_value: RollExperiment) => {});
-  const originalParams = structuredClone(initial.template.params);
+  const originalTemplate = structuredClone(initial.template);
   render(<StyleRollSetup library={rollFixture().artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 }))} onBlockedChange={async () => {}} initial={initial} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
-  expect(screen.getByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeTruthy();
-  expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', DEFAULT_ROLL_PROMPT);
-  expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', DEFAULT_ROLL_CHARACTER_PROMPT);
+  expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', originalTemplate.prompt);
+  expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', '');
+  expect(screen.getByRole('textbox', { name: '负面提示词' })).toHaveProperty('value', '');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0][0].template.prompt).toBe(DEFAULT_ROLL_PROMPT);
-  expect(save.mock.calls[0][0].template.characterPrompt).toBe(DEFAULT_ROLL_CHARACTER_PROMPT);
-  expect(save.mock.calls[0][0].template.params).toEqual(originalParams);
-  expect(initial.template.params).toEqual(originalParams);
+  expect(save.mock.calls[0][0].template).toEqual(originalTemplate);
+  expect(initial.template).toEqual(originalTemplate);
 });
 
 it('角色提示词独立于公共提示词保存', async () => {
@@ -142,7 +164,7 @@ it.each([
   ['用户已有角色文本', 'custom role', []],
   ['显式清空角色文本', '', []],
   ['结构化角色', undefined, [{ id: 'existing', prompt: 'structured role', negativePrompt: 'bad role', x: 0.5, y: 0.5 }]],
-] as const)('旧默认模板升级时不覆盖%s', async (_label, characterPrompt, characters) => {
+] as const)('打开旧默认模板不覆盖%s', async (_label, characterPrompt, characters) => {
   const initial = rollFixture(); initial.artists = [];
   initial.template.prompt = '{style}, 1girl, solo, upper body, simple background, looking at viewer';
   initial.template.negativePrompt = '';
@@ -152,7 +174,6 @@ it.each([
   const save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup library={rollFixture().artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 }))} onBlockedChange={async () => {}} initial={initial} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
-  expect(screen.queryByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeNull();
   expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', originalTemplate.prompt);
   expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', characterPrompt ?? '');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
@@ -196,15 +217,22 @@ const presetSetup = async (initial = rollFixture()) => {
 const choosePreset = (id: string) => fireEvent.change(screen.getByRole('combobox', { name: '生成配置预设' }), { target: { value: id } });
 const namePreset = (value: string) => fireEvent.change(screen.getByRole('textbox', { name: '预设名称' }), { target: { value } });
 
-it('旧默认模板切换自定义预设后不再显示推荐升级提示', async () => {
+it('旧默认记录只有主动选推荐才更新草稿，切换自定义预设仍原样取用', async () => {
   const initial = rollFixture(); initial.candidates = [];
   initial.template.prompt = '{style}, 1girl, solo, upper body, simple background, looking at viewer';
   initial.template.negativePrompt = '';
-  vi.mocked(loadRollPresets).mockResolvedValue([presetFixture('custom', 42)]);
-  await presetSetup(initial);
-  expect(screen.getByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeTruthy();
+  const preset = presetFixture('custom', 42), originalPreset = structuredClone(preset), originalTemplate = structuredClone(initial.template);
+  vi.mocked(loadRollPresets).mockResolvedValue([preset]);
+  const { save } = await presetSetup(initial);
+  expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', originalTemplate.prompt);
+  choosePreset('recommended');
+  expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', DEFAULT_ROLL_PROMPT);
+  expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', DEFAULT_ROLL_CHARACTER_PROMPT);
   choosePreset('custom');
-  expect(screen.queryByText('已把旧的默认提示词换成质量词模板，保存后生效。')).toBeNull();
+  expect(screen.getByRole('combobox', { name: '公共提示词' })).toHaveProperty('value', preset.template.prompt);
+  expect(screen.getByRole('combobox', { name: '角色提示词（可选）' })).toHaveProperty('value', preset.template.characterPrompt);
+  expect(initial.template).toEqual(originalTemplate); expect(preset).toEqual(originalPreset);
+  expect(save).not.toHaveBeenCalled(); expect(saveRollPreset).not.toHaveBeenCalled(); expect(deleteRollPreset).not.toHaveBeenCalled();
 });
 
 it('两套预设完整套用正负词、角色和参数，另存快照不改源或记录，保存后可再切换', async () => {

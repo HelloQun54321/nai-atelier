@@ -3,24 +3,118 @@ import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StyleRollArtistDialog } from '../../components/roll/StyleRollArtistDialog';
-import { DEFAULT_ROLL_RULES } from '../../services/styleRoll';
+import { DEFAULT_ROLL_RULES, type RollRules } from '../../services/styleRoll';
 import { installPointerEvents, longPress } from '../support/touchEvents';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
-import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
+import { ARTIST_SAMPLES_CHANGED, type ArtistOwnSample } from '../../services/artistSamples';
+import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
+import { createDefaultRollTemplate } from '../../services/styleRoll';
+import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
-const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
-vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: mocks.urls }));
+vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleLookup: mocks.lookup }));
+vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, deleteArtistSample: mocks.remove }));
+vi.mock('../../services/artistSampleGeneration', async original => ({ ...await original<typeof import('../../services/artistSampleGeneration')>(), beginArtistSampleGeneration: mocks.begin, readArtistSampleApiKey: () => 'synthetic-key' }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
+vi.mock('../../services/anlasBudget', async original => ({ ...await original<typeof import('../../services/anlasBudget')>(), useAnlasBudget: () => ({ remaining: 100 }), estimateV45GenerationCost: () => 3 }));
+vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
+vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => DEFAULT_NAI_RUNTIME }));
+vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, renderItem, columns }: any) => <div data-testid="masonry" data-columns={columns}>{items.map(renderItem)}</div> }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: mocks.favorite }));
-vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt }: any) => <img src={src} alt={alt} /> }));
-beforeEach(() => { vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
+vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, onLoad, previewTransform }: any) => <img src={src} alt={alt} className={className} onLoad={onLoad} data-preview-transform={previewTransform} /> }));
+const ownSample = (tag: string, imageUrl: string, pack: 'v45' | 'v5' = 'v45', id = imageUrl): ArtistOwnSample => ({ ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), id, tag, pack, imageUrl, createdAt: 1, params: { ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, model: pack === 'v5' ? 'nai-diffusion-5-full' : 'nai-diffusion-4-5-full' } });
+beforeEach(() => {
+  mocks.catalog.mockReset();
+  mocks.status.mockResolvedValue({ available: true, canManage: true, packs: [] });
+  mocks.data.mockImplementation(async () => ({ templates: {}, samples: (await Promise.all((['v45', 'v5'] as const).map(async pack => [...await mocks.urls(pack)].map(([tag, url]: [string, string]) => ownSample(url.startsWith('/api/artist-samples/image?') ? new URLSearchParams(url.split('?')[1]).get('tag') || tag : tag, url, pack))))).flat() }));
+  mocks.confirm.mockResolvedValue(true); mocks.remove.mockResolvedValue(undefined); mocks.begin.mockResolvedValue(undefined);
+  mocks.lookup.mockImplementation(async (pack, tag) => ({ pack, tag, revision: 'synthetic', imageCount: 2, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })) }: { library?: ArtistDictionaryEntry[] }) => {
-  const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(DEFAULT_ROLL_RULES);
+const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })), initialRules = DEFAULT_ROLL_RULES }: { library?: ArtistDictionaryEntry[]; initialRules?: RollRules }) => {
+  const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(initialRules);
   return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
 };
+
+it.each(['masonry', 'portrait', 'square'] as const)('%s 布局与画师库共用偏好，瀑布流使用当前图片真实比例而非固定空框', async layout => {
+  setMobileImageDisplayPreferences({ layout, columns: 2, desktopColumns: 3 }, 'artists');
+  render(<Fixture />); const image = await screen.findByAltText('alpha');
+  const frame = image.closest<HTMLElement>('.mobile-gallery-frame')!;
+  expect(frame.classList.contains('aspect-[2/3]')).toBe(false);
+  expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('2 / 3');
+  if (layout === 'masonry') {
+    expect(screen.getByTestId('masonry').getAttribute('data-columns')).toBe('3');
+    expect(image.classList.contains('object-contain')).toBe(true);
+  } else {
+    expect(document.querySelector(`.mobile-gallery--${layout}`)).toBeTruthy();
+    expect(screen.queryByTestId('masonry')).toBeNull();
+  }
+  Object.defineProperties(image, { naturalWidth: { value: 1000, configurable: true }, naturalHeight: { value: 800, configurable: true } });
+  fireEvent.load(image);
+  await waitFor(() => expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('1250 / 1000'));
+  expect(frame.parentElement?.querySelector('.gallery-card-caption')?.classList.contains('!min-h-0')).toBe(false);
+});
+
+it('Roll 复用画师库翻页、确认删除及生成链路，各操作不锁定画师且不改写原样张', async () => {
+  const newer = { ...ownSample('alpha', '/new.png', 'v45', 'new'), createdAt: 2 };
+  const older = ownSample('alpha', '/old.png', 'v45', 'old');
+  const template = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME);
+  template.params.model = 'nai-diffusion-4-5-full';
+  const data = { templates: { v45: template }, samples: [older, newer] }, original = structuredClone(data);
+  mocks.data.mockResolvedValue(data);
+  render(<Fixture />); await screen.findByAltText('alpha');
+  const card = screen.getByRole('button', { name: '锁定画师：alpha' });
+  const generate = within(card).getByRole('button', { name: '重新生成样张' });
+  expect(generate.classList.contains('hover-reveal-md')).toBe(true);
+  expect(within(card).getByRole('button', { name: '偏好画师：alpha' }).nextElementSibling).toBe(generate);
+  expect(generate.nextElementSibling?.getAttribute('aria-label')).toContain('样张版本');
+  expect(within(card).getByRole('img').getAttribute('src')).toBe('/new.png');
+  fireEvent.click(within(card).getByRole('button', { name: '下一张' }));
+  expect(within(card).getByRole('img').getAttribute('src')).toBe('/old.png');
+  const remove = within(card).getByRole('button', { name: '删除当前样张' });
+  expect(remove.parentElement?.classList.contains('md:top-11')).toBe(true);
+  mocks.confirm.mockResolvedValueOnce(false); fireEvent.click(remove);
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+  expect(mocks.remove).not.toHaveBeenCalled();
+  await waitFor(() => expect(remove).toHaveProperty('disabled', false));
+  fireEvent.click(remove);
+  await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith({ source: 'own', pack: 'v45', tag: 'alpha', id: 'old' }));
+  await waitFor(() => expect(within(card).getByRole('img').getAttribute('src')).toBe('/new.png'));
+  expect(within(card).queryByRole('button', { name: '下一张' })).toBeNull();
+  mocks.confirm.mockResolvedValueOnce(false); fireEvent.click(generate);
+  await waitFor(() => expect(mocks.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ rememberKey: 'artist-sample.generate' })));
+  expect(mocks.begin).not.toHaveBeenCalled();
+  await waitFor(() => expect(generate).toHaveProperty('disabled', false));
+  fireEvent.click(generate);
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('alpha', 'v45', template, 'synthetic-key', 3, true, true, expect.any(Function)));
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+  expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
+  expect(data).toEqual(original);
+});
+
+it('Full 图包翻页使用当前包真实物理页，切到缺图版本仍可打开同一补图设置而不生图', async () => {
+  mocks.status.mockResolvedValue({ available: true, canManage: true, packs: [{ id: 'v45', phase: 'ready', revision: 'synthetic' }] });
+  mocks.catalog.mockResolvedValue({ pack: 'v45', revision: 'synthetic', tags: ['alpha'] });
+  mocks.data.mockResolvedValue({ templates: {}, samples: [], removedSamples: [{ source: 'pack', pack: 'v45', tag: 'alpha', revision: 'synthetic', index: 0, imageCount: 3 }] });
+  mocks.lookup.mockResolvedValue({ pack: 'v45', tag: 'alpha', revision: 'synthetic', imageCount: 3 });
+  render(<Fixture />); await screen.findByAltText('alpha');
+  const card = screen.getByRole('button', { name: '锁定画师：alpha' });
+  expect(within(card).getByRole('img').getAttribute('src')).toContain('index=1');
+  expect(within(card).getByRole('img').getAttribute('data-preview-transform')).toBe('artist-sample-padding-v2');
+  fireEvent.click(within(card).getByRole('button', { name: '下一张' }));
+  expect(within(card).getByRole('img').getAttribute('src')).toContain('index=2');
+  fireEvent.click(within(card).getByRole('button', { name: /样张版本/ }));
+  expect(within(card).queryByRole('img')).toBeNull();
+  expect(within(card).queryByRole('button', { name: '删除当前样张' })).toBeNull();
+  fireEvent.click(within(card).getByRole('button', { name: '补充样张' }));
+  await screen.findByRole('dialog', { name: '补图生成设置' });
+  expect(mocks.begin).not.toHaveBeenCalled();
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+});
 
 it('样张删除广播刷新两版封面，保留搜索锁定及当前卡版本', async () => {
   render(<Fixture />); await screen.findByAltText('alpha');
@@ -121,14 +215,15 @@ it.each([390, 1280])('宽度 %s：爱心下面切单卡版本，保留另一张�
   fireEvent.click(alpha); fireEvent.click(beta);
   const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!; gallery.scrollTop = 480;
   const version = within(alpha).getByRole('button', { name: '样张版本 V4.5，切换为 V5 Full' });
-  expect(within(alpha).getByRole('button', { name: '取消偏好画师：alpha' }).nextElementSibling).toBe(version);
+  expect(within(alpha).getByRole('button', { name: '取消偏好画师：alpha' }).nextElementSibling).toBe(within(alpha).getByRole('button', { name: '重新生成样张' }));
+  expect(within(alpha).getByRole('button', { name: '重新生成样张' }).nextElementSibling).toBe(version);
   fireEvent.keyDown(version, { key: 'Enter' }); fireEvent.click(version);
   expect(within(alpha).getByRole('img').getAttribute('src')).toBe('/v5-alpha.png');
   expect(within(beta).getByRole('img')).toBe(betaImage); expect(betaImage.getAttribute('src')).toBe('/v45-beta.png');
   expect(gallery.scrollTop).toBe(480); expect(alpha.getAttribute('aria-pressed')).toBe('true');
   expect(within(alpha).getByRole('button', { name: '取消偏好画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(within(beta).getByRole('button', { name: /样张版本/ }));
-  expect(within(beta).queryByRole('img')).toBeNull(); expect(within(beta).getByText('暂无样张')).toBeTruthy();
+  expect(within(beta).queryByRole('img')).toBeNull(); expect(within(beta).getByText(/暂无样张$/)).toBeTruthy();
   expect(beta.getAttribute('aria-pressed')).toBe('true'); expect(screen.getByRole('button', { name: '锁定画师：alpha' })).toBe(alpha);
   expect(mocks.urls).toHaveBeenCalledTimes(2); expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
 });
@@ -165,12 +260,12 @@ it('复用画师库四种排序，排序重置滚动且保留锁定、筛选和�
 
 it('样张与缺图空封面同时可见，点击封面只锁定 Tag', async () => {
   render(<Fixture />); await screen.findByAltText('alpha');
-  expect(screen.getByText('暂无样张')).toBeTruthy();
+  expect(screen.getByText(/暂无样张$/)).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '锁定画师：beta' }));
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }));
-  expect(screen.getByText('暂无样张')).toBeTruthy();
+  expect(screen.getByText(/暂无样张$/)).toBeTruthy();
   expect(mocks.block).not.toHaveBeenCalled(); expect(mocks.favorite).not.toHaveBeenCalled();
 });
 
@@ -192,13 +287,45 @@ it('两个角分别是屏蔽和偏好，缺图也可收藏，用户可改倍率�
   const favorite = screen.getByRole('button', { name: '偏好画师：beta' });
   expect(favorite.parentElement?.className).toContain('right-2');
   expect(screen.getByRole('button', { name: '屏蔽画师：beta' }).className).toContain('left-2');
-  fireEvent.click(favorite); await waitFor(() => expect(mocks.favorite).toHaveBeenCalledWith('beta', ''));
+  fireEvent.click(favorite); await waitFor(() => expect(mocks.favorite).toHaveBeenCalledWith('beta', '', undefined));
   expect(screen.getByRole('button', { name: '锁定画师：beta' }).getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
   fireEvent.change(screen.getByLabelText('偏好抽中倍率'), { target: { value: '4.5' } });
   fireEvent.change(screen.getByLabelText('每串偏好保底人数'), { target: { value: '2' } });
   expect(screen.getByLabelText('偏好抽中倍率')).toHaveProperty('value', '4.5');
   expect(screen.getByLabelText('每串偏好保底人数')).toHaveProperty('value', '2');
+});
+
+it.each([390, 1280])('宽度 %s：偏好倍率滑条与数字双向同步，回到1倍不改保底锁定或偏好', async width => {
+  vi.stubGlobal('innerWidth', width);
+  render(<Fixture initialRules={{ ...DEFAULT_ROLL_RULES, preferredMinArtists: 1 }} />);
+  await screen.findByAltText('alpha');
+  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
+  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
+  const number = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
+  expect(slider).toHaveProperty('value', '1'); expect(slider).toHaveProperty('min', '1');
+  expect(slider).toHaveProperty('max', '100'); expect(slider).toHaveProperty('step', '0.1');
+  fireEvent.change(slider, { target: { value: '4.5' } }); expect(number).toHaveProperty('value', '4.5');
+  fireEvent.change(number, { target: { value: '12.3' } }); expect(slider).toHaveProperty('value', '12.3');
+  fireEvent.change(slider, { target: { value: '1' } }); expect(number).toHaveProperty('value', '1');
+  expect(screen.getByRole('spinbutton', { name: '每串偏好保底人数' })).toHaveProperty('value', '1');
+  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('false');
+  expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
+});
+
+it('已存大倍率不截断，数字扩大滑条范围后拖回低倍率也不收缩跳动', async () => {
+  render(<Fixture initialRules={{ ...DEFAULT_ROLL_RULES, preferredMultiplier: 250 }} />);
+  await screen.findByAltText('alpha');
+  const settings = screen.getByRole('button', { name: '抽取设置' }); fireEvent.click(settings);
+  const slider = screen.getByRole('slider', { name: '偏好抽中倍率滑条' });
+  const number = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
+  expect(slider).toHaveProperty('value', '250'); expect(slider).toHaveProperty('max', '250');
+  fireEvent.change(number, { target: { value: '500.5' } });
+  expect(slider).toHaveProperty('max', '500.5'); expect(slider).toHaveProperty('value', '500.5');
+  fireEvent.change(slider, { target: { value: '2.5' } });
+  expect(number).toHaveProperty('value', '2.5'); expect(slider).toHaveProperty('max', '500.5');
+  fireEvent.keyDown(window, { key: 'Escape' }); fireEvent.click(settings);
+  expect(screen.getByRole('slider', { name: '偏好抽中倍率滑条' })).toHaveProperty('value', '2.5');
 });
 
 it('收藏库已有的画师会直接显示偏好，并可按偏好筛选', async () => {
@@ -315,7 +442,10 @@ it('归一化冲突时仅精确图包Tag显示图片，另一原名安全无图'
   const ambiguous = screen.getByRole('button', { name: '锁定画师：foo bar' });
   await waitFor(() => expect(exact.querySelector('img')?.getAttribute('src')).toBe(url));
   expect(ambiguous.querySelector('img')).toBeNull();
-  expect(within(ambiguous).getByText('暂无样张')).toBeTruthy();
+  expect(within(ambiguous).getByText(/暂无样张$/)).toBeTruthy();
+  fireEvent.click(within(exact).getByRole('button', { name: '样张版本 V4.5，切换为 V5 Full' }));
+  expect(within(exact).getByRole('button', { name: '样张版本 V5 Full，切换为 V4.5' })).toBeTruthy();
+  expect(within(ambiguous).getByRole('button', { name: '样张版本 V4.5，切换为 V5 Full' })).toBeTruthy();
 });
 
 it('逗号多词按OR合并原名，支持中英文逗号与译名并忽略重复空项', async () => {

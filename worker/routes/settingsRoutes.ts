@@ -697,7 +697,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       if (file.size > MAX_MANAGED_IMAGE_BYTES) {
         return error(`图片不能超过 ${Math.floor(MAX_MANAGED_IMAGE_BYTES / 1024 / 1024)}MB`, 413);
       }
-      const filename = `${folder}/${currentUser.id}_${Date.now()}.${ext}`;
+      const filename = `${folder}/${currentUser.id}_${Date.now()}_${crypto.randomUUID()}.${ext}`;
       await env.BUCKET.put(filename, file.stream(), { httpMetadata: { contentType: `image/${ext}` } });
       return json({ url: `/api/assets/${filename}`, size: file.size });
   }
@@ -755,8 +755,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   if (path === '/api/chains' && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const body = await request.json() as any;
-    const id = /^agent-[a-f0-9]{64}$/.test(String(body.id || '')) ? String(body.id) : crypto.randomUUID();
-    if (id.startsWith('agent-')) {
+    const id = /^(?:agent|naia)-[a-f0-9]{64}$/.test(String(body.id || '')) ? String(body.id) : crypto.randomUUID();
+    if (/^(?:agent|naia)-/.test(id)) {
       const existing = await db.prepare('SELECT id, user_id FROM chains WHERE id = ?').bind(id).first<any>();
       if (existing) return existing.user_id === currentUser.id ? json({ id, replayed: true }) : error('操作 ID 冲突', 409);
     }
@@ -829,7 +829,15 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
     
     try {
-      if (updates.params !== undefined) updates.params = await preparePromptLibraryParams(updates.params, db, currentUser.id);
+      if (updates.params !== undefined) {
+        updates.params = await preparePromptLibraryParams(updates.params, db, currentUser.id);
+        const sources = parseChainParams(chain.params)._styleBundleSources;
+        // 替换生成配置也保留原分享声明，避免普通编辑无意抹掉出处。
+        if (Array.isArray(sources) && sources.length) {
+          const incoming = Array.isArray(updates.params?._styleBundleSources) ? updates.params._styleBundleSources : [];
+          updates.params = { ...updates.params, _styleBundleSources: [...new Map([...sources, ...incoming].map(source => [JSON.stringify(source), source])).values()] };
+        }
+      }
       if (typeof updates.previewImage === 'string' && /^\/api\/(local-history|inspirations)\//.test(updates.previewImage)) {
         updates.previewImage = await createChainCover(env, db, updates.previewImage, id, currentUser);
       }

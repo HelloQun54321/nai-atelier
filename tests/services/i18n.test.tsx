@@ -11,6 +11,25 @@ import ts from 'typescript';
 import messages from '../../locales/messages.json';
 import { sourceLabel } from '../../services/inspirationUtils';
 
+it('翻译词典没有重复键，清理后保留原来实际生效的译文', () => {
+  const source = ts.parseJsonText('messages.json', readFileSync('locales/messages.json', 'utf8'));
+  const keys = new Set<string>(), duplicates: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name)) {
+      const key = node.name.text;
+      if (keys.has(key)) duplicates.push(key);
+      keys.add(key);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  expect(duplicates).toEqual([]);
+  expect(translate('en', '生成张数')).toBe('Image count');
+  expect(translate('en', '联网搜索')).toBe('Web search');
+  expect(translate('en', '当前规则下没有新的组合，请调整画师数量、锁定项或权重范围')).toBe('No new combinations are available. Adjust the artist count, locks, or weight range');
+  for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, '桌面已有安装版或自定义快捷方式，已保留，未覆盖。')).not.toBe('桌面已有安装版或自定义快捷方式，已保留，未覆盖。');
+});
+
 it('主题配色、修改状态及导入错误具备完整译文', () => {
   for (const key of ['自定义明暗配色', '浅色配色', '深色配色', '正文', '次要文字', '恢复默认配色', '当前外观已修改', '导出当前外观', '主题文件不是有效的 JSON', '不支持的主题文件版本，请更新应用', '主题包含不支持的字段，请对照主题制作说明', '主题选项无效，请对照主题制作说明', '主题配色只支持 light 和 dark', '主题配色必须使用已支持的字段和六位十六进制颜色', '主题文件中没有可导入的主题']) expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
   for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
@@ -23,6 +42,12 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('收藏画师抽取倍率滑条与说明具备四种译文', () => {
+    for (const key of ['偏好抽中倍率滑条', '1× 不加成；倍率只影响收藏画师的抽取机会。']) {
+      expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), key).not.toBe(key);
+    }
+  });
   it('画师目录的逗号多词搜索提示具备四种译文', () => {
     const key = '搜索画师，多个词用逗号分隔';
     expect((messages as Record<string, string[]>)[key]).toHaveLength(4);
