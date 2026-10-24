@@ -170,7 +170,12 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
     expect(list().classList.contains('h-10')).toBe(true);
-    expect(list().classList.contains('resize-y')).toBe(true);
+    // 触屏上不要 resize 手柄和滚动隔离（否则右下角手势被吃掉、内层不滚动时也不把滚动交给外层），只在鼠标环境恢复。
+    expect(list().classList.contains('resize-y')).toBe(false);
+    expect(list().classList.contains('pointer-fine:resize-y')).toBe(true);
+    expect(list().classList.contains('overscroll-contain')).toBe(false);
+    expect(list().classList.contains('pointer-fine:overscroll-contain')).toBe(true);
+    expect(list().classList.contains('overflow-y-auto')).toBe(true);
     fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: 'masterpiece' } });
     await waitFor(() => expect(list().classList.contains('h-36')).toBe(true));
     list().style.height = '240px';
@@ -178,6 +183,20 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     await waitFor(() => expect(list().classList.contains('h-10')).toBe(true));
     expect(list().style.height).toBe('240px');
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy();
+  });
+  it('手指在对照框内滑动不会选中 Tag，滚动层保留自己的滚动且不拦截手势', async () => {
+    render(React.createElement(Harness, { initial: 'masterpiece, masterpiece lighting', showTranslations: true }));
+    const list = screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
+    const chips = await within(list).findAllByText(/杰作/);
+    const chip = chips.find(node => node.closest('[aria-pressed]'))!.closest('[aria-pressed]') as HTMLElement;
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    const startNotPrevented = fireEvent.touchStart(chip, { touches: [{ clientX: 40, clientY: 60 }] });
+    const moveNotPrevented = fireEvent.touchMove(chip, { touches: [{ clientX: 40, clientY: 20 }] });
+    fireEvent.touchEnd(chip, { touches: [] });
+    expect(startNotPrevented).toBe(true);
+    expect(moveNotPrevented).toBe(true);
+    expect(chip.getAttribute('aria-pressed')).toBe('false');
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('masterpiece, masterpiece lighting');
   });
   it('Agent 填写后保留焦点，读取 body 中真实候选并点击完成补全', async () => {
     render(React.createElement('main', { 'data-agent-view': 'playground' }, React.createElement(Harness)));
