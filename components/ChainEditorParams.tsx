@@ -27,6 +27,7 @@ interface ChainEditorParamsProps {
     onForceEmptySeedChange?: (enabled: boolean) => void;
     /** 免费步数上限开关（全局设置）；开启时步数锁定在官方同步的免费门槛内，关闭后放宽到 NovelAI 硬上限 50。 */
     enforceFreeStepLimit?: boolean;
+    modelFilter?: (id: string) => boolean;
 }
 
 export { OPUS_FREE_PIXEL_LIMIT };
@@ -43,6 +44,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     forceEmptySeed = false,
     onForceEmptySeedChange,
     enforceFreeStepLimit = true,
+    modelFilter,
 }) => {
   useLanguage();
     // 网关自动同步的官方模型清单（未来新模型无需改代码即可出现在下拉里）。
@@ -50,7 +52,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     // NovelAI 采样步数硬上限 50；免费上限取官方运行时同步值（默认 28），随官方调整自动更新。
     const maxSteps = enforceFreeStepLimit ? Math.max(1, Math.floor(runtime.freeMaxSteps) || 28) : 50;
     const freeMaxArea = runtime.freeMaxArea || OPUS_FREE_PIXEL_LIMIT;
-    const selectableModels = getSelectableNaiModels(runtime);
+    const availableModels = getSelectableNaiModels(runtime);
+    const selectableModels = availableModels.filter(model => !modelFilter || modelFilter(model.id));
 
     // 比例模式与缩放状态
     const [resolutionMode, setResolutionMode] = useState<string>(() => {
@@ -95,6 +98,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     const fixedSettings = getNaiModelFixedSettings(resolvedModelId, runtime);
     const effectiveParams = applyNaiModelSettings(params, runtime);
     const displayedModelId = resolvedModelId.replace(/-medium(?=-inpainting|$)/, '');
+    const displayedModel = availableModels.find(model => model.id === displayedModelId);
     const supportsEffort = /^nai-diffusion-5-full(?:-medium)?(?:-inpainting)?$/.test(resolvedModelId);
     const currentModelInfo = getRuntimeNaiModelInfo(resolvedModelId, runtime);
     const transparentWeight = resolveTransparentWeight(params.transparentWeight, prompt);
@@ -205,7 +209,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             <option key={model.id} value={model.id}>NovelAI {t(model.label)}</option>
                         ))}
                         {params.model && !selectableModels.some(model => model.id === displayedModelId) && (
-                            <option value={displayedModelId}>{t("未知模型（{0}）", [displayedModelId])}</option>
+                            <option value={displayedModelId}>{displayedModel ? t('当前模型不可用于此配置（{0}）', [t(displayedModel.label)]) : t("未知模型（{0}）", [displayedModelId])}</option>
                         )}
                     </select>
                     {supportsEffort && <select aria-label={t('生成档位')} disabled={!canEdit}

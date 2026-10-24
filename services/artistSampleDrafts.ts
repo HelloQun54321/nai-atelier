@@ -1,52 +1,55 @@
-import type { LocalGenItem, PromptChain } from '../types';
+import type { LocalGenItem } from '../types';
 import { api, notifyLanAccessRequired, parseErrorResponse } from './api';
 import { IMPORT_SESSION_KEY } from './metadataService';
-import { compilePrompt } from './promptUtils';
 import { parsePromptTags } from './tagTranslations';
 import { createUuid } from './id';
-import { broadcastArtistSamplesChanged, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag, type ArtistSamplePack, type ArtistSampleTemplate, type ArtistOwnSample } from './artistSamples';
+import { createDefaultRollTemplate } from './styleRoll';
+import { applyNaiModelSettings } from './naiModels';
+import { DEFAULT_NAI_RUNTIME, type NaiRuntimeConfig } from './naiRuntime';
+import { buildArtistSamplePrompt, validateArtistSamplePlaceholders } from './artistSampleTemplate';
+export { buildArtistSamplePrompt, normalizeArtistSampleTemplate } from './artistSampleTemplate';
+import { broadcastArtistSamplesChanged, getArtistSampleCatalog, getArtistSampleStatus, getAvailableArtistSampleCatalogTags, isArtistOwnSampleRemoved, isArtistOwnSampleForPack, isArtistSampleModelForPack, isArtistSampleSourceForPack, normalizeArtistSampleTag, type ArtistSampleRemoval, type ArtistSamplePack, type ArtistSampleTemplate, type ArtistOwnSample } from './artistSamples';
 
 export type { ArtistSampleTemplate, ArtistOwnSample } from './artistSamples';
-export interface ArtistSampleData { templates: Partial<Record<ArtistSamplePack, ArtistSampleTemplate>>; samples: ArtistOwnSample[] }
+export interface ArtistSampleData { templates: Partial<Record<ArtistSamplePack, ArtistSampleTemplate>>; samples: ArtistOwnSample[]; removedSamples?: ArtistSampleRemoval[] }
 export interface ArtistSampleTarget { id: string; tag: string; pack: ArtistSamplePack; historyIds: string[] }
 
-export const getArtistSampleData = (): Promise<ArtistSampleData> => api.get('/artist-sample-data');
+export const getArtistSampleData = async (): Promise<ArtistSampleData> => {
+  const data = await api.get('/artist-sample-data') as ArtistSampleData;
+  return { ...data, samples: data.samples.filter(sample => !isArtistOwnSampleRemoved(sample, data.removedSamples)) };
+};
+
+export async function deleteArtistSample(removal: ArtistSampleRemoval): Promise<void> {
+  await api.post('/artist-sample-data', { action: 'remove', pack: removal.pack, removal });
+  broadcastArtistSamplesChanged();
+}
 
 /** 有可用样张的画师集合（图包 + 自建样张），归一化后用于抽取过滤。 */
 export async function getSampledArtistTags(): Promise<Set<string>> {
   const [status, data] = await Promise.all([
     getArtistSampleStatus().catch(() => null),
-    getArtistSampleData().catch(() => ({ templates: {}, samples: [] } as ArtistSampleData)),
+    getArtistSampleData(),
   ]);
   const tags = new Set<string>();
-  for (const sample of data.samples) tags.add(normalizeArtistSampleTag(sample.tag));
-  const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready'));
+  for (const sample of data.samples) if (isArtistOwnSampleForPack(sample) && !isArtistOwnSampleRemoved(sample, data.removedSamples)) tags.add(normalizeArtistSampleTag(sample.tag));
+  const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready' && isArtistSampleSourceForPack(pack, item)));
   const catalogs = await Promise.all(ready.map(pack => getArtistSampleCatalog(pack).catch(() => null)));
-  for (const catalog of catalogs) for (const tag of catalog?.tags || []) tags.add(normalizeArtistSampleTag(tag));
+  for (const catalog of catalogs) if (catalog && isArtistSampleSourceForPack(catalog.pack, catalog)) for (const tag of getAvailableArtistSampleCatalogTags(catalog, data.removedSamples)) tags.add(normalizeArtistSampleTag(tag));
   return tags;
 }
 
 /** 自建起点，绝不声称是外部图包的原始配方。 */
-export const getDefaultArtistSampleTemplate = (pack: ArtistSamplePack): ArtistSampleTemplate => ({
-  prompt: '1girl, solo, upper body, simple background, looking at viewer, artist:{artist}',
-  negativePrompt: '',
-  params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', width: 832, height: 1216,
-    steps: pack === 'v45' ? 28 : 23, scale: 5, sampler: 'k_euler_ancestral', seed: 0,
-    qualityToggle: false, ucPreset: 4, characters: [] },
-});
+export const getDefaultArtistSampleTemplate = (pack: ArtistSamplePack, runtime: NaiRuntimeConfig = DEFAULT_NAI_RUNTIME): ArtistSampleTemplate => {
+  const template = createDefaultRollTemplate(runtime);
+  return { ...template, params: applyNaiModelSettings({ ...template.params,
+    model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', steps: runtime.freeMaxSteps }, runtime) };
+};
 
-export function buildArtistSampleTemplateFromChain(chain: PromptChain): ArtistSampleTemplate {
-  const prompt = compilePrompt(chain, chain.variableValues?.subject || '');
-  return { prompt: prompt.includes('{artist}') ? prompt : `${prompt}${prompt ? ', ' : ''}artist:{artist}`,
-    negativePrompt: chain.negativePrompt, params: structuredClone(chain.params) };
-}
-
-export const artistSampleModelMatches = (pack: ArtistSamplePack, model = '') =>
-  !model.endsWith('-inpainting') && (pack === 'v45' ? /^nai-diffusion-4-5-/.test(model) : /^nai-diffusion-5-/.test(model));
+export const artistSampleModelMatches = isArtistSampleModelForPack;
 
 export function validateArtistSampleTemplate(pack: ArtistSamplePack, template: ArtistSampleTemplate) {
-  if (!template.prompt.includes('{artist}')) throw new Error('公共提示词必须包含 {artist} 占位符');
-  if (!artistSampleModelMatches(pack, template.params.model)) throw new Error('样张配置的模型与所选版本不一致');
+  validateArtistSamplePlaceholders(template);
+  if (!artistSampleModelMatches(pack, template.params.model)) throw new Error(pack === 'v5' ? '画师样张仅支持 V5 Full' : '样张配置的模型与所选版本不一致');
   if (!Number.isSafeInteger(template.params.seed) || template.params.seed! < 0) throw new Error('样张配置需要固定的非负 Seed');
 }
 
@@ -62,7 +65,7 @@ export function prepareArtistSampleImport(tag: string, pack: ArtistSamplePack, t
   const artistSampleTarget: ArtistSampleTarget = { id: createUuid(), tag, pack, historyIds: [] };
   sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
     mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true, replace: true,
-    prompt: template.prompt.replaceAll('{artist}', tag), negativePrompt: template.negativePrompt,
+    prompt: buildArtistSamplePrompt(template, tag), negativePrompt: template.negativePrompt,
     params: structuredClone(template.params), importSettings: true, importSeed: true, importModel: true, artistSampleTarget,
   }));
 }

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArtistPreferenceActions } from '../../components/ArtistPreferenceActions';
 import { ImageShareOverlay } from '../../components/ImageShareActions';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
+vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: vi.fn(async () => ({ byTag: new Map(), indexed: 0, total: 0 })) }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 import { CharacterLibrary } from '../../components/CharacterLibrary';
 import type { PromptChain } from '../../types';
@@ -445,6 +446,31 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
     expect(screen.getByRole('button', { name: kindLabels(kind).draw })).toBeTruthy();
   });
+});
+
+it('角色目录小池被近期批次覆盖后仍随机换批，不固定抽热度前12位', async () => {
+  const catalog = Array.from({ length: 13 }, (_, index) => ({ name: `small_pool_character_${index}`, chinese: '', postCount: 13 - index }));
+  vi.mocked(getCharacterDictionaryPage).mockResolvedValue({ entries: catalog, total: 13, page: 0, pageSize: 500, pageCount: 1 });
+  vi.mocked(getCharacterDictionaryEntriesAt).mockImplementation(async indices => indices.map(index => catalog[index]));
+  let seed = 42;
+  vi.spyOn(Math, 'random').mockImplementation(() => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  });
+  renderLibrary('character');
+  await screen.findByTestId('cover-small_pool_character_0');
+  fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
+  await screen.findByText(/正在浏览随机抽取的 12 位角色/);
+  for (let round = 1; round < 6; round++) {
+    fireEvent.click(screen.getByRole('button', { name: '再抽一批' }));
+    await waitFor(() => expect(getCharacterDictionaryEntriesAt).toHaveBeenCalledTimes(round + 1));
+  }
+  const batches = vi.mocked(getCharacterDictionaryEntriesAt).mock.calls.map(([indices]) => {
+    expect(new Set(indices).size).toBe(12);
+    return [...indices].sort((left, right) => left - right).join(',');
+  });
+  expect(new Set(batches.slice(2)).size).toBeGreaterThan(1);
+  expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
 it('角色目录为空时仍能抽取自定义角色，不生成预览', async () => {

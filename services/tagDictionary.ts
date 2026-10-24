@@ -200,6 +200,7 @@ export interface ArtistDictionaryEntry {
   name: string;
   chinese: string;
   postCount: number;
+  postCountKnown?: boolean;
 }
 
 const mapArtistEntry = (entry: TagDictionaryEntry): ArtistDictionaryEntry => ({

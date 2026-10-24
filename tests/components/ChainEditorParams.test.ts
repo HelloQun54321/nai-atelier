@@ -62,6 +62,13 @@ const renderParams = (props: Record<string, unknown> = {}) => render(React.creat
 afterEach(() => { cleanup(); });
 
 describe('ChainEditorParams', () => {
+  it('已知 Curated 被配置模型过滤时仍显示真实名称并保留原模型', () => {
+    const setParams = vi.fn(), curated = { ...params, model: 'nai-diffusion-5-curated' };
+    renderParams({ params: curated, setParams, modelFilter: (id: string) => id === 'nai-diffusion-5-full' });
+    expect((screen.getByRole('combobox', { name: '生成模型' }) as HTMLSelectElement).value).toBe('nai-diffusion-5-curated');
+    expect(screen.getByRole('option', { name: '当前模型不可用于此配置（V5 Curated）' })).toBeTruthy();
+    expect(screen.queryByRole('option', { name: /未知模型/ })).toBeNull(); expect(setParams).not.toHaveBeenCalled(); expect(curated.model).toBe('nai-diffusion-5-curated');
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 Medium 锁定灰白控件，切回 High 恢复草稿', mode => {
     let draft!: NAIParams;
     const Harness = () => {

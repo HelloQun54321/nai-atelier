@@ -22,6 +22,13 @@ it('44px 触控按钮不缩小，极窄卡片避开左上删除后补足高度',
   expect(result).toEqual({ rows: 5, top: 60, minHeight: 380 });
 });
 
+it('单列动作按三行布局并为标题与翻图留出完整高度，默认多按钮仍沿用换列', () => {
+  const single = imageCardActionLayout({ ...base, count: 3, bottom: 100, singleColumn: true });
+  expect(single.rows).toBe(3);
+  expect(single.top + single.rows * (base.buttonHeight + base.gap) - base.gap).toBeLessThanOrEqual(single.minHeight - 100 - base.inset);
+  expect(imageCardActionLayout({ ...base, count: 12 }).rows).toBe(2);
+});
+
 it('不同宽高、按钮数和底栏高度下，所有按钮均在封面内且避开标题与左侧操作', () => {
   for (const width of [80, 100, 160, 240, 480]) for (const height of [24, 80, 160, 360]) {
     for (const size of [32, 44]) for (const count of [1, 3, 4, 5]) for (const bottom of [0, 48, 96]) {

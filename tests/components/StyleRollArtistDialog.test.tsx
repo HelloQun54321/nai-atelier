@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StyleRollArtistDialog } from '../../components/roll/StyleRollArtistDialog';
 import { DEFAULT_ROLL_RULES } from '../../services/styleRoll';
-import { installPointerEvents } from '../support/touchEvents';
+import { installPointerEvents, longPress } from '../support/touchEvents';
 import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
+import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
 
 const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
@@ -20,6 +21,18 @@ const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '',
   const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(DEFAULT_ROLL_RULES);
   return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
 };
+
+it('样张删除广播刷新两版封面，保留搜索锁定及当前卡版本', async () => {
+  render(<Fixture />); await screen.findByAltText('alpha');
+  fireEvent.click(screen.getByRole('button', { name: '锁定画师：alpha' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'alpha' } });
+  mocks.urls.mockResolvedValue(new Map());
+  act(() => window.dispatchEvent(new Event(ARTIST_SAMPLES_CHANGED)));
+  await waitFor(() => expect(screen.queryByAltText('alpha')).toBeNull());
+  expect(screen.getByRole('searchbox', { name: '搜索画师' })).toHaveProperty('value', 'alpha');
+  expect(screen.getByRole('button', { name: '锁定画师：alpha' })).toHaveProperty('ariaPressed', 'true');
+  expect(mocks.urls).toHaveBeenCalledTimes(4);
+});
 
 it('使用量升降序和收录生成交集包含零值，保留锁定与偏好并重置分页', async () => {
   const library = Array.from({ length: 65 }, (_, i) => ({ name: `artist${String(i).padStart(2, '0')}`, chinese: '', postCount: 100 - i }));
@@ -107,7 +120,7 @@ it.each([390, 1280])('宽度 %s：爱心下面切单卡版本，保留另一张�
   const betaImage = within(beta).getByRole('img');
   fireEvent.click(alpha); fireEvent.click(beta);
   const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!; gallery.scrollTop = 480;
-  const version = within(alpha).getByRole('button', { name: '样张版本 V4.5，切换为 V5' });
+  const version = within(alpha).getByRole('button', { name: '样张版本 V4.5，切换为 V5 Full' });
   expect(within(alpha).getByRole('button', { name: '取消偏好画师：alpha' }).nextElementSibling).toBe(version);
   fireEvent.keyDown(version, { key: 'Enter' }); fireEvent.click(version);
   expect(within(alpha).getByRole('img').getAttribute('src')).toBe('/v5-alpha.png');
@@ -126,7 +139,7 @@ it('Roll 打开时沿用画师库默认版本，单卡切换不改全局选择',
   render(<Fixture />); await screen.findByAltText('alpha');
   const alpha = screen.getByRole('button', { name: '锁定画师：alpha' });
   expect(within(alpha).getByRole('img').getAttribute('src')).toBe('/v5-alpha.png');
-  fireEvent.click(within(alpha).getByRole('button', { name: '样张版本 V5，切换为 V4.5' }));
+  fireEvent.click(within(alpha).getByRole('button', { name: '样张版本 V5 Full，切换为 V4.5' }));
   expect(within(alpha).getByRole('img').getAttribute('src')).toBe('/v45-alpha.png');
   expect(localStorage.getItem('nai_artist_sample_pack')).toBe('v5');
 });
@@ -244,4 +257,63 @@ it('卡片复用角色卡图文结构和图库动效，点击名字与键盘选�
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.keyDown(card, { key: 'Enter' });
   expect(card.getAttribute('aria-pressed')).toBe('false');
+});
+
+it('触屏长按显露版本切换，换版本后收起；普通点按锁定，滑动不显露', async () => {
+  installPointerEvents(); render(<Fixture />);
+  const image = await screen.findByAltText('alpha');
+  const card = image.closest('article')!;
+  const getVersion = () => within(card).getByRole('button', { name: /样张版本 .*切换为/ });
+
+  longPress(card);
+  expect(card.getAttribute('data-press-revealed')).toBe('true');
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(getVersion());
+  await waitFor(() => expect(card.getAttribute('data-press-revealed')).toBeNull());
+  expect(getVersion().getAttribute('aria-label')).toBe('样张版本 V5 Full，切换为 V4.5');
+  expect(card.getAttribute('aria-pressed')).toBe('false');
+
+  vi.useFakeTimers();
+  fireEvent.pointerDown(card, { pointerType: 'touch', button: 0, clientX: 20, clientY: 20 });
+  act(() => vi.advanceTimersByTime(100));
+  fireEvent.pointerUp(card, { pointerType: 'touch' });
+  fireEvent.click(card, { detail: 1 });
+  expect(card.getAttribute('aria-pressed')).toBe('true');
+  expect(card.getAttribute('data-press-revealed')).toBeNull();
+
+  fireEvent.pointerDown(card, { pointerType: 'touch', button: 0, clientX: 20, clientY: 20 });
+  fireEvent.pointerMove(card, { pointerType: 'touch', clientX: 40, clientY: 20 });
+  act(() => vi.advanceTimersByTime(500));
+  fireEvent.pointerUp(card, { pointerType: 'touch' });
+  fireEvent.click(card, { detail: 1 });
+  expect(card.getAttribute('aria-pressed')).toBe('true');
+  expect(card.getAttribute('data-press-revealed')).toBeNull();
+  vi.useRealTimers();
+});
+
+it('图包-only原名可固定且保留归一冲突条目，未知热度不会冒充最低热度', async () => {
+  const library = [{ name: 'a_b', chinese: '词库中文', postCount: 100 }, { name: 'a b', chinese: '', postCount: 0, postCountKnown: false }, { name: 'pack_only', chinese: '', postCount: 0, postCountKnown: false }, { name: 'known zero', chinese: '', postCount: 0 }];
+  localStorage.setItem('nai_roll_artist_sort', 'least');
+  render(<Fixture library={library} />);
+  await screen.findByRole('button', { name: '锁定画师：pack_only' });
+  const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
+  expect(names().slice(0, 2)).toEqual(['known zero', 'a_b']);
+  expect(screen.getByRole('button', { name: '锁定画师：a b' })).toBeTruthy();
+  expect(screen.getByText('词库中文')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '锁定画师：pack_only' }));
+  expect(screen.getByRole('button', { name: '锁定画师：pack_only' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'name-asc' } });
+  expect(names().at(-1)).toBe('pack_only');
+  expect(screen.getByRole('button', { name: '锁定画师：pack_only' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('归一化冲突时仅精确图包Tag显示图片，另一原名安全无图', async () => {
+  const url = '/api/artist-samples/image?pack=v45&tag=foo_bar&index=0&revision=synthetic';
+  mocks.urls.mockResolvedValue(new Map([['foo bar', url]]));
+  render(<Fixture library={[{ name: 'foo_bar', chinese: '', postCount: 1 }, { name: 'foo bar', chinese: '', postCount: 0, postCountKnown: false }]} />);
+  const exact = screen.getByRole('button', { name: '锁定画师：foo_bar' });
+  const ambiguous = screen.getByRole('button', { name: '锁定画师：foo bar' });
+  await waitFor(() => expect(exact.querySelector('img')?.getAttribute('src')).toBe(url));
+  expect(ambiguous.querySelector('img')).toBeNull();
+  expect(within(ambiguous).getByText('暂无样张')).toBeTruthy();
 });

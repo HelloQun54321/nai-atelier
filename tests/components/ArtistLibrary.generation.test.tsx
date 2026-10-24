@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 import { getDefaultArtistSampleTemplate } from '../../services/artistSampleDrafts';
+import { getArtistSampleGeneration } from '../../services/artistSampleGeneration';
 
 const mocks = vi.hoisted(() => ({ build: vi.fn(), begin: vi.fn(), data: vi.fn(), changed: undefined as (() => void) | undefined }));
 vi.mock('../../services/naiService', () => ({ buildGenerationJobDescriptor: mocks.build }));
@@ -22,12 +23,12 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
 }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: async () => ({ entries: [], pageCount: 0, total: 0 }) }));
 vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionSnapshot: () => [], subscribeCollection: () => () => {} }));
-vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', ImageShareActions: () => <span data-testid="image-actions" /> }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8' }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} /> }));
 vi.mock('../../services/imageDisplayPreferences', () => ({ useMobileImageDisplayPreferences: () => ({ layout: 'masonry', columns: 'auto', desktopColumns: 5 }), mobileGalleryClassName: () => '', mobileGalleryStyle: () => ({}) }));
 
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
-it('真实瀑布流和封面沿服务订阅显示连续预览帧；完成后从样张弹卡重新生成，默认请求流式且不依赖其他页面观看偏好', async () => {
+it('真实瀑布流和封面沿服务订阅显示连续预览帧；完成后直接点封面重新生成，不选中画师且请求流式', async () => {
   localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem('nai_api_key', 'synthetic-key');
   const watchingPreference = JSON.stringify({ generationStreamPreview: false }); localStorage.setItem('nai_appearance_preferences', watchingPreference);
   vi.stubGlobal('innerWidth', 1280);
@@ -43,10 +44,10 @@ it('真实瀑布流和封面沿服务订阅显示连续预览帧；完成后从�
   const props = { notify: vi.fn(), onNavigateToPlayground: vi.fn() };
   const view = render(<ArtistLibrary {...props} />);
   const card = await screen.findByRole('button', { name: '选择画师：synthetic artist' });
-  fireEvent.click(card); fireEvent.click(screen.getByRole('button', { name: '样张操作' }));
   const button = await screen.findByRole('button', { name: '补充样张' });
   fireEvent.click(button);
   await waitFor(() => expect(mocks.begin).toHaveBeenCalledOnce());
+  expect(card.getAttribute('aria-pressed')).toBe('false');
   expect(mocks.build.mock.calls[0][0].stream).toBe(true);
   act(() => { session.preview = { image: 'data:image/png;base64,Zmlyc3Q=', step: 1 }; mocks.changed?.(); });
   const preview = await screen.findByRole('img', { name: '样张生成预览' });
@@ -58,10 +59,9 @@ it('真实瀑布流和封面沿服务订阅显示连续预览帧；完成后从�
   const item = { id: 'history-synthetic', imageUrl: '/api/assets/synthetic.png', prompt: 'artist:synthetic artist', negativePrompt: '', params: { ...template.params, seed: 123 }, createdAt: 100 };
   mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [{ ...item, id: 'sample-v45-' + item.id, tag: 'synthetic artist', pack: 'v45' }] });
   await act(async () => { session.preview = undefined; session.historyIds = [item.id]; session.lastSavedItem = item; finish({ success: true }); });
-  fireEvent.click(screen.getByRole('button', { name: '样张操作' }));
+  expect(getArtistSampleGeneration('synthetic artist', 'v45')).toMatchObject({ phase: 'saved' });
   const regenerate = await screen.findByRole('button', { name: '重新生成样张' });
-  expect(regenerate.closest('[role=dialog]')).not.toBeNull(); expect(regenerate.closest('.mobile-gallery-frame')).toBeNull();
-  expect(screen.queryByRole('status')).toBeNull();
+  expect(regenerate.closest('[role=dialog]')).toBeNull(); expect(regenerate.closest('.mobile-gallery-frame')).not.toBeNull();
   view.rerender(<ArtistLibrary {...props} />);
   fireEvent.click(regenerate);
   await waitFor(() => expect(mocks.begin).toHaveBeenCalledTimes(2));

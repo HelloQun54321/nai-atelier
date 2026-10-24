@@ -5,7 +5,7 @@ import type { ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { getArtistUsage, isArtistUsageSort, artistUsageCount, compareArtistUsage, matchesArtistUsage, type ArtistBrowseSort, type ArtistUsageFilter, type ArtistUsageIndex } from '../../services/artistUsage';
 import { localHistory } from '../../services/localHistory';
 import type { RollRules } from '../../services/styleRoll';
-import { normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
+import { ARTIST_SAMPLES_CHANGED, normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
 import { loadArtistSampleUrls } from '../../services/artistSampleUrls';
 import { collectionSnapshot, ensureCollection, subscribeCollection, toggleArtistPreference } from '../../services/collectionFavorites';
 import { normalizeRollArtistKey } from '../../services/styleRollSeed';
@@ -37,6 +37,8 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   const collection = useSyncExternalStore(subscribeCollection, collectionSnapshot);
   const preferred = useMemo(() => new Set(collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => normalizeRollArtistKey(item.sourceId!))), [collection]);
   const [urls, setUrls] = useState<Record<ArtistSamplePack, Map<string, string>>>({ v45: new Map(), v5: new Map() }), [sampleLoading, setSampleLoading] = useState(true);
+  const [sampleRetry, setSampleRetry] = useState(0);
+  useEffect(() => { const changed = () => setSampleRetry(value => value + 1); window.addEventListener(ARTIST_SAMPLES_CHANGED, changed); return () => window.removeEventListener(ARTIST_SAMPLES_CHANGED, changed); }, []);
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
   const [query, setQuery] = useState(''), [filter, setFilter] = useState('all'), [limit, setLimit] = useState(60);
@@ -71,14 +73,26 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   useEffect(() => {
     let current = true;
     void Promise.all([loadArtistSampleUrls('v45'), loadArtistSampleUrls('v5')]).then(([v45, v5]) => { if (current) setUrls({ v45, v5 }); }).catch(cause => { if (current) setError((cause as Error).message); }).finally(() => { if (current) setSampleLoading(false); });
-    void ensureCollection().catch(cause => { if (current) setError((cause as Error).message); });
     return () => { current = false; };
-  }, []);
+  }, [sampleRetry]);
+  useEffect(() => { void ensureCollection().catch(cause => setError((cause as Error).message)); }, []);
   const pinnedKeys = useMemo(() => new Set(pinned.map(normalizeRollArtistKey)), [pinned]);
   const blockedKeys = useMemo(() => new Set([...blocked, ...excluded].map(normalizeRollArtistKey)), [blocked, excluded]);
+  const sampleNameCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const name of new Set(library.map(entry => entry.name))) { const key = normalizeArtistSampleTag(name); counts.set(key, (counts.get(key) || 0) + 1); }
+    return counts;
+  }, [library]);
+  const sampleUrl = (name: string, pack: ArtistSamplePack) => {
+    const key = normalizeArtistSampleTag(name), url = urls[pack].get(key);
+    if (!url || (sampleNameCounts.get(key) || 0) < 2) return url;
+    // 归一冲突只接受地址明确记录的原 Tag；普通资产地址不能证明属于哪个别名。
+    return url.startsWith('/api/artist-samples/image?') && new URLSearchParams(url.slice(url.indexOf('?') + 1)).get('tag') === name ? url : undefined;
+  };
   const artists = useMemo(() => {
-    const entries = new Map(library.map(entry => [normalizeRollArtistKey(entry.name), entry]));
-    for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!entries.has(normalizeRollArtistKey(tag))) entries.set(normalizeRollArtistKey(tag), { name: tag, chinese: '', postCount: 0 });
+    const entries = new Map(library.map(entry => [entry.name, entry]));
+    const known = new Set(library.map(entry => normalizeRollArtistKey(entry.name)));
+    for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!known.has(normalizeRollArtistKey(tag))) { entries.set(tag, { name: tag, chinese: '', postCount: 0, postCountKnown: false }); known.add(normalizeRollArtistKey(tag)); }
     const search = normalizeRollArtistKey(query);
     const index = usage || { byTag: new Map(), indexed: 0, total: 0 };
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
@@ -160,8 +174,8 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
         {(loading || sampleLoading) && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取画师样张…')}</p>}
         <div className="grid grid-cols-2 items-start gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
           {artists.slice(0, limit).map(artist => {
-            const key = normalizeRollArtistKey(artist.name), selected = pinnedKeys.has(key), banned = blockedKeys.has(key), favorite = preferred.has(key), pack = cardPacks[key] || defaultPack, url = urls[pack].get(normalizeArtistSampleTag(artist.name));
-            return <PressRevealSurface as="article" key={key} pressDisabled data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group gallery-image-card gallery-card-visual relative min-w-0 cursor-pointer overflow-hidden rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-900 ${selected ? 'ring-2 ring-indigo-500' : ''}`}>
+            const key = normalizeRollArtistKey(artist.name), selected = pinnedKeys.has(key), banned = blockedKeys.has(key), favorite = preferred.has(key), pack = cardPacks[key] || defaultPack, url = sampleUrl(artist.name, pack);
+            return <PressRevealSurface as="article" key={artist.name} pressResetKey={pack} pressDisabled={busy} data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group gallery-image-card gallery-card-visual relative min-w-0 cursor-pointer overflow-hidden rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-900 ${selected ? 'ring-2 ring-indigo-500' : ''}`}>
               <div className="appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-100 dark:bg-gray-950">
                 <div className="absolute inset-0 h-full w-full">
                   {url ? <SmartImage src={url} alt={artist.chinese || artist.name} className="h-full w-full object-contain" previewTransform={url.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v2' : undefined} /> : <span className="flex h-full flex-col items-center justify-center gap-2 text-xs text-gray-400"><ImageIcon className="h-7 w-7 opacity-40" strokeWidth={1.25} />{t('暂无样张')}</span>}

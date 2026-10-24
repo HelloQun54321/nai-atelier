@@ -7,7 +7,7 @@ import { t, useLanguage } from '../services/i18n';
 import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
-import { getArtistSampleDictionary, normalizeArtistSampleTag } from '../services/artistSamples';
+import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
 import type { ArtistDictionaryEntry } from '../services/tagDictionary';
@@ -92,6 +92,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
   const busyRef = useRef(false), generatingRef = useRef(false), selectedExperimentRef = useRef(experimentId), historySequence = useRef(0);
   const loadingRef = useRef(true), loadSequence = useRef(0);
+  const librarySequence = useRef(0);
   const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
   const sampleLoaded = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -104,7 +105,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   });
   selectedExperimentRef.current = experimentId;
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
-  const effectiveLibrary = sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library;
+  const effectiveLibrary = useMemo(() => sampledTags ? library.filter(tag => sampledTags.has(normalizeArtistSampleTag(tag))) : library, [library, sampledTags]);
   const chineseNames = useMemo(() => new Map(libraryEntries.map(entry => [normalizeArtistSampleTag(entry.name), entry.chinese || ''])), [libraryEntries]);
   const roundNumbers = useMemo(() => {
     const map = new Map<string, number>();
@@ -136,14 +137,15 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   }, []);
   useEffect(() => { void reload(); }, [reload]);
   const reloadLibrary = useCallback(async () => {
+    const sequence = ++librarySequence.current;
     setLibraryLoading(true); setLibraryError('');
     try {
-      const artists = await getArtistSampleDictionary();
+      const artists = await getArtistSampleLibrary();
       if (!artists.length) throw new Error('画师词库为空，请在画师库中检查词库资源');
-      if (mounted.current) { setLibrary(artists.map(artist => artist.name)); setLibraryEntries(artists); }
+      if (mounted.current && sequence === librarySequence.current) { setLibrary(artists.map(artist => artist.name)); setLibraryEntries(artists); }
     }
-    catch (cause) { if (mounted.current) setLibraryError((cause as Error).message); }
-    finally { if (mounted.current) setLibraryLoading(false); }
+    catch (cause) { if (mounted.current && sequence === librarySequence.current) setLibraryError((cause as Error).message); }
+    finally { if (mounted.current && sequence === librarySequence.current) setLibraryLoading(false); }
   }, []);
   useEffect(() => { if (active) void reloadLibrary(); }, [active, reloadLibrary]);
   const refreshHistory = useCallback(async (id: string) => {
@@ -160,7 +162,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   useEffect(() => { setArtistOverrides(experiment?.artists ?? []); }, [experimentId, experiment?.artists]);
   useEffect(() => { setPinnedArtists(experiment ? getRollPinnedArtists(experiment) : []); }, [experimentId, experiment?.pinnedArtists, experiment?.drawPlan, experiment?.artists]);
   useEffect(() => { setSampledOnly(experiment?.sampledOnly ?? false); }, [experimentId, experiment?.sampledOnly]);
-  useEffect(() => { if (active) void getSampledArtistTags().then(setSampledTags).catch(() => setSampledTags(new Set())); }, [active]);
+  const [sampleRetry, setSampleRetry] = useState(0);
+  useEffect(() => { const changed = () => { sampleLoaded.current = false; setSampledTags(null); setSampleRetry(value => value + 1); if (active) void reloadLibrary(); }; window.addEventListener(ARTIST_SAMPLES_CHANGED, changed); return () => window.removeEventListener(ARTIST_SAMPLES_CHANGED, changed); }, [active, reloadLibrary]);
+  useEffect(() => { let current = true; if (active) void getSampledArtistTags().then(tags => { if (current) setSampledTags(tags); }).catch(() => { if (current) setSampledTags(new Set()); }); return () => { current = false; }; }, [active, sampleRetry]);
   useEffect(() => {
     let stale = false;
     const changed = (event: Event) => {
@@ -223,11 +227,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!active || !selectedId || sampleLoaded.current) return;
     let current = true;
     void loadArtistSampleUrls().then(urls => {
-      sampleLoaded.current = true;
-      if (current && mounted.current) setSampleUrls(urls);
+      if (current && mounted.current) { sampleLoaded.current = true; setSampleUrls(urls); }
     }).catch(() => {});
     return () => { current = false; };
-  }, [active, selectedId]);
+  }, [active, selectedId, sampleRetry]);
   // 画师库「在 Roll 中固定」：新建记录并预置固定画师，不覆盖当前记录。
   useEffect(() => {
     if (!initialPinned || consumedPinnedTokens.has(initialPinned.token)) return;
@@ -562,7 +565,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
               </form>}
               <div className="space-y-1">
-                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setSetup(makeExperiment()); close(); }}><Plus />{t('新建记录')}</button>
+                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => openFromSettings(close, () => setSetup(makeExperiment()))}><Plus />{t('新建记录')}</button>
                 <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载画风记录')}</button>
                 {experiment && <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button>}
               </div>

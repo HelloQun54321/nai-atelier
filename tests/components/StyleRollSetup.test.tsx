@@ -16,6 +16,20 @@ vi.mock('../../services/styleRollApi', () => ({ loadRollPresets: vi.fn(), saveRo
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => DEFAULT_NAI_RUNTIME }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: mocks.search }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
+
+it('切换抽取与生成分区保留预设选择及未保存名称，不重复读取预设', async () => {
+  const initial = rollFixture();
+  render(<StyleRollSetup initial={initial} enforceFreeStepLimit onBlockedChange={async () => {}} onSave={async () => {}} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  await waitFor(() => expect(screen.queryByText('正在读取生成预设…')).toBeNull());
+  fireEvent.change(screen.getByRole('combobox', { name: '生成配置预设' }), { target: { value: 'recommended' } });
+  fireEvent.change(screen.getByRole('textbox', { name: '预设名称' }), { target: { value: '未保存的名称' } });
+  fireEvent.click(screen.getByRole('button', { name: '抽取设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  expect(screen.getByRole('combobox', { name: '生成配置预设' })).toHaveProperty('value', 'recommended');
+  expect(screen.getByRole('textbox', { name: '预设名称' })).toHaveProperty('value', '未保存的名称');
+  expect(loadRollPresets).toHaveBeenCalledOnce();
+});
 beforeEach(() => { vi.resetAllMocks(); mocks.search.mockResolvedValue([]); mocks.confirm.mockResolvedValue(true);
   vi.mocked(loadRollPresets).mockResolvedValue([]); vi.mocked(saveRollPreset).mockImplementation(async value => ({ ...value, revision: value.revision + 1 }));
   vi.mocked(deleteRollPreset).mockResolvedValue();

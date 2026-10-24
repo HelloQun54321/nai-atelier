@@ -58,6 +58,18 @@ const invoke = async (path = '/api/local-history', method = 'GET', body?: unknow
   const context = { request, url: new URL(request.url), path, method, db, env, currentUser: { id: userId, username: userId, role: 'admin' } } as RouteContext;
   return (await handleArtistSampleRoute(context) || await handleHistoryRoute(context))!;
 };
+
+it('旧V5Curated生成历史继续保存但不归档Full样张，FullMedium正常归档', async () => {
+  for (const [id, model] of [['old-curated', 'nai-diffusion-5-curated'], ['full-medium', 'nai-diffusion-5-full-medium']]) {
+    const value = metadata(); value.id = id; value.params.model = model;
+    value.sourceChainId = `artist-sample:v5:${encodeURIComponent(target.tag)}`;
+    value.modules[0].content = JSON.stringify({ ...target, pack: 'v5' });
+    expect((await invoke('/api/local-history', 'POST', value)).status).toBe(200);
+  }
+  const data = await (await invoke('/api/artist-sample-data')).json();
+  expect(data.samples.map((sample: any) => sample.id)).toEqual(['sample-v5-full-medium']);
+  expect(sqlite.prepare("SELECT id FROM local_generation_history WHERE id = 'old-curated'").get()).toBeTruthy();
+});
 const samples = async (userId = 'owner') => (await (await invoke('/api/artist-sample-data', 'GET', undefined, userId)).json()).samples;
 beforeAll(async () => { sqlite.exec(INIT_SQL); await invoke(); });
 beforeEach(() => {
@@ -65,6 +77,65 @@ beforeEach(() => {
   images.clear(); failArchive = false; vi.clearAllMocks();
 });
 afterAll(() => sqlite.close());
+
+it('单张自建移除幂等且保留历史原图引用，重存和迟到归档不会复活', async () => {
+  const body = metadata();
+  await invoke('/api/local-history', 'POST', body);
+  const sample = (await samples())[0];
+  const removal = { source: 'own', pack: 'v45', tag: sample.tag, id: sample.id };
+  const deletedBefore = bucket.delete.mock.calls.length;
+  for (let i = 0; i < 2; i++) expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal })).status).toBe(200);
+  expect(await samples()).toEqual([]);
+  const data = await (await invoke('/api/artist-sample-data')).json();
+  expect(data.removedSamples).toEqual([removal]);
+  expect(sqlite.prepare('SELECT count(*) AS n FROM local_generation_history').get()?.n).toBe(1);
+  expect(sqlite.prepare("SELECT count(*) AS n FROM settings WHERE key LIKE '%:sample:%'").get()?.n).toBe(1);
+  expect(bucket.delete.mock.calls.length).toBe(deletedBefore);
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'sample', pack: 'v45', sample })).status).toBe(400);
+  expect((await invoke('/api/local-history', 'POST', body)).status).toBe(200);
+  expect(await samples()).toEqual([]);
+  expect((await (await invoke('/api/artist-sample-data', 'GET', undefined, 'other')).json()).removedSamples).toEqual([]);
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal }, 'other')).status).toBe(404);
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal: { ...removal, tag: 'other' } })).status).toBe(404);
+});
+
+it('图包移除仅记录当前页和版本，非法目标拒绝且不触及任何图片', async () => {
+  const removal = { source: 'pack', pack: 'v45', tag: 'exact_tag', revision: 'a'.repeat(24), index: 1, imageCount: 3 };
+  for (let i = 0; i < 2; i++) expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal })).status).toBe(200);
+  const other = { ...removal, revision: 'b'.repeat(24), index: 0 };
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal: other })).status).toBe(200);
+  expect((await (await invoke('/api/artist-sample-data')).json()).removedSamples).toEqual(expect.arrayContaining([removal, other]));
+  for (const invalid of [{ index: -1 }, { index: 3 }, { index: 0.5 }, { imageCount: 0 }, { imageCount: 1000001 }, { revision: 'x' }, { pack: 'v5' }, { tag: '' }, { source: 'other' }]) {
+    expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal: { ...removal, ...invalid } })).status).toBe(400);
+  }
+  expect(bucket.delete).not.toHaveBeenCalled(); expect(bucket.get).not.toHaveBeenCalled();
+});
+
+it('保存已读到原图时并发移除，最终SQL条件仍阻止迟到覆盖', async () => {
+  await invoke('/api/local-history', 'POST', metadata());
+  const sample = (await samples())[0];
+  bucket.get.mockImplementationOnce(async key => {
+    expect((await invoke('/api/artist-sample-data', 'POST', { action: 'remove', pack: 'v45', removal: { source: 'own', pack: 'v45', tag: sample.tag, id: sample.id } })).status).toBe(200);
+    const bytes = images.get(key)!;
+    return { body: bytes, httpEtag: 'synthetic', writeHttpMetadata(headers: Headers) { headers.set('Content-Type', 'image/png'); } };
+  });
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'sample', pack: 'v45', sample: { ...sample, prompt: 'changed' } })).status).toBe(400);
+  expect(await samples()).toEqual([]);
+  expect(JSON.parse(String(sqlite.prepare('SELECT value FROM settings WHERE key = ?').get(`artist_sample_v1:owner:sample:v45:${sample.id}`)?.value)).prompt).toBe(sample.prompt);
+});
+
+it('样张模板持久保存规范三栏，旧画师替换位原样兼容且校验角色内容', async () => {
+  const template = { prompt: 'quality, {style}, {character}', negativePrompt: 'lowres', characterPrompt: 'solo, blue hair', params };
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'template', pack: 'v45', template })).status).toBe(200);
+  expect((await (await invoke('/api/artist-sample-data')).json()).templates.v45).toEqual(template);
+  const legacy = { prompt: 'artist:{artist}', negativePrompt: '', params };
+  expect((await invoke('/api/artist-sample-data', 'POST', { action: 'template', pack: 'v45', template: legacy })).status).toBe(200);
+  expect((await (await invoke('/api/artist-sample-data')).json()).templates.v45).toEqual(legacy);
+  for (const change of [{ prompt: '{style}, {artist}' }, { prompt: '{artist}, {artist}' }, { characterPrompt: 'a'.repeat(32001) }, { characterPrompt: '{style}' }, { characterPrompt: 12 }]) {
+    expect((await invoke('/api/artist-sample-data', 'POST', { action: 'template', pack: 'v45', template: { ...template, ...change } })).status).toBe(400);
+  }
+  expect((await (await invoke('/api/artist-sample-data')).json()).templates.v45).toEqual(legacy);
+});
 
 it.each(['v45', 'v5'])('卡内 %s 后台保存历史即归档真实参数和原图，无前端保存请求', async pack => {
   const body = metadata();

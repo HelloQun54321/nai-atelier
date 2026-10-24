@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NAIParams, PromptChain } from '../types';
 import { compilePrompt } from '../services/promptUtils';
 import { compareLibraryTags } from '../services/tagLibrary';
+import { drawLibraryIndices } from '../services/libraryRandom';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import {
   CharacterDictionaryEntry,
@@ -572,10 +573,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     notify(`已把 ${count} 个角色分配至独立槽位送往实验室`);
     onNavigateToPlayground();
   };
-  const drawIndex = (total: number) => Math.random() < 0.7
-    ? Math.floor(Math.random() * Math.min(total, 20_000))
-    : Math.floor(Math.random() * total);
-
   const drawGacha = async () => {
     if (isGachaLoading || (gachaMode !== 'custom' && catalogTotal <= 0)) return;
     if (gachaMode === 'custom' && customChains.length === 0) {
@@ -594,19 +591,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       const customCards = [...customChains].sort(() => Math.random() - 0.5).slice(0, gachaCount).map(customToCard);
       const customTarget = gachaMode === 'custom' ? gachaCount : gachaMode === 'mixed' ? Math.min(customCards.length, Math.max(1, Math.round(gachaCount * 0.25))) : 0;
       const catalogTarget = Math.min(catalogTotal, gachaCount - customTarget);
-      const recent = new Set(recentGachaRef.current.flat());
-      const indices = new Set<number>();
-      let attempts = 0;
-      while (indices.size < catalogTarget && attempts++ < 10_000) {
-        const index = drawIndex(catalogTotal);
-        if (!recent.has(index)) indices.add(index);
-      }
-      for (let index = 0; indices.size < catalogTarget && index < catalogTotal; index++) indices.add(index);
-      const entries = indices.size ? await getCharacterDictionaryEntriesAt([...indices]) : [];
+      const indices = drawLibraryIndices(catalogTotal, catalogTarget, 'mixed', recentGachaRef.current);
+      const entries = indices.length ? await getCharacterDictionaryEntriesAt(indices) : [];
       const cards = [...customCards.slice(0, customTarget), ...entries.map(catalogToCard)].sort(() => Math.random() - 0.5);
       if (generation !== gachaGenerationRef.current) return;
       setGachaCards(cards);
-      recentGachaRef.current = [...recentGachaRef.current, [...indices]].slice(-5);
+      recentGachaRef.current = [...recentGachaRef.current, indices].slice(-5);
       scrollRef.current?.scrollTo({ top: 0, behavior: appearanceScrollBehavior() });
     } catch (error) {
       if (generation !== gachaGenerationRef.current) return;

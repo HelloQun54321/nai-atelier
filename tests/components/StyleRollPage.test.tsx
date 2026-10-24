@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useMobileHistoryLayer } from '../../components/MobileUI';
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -9,13 +10,13 @@ import { StyleRollPage } from '../../components/StyleRollPage';
 import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
-vi.mock('../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false }));
+vi.mock('../../services/artistSamples', () => ({ ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
-vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: async () => new Set(['alpha']) }));
+vi.mock('../../services/artistSampleDrafts', () => ({ getSampledArtistTags: mocks.sampled }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: () => () => {} } }));
@@ -29,14 +30,14 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, previewTransform, containerClassName }: any) => <img src={src} alt={alt} className={className} data-preview-transform={previewTransform} data-container-class={containerClassName} />, OriginalImage: (props: any) => <img {...props} /> }));
-vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
+vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => { const close = useMobileHistoryLayer(mocks.setupHistory, onClose, 'roll-setup'); return <div role="dialog" aria-label="Roll 串配置" data-pinned={(initial.pinnedArtists ?? []).join(',')}><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button><button onClick={close}>取消草稿</button></div>; } }));
 
 const preferredItems: any[] = [];
 let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
-  sampleUrls.clear();
-  preferredItems.length = 0; vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  sampleUrls.clear(); mocks.sampled.mockResolvedValue(new Set(['alpha']));
+  preferredItems.length = 0; vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
@@ -60,6 +61,39 @@ const setup = async (options = {}) => {
 };
 const filterBy = (name: string) => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name })); };
 const pending = () => filterBy('待生成');
+
+it('手机390窄窗管理菜单新建先退出旧历史层，配置草稿持续显示且取消不保存', async () => {
+  mocks.mobile = true; mocks.setupHistory = true; vi.stubGlobal('innerWidth', 390);
+  window.history.replaceState(null, '');
+  const original = structuredClone(experiment);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '管理记录' }));
+  expect(window.history.state?.__naiMobileLayer).toMatch(/^sheet-/);
+  const returned = new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true }));
+  fireEvent.click(screen.getByRole('button', { name: '新建记录' }));
+  await act(async () => { await returned; });
+  await screen.findByRole('dialog', { name: 'Roll 串配置' });
+  expect(window.history.state?.__naiMobileLayer).toMatch(/^roll-setup-/);
+  expect(mocks.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '取消草稿' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Roll 串配置' })).toBeNull());
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
+  expect(experiment).toEqual(original);
+  window.history.replaceState(null, '');
+});
+
+it('删除样张广播刷新已打开Roll详情缩略图，保留候选且不保存或生图', async () => {
+  sampleUrls.set('alpha', '/api/assets/removed-sample.png');
+  const { container } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  await waitFor(() => expect(document.querySelector('img[src="/api/assets/removed-sample.png"]')).not.toBeNull());
+  sampleUrls.clear();
+  act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
+  await waitFor(() => expect(document.querySelector('img[src="/api/assets/removed-sample.png"]')).toBeNull());
+  expect(screen.getAllByAltText('候选 1')).toHaveLength(2);
+  expect(container.querySelector('[data-roll-page]')).toBeTruthy();
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
+});
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); for (const label of name === '每串总人数' ? ['最少画师人数', '最多画师人数'] : [name]) fireEvent.change(screen.getByRole('spinbutton', { name: label }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const openArtists = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ })); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载画风记录' })); };
@@ -674,4 +708,56 @@ it.each([
   expect(onOpenArtistLibrary).toHaveBeenCalledWith('alpha');
   expect(image.getAttribute('src')).toBe(url);
   for (const candidate of screen.getAllByAltText('候选 1')) expect(candidate.getAttribute('data-preview-transform')).toBeNull();
+});
+
+it('图包原名进入完整选择目录并可固定，已知中文与无图词库条目仍保留', async () => {
+  const tag = 'Pack_Only (Artist)';
+  experiment.artists = []; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
+  mocks.dictionary.mockResolvedValue([{ name: 'alpha', chinese: '词库中文', postCount: 42 }, { name: 'no sample', chinese: '', postCount: 2 }, { name: tag, chinese: '', postCount: 0, postCountKnown: false }]);
+  const { container } = await setup(); openArtists();
+  const dialog = screen.getByRole('dialog', { name: 'Roll 画师' });
+  expect(within(dialog).getByText('词库中文')).toBeTruthy();
+  expect(within(dialog).getByRole('button', { name: '锁定画师：no sample' })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: `锁定画师：${tag}` }));
+  expect(within(dialog).getByRole('button', { name: `锁定画师：${tag}` }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 1, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0];
+  expect(saved.pinnedArtists).toEqual([tag]); expect(saved.candidates.at(-1).tags[0].tag).toBe(tag);
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('有样张抽取包含图包-only原名并遵循偏好保底，不将无图词库项混入', async () => {
+  const tag = 'afternooners';
+  experiment.artists = []; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1, preferredMinArtists: 1 };
+  preferredItems.push({ sourceType: 'artist', sourceId: tag, archived: false });
+  mocks.dictionary.mockResolvedValue([{ name: 'no sample', chinese: '保留词库', postCount: 40 }, { name: tag, chinese: '', postCount: 0, postCountKnown: false }]);
+  mocks.sampled.mockResolvedValue(new Set([tag]));
+  const { container } = await setup(); await waitFor(() => expect(mocks.sampled).toHaveBeenCalled());
+  await act(async () => { await executeAgentCommand(container, 'run_roll_round', { count: 2, sampledOnly: true, generate: false }, false); });
+  const saved = mocks.save.mock.calls.at(-1)![0];
+  expect(saved.candidates.slice(-2).every((candidate: any) => candidate.tags.length === 1 && candidate.tags[0].tag === tag)).toBe(true);
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('图包广播刷新完整目录，迟到旧响应不覆盖新目录，失败保留原列表并明确报错', async () => {
+  const known = { name: 'alpha', chinese: '', postCount: 42 };
+  mocks.dictionary.mockResolvedValue([known]);
+  await setup(); openArtists();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'pack' } });
+  let resolveOld!: (value: any[]) => void;
+  mocks.dictionary.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+  act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
+  await waitFor(() => expect(mocks.dictionary).toHaveBeenCalledTimes(2));
+  mocks.dictionary.mockResolvedValueOnce([known, { name: 'pack_new', chinese: '', postCount: 0, postCountKnown: false }]);
+  act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
+  await screen.findByRole('button', { name: '锁定画师：pack_new' });
+  await act(async () => { resolveOld([{ name: 'pack_stale', chinese: '', postCount: 0, postCountKnown: false }]); });
+  expect(screen.queryByRole('button', { name: '锁定画师：pack_stale' })).toBeNull();
+  expect(screen.getByRole('searchbox', { name: '搜索画师' })).toHaveProperty('value', 'pack');
+  mocks.dictionary.mockRejectedValueOnce(new Error('图包目录读取失败'));
+  act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
+  await screen.findByText('图包目录读取失败');
+  expect(screen.getByRole('button', { name: '锁定画师：pack_new' })).toBeTruthy();
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });

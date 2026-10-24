@@ -3320,7 +3320,7 @@ const serveDistFile = async (req, res, url) => {
         }
         if (url.pathname === '/api/artist-samples/control') {
           if (req.method !== 'POST' || !canManage || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '画师图包管理只允许 Windows 电脑本机页面操作' });
-          const body = await readJsonBody(req, 4096), result = await artistSamples.control(body.action, body.pack);
+          const body = await readJsonBody(req, 4096), result = await artistSamples.control(body.action, body.pack, body.file);
           return sendJson(res, 200, { ...result, status: await artistSamples.status(canManage) });
         }
         return sendJson(res, 404, { error: '未知画师样张接口' });

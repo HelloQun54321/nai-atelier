@@ -1002,6 +1002,7 @@ const App = () => {
       case 'library':
         return <ArtistLibrary
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           onOpenRoll={openRollWithArtists}

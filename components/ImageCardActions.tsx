@@ -2,20 +2,23 @@ import React, { useLayoutEffect, useRef } from 'react';
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 
 /** 先填满右列，再向左换列；窄图保留左侧操作，空间不足时只补足必需高度。 */
-export function imageCardActionLayout({ width, height, count, buttonWidth, buttonHeight, gap, inset, bottom, leftWidth, leftBottom }: {
+export function imageCardActionLayout({ width, height, count, buttonWidth, buttonHeight, gap, inset, bottom, leftWidth, leftBottom, singleColumn = false }: {
   width: number; height: number; count: number; buttonWidth: number; buttonHeight: number;
   gap: number; inset: number; bottom: number; leftWidth: number; leftBottom: number;
+  singleColumn?: boolean;
 }) {
   const stackBelowLeft = width - 2 * inset - leftWidth < buttonWidth;
   const top = stackBelowLeft ? Math.max(inset, leftBottom + gap) : inset;
-  const columns = Math.max(1, Math.floor((width - 2 * inset - (stackBelowLeft ? 0 : leftWidth) + gap) / (buttonWidth + gap)));
+  const columns = singleColumn ? 1 : Math.max(1, Math.floor((width - 2 * inset - (stackBelowLeft ? 0 : leftWidth) + gap) / (buttonWidth + gap)));
   const minRows = Math.ceil(count / columns);
   const rows = Math.min(count, Math.max(minRows, Math.floor((height - top - bottom - inset + gap) / (buttonHeight + gap))));
   const minHeight = Math.max(top + minRows * (buttonHeight + gap) - gap, leftBottom) + bottom + inset;
   return { rows, top, minHeight };
 }
 
-export const ImageCardActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => {
+type ImageCardActionsProps = React.HTMLAttributes<HTMLDivElement> & { singleColumn?: boolean };
+
+export const ImageCardActions: React.FC<ImageCardActionsProps> = ({ children, className = '', singleColumn = false, ...props }) => {
   const ref = useRef<HTMLDivElement>(null);
   const frostedCaption = useGalleryFrostedCaption();
   useLayoutEffect(() => {
@@ -56,7 +59,7 @@ export const ImageCardActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = 
       const layout = imageCardActionLayout({ width: bounds.width, height: bounds.height, count: items.length,
         buttonWidth, buttonHeight, gap, inset, bottom: captionHeight + (navigationHeight ? navigationHeight + gap : 0),
         leftWidth: Math.max(0, ...leftRects.map(rect => rect.right - bounds.left + gap - inset)),
-        leftBottom: Math.max(0, ...leftRects.map(rect => rect.bottom - bounds.top)),
+        leftBottom: Math.max(0, ...leftRects.map(rect => rect.bottom - bounds.top)), singleColumn,
       });
       const rows = `repeat(${layout.rows}, ${buttonHeight}px)`, top = `${layout.top}px`;
       const minHeight = originalMinHeight ? `max(${originalMinHeight}, ${Math.ceil(layout.minHeight)}px)` : `${Math.ceil(layout.minHeight)}px`;
@@ -90,6 +93,6 @@ export const ImageCardActions: React.FC<React.HTMLAttributes<HTMLDivElement>> = 
       window.removeEventListener('resize', update);
       restoreFrame();
     };
-  }, [frostedCaption]);
+  }, [frostedCaption, singleColumn]);
   return <div {...props} ref={ref} data-card-action="true" className={`image-card-actions absolute right-2 top-2 z-20 gap-2 ${className}`}>{children}</div>;
 };

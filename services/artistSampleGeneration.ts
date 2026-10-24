@@ -1,6 +1,6 @@
 import type { LocalGenItem } from '../types';
-import type { ArtistOwnSample, ArtistSamplePack, ArtistSampleTemplate } from './artistSamples';
-import { getArtistSampleData, saveArtistOwnSample, validateArtistSampleTemplate, type ArtistSampleTarget } from './artistSampleDrafts';
+import { isArtistOwnSampleForPack, isArtistOwnSampleRemoved, type ArtistSampleRemoval, type ArtistOwnSample, type ArtistSamplePack, type ArtistSampleTemplate } from './artistSamples';
+import { buildArtistSamplePrompt, getArtistSampleData, saveArtistOwnSample, validateArtistSampleTemplate, type ArtistSampleTarget } from './artistSampleDrafts';
 import { createUuid } from './id';
 import { buildGenerationJobDescriptor } from './naiService';
 import { beginGenerationSeries, subscribeGenerationSeries, type GenerationSeriesSession } from './generationSeries';
@@ -20,7 +20,18 @@ const states = new Map<string, ArtistSampleGeneration>();
 const listeners = new Set<() => void>();
 let revision = 0, watching = false;
 let savedSamples: ArtistOwnSample[] = [];
+const removedOwnSamples = new Set<string>();
+const ownSampleKey = (sample: { pack: ArtistSamplePack; tag: string; id: string }) => JSON.stringify([sample.pack, sample.id]);
 export const getGeneratedArtistSamples = () => savedSamples;
+export function removeCachedArtistSample(removal: ArtistSampleRemoval) {
+  if (removal.source !== 'own') return;
+  removedOwnSamples.add(ownSampleKey(removal));
+  savedSamples = savedSamples.filter(sample => !isArtistOwnSampleRemoved(sample, [removal]));
+  for (const state of states.values()) if (state.sample && isArtistOwnSampleRemoved(state.sample, [removal])) {
+    state.sample = undefined; state.preview = undefined;
+  }
+  publish();
+}
 const publish = () => { revision++; listeners.forEach(listener => listener()); };
 export const artistSampleGenerationKey = (tag: string, pack: ArtistSamplePack) => `artist-sample:${pack}:${encodeURIComponent(tag)}`;
 export const getArtistSampleGeneration = (tag: string, pack: ArtistSamplePack) => states.get(artistSampleGenerationKey(tag, pack));
@@ -40,7 +51,7 @@ export async function beginArtistSampleGeneration(tag: string, pack: ArtistSampl
   if (!watching) { watching = true; subscribeGenerationSeries(() => { if ([...states.values()].some(value => value.session)) publish(); }); }
   try {
     const runtime = await getNaiRuntimeConfig();
-    const prompt = template.prompt.replaceAll('{artist}', tag);
+    const prompt = buildArtistSamplePrompt(template, tag);
     const descriptor = await buildGenerationJobDescriptor({ operation: 'text-to-image', prompt, negative: template.negativePrompt,
       params: structuredClone(template.params), forceEmptySeed: regenerate, stream: stream && getRuntimeNaiModelInfo(template.params.model, runtime).supportsStreamedResponses, approvedCost,
       history: { basePrompt: prompt, subjectPrompt: '', sourceChainId: scope, sourceChainName: tag, sourceChainType: 'style',
@@ -57,6 +68,7 @@ export async function beginArtistSampleGeneration(tag: string, pack: ArtistSampl
     // 原图与历史由后台保存，样张同样由后台归档；这里只核对结果，不重复上传或生成。
     try {
       const data = await getArtistSampleData();
+      data.samples = data.samples.filter(sample => isArtistOwnSampleForPack(sample) && !removedOwnSamples.has(ownSampleKey(sample)));
       state.sample = data.samples.find(sample => sample.id === `sample-${pack}-${state.item!.id}` && sample.pack === pack && sample.tag === tag);
       if (!state.sample) throw new Error('图片已保存到历史，但样张保存失败，请重试入库');
       savedSamples = data.samples;
@@ -76,6 +88,7 @@ export async function retryArtistSampleSave(tag: string, pack: ArtistSamplePack)
   try {
     await saveArtistOwnSample(state.target, state.item);
     const data = await getArtistSampleData();
+    data.samples = data.samples.filter(sample => isArtistOwnSampleForPack(sample) && !removedOwnSamples.has(ownSampleKey(sample)));
     state.sample = data.samples.find(sample => sample.id === `sample-${pack}-${state.item!.id}` && sample.pack === pack && sample.tag === tag);
     if (!state.sample) throw new Error('图片已保存到历史，但样张保存失败，请重试入库');
     savedSamples = data.samples;

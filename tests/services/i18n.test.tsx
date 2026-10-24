@@ -60,6 +60,23 @@ describe('界面语言', () => {
   });
   it('画师图包管理与补图生成入口具备完整译文，数量与画师占位保持准确', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['分别下载图包（{0}）', '全部下载 · 约 {0}', '继续全部下载', '重试全部下载', '已全部接入', '已接入', '未接入', '下载失败']) {
+        expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+        expect(translate(language.code, key)).not.toBe(key);
+      }
+      const packageLabel = translate(language.code, '分别下载图包（{0}）', ['NAID5F-10000-Q']);
+      expect(packageLabel).toContain('NAID5F-10000-Q'); expect(packageLabel).not.toContain('{0}');
+      const allDownload = translate(language.code, '全部下载 · 约 {0}', ['16.51 GB']);
+      expect(allDownload).toContain('16.51 GB'); expect(allDownload).not.toContain('{0}');
+      const connectedReady = translate(language.code, '已接入 · {0} 个画师 Tag', [54880]);
+      expect(connectedReady).toContain('54880'); expect(connectedReady).not.toContain('{0}');
+      const action = translate(language.code, '{0}：{1}', [translate(language.code, '下载图包'), 'NAID5F-55000-Q']);
+      expect(action).toContain('NAID5F-55000-Q');
+      for (const key of ['正在读取生成预设…', '更新这个生成预设？', '删除这个生成预设？', '将用当前提示词与参数覆盖共用预设“{0}”，已有记录和配置保持不变。', '将删除共用预设“{0}”，已有记录和配置保持不变。']) {
+        expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+        expect(translate(language.code, key)).not.toBe(key);
+      }
+      expect(translate(language.code, '公共提示词需要且只能包含一个 {style} 占位符，角色提示词不能包含替换位')).toContain('{style}');
       for (const key of ['画师预览图库', '补图生成设置', '保存并进入实验室', '图包管理', '解除关联（不删文件）', '正在读取配置…']) expect(translate(language.code, key)).not.toBe(key);
       const ready = translate(language.code, '可用 · {0} 个画师 Tag', [6145]);
       expect(ready).toContain('6145'); expect(ready).not.toContain('{0}');

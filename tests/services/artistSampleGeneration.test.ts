@@ -7,16 +7,42 @@ vi.mock('../../services/naiService', () => ({ buildGenerationJobDescriptor: mock
 vi.mock('../../services/generationSeries', () => ({ beginGenerationSeries: mocks.begin, subscribeGenerationSeries: (listener: () => void) => { mocks.publish = listener; return () => {}; } }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, saveArtistOwnSample: mocks.save }));
 vi.mock('../../services/naiModels', async original => ({ ...await original<typeof import('../../services/naiModels')>(), getRuntimeNaiModelInfo: () => ({ supportsStreamedResponses: mocks.supportsStream }) }));
-vi.mock('../../services/naiRuntime', () => ({ getNaiRuntimeConfig: async () => undefined }));
+vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), getNaiRuntimeConfig: async () => undefined }));
 
 const item = (id = 'history-one', pack = 'v45') => ({ id, imageUrl: `/api/assets/${id}.png`, prompt: '1girl, artist:synthetic artist', negativePrompt: '', params: { ...getDefaultArtistSampleTemplate(pack as 'v45').params, seed: 123 }, createdAt: 100 });
 const sample = (id = 'history-one', pack = 'v45', tag = 'synthetic artist') => ({ ...item(id, pack), id: `sample-${pack}-${id}`, tag, pack });
 const session = (id = 'history-one', pack = 'v45') => ({ scope: '', key: 'synthetic-key', state: 'succeeded', historyIds: [id], lastSavedItem: item(id, pack) });
+it('删除已生成样张清除缓存及预览，迟到旧GET不能复活同一id', async () => {
+  const service = await import('../../services/artistSampleGeneration');
+  const id = 'remove-cache';
+  mocks.begin.mockReturnValue({ session: session(id), settle: Promise.resolve({ success: true }) });
+  mocks.data.mockResolvedValue({ templates: {}, samples: [sample(id)] });
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', getDefaultArtistSampleTemplate('v45'), 'synthetic-key', 0, false);
+  expect(service.getGeneratedArtistSamples()).toContainEqual(sample(id));
+  service.removeCachedArtistSample({ source: 'own', pack: 'v45', tag: 'synthetic artist', id: sample(id).id });
+  expect(service.getGeneratedArtistSamples()).not.toContainEqual(sample(id));
+  expect(service.getArtistSampleGeneration('synthetic artist', 'v45')?.sample).toBeUndefined();
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', getDefaultArtistSampleTemplate('v45'), 'synthetic-key', 0, false);
+  expect(service.getGeneratedArtistSamples()).not.toContainEqual(sample(id));
+});
+
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks(); mocks.supportsStream = true; localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem('nai_api_key', 'synthetic-key');
   mocks.build.mockImplementation(async input => ({ ...input, history: input.history }));
   mocks.begin.mockImplementation(() => ({ session: session(), settle: Promise.resolve({ success: true, outcome: 'succeeded' }) }));
   mocks.data.mockResolvedValue({ templates: {}, samples: [sample()] }); mocks.save.mockResolvedValue(undefined);
+});
+
+it('V5Curated模板拒绝生成且不创建描述符或费用任务，V5FullMedium仍可生成', async () => {
+  const service = await import('../../services/artistSampleGeneration');
+  const template = getDefaultArtistSampleTemplate('v5'); template.params.model = 'nai-diffusion-5-curated';
+  await expect(service.beginArtistSampleGeneration('synthetic artist', 'v5', template, 'synthetic-key', 0, false)).rejects.toThrow('V5 Full');
+  expect(mocks.build).not.toHaveBeenCalled(); expect(mocks.begin).not.toHaveBeenCalled();
+  template.params.model = 'nai-diffusion-5-full-medium';
+  mocks.begin.mockReturnValue({ session: session('medium-full', 'v5'), settle: Promise.resolve({ success: true }) });
+  mocks.data.mockResolvedValue({ templates: {}, samples: [sample('medium-full', 'v5')] });
+  await service.beginArtistSampleGeneration('synthetic artist', 'v5', template, 'synthetic-key', 0, false);
+  expect(mocks.build).toHaveBeenCalledWith(expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full-medium' }) }));
 });
 
 it.each(['v45', 'v5'] as const)('%s补图只提交单张，并按明确画师/版本marker核对后台归档，不主动上传', async pack => {
@@ -28,6 +54,7 @@ it.each(['v45', 'v5'] as const)('%s补图只提交单张，并按明确画师/�
   const input = mocks.build.mock.calls[0][0];
   expect(input).toMatchObject({ operation: 'text-to-image', prompt: expect.stringContaining('artist:synthetic artist'), approvedCost: 3, forceEmptySeed: false, params: { seed: 0 } });
   expect(input.history.sourceChainId).toBe(`artist-sample:${pack}:synthetic%20artist`);
+  expect(input.prompt).toContain(template.characterPrompt);
   const marker = input.history.modules[0];
   expect(marker).toMatchObject({ name: '画师样张', isActive: false });
   expect(JSON.parse(marker.content)).toEqual({ id: marker.id.replace('artist-sample-target:', ''), tag: 'synthetic artist', pack });
@@ -42,6 +69,16 @@ it('样张已归档时保留记账失败的具体原因，不重新编码或生�
   await service.beginArtistSampleGeneration('synthetic artist', 'v45', getDefaultArtistSampleTemplate('v45'), 'synthetic-key', 0, true);
   expect(service.getArtistSampleGeneration('synthetic artist', 'v45')).toMatchObject({ phase: 'saved', error: expect.stringContaining('用量记录写入失败（HTTP 503）') });
   expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it('旧画师模板保持原词权重，新模板的角色位置与最终请求保持一致', async () => {
+  const service = await import('../../services/artistSampleGeneration');
+  const template = { ...getDefaultArtistSampleTemplate('v45'), prompt: 'before, 1.2::artist:{artist} ::, {character}, after', characterPrompt: 'blue hair' };
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', template, 'synthetic-key', 0, false);
+  expect(mocks.build.mock.calls[0][0].prompt).toBe('before, 1.2::artist:synthetic artist ::, blue hair, after');
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', { ...template, prompt: 'before, {character}, {style}, after' }, 'synthetic-key', 0, false);
+  expect(mocks.build.mock.calls[1][0].prompt).toBe('before, blue hair, artist:synthetic artist, after');
+  expect(mocks.build.mock.calls[1][0].history.basePrompt).toBe(mocks.build.mock.calls[1][0].prompt);
 });
 
 it('再次生成只令本次描述符使用新随机Seed，模板保持不变且直播关闭有效', async () => {
