@@ -23,6 +23,8 @@ on:
       - 'components/ContentRollWorkspace.tsx'
       - 'locales/messages.json'
       - 'tests/worker/routes/promptLibraryLinks.test.ts'
+      - 'tests/worker/routes/chainTags.test.ts'
+      - 'tests/worker/storageLifecycle.test.ts'
       - 'tests/services/contentRollToChain.test.ts'
       - 'tests/components/PromptLibrary*.test.tsx'
       - 'tests/scripts/prompt-library.test.mjs'
@@ -42,6 +44,8 @@ on:
       - 'components/ContentRollWorkspace.tsx'
       - 'locales/messages.json'
       - 'tests/worker/routes/promptLibraryLinks.test.ts'
+      - 'tests/worker/routes/chainTags.test.ts'
+      - 'tests/worker/storageLifecycle.test.ts'
       - 'tests/services/contentRollToChain.test.ts'
       - 'tests/components/PromptLibrary*.test.tsx'
       - 'tests/scripts/prompt-library.test.mjs'
@@ -73,8 +77,8 @@ jobs:
       - name: 六库提示词与助手回归
         run: npm run test:node -- tests/scripts/prompt-library.test.mjs tests/scripts/prompt-agent.test.mjs
 
-      - name: 提示词库关联接口回归
-        run: npm run test -- tests/worker/routes/promptLibraryLinks.test.ts
+      - name: 提示词库关联、标签与存储回归
+        run: npm run test -- tests/worker/routes/promptLibraryLinks.test.ts tests/worker/routes/chainTags.test.ts tests/worker/storageLifecycle.test.ts
 
       - name: 一键 Roll 写入风格串回归
         run: npm run test -- tests/services/contentRollToChain.test.ts

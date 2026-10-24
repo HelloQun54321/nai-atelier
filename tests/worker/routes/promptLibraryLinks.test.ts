@@ -7,7 +7,7 @@ import { handlePromptLibraryLinkRoute, normalizePromptLibraryText } from '../../
 import { handleSettingsRoute } from '../../../worker/routes/settingsRoutes';
 import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../../worker/routes/types';
 
-// 内存 D1（prepare/bind/first/all/run）+ 内存 R2：不读真实 local-data，也不写磁盘。
+// 内存 D1 + 真实 SQLite 事务及内存 R2：不读真实 local-data，也不写磁盘。
 const png = encode({ width: 8, height: 8, channels: 4, data: new Uint8Array(8 * 8 * 4).fill(255) });
 const IMAGE_URL = `data:image/png;base64,${Buffer.from(png).toString('base64')}`;
 const databases: DatabaseSync[] = [];
@@ -17,6 +17,7 @@ const fixture = () => {
   const sqlite = new DatabaseSync(':memory:');
   databases.push(sqlite);
   sqlite.exec(INIT_SQL);
+  let pendingBatch = Promise.resolve<unknown>(undefined);
   const db = { prepare(query: string) {
     let values: any[] = [];
     return {
@@ -25,6 +26,18 @@ const fixture = () => {
       async all() { return { results: sqlite.prepare(query).all(...values) }; },
       async run() { return { success: true, meta: sqlite.prepare(query).run(...values) }; },
     };
+  }, async batch(statements: { run(): Promise<unknown> }[]) {
+    const result = pendingBatch.then(async () => {
+      sqlite.exec('BEGIN');
+      try {
+        const output = [];
+        for (const statement of statements) output.push(await statement.run());
+        sqlite.exec('COMMIT');
+        return output;
+      } catch (cause) { sqlite.exec('ROLLBACK'); throw cause; }
+    });
+    pendingBatch = result.catch(() => {});
+    return result;
   } } as unknown as D1Database;
   const images = new Map<string, Uint8Array>();
   const bucket = {
@@ -47,6 +60,21 @@ const fixture = () => {
   return { sqlite, db, env, bucket, images, user, invoke };
 };
 type Fixture = ReturnType<typeof fixture>;
+
+it('内存 D1 batch 失败整体回滚，后续批次继续串行执行', async () => {
+  const { db, sqlite } = fixture();
+  const failed = db.batch([
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').bind('batch-test', 'rolled-back'),
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').bind('batch-test', 'duplicate'),
+  ]);
+  const following = db.batch([
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').bind('batch-test', 'committed'),
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').bind('updated', 'batch-test'),
+  ]);
+  await expect(failed).rejects.toThrow();
+  expect(await following).toHaveLength(2);
+  expect(sqlite.prepare('SELECT value FROM settings WHERE key = ?').get('batch-test')?.value).toBe('updated');
+});
 
 const addChain = (f: Fixture, entry: { id: string; type?: string; name?: string; basePrompt?: string; createdAt?: number }) => {
   f.sqlite.prepare('INSERT INTO chains (id, user_id, username, type, name, base_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')

@@ -11,6 +11,7 @@ const fixture = () => {
   const sqlite = new DatabaseSync(':memory:'); databases.push(sqlite); sqlite.exec(INIT_SQL);
   const queries: string[] = [];
   let fail: RegExp | undefined;
+  let pendingBatch = Promise.resolve<unknown>(undefined);
   const db = { prepare(query: string) {
     queries.push(query); let values: any[] = [];
     return {
@@ -22,6 +23,18 @@ const fixture = () => {
         return { success: true, meta: sqlite.prepare(query).run(...values) };
       },
     };
+  }, async batch(statements: { run(): Promise<unknown> }[]) {
+    const result = pendingBatch.then(async () => {
+      sqlite.exec('BEGIN');
+      try {
+        const output = [];
+        for (const statement of statements) output.push(await statement.run());
+        sqlite.exec('COMMIT');
+        return output;
+      } catch (cause) { sqlite.exec('ROLLBACK'); throw cause; }
+    });
+    pendingBatch = result.catch(() => {});
+    return result;
   } } as unknown as D1Database;
   const bucket = { delete: vi.fn(async (_key: string) => {}), get: vi.fn(), put: vi.fn() };
   const env = { DB: db, BUCKET: bucket, PERSONAL_MODE_ENABLED: 'true', LOCAL_HISTORY_ENABLED: 'true' } as unknown as Env;
@@ -32,6 +45,17 @@ const fixture = () => {
   };
   return { sqlite, db, env, bucket, queries, invoke, fail: (pattern: RegExp) => { fail = pattern; } };
 };
+
+it('存储夹具批处理失败时回滚前序写入，后续批次仍可提交', async () => {
+  const f = fixture();
+  await expect(f.db.batch([
+    f.db.prepare("INSERT INTO settings (key, value) VALUES ('batch-fixture', 'first')"),
+    f.db.prepare("INSERT INTO settings (key, value) VALUES ('batch-fixture', 'duplicate')"),
+  ])).rejects.toThrow();
+  expect(f.sqlite.prepare("SELECT value FROM settings WHERE key = 'batch-fixture'").get()).toBeUndefined();
+  await f.db.batch([f.db.prepare("INSERT INTO settings (key, value) VALUES ('batch-fixture', 'next')")]);
+  expect(f.sqlite.prepare("SELECT value FROM settings WHERE key = 'batch-fixture'").get()?.value).toBe('next');
+});
 
 it('提示词库引用历史原件，删历史仍可用，最后一个库引用释放后才清理', async () => {
   const f = fixture(), key = 'local-history/owner/synthetic.png';

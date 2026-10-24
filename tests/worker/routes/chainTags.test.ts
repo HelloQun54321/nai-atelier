@@ -5,10 +5,11 @@ import { handleAgentRoute } from '../../../worker/routes/historyRoutes';
 import { INIT_SQL, type D1Database, type Env, type R2Bucket, type RouteContext } from '../../../worker/routes/types';
 
 const databases: DatabaseSync[] = [];
-afterEach(() => { for (const database of databases.splice(0)) database.close(); vi.unstubAllGlobals(); });
+afterEach(() => { for (const database of databases.splice(0)) database.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
   const sqlite = new DatabaseSync(':memory:'); databases.push(sqlite); sqlite.exec(INIT_SQL);
+  let pendingBatch = Promise.resolve<unknown>(undefined);
   const db = { prepare(query: string) {
     let values: any[] = [];
     return {
@@ -17,15 +18,35 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
       async all() { return { results: sqlite.prepare(query).all(...values) }; },
       async run() { return { success: true, meta: { changes: sqlite.prepare(query).run(...values).changes } }; },
     };
+  }, async batch(statements: { run(): Promise<unknown> }[]) {
+    const result = pendingBatch.then(async () => {
+      sqlite.exec('BEGIN');
+      try {
+        const output = [];
+        for (const statement of statements) output.push(await statement.run());
+        sqlite.exec('COMMIT');
+        return output;
+      } catch (cause) { sqlite.exec('ROLLBACK'); throw cause; }
+    });
+    pendingBatch = result.catch(() => {});
+    return result;
   } } as unknown as D1Database;
   const initDB = vi.fn(async () => { throw new Error('不允许迁移'); });
+  const assetRequests: string[] = [];
+  const assets = { fetch: async (request: Request) => {
+    const url = new URL(request.url); assetRequests.push(url.pathname);
+    if (url.origin !== 'https://atelier.local') throw new Error('不允许访问真实资产');
+    if (url.pathname === '/tag-data/manifest.json') return Response.json({ artistPages: ['artists-synthetic.json'] });
+    if (url.pathname === '/tag-data/artist-pages/artists-synthetic.json') return Response.json([['synthetic_artist', 1]]);
+    throw new Error('不允许访问真实资产');
+  } };
   const invoke = async (path = '/api/chains', method = 'GET', body?: unknown) => {
     const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: 'test-owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: { fetch: async () => { throw new Error('不允许访问真实资产'); } }, ...envOverrides }, initDB };
+    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: 'test-owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: assets, ...envOverrides }, initDB };
     const response = path.startsWith('/api/agent/') ? await handleAgentRoute(context) : await handleSettingsRoute(context);
     return response!;
   };
-  return { sqlite, invoke, initDB };
+  return { sqlite, invoke, initDB, assetRequests };
 };
 
 describe('风格串标签读写链路（隔离 SQLite）', () => {
@@ -76,6 +97,23 @@ describe('风格串标签读写链路（隔离 SQLite）', () => {
     const detail = await (await f.invoke(`/api/chains/${created.id}`)).json() as any;
     expect(detail.tags).toEqual(['新分类']);
     expect(f.initDB).not.toHaveBeenCalled();
+  });
+
+  it('保存含本地词库画师 Tag 的风格串时事务写入收录统计且只读合成词库', async () => {
+    const f = fixture();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const response = await f.invoke('/api/chains', 'POST', {
+      name: '合成画师统计', basePrompt: 'synthetic_artist',
+    });
+    expect(response.status).toBe(200);
+    const created = await response.json() as { id: string };
+    expect(f.sqlite.prepare("SELECT CAST(value AS INTEGER) AS count FROM settings WHERE key = 'artist_chain_count_v1:synthetic artist'").get()).toEqual({ count: 1 });
+    expect(JSON.parse(String(f.sqlite.prepare('SELECT value FROM settings WHERE key = ?').get(`artist_chain_snapshot_v1:${created.id}`)?.value))).toEqual({
+      version: expect.any(Number), type: 'style', artists: ['synthetic artist'],
+    });
+    expect(error.mock.calls.some(([message]) => String(message).includes('画师收录统计更新失败'))).toBe(false);
+    expect(f.assetRequests).toEqual(['/tag-data/manifest.json', '/tag-data/artist-pages/artists-synthetic.json']);
+    error.mockRestore();
   });
 });
 
