@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import assert from 'node:assert/strict';
 import { writeFile, readFile, readdir, unlink, mkdir, copyFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -241,6 +243,7 @@ test('暂停与断流保留副本，重启仅显示可继续，Range续传完成
         return new Response(new ReadableStream({ start(controller) { streamController = controller; controller.enqueue(f.bytes.subarray(0, 16)); } }));
       } });
       await service.control('download', 'v45'); await waitPack(service, value => value.download.receivedBytes === 16);
+      await waitForFileBytes(`${f.path}.download`, 16);
       await service.control('download', 'v45'); assert.equal(requests, 1);
       await assert.rejects(service.control('download', 'v5'), error => error.status === 409);
       await assert.rejects(service.control('remove', 'v5'), error => error.status === 409);
@@ -533,6 +536,72 @@ test('Full 多片后片暂停或校验失败保留前片、旧来源与聚合进
       assert.deepEqual(await readFile(legacy), f.bytes);
     } finally { await service?.close(); removeWorkspace(root); }
   }
+});
+
+test('旧来源状态核验迟到时不能使刚接入的Full分片失效，暂停后重启保留前片', async t => {
+  const root = createWorkspace('artist-group-stale-verify-'); let service, release;
+  const originalStat = fsPromises.stat;
+  try {
+    const f = await groupedFixture(root), legacy = join(f.options.cacheDir, 'packs', 'NAID5-33000-55000-Curated');
+    await mkdir(dirname(legacy), { recursive: true }); await writeFile(legacy, f.bytes);
+    f.configure({ artistSamplePacks: { v5: 'managed' } });
+    service = createArtistSamples({ ...f.options, fetchRemote: async url => url.endsWith('NAID5F-33000-Q') ? new Response(f.firstBytes)
+      : new Response(new ReadableStream({ start(controller) { controller.enqueue(f.bytes.subarray(0, 16)); } })) });
+    const initial = await ready(service);
+    let reached; const checking = new Promise(resolve => { reached = resolve; });
+    const resume = new Promise(resolve => { release = resolve; }); let delayed = 0;
+    t.mock.method(fsPromises, 'stat', async (...args) => {
+      const info = await originalStat(...args);
+      if (delayed < 2 && args[0] === legacy) { delayed++; if (delayed === 2) reached(); await resume; }
+      return info;
+    }); syncBuiltinESMExports();
+    const oldStatus = service.status(true), oldCatalog = service.catalog('v5'); await checking;
+    await service.control('download', 'v5');
+    await waitPack(service, pack => pack.download.receivedBytes === f.firstBytes.length + 16);
+    release();
+    const current = (await oldStatus).packs[0];
+    assert.equal(current.phase, 'ready'); assert.equal(current.files[0].active, true);
+    assert.notEqual(current.revision, initial.revision);
+    const catalog = await oldCatalog;
+    assert.equal(catalog.revision, current.revision); assert.deepEqual(catalog.tags, (await service.catalog('v5')).tags);
+    await service.control('pause', 'v5');
+    const paused = await ready(service); assert.equal(paused.files[0].active, true); assert.equal(paused.download.stage, 'paused');
+    await service.close();
+    t.mock.restoreAll(); syncBuiltinESMExports();
+    service = createArtistSamples({ ...f.options, fetchRemote: () => { throw new Error('不得联网'); } });
+    const restarted = await ready(service); assert.equal(restarted.files[0].active, true); assert.equal(restarted.revision, paused.revision);
+    assert.deepEqual(await readFile(legacy), f.bytes);
+  } finally { release?.(); t.mock.restoreAll(); syncBuiltinESMExports(); await service?.close(); removeWorkspace(root); }
+});
+
+test('旧图片句柄核验迟到不使新Full集合失效，旧地址重试仍读取原件', async t => {
+  const root = createWorkspace('artist-stale-image-'); let service, release;
+  const originalOpen = fsPromises.open;
+  try {
+    const f = await groupedFixture(root), legacy = join(f.options.cacheDir, 'packs', 'NAID5-33000-55000-Curated');
+    await mkdir(dirname(legacy), { recursive: true }); await writeFile(legacy, f.bytes);
+    f.configure({ artistSamplePacks: { v5: 'managed' } });
+    service = createArtistSamples({ ...f.options, fetchRemote: async url => url.endsWith('NAID5F-33000-Q') ? new Response(f.firstBytes)
+      : new Response(new ReadableStream({ start(controller) { controller.enqueue(f.bytes.subarray(0, 16)); } })) });
+    const initial = await ready(service), source = imageSource('newtag', initial.revision, 1).replace('pack=v45', 'pack=v5');
+    let reached; const checking = new Promise(resolve => { reached = resolve; });
+    const resume = new Promise(resolve => { release = resolve; }); let delayed = false;
+    t.mock.method(fsPromises, 'open', async (...args) => {
+      const handle = await originalOpen(...args);
+      if (!delayed && args[0] === legacy) {
+        delayed = true; const originalStat = handle.stat.bind(handle);
+        handle.stat = async () => { const info = await originalStat(); reached(); await resume; return info; };
+      }
+      return handle;
+    }); syncBuiltinESMExports();
+    const reading = service.readImage(source); const rejected = assert.rejects(reading, /变化|失效/); await checking;
+    await service.control('download', 'v5');
+    await waitPack(service, pack => pack.download.receivedBytes === f.firstBytes.length + 16);
+    await service.control('pause', 'v5'); release(); await rejected;
+    const current = await ready(service); assert.equal(current.phase, 'ready'); assert.equal(current.files[0].active, true);
+    t.mock.restoreAll(); syncBuiltinESMExports();
+    assert.deepEqual((await service.readImage(source)).buffer, f.image);
+  } finally { release?.(); t.mock.restoreAll(); syncBuiltinESMExports(); await service?.close(); removeWorkspace(root); }
 });
 
 test('固定七个 Full 来源逐片索引并接入，同名图片不因 Tag 重叠省略，覆盖量排除空项', async () => {

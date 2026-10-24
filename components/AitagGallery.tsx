@@ -67,8 +67,6 @@ const PAGE_SIZE = 60;
 const FIRST_IMAGE_IDLE_DELAYS_MS = [1500, 3000, 6000];
 /** 依赖元数据的筛选等待后台补齐首图信息的上限；超时后按无法判断处理，不再阻挡后续加载。 */
 const METADATA_WAIT_MS = 120_000;
-/** 追加式自动加载的软上限：超过后停止自动追加，按钮可继续手动加载。 */
-const AITAG_APPEND_LIMIT = 800;
 
 const formatCount = (value?: number) => {
   const count = Number(value || 0);
@@ -374,6 +372,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [total, setTotal] = useState(() => aitagPageCache.total);
   const [cacheStatus, setCacheStatus] = useState<AitagCacheStatus | null>(() => aitagPageCache.cacheStatus);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAppending, setIsAppending] = useState(false);
+  const [appendError, setAppendError] = useState<string | null>(null);
+  const appendRun = useRef(0);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const savingImageRef = useRef<string | null>(null);
   const [savingImage, setSavingImage] = useState<string | null>(null);
@@ -429,7 +430,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 等待超时仍未补齐元数据的作品不再计为待定，避免一直暂停后续加载。
   const [metadataGiveUpIds, setMetadataGiveUpIds] = useState<ReadonlySet<number>>(() => new Set());
   const isWorkMetadataPending = (work: AitagWorkSummary) => (
-    metadataFilterActive && isAitagMetadataPending(work) && !metadataGiveUpIds.has(Number(work.id))
+    metadataFilterActive && !isOfflineCache && cacheFilter === 'all' && isAitagMetadataPending(work) && !metadataGiveUpIds.has(Number(work.id))
   );
   const pendingMetadataItems = metadataFilterActive ? items.filter(isWorkMetadataPending) : [];
   // 轮询循环跨多批运行，从这里读取最新的待补齐作品，补入尚未轮询的部分。
@@ -577,6 +578,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 一整页作品仍在等待元数据时暂停自动追加：继续拉页只会让后端排队补齐更多作品、频繁请求 aitag.win。
   const metadataBacklogFull = pendingMetadataItems.length >= PAGE_SIZE;
   const allowBackgroundChecks = active && documentVisible;
+  const backgroundAllowedRef = useRef(allowBackgroundChecks);
+  backgroundAllowedRef.current = allowBackgroundChecks;
 
   useEffect(() => {
     const updateVisibility = () => setDocumentVisible(document.visibilityState === 'visible');
@@ -607,6 +610,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 每次 loadWorks 递增的序号：非追加路径（搜索/筛选/跳页）此前无竞态守卫，慢的旧响应
   // 会覆盖新结果并污染模块级 aitagPageCache；卸载后迟到的响应同样不该再写。
   const loadGuard = useStaleGuard();
+  useEffect(() => {
+    if (allowBackgroundChecks) return;
+    appendRun.current++; appendingRef.current = false;
+    setIsAppending(false); setAppendError(null);
+  }, [allowBackgroundChecks]);
   // 下一页投机预取：当前页稳定后后台请求下一页，哨兵触底追加时直接消费，
   // 把 JSON 往返从滚动路径上移走。签名与页码都匹配才可消费，过期预取自然作废。
   const prefetchedPageRef = useRef<{ signature: string; page: number; promise: Promise<any> } | null>(null);
@@ -614,11 +622,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 签名使用已生效的关键词与提示词：输入框里尚未提交的草稿不影响当前结果的追加加载。
   const getQuerySignature = () => buildAitagQuerySignature(appliedQ, appliedPrompt, sort, rankMonth, cacheFilter);
   const appliedRemotePrompt = useMemo(() => parseAitagPromptQuery(appliedPrompt).remote, [appliedPrompt]);
-  const appendNextPage = async (force = false) => {
-    if (appendingRef.current || isLoading) return;
-    if (!force && visibleItems.length >= AITAG_APPEND_LIMIT) return;
-    if (!force && metadataBacklogFull) return;
+  const appendNextPage = async () => {
+    if (!allowBackgroundChecks || appendingRef.current || isLoading || metadataBacklogFull) return;
     appendingRef.current = true;
+    const run = ++appendRun.current;
+    setIsAppending(true); setAppendError(null);
     try {
       // 追加循环只在开头取一次守卫序号，且每页让位给用户触发的新加载：
       // 此前每页都 begin()，会持续作废在途的用户搜索，导致搜索结果被静默丢弃
@@ -639,12 +647,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       let skippedPages = 0;
 
       while (currentPageToLoad <= currentTotalPages && pagesFetched < maxBatchPages + (skippedPages > 0 ? maxSkippedPages : 0)) {
-        if (!loadGuard.isCurrent(appendSeq)) break;
+        if (!loadGuard.isCurrent(appendSeq) || appendRun.current !== run) break;
         const itemsBefore = aitagPageCache.items.length;
         const loadedCount = await loadWorks(currentPageToLoad, { append: true, silent: true, guardSeq: appendSeq });
+        if (!loadGuard.isCurrent(appendSeq) || appendRun.current !== run) break;
         pagesFetched++;
         currentPageToLoad++;
-        if (loadedCount === 0) break;
+        if (loadedCount === undefined || loadedCount === 0) break;
         // 该页条目全部因无有效 prompt 被过滤（零新增）：继续拉下一页填补空白
         if (aitagPageCache.items.length - itemsBefore === 0) {
           skippedPages++;
@@ -658,11 +667,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         currentTotalPages = Math.max(1, Math.ceil(aitagPageCache.total / PAGE_SIZE));
       }
     } finally {
-      appendingRef.current = false;
+      if (appendRun.current === run) { appendingRef.current = false; setIsAppending(false); }
     }
   };
   // 页码前进即重新监听：本地筛选可能让新一页全部被隐藏，卡片不变也要能继续追加。
-  useGalleryLoadMore(mainScrollRef, appendSentinelRef, hasNextPage && !isLoading && !metadataBacklogFull && visibleItems.length < AITAG_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px', page);
+  useGalleryLoadMore(mainScrollRef, appendSentinelRef, allowBackgroundChecks && hasNextPage && !isLoading && !isAppending && !appendError && !metadataBacklogFull, () => { void appendNextPage(); }, '1200px 0px', page);
 
   const loadWorks = async (
     targetPage = page,
@@ -681,12 +690,18 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     } = {}
   ) => {
     const isAppend = options.append === true;
+    if (!isAppend) {
+      appendRun.current++; appendingRef.current = false;
+      setIsAppending(false); setAppendError(null);
+    }
     if (isAppend) {
       const signature = getQuerySignature();
       if (querySignatureRef.current !== signature) return;
     }
     // 追加模式复用 appendNextPage 的守卫序号，避免后台连拉作废用户的前台加载
     const mySeq = options.guardSeq ?? loadGuard.begin();
+    const myAppendRun = appendRun.current;
+    const isCurrent = () => loadGuard.isCurrent(mySeq) && (!isAppend || appendRun.current === myAppendRun);
     const targetSort = options.sortOverride || sort;
     const targetRankMonth = options.rankMonthOverride || rankMonth;
     const targetTimeRange = getAitagTimeRange(targetSort, targetRankMonth);
@@ -705,16 +720,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     setError(null);
     try {
       let data;
-      let offline = false;
+      let offline = isAppend && aitagPageCache.isOfflineCache;
       // 命中投机预取（同签名同页）则直接消费；预取失败（null）回退正常请求
       const prefetched = prefetchedPageRef.current;
       if (prefetched && prefetched.signature === prefetchSignature && prefetched.page === targetPage) {
         prefetchedPageRef.current = null;
         data = await prefetched.promise;
       }
+      if (!isCurrent()) return;
       if (!data) {
         try {
-          if (targetCacheFilter === 'all') {
+          if (targetCacheFilter === 'all' && !offline) {
           data = await aitagService.search({
             page: targetPage,
             pageSize: PAGE_SIZE,
@@ -735,6 +751,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           });
         }
       } catch (remoteError) {
+        if (!isCurrent()) return;
         data = await aitagService.searchCache({
           page: targetPage,
           pageSize: PAGE_SIZE,
@@ -749,11 +766,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       }
 
       // 等待期间用户又触发了新的加载，或组件已卸载：丢弃过期结果，不写状态也不污染模块级缓存
-      if (!loadGuard.isCurrent(mySeq)) return;
+      if (!isCurrent()) return;
 
       const nextItems = Array.isArray(data.items) ? data.items : [];
       const reportedTotal = Number(data.total || 0);
-      const nextTotal = offline ? Math.max(reportedTotal, total, targetPage * PAGE_SIZE) : reportedTotal;
+      const nextTotal = reportedTotal;
       const nextPage = Number(data.page || targetPage);
       const nextStatus = data.status || null;
       const nextError = offline ? 'aitag.win 暂时不可用，正在使用本地缓存' : null;
@@ -789,8 +806,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       if (options.resetScroll) resetScrollPositions();
 
       // 当前页稳定后后台预取下一页：追加触底时直接消费，省掉 JSON 往返等待
-      if (nextItems.length > 0) {
-        const fetchPrefetchPage = (pageNumber: number) => targetCacheFilter === 'all'
+      if (nextItems.length > 0 && nextPage * PAGE_SIZE < nextTotal && backgroundAllowedRef.current) {
+        const fetchPrefetchPage = (pageNumber: number) => targetCacheFilter === 'all' && !offline
           ? aitagService.search({ page: pageNumber, pageSize: PAGE_SIZE, q: targetQ, prompt: targetRemotePrompt, sort: targetSort, timeRange: targetTimeRange })
           : aitagService.searchCache({ page: pageNumber, pageSize: PAGE_SIZE, q: targetQ, prompt: targetRemotePrompt, sort: targetSort, cacheFilter: targetCacheFilter, timeRange: targetTimeRange });
         prefetchedPageRef.current = {
@@ -801,9 +818,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       }
       return nextItems.length;
     } catch (e: unknown) {
-      if (!loadGuard.isCurrent(mySeq)) return 0;
+      if (!isCurrent()) return 0;
       const errMessage = e instanceof Error ? e.message : String(e);
       const nextError = errMessage || '本地没有这一页，且当前无法联网获取';
+      if (isAppend) { setAppendError(nextError); return 0; }
       aitagPageCache = { ...aitagPageCache, error: nextError };
       setError(nextError);
       notify('aitag 加载失败: ' + (errMessage || '未知错误'), 'error');
@@ -923,12 +941,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     // 被筛选暂时隐藏、等待元数据的作品优先轮询。接口单次最多一页，每批有结果后从最新列表补入
     // 尚未轮询的作品，超过一页的待补齐作品也会依次轮到；等待上限按作品各自计算。
     const metadataWaitIds = new Set<number>();
+    const metadataReadyIds = new Set<number>();
     const metadataWaitStartedAt = new Map<number, number>();
     const pendingIds = new Set<number>();
     const refillMetadataWaits = () => {
       for (const id of pendingMetadataIdsRef.current) {
         if (pendingIds.size >= PAGE_SIZE) break;
-        if (metadataWaitIds.has(id)) continue;
+        if (metadataWaitIds.has(id) || metadataReadyIds.has(id)) continue;
         metadataWaitIds.add(id);
         metadataWaitStartedAt.set(id, Date.now());
         pendingIds.add(id);
@@ -940,22 +959,23 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       const id = Number(item.id);
       if (Number.isFinite(id) && needsFirstImageCacheRefresh(item)) pendingIds.add(id);
     }
-    const hasMetadataWaits = () => [...pendingIds].some(id => metadataWaitIds.has(id));
+    const hasMetadataWaits = () => [...pendingIds].some(id => metadataWaitIds.has(id) && !metadataReadyIds.has(id));
     const giveUpMetadata = (ids: number[]) => {
       ids.forEach(id => pendingIds.delete(id));
       if (!cancelled && ids.length) setMetadataGiveUpIds(previous => new Set([...previous, ...ids]));
     };
     const expireMetadataWaits = () => giveUpMetadata([...pendingIds].filter(id => (
-      metadataWaitIds.has(id) && Date.now() - (metadataWaitStartedAt.get(id) ?? 0) >= METADATA_WAIT_MS
+      metadataWaitIds.has(id) && !metadataReadyIds.has(id) && Date.now() - (metadataWaitStartedAt.get(id) ?? 0) >= METADATA_WAIT_MS
     )));
-    const giveUpRemainingMetadata = () => giveUpMetadata([...pendingIds].filter(id => metadataWaitIds.has(id)));
+    const giveUpRemainingMetadata = () => giveUpMetadata([...pendingIds].filter(id => metadataWaitIds.has(id) && !metadataReadyIds.has(id)));
 
     const waitForFirstImages = async () => {
       while (!cancelled && pendingIds.size > 0 && (pollRounds < 4 || hasMetadataWaits())) {
-        pollRounds++;
+        if (!hasMetadataWaits()) pollRounds++;
         try {
           const data = await aitagService.waitForFirstImageCache({
             ids: Array.from(pendingIds),
+            metadataIds: Array.from(pendingIds).filter(id => metadataWaitIds.has(id) && !metadataReadyIds.has(id)),
             sort,
             timeRange: getAitagTimeRange(sort, rankMonth),
             timeoutMs: 3500,
@@ -966,10 +986,14 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           const nextItems = Array.isArray(data.items) ? data.items : [];
           if (nextItems.length > 0) {
             idleRounds = 0;
-            nextItems.forEach(item => pendingIds.delete(Number(item.id)));
+            nextItems.forEach(item => {
+              const id = Number(item.id);
+              if (!isAitagMetadataPending(item)) metadataReadyIds.add(id);
+              if (!needsFirstImageCacheRefresh(item) || String(item.firstImageStatus || item.cover_status || '').toLowerCase() === 'error') pendingIds.delete(id);
+            });
             mergeCachedFirstImageItems(nextItems);
             // 已有首图缓存却仍缺元数据的作品无法再等到结果，按无法判断处理，不占用待补齐名额。
-            giveUpMetadata(nextItems.filter(isAitagMetadataPending).map(item => Number(item.id)).filter(id => metadataWaitIds.has(id)));
+            giveUpMetadata(nextItems.filter(item => isAitagMetadataPending(item) && (!needsFirstImageCacheRefresh(item) || String(item.firstImageStatus || item.cover_status || '').toLowerCase() === 'error')).map(item => Number(item.id)).filter(id => metadataWaitIds.has(id)));
             if (data.status) {
               setCacheStatus(data.status);
               aitagPageCache = { ...aitagPageCache, cacheStatus: data.status };
@@ -1556,9 +1580,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
           <div className="flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
-            {visibleItems.length >= AITAG_APPEND_LIMIT && hasNextPage && (
-              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="appearance-group mobile-touch px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">{t("已加载 {0} 条 · 继续加载更多", [AITAG_APPEND_LIMIT])}</button>
-            )}
+            {isAppending && <span role="status" className="flex items-center gap-1 text-xs text-gray-500"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />{t('正在加载更多…')}</span>}
+            {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
               <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
               {pendingMetadataItems.length > 0 && <span className="inline-flex items-center gap-1"><LoaderCircle aria-hidden="true" className="h-3 w-3 animate-spin" />{t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length])}</span>}

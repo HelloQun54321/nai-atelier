@@ -116,12 +116,21 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
   const invalidate = pack => { pack.controller?.abort(); Object.assign(pack, { entries: null, count: 0, phase: 'error', error: '图包文件已变化或不可读取，请重新建立索引' }); };
   const verify = async pack => {
     if (pack.phase !== 'ready') return false;
-    if (pack.children) {
-      if ((await Promise.all(pack.children.map(verify))).every(Boolean)) return true;
+    const { revision, path, children, controller } = pack;
+    // 核验期间可能接入下一分片；旧文件的 stat 结果不能使新集合失效。
+    const unchanged = () => pack.phase === 'ready' && pack.revision === revision && pack.path === path && pack.children === children && pack.controller === controller;
+    if (children) {
+      const valid = (await Promise.all(children.map(verify))).every(Boolean);
+      if (!unchanged()) return verify(pack);
+      if (valid) return true;
       invalidate(pack); return false;
     }
-    try { if (revisionFor(identityFor(pack, await stat(pack.path))) !== pack.revision) { invalidate(pack); return false; } }
-    catch { invalidate(pack); return false; }
+    try {
+      const info = await stat(path);
+      if (!unchanged()) return verify(pack);
+      if (revisionFor(identityFor(pack, info)) !== revision) { invalidate(pack); return false; }
+    }
+    catch { if (!unchanged()) return verify(pack); invalidate(pack); return false; }
     return true;
   };
   const start = async (pack, reuse = true, onProgress = () => {}) => {
@@ -347,12 +356,21 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
     }
     // shortcut: 单画师数组限64MiB，上游出现更大条目时再增加数组内图片偏移索引。
     if (entry.end - entry.start > 64 * 1024 * 1024) throw failure('单个画师图片组过大');
-    const handle = await open(pack.path, 'r').catch(() => { invalidate(pack); throw failure('画师图包文件不可读取，请重新选择'); });
+    const { path, revision, controller, children } = pack;
+    const unchanged = () => pack.path === path && pack.revision === revision && pack.controller === controller && pack.children === children;
+    const assertCurrent = () => { if (!unchanged()) throw failure('画师图包索引失效，请刷新后重试'); };
+    const handle = await open(path, 'r').catch(() => { assertCurrent(); invalidate(pack); throw failure('画师图包文件不可读取，请重新选择'); });
+    const verifyHandle = async () => {
+      const info = await handle.stat(); assertCurrent();
+      if (revisionFor(identityFor(pack, info)) !== revision) { invalidate(pack); throw failure('图包文件已变化'); }
+    };
     try {
-      if (revisionFor(identityFor(pack, await handle.stat())) !== pack.revision) { invalidate(pack); throw failure('图包文件已变化'); }
+      assertCurrent(); await verifyHandle();
       const bytes = Buffer.alloc(entry.end - entry.start); let read = 0;
       while (read < bytes.length) { const result = await handle.read(bytes, read, bytes.length - read, entry.start + read); if (!result.bytesRead) throw failure('图包文件不完整'); read += result.bytesRead; }
-      if (!await verify(pack) || revisionFor(identityFor(pack, await handle.stat())) !== pack.revision) { invalidate(pack); throw failure('图包文件已变化'); }
+      const valid = await verify(pack); assertCurrent();
+      if (!valid) { invalidate(pack); throw failure('图包文件已变化'); }
+      await verifyHandle();
       const images = JSON.parse(bytes.toString('utf8'));
       if (!Array.isArray(images) || images.length !== entry.count || typeof images[index] !== 'string') throw failure('画师图片组无效');
       const encoded = images[index].replace(/^data:image\/(?:jpeg|png|webp);base64,/, '');
@@ -365,8 +383,8 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
       const { default: sharp } = await import('sharp');
       try { await sharp(buffer, { failOn: 'warning', limitInputPixels: 16000000 }).stats(); }
       catch { throw failure('画师样张图片损坏或尺寸过大'); }
-      return { status: 200, buffer, headers: { 'content-type': contentType } };
-    } catch (error) { if (error.code) { invalidate(pack); throw failure('画师图包文件不可读取，请重新建立索引'); } throw error; }
+      assertCurrent(); return { status: 200, buffer, headers: { 'content-type': contentType } };
+    } catch (error) { assertCurrent(); if (error.code) { invalidate(pack); throw failure('画师图包文件不可读取，请重新建立索引'); } throw error; }
     finally { await handle.close(); }
   };
   const downloadGroup = (pack, definition, filename) => {
@@ -506,7 +524,7 @@ export function createArtistSamples({ cacheDir, loadPreferences, savePreferences
     } else throw failure('未知图包操作');
     return {};
   };
-  return { status, lookup, readImage, control, catalog: async id => { await initialized; const pack = get(id); return { pack: id, ...(pack.model ? { model: pack.model } : {}), revision: pack.revision, tags: await verify(pack) && visible(pack) ? Object.keys(pack.entries) : [] }; }, downloading: () => Boolean(activeDownload), busy: () => Boolean(activeDownload || pickerOpen || [...packs.values()].some(pack => pack.phase === 'indexing')), close: () => { closed = true; for (const pack of packs.values()) pack.controller?.abort(); activeDownload?.controller.abort(); return activeDownload?.promise || Promise.resolve(); } };
+  return { status, lookup, readImage, control, catalog: async id => { await initialized; const pack = get(id), ready = await verify(pack); return { pack: id, ...(pack.model ? { model: pack.model } : {}), revision: pack.revision, tags: ready && visible(pack) ? Object.keys(pack.entries) : [] }; }, downloading: () => Boolean(activeDownload), busy: () => Boolean(activeDownload || pickerOpen || [...packs.values()].some(pack => pack.phase === 'indexing')), close: () => { closed = true; for (const pack of packs.values()) pack.controller?.abort(); activeDownload?.controller.abort(); return activeDownload?.promise || Promise.resolve(); } };
 }
 
 let picking = false;

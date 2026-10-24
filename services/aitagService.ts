@@ -572,6 +572,7 @@ export const aitagService = {
 
   waitForFirstImageCache: (params: {
     ids: number[];
+    metadataIds?: number[];
     sort?: 'new' | 'monthly';
     timeRange?: string;
     timeoutMs?: number;
@@ -586,6 +587,7 @@ export const aitagService = {
       timeout_ms: String(params.timeoutMs ?? 4500),
       interval_ms: String(params.intervalMs ?? 700),
     });
+    if (params.metadataIds?.length) query.set('metadata_ids', params.metadataIds.join(','));
     return fetch(`/api/aitag/cache/first-images?${query.toString()}`, {
       cache: 'no-store',
       credentials: 'same-origin',

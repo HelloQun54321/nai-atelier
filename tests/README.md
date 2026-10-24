@@ -60,6 +60,8 @@ npm run test:android
 
 Node 入口在被测模块加载前，通过 [node-environment.mjs](./support/node-environment.mjs) 为每个测试进程建立独立工作区、切换工作目录，并将 `TEMP`、`TMP`、`TMPDIR` 指向其中的临时目录。默认 `local-data/` 和 `local-cache/` 因而只指向合成环境；用于桥接和版本验证的工程文件只从公开文件复制，官方同步快照由 [合成数据生成器](./fixtures/nai-runtime.mjs) 构造。
 
+真实 Pages → Worker → D1/R2 链路回归会在 Wrangler 子进程中跳过与业务无关的版本提示和 npm 更新检查，使离线回归不依赖 npm 连通性；Pages/D1/R2 实际链路、测试超时与业务断言仍保留。
+
 统一入口等测试及其子进程结束后清理本次工作区，避免 Windows 上仍持有目录的子进程导致误报。新增需要文件的测试可复用 [workspace.mjs](./support/workspace.mjs) 创建工作区，并在 `finally` 或测试清理钩子中移除；清理工具核对父目录和实际路径，拒绝删除父目录或越界路径。涉及默认文件路径的测试若需要支持直接 `node --test`，也应先导入隔离环境。
 
 一次性排查脚本、截图和临时输出也放在 `tests/.tmp/`，自行清理本次创建的文件；强制终止测试可能留下临时目录，不能因此清理真实部署目录。`logs/tests/` 与 `tests/.tmp/` 均由 Git、ESLint 和 TypeScript 排除。数据保护与验证梯度以 [AGENTS.md](../AGENTS.md) 为准。

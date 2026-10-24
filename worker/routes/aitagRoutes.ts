@@ -589,7 +589,7 @@ async function getCachedAitagWorksByIds(db: D1Database, ids: number[], sort: str
 
 async function waitForAitagFirstImageUpdates(
   db: D1Database,
-  options: { ids: number[]; sort: string; timeoutMs: number; intervalMs: number }
+  options: { ids: number[]; metadataIds?: number[]; sort: string; timeoutMs: number; intervalMs: number }
 ) {
   const numericIds = Array.from(new Set(options.ids.map(Number).filter(Number.isFinite))).slice(0, AITAG_MAX_PAGE_SIZE);
   const startedAt = Date.now();
@@ -598,7 +598,8 @@ async function waitForAitagFirstImageUpdates(
     const items = await getCachedAitagWorksByIds(db, numericIds, options.sort);
     const changedItems = items.filter((item: any) => {
       const status = String(item.firstImageStatus || item.cover_status || '').toLowerCase();
-      return Boolean(item.localFirstImageUrl || item.local_cover_url) || status === 'error';
+      return Boolean(item.localFirstImageUrl || item.local_cover_url) || status === 'error'
+        || Boolean(options.metadataIds?.includes(Number(item.id)) && (item.firstImage || item.first_image));
     });
 
     if (changedItems.length > 0 || Date.now() - startedAt >= options.timeoutMs) {
@@ -619,7 +620,13 @@ async function waitForAitagFirstImageUpdates(
   };
 }
 
-async function cacheAitagFirstImage(env: Env, db: D1Database, work: any): Promise<boolean> {
+const firstImageJobs = new WeakMap<D1Database, { metadata: Map<string, Promise<boolean | null>>; images: Map<string, Promise<void>>; imageTail: Promise<void> }>();
+function imageJobs(db: D1Database) {
+  let jobs = firstImageJobs.get(db);
+  if (!jobs) { jobs = { metadata: new Map(), images: new Map(), imageTail: Promise.resolve() }; firstImageJobs.set(db, jobs); }
+  return jobs;
+}
+async function cacheAitagFirstImage(env: Env, db: D1Database, work: any, imageBatch: { failures: number }): Promise<boolean | null> {
   const workId = Number(work?.id);
   if (!Number.isFinite(workId)) return true;
   const sourceSort = normalizeAitagSourceSort(work?.source_sort || null);
@@ -628,49 +635,75 @@ async function cacheAitagFirstImage(env: Env, db: D1Database, work: any): Promis
     SELECT local_cover_url, remote_cover_url, first_image_json FROM aitag_works
     WHERE id = ? AND source_sort = ?
   `).bind(workId, sourceSort).first<{local_cover_url?: string; remote_cover_url?: string; first_image_json?: string}>();
-  if (existing?.local_cover_url && existing?.first_image_json) return true;
+  if (existing?.local_cover_url && existing?.first_image_json) return null;
 
   try {
     const cachedDetail = await getCachedAitagDetail(db, workId);
-    const detail = cachedDetail || await fetchAitagJson(new URL(`/api/work/${workId}`, AITAG_BASE_URL), env);
+    let existingImage;
+    try { existingImage = existing?.first_image_json ? JSON.parse(existing.first_image_json) : null; } catch { /* 旧缓存损坏时重新取得真实资料。 */ }
+    const requestedMetadata = !existingImage && !cachedDetail;
+    const detail = existingImage ? { work, images: [existingImage] }
+      : cachedDetail || await fetchAitagJson(new URL(`/api/work/${workId}`, AITAG_BASE_URL), env);
     const firstImage = pickFirstAitagImage(detail);
     if (!firstImage) throw new Error('first image metadata missing');
 
     const workMeta = detail?.work || work;
     const normalizedFirstImage = normalizeAitagImage(firstImage, workMeta, 0);
-    const cachedFirstImage = await fetchAitagImageToBucket(env, normalizedFirstImage, {
-      workId,
-      index: 0,
-      purpose: 'cover',
-    });
-    const remoteFirstImageUrl = cachedFirstImage.remote_image_url || existing?.remote_cover_url || buildAitagImageUrlFromImage(normalizedFirstImage) || buildAitagPreviewUrlFromWork(work);
-    const localFirstImageUrl = cachedFirstImage.local_image_url || existing?.local_cover_url || null;
-    const firstImageStatus = localFirstImageUrl ? 'cached' : (cachedFirstImage.image_cache_status || 'metadata');
-    const now = Date.now();
+    const metadataNow = Date.now();
+    await db.prepare(`UPDATE aitag_works SET first_image_json = ?, first_image_cached_at = ?, cover_status = 'metadata', updated_at = ?
+      WHERE id = ? AND source_sort = ? AND (local_cover_url IS NULL OR local_cover_url = '')`)
+      .bind(safeJsonStringify(normalizedFirstImage, '{}'), metadataNow, metadataNow, workId, sourceSort).run();
+    const jobs = imageJobs(db), key = `${sourceSort}:${workId}`;
+    if (!jobs.images.has(key)) {
+      // 原图保存单独串行，慢图不阻塞下一作品的元数据，也不产生无限并发。
+      const imageTask = jobs.imageTail.then(async () => {
+        if (imageBatch.failures >= 2) return;
+        const latest = await db.prepare('SELECT local_cover_url, first_image_json FROM aitag_works WHERE id = ? AND source_sort = ?')
+          .bind(workId, sourceSort).first<{ local_cover_url?: string; first_image_json?: string }>();
+        if (latest?.local_cover_url && latest.first_image_json) {
+          try { if (JSON.parse(latest.first_image_json)) return; } catch { /* 损坏的旧资料仍需补齐。 */ }
+        }
+        const cachedFirstImage = await fetchAitagImageToBucket(env, normalizedFirstImage, {
+          workId,
+          index: 0,
+          purpose: 'cover',
+        });
+        const remoteFirstImageUrl = cachedFirstImage.remote_image_url || existing?.remote_cover_url || buildAitagImageUrlFromImage(normalizedFirstImage) || buildAitagPreviewUrlFromWork(work);
+        const localFirstImageUrl = cachedFirstImage.local_image_url || existing?.local_cover_url || null;
+        const firstImageStatus = localFirstImageUrl ? 'cached' : (cachedFirstImage.image_cache_status || 'metadata');
+        const now = Date.now();
 
-    await db.prepare(`
-      UPDATE aitag_works
-      SET
-        local_cover_url = COALESCE(NULLIF(?, ''), local_cover_url),
-        remote_cover_url = COALESCE(NULLIF(?, ''), remote_cover_url),
-        cover_status = ?,
-        cover_cached_at = ?,
-        first_image_json = ?,
-        first_image_cached_at = ?,
-        updated_at = ?
-      WHERE id = ? AND source_sort = ?
-    `).bind(
-      localFirstImageUrl || null,
-      remoteFirstImageUrl || null,
-      firstImageStatus,
-      now,
-      safeJsonStringify(cachedFirstImage, '{}'),
-      now,
-      now,
-      workId,
-      sourceSort
-    ).run();
-    return true;
+        await db.prepare(`
+          UPDATE aitag_works
+          SET
+            local_cover_url = COALESCE(NULLIF(?, ''), local_cover_url),
+            remote_cover_url = COALESCE(NULLIF(?, ''), remote_cover_url),
+            cover_status = ?,
+            cover_cached_at = ?,
+            first_image_json = ?,
+            first_image_cached_at = ?,
+            updated_at = ?
+          WHERE id = ? AND source_sort = ? AND (? <> '' OR local_cover_url IS NULL OR local_cover_url = '')
+        `).bind(
+          localFirstImageUrl || null,
+          remoteFirstImageUrl || null,
+          firstImageStatus,
+          now,
+          safeJsonStringify(cachedFirstImage, '{}'),
+          now,
+          now,
+          workId,
+          sourceSort,
+          localFirstImageUrl || ''
+        ).run();
+        imageBatch.failures = cachedFirstImage.image_cache_status === 'error' ? imageBatch.failures + 1 : 0;
+        await sleep(550);
+      });
+      jobs.images.set(key, imageTask);
+      jobs.imageTail = imageTask.catch(cause => console.error('Aitag first image save failed', cause));
+      void imageTask.finally(() => jobs.images.delete(key)).catch(() => {});
+    }
+    return requestedMetadata ? true : null;
   } catch (e: any) {
     const now = Date.now();
     await db.prepare(`
@@ -686,21 +719,30 @@ async function cacheAitagFirstImage(env: Env, db: D1Database, work: any): Promis
 async function cacheAitagFirstImagesForWorks(env: Env, db: D1Database, works: any[], sort: string) {
   if (!Array.isArray(works)) return;
   let consecutiveFailures = 0;
+  const jobs = imageJobs(db);
+  const imageBatch = { failures: 0 };
   for (const work of works) {
-    const success = await cacheAitagFirstImage(env, db, { ...work, source_sort: sort });
+    const key = `${sort}:${work.id}`;
+    if (jobs.metadata.has(key)) { await jobs.metadata.get(key); continue; }
+    if (jobs.images.has(key)) continue;
+    const task = cacheAitagFirstImage(env, db, { ...work, source_sort: sort }, imageBatch);
+    jobs.metadata.set(key, task);
+    const success = await task.finally(() => jobs.metadata.delete(key));
+    if (success === null) continue;
     if (!success) {
       consecutiveFailures++;
       // 连续失败说明 aitag.win 正在挑战/限流，本轮熔断避免轰炸并刷屏错误日志；
       // 未处理的作品保持原状态，下次加载会继续重试。
       if (consecutiveFailures >= 2) {
         console.warn(`[aitag] 首图缓存连续失败 ${consecutiveFailures} 次，本轮暂停（${works.length} 个待处理）`);
-        return;
+        break;
       }
     } else {
       consecutiveFailures = 0;
     }
     await sleep(550);
   }
+  await Promise.allSettled([...jobs.images.values()]);
 }
 
 async function cacheAitagDetail(env: Env, db: D1Database, detail: any) {
@@ -1293,6 +1335,7 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
     const intervalMs = clampInt(url.searchParams.get('interval_ms'), 700, 250, 2500);
     const result = await waitForAitagFirstImageUpdates(db, {
       ids,
+      metadataIds: (url.searchParams.get('metadata_ids') || '').split(',').filter(Boolean).map(Number).filter(id => ids.includes(id)),
       sort: sourceSort,
       timeoutMs,
       intervalMs,

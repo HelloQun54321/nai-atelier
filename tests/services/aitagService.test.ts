@@ -176,6 +176,15 @@ describe('hasAitagImagePrompt', () => {
 });
 
 describe('aitagService', () => {
+  it('首图轮询仅为指定资料待定子集发送metadata_ids，普通轮询不携带此参数', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    try {
+      await aitagService.waitForFirstImageCache({ ids: [1, 2], metadataIds: [2] });
+      expect(new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost').searchParams.get('metadata_ids')).toBe('2');
+      await aitagService.waitForFirstImageCache({ ids: [1, 2], metadataIds: [] });
+      expect(new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost').searchParams.has('metadata_ids')).toBe(false);
+    } finally { fetchMock.mockRestore(); }
+  });
   it('所有列表与缓存请求固定使用 NovelAI 来源', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ items: [] }), {
       status: 200,

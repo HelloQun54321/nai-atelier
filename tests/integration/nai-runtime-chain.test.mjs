@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { build } from 'esbuild';
@@ -47,12 +47,32 @@ bucket_name = "synthetic-assets"
     bundle: true, format: 'esm', platform: 'browser', outfile: join(dist, '_worker.js'), logLevel: 'silent' });
   const reservation = createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
   const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
+  const updateProbe = join(root, 'wrangler-update-probe.cjs');
+  const updateAttempt = join(root, 'unexpected-update-check');
+  // 模拟更新服务在连接前永久等待，固定冷缓存启动回归，同时禁止此检查访问真实 npm。
+  writeFileSync(updateProbe, `const { EventEmitter } = require('node:events');
+const { writeFileSync } = require('node:fs');
+for (const protocol of ['node:http', 'node:https']) {
+  const transport = require(protocol), original = transport.get;
+  transport.get = function (options, ...args) {
+    if (String(options?.headers?.accept || '').includes('application/vnd.npm.install-v1+json')) {
+      writeFileSync(${JSON.stringify(updateAttempt)}, 'unexpected npm update check');
+      console.error('Synthetic npm update check is waiting before connection');
+      setInterval(() => {}, 1000);
+      return new EventEmitter();
+    }
+    return original.call(this, options, ...args);
+  };
+}
+`);
   const child = spawn(process.execPath, ['--require', join(projectRoot, 'scripts/wrangler-local-transport.cjs'),
+    '--require', updateProbe,
     join(projectRoot, 'node_modules/wrangler/bin/wrangler.js'), 'pages', 'dev', dist, '--persist-to', join(root, 'state'),
     '--binding', 'LOCAL_HISTORY_ENABLED=true', '--binding', 'PERSONAL_MODE_ENABLED=true', '--ip', '127.0.0.1',
     '--port', String(port), '--compatibility-date', '2024-04-01', '--show-interactive-dev-session=false'], {
     cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(root, 'logs'),
+    // banner 会先等待 npm 更新检查；冷临时目录不能让本地回归依赖外网或开发机缓存。
+    env: { ...process.env, WRANGLER_HIDE_BANNER: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_PATH: join(root, 'logs'),
       HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1', NO_PROXY: '127.0.0.1,localhost,::1' },
   });
   let diagnostic = ''; child.stdout.on('data', b => { diagnostic = (diagnostic + b).slice(-6000); });
@@ -73,6 +93,7 @@ bucket_name = "synthetic-assets"
     await pause(100);
   }
   assert.equal(ready?.status, 400, diagnostic);
+  assert.equal(existsSync(updateAttempt), false, '本地链路测试不得等待或请求 npm 版本更新');
   assert.equal(ready.headers['content-encoding'], undefined, '原生 HTTP 不能收到被二次压缩的 JSON');
   assert.equal(ready.body.error, 'Invalid accounting receipt');
 

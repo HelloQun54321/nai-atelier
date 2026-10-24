@@ -42,7 +42,15 @@ export const inspectExistingLocalServer = async (expectedVersion, fetchImpl = fe
 const windowsRestart = String.raw`
 $ErrorActionPreference = 'Stop'
 $taskPort = [int]$env:NAI_RESTART_PORT
-$taskListeners = @(Get-NetTCPConnection -State Listen -LocalPort $taskPort | Select-Object -ExpandProperty OwningProcess -Unique)
+# NetTCPIP/CIM 枚举冷启动很慢；直接读取内核连接表，仍按监听状态、完整本地端口和唯一 PID 校验。
+function Get-TaskListenerPids {
+  $taskConnections = & netstat.exe -ano
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to enumerate local listeners' }
+  @($taskConnections | ForEach-Object {
+    if ($_ -match ('^\s*TCP\s+\S+:' + $taskPort + '\s+\S+\s+LISTENING\s+([1-9]\d*)\s*$')) { [int]$Matches[1] }
+  } | Select-Object -Unique)
+}
+$taskListeners = @(Get-TaskListenerPids)
 if ($taskListeners.Count -ne 1) { throw 'Unable to identify the local server listener' }
 $taskServerPid = [int]$taskListeners[0]
 if ($env:NAI_RESTART_EXPECTED_PID -and $taskServerPid -ne [int]$env:NAI_RESTART_EXPECTED_PID) { throw 'The launcher owner changed before verification' }
@@ -51,7 +59,7 @@ if ($taskProcess.Name -ne 'node.exe' -or $taskProcess.CommandLine -notmatch 'scr
 $taskIdentity = Invoke-RestMethod -Uri $env:NAI_RESTART_STATUS_URL -TimeoutSec 2 -DisableKeepAlive
 if (-not $taskIdentity.projectDir -or [IO.Path]::GetFullPath($taskIdentity.projectDir) -ne [IO.Path]::GetFullPath($env:NAI_RESTART_PROJECT_DIR)) { throw 'The running server belongs to a different project folder' }
 if ($env:NAI_RESTART_EXPECTED_PID -and ($taskIdentity.app -ne 'nai-atelier-local-launcher' -or $taskIdentity.pid -ne $taskServerPid -or $taskIdentity.phase -ne 'running')) { throw 'The launcher identity changed during verification' }
-$taskCurrentListeners = @(Get-NetTCPConnection -State Listen -LocalPort $taskPort | Select-Object -ExpandProperty OwningProcess -Unique)
+$taskCurrentListeners = @(Get-TaskListenerPids)
 if ($taskCurrentListeners.Count -ne 1 -or $taskCurrentListeners[0] -ne $taskServerPid) { throw 'The listener changed while verifying the server' }
 & taskkill.exe /PID $taskServerPid /T /F | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Unable to stop the verified server process tree' }

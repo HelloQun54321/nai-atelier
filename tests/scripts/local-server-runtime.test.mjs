@@ -64,6 +64,43 @@ test('Windows 重启按唯一监听 PID、入口和目录二次校验，参数�
 test('原服务端口不释放时阻止继续启动', async () => {
   await assert.rejects(restartOwnedLocalServer(projectDir, { os: 'win32', waitMs: 0, fetchImpl: async () => response({ projectDir }), execFile: () => '1234' }), /端口尚未释放/);
 });
+
+test('Windows 监听表解析只识别完整 TCP 监听端口，兼容 IPv6 并按 PID 去重', { skip: platform() !== 'win32' }, async () => {
+  let script;
+  await restartOwnedLocalServer(projectDir, {
+    os: 'win32', portBusy: async () => false,
+    fetchImpl: async () => response({ projectDir }),
+    execFile: (_binary, args) => { script = args.at(-1); return '1234'; },
+  });
+  // 只运行实际脚本的监听解析函数，连接表全部合成，不执行身份探测或终止进程。
+  const parser = script.slice(0, script.indexOf('$taskListeners ='));
+  const rows = [
+    '  TCP    127.0.0.1:3000    0.0.0.0:0    LISTENING    1234',
+    '  TCP    [::1]:3000       [::]:0       LISTENING    1234',
+    '  TCP    127.0.0.1:13000  0.0.0.0:0    LISTENING    7777',
+    '  TCP    127.0.0.1:5000   127.0.0.1:3000 ESTABLISHED 8888',
+    '  TCP    127.0.0.1:3000   127.0.0.1:5000 TIME_WAIT  0',
+    '  UDP    127.0.0.1:3000   *:*                         9999',
+    '  TCP    127.0.0.1:3000   0.0.0.0:0    LISTENING    0',
+    '  TCP    [::]:3000       [::]:0       LISTENING    2345',
+  ];
+  const command = `function netstat.exe { $global:LASTEXITCODE = 0; @(${rows.map(row => `'${row}'`).join(',')}) }; ${parser}; @(Get-TaskListenerPids) | ConvertTo-Json -Compress`;
+  const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    encoding: 'utf8', windowsHide: true, timeout: 10_000, env: { ...process.env, NAI_RESTART_PORT: '3000' },
+  });
+  assert.deepEqual(JSON.parse(stdout), [1234, 2345]);
+  const verification = script.slice(0, script.indexOf('$taskServerPid ='));
+  for (const [output, exitCode] of [
+    [rows.filter(row => row.endsWith('1234') || row.endsWith('2345')), 0],
+    [['not a connection table'], 0],
+    [[], 1],
+  ]) {
+    const invalid = `function netstat.exe { $global:LASTEXITCODE = ${exitCode}; @(${output.map(row => `'${row}'`).join(',')}) }; ${verification}`;
+    await assert.rejects(promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', invalid], {
+      encoding: 'utf8', windowsHide: true, timeout: 10_000, env: { ...process.env, NAI_RESTART_PORT: '3000' },
+    }));
+  }
+});
 test('Unix 不会停止入口不符的进程', async () => {
   const calls = [];
   await assert.rejects(restartOwnedLocalServer(projectDir, { os: 'linux', fetchImpl: async () => response({ projectDir }), execFile: (binary, args) => { calls.push([binary, args]); return binary === 'lsof' ? '1234' : 'another-application'; } }), /不是工坊启动入口/);

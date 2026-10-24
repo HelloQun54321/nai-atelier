@@ -106,6 +106,138 @@ const setup = async (layout = 'masonry', selectionFocusEnabled = true, chains?: 
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
 
+const installAppendObserver = () => {
+  const observers: Array<{ callback: IntersectionObserverCallback; targets: Element[] }> = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    state: { callback: IntersectionObserverCallback; targets: Element[] };
+    constructor(callback: IntersectionObserverCallback) { this.state = { callback, targets: [] }; observers.push(this.state); }
+    observe(target: Element) { this.state.targets.push(target); }
+    disconnect() { this.state.targets = []; }
+  });
+  return () => { const current = observers.filter(item => item.targets.length).at(-1); current?.callback(current.targets.map(target => ({ target, isIntersecting: true } as IntersectionObserverEntry)), {} as IntersectionObserver); };
+};
+
+it('超过800条仍由生产DOM哨兵自动继续，无强制手动更多', async () => {
+  const reach = installAppendObserver();
+  const many = Array.from({ length: 801 }, (_, index) => ({ ...works[0], id: index + 1, title: `合成作品 ${index + 1}` }));
+  const extra = { ...works[0], id: 802, title: '合成作品 802' };
+  mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? many : [extra], total: 900, page: options.page === 1 ? 14 : options.page, page_size: 60 }));
+  await setup('portrait'); await act(async () => reach());
+  await screen.findByRole('button', { name: '查看作品 合成作品 802' });
+  expect(screen.queryByText(/继续加载更多/)).toBeNull();
+});
+
+it('追加中准确显示进度，失败原位重试且成功后继续自动滚动', async () => {
+  const reach = installAppendObserver(); let finish!: (value: any) => void;
+  mocks.search.mockImplementation(options => options.page === 1 ? Promise.resolve({ items: works, total: 180, page: 1 }) : new Promise(resolve => { finish = resolve; }));
+  mocks.searchCache.mockRejectedValue(new Error('缓存也不可用'));
+  const view = await setup('portrait'); await act(async () => reach());
+  expect(screen.getByText('正在加载更多…').getAttribute('role')).toBe('status');
+  await act(async () => finish(null));
+  await waitFor(() => expect(mocks.search.mock.calls.length).toBeGreaterThan(2));
+  // 预取失败会回退实际请求，实际请求与缓存均失败后进入显式重试。
+  mocks.search.mockImplementation(async options => { if (options.page === 2) throw new Error('追加失败'); return { items: works, total: 180, page: options.page }; });
+  await act(async () => finish(null));
+  await screen.findByRole('button', { name: '重试加载' });
+  const calls = mocks.search.mock.calls.length; await act(async () => { reach(); reach(); }); expect(mocks.search).toHaveBeenCalledTimes(calls);
+  const extra = { ...works[0], id: 9, title: '合成作品 9' };
+  mocks.search.mockImplementation(async options => ({ items: options.page === 2 ? [extra] : [{ ...extra, id: 10, title: '合成作品 10' }], total: 180, page: options.page }));
+  fireEvent.click(screen.getByRole('button', { name: '重试加载' })); await screen.findByRole('button', { name: '查看作品 合成作品 9' });
+  expect(screen.queryByText('正在加载更多…')).toBeNull(); expect(screen.queryByRole('button', { name: '重试加载' })).toBeNull();
+  await act(async () => reach()); await waitFor(() => expect(mocks.search.mock.calls.some(([options]) => options.page === 3)).toBe(true));
+  view.unmount();
+});
+
+it('离线缓存60项未知元数据不误匹配也不卡住后续缓存页，不逐页重试外站', async () => {
+  const reach = installAppendObserver();
+  const unknown = Array.from({ length: 60 }, (_, index) => ({ ...works[0], id: index + 1, title: `合成作品 ${index + 1}`, firstImage: undefined, first_image: undefined, localFirstImageUrl: undefined, local_cover_url: undefined }));
+  const known = { ...works[0], id: 99, title: '合成作品 99', firstImage: { ...works[0].firstImage!, ai_json: { prompt: 'artist:test', seed: 1 } } };
+  mocks.search.mockRejectedValue(new Error('offline'));
+  mocks.searchCache.mockImplementation(async options => ({ items: options.page === 1 ? unknown : [known], total: 120, page: options.page }));
+  await setup('portrait'); fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  expect(visibleIds()).toEqual([]); await act(async () => reach());
+  await screen.findByRole('button', { name: '查看作品 合成作品 99' });
+  expect(visibleIds()).toEqual([99]); expect(mocks.search).toHaveBeenCalledOnce(); expect(mocks.waitForFirstImageCache).not.toHaveBeenCalled();
+});
+
+it('元数据先到即可筛选，原图未到仍继续普通图片轮询且不重复metadata_ids', async () => {
+  const listed = { ...works[0], firstImage: undefined, first_image: undefined, localFirstImageUrl: undefined, local_cover_url: undefined };
+  mocks.search.mockResolvedValue({ items: [listed], total: 1, page: 1 });
+  const waits: Array<{ options: any; resolve: (value: any) => void }> = [];
+  mocks.waitForFirstImageCache.mockImplementation(options => new Promise(resolve => waits.push({ options, resolve })));
+  await setup('portrait'); fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toEqual([1]));
+  const metadata = { ...listed, firstImage: { ...works[0].firstImage!, local_image_url: undefined, ai_json: { prompt: 'artist:test', seed: 1 } }, firstImageStatus: 'metadata' };
+  const before = waits.length;
+  await act(async () => waits.at(-1)!.resolve({ items: [metadata] }));
+  await waitFor(() => expect(visibleIds()).toEqual([1]));
+  await waitFor(() => expect(waits.length).toBeGreaterThan(before));
+  expect(waits.at(-1)?.options).toMatchObject({ ids: [1], metadataIds: [] });
+  expect(card(1).querySelector('[title="图片已缓存"]')).toBeNull();
+  await act(async () => waits.at(-1)!.resolve({ items: [{ ...metadata, localFirstImageUrl: '/synthetic/ready.png', firstImageStatus: 'cached' }] }));
+  await waitFor(() => expect(card(1).querySelector('img')?.getAttribute('src')).toBe('/synthetic/ready.png'));
+});
+
+it('超过四轮逐项元数据提前返回后仍保留普通原图等待预算', async () => {
+  const listed = Array.from({ length: 5 }, (_, index) => ({ ...works[0], id: index + 1, title: `合成作品 ${index + 1}`, firstImage: undefined, first_image: undefined, localFirstImageUrl: undefined, local_cover_url: undefined }));
+  mocks.search.mockResolvedValue({ items: listed, total: 5, page: 1 });
+  const waits: Array<{ options: any; resolve: (value: any) => void }> = [];
+  mocks.waitForFirstImageCache.mockImplementation(options => new Promise(resolve => waits.push({ options, resolve })));
+  await setup('portrait'); fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toHaveLength(5));
+  const ready = listed.map(item => ({ ...item, firstImage: { ...works[0].firstImage!, local_image_url: undefined, ai_json: { prompt: 'artist:test', seed: item.id } }, firstImageStatus: 'metadata' }));
+  for (const item of ready) {
+    const count = waits.length;
+    await act(async () => waits.at(-1)!.resolve({ items: [item] }));
+    await waitFor(() => expect(waits.length).toBeGreaterThan(count));
+    expect(waits.at(-1)?.options.metadataIds).not.toContain(item.id);
+  }
+  expect(waits.at(-1)?.options).toMatchObject({ ids: [1, 2, 3, 4, 5], metadataIds: [] });
+  await act(async () => waits.at(-1)!.resolve({ items: ready.map(item => ({ ...item, localFirstImageUrl: `/synthetic/ready-${item.id}.png`, firstImageStatus: 'cached' })) }));
+  await waitFor(() => expect(card(5).querySelector('img')?.getAttribute('src')).toBe('/synthetic/ready-5.png'));
+});
+
+it('搜索切换及页面隐藏隔离旧追加的loading和错误，返回仍可继续加载', async () => {
+  const reach = installAppendObserver(); let finishOld!: (value: any) => void;
+  mocks.search.mockImplementation(options => options.q === 'new' ? Promise.resolve({ items: options.page === 1 ? [works[1]] : [{ ...works[1], id: 12, title: '合成作品 12' }], total: 120, page: options.page }) : options.page === 1 ? Promise.resolve({ items: works, total: 180, page: 1 }) : new Promise(resolve => { finishOld = resolve; }));
+  const view = await setup('portrait'); await act(async () => reach()); expect(screen.getByText('正在加载更多…')).toBeTruthy();
+  const input = screen.getByPlaceholderText('作品、作者、标题或标签，回车检索'); fireEvent.change(input, { target: { value: 'new' } }); fireEvent.keyDown(input, { key: 'Enter' });
+  await waitFor(() => expect(visibleIds()).toEqual([2])); expect(screen.queryByText('正在加载更多…')).toBeNull();
+  await act(async () => finishOld(null)); expect(screen.queryByRole('button', { name: '重试加载' })).toBeNull(); expect(visibleIds()).toEqual([2]);
+  view.rerender(view.draw(false)); const calls = mocks.search.mock.calls.length; await act(async () => reach()); expect(mocks.search).toHaveBeenCalledTimes(calls);
+  view.rerender(view.draw(true)); await act(async () => reach()); await waitFor(() => expect(mocks.search.mock.calls.some(([options]) => options.q === 'new' && options.page === 2)).toBe(true));
+});
+
+it('本地细筛多页连拉中隐藏页面，旧追加回来不再启动后续页或污染状态', async () => {
+  const reach = installAppendObserver(); let finish!: (value: any) => void;
+  mocks.search.mockImplementation(options => options.page === 1 ? Promise.resolve({ items: works, total: 600, page: 1 }) : new Promise(resolve => { finish = resolve; }));
+  const view = await setup('portrait'); fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  await act(async () => reach()); expect(screen.getByText('正在加载更多…')).toBeTruthy();
+  view.rerender(view.draw(false));
+  await act(async () => finish({ items: [works[0]], total: 600, page: 2 }));
+  expect(mocks.search.mock.calls.some(([options]) => options.page >= 3)).toBe(false);
+  expect(screen.queryByText('正在加载更多…')).toBeNull(); expect(screen.queryByRole('button', { name: '重试加载' })).toBeNull();
+});
+
+it('首屏请求中隐藏再返回不会留下永久前台loading', async () => {
+  let finish!: (value: any) => void; mocks.search.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const { AitagGallery } = await import('../../components/AitagGallery');
+  const draw = (active: boolean) => <AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={vi.fn()} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} />;
+  const view = render(draw(true)); view.rerender(draw(false));
+  await act(async () => finish({ items: works, total: 2, page: 1 })); view.rerender(draw(true));
+  await screen.findByRole('button', { name: '查看作品 合成作品 1' }); expect(screen.queryByText('加载 aitag 数据中...')).toBeNull();
+});
+
+it('在线大总数回退小缓存后按缓存实际总数停止，不连续扫描旧远端空页', async () => {
+  const reach = installAppendObserver();
+  mocks.search.mockImplementation(async options => { if (options.page > 1) throw new Error('offline'); return { items: works, total: 6000, page: 1 }; });
+  mocks.searchCache.mockResolvedValue({ items: [], total: 60, page: 2 });
+  await setup('portrait'); await act(async () => reach());
+  await waitFor(() => expect(screen.queryByText('正在加载更多…')).toBeNull());
+  const reads = mocks.searchCache.mock.calls.length; await act(async () => { reach(); reach(); });
+  expect(mocks.searchCache).toHaveBeenCalledTimes(reads); expect(mocks.searchCache.mock.calls.some(([options]) => options.page >= 3)).toBe(false);
+});
+
 const batchImages = () => [
   { ...works[0].firstImage!, id: 12, file_name: 'page10.png', local_image_url: '/api/assets/page10.png', ai_json: { prompt: 'second recipe', uc: 'second negative', seed: 22, steps: 19 } },
   { ...works[0].firstImage!, id: 11, file_name: 'page2.png', local_image_url: '/api/assets/page2.png', ai_json: { prompt: 'first recipe', uc: 'first negative', seed: 11, steps: 25, v4_prompt: { caption: { base_caption: 'first recipe', char_captions: [{ char_caption: 'character one', centers: [{ x: 0.2, y: 0.7 }] }] } } } },
