@@ -7,18 +7,59 @@ import { ContentLibraryPage, type ContentLibrarySection } from '../../components
 
 afterEach(() => cleanup());
 
+/* 只提供打开面板所需的助手配置；本轮不触发模型调用。 */
+vi.mock('../../services/promptAgent', () => ({
+  promptAgentService: {
+    getConfig: async () => ({ provider: 'synthetic', model: 'synthetic-model', imageInput: false }),
+    extractCandidates: async () => ({ mode: 'text', provider: 'synthetic', model: 'synthetic-model', items: [], unclassified: null }),
+  },
+  PROMPT_LIBRARY_KIND_LABELS: { appearance: '人物形象', wardrobe: '服饰', pose: '姿势', expression: '表情状态', scene: '场景', camera: '镜头画面' },
+}));
+/* 提取面板要用确认框与词库：本文件只验证工具栏入口，桩成最小可用形态。 */
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => async () => true }));
+vi.mock('../../services/tagDictionary', () => ({
+  normalizeTagQuery: (value: string) => String(value || '').trim().toLowerCase(),
+  preloadTagDictionary: () => undefined,
+  searchTagDictionary: async () => [],
+  lookupTagTranslations: async () => new Map(),
+  /* 上游 1.121.1 起输入框会查词典释义；这里同样桩成空表。 */
+  lookupTagCatalogEntries: async () => new Map(),
+}));
+
 const Tools = ({ slot, label }: { slot: HTMLElement | null; label: string }) => {
   const [value, setValue] = useState('');
   return <div data-testid={label}>{slot && createPortal(<><button>筛选</button><input aria-label={label} value={value} onChange={event => setValue(event.target.value)} /></>, slot)}</div>;
 };
-const Harness = ({ active = true, onCapture }: { active?: boolean; onCapture?: (text: string, name: string, category: string) => Promise<void> }) => {
+const Harness = ({ active = true, onCapture, onExtractSave }: { active?: boolean; onCapture?: (text: string, name: string, category: string) => Promise<void>; onExtractSave?: (draft: { kind: string; name: string; prompt: string }) => Promise<void> }) => {
   const [section, setSection] = useState<ContentLibrarySection>('items');
   const [rollOpen, setRollOpen] = useState(false);
-  return <ContentLibraryPage section={section} onSectionChange={setSection} active={active} rollOpen={rollOpen} onRollOpenChange={setRollOpen} onCapture={onCapture}
+  return <ContentLibraryPage section={section} onSectionChange={setSection} active={active} rollOpen={rollOpen} onRollOpenChange={setRollOpen} onCapture={onCapture} onExtractSave={onExtractSave}
     items={slot => <Tools slot={slot} label="条目搜索" />}
     roll={slot => <Tools slot={slot} label="搭配草稿" />}
     saved={slot => <Tools slot={slot} label="组合搜索" />} originals={slot => <Tools slot={slot} label="原文搜索" />} />;
 };
+
+it('AI 提取分类只在提供保存处理器时出现，排在粘贴收录之前，打开与关闭不影响原库', async () => {
+  const view = render(<Harness />);
+  expect(screen.queryByRole('button', { name: 'AI 提取分类' })).toBeNull();
+  const save = vi.fn(async () => {});
+  view.rerender(<Harness onCapture={vi.fn(async () => {})} onExtractSave={save} />);
+  const toolbar = screen.getByRole('banner');
+  const labels = Array.from(toolbar.querySelectorAll('button')).map(node => node.textContent || node.getAttribute('aria-label'));
+  expect(labels.indexOf('AI 提取分类')).toBeGreaterThan(-1);
+  expect(labels.indexOf('AI 提取分类')).toBeLessThan(labels.indexOf('粘贴收录'));
+  /* 窄屏与「粘贴收录」同一套响应式规则：图标常显，文字在 sm 以下收起，靠 aria-label 保持可读 */
+  const extractButton = screen.getByRole('button', { name: 'AI 提取分类' });
+  expect(extractButton.querySelector('svg')).toBeTruthy();
+  expect(extractButton.querySelector('span')?.className).toContain('hidden sm:inline');
+  expect(extractButton.getAttribute('aria-haspopup')).toBe('dialog');
+  fireEvent.click(screen.getByRole('button', { name: 'AI 提取分类' }));
+  const dialog = await screen.findByRole('dialog', { name: 'AI 提取分类' });
+  expect(dialog).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭并保留草稿' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(save).not.toHaveBeenCalled();
+});
 
 it('粘贴收录两库均可达，后台隐藏且返回保留原文，不干扰原列表搜索与焦点', () => {
   const save = vi.fn(async () => {}); const view = render(<Harness onCapture={save} />);

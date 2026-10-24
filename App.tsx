@@ -26,6 +26,8 @@ import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan, type ContentRollEntryTarget } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
 import { prepareCollectedPrompt } from './services/collectedPrompt';
+import { buildExtractedChainPayload } from './services/extractedPromptEntry';
+import { PROMPT_LIBRARY_KIND_LABELS } from './services/promptAgent';
 import { stableOperationId } from './services/operationId';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
@@ -923,6 +925,16 @@ const App = () => {
             const data = prepareCollectedPrompt(text, name, category);
             await createLibraryChain(data.name, '', data.type, data);
             notify(t(category ? '已保存片段' : '已保存原文'));
+          }}
+          notify={notify}
+          onExtractSave={async draft => {
+            const payload = buildExtractedChainPayload(draft);
+            // 每条候选都建成对应分类的正常条目；失败直接抛出，由面板保留该条并允许重试。
+            await createLibraryChain(payload.name, '', payload.type, payload.data);
+            const label = t(PROMPT_LIBRARY_KIND_LABELS[draft.kind as keyof typeof PROMPT_LIBRARY_KIND_LABELS] || '内容库');
+            // 条目已创建成功，但列表刷新可能失败：两件事分开反馈，避免误以为没有存进去。
+            if (await refreshData(true)) notify(t('已存入{0}', [label]));
+            else notify(t('已存入{0}，但列表刷新失败，稍后刷新即可看到', [label]), 'error');
           }}
           rollOpen={contentRollOpen}
           rollTitle={contentRollEntryTarget ? '随机搭配' : undefined}

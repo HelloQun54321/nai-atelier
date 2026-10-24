@@ -510,6 +510,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     }
     if (event.key === 'Escape') {
       event.preventDefault();
+      // 只关补全浮层：不把 Esc 继续传给外层容器（例如提取面板会把 Esc 当成关闭整个面板）。
+      event.stopPropagation();
       closeSuggestions();
       return true;
     }

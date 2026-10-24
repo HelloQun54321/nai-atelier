@@ -319,6 +319,58 @@ export interface PromptLibraryPrompts {
   extra: string;
 }
 
+/** 提示词／图片提取：一条候选即一个未来要落库的库条目（同类内容已按原顺序合并）。 */
+export interface PromptExtractionCandidate {
+  kind: PromptLibraryKind;
+  /** 中文名称含义，用户可在审阅时改写。 */
+  name: string;
+  /** 实际保存进库的英文提示词。 */
+  prompt: string;
+  /** 被翻译的中文原文（仅文字模式的中文片段出现）。 */
+  original?: string;
+  /** 中文片段还没拿到可用英文译法：界面默认不勾选，补上英文后才能入库。 */
+  needsTranslation?: boolean;
+  /** 源文本的权重／括号结构没能可靠套回译文：界面默认不勾选并提示人工处理。 */
+  needsReview?: boolean;
+  /** 需要人工处理的具体原因（结构问题说明）。 */
+  reviewNote?: string;
+}
+
+/** 图片元数据里的一个角色分栏：正向内容单独成组，不与其他角色混合。 */
+export interface PromptExtractionCharacter {
+  label: string;
+  prompt: string;
+  /** 该角色的负面提示词：只用于如实展示，不进入正向候选。 */
+  negative?: string;
+}
+
+/** 无法归类的残留内容：只在「未归类」区域展示，不入库，也不静默丢弃。 */
+export interface PromptExtractionUnclassified {
+  name: string;
+  prompt: string;
+  original?: string;
+}
+
+export interface PromptExtractionResult {
+  mode: 'text' | 'vision';
+  provider: string;
+  model: string;
+  items: PromptExtractionCandidate[];
+  unclassified: PromptExtractionUnclassified | null;
+  /** 从原文剥离的负面提示词与生成参数，只用于如实展示。 */
+  excluded?: { negative: string; parameters: string };
+  /** 看图提取时被模型返回、但内容为空的条目数量。 */
+  ignored?: number;
+}
+
+export interface PromptExtractionInput {
+  mode: 'text' | 'vision';
+  text?: string;
+  /** 图片元数据里的角色分栏正向提示词：带上它才能保留角色归属。 */
+  characters?: PromptExtractionCharacter[];
+  images?: Array<{ data: string; mimeType: string }>;
+}
+
 export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
   appearance: '外貌',
   wardrobe: '服饰',
@@ -335,6 +387,27 @@ export const promptAgentService = {
     });
     if (!response.ok) return readError(response) as never;
     return response.json() as Promise<{ items: Array<{ id: string; kind: 'global' | 'character'; sections: Record<string, string> }> }>;
+  },
+  /**
+   * 提示词／图片 → 六类库候选（忠实提取，不是六库生成）。
+   *
+   * 文字模式：本地切片后只让模型判断类别，原词由服务端按原片段重组，因此不会补全、
+   * 不会改写权重、不会去重。图片模式：当前助手模型看图推断，结果不得冒充原始提示词。
+   * 每次都由用户主动点击触发；客户端不自动重发，避免重复消耗模型调用。
+   */
+  extractCandidates: async (input: PromptExtractionInput, signal?: AbortSignal): Promise<PromptExtractionResult> => {
+    // 图片的 base64 体积很大，operationId 只按结构派生，避免对整段图片数据做哈希。
+    const operationId = stableOperationId('extract-candidates', {
+      mode: input.mode,
+      text: input.text ?? '',
+      characters: (input.characters ?? []).map(entry => `${entry.label}:${entry.prompt.length}`),
+      images: (input.images ?? []).map(image => ({ mimeType: image.mimeType, length: image.data.length })),
+    });
+    const response = await fetch('/api/prompt-agent/extract-candidates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, operationId }), signal,
+    });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
   },
   setCreativeDirect: async (enabled: boolean): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/creative-direct', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
