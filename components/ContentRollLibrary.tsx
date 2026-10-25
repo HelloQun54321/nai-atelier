@@ -13,6 +13,7 @@ import { SmartImage } from './SmartImage';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
+import { PromptLibraryTagEditor } from './PromptLibraryTagEditor';
 
 interface ContentRollLibraryProps {
   section?: 'saved' | 'originals';
@@ -129,8 +130,8 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
             <div className="flex items-center justify-between gap-2 px-4 pb-3">
               <span className="text-xs text-gray-400">{new Date(Number(chain.updatedAt || 0)).toLocaleDateString()}</span>
               {original !== null ? <ToolbarButton onClick={() => void copySnapshot(chain)}><Copy />{t('复制提示词')}</ToolbarButton>
-                : <ToolbarButton disabled={!read.ok || !!busy || read.roles.length > 1 && roleChoices[chain.id] === undefined} onClick={() => read.roles.length > 1 ? onLoad(chain, roleChoices[chain.id]) : onLoad(chain)}>{t('载入组合')}</ToolbarButton>}
-              {library?.useEntry && <ToolbarButton onClick={() => library.useEntry?.(chain)}>{t('取用')}</ToolbarButton>}
+                : <ToolbarButton disabled={!read.ok || !!busy || read.roles.length > 1 && roleChoices[chain.id] === undefined} onClick={() => read.roles.length > 1 ? onLoad(chain, roleChoices[chain.id]) : onLoad(chain)}>{t('编辑组合')}</ToolbarButton>}
+              {library?.useEntry && <ToolbarButton onClick={() => library.useEntry?.(chain)}>{t('使用')}</ToolbarButton>}
             </div>
             {original === null && !read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
             {expanded && <div id={`content-preview-${chain.id}`} data-content-roll-preview={chain.id} className="border-t border-gray-200 p-4 dark:border-gray-800">
@@ -141,14 +142,14 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
                   onChange={event => setRenaming({ id: chain.id, value: event.target.value })} onBlur={() => void commitRename()}
                   onKeyDown={event => { if (event.key === 'Enter') void commitRename(); if (event.key === 'Escape') { renameCancelled.current = true; setRenaming(null); } }} />
                   : <ToolbarButton disabled={!!busy} onClick={() => { renameCancelled.current = false; setRenaming({ id: chain.id, value: chain.name }); }}>{t('改名')}</ToolbarButton>}
-                {original === null && <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制快照')} aria-label={t('复制快照')}><Copy /></ToolbarButton>}
+                {original === null && <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制组合数据')} aria-label={t('复制组合数据')}><Copy /></ToolbarButton>}
                 <ToolbarButton disabled={!!busy} onClick={() => setCoverFor(chain)} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')}><ImagePlus /></ToolbarButton>
                 <ToolbarButton tone="danger" disabled={!!busy} onClick={() => void remove(chain)} title={t('删除')} aria-label={t('删除')}><Trash2 /></ToolbarButton>
                 {busy === chain.id && <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />}
               </div>
               <div className="space-y-3">
                 {read.roles.length > 1 && <select aria-label={t('组合中的角色')} value={roleChoices[chain.id] ?? ''} onChange={event => setRoleChoices(previous => ({ ...previous, [chain.id]: Number(event.target.value) }))} className={TOOLBAR_FIELD_CLASS}><option value="" disabled>{t('请选择角色')}</option>{read.roles.map((role, index) => <option key={role.key} value={index}>{role.name}</option>)}</select>}
-                {library && <label className="block text-xs text-gray-500">{t('自定义标签')}<input aria-label={t('编辑自定义标签')} defaultValue={(chain.tags || []).join(', ')} className={TOOLBAR_FIELD_CLASS} onBlur={event => { const tags = event.target.value.split(/[,，]/).map(value => value.trim()).filter(Boolean); if (JSON.stringify(tags) !== JSON.stringify(chain.tags || [])) void library.save({ id: chain.id, tags }).catch(error => notify(String(error.message || error), 'error')); }} /></label>}
+                {library && <PromptLibraryTagEditor key={chain.id} tags={chain.tags || []} suggestions={[...new Set(chains.flatMap(item => item.tags || []))].sort()} onSave={async tags => { await library.save({ id: chain.id, tags }); }} />}
                 {original !== null && <p className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{original}</p>}
                 {fields.map(({ kind, text, negative }) => <div key={kind}>
                   <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</h3>

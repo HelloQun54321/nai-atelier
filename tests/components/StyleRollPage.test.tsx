@@ -965,9 +965,11 @@ it('顶部直接提取抽样来源，不打开管理、不生成或保存参数�
   mocks.load.mockImplementation(async () => [structuredClone(experiment), second]);
   const view = await setup();
   const open = () => fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
   open(); expect(screen.getByRole('dialog', { name: '提取接线' })).toBeTruthy();
   expect(screen.queryByRole('dialog', { name: 'Roll 画师' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('已选 2 串 · 4 位画师')).toBeTruthy();
   open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('beta');
   view.rerender(<StyleRollPage {...view.props} active={false} />);
   expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
@@ -998,6 +1000,7 @@ it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，�
   fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
   expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('source-chain');
   fireEvent.click(screen.getByRole('button', { name: '使用全部画师接线' }));
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
   expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource).toBeUndefined();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
   fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: saved.rounds.at(-1)!.id } });

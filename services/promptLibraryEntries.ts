@@ -10,6 +10,7 @@ export const isLibraryOnlyQuery = (query: string): boolean => /^@(?=[\p{L}\p{N}]
 export const FRAGMENT_LABELS: Record<PromptFragmentKind, string> = {
   appearance: '外貌', wardrobe: '服饰', pose: '动作', expression: '表情', scene: '场景', camera: '镜头', general: '通用',
 };
+export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {
   kind?: PromptFragmentKind;
   roleId?: string;
@@ -77,10 +78,10 @@ export function libraryPicksWithSources(picks: Record<string, RollRow>): Record<
   }]));
 }
 
-export function createCombinationData(name: string, picks: Record<string, RollRow>): Partial<PromptChain> {
+export function createCombinationData(name: string, picks: Record<string, RollRow>, tags: string[] = []): Partial<PromptChain> {
   const snapshot = contentSnapshotOf({ picks: libraryPicksWithSources(picks) }, new Date().toISOString());
   if (!snapshot) throw new Error('组合还没有内容');
-  return { name: name.trim() || '新组合', type: 'preset', params: { _rollContentSnapshot: snapshot } as unknown as NAIParams };
+  return { name: name.trim() || '新组合', type: 'preset', tags: parsePromptLibraryTags(tags.join(',')), params: { _rollContentSnapshot: snapshot } as unknown as NAIParams };
 }
 
 export function workspacePicks(params: Partial<NAIParams>, roleId?: string): Record<string, RollRow> {

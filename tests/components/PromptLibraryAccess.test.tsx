@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { LibraryDialog, PromptLibraryChooser, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryWorkspace } from '../../components/PromptLibraryAccess';
+import { LibraryDialog, PromptLibraryChooser, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryWorkspace, PromptLibraryUseDialog, PromptLibrarySaveDialog, type WorkspaceAccess } from '../../components/PromptLibraryAccess';
 import { ImageActivityProvider } from '../../components/SmartImage';
 import { createCombinationData } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
@@ -10,6 +10,137 @@ import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
 import type { PromptChain } from '../../types';
 
 afterEach(cleanup);
+it('分栏收录组合可填写多个自定义标签并选择已有标签', async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  const chain = { id: 'existing', tags: ['已有分类'], type: 'appearance', name: '片段' } as PromptChain;
+  render(<PromptLibraryContext.Provider value={{ chains: [chain], save }}><PromptLibrarySaveDialog text="rain" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'rain' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } });
+  const tags = screen.getByRole('textbox', { name: '自定义标签' });
+  fireEvent.change(tags, { target: { value: ' 新分类， 新分类, ' } });
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(await screen.findByRole('button', { name: '#已有分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].tags).toEqual(['新分类', '已有分类']);
+  expect(save.mock.calls[0][0].params._rollContentSnapshot).toBeTruthy();
+});
+it('手机 StrictMode 新挂载使用面板不会被试挂载清理的返回事件关闭', async () => {
+  const previousMatchMedia = window.matchMedia;
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  window.history.replaceState({}, '');
+  const back = vi.spyOn(window.history, 'back').mockImplementation(() => {
+    setTimeout(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })), 0);
+  });
+  const entry = { id: 'raw', ...prepareCollectedPrompt('snow', '雪夜') } as PromptChain;
+  function Harness() {
+    const [open, setOpen] = useState(true);
+    return open ? <PromptLibraryUseDialog entry={entry} state={{ params: LAB_DEFAULT_PARAMS, base: '', subject: '', negative: '', classified: false }} onChange={vi.fn()} onApplied={vi.fn()} onClose={() => setOpen(false)} /> : null;
+  }
+  try {
+    render(<React.StrictMode><Harness /></React.StrictMode>);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(screen.queryByRole('dialog', { name: '使用提示词' })).not.toBeNull();
+  } finally { back.mockImplementation(() => {}); cleanup(); back.mockRestore(); window.matchMedia = previousMatchMedia; window.history.replaceState({}, ''); }
+});
+
+it('手机冷挂载实验室从等待态换为使用面板时，不被旧层迟到返回关闭', async () => {
+  const previousMatchMedia = window.matchMedia;
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  window.history.replaceState({}, '');
+  // 浏览器返回异步抵达：旧等待层清理后，新使用层已经完成挂载。
+  const back = vi.spyOn(window.history, 'back').mockImplementation(() => {
+    setTimeout(() => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })), 0);
+  });
+  const entry = { id: 'raw', ...prepareCollectedPrompt('snow', '雪夜') } as PromptChain;
+  function Harness() {
+    const [open, setOpen] = useState(true), [ready, setReady] = useState(false);
+    return <><button onClick={() => setReady(true)}>实验室就绪</button>{open && (ready
+      ? <PromptLibraryUseDialog entry={entry} state={{ params: LAB_DEFAULT_PARAMS, base: '', subject: '', negative: '', classified: false }} onChange={vi.fn()} onApplied={vi.fn()} onClose={() => setOpen(false)} />
+      : <LibraryDialog title="使用" historyLayer={false} onClose={() => setOpen(false)}>正在读取实验室草稿</LibraryDialog>)}</>;
+  }
+  try {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: '实验室就绪' }));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(screen.queryByRole('dialog', { name: '使用提示词' })).not.toBeNull();
+  } finally { back.mockImplementation(() => {}); cleanup(); back.mockRestore(); window.matchMedia = previousMatchMedia; window.history.replaceState({}, ''); }
+});
+
+it('隐藏的文生图工作区登记真实草稿且不重复登记，外部写入共享撤销', async () => {
+  const before = { params: LAB_DEFAULT_PARAMS, base: 'draft artist', subject: 'draft scene', negative: 'draft negative', classified: true };
+  let registered: WorkspaceAccess | null = null;
+  const register = vi.fn((access: WorkspaceAccess | null) => { registered = access; });
+  const activate = vi.fn();
+  function Harness() {
+    const [state, setState] = useState(before);
+    const [, rerender] = useState(0);
+    return <PromptLibraryContext.Provider value={{ chains: [], save: vi.fn(), registerWorkspace: register }}><PromptLibraryRequestEnabledContext.Provider value>
+      <PromptLibraryWorkspace register active={false} state={{ ...state }} onExternalChange={activate} onChange={next => setState(next)}><button onClick={() => rerender(value => value + 1)}>重绘</button></PromptLibraryWorkspace>
+    </PromptLibraryRequestEnabledContext.Provider></PromptLibraryContext.Provider>;
+  }
+  const { unmount } = render(<Harness />);
+  expect(registered!.state).toMatchObject(before);
+  const registrations = register.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: '重绘' }));
+  expect(register).toHaveBeenCalledTimes(registrations);
+  await registered!.change({ ...before, base: 'new artist' });
+  await waitFor(() => expect(registered!.canUndo).toBe(true));
+  expect(activate).toHaveBeenCalledOnce();
+  registered!.undo();
+  await waitFor(() => expect(registered!.state.base).toBe('draft artist'));
+  unmount();
+  expect(register).toHaveBeenLastCalledWith(null);
+});
+
+it('普通编辑器与图片模式工作区不抢占实验室的文生图登记', () => {
+  const register = vi.fn();
+  const state = { params: LAB_DEFAULT_PARAMS, base: '', subject: '', negative: '', classified: false };
+  render(<PromptLibraryContext.Provider value={{ chains: [], save: vi.fn(), registerWorkspace: register }}><PromptLibraryRequestEnabledContext.Provider value>
+    <PromptLibraryWorkspace state={state} onChange={vi.fn()}><span>图片模式</span></PromptLibraryWorkspace>
+  </PromptLibraryRequestEnabledContext.Provider><PromptLibraryWorkspace register state={state} onChange={vi.fn()}><span>普通编辑器</span></PromptLibraryWorkspace></PromptLibraryContext.Provider>);
+  expect(register).not.toHaveBeenCalled();
+});
+
+it('纯文本收录复用可编辑的通用表单，保留字段用途', async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  render(<PromptLibraryContext.Provider value={{ chains: [], save }}><PromptLibrarySaveDialog text="silver hair" field={{ kind: 'appearance' }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  const input = await screen.findByRole('textbox', { name: '提示词原文' });
+  expect(input.closest('.z-\\[2000\\]')).not.toBeNull();
+  expect((input as HTMLTextAreaElement).value).toBe('silver hair');
+  fireEvent.change(input, { target: { value: 'white hair' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0]).toMatchObject({ type: 'appearance', basePrompt: 'white hair' });
+});
+
+it('库内使用原文先确认，等待写入成功后才离开，并保留逐字内容', async () => {
+  const entry = { id: 'raw', ...prepareCollectedPrompt('  {{snow}}\r\nnight  ', '雪夜') } as PromptChain;
+  let finish!: () => void;
+  const changed = vi.fn((_next: { base: string }) => new Promise<void>(resolve => { finish = resolve; }));
+  const applied = vi.fn(), close = vi.fn();
+  render(<PromptLibraryUseDialog entry={entry} state={{ params: LAB_DEFAULT_PARAMS, base: 'artist', subject: '', negative: 'lowres', classified: false }} onChange={changed} onApplied={applied} onClose={close} />);
+  expect(screen.queryByRole('searchbox')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '替换' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  expect(changed.mock.calls[0][0].base).toBe(entry.basePrompt);
+  expect(applied).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  finish();
+  await waitFor(() => expect(applied).toHaveBeenCalledOnce());
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it('库内使用失败留在确认面板，不进入实验室', async () => {
+  const entry = { id: 'raw', ...prepareCollectedPrompt('snow', '雪夜') } as PromptChain;
+  const applied = vi.fn(), close = vi.fn();
+  render(<PromptLibraryUseDialog entry={entry} state={{ params: LAB_DEFAULT_PARAMS, base: '', subject: '', negative: '', classified: false }} onChange={vi.fn().mockRejectedValue(new Error('保存失败'))} onApplied={applied} onClose={close} />);
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  await screen.findByRole('alert');
+  expect(applied).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: '使用' }).hasAttribute('disabled')).toBe(false);
+});
+
 it('在取用弹窗标题栏下沿显示当前可选条目数', async () => {
   const entry = { id: 'entry', type: 'appearance', name: '银发', basePrompt: 'silver hair', params: {}, tags: [] } as unknown as PromptChain;
   render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}>
@@ -47,9 +178,9 @@ it('从库页取用原文写入当前实验室，保留原文与生成参数，�
     </PromptLibraryContext.Provider>;
   }
   render(<Harness />);
-  await screen.findByRole('dialog', { name: '取用提示词' });
+  await screen.findByRole('dialog', { name: '使用提示词' });
   expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  fireEvent.click(screen.getByRole('button', { name: '取用' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(changed).toHaveBeenCalledOnce(); expect(changed.mock.calls[0][0].base).toBe('artist,   {{snow}}\r\nnight  ');
   expect(changed.mock.calls[0][0].params.seed).toBe(37); expect(hidden).not.toHaveBeenCalled();
 });
@@ -60,11 +191,11 @@ it('角色入口取用组合仅写指定角色，包含负面与可撤销快照'
   const before = { params: { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'one', prompt: 'one', x: 0.2, y: 0.5 }, { id: 'two', prompt: 'two', x: 0.8, y: 0.5 }] }, base: 'artist', subject: 'sunny', negative: '', classified: true };
   function Harness() { const [state, setState] = useState(before); return <PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}><PromptLibraryWorkspace state={state} onChange={next => { changed(next); setState(next as typeof before); }}><PromptLibraryChooser initialEntry={entry} value="two" field={{ roleId: 'two' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryWorkspace></PromptLibraryContext.Provider>; }
   render(<Harness />);
-  fireEvent.click(screen.getByRole('button', { name: '取用' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(changed.mock.calls[0][0].params.characters[0]).toEqual(before.params.characters[0]);
   expect(changed.mock.calls[0][0].params.characters[1].sections.wardrobe).toBe('white dress');
   expect(changed.mock.calls[0][0].params.characters[1].sectionNegatives.wardrobe).toBe('red dress');
   expect(changed.mock.calls[0][0].subject).toBe('sunny');
-  fireEvent.click(screen.getByRole('button', { name: '撤销上次填入' }));
+  fireEvent.click(await screen.findByRole('button', { name: '撤销上次填入' }));
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith(before));
 });

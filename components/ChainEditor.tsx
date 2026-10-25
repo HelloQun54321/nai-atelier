@@ -2085,7 +2085,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     return (
-        <PromptLibraryWorkspace active={activeGenerationMode === 'text-to-image'} state={{ params, base: basePrompt, subject: subjectPrompt, negative: negativePrompt, classified: promptClassificationEnabled }} onChange={next => {
+        <PromptLibraryWorkspace register active={activeGenerationMode === 'text-to-image'} state={{ params, base: basePrompt, subject: subjectPrompt, negative: negativePrompt, classified: promptClassificationEnabled }} onExternalChange={async () => {
+            if (isGenerating || modeTransitionRef.current) throw new Error(t('实验室正在执行任务，请稍后使用提示词'));
+            await selectGenerationMode('text-to-image');
+        }} onChange={next => {
             setParams(next.params); setBasePrompt(next.base); setSubjectPrompt(next.subject); setNegativePrompt(next.negative); markChange();
         }}><div
             className="workspace-canvas chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"

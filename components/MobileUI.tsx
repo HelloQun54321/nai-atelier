@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useContext, useEffect, useId, useRef } from 'react';
+import React, { useContext, useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, X } from 'lucide-react';
 import { useModalA11y } from './useModalA11y';
 import { ImageActivityContext } from './SmartImage';
@@ -22,16 +22,21 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
   const active = useContext(ImageActivityContext);
   const reactId = useId();
   const markerRef = useRef(`${prefix}-${reactId}`);
+  const registrationRef = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const [historyReady, setHistoryReady] = useState(false);
+  // 首次挂载稳定后再入栈，避免 StrictMode 试清理的异步返回关闭新窗口。
+  useEffect(() => setHistoryReady(true), []);
 
   useEffect(() => {
     // 手机与平板窗口注册返回关闭，历史／灵感等模态同样适用；后台视图不参与返回。
-    if (!open || !active || typeof window === 'undefined') return;
+    if (!historyReady || !open || !active || typeof window === 'undefined') return;
     // 窄窗打开父层后放宽窗口，子层仍沿用该返回栈，避免一次返回连带关闭父层。
     if (!window.matchMedia?.('(max-width: 1279px)').matches && !window.history.state?.__naiMobileLayers?.length) return;
     const marker = markerRef.current;
-    if (window.history.state?.__naiMobileLayer !== marker) {
+    const registration = ++registrationRef.current;
+    if (!window.history.state?.__naiMobileLayers?.includes(marker)) {
       window.history.pushState({ ...(window.history.state || {}), __naiMobileLayer: marker,
         __naiMobileLayers: [...(window.history.state?.__naiMobileLayers || []), marker] }, '');
     }
@@ -46,9 +51,12 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
     window.addEventListener('popstate', handlePopState);
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      if (window.history.state?.__naiMobileLayer === marker) window.history.back();
+      // StrictMode／保留子树重连会立刻重新 setup，不把试清理当作真实关闭。
+      queueMicrotask(() => {
+        if (registrationRef.current === registration && window.history.state?.__naiMobileLayer === marker) window.history.back();
+      });
     };
-  }, [open, active]);
+  }, [historyReady, open, active]);
 
   return () => {
     const marker = markerRef.current;

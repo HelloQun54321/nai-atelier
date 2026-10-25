@@ -79,8 +79,6 @@ html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='co
   .content-library-roll-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @container content-library (max-width: 620px) {
-  /* 手机把手保留完整触控高度，分区标签从其下方开始。 */
-  .content-library-toolbar.workspace-command-bar { padding-top: 3rem; }
   .prompt-library-hub { flex-direction: column; }
   .prompt-library-hub > nav { width: auto; flex-direction: row; overflow-x: auto; }
   .prompt-library-hub > nav > p { display: none; }
@@ -1116,6 +1114,9 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 }
 
 @media (max-width: 767px) {
+  /* 把手已占顶栏左列，与右侧同排控件居中，不再单独预留一行。 */
+  .content-library > .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { align-self: center; }
+
   :root {
     --mobile-topbar: 3.5rem;
     --mobile-bottombar: 4.25rem;

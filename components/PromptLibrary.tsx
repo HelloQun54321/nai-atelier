@@ -61,7 +61,7 @@ import { PromptLibraryUsageBadge, PromptLibraryUsageSection } from './PromptLibr
 import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
-import { fragmentKindOf, FRAGMENT_LABELS } from '../services/promptLibraryEntries';
+import { fragmentKindOf, FRAGMENT_LABELS, parsePromptLibraryTags } from '../services/promptLibraryEntries';
 import { usePromptLibrary } from './PromptLibraryAccess';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
@@ -123,14 +123,6 @@ const chainReferences = (chain?: PromptChain | null): PromptLibraryReference[] =
     .map(item => ({ id: String(item.id || ''), url: String(item.url), prompt: String(item.prompt || '') }));
 };
 
-/** 逗号（中英）分隔的标签输入 → 标签数组，最多 12 个。 */
-const parseTags = (value: string): string[] =>
-  String(value || '')
-    .split(/[,，]/)
-    .map(part => part.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-
 const sameIds = (list: string[], other: string[]) =>
   list.length === other.length && list.every((id, index) => id === other[index]);
 
@@ -171,10 +163,14 @@ export interface PromptLibraryProps {
   embedded?: boolean;
   /** 嵌入时把搜索／筛选工具栏挂到父级顶栏的槽位。 */
   toolbarSlot?: HTMLElement | null;
+  requestCloseRef?: React.MutableRefObject<(() => void) | null>;
+  onClose?: () => void;
 }
 
 interface PromptLibraryInternalProps extends PromptLibraryProps {
   config: PromptLibraryKindConfig;
+  initialEntry?: PromptChain;
+  onEditorClose?: () => void;
   categoryNavigation?: React.ReactNode;
   registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void;
   browsing?: LibraryBrowsing;
@@ -197,6 +193,9 @@ const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-2
 
 export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   config,
+  initialEntry,
+  onEditorClose,
+  requestCloseRef,
   categoryNavigation,
   registerLeaveGuard,
   chains,
@@ -232,7 +231,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; browsingRef.current.scrollTop = 0; };
   const [tagQuery, setTagQuery] = useState('');
 
-  const [detail, setDetail] = useState<LibraryDraft | null>(null);
+  const [detail, setDetail] = useState<LibraryDraft | null>(() => initialEntry ? draftFromChain(initialEntry) : null);
   const [savingDetail, setSavingDetail] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -359,7 +358,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   /* ---------------- 详情态 ---------------- */
 
-  const draftFromChain = (chain: PromptChain): LibraryDraft => ({
+  function draftFromChain(chain: PromptChain): LibraryDraft { return {
     id: chain.id,
     name: String(chain.name || ''),
     tags: chainTags(chain).join(', '),
@@ -369,7 +368,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     cover: String(chain.previewImage || ''),
     coverChanged: false,
     references: chainReferences(chain),
-  });
+  }; }
 
   const patchDetail = useCallback((patch: Partial<LibraryDraft>) => {
     setDetail(previous => (previous ? { ...previous, ...patch } : previous));
@@ -397,10 +396,17 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       tone: 'danger',
     })) return false;
     setDetail(null);
+    onEditorClose?.();
     // 详情关闭时顺手刷新图墙计数：详情内的保存/删除/改名都发生在离开之后才可见。
     void refreshUsage();
     return true;
-  }, [config.title, confirmAction, draftDirty, refreshUsage, savingDetail]);
+  }, [config.title, confirmAction, draftDirty, refreshUsage, savingDetail, onEditorClose]);
+
+  useEffect(() => {
+    if (!requestCloseRef) return;
+    requestCloseRef.current = () => { void closeDetail(); };
+    return () => { requestCloseRef.current = null; };
+  }, [requestCloseRef, closeDetail]);
 
   useEffect(() => registerLeaveGuard?.(async () => {
     if (generating || savingDrafts || creating || renamePending.current) return false;
@@ -433,7 +439,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       };
       const updates: Partial<PromptChain> = {
         name: detail.name.trim() || t('未命名{0}', [t(config.itemNoun)]),
-        tags: parseTags(detail.tags),
+        tags: parsePromptLibraryTags(detail.tags),
         basePrompt: detail.prompt,
         negativePrompt: detail.negativePrompt,
         params,
@@ -443,6 +449,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       notify(t('{0}已保存', [t(config.itemNoun)]));
       void refreshUsage();
       setDetail(null);
+      onEditorClose?.();
     } catch (error) {
       console.warn('Prompt library save failed:', error);
       notify(t('保存失败，请稍后重试'), 'error');
@@ -466,6 +473,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       return;
     }
     setDetail(current => (current?.id === id ? null : current));
+    if (detail?.id === id) onEditorClose?.();
     setViewer(null);
     void refreshUsage();
     notify(t('已删除该{0}', [t(config.itemNoun)]));
@@ -1268,12 +1276,28 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const body = <>
     <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
-      {detail ? detailBody : <>{itemActions}{listBody}</>}
+      {detail ? detailBody : !initialEntry && <>{itemActions}{listBody}</>}
     </div>
     {generator}
-    <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} />
+    <PromptLibraryBundleDialog
+      open={bundleOpen}
+      onClose={() => setBundleOpen(false)}
+      notify={notify}
+      onCreate={onCreate}
+      onSaved={() => { void refreshUsage(); }}
+      styleChains={styleChains}
+      onWriteToChain={writeBundleToChain}
+    />
+    <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
+      scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
   </>;
+  if (initialEntry) return (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {detailToolbar}
+      {body}
+    </div>
+  );
   if (embedded) return (
     <div className="flex min-h-0 flex-1 flex-col">
       {toolbarSlot ? createPortal(detail ? detailToolbarContent : listToolbarContent, toolbarSlot) : null}
@@ -1283,32 +1307,26 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   return (
     <div className="workspace-canvas relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>{categoryNavigation}{detail ? detailToolbar : listToolbar}</WorkspaceChrome>
-      <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
-        {detail ? detailBody : <>{itemActions}{listBody}</>}
-      </div>
-      {generator}
-      <PromptLibraryBundleDialog
-        open={bundleOpen}
-        onClose={() => setBundleOpen(false)}
-        notify={notify}
-        onCreate={onCreate}
-        onSaved={() => { void refreshUsage(); }}
-        styleChains={styleChains}
-        onWriteToChain={writeBundleToChain}
-      />
-      <HistoryImagePicker
-        open={picker !== null}
-        onClose={() => setPicker(null)}
-        onSelect={handleHistorySelect}
-        scopeChainId={picker === 'cover' && detail && detail.id ? detail.id : null}
-      />
-      {viewerModal}
+      {body}
     </div>
   );
 };
 
 const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','expression','scene','camera'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
 const GENERAL_CONFIG: PromptLibraryKindConfig = { ...PROMPT_LIBRARY_KINDS.appearance, general: true, type: 'preset', title: '通用', itemNoun: '片段', defaultName: '新片段', createLabel: '新建片段', emptyTitle: '通用片段还是空的', facets: [] };
+export type PromptLibraryEntryEditorProps = Omit<PromptLibraryProps, 'embedded' | 'toolbarSlot'> & {
+  entry: PromptChain;
+  onClose: () => void;
+  requestCloseRef?: React.MutableRefObject<(() => void) | null>;
+};
+
+export const PromptLibraryEntryEditor: React.FC<PromptLibraryEntryEditorProps> = ({ entry, onClose, ...props }) => {
+  const kind = fragmentKindOf(entry);
+  if (!kind) return null;
+  return <PromptLibrary key={entry.id} {...props} config={kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+    initialEntry={entry} onEditorClose={onClose} />;
+};
+
 const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera','general'] as const;
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
@@ -1319,6 +1337,17 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     try { const saved=localStorage.getItem('nai-prompt-library-kind'); return LIBRARY_CATEGORIES.includes(saved as LibraryCategory) ? saved as LibraryCategory : 'all'; }
     catch { return 'all'; }
   });
+  const { requestCloseRef, onClose } = props;
+  useEffect(() => {
+    if (!requestCloseRef) return;
+    requestCloseRef.current = () => {
+      void (async () => {
+        const guard = leaveGuards.current[kind];
+        if (!guard || await guard()) onClose?.();
+      })();
+    };
+    return () => { requestCloseRef.current = null; };
+  }, [requestCloseRef, onClose, kind]);
   const selectKind = async (category: LibraryCategory) => {
     if (category === kind) return;
     const guard = leaveGuards.current[kind];
@@ -1344,7 +1373,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
       })}
     </nav>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+      <PromptLibrary key={kind} {...props} requestCloseRef={undefined} config={kind==='all' ? ALL_CONFIG : kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
         browsing={browsing.current[kind]} rememberBrowsing={state => { browsing.current[kind] = state; }}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>

@@ -353,8 +353,11 @@ it.each([false, true])('配置内直接提取只改来源草稿，已有候选=%
   fireEvent.click(screen.getByRole('button', { name: '取消提取接线' }));
   fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
   expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toBe('null');
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
   expect(save).not.toHaveBeenCalled();
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('已选 2 串 · 4 位画师')).toBeTruthy();
+  expect(screen.queryByText(/从画师库自动抽取/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].pinnedArtists).toEqual(['alpha']);
@@ -395,7 +398,11 @@ it('重新编辑恢复已存来源，清为全库后保存保留固定项及模�
   render(<StyleRollSetup initial={initial} library={[]} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
   expect(JSON.parse(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')!)).toEqual(initial.chainArtistSource);
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('已选 1 串 · 1 位画师')).toBeTruthy();
+  expect(screen.queryByText(/从画师库自动抽取/)).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '使用全部画师接线' }));
+  expect(within(screen.getByRole('button', { name: '从风格串提取' })).getByText('画师库')).toBeTruthy();
+  expect(screen.getByText(/从画师库自动抽取/).getAttribute('role')).toBe('status');
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].chainArtistSource).toBeUndefined();

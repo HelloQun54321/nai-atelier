@@ -10,8 +10,9 @@ import { LoaderCircle, Sparkles, Wand2, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { planRollToChain } from '../services/contentRollToChain';
-import { createCombinationData } from '../services/promptLibraryEntries';
+import { createCombinationData, parsePromptLibraryTags } from '../services/promptLibraryEntries';
 import { usePromptLibrary } from './PromptLibraryAccess';
+import { CollectionTagInput } from './inspiration/CollectionControls';
 import {
   PROMPT_LIBRARY_KIND_LABELS,
   promptAgentService,
@@ -81,6 +82,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   const library = usePromptLibrary();
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [brief, setBrief] = useState('');
+  const [saveTags, setSaveTags] = useState('');
   const [drafts, setDrafts] = useState<BundleDraft[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const [generatedBy, setGeneratedBy] = useState('');
@@ -102,6 +104,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   useEffect(() => {
     if (!open) return;
     setBrief('');
+    setSaveTags('');
     setDrafts([]);
     setMissing([]);
     setGeneratedBy('');
@@ -209,6 +212,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   };
 
   const pickedDrafts = drafts.filter(draft => draft.picked && String(draft.prompt || '').trim());
+  const tagSuggestions = [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort();
   const selectedChain = styleChains.find(item => item.id === chainTarget) || null;
 
   /**
@@ -349,6 +353,14 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                 })}
               </div>
             )}
+            {library && pickedDrafts.length > 0 && <label className="block"><span className={DETAIL_LABEL_CLASS}>{t('组合标签（可选）')}</span><CollectionTagInput inlineSuggestions aria-label={t('组合标签')} value={saveTags} suggestions={tagSuggestions} onPick={setSaveTags} onChange={event => setSaveTags(event.target.value)} onPaste={event => {
+              const pasted = event.clipboardData.getData('text/plain');
+              if (!/[\r\n]/.test(pasted)) return;
+              event.preventDefault();
+              const input = event.currentTarget;
+              const start = input.selectionStart ?? input.value.length; const end = input.selectionEnd ?? start;
+              setSaveTags(`${saveTags.slice(0, start)}${pasted.replace(/[\r\n]+/g, ',')}${saveTags.slice(end)}`);
+            }} disabled={generating || saving} placeholder={t('用逗号分隔')} className={`${DETAIL_FIELD_CLASS} mt-1.5`} /></label>}
           </div>
 
           {chainOpen && onWriteToChain ? (
@@ -404,7 +416,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
             {library && <ToolbarButton disabled={generating || saving || !pickedDrafts.length} onClick={async () => {
               setSaving(true);
-              try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedDrafts.map(draft => [draft.kind, { kind: draft.kind, name: draft.name, text: draft.prompt, negative: draft.negativePrompt, filled: true }])))); notify(t('已保存组合')); }
+              try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedDrafts.map(draft => [draft.kind, { kind: draft.kind, name: draft.name, text: draft.prompt, negative: draft.negativePrompt, filled: true }])), parsePromptLibraryTags(saveTags))); notify(t('已保存组合')); }
               catch (error) { notify((error as Error).message, 'error'); }
               finally { setSaving(false); }
             }}>{t('保存为组合')}</ToolbarButton>}

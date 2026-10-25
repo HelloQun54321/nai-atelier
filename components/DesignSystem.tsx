@@ -90,8 +90,8 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       else host.style.removeProperty('--workspace-chrome-height');
     };
   }, [collapsed]);
-  return <div ref={ref} className="workspace-chrome relative z-30 flex flex-none flex-col">
-    {/* 顶栏把手：始终贴在顶栏上边中央，不跨边界、不移动顶栏。 */}
+  return <div ref={ref} className="workspace-chrome relative z-30 grid flex-none grid-cols-[2.75rem_minmax(0,1fr)] md:flex md:flex-col">
+    {/* 手机展开时独占左列；电脑保留顶边中央把手和原有布局。 */}
     <button
       type="button"
       data-workspace-topbar-toggle="true"
@@ -99,13 +99,13 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
       title={collapsed ? t('展开顶栏') : t('收起顶栏')}
       onClick={() => toggleTopbarCollapsed()}
-      className={`group absolute left-1/2 z-40 flex h-5 min-w-11 -translate-x-1/2 items-center justify-center gap-1 overflow-hidden rounded-full border border-gray-400/80 bg-transparent px-2 text-micro font-semibold text-gray-600 shadow-lg backdrop-blur-[2px] transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-400/70 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 top-0`}
+      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center gap-1 overflow-hidden rounded-full border border-gray-400/80 bg-transparent px-2 text-micro font-semibold text-gray-600 shadow-lg backdrop-blur-[2px] transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-400/70 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
     >
       <span aria-hidden="true" className={`block h-0 w-0 shrink-0 border-x-[5px] border-x-transparent ${collapsed ? 'border-t-[6px] border-t-current' : 'border-b-[6px] border-b-current'}`} />
-      <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 group-hover:max-w-12 group-hover:opacity-100 group-focus-visible:max-w-12 group-focus-visible:opacity-100">{collapsed ? t('展开') : t('收起')}</span>
+      <span className="hidden max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 md:block md:group-hover:max-w-12 md:group-hover:opacity-100 md:group-focus-visible:max-w-12 md:group-focus-visible:opacity-100">{collapsed ? t('展开') : t('收起')}</span>
     </button>
     {/* 收起时只切换可见性：实验室三分区依赖顶栏测量，重建子树会让共用底板丢失。 */}
-    <div className={collapsed ? 'hidden' : 'contents'}>{children}</div>
+    <div className={collapsed ? 'hidden' : 'flex min-w-0 flex-col md:contents'}>{children}</div>
   </div>;
 };
 

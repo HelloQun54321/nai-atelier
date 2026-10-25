@@ -12,6 +12,21 @@ vi.mock('../../../services/dbService', () => ({ db: { getInspirationBoards: vi.f
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); vi.mocked(db.getInspirationBoards).mockResolvedValue(folders); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it.each([390, 1280])('宽度 %s：嵌套表单的标签候选就地展开，不新建弹窗或返回层', width => {
+  vi.stubGlobal('innerWidth', width);
+  const push = vi.spyOn(window.history, 'pushState');
+  const onPick = vi.fn();
+  const view = render(<CollectionTagInput inlineSuggestions aria-label="组合标签" value="个人， " suggestions={['个人', '夜景']} onChange={vi.fn()} onPick={onPick} />);
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(push).not.toHaveBeenCalled();
+  expect(view.container.contains(screen.getByRole('button', { name: '#夜景' }))).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '#夜景' }));
+  expect(onPick).toHaveBeenCalledWith('个人， 夜景');
+  expect(screen.queryByRole('button', { name: '#夜景' })).toBeNull();
+  push.mockRestore();
+});
+
 it('标签候选包含冷门标签，选择保留逗号前的标签，不重复推荐已输入项，也不使用原生补全', () => {
   const suggestions = Array.from({ length: 100 }, (_, index) => `tag-${index}`);
   const onPick = vi.fn();

@@ -10,7 +10,7 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { MobileBottomSheet } from '../MobileUI';
 
 /** 候选统一使用项目面板；逗号输入时只替换最后一个标签。 */
-export const CollectionTagInput: React.FC<Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value'> & { value: string; suggestions: string[]; onPick?: (value: string) => void }> = ({ value, suggestions, onPick, className, onBlur, ...props }) => {
+export const CollectionTagInput: React.FC<Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value'> & { value: string; suggestions: string[]; onPick?: (value: string) => void; inlineSuggestions?: boolean }> = ({ value, suggestions, onPick, inlineSuggestions = false, className, onBlur, ...props }) => {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const pickingRef = useRef(false);
   const [open, setOpen] = useState(false);
@@ -33,8 +33,8 @@ export const CollectionTagInput: React.FC<Omit<React.InputHTMLAttributes<HTMLInp
       {!available.some(tag => tag.toLowerCase().includes(query.trim().toLowerCase())) && <p className="py-3 text-sm text-gray-400">{t('没有匹配的标签')}</p>}
     </div>
   </div>;
-  return <>{onPick ? <span ref={anchorRef} className={`relative inline-flex items-center focus-within:border-indigo-400 ${className || ''}`}>{input}<button type="button" aria-label={t('选择已有标签')} title={t('选择已有标签')} aria-expanded={open} aria-haspopup="dialog" disabled={props.disabled || props.readOnly || !available.length} onPointerDown={event => event.preventDefault()} onClick={() => { pickingRef.current = true; setQuery(''); setMobile(window.innerWidth < 768); setOpen(true); }} className="mobile-size-locked absolute right-0 top-0 flex h-full w-9 items-center justify-center rounded-r-[inherit] text-gray-400 outline-none hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-30"><ChevronDown className="h-4 w-4" /></button></span> : input}
-    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t('选择已有标签')} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t('选择已有标签')} width={320} onClose={close}>{content}</AnchoredToolbarPopover>)}
+  return <>{onPick ? <span ref={anchorRef} className={`relative inline-flex items-center focus-within:border-indigo-400 ${className || ''}`}>{input}<button type="button" aria-label={t('选择已有标签')} title={t('选择已有标签')} aria-expanded={open} aria-haspopup={inlineSuggestions ? undefined : 'dialog'} disabled={props.disabled || props.readOnly || !available.length} onPointerDown={event => event.preventDefault()} onClick={() => { if (inlineSuggestions && open) { close(); return; } pickingRef.current = true; setQuery(''); setMobile(window.innerWidth < 768); setOpen(true); }} className="mobile-size-locked absolute right-0 top-0 flex h-full w-9 items-center justify-center rounded-r-[inherit] text-gray-400 outline-none hover:text-indigo-600 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-30"><ChevronDown className="h-4 w-4" /></button></span> : input}
+    {open && (inlineSuggestions ? <div className="appearance-group mt-2 rounded-xl p-3">{content}</div> : mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t('选择已有标签')} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t('选择已有标签')} width={320} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </>;
 };
 

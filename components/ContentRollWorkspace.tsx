@@ -1,4 +1,5 @@
-import { FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
+import { parsePromptLibraryTags, FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
+import { CollectionTagInput } from './inspiration/CollectionControls';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
@@ -34,9 +35,9 @@ interface ContentRollWorkspaceProps {
   /** 是否有可撤销的填入 */
   canUndo?: boolean;
   /** 存为 Roll 内容（App 负责按白名单构造快照并落库），返回新记录 id */
-  onSaveRoll?: (name: string, picks: Record<string, RollRow>, seed: string, seeds: Record<string, string>, copy?: boolean) => Promise<string>;
+  onSaveRoll?: (name: string, picks: Record<string, RollRow>, seed: string, seeds: Record<string, string>, copy?: boolean, tags?: string[]) => Promise<string>;
   /** 从提示词库「载入到一键 Roll」带过来的一组（消费一次） */
-  seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string>; sourceText?: string } | null;
+  seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string>; sourceText?: string; tags?: string[] } | null;
   onSeedConsumed?: () => void;
   /** 作为「提示词库」的子分区渲染：不再自带页面顶栏与外层画布。 */
   /**
@@ -115,6 +116,8 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
   const [applying, setApplying] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [saveTags, setSaveTags] = useState('');
+  const tagSuggestions = [...new Set(chains.flatMap(chain => chain.tags || []))].sort();
   const [saving, setSaving] = useState(false);
   const [sourceText, setSourceText] = useState('');
 
@@ -182,6 +185,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
       return next;
     });
     setSaveName(seedRecord.seed);
+    setSaveTags((seedRecord.tags || []).join(', '));
     setChecks({});
     setLocked({});
     notify(t('已把提示词库的这一组载入为当前一组；点「填入实验室」继续确认'));
@@ -317,10 +321,10 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
     if (!name) { notify(t('先给这条记录起个名字'), 'error'); return; }
     setSaving(true);
     try {
-      const id = await onSaveRoll(name, activePicks, current.seed, current.seeds, copy);
+      const id = await onSaveRoll(name, activePicks, current.seed, current.seeds, copy, parsePromptLibraryTags(saveTags));
       if (!id) throw new Error(t('保存失败，请稍后重试'));
       setSaveOpen(false);
-      notify(t('已存为 Roll 内容「{0}」（六类内容与约束，不含画师风格与生图参数）', [name]));
+      notify(t('已保存组合「{0}」', [name]));
     } catch (error) {
       notify(t('保存失败：{0}', [String((error as Error)?.message || error)]), 'error');
     } finally {
@@ -358,7 +362,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
 
   const openChainConfirm = () => {
     setChainPicked(new Set(rollRows.map(row => row.kind)));
-    setChainName(selectedChain ? '' : t('Roll 内容 {0}', [new Date().toLocaleString()]));
+    setChainName(selectedChain ? '' : t('组合 {0}', [new Date().toLocaleString()]));
     setChainConfirming(true);
   };
 
@@ -366,7 +370,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
     if (!onWriteRollToChain || !chainPicked.size) return;
     setChainBusy(true);
     try {
-      const name = chainName.trim() || t('Roll 内容 {0}', [new Date().toLocaleString()]);
+      const name = chainName.trim() || t('组合 {0}', [new Date().toLocaleString()]);
       await onWriteRollToChain({
         name,
         chain: selectedChain,
@@ -388,7 +392,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
 
 
   const toolbar = <>
-    {entryTarget ? <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t('随机搭配')} · {missingTarget ? t('目标角色已不存在，请重新打开随机搭配') : entryLabel}</span> : <ToolbarSelect label="选择抽取范围" value={range} disabled={applying || saving} containerClassName="content-roll-scope min-w-0 flex-1" onChange={event => {
+    {entryTarget ? <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t('搭配')} · {missingTarget ? t('目标角色已不存在，请重新打开随机搭配') : entryLabel}</span> : <ToolbarSelect label="选择抽取范围" value={range} disabled={applying || saving} containerClassName="content-roll-scope min-w-0 flex-1" onChange={event => {
       const nextRange = event.target.value as ContentRollScope;
       setRange(nextRange); setConfirming(false);
       try { window.localStorage.setItem('nai-content-roll-range', nextRange); } catch { /* 存储不可用时仍可抽取。 */ }
@@ -457,13 +461,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
               {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
             </ToolbarSelect>}
             <div className="mt-3 flex flex-wrap gap-2">
-              <ToolbarButton tone="primary" className="flex-1" disabled={(!onApplyRoll && !onUseCombination) || applying || missingTarget || !plan?.written.length} onClick={() => onUseCombination ? onUseCombination(activePicks) : setConfirming(true)}>{t('填入实验室…')}</ToolbarButton>
+              <ToolbarButton tone="primary" className="flex-1" disabled={(!onApplyRoll && !onUseCombination) || applying || missingTarget || !plan?.written.length} onClick={() => onUseCombination ? onUseCombination(activePicks) : setConfirming(true)}>{t('使用')}</ToolbarButton>
               {onSaveRoll && <ToolbarButton disabled={saving || !Object.keys(activePicks).length} onClick={() => { setSaveName(saveName || t('组合 {0}', [new Date().toLocaleString()])); setSaveOpen(value => !value); }}>{t('保存组合')}</ToolbarButton>}
             </div>
             {saveOpen && <div className="mt-3 space-y-2" data-content-roll-save="true">
               <input autoFocus value={saveName} maxLength={80} disabled={saving} aria-label={t('给这条记录起名')}
                 onChange={event => setSaveName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSaveOpen(false); } }}
                 className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 dark:text-gray-100" />
+              <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('组合标签')} value={saveTags} suggestions={tagSuggestions} onChange={event => setSaveTags(event.target.value)} onPick={setSaveTags} disabled={saving} placeholder={t('用逗号分隔')} className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700" /></label>
               <div className="flex gap-2"><ToolbarButton tone="primary" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : editing ? '保存修改' : '保存')}</ToolbarButton>{editing && <ToolbarButton disabled={saving} onClick={() => void doSave(true)}>{t('另存为新组合')}</ToolbarButton>}<ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
             </div>}
             {confirming && plan && <div className="mt-4 space-y-3" data-content-roll-apply-preview="true">
@@ -554,7 +559,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
             <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-gray-400">{t('抽取记录')}</summary>
             <p className="mt-3 break-all text-xs text-gray-400">{t('组合随机码 {0}', [current.seed])}</p>
             <p className="mt-1 text-xs text-gray-400">{t('组合随机码只用于复现这一组，不是生图 seed。')}</p>
-            <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制快照')}</ToolbarButton>
+            <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制组合数据')}</ToolbarButton>
             {showEvidence && <pre data-content-roll-evidence="true" className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-micro text-gray-500 dark:text-gray-400">{evidenceText}</pre>}
           </details>}
         </aside>

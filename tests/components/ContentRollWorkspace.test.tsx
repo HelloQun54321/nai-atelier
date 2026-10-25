@@ -12,6 +12,26 @@ const chains: PromptChain[] = KINDS.map(kind => ({ id: kind, type: kind as Promp
   params: LAB_DEFAULT_PARAMS, modules: [], tags: [], variableValues: {}, createdAt: 1, updatedAt: 1 }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 
+it('编辑与另存组合预填标签，失败保留输入，明确留空会保存空数组', async () => {
+  const save = vi.fn().mockRejectedValueOnce(new Error('保存失败')).mockResolvedValue('saved');
+  const seedRecord = { picks: { scene: { kind: 'scene', filled: true, text: 'rain' } }, seed: '旧组合', seeds: {}, tags: ['夜景', '我的分类'] };
+  render(<ContentRollWorkspace active editing chains={chains} notify={vi.fn()} seedRecord={seedRecord} onSaveRoll={save} />);
+  fireEvent.click(screen.getByRole('button', { name: '保存组合' }));
+  const input = screen.getByRole('textbox', { name: '组合标签' }) as HTMLInputElement;
+  expect(input.value).toBe('夜景, 我的分类');
+  fireEvent.change(input, { target: { value: ' 新分类，夜景,新分类' } });
+  fireEvent.click(screen.getByRole('button', { name: '另存为新组合' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][4]).toBe(true);
+  expect(save.mock.calls[0][5]).toEqual(['新分类', '夜景']);
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存修改' }).hasAttribute('disabled')).toBe(false));
+  expect(input.value).toBe(' 新分类，夜景,新分类');
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][5]).toEqual([]);
+});
+
 it('全局随机搭配提供五类选择，未选栏不进入保存与填入计划，全不选时禁止抽取', async () => {
   const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
   render(<ContentRollWorkspace active entryTarget={{ mode: 'global' }} chains={chains} notify={vi.fn()} playgroundParams={LAB_DEFAULT_PARAMS} onApplyRoll={onApplyRoll} />);
@@ -24,7 +44,7 @@ it('全局随机搭配提供五类选择，未选栏不进入保存与填入计�
   fireEvent.click(screen.getByRole('checkbox', { name: '参与「服饰」的抽取' }));
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
   expect(screen.queryByRole('combobox', { name: '选择写入的目标角色' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(document.querySelectorAll('[data-content-roll-apply-row]')).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
   await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
@@ -43,12 +63,12 @@ it('全局与角色入口切换和恢复历史不会串目标，角色只能选�
   expect(screen.queryByRole('checkbox', { name: '参与「场景」的抽取' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
   fireEvent.click(screen.getByRole('button', { name: '上一组' }));
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
   await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
   expect(onApplyRoll.mock.calls[0][0].target).toEqual(entryTarget);
   expect(onApplyRoll.mock.calls[0][0].globalSections).toEqual({});
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   view.rerender(<ContentRollWorkspace {...props} entryTarget={entryTarget} playgroundParams={{ ...params, characters: [] }} />);
   expect((screen.getByRole('button', { name: '确认填入' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
@@ -68,7 +88,7 @@ it('首次抽取之前可选全局范围，锁定项不能单栏重抽，填入�
   fireEvent.click(scene.querySelector('[title="固定这一条"]')!);
   expect((Array.from(scene.querySelectorAll('button')).find(button => button.textContent === '换一个') as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole('combobox', { name: '选择写入的目标角色' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(screen.getByText('old_scene → scene_tag')).toBeTruthy();
   expect(onApplyRoll).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
@@ -91,7 +111,7 @@ it('范围与参与开关一致，切范围后可抽取、保存和应用对应�
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(onSaveRoll).toHaveBeenCalledOnce());
   expect(Object.keys(onSaveRoll.mock.calls[0][1])).toEqual(['scene', 'camera']);
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
   await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
   expect(onApplyRoll.mock.calls[0][0]).toMatchObject({ roleWrites: [], globalSections: { scene: 'scene_tag', camera: 'camera_tag' } });
@@ -106,7 +126,7 @@ it('仅有全局内容的已存搭配载入后自动采用全局范围，保留�
   render(<ContentRollWorkspace active chains={chains} notify={vi.fn()} playgroundParams={LAB_DEFAULT_PARAMS}
     seedRecord={{ picks, seed: 'saved', seeds: {} }} onSeedConsumed={vi.fn()} onApplyRoll={onApplyRoll} />);
   expect((screen.getByRole('combobox', { name: '选择抽取范围' }) as HTMLSelectElement).value).toBe('global');
-  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
   fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
   await waitFor(() => expect(onApplyRoll).toHaveBeenCalledOnce());
   expect(onApplyRoll.mock.calls[0][0]).toMatchObject({ globalSections: { scene: 'night' }, globalNegatives: { scene: 'day' } });

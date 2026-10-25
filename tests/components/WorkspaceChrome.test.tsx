@@ -40,7 +40,7 @@ it('首屏与状态行换行使用同一实际高度，隐藏缓存页不会清�
   expect(host.style.getPropertyValue('--workspace-chrome-height')).toBe('80px');
 });
 
-it('顶边中央把手收起顶栏：内容隐藏、高度归零、方向与状态持久化', () => {
+it('共用把手收起顶栏：内容隐藏、高度归零、方向与状态持久化', () => {
   const { getByTestId, getByRole } = render(<div data-testid="host"><WorkspaceChrome><header>工具栏</header><p>状态行</p></WorkspaceChrome><main>作品</main></div>);
   const host = getByTestId('host');
   const collapse = getByRole('button', { name: '收起顶栏' });
@@ -70,6 +70,25 @@ it('顶边中央把手收起顶栏：内容隐藏、高度归零、方向与状�
   expect(host.style.getPropertyValue('--workspace-chrome-height')).toBe('72px');
   expect(host.textContent).toContain('工具栏');
   expect(host.querySelector('header')).toBe(headerBefore);
+});
+
+it('业务输入和操作独立于收起把手，折叠往返保留同一子树及输入状态', () => {
+  const applied = vi.fn();
+  const { getByRole, getByLabelText } = render(<div><WorkspaceChrome><header><input aria-label="来源搜索" defaultValue="旧值" /><button onClick={applied}>选取来源</button></header><p>状态</p></WorkspaceChrome></div>);
+  const input = getByLabelText('来源搜索') as HTMLInputElement;
+  const action = getByRole('button', { name: '选取来源' });
+  fireEvent.change(input, { target: { value: '当前草稿' } });
+  fireEvent.click(action);
+  expect(applied).toHaveBeenCalledOnce();
+  expect(getTopbarCollapsed()).toBe(false);
+  fireEvent.click(getByRole('button', { name: '收起顶栏' }));
+  expect(getByLabelText('来源搜索')).toBe(input);
+  fireEvent.click(getByRole('button', { name: '展开顶栏' }));
+  expect(getByRole('button', { name: '选取来源' })).toBe(action);
+  expect(input.value).toBe('当前草稿');
+  fireEvent.click(action);
+  expect(applied).toHaveBeenCalledTimes(2);
+  expect(getTopbarCollapsed()).toBe(false);
 });
 
 it('同时挂载的多个页面顶栏共用同一收起状态', () => {

@@ -63,14 +63,14 @@ it('输入组合名称先预览，取消保留名称，确认后按角色和全�
     const input = type('keep, @雨夜');
     await screen.findByRole('option');
     fireEvent.keyDown(input, { key: 'ArrowDown' }); fireEvent.keyDown(input, { key: 'Enter' });
-    await screen.findByRole('dialog', { name: '取用提示词' });
+    await screen.findByRole('dialog', { name: '使用提示词' });
     return input;
   };
   const input = await choose();
   expect(changed).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(input.value).toBe('keep, @雨夜');
-  await choose(); fireEvent.click(screen.getByRole('button', { name: '取用' }));
+  await choose(); fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(changed).toHaveBeenCalledOnce();
   expect(changed.mock.calls[0][0]).toMatchObject({ base: 'keep, ', subject: 'rainy night', params: { _promptSections: { scene: 'rainy night', sectionNegatives: { scene: 'daylight' } }, characters: [{ sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'red dress' } }] } });
   expect(input.value).toBe('keep, ');

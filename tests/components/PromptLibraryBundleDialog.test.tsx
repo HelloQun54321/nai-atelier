@@ -4,9 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import dictionary from '../../locales/messages.json';
 import { PromptLibraryBundleDialog } from '../../components/PromptLibraryBundleDialog';
+import { PromptLibraryContext } from '../../components/PromptLibraryAccess';
 
 const mocks = vi.hoisted(() => ({
-  generate: vi.fn(), create: vi.fn(), notify: vi.fn(), close: vi.fn(), saved: vi.fn(), writeChain: vi.fn(),
+  generate: vi.fn(), create: vi.fn(), notify: vi.fn(), close: vi.fn(), saved: vi.fn(), writeChain: vi.fn(), saveCombination: vi.fn(),
 }));
 
 vi.mock('../../services/promptAgent', () => ({
@@ -62,11 +63,17 @@ const setupWithChain = () => render(
     onWriteToChain={mocks.writeChain}
   />,
 );
+const setupWithLibrary = (chains: Array<{ tags?: string[] }> = []) => render(
+  <PromptLibraryContext.Provider value={{ chains, save: mocks.saveCombination } as never}>
+    <PromptLibraryBundleDialog open onClose={mocks.close} notify={mocks.notify} onCreate={mocks.create} onSaved={mocks.saved} />
+  </PromptLibraryContext.Provider>,
+);
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.create.mockResolvedValue('created-id');
   mocks.writeChain.mockResolvedValue('chain-1');
+  mocks.saveCombination.mockResolvedValue(undefined);
 });
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -129,6 +136,36 @@ it('缺库时提示可重试，生成失败给出可读原因且保留候选', a
   fireEvent.click(screen.getByRole('button', { name: '重新生成' }));
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('生成失败：模型未配置', 'error'));
   expect(screen.getByText('已生成 5 条')).toBeTruthy();
+});
+
+it('组合标签只取用户输入，允许留空，多标签去重且保存失败保留候选和标签', async () => {
+  mocks.generate.mockResolvedValue(bundleResult(KINDS.slice(0, 2).map(([kind, label]) => bundleItem(kind, label))));
+  mocks.saveCombination.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('保存暂不可用'));
+  setupWithLibrary([{ tags: ['已有标签'] }]);
+  fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '雨夜' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  await screen.findByText('已生成 2 条');
+  const tags = screen.getByRole('textbox', { name: '组合标签' }) as HTMLInputElement;
+  expect(tags.value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: '保存为组合' }));
+  await waitFor(() => expect(mocks.saveCombination).toHaveBeenCalledTimes(1));
+  expect(mocks.saveCombination.mock.calls[0][0].tags).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(await screen.findByRole('button', { name: '#已有标签' }));
+  tags.setSelectionRange(tags.value.length, tags.value.length);
+  fireEvent.paste(tags, { clipboardData: { getData: () => '，手工标签\n夜景,手工标签' } });
+
+  fireEvent.click(screen.getByRole('button', { name: '保存为组合' }));
+  await waitFor(() => expect(mocks.saveCombination).toHaveBeenCalledTimes(2));
+  expect(mocks.saveCombination.mock.calls[1][0].tags).toEqual(['已有标签', '手工标签', '夜景']);
+  expect(tags.value).toBe('已有标签，手工标签,夜景,手工标签');
+  expect(screen.getByText('已生成 2 条')).toBeTruthy();
+
+  mocks.saveCombination.mockResolvedValueOnce(undefined);
+  fireEvent.click(screen.getByRole('button', { name: '保存为组合' }));
+  await waitFor(() => expect(mocks.saveCombination).toHaveBeenCalledTimes(3));
+  expect(mocks.saveCombination.mock.calls[2][0].tags).toEqual(['已有标签', '手工标签', '夜景']);
+  expect(mocks.saveCombination.mock.calls[2][0].tags).not.toContain('appearance');
 });
 
 it('全部取消勾选后保存按钮禁用；保存全部失败时保留六条候选且不回调刷新', async () => {
@@ -219,7 +256,7 @@ it('一键六库相关文案在四语言字典中齐全且占位符一致', () =
     '生成六条', '正在生成…', '生成失败：{0}', '已生成 {0} 条', '{0} 类缺失，可重试', '勾选后一起保存', '选择{0}',
     '{0}提示词', '{0}名称', '全部保存到提示词库', '已保存 {0} 条', '保存失败：{0}', '条目名称', '提示词',
     '写入风格串', '写入风格串…', '新建风格串', '写入已有风格串', '写入这条风格串', '新建并写入',
-    '已写入风格串：角色 {0} 栏、全局 {1} 栏', '来自一键六库内容'];
+    '已写入风格串：角色 {0} 栏、全局 {1} 栏', '来自一键六库内容', '组合标签（可选）', '组合标签'];
   for (const key of keys) {
     const variants = (dictionary as Record<string, string[]>)[key];
     expect(variants, key).toHaveLength(4);

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ContentLibraryPage, type ContentLibrarySection } from '../../components/ContentLibraryPage';
+import { useMobileHistoryLayer } from '../../components/MobileUI';
 
 afterEach(() => cleanup());
 
@@ -84,4 +85,85 @@ it('页面进入后台后隐藏 portal 面板，重新激活保留草稿；Tab �
   expect(screen.queryByRole('dialog')).toBeNull();
   view.rerender(<Harness />);
   expect(screen.getByRole('textbox', { name: '搭配草稿' })).toBe(input);
+});
+
+it('统一浏览替换原分区，收录成功通过临时查看回调定位新资料', async () => {
+  const save = vi.fn(async () => 'new-entry');
+  const saved = vi.fn(); const view = vi.fn();
+  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()}
+    onCapture={save} onCaptureSaved={saved} onViewCaptured={view}
+    browse={slot => <Tools slot={slot} label="统一搜索" />} items={() => <div>旧片段</div>} saved={() => null} roll={() => null} />);
+  expect(screen.queryByRole('tab')).toBeNull();
+  expect(screen.queryByText('旧片段')).toBeNull();
+  expect(screen.getByRole('textbox', { name: '统一搜索' }).closest('header')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: 'new prompt' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
+  await waitFor(() => expect(saved).toHaveBeenCalledWith('new-entry'));
+  fireEvent.click(screen.getByRole('button', { name: '查看' }));
+  expect(view).toHaveBeenCalledWith('new-entry');
+  expect(save).toHaveBeenCalledWith('new prompt', '', '', []);
+});
+
+it('统一浏览普通入口称搭配，固定目标沿用随机搭配，旧分区默认名称保持兼容', () => {
+  const props = { section: 'items' as const, onSectionChange: vi.fn(), rollOpen: true, onRollOpenChange: vi.fn(), browse: (slot: HTMLElement | null) => <Tools slot={slot} label="统一搜索" />,
+    items: () => null, saved: () => null, roll: () => null };
+  const view = render(<ContentLibraryPage {...props} />);
+  expect(screen.getByRole('button', { name: '搭配' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '搭配' })).toBeTruthy();
+  view.rerender(<ContentLibraryPage {...props} rollTitle="随机搭配" />);
+  expect(screen.getByRole('button', { name: '随机搭配' })).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: '随机搭配' })).toBeTruthy();
+});
+
+it('手机父搭配与子使用层逐次返回只关闭一层，不越过搭配直接离站', async () => {
+  const originalMatchMedia = window.matchMedia;
+  const originalState = window.history.state;
+  const pageUrl = window.location.href;
+  window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList));
+  window.history.replaceState({ testBase: true }, '');
+  const ChildUse = () => {
+    const [open, setOpen] = useState(false);
+    const close = useMobileHistoryLayer(open, () => setOpen(false), 'test-use');
+    return <><button onClick={() => setOpen(true)}>打开使用层</button>{open && createPortal(<div role="dialog" aria-label="使用提示词"><button onClick={close}>关闭使用层</button></div>, document.body)}</>;
+  };
+  const NestedHarness = () => {
+    const [open, setOpen] = useState(false);
+    return <ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={open} onRollOpenChange={setOpen}
+      items={() => null} saved={() => null} roll={() => <ChildUse />} />;
+  };
+  const view = render(<NestedHarness />);
+  try {
+    fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+    await waitFor(() => expect(window.history.state.__naiMobileLayer).toMatch(/^content-roll-/));
+    const parentMarker = window.history.state.__naiMobileLayer;
+    fireEvent.click(screen.getByRole('button', { name: '打开使用层' }));
+    await waitFor(() => expect(window.history.state.__naiMobileLayer).toMatch(/^test-use-/));
+    expect(window.history.state.__naiMobileLayers).toContain(parentMarker);
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '使用提示词' })).toBeNull());
+    expect(screen.getByRole('dialog', { name: '随机搭配' })).toBeTruthy();
+    expect(window.history.state.__naiMobileLayer).toBe(parentMarker);
+    window.history.back();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '随机搭配' })).toBeNull());
+    expect(window.history.state).toEqual({ testBase: true });
+    expect(window.location.href).toBe(pageUrl);
+  } finally {
+    view.unmount(); window.matchMedia = originalMatchMedia;
+    window.history.replaceState(originalState, '');
+  }
+});
+
+it('统一浏览收录与搭配仅局部设为手机44桌面40，不改变顶栏与把手尺寸', () => {
+  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()} onCapture={async () => {}}
+    browse={slot => <Tools slot={slot} label="统一搜索" />} items={() => null} saved={() => null} roll={() => null} />);
+  for (const name of ['粘贴收录', '搭配']) {
+    const button = screen.getByRole('button', { name });
+    expect(button.classList.contains('!h-11')).toBe(true);
+    expect(button.classList.contains('md:!h-10')).toBe(true);
+    expect(button.classList.contains('!w-11')).toBe(true);
+  }
+  const toolbar = screen.getByRole('banner');
+  expect(toolbar.classList.contains('!h-11')).toBe(false);
+  expect(toolbar.classList.contains('md:!h-10')).toBe(false);
 });

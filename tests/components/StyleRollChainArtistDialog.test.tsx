@@ -94,7 +94,7 @@ it('重开恢复来源及画师勾选，再确认替换次数；取消不应用�
   const empty = setup(); await screen.findByRole('checkbox', { name: '串 a' });
   expect(screen.getByRole('button', { name: '设为抽取来源' })).toHaveProperty('disabled', true);
   expect(empty.props.onConfirm).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '使用全部画师' })); expect(empty.props.onConfirm).toHaveBeenCalledExactlyOnceWith(undefined);
+  fireEvent.click(screen.getByRole('button', { name: '使用画师库' })); expect(empty.props.onConfirm).toHaveBeenCalledExactlyOnceWith(undefined);
 });
 
 it('缺失来源明确提示，只按本次读到的资料重算且不自动回写', async () => {
@@ -227,6 +227,106 @@ it('增减来源与逐项勾选复用已识别缓存，不重新解析已有来�
   fireEvent.click(screen.getByRole('checkbox', { name: 'alpha' })); fireEvent.click(screen.getByRole('checkbox', { name: '串 a' }));
   expect(mocks.extract).toHaveBeenCalledTimes(initial);
   expect(screen.getByRole('checkbox', { name: 'beta' }).parentElement?.textContent).toContain('出现 1 次');
+});
+
+it('随机从完整筛选结果无放回替换草稿，末页所选优先显示，确认后才应用来源', async () => {
+  mocks.load.mockResolvedValue(Array.from({ length: 71 }, (_, i) => chain(String(i), `artist:tag${i}, artist:shared`)));
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+  const view = setup(); await screen.findByRole('checkbox', { name: '串 0' });
+  expect(screen.getByRole('spinbutton', { name: '随机选取风格串数量' })).toHaveProperty('value', '3');
+  fireEvent.click(screen.getByRole('checkbox', { name: '串 1' })); fireEvent.click(screen.getByRole('checkbox', { name: 'shared' }));
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2' } }); fireEvent.click(screen.getByRole('button', { name: '随机选取' }));
+  expect(screen.getByRole('checkbox', { name: '串 70' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('checkbox', { name: '串 0' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('checkbox', { name: '串 1' }).getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('checkbox', { name: 'shared' })).toHaveProperty('checked', false);
+  expect(view.props.onConfirm).not.toHaveBeenCalled(); const parsed = mocks.extract.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: '随机选取' })); expect(mocks.extract).toHaveBeenCalledTimes(parsed);
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索风格串' }), { target: { value: '串' } });
+  expect(screen.queryByRole('checkbox', { name: '串 70' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '设为抽取来源' }));
+  expect(view.props.onConfirm).toHaveBeenCalledWith({ chainIds: ['0', '70'], artists: [{ tag: 'tag0', count: 1 }, { tag: 'tag70', count: 1 }] });
+  random.mockRestore();
+});
+
+it('不同随机值产生不同无重复集合，遵循名称和标签交集及可用Tag约束', async () => {
+  const rows = Array.from({ length: 6 }, (_, i) => chain(String(i), i === 4 ? 'artist:blocked' : i === 5 ? 'landscape' : `artist:tag${i}`));
+  for (const row of rows) row.tags = ['allowed']; rows[0].tags = ['other'];
+  mocks.load.mockResolvedValue(rows); const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+  const { props } = setup({ blocked: ['blocked'] }); await screen.findByRole('checkbox', { name: '串 0' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: 'allowed' }));
+  fireEvent.keyDown(window, { key: 'Escape' }); fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '2' } });
+  fireEvent.click(screen.getByRole('button', { name: '随机选取' }));
+  const selected = () => screen.getAllByRole('checkbox', { name: /^串 / }).filter(card => card.getAttribute('aria-checked') === 'true').map(card => card.getAttribute('aria-label'));
+  expect(selected()).toEqual(['串 1', '串 2']);
+  random.mockReturnValue(0.999); fireEvent.click(screen.getByRole('button', { name: '随机选取' }));
+  expect(new Set(selected())).toEqual(new Set(['串 3', '串 1'])); expect(selected()).toHaveLength(2);
+  expect(props.onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '取消' })); expect(props.onConfirm).not.toHaveBeenCalled(); random.mockRestore();
+});
+
+it.each(['0', '-1', '1.5', '', '4'])('随机数量%s非法或不足时保留原选择，不静默少抽', async value => {
+  const { props } = setup(); fireEvent.click(await screen.findByRole('checkbox', { name: '串 a' }));
+  fireEvent.change(screen.getByRole('spinbutton'), { target: { value } }); fireEvent.click(screen.getByRole('button', { name: '随机选取' }));
+  expect(screen.getByRole('checkbox', { name: '串 a' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('alert').textContent).toContain(value === '4' ? '当前可随机选取 2 条风格串' : '请填写正整数');
+  expect(props.onConfirm).not.toHaveBeenCalled();
+});
+
+it('所有可用Tag被取消后不进入随机池，资料与收藏未就绪或隐藏禁止随机', async () => {
+  let finish!: (value: PromptChain[]) => void; mocks.load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = setup(); expect(screen.getByRole('button', { name: '随机选取' })).toHaveProperty('disabled', true);
+  await act(async () => finish([chain('a', 'artist:alpha')])); fireEvent.click(screen.getByRole('checkbox', { name: '串 a' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'alpha' })); fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: '随机选取' })); expect(screen.getByRole('alert').textContent).toContain('当前可随机选取 0 条');
+  mocks.ensure.mockRejectedValueOnce(new Error('合成收藏错误')); fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
+  expect(screen.getByRole('button', { name: '随机选取' })).toHaveProperty('disabled', true); await screen.findByText('合成收藏错误');
+  expect(screen.getByRole('button', { name: '随机选取' })).toHaveProperty('disabled', true);
+  view.rerender(<ImageActivityProvider active={false}><StyleRollChainArtistDialog {...view.props} /></ImageActivityProvider>);
+  expect(screen.getByRole('button', { name: '随机选取', hidden: true })).toHaveProperty('disabled', true); expect(view.props.onConfirm).not.toHaveBeenCalled();
+});
+
+it('使用全部风格串越过筛选分页和旧勾选，跨串频次去重且一次直接应用', async () => {
+  const all = Array.from({ length: 65 }, (_, index) => chain(String(index), 'artist:Ａlpha_Name, artist:alpha name, artist:blocked'));
+  all[0].negativePrompt = 'artist:negative'; all[0].modules = [{ id: 'off', name: '停用', content: 'artist:disabled', isActive: false }];
+  const legacy = chain('legacy', 'artist:beta'); delete (legacy as Partial<PromptChain>).type;
+  mocks.load.mockResolvedValue([...all, legacy, chain('character', 'artist:character', 'character'), chain('preset', 'artist:preset', 'preset')]);
+  const { props } = setup({ blocked: ['blocked'] }); await screen.findByRole('checkbox', { name: '串 0' });
+  expect(screen.getAllByRole('checkbox', { name: /^串 / })).toHaveLength(60);
+  fireEvent.click(screen.getByRole('checkbox', { name: '串 0' })); fireEvent.click(screen.getByRole('checkbox', { name: 'alpha name' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索风格串' }), { target: { value: '无匹配筛选' } }); expect(screen.getByText('没有匹配的风格串')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '使用全部风格串' })); fireEvent.click(screen.getByRole('button', { name: '使用全部风格串' }));
+  expect(props.onConfirm).toHaveBeenCalledExactlyOnceWith({ chainIds: [...all.map(item => item.id), 'legacy'], artists: [{ tag: 'alpha name', count: 65 }, { tag: 'beta', count: 1 }] });
+  expect(props.onClose).toHaveBeenCalledOnce();
+  expect(mocks.extract.mock.calls).toHaveLength(66);
+  expect(new Set(mocks.extract.mock.calls.map(([item]) => item.id)).size).toBe(66);
+});
+
+it('全库没有可用画师时保留当前source和草稿，不关闭或回退画师库', async () => {
+  const source = { chainIds: ['empty'], artists: [] };
+  mocks.load.mockResolvedValue([chain('empty', 'artist:blocked, landscape')]);
+  const { props } = setup({ source, blocked: ['blocked'] });
+  fireEvent.click(await screen.findByRole('checkbox', { name: '串 empty' }));
+  fireEvent.click(screen.getByRole('button', { name: '使用全部风格串' }));
+  expect(screen.getByRole('alert').textContent).toBe('风格串中没有可用的画师 Tag');
+  expect(props.onConfirm).not.toHaveBeenCalled(); expect(props.onClose).not.toHaveBeenCalled();
+  expect(source).toEqual({ chainIds: ['empty'], artists: [] });
+  expect(screen.getByRole('checkbox', { name: '串 empty' }).getAttribute('aria-checked')).toBe('false');
+});
+
+it('整库动作不依赖收藏读取，但资料加载失败和隐藏不能应用', async () => {
+  mocks.ensure.mockRejectedValueOnce(new Error('合成收藏失败'));
+  const view = setup(); await screen.findByRole('checkbox', { name: '串 a' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '只看收藏' }));
+  await screen.findByText('合成收藏失败'); expect(screen.getByRole('button', { name: '使用全部风格串' })).toHaveProperty('disabled', false);
+  fireEvent.click(screen.getByRole('button', { name: '使用全部风格串' })); expect(view.props.onConfirm).toHaveBeenCalledOnce(); view.unmount();
+  let finish!: (value: PromptChain[]) => void; mocks.load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const pending = setup(); expect(screen.getByRole('button', { name: '使用全部风格串' })).toHaveProperty('disabled', true);
+  pending.rerender(<ImageActivityProvider active={false}><StyleRollChainArtistDialog {...pending.props} /></ImageActivityProvider>);
+  await act(async () => finish([chain('late', 'artist:alpha')]));
+  expect(screen.getByRole('button', { name: '使用全部风格串', hidden: true })).toHaveProperty('disabled', true); expect(pending.props.onConfirm).not.toHaveBeenCalled(); pending.unmount();
+  mocks.load.mockRejectedValueOnce(new Error('合成资料失败')); const failed = setup(); await screen.findByText('合成资料失败');
+  expect(screen.getByRole('button', { name: '使用全部风格串' })).toHaveProperty('disabled', true); expect(failed.props.onConfirm).not.toHaveBeenCalled();
 });
 
 it('搜索名称或说明不搜索Prompt，标签搜索完整选项且四种排序稳定', async () => {

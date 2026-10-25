@@ -60,10 +60,10 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {section === 'pool' && <div className="space-y-4">
-          <p role="status" className="text-sm text-gray-500">{libraryLoading ? t('正在读取画师词库…') : t('从画师库自动抽取 · {0} 位画师', [libraryCount])}</p>
+          {draft.chainArtistSource === undefined && <p role="status" className="text-sm text-gray-500">{libraryLoading ? t('正在读取画师词库…') : t('从画师库自动抽取 · {0} 位画师', [libraryCount])}</p>}
           <StyleRollRuleFields rules={draft.rules} disabled={editingBusy} onChange={rules => setDraft({ ...draft, rules })} />
           <div className="flex flex-wrap gap-2"><ToolbarButton disabled={editingBusy} onClick={() => setArtistDialogOpen(true)}>{t('管理画师与偏好')} · {t('固定 {0} 位', [draft.pinnedArtists?.length ?? 0])}</ToolbarButton>
-          <ToolbarButton aria-label={t('从风格串提取')} title={draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('从风格串提取')} disabled={editingBusy || libraryLoading} onClick={() => setChainDialogOpen(true)}><Layers />{t('从风格串提取')}</ToolbarButton></div>
+          <ToolbarButton aria-label={t('从风格串提取')} title={draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('从风格串提取')} disabled={editingBusy || libraryLoading} onClick={() => setChainDialogOpen(true)}><Layers /><span className="flex min-w-0 max-w-[9rem] flex-col items-start sm:max-w-[12rem]"><span className="text-xs leading-4">{t('从风格串提取')}</span><span className="max-w-full truncate text-micro font-normal leading-3 tabular-nums opacity-70">{draft.chainArtistSource ? t('已选 {0} 串 · {1} 位画师', [draft.chainArtistSource.chainIds.length, draft.chainArtistSource.artists.length]) : t('画师库')}</span></span></ToolbarButton></div>
         </div>}
         <div className={section === 'template' ? 'space-y-4' : 'hidden'}>
           {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}

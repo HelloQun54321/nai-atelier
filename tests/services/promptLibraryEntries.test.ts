@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NAIParams, PromptChain } from '../../types';
-import { applyLibraryText, combinationPicks, createCombinationData, createFragmentData, librarySectionOf, searchLibraryEntries, workspacePicks } from '../../services/promptLibraryEntries';
+import { applyLibraryText, combinationPicks, createCombinationData, createFragmentData, librarySectionOf, searchLibraryEntries, workspacePicks, parsePromptLibraryTags } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { applyLibrarySelection, planLibrarySelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 
@@ -18,6 +18,13 @@ const state = (): PromptLibraryWorkspaceState => ({ classified: true, base: 'art
 } as NAIParams });
 
 describe('提示词库的对象边界与定向取用', () => {
+  it('组合只保存用户填写的标签，去掉空白和重复且允许不分类', () => {
+    expect(parsePromptLibraryTags(' 雨夜，动作\n雨夜, , 动作\r\n个人分类 ')).toEqual(['雨夜', '动作', '个人分类']);
+    expect(parsePromptLibraryTags(' ,，\n')).toEqual([]);
+    const picks = { scene: { kind: 'scene', filled: true, text: 'rain' } };
+    expect(createCombinationData('雨夜', picks, [' 夜景 ', '夜景']).tags).toEqual(['夜景']);
+    expect(createCombinationData('雨夜', picks).tags).toEqual([]);
+  });
   it('原文、通用片段、六类片段和组合分开归属，旧记录无需搬移', () => {
     expect(librarySectionOf(chain(prepareCollectedPrompt(' a\r\nb ')))).toBe('originals');
     expect(librarySectionOf(chain(createFragmentData('a prop', '', 'general')))).toBe('items');

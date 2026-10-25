@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, act } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useMobileHistoryLayer } from '../../components/MobileUI';
 import { ImageActivityContext } from '../../components/SmartImage';
@@ -19,6 +19,64 @@ beforeEach(() => {
   vi.spyOn(window.history, 'back').mockImplementation(() => {});
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState({}, ''); });
+
+it('StrictMode 新挂载只登记一次，真实关闭仍只返回一次', async () => {
+  const push = vi.spyOn(window.history, 'pushState');
+  vi.mocked(window.history.back).mockImplementation(() => {
+    setTimeout(() => returnTo({ source: 'synthetic' }), 0);
+  });
+  const Harness = () => {
+    const [open, setOpen] = useState(true);
+    return <Layer name="条件窗口" open={open} onClose={() => setOpen(false)} />;
+  };
+  render(<React.StrictMode><Harness /></React.StrictMode>);
+  await act(() => new Promise(resolve => setTimeout(resolve, 20)));
+  expect(screen.queryByRole('button', { name: '条件窗口' })).not.toBeNull();
+  expect(push).toHaveBeenCalledOnce();
+  expect(window.history.back).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '条件窗口' }));
+  await act(() => new Promise(resolve => setTimeout(resolve, 20)));
+  expect(screen.queryByRole('button')).toBeNull();
+  expect(window.history.back).toHaveBeenCalledOnce();
+});
+
+it('StrictMode 条件窗口真正卸载时清理自己的历史层', async () => {
+  const { unmount } = render(<React.StrictMode><Layer name="条件收录窗口" open onClose={vi.fn()} /></React.StrictMode>);
+  expect(window.history.back).not.toHaveBeenCalled();
+  unmount();
+  await act(async () => {});
+  expect(window.history.back).toHaveBeenCalledOnce();
+});
+
+it('保留窗口断开后立即重连不返回，真实隐藏仍清理一次', async () => {
+  const draw = (mode: 'visible' | 'hidden') => <React.Activity mode={mode}><Layer name="保留窗口" open onClose={vi.fn()} /></React.Activity>;
+  const view = render(draw('visible'));
+  const marker = window.history.state.__naiMobileLayer;
+  view.rerender(draw('hidden'));
+  view.rerender(draw('visible'));
+  await act(async () => {});
+  expect(window.history.back).not.toHaveBeenCalled();
+  expect(window.history.state.__naiMobileLayer).toBe(marker);
+  view.rerender(draw('hidden'));
+  await act(async () => {});
+  expect(window.history.back).toHaveBeenCalledOnce();
+});
+
+it('父子窗口立即重连时不重复登记已在栈内的父子标记', async () => {
+  const push = vi.spyOn(window.history, 'pushState');
+  const draw = (mode: 'visible' | 'hidden') => <React.Activity mode={mode}>
+    <Layer name="父窗口" open onClose={vi.fn()} /><Layer name="子窗口" open onClose={vi.fn()} />
+  </React.Activity>;
+  const view = render(draw('visible'));
+  const original = window.history.state.__naiMobileLayers;
+  expect(original).toHaveLength(2);
+  view.rerender(draw('hidden'));
+  view.rerender(draw('visible'));
+  await act(async () => {});
+  expect(window.history.state.__naiMobileLayers).toEqual(original);
+  expect(push).toHaveBeenCalledTimes(2);
+  expect(window.history.back).not.toHaveBeenCalled();
+});
 
 it('详情、子窗口及孙窗口按返回顺序逐层关闭，父层监听仍保留', () => {
   const push = vi.spyOn(window.history, 'pushState');

@@ -10,6 +10,12 @@ import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 const render = (ui: React.ReactNode) => renderView(<ConfirmDialogProvider>{ui}</ConfirmDialogProvider>);
 
 vi.mock('../../components/HistoryImagePicker', () => ({HistoryImagePicker: () => null}));
+vi.mock('../../services/promptLibraryUsage', () => ({
+  PROMPT_LIBRARY_USAGE_PAGE_SIZE: 24,
+  PROMPT_LIBRARY_USAGE_PREVIEW_SIZE: 6,
+  fetchPromptLibraryUsageSummary: async () => ({ items: [], linkedImages: 0, entries: 0 }),
+  fetchPromptLibraryUsageImages: async () => ({ items: [], count: 0, limit: 24, offset: 0 }),
+}));
 afterEach(() => {cleanup(); localStorage.clear(); vi.restoreAllMocks();});
 const chains = [
   {id:'a',type:'appearance',name:'形象甲',basePrompt:'silver_hair',params:{},tags:[]},
@@ -20,6 +26,90 @@ const props = () => ({chains,onCreate:vi.fn(),onSelect:vi.fn(),onUpdateChain:vi.
 const Hub = () => libraries.PromptLibraryHub;
 
 describe('图片提示词库', () => {
+  it.each(['name', 'prompt'])('已有超过12个标签的片段只改%s，编辑保存仍保留全部标签', async field => {
+    const tags = Array.from({ length: 15 }, (_, index) => `标签${index + 1}`);
+    const entry = { ...chains[0], tags };
+    const p = { ...props(), chains: [entry] };
+    render(<libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={vi.fn()} />);
+    fireEvent.change(screen.getByRole('textbox', { name: field === 'name' ? '形象名称' : '英文提示词' }),
+      { target: { value: field === 'name' ? '改名后' : 'updated prompt' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledOnce());
+    expect(p.onUpdateChain).toHaveBeenCalledWith(entry.id, expect.objectContaining({
+      tags, ...(field === 'name' ? { name: '改名后' } : { basePrompt: 'updated prompt' }),
+    }));
+  });
+
+  it.each(['editor', 'hub'])('%s外层关闭请求沿用脏草稿确认，卸载清理关闭句柄', async mode => {
+    const requestCloseRef = { current: null as (() => void) | null }, onClose = vi.fn();
+    const view = render(mode === 'editor'
+      ? <libraries.PromptLibraryEntryEditor {...props()} entry={chains[0]} onClose={onClose} requestCloseRef={requestCloseRef} />
+      : <libraries.PromptLibraryHub {...props()} embedded onClose={onClose} requestCloseRef={requestCloseRef} />);
+    if (mode === 'hub') {
+      fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
+      fireEvent.click(await screen.findByRole('button', { name: '形象：形象甲' }));
+    }
+    fireEvent.change(screen.getByRole('textbox', { name: '形象名称' }), { target: { value: '未保存' } });
+    act(() => requestCloseRef.current?.());
+    fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByRole('textbox', { name: '形象名称' }) as HTMLInputElement).value).toBe('未保存');
+    act(() => requestCloseRef.current?.());
+    fireEvent.click(await screen.findByRole('button', { name: '放弃修改' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    view.unmount();
+    expect(requestCloseRef.current).toBeNull();
+  });
+
+  it('嵌入的低频管理仍可打开并关闭AI生成搭配', async () => {
+    render(<libraries.PromptLibraryHub {...props()} embedded />);
+    fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'AI 生成搭配' }));
+    expect(screen.getByRole('dialog', { name: 'AI 生成搭配' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    expect(screen.queryByRole('dialog', { name: 'AI 生成搭配' })).toBeNull();
+  });
+
+  it.each(['appearance', 'general'] as const)('统一浏览直接复用%s片段详情，保存原参数并关闭', async kind => {
+    const entry = { ...chains[0], type: kind === 'general' ? 'preset' : kind, params: {
+      seed: 42, _collectedCategory: kind === 'general' ? 'general' : undefined,
+      _promptLibrary: { bilingual: '银发', references: [] },
+    }, negativePrompt: 'blur' } as unknown as PromptChain;
+    const p = { ...props(), chains: [entry] }, onClose = vi.fn();
+    render(<libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={onClose} />);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
+    const name = screen.getByRole('textbox', { name: kind === 'general' ? '片段名称' : '形象名称' });
+    expect((name as HTMLInputElement).value).toBe(entry.name);
+    fireEvent.change(name, { target: { value: '修改后的名称' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(p.onUpdateChain).toHaveBeenCalledWith(entry.id, expect.objectContaining({
+      name: '修改后的名称', basePrompt: 'silver_hair', negativePrompt: 'blur',
+      params: expect.objectContaining({ seed: 42, _promptLibrary: { bilingual: '银发', references: [] } }),
+    }));
+    expect(p.onCreate).not.toHaveBeenCalled();
+  });
+
+  it('独立详情保存失败保留草稿，返回取消也保留编辑', async () => {
+    const p = props(), onClose = vi.fn();
+    p.onUpdateChain.mockRejectedValue(new Error('synthetic failure'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    render(<libraries.PromptLibraryEntryEditor {...p} entry={chains[0]} onClose={onClose} />);
+    fireEvent.change(screen.getByRole('textbox', { name: '形象名称' }), { target: { value: '未保存内容' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(p.notify).toHaveBeenCalledWith('保存失败，请稍后重试', 'error'));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '返回外貌' }));
+    fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+    expect((screen.getByRole('textbox', { name: '形象名称' }) as HTMLInputElement).value).toBe('未保存内容');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '返回外貌' }));
+    fireEvent.click(await screen.findByRole('button', { name: '放弃修改' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(screen.queryByRole('searchbox')).toBeNull();
+  });
+
   it('在顶栏下沿显示当前分类的条目数', async () => {
     const Component = Hub(); render(<Component {...props()} />);
     const caption = await screen.findByText('共 2 条');

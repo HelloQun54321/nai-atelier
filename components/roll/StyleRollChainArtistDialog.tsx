@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Filter, Layers, X } from 'lucide-react';
+import { Check, Dice5, Filter, Layers, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import { buildRollChainArtistSource, extractRollChainArtistTags } from '../../services/styleRollChainArtists';
@@ -40,6 +40,7 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   const [chains, setChains] = useState<PromptChain[]>([]), [loading, setLoading] = useState(true), [retry, setRetry] = useState(0);
   const [query, setQuery] = useState(''), [visibleLimit, setVisibleLimit] = useState(60), [error, setError] = useState('');
   const [artistsOnly, setArtistsOnly] = useState(false);
+  const [randomCount, setRandomCount] = useState('3'), [randomError, setRandomError] = useState(''), [randomPriority, setRandomPriority] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState(''), [favOnly, setFavOnly] = useState(false), [untestedOnly, setUntestedOnly] = useState(false);
   const [selectedTags, setSelectedTags] = useState(new Set<string>()), [tagSearch, setTagSearch] = useState('');
   const [sort, setSort] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
@@ -111,7 +112,12 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
     const ca = a.createdAt || 0, cb = b.createdAt || 0, ua = a.updatedAt || ca, ub = b.updatedAt || cb;
     return sort === 'created_asc' ? ca - cb : sort === 'created_desc' ? cb - ca : sort === 'updated_asc' ? ua - ub : ub - ua;
   }), [chains, query, artistsOnly, extract, favOnly, favorites, untestedOnly, selectedModel, selectedTags, sort]);
-  const visible = useMemo(() => filtered.slice(0, visibleLimit), [filtered, visibleLimit]);
+  const displayOrder = useMemo(() => {
+    if (!randomPriority.length) return filtered;
+    const priority = new Set(randomPriority);
+    return [...filtered.filter(chain => priority.has(chain.id)), ...filtered.filter(chain => !priority.has(chain.id))];
+  }, [filtered, randomPriority]);
+  const visible = useMemo(() => displayOrder.slice(0, visibleLimit), [displayOrder, visibleLimit]);
   const blockedKeys = useMemo(() => new Set(blocked.map(normalizeArtistUsageKey)), [blocked]);
   const pool = useMemo(() => buildRollChainArtistSource(chains.filter(chain => selectedChains.has(chain.id)), knownArtists, extract), [chains, selectedChains, knownArtists, extract]);
   const missingSources = loading ? 0 : [...selectedChains].filter(id => !chains.some(chain => chain.id === id)).length;
@@ -131,9 +137,32 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
     close();
   };
   const useAllArtists = () => { if (!active || applied.current) return; applied.current = true; onConfirm(undefined); close(); };
+  const useAllChains = () => {
+    if (!active || loading || error || applied.current) return;
+    const all = buildRollChainArtistSource(chains, knownArtists, extract);
+    all.artists = all.artists.filter(artist => !blockedKeys.has(normalizeArtistUsageKey(artist.tag)));
+    if (!all.artists.length) { setRandomError(t('风格串中没有可用的画师 Tag')); return; }
+    applied.current = true;
+    onConfirm(all);
+    close();
+  };
   const changeResults = () => { setVisibleLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const resultKey = JSON.stringify([query, artistsOnly, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sort]);
-  useEffect(() => { changeResults(); }, [resultKey]);
+  useEffect(() => { setRandomPriority([]); setRandomError(''); changeResults(); }, [resultKey]);
+  const randomDisabled = !active || loading || Boolean(error) || favoritePending;
+  const randomlySelect = () => {
+    if (randomDisabled) return;
+    const count = Number(randomCount);
+    if (!Number.isSafeInteger(count) || count < 1) { setRandomError(t('请填写正整数的风格串数量')); return; }
+    const candidates = [...new Map(filtered.filter(chain => extract(chain).some(tag => !blockedKeys.has(normalizeArtistUsageKey(tag)) && !unchecked.has(tag))).map(chain => [chain.id, chain])).values()];
+    if (count > candidates.length) { setRandomError(t('当前可随机选取 {0} 条风格串，请减少数量或调整筛选', [candidates.length])); return; }
+    for (let index = 0; index < count; index++) {
+      const next = index + Math.floor(Math.random() * (candidates.length - index));
+      [candidates[index], candidates[next]] = [candidates[next], candidates[index]];
+    }
+    const ids = candidates.slice(0, count).map(chain => chain.id);
+    setSelectedChains(new Set(ids)); setRandomPriority(ids); setRandomError(''); changeResults();
+  };
   const filterCount = Number(artistsOnly) + Number(favOnly) + Number(untestedOnly) + Number(Boolean(selectedModel)) + selectedTags.size;
   const resetFilters = () => { setArtistsOnly(false); setFavOnly(false); setUntestedOnly(false); setSelectedModel(''); setSelectedTags(new Set()); setTagSearch(''); setSort('updated_desc'); };
   const ratio = (chain: PromptChain) => ratios[chain.id] || (chain.params?.width && chain.params?.height ? chain.params.width / chain.params.height : 2 / 3);
@@ -153,7 +182,8 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   return <div hidden={!active} className={active ? 'fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm sm:p-6' : 'hidden'} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('从风格串提取')} className="appearance-panel flex h-[94dvh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
       <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 p-3 dark:border-gray-800"><h2 className="min-w-0 flex-1 text-sm font-semibold">{t('从风格串提取')}</h2><IconButton label="关闭" onClick={close}><X /></IconButton></header>
-      <div className="flex shrink-0 flex-wrap items-center gap-3 p-3"><ToolbarSearch aria-label={t('搜索风格串')} placeholder={t('搜索风格串')} value={query} onChange={event => setQuery(event.target.value)} containerClassName="min-w-40 flex-1 !max-w-none" /><label className="mobile-touch flex items-center gap-2 text-xs"><input type="checkbox" checked={artistsOnly} onChange={event => setArtistsOnly(event.target.checked)} />{t('只看有画师 Tag')}</label><div ref={filterAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={filterOpen} active={filterCount > 0 || sort !== 'updated_desc'} onClick={() => setFilterOpen(value => !value)}><Filter />{t('筛选')}{filterCount > 0 && <span>{filterCount}</span>}</ToolbarButton></div></div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 p-3"><ToolbarSearch aria-label={t('搜索风格串')} placeholder={t('搜索风格串')} value={query} onChange={event => setQuery(event.target.value)} containerClassName="min-w-40 flex-1 !max-w-none" /><label className="mobile-touch flex items-center gap-2 text-xs"><input type="checkbox" checked={artistsOnly} onChange={event => setArtistsOnly(event.target.checked)} />{t('只看有画师 Tag')}</label><div ref={filterAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={filterOpen} active={filterCount > 0 || sort !== 'updated_desc'} onClick={() => setFilterOpen(value => !value)}><Filter />{t('筛选')}{filterCount > 0 && <span>{filterCount}</span>}</ToolbarButton></div><div className="flex shrink-0 items-center gap-1"><input type="number" min={1} step={1} aria-label={t('随机选取风格串数量')} value={randomCount} disabled={randomDisabled} onChange={event => { setRandomCount(event.target.value); setRandomError(''); }} className="mobile-touch h-10 w-16 rounded-xl border border-gray-200 bg-transparent px-2 text-center text-sm tabular-nums dark:border-gray-700" /><ToolbarButton disabled={randomDisabled} onClick={randomlySelect}><Dice5 />{t('随机选取')}</ToolbarButton></div></div>
+      {randomError && <p role="alert" className="shrink-0 px-3 pb-2 text-xs text-red-500">{randomError}</p>}
       {filterOpen && active && <AnchoredToolbarPopover anchorRef={filterAnchor} title={t('筛选')} width={360} allowMobile onClose={closeFilters}>
         <div className="space-y-3">
           <div className="flex items-center justify-between text-xs text-gray-500"><span>{filterCount ? t('{0} 项筛选已启用', [filterCount]) : t('全部资料')}</span>{(filterCount > 0 || sort !== 'updated_desc') && <button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={resetFilters}>{t('重置筛选')}</button>}</div>
@@ -183,7 +213,10 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
         })}</div>
       </section>}
       {error && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{error}{!chains.length && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>}</p>}
-      <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800"><ToolbarButton className="mr-auto" disabled={!active} onClick={useAllArtists}>{t('使用全部画师')}</ToolbarButton><ToolbarButton onClick={close}>{t('取消')}</ToolbarButton><ToolbarButton tone="primary" disabled={!chosen.length || !active || loading || Boolean(error)} onClick={confirm}>{t('设为抽取来源')}</ToolbarButton></footer>
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
+        <div className="flex shrink-0 items-center gap-2"><ToolbarButton disabled={!active} onClick={useAllArtists}>{t('使用画师库')}</ToolbarButton><ToolbarButton disabled={!active || loading || Boolean(error)} onClick={useAllChains}>{t('使用全部风格串')}</ToolbarButton></div>
+        <div className="ml-auto flex shrink-0 items-center gap-2"><ToolbarButton onClick={close}>{t('取消')}</ToolbarButton><ToolbarButton tone="primary" disabled={!chosen.length || !active || loading || Boolean(error)} onClick={confirm}>{t('设为抽取来源')}</ToolbarButton></div>
+      </footer>
     </div>
   </div>;
 };
