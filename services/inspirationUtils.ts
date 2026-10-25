@@ -40,13 +40,17 @@ export const COLLECTION_SORT_LABELS = { newest: '最新收藏', oldest: '最早�
 export type CollectionSort = keyof typeof COLLECTION_SORT_LABELS;
 
 export const sortCollectionGroups = (groups: Inspiration[][], sort: CollectionSort): Inspiration[][] => {
-  const time = (group: Inspiration[]) => Math.max(...group.map(item => item.createdAt));
-  return [...groups].sort((a, b) => {
+  const keyed = groups.map(group => ({
+    group,
+    time: group.reduce((latest, item) => Math.max(latest, item.createdAt), -Infinity),
+    key: collectionGroupKey(group[0]),
+  }));
+  return keyed.sort((a, b) => {
     const order = sort === 'name' || sort === 'nameDesc'
-      ? a[0].title.replace(/ · \d+$/, '').localeCompare(b[0].title.replace(/ · \d+$/, ''), undefined, { numeric: true }) * (sort === 'nameDesc' ? -1 : 1)
-      : (time(a) - time(b)) * (sort === 'newest' ? -1 : 1);
-    return order || collectionGroupKey(a[0]).localeCompare(collectionGroupKey(b[0]));
-  });
+      ? a.group[0].title.replace(/ · \d+$/, '').localeCompare(b.group[0].title.replace(/ · \d+$/, ''), undefined, { numeric: true }) * (sort === 'nameDesc' ? -1 : 1)
+      : (a.time - b.time) * (sort === 'newest' ? -1 : 1);
+    return order || a.key.localeCompare(b.key);
+  }).map(entry => entry.group);
 };
 
 const RECENT_FOLDERS_KEY = 'nai-collection-recent-folders';

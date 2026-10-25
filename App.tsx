@@ -343,7 +343,8 @@ const App = () => {
   const loadInspirations = useCommittedCallback(async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
     try {
-      const data = await db.getAllInspirations(currentUser || undefined);
+      const data = await db.getAllInspirations(currentUser || undefined,
+        !force && lastChainFetch > 0 && Date.now() - lastChainFetch < CACHE_TTL ? chains : undefined);
       setInspirationsCache(data);
       setLastInspirationFetch(Date.now());
     } catch (e) {

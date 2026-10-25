@@ -62,7 +62,7 @@ export async function readGenerationResponse(response, onPreview, onFinal) {
     if (event === 'error') { const error = parseHttpError(encoded, undefined, '流式生图失败'); streamError = Object.assign(new Error(error.message), { code: error.code || 'generation_failed' }); }
     if (event === 'nai_usage' && data && typeof data === 'object') {
       // 状态与费用放在同一回执，避免断流恰好截掉后续错误帧时误认成功。
-      usageReceived = typeof data.accountingFailed === 'boolean';
+      usageReceived ||= typeof data.accountingFailed === 'boolean';
       if (data.accountingFailed === true) {
         result.accountingFailed = true;
         result.accountingError = typeof data.accountingError === 'string' ? data.accountingError.slice(0, 240) : '本地用量记录未完整保存';
@@ -102,13 +102,13 @@ export async function readGenerationResponse(response, onPreview, onFinal) {
   } catch (error) {
     if (!finalImage) throw error;
     result.cleanupError ||= '图片已收齐，但连接收尾异常，请检查公共队列状态';
-    // 成功回执之后的收尾断流不推翻记账；未拿到回执才保持未知告警。
-    if (!usageReceived && !result.accountingFailed) {
-      result.accountingFailed = true;
-      result.accountingError = '图片已收齐，但连接中断，未收到本地记账回执';
-    }
   } finally { reader.releaseLock(); }
   if (!finalImage) throw streamError || imageError('流式响应没有最终图片');
+  // 正常结束也不能代替结算回执；明确失败保留原因，已确认成功不受收尾影响。
+  if (!usageReceived && !result.accountingFailed) {
+    result.accountingFailed = true;
+    result.accountingError = '图片已收齐，但未收到本地记账回执，记账状态未确认';
+  }
   if (streamError) result.cleanupError ||= streamError.message;
   return { ...finalOutput, ...result };
 }

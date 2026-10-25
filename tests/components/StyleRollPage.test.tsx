@@ -62,6 +62,172 @@ const setup = async (options = {}) => {
 const filterBy = (name: string) => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('button', { name })); };
 const pending = () => filterBy('待生成');
 
+it.each([false, true])('详情按当前排序前后浏览且边界禁用，手机=%s', async mobile => {
+  mocks.mobile = mobile;
+  await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));
+  expect(screen.getByRole('button', { name: '上一张' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(screen.getByRole('button', { name: '下一张' }).hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '上一张' }));
+  expect(screen.getByRole('button', { name: '查看候选 2' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('已出图但未保存筛选排除缺图与已保存，保存后衔接筛选内下一项再收起详情', async () => {
+  experiment.candidates.push(candidateFixture('c', 'gamma')); experiment.candidates[2].savedChainId = 'already';
+  mocks.history.mockResolvedValue(rows(experiment)); const { props } = await setup();
+  filterBy('已出图但未保存');
+  expect(screen.queryByRole('button', { name: '查看候选 3' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 2' })); fireEvent.click(screen.getByRole('button', { name: '存为风格串' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true'));
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '存为风格串' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull());
+  expect(props.onSaveChain).toHaveBeenCalledTimes(2);
+});
+
+it('批量个别封面失败继续其余候选，汇总编号和原错误且仅重试失败项', async () => {
+  experiment.candidates.push(candidateFixture('c', 'gamma')); mocks.history.mockResolvedValue(rows(experiment));
+  const { props } = await setup(); mocks.upload.mockRejectedValueOnce(new Error('合成封面失败'));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试失败项' });
+  expect(screen.getByRole('alert').textContent).toContain('已保存 2 个候选，1 个失败，0 个未处理');
+  expect(screen.getByRole('alert').textContent).toContain('#3：合成封面失败'); expect(props.onSaveChain).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: '重试失败项' }));
+  await waitFor(() => expect(props.onSaveChain).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试失败项' })).toBeNull());
+  expect(mocks.upload).toHaveBeenCalledTimes(4);
+});
+
+it.each([{}, { url: '' }, { url: 42 }])('封面上传回执缺少有效地址时保留失败项且继续保存其余候选：%j', async uploadResult => {
+  const { props } = await setup(); mocks.upload.mockResolvedValueOnce(uploadResult);
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试失败项' });
+  expect(screen.getByRole('alert').textContent).toContain('已保存 1 个候选，1 个失败，0 个未处理');
+  expect(screen.getByRole('alert').textContent).toContain('上传失败');
+  expect(props.onSaveChain).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '重试失败项' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试失败项' })).toBeNull());
+  expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(3);
+});
+
+it.each([false, true])('上传后建串失败重试按实际历史图片复用封面，换图=%s', async changedImage => {
+  const onSaveChain = vi.fn().mockRejectedValueOnce(new Error('合成建串失败')).mockResolvedValue({ id: 'saved' });
+  const view = await setup({ onSaveChain });
+  fireEvent.click(screen.getByRole('button', { name: '保存候选 1' }));
+  await screen.findByText('合成建串失败');
+  expect(mocks.upload).toHaveBeenCalledOnce();
+  if (changedImage) {
+    const image = rollImageFixture(experiment, experiment.candidates[0], 'replacement');
+    mocks.history.mockResolvedValue([image, rollImageFixture(experiment, experiment.candidates[1])]);
+    const previousCalls = mocks.history.mock.calls.length;
+    view.rerender(<StyleRollPage {...view.props} active={false} />);
+    view.rerender(<StyleRollPage {...view.props} active />);
+    await waitFor(() => expect(mocks.history.mock.calls.length).toBeGreaterThan(previousCalls));
+    await waitFor(() => expect(screen.getByRole('button', { name: '查看候选 1' }).querySelector('img')?.getAttribute('src')).toContain('replacement'));
+  }
+  fireEvent.click(screen.getByRole('button', { name: '保存候选 1' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(onSaveChain).toHaveBeenCalledTimes(2);
+  expect(mocks.upload).toHaveBeenCalledTimes(changedImage ? 2 : 1);
+  expect(fetch).toHaveBeenCalledTimes(changedImage ? 2 : 1);
+});
+
+it('失败重试期间改变查询仍保留失败回执并清进度，不改新视图选择', async () => {
+  const onSaveChain = vi.fn().mockRejectedValue(new Error('首次失败'));
+  await setup({ onSaveChain });
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试失败项' });
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  let fail!: (cause: Error) => void;
+  onSaveChain.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+  fireEvent.click(screen.getByRole('button', { name: '重试失败项' }));
+  await waitFor(() => expect(onSaveChain).toHaveBeenCalledTimes(3));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师、中文名或编号' }), { target: { value: 'alpha' } });
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
+  await act(async () => fail(new Error('重试仍失败')));
+  await waitFor(() => expect(screen.getByRole('button', { name: '重试失败项' }).hasAttribute('disabled')).toBe(false));
+  expect(screen.getByRole('alert').textContent).toContain('重试仍失败');
+  expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' }));
+  expect(screen.queryByText(/^正在保存 \d+\/\d+$/)).toBeNull();
+});
+
+it('批存遵循筛选排序，逐项清理网页错误且长错误不截掉后续失败', async () => {
+  await setup();
+  mocks.upload.mockRejectedValueOnce(new Error('<html><body>upstream</body></html>')).mockRejectedValueOnce(new Error('后续失败' + '长'.repeat(600)));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试失败项' });
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('已保存 0 个候选，2 个失败，0 个未处理');
+  const errors = within(alert).getAllByRole('listitem');
+  expect(errors[0].textContent).toBe('#2：服务返回了错误页面，请稍后重试');
+  expect(errors[1].textContent).toContain('#1：后续失败');
+  expect(alert.textContent).not.toContain('<html>');
+  expect(alert.querySelector('ul')?.className).toContain('overflow-y-auto');
+});
+
+it('关联冲突后回读最新修订再保存其他项，保留外部修改，重试不重复建串或封面', async () => {
+  const { props } = await setup();
+  const latest = structuredClone(experiment); latest.revision = 12; latest.name = '外部更新记录';
+  mocks.load.mockResolvedValue([latest]); mocks.save.mockRejectedValueOnce(new Error('关联冲突'));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试失败项' });
+  expect(mocks.save.mock.calls[1][0]).toMatchObject({ revision: 12, name: '外部更新记录' });
+  expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole('button', { name: '重试失败项' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(3));
+  expect(mocks.save.mock.calls[2][0].candidates[0].savedChainId).toBe('saved-chain');
+  expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(2);
+});
+
+it('关联失败且无法核对修订时停止余下项，区分失败和未处理', async () => {
+  const { props } = await setup(); mocks.save.mockRejectedValueOnce(new Error('关联失败')); mocks.load.mockRejectedValueOnce(new Error('读取失败'));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await screen.findByRole('button', { name: '重试待保存项' });
+  expect(screen.getByRole('alert').textContent).toContain('已保存 0 个候选，1 个失败，1 个未处理');
+  expect(props.onSaveChain).toHaveBeenCalledOnce(); expect(mocks.save).toHaveBeenCalledOnce();
+  mocks.load.mockRejectedValueOnce(new Error('仍不可读'));
+  fireEvent.click(screen.getByRole('button', { name: '重试待保存项' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('暂时无法确认保存结果，已暂停后续项目'));
+  expect(mocks.save).toHaveBeenCalledOnce(); expect(props.onSaveChain).toHaveBeenCalledOnce();
+});
+
+it('关联回读发现外部已保存时尊重外部关联，不用本端缓存覆盖', async () => {
+  const { props } = await setup(); const latest = structuredClone(experiment); latest.revision = 8; latest.candidates[1].savedChainId = 'external-chain';
+  mocks.load.mockResolvedValue([latest]); mocks.save.mockRejectedValueOnce(new Error('并发冲突'));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' })); fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+  expect(mocks.save.mock.calls[1][0].candidates[1].savedChainId).toBe('external-chain');
+  expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(screen.queryByRole('button', { name: '重试失败项' })).toBeNull();
+});
+
+it('未保存筛选等待历史真实就绪，不误报零匹配或空结果', async () => {
+  let finish!: (value: any) => void; mocks.history.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await setup(); filterBy('已出图但未保存');
+  expect(screen.queryByText('暂无匹配候选')).toBeNull(); expect(screen.queryByText('匹配 0 个候选')).toBeNull();
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  await act(async () => finish(rows(experiment))); await screen.findByRole('button', { name: '查看候选 1' });
+});
+
+it('保存期间主动关闭详情，迟到成功不重新打开另一项', async () => {
+  let finish!: (value: PromptChain) => void;
+  const onSaveChain = vi.fn(() => new Promise<PromptChain>(resolve => { finish = resolve; }));
+  await setup({ onSaveChain }); filterBy('已出图但未保存'); fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));
+  fireEvent.click(screen.getByRole('button', { name: '存为风格串' })); await waitFor(() => expect(onSaveChain).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole('button', { name: '关闭候选详情' })); await act(async () => finish({ id: 'saved' } as PromptChain));
+  expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull(); expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('false');
+});
+
+it('UI保存挂起时助手保存共用锁，不重复创建同一候选', async () => {
+  let finish!: (value: PromptChain) => void;
+  const onSaveChain = vi.fn(() => new Promise<PromptChain>(resolve => { finish = resolve; }));
+  const { container } = await setup({ onSaveChain }); fireEvent.click(screen.getByRole('button', { name: '保存候选 1' }));
+  await waitFor(() => expect(onSaveChain).toHaveBeenCalledOnce());
+  await expect(executeAgentCommand(container, 'save_roll_candidate', { candidateIds: ['a'] }, false)).rejects.toThrow('正在保存，请稍候');
+  await act(async () => finish({ id: 'saved-chain' } as PromptChain)); expect(onSaveChain).toHaveBeenCalledOnce();
+});
+
 it('手机390窄窗管理菜单新建先退出旧历史层，配置草稿持续显示且取消不保存', async () => {
   mocks.mobile = true; mocks.setupHistory = true; vi.stubGlobal('innerWidth', 390);
   window.history.replaceState(null, '');
@@ -245,19 +411,21 @@ it('普通轮次第六张失败后仅手动补缺图，保留五张成品，不�
   expect(mocks.generate).toHaveBeenCalledTimes(2); expect(mocks.generate.mock.calls[1][0]).toEqual(before);
   expect(mocks.generate.mock.calls[1][1]).toEqual(before.candidates[5]); expect(mocks.save).not.toHaveBeenCalled();
 });
-it('Roll 成图记账异常仍显示已保存结果与结算原因，不自动补图', async () => {
+it.each([false, true])('Roll 成图记账异常仍显示已保存结果与结算原因，不自动补图，清理异常=%s', async cleanupFailed => {
   experiment.candidates = [candidateFixture('a', 'alpha')];
   experiment.rounds = [{ id: 'accounting-round', candidateIds: ['a'], createdAt: 1 }];
   mocks.history.mockResolvedValue([]);
   const saved = rollImageFixture(experiment, experiment.candidates[0]);
   mocks.generate.mockImplementationOnce(async () => {
     mocks.history.mockResolvedValue([saved]);
-    return { session: { accountingFailed: true, accountingError: '本地用量结算失败（HTTP 503）', lastSavedItem: saved }, settle: Promise.resolve({ success: true }) };
+    return { session: { accountingFailed: true, accountingError: '本地用量结算失败（HTTP 503）', ...(cleanupFailed ? { cleanupError: '合成后台释放失败' } : {}), lastSavedItem: saved }, settle: Promise.resolve({ success: true }) };
   });
   await setup();
   fireEvent.click(screen.getByRole('button', { name: '补齐剩余 1 张' }));
   expect((await screen.findByRole('alert')).textContent).toContain('图片已保存，但本地记账异常，请核对额度后再继续：本地用量结算失败（HTTP 503）');
+  if (cleanupFailed) expect(screen.getByRole('alert').textContent).toContain('后台任务清理异常：合成后台释放失败');
   await waitFor(() => expect(screen.queryByRole('button', { name: '补齐剩余 1 张' })).toBeNull());
+  expect(screen.getByRole('button', { name: '查看候选 1' }).querySelector('img')?.getAttribute('src')).toContain(saved.id);
   expect(mocks.generate).toHaveBeenCalledOnce(); expect(mocks.upload).not.toHaveBeenCalled();
 });
 it('保存轮次冲突不提交生图，保留现有图片和候选', async () => {
@@ -359,9 +527,9 @@ it('批量管理原位替换工具栏，按当前搜索全选，保存成功后�
 it('批量保存逐项落盘，第二项关联失败保留选择，重试不重复保存封面和风格串', async () => {
   const { props } = await setup();
   fireEvent.click(screen.getByRole('button', { name: '批量选择候选' })); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
-  mocks.save.mockImplementationOnce(async value => ({ ...value, revision: value.revision + 1 })).mockRejectedValueOnce(new Error('第二项合成冲突'));
+  mocks.save.mockImplementationOnce(async value => { experiment = { ...value, revision: value.revision + 1 }; return experiment; }).mockRejectedValueOnce(new Error('第二项合成冲突'));
   fireEvent.click(screen.getByRole('button', { name: '保存所选' }));
-  await screen.findByText('第二项合成冲突'); expect(screen.getByText('已选 1 个候选')).toBeTruthy();
+  await screen.findByText(/第二项合成冲突/); expect(screen.getByText('已选 1 个候选')).toBeTruthy();
   expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole('button', { name: '保存所选' })); await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(3));
   expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(2);

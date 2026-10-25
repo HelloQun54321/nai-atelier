@@ -17,16 +17,26 @@ import {
 import { readNaiKeyUsage } from './naiUsageStats';
 import { readCreationFootprintAssets } from './creationFootprintAssets';
 
-// 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
-// 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
-let inspirationSchemaEnsured = false;
-async function ensureInspirationSchema(db: D1Database) {
-  if (inspirationSchemaEnsured) return;
+// 同一数据库的并发入口共用初始化，失败后允许下一次请求重试。
+const inspirationSchemas = new WeakMap<D1Database, Promise<void>>();
+function ensureInspirationSchema(db: D1Database): Promise<void> {
+  const existing = inspirationSchemas.get(db);
+  if (existing) return existing;
+  const pending = initializeInspirationSchema(db).catch(cause => {
+    inspirationSchemas.delete(db);
+    throw cause;
+  });
+  inspirationSchemas.set(db, pending);
+  return pending;
+}
+
+async function initializeInspirationSchema(db: D1Database) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS inspiration_boards (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
     color TEXT DEFAULT '#6366f1', sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
   )`).run();
+  const columns = new Set((await db.prepare('PRAGMA table_info(inspirations)').all<{ name: string }>()).results.map(column => column.name));
   for (const statement of [
     "ALTER TABLE inspirations ADD COLUMN board_id TEXT",
     "ALTER TABLE inspirations ADD COLUMN notes TEXT DEFAULT ''",
@@ -45,12 +55,11 @@ async function ensureInspirationSchema(db: D1Database) {
     "ALTER TABLE inspirations ADD COLUMN image_type TEXT",
     "ALTER TABLE inspirations ADD COLUMN updated_at INTEGER",
   ]) {
-    await addColumnIfMissing(db, statement);
+    if (!columns.has(statement.split(' ')[5])) await addColumnIfMissing(db, statement);
   }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_board ON inspirations(user_id, board_id, archived, is_pinned, created_at DESC)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_source ON inspirations(user_id, source_type, source_id)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspiration_boards_sort ON inspiration_boards(user_id, sort_order, created_at)').run();
-  inspirationSchemaEnsured = true;
 }
 
 /** 构建灵感字段更新的 SET 子句与绑定值；无任何可更新字段时返回 null。 */

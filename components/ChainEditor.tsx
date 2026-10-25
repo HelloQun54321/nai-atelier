@@ -27,7 +27,7 @@ import { ImagePreviewActions } from './ImagePreviewActions';
 import { MobileGenerationResources } from './MobileGenerationResources';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
-import { dataUrlToBlob } from '../services/imageEdit';
+import { dataUrlToBlob, prepareImageEdit, type PreparedImageEdit } from '../services/imageEdit';
 import { useConfirmDialog } from './ConfirmDialog';
 import { SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
@@ -1620,8 +1620,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             if (result.success) notify(`已生成并保存 ${completed} 张图片`, 'success');
             else if (result.outcome === 'cancelled') notify(`已取消后续生成，已保存 ${completed} 张图片`, 'success');
             else notify(`${result.error}（已保存 ${completed}/${count} 张）`, 'error');
-            if (session.accountingFailed) notify(`图片已保存，但本地记账异常，请核对额度后再继续${session.accountingError ? `：${session.accountingError}` : ''}`, 'error');
-            else if (session.cleanupError) notify(`后台任务清理异常：${session.cleanupError}`, 'error');
+            const warnings = [
+                session.accountingFailed && `图片已保存，但本地记账异常，请核对额度后再继续${session.accountingError ? `：${session.accountingError}` : ''}`,
+                session.cleanupError && `后台任务清理异常：${session.cleanupError}`,
+            ].filter(Boolean).join('\n');
+            if (warnings) notify(warnings, 'error');
             return result;
         } catch (error) {
             const result = { ...agentGenerationFailure(error), requestedCount: count, completedCount: 0, historyIds: [] as string[] };
@@ -1748,19 +1751,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
         const freshSubscription = latestGenerationStateRef.current.subscription.info;
         void refreshUsageIfStale();
-        let sourceWidth = request.canvasWidth;
-        let sourceHeight = request.canvasHeight;
+        let preparedEdit: PreparedImageEdit;
         try {
-            const bitmap = await createImageBitmap(await dataUrlToBlob(request.image));
-            sourceWidth = bitmap.width;
-            sourceHeight = bitmap.height;
-            bitmap.close();
+            preparedEdit = await prepareImageEdit({
+                operation: request.operation, image: request.image, mask: request.mask,
+                focused: Boolean(request.focused && request.operation === 'inpaint'),
+                focusedRect: request.focusedRect, minimumContextArea: request.minimumContextArea,
+            });
         } catch {
-            const message = '无法读取图片编辑底图尺寸';
+            const message = '无法准备图片编辑底图或蒙版';
             setErrorMsg(message);
             notify(message, 'error');
             return stop(message, 'invalid_base_image');
         }
+        const { sourceWidth, sourceHeight } = preparedEdit;
         const editCost = estimateImageEditCost(editParamsSource, request.operation, request.strength, Boolean(request.focused), isActiveOpusSubscription(freshSubscription) ? freshSubscription!.tier : 0, freshSubscription?.usage?.isNegative ?? true, {
             width: sourceWidth,
             height: sourceHeight,
@@ -1780,7 +1784,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         } else if (!fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         } else if (!fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
         generationInFlightRef.current = true;
         if (mountedRef.current) {
             setIsGenerating(true);
@@ -1795,6 +1798,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             };
             const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(editParams, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
             // 只提交一次：回贴原料与整图历史参数都在这里固定，随机种子由后端每张抽取。
+            const maskSave = flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
             const job = await buildGenerationJobDescriptor({
                 operation: request.operation, prompt: request.prompt, negative: request.negativePrompt, params: editParams,
                 stream: generationStreamPreview && streamSupported, forceEmptySeed, apiKey, estimatedCost: editCost, approvedCost: editCost,
@@ -1816,7 +1820,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     focused: request.focused, focusedRect: request.focusedRect,
                     minimumContextArea: request.minimumContextArea, expansion: request.expansion,
                 },
-            });
+            }, preparedEdit).finally(() => maskSave);
             const result = await runBackgroundJob(job, count, {
                 agent: options?.agent, autoApproveCost: fullAccess, placement: options?.placement, onApproved: options?.onApproved,
                 onCompleted: persistEditResultAsset,

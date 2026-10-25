@@ -18,13 +18,13 @@ const snapshot: GenerationJobSnapshot = {
     token: 'synthetic-token', state: 'generating', completedCount: 1, requestedCount: 3, historyIds: ['h1'],
 };
 
-it('实时 GET 携带鉴权，同块及分片 SSE 的每步按顺序绘制，同图片仍通知步数', async () => {
+it('实时 GET 跳过同块旧预览，最终图、保存与失败告警按顺序交付，不等待绘制', async () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frames.push(callback); return frames.length; }));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     const snapshots: GenerationJobSnapshot[] = [1, 2, 3].map(step => ({ ...snapshot, previewVersion: step, preview: { image: 'data:image/png;base64,AQID', step } }));
-    snapshots.push({ ...snapshot, state: 'succeeded', previewVersion: 4 });
+    snapshots.push({ ...snapshot, previewVersion: 4, preview: { image: 'final-unsaved' } }, { ...snapshot, state: 'saving', previewVersion: 4 }, { ...snapshot, state: 'failed', previewVersion: 4, accountingFailed: true, accountingError: '记账失败', cleanupError: '清理失败', code: 'history_save_failed' });
     const text = snapshots.map(value => `event: snapshot\r\ndata: ${JSON.stringify(value)}\r\n\r\n`).join('');
     const stream = new ReadableStream<Uint8Array>({ start(controller) {
         const encoded = new TextEncoder().encode(text);
@@ -32,22 +32,51 @@ it('实时 GET 携带鉴权，同块及分片 SSE 的每步按顺序绘制，同
     } });
     const fetch = vi.fn(async () => new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
     vi.stubGlobal('fetch', fetch);
-    const steps: number[] = [], abort = new AbortController();
-    const observing = observeGenerationJob('synthetic-key', 'a b/c', abort.signal, value => { if (value.preview?.step) steps.push(value.preview.step); }, 0);
-    for (let step = 1; step <= 3; step++) {
-        await vi.waitFor(() => expect(steps).toEqual(Array.from({ length: step }, (_, index) => index + 1)));
-        expect(frames).toHaveLength(1);
-        frames.shift()!(0);
-        await Promise.resolve();
-        expect(steps).toHaveLength(step);
-        frames.shift()!(0);
-    }
+    const steps: number[] = [], received: GenerationJobSnapshot[] = [], abort = new AbortController();
+    const observing = observeGenerationJob('synthetic-key', 'a b/c', abort.signal, value => { received.push(value); if (value.preview?.step) steps.push(value.preview.step); }, 0);
     await observing;
-    expect(steps).toEqual([1, 2, 3]);
+    expect(steps).toEqual([]);
+    expect(frames).toHaveLength(0);
+    expect(received.map(value => value.state)).toEqual(['generating', 'generating', 'generating', 'generating', 'saving', 'failed']);
+    expect(received.flatMap(value => value.preview ? [value.preview.image] : [])).toEqual(['final-unsaved']);
+    expect(received.at(-1)).toMatchObject({ accountingFailed: true, accountingError: '记账失败', cleanupError: '清理失败', code: 'history_save_failed' });
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch.mock.calls[0]).toEqual(['/api/generation-job?token=a%20b%2Fc&events=1&previewVersion=0', {
         headers: { Authorization: 'Bearer synthetic-key', Accept: 'text/event-stream' }, cache: 'no-store', signal: abort.signal,
     }]);
+});
+
+it('同块仅剩过程图时交付最新步数，状态字段逐条保留', async () => {
+    const values: GenerationJobSnapshot[] = [1, 2, 3].map(step => ({ ...snapshot, previewVersion: step, preview: { image: `frame-${step}`, step } }));
+    values.push({ ...snapshot, state: 'cancelled', previewVersion: 3 });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(values.map(value => `event: snapshot\ndata: ${JSON.stringify(value)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })));
+    const received: GenerationJobSnapshot[] = [];
+    await observeGenerationJob('key', 'token', new AbortController().signal, value => { received.push(value); });
+    expect(received.map(value => value.preview?.step)).toEqual([undefined, undefined, 3, undefined]);
+    expect(received.every(value => value.historyIds[0] === 'h1')).toBe(true);
+    expect(received.at(-1)?.state).toBe('cancelled');
+});
+
+it.each(['visible', 'hidden'] as const)('%s 页跨块立即交付新图，最终图与同版本保存状态无需绘制即可到达', async visibility => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(visibility);
+    const raf = vi.fn(); vi.stubGlobal('requestAnimationFrame', raf);
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })));
+    const received: GenerationJobSnapshot[] = [];
+    const observing = observeGenerationJob('key', 'token', new AbortController().signal, value => { received.push(value); });
+    const emit = (value: GenerationJobSnapshot) => controller.enqueue(new TextEncoder().encode(`event: snapshot\ndata: ${JSON.stringify(value)}\n\n`));
+    emit({ ...snapshot, previewVersion: 1, preview: { image: 'first', step: 1 } });
+    await vi.waitFor(() => expect(received.at(-1)?.preview?.image).toBe('first'));
+    emit({ ...snapshot, previewVersion: 2, preview: { image: 'latest', step: 2 } });
+    await vi.waitFor(() => expect(received.at(-1)?.preview?.image).toBe('latest'));
+    emit({ ...snapshot, previewVersion: 3, preview: { image: 'final' } });
+    await vi.waitFor(() => expect(received.at(-1)?.preview?.image).toBe('final'));
+    emit({ ...snapshot, state: 'saving', previewVersion: 3 });
+    emit({ ...snapshot, state: 'succeeded', previewVersion: 4 });
+    await observing;
+    expect(received.map(value => value.state)).toEqual(['generating', 'generating', 'generating', 'saving', 'succeeded']);
+    expect(raf).not.toHaveBeenCalled();
 });
 
 it('实时观察不伪报断流成功，错误状态与取消保留原有语义', async () => {

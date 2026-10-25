@@ -13,6 +13,7 @@ export function rollWorkspaceCandidates(experiment: RollExperiment, images: Map<
     if (view.roundId && !round?.candidateIds.includes(candidate.id)) return false;
     if (view.filter === 'archived' ? !candidate.archived : candidate.archived) return false;
     if (view.filter === 'saved' && !candidate.savedChainId || view.filter === 'pending' && images.has(candidate.id)) return false;
+    if (view.filter === 'unsaved' && (!images.has(candidate.id) || candidate.savedChainId)) return false;
     return !query || String(index + 1) === query || `#${index + 1}` === query || candidate.tags.some(tag =>
       normalized(tag.tag).includes(query) || (chineseNames?.get(normalized(tag.tag)) || '').toLowerCase().includes(query));
   }).sort((a, b) => view.sort === 'old' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt || experiment.candidates.indexOf(b) - experiment.candidates.indexOf(a));

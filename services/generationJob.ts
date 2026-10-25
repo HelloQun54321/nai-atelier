@@ -55,15 +55,6 @@ export const startGenerationJob = async (
 
 export const getGenerationJob = async (key: string, token: string, previewVersion?: number): Promise<GenerationJobSnapshot> => send('GET', key, token, { viaQuery: true, previewVersion });
 
-/** 同一数据块里的多步预览也逐帧提交，给浏览器留出绘制机会，隐藏页无需回放。 */
-const previewPaint = (signal: AbortSignal) => new Promise<void>(resolve => {
-    if (document.visibilityState !== 'visible' || signal.aborted) { resolve(); return; }
-    let frame: number;
-    const finish = () => { cancelAnimationFrame(frame); signal.removeEventListener('abort', finish); resolve(); };
-    signal.addEventListener('abort', finish, { once: true });
-    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finish); });
-});
-
 /** 只订阅已建立的后台任务，重连不提交新的生图请求。 */
 export const observeGenerationJob = async (key: string, token: string, signal: AbortSignal,
     onSnapshot: (snapshot: GenerationJobSnapshot) => void | Promise<void>, previewVersion?: number): Promise<void> => {
@@ -88,11 +79,20 @@ export const observeGenerationJob = async (key: string, token: string, signal: A
             const { done, value } = await reader.read();
             parser.push(decoder.decode(value, { stream: !done }));
             if (done) parser.finish();
+            // 积压的过程图只交付最新一帧；状态、保存回执和告警仍逐条交付，不能跨保存阶段合并。
+            let newerPreview = false;
+            for (let index = pending.length - 1; index >= 0; index--) {
+                const snapshot = pending[index];
+                if (snapshot.state !== 'generating') { newerPreview = false; continue; }
+                if (!snapshot.preview) continue;
+                if (snapshot.preview.step === undefined) { newerPreview = true; continue; }
+                if (newerPreview) pending[index] = { ...snapshot, preview: undefined };
+                newerPreview = true;
+            }
             for (const snapshot of pending.splice(0)) {
                 signal.throwIfAborted();
                 await onSnapshot(snapshot);
                 if (isGenerationJobTerminal(snapshot.state)) return;
-                if (snapshot.preview) await previewPaint(signal);
             }
             if (done) throw new Error('后台任务实时预览连接已断开');
         }

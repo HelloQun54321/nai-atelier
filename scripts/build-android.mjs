@@ -24,6 +24,7 @@ const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRun
 const gatewaySource = extractAndroidShared(path.join(root, 'scripts/media-gateway.mjs'), gatewayExports,
   `import { createHash,createHmac,randomUUID,randomBytes,timingSafeEqual } from '/mobile/shims/crypto.mjs';
 import { Buffer } from 'buffer';
+import { readGenerationResponse } from 'mobile:generation-output';
 import { parseHttpError } from '/services/httpErrors.mjs';
 import { dirname,join } from 'path-browserify';
 import { mkdir,readFile,readdir,rename,unlink,writeFile } from '/mobile/shims/fs.mjs';

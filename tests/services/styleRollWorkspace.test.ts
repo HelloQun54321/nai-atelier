@@ -41,3 +41,16 @@ it('候选搜索同时匹配画师中文名', () => {
   expect(rollWorkspaceCandidates(e, images, { ...view, query: '旧画师' }, aliases).map(item => item.id)).toEqual(['old']);
   expect(rollWorkspaceCandidates(e, images, { ...view, query: '收藏' }, aliases).map(item => item.id)).toEqual(['saved']);
 });
+
+it('已出图但未保存仅显示有图片、未关联风格串且未归档的候选，并叠加搜索和轮次', () => {
+  const { e, images } = fixture();
+  const completed = candidateFixture('completed', 'done_artist');
+  e.candidates.push(completed);
+  e.rounds[1].candidateIds.push(completed.id);
+  images.set(completed.id, rollImageFixture(e, completed));
+  images.set('trash', rollImageFixture(e, e.candidates[3]));
+
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved' }).map(item => item.id)).toEqual(['completed']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved', roundId: 'current', query: 'done_artist' }).map(item => item.id)).toEqual(['completed']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved', roundId: 'old-round' })).toEqual([]);
+});

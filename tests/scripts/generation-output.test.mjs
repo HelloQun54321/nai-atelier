@@ -29,18 +29,21 @@ test('首个完整 final 立即交付保存，流尾继续消费且迟到预览�
   assert.equal(result.estimatedCost, 3); assert.equal(result.accountingError, 'synthetic accounting'); assert.equal(result.cleanupError, 'synthetic cleanup');
 });
 
-for (const saveFails of [false, true]) test(`电脑 SSE 实际保存先于流尾，保存失败=${saveFails}仍收取记账与退出回执`, async t => {
+for (const stream of [false, true]) for (const saveFails of [false, true]) test(`电脑预览=${stream} 实际保存先于流尾，保存失败=${saveFails}仍收取记账与退出回执`, async t => {
   const image = await png(8, 8, [10, 20, 30, 255]);
   let controller, saves = 0, savedMetadata;
   const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
   globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith('/api/generate-stream')) return new Response(new ReadableStream({ start(value) { controller = value; } }), { headers: { 'Content-Type': 'text/event-stream', 'X-Nai-Anlas-Estimated-Spent': '4' } });
+    if (String(url).endsWith(stream ? '/api/generate-stream' : '/api/generate')) {
+      assert.equal(options.headers['X-Nai-Generation-Response'], 'events');
+      return new Response(new ReadableStream({ start(value) { controller = value; } }), { headers: { 'Content-Type': 'text/event-stream', 'X-Nai-Anlas-Estimated-Spent': '4' } });
+    }
     assert.ok(String(url).endsWith('/api/local-history')); saves++;
     savedMetadata = JSON.parse(options.body.get('metadata'));
     return Response.json(saveFails ? { error: 'synthetic save failure' } : { item: { ...savedMetadata, imageUrl: '/synthetic.png' } }, { status: saveFails ? 500 : 200 });
   };
   const jobs = createDesktopGenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), gatewayUrl: () => 'http://synthetic', workerPort: 9999, estimate: async () => 2, readCleanup: () => undefined });
-  const descriptor = { payload: { model: 'synthetic', action: 'infill', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {}, edit: { operation: 'inpaint' } }, approvedCost: 4, stream: true };
+  const descriptor = { payload: { model: 'synthetic', action: 'infill', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {}, edit: { operation: 'inpaint' } }, approvedCost: 4, stream };
   jobs.start('key', 'synthetic-parallel-save-0001', 1, undefined, descriptor, {});
   const job = jobs.get('key', 'synthetic-parallel-save-0001');
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -54,6 +57,32 @@ for (const saveFails of [false, true]) test(`电脑 SSE 实际保存先于流尾
   assert.equal(snapshot.state, saveFails ? 'failed' : 'succeeded'); assert.equal(saves, 1);
   assert.equal(snapshot.accountingError, 'synthetic accounting'); assert.equal(snapshot.cleanupError, 'synthetic cleanup');
   if (saveFails) assert.equal(snapshot.preview.image, uri(image));
+});
+
+test('电脑 final 后正常 EOF 缺记账回执仍保存一次，成功快照附未确认提示', async t => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  let generations = 0, saves = 0, savedId;
+  const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/api/generate')) {
+      generations++;
+      return new Response(`event: final\ndata: ${JSON.stringify({ image: image.toString('base64'), seed: 31 })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+    }
+    assert.ok(String(url).endsWith('/api/local-history')); saves++;
+    const metadata = JSON.parse(options.body.get('metadata')); savedId = metadata.id;
+    assert.equal(metadata.params.seed, 31);
+    return Response.json({ item: { ...metadata, imageUrl: '/synthetic.png' } });
+  };
+  const jobs = createDesktopGenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), gatewayUrl: () => 'http://synthetic', workerPort: 9999, estimate: async () => 0, readCleanup: () => undefined });
+  const descriptor = { payload: { model: 'synthetic', action: 'generate', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {} }, approvedCost: 0 };
+  const token = 'synthetic-missing-receipt-0001';
+  jobs.start('key', token, 1, undefined, descriptor, {});
+  const job = jobs.get('key', token); await job.running;
+  const snapshot = jobs.snapshot(job);
+  assert.equal(snapshot.state, 'succeeded'); assert.equal(snapshot.completedCount, 1);
+  assert.ok(savedId); assert.deepEqual(snapshot.historyIds, [savedId]);
+  assert.equal(snapshot.accountingFailed, true); assert.match(snapshot.accountingError, /未收到本地记账回执.*状态未确认/);
+  assert.equal(generations, 1); assert.equal(saves, 1);
 });
 
 test('第六张返回502网页时停止任务并保留前五张，回执不暴露HTML，不自动重试', async () => {
@@ -231,9 +260,29 @@ test('SSE 已有记账成功回执后断流不误报，明确记账失败仍保�
   assert.equal(failed.accountingFailed, true); assert.equal(failed.accountingError, '用量记录写入失败（HTTP 503）');
 });
 
+for (const receipt of [undefined, {}, { estimatedSpent: 0 }, { accountingFailed: 'false' }]) test(`SSE 正常结束但无有效记账回执 ${JSON.stringify(receipt)}：保留成图并提示状态未确认`, async () => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  const final = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64'), seed: 321 })}\n\n`;
+  const usage = receipt === undefined ? '' : `event: nai_usage\ndata: ${JSON.stringify(receipt)}\n\n`;
+  let delivered = 0;
+  const result = await readGenerationResponse(new Response(final + usage, { headers: { 'Content-Type': 'text/event-stream' } }), undefined, () => { delivered++; });
+  assert.deepEqual(result.bytes, image); assert.equal(result.seed, 321); assert.equal(delivered, 1);
+  assert.equal(result.accountingFailed, true);
+  assert.match(result.accountingError, /未收到本地记账回执.*状态未确认/);
+  assert.equal(result.cleanupError, undefined);
+});
+
+for (const failed of [false, true]) test(`SSE 正常结束保留明确记账回执，失败=${failed} 不被后续不完整回执覆盖`, async () => {
+  const image = await png(8, 8, [10, 20, 30, 255]);
+  const frames = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\nevent: nai_usage\ndata: ${JSON.stringify({ accountingFailed: failed, ...(failed ? { accountingError: '合成明确失败' } : {}) })}\n\nevent: nai_usage\ndata: {}\n\n`;
+  const result = await readGenerationResponse(new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.deepEqual(result.bytes, image); assert.equal(result.accountingFailed, failed);
+  assert.equal(result.accountingError, failed ? '合成明确失败' : undefined);
+});
+
 test('SSE 忽略未使用事件的非 JSON 内容，不将收尾消息误报为记账失败', async () => {
   const image = await png(8, 8, [10, 20, 30, 255]);
-  const frames = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\nevent: nai_usage\ndata: {"estimatedSpent":0}\n\ndata: [DONE]\n\n`;
+  const frames = `event: final\ndata: ${JSON.stringify({ image: image.toString('base64') })}\n\nevent: nai_usage\ndata: {"estimatedSpent":0,"accountingFailed":false}\n\ndata: [DONE]\n\n`;
   const result = await readGenerationResponse(new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } }));
   assert.deepEqual(result.bytes, image); assert.equal(result.accountingFailed, false);
 });

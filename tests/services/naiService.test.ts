@@ -80,6 +80,19 @@ beforeEach(() => {
 });
 
 describe('文生图描述符', () => {
+  it('复用同次真实预处理结果，不再读取或转换底图，并保持描述符一致', async () => {
+    const input: GenerationJobDescriptorInput = {
+      operation: 'inpaint', prompt: 'scene', negative: '', params: baseParams(), approvedCost: 0, history: {},
+      edit: { image: PNG_DATA_URL, mask: PNG_DATA_URL, strength: 0.7, noise: 0.1 },
+    };
+    const pixels = prepared();
+    vi.mocked(prepareImageEdit).mockResolvedValue(pixels);
+    const expected = await buildGenerationJobDescriptor(input);
+    vi.mocked(prepareImageEdit).mockClear();
+    const actual = await buildGenerationJobDescriptor(input, pixels);
+    expect(prepareImageEdit).not.toHaveBeenCalled();
+    expect(actual).toEqual(expected);
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 分栏只在请求中编译，历史保留可继续编辑的原始分栏', async operation => {
     const role = { ...character, prompt: 'manual text', sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'coat' } };
     const params = { ...baseParams(), characters: [role] };

@@ -6,6 +6,13 @@ import { generationHistoryForm, generationImageBytes, readGenerationResponse } f
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
 const dataUrl = bytes => `data:image/png;base64,${bytes.toString('base64')}`;
 
+test('手机共用解析器在 final 正常结束却缺记账回执时保留图片并提示未知', async () => {
+  const result = await readGenerationResponse(new Response(`event: final\ndata: ${JSON.stringify({ image: PNG.toString('base64'), seed: 7 })}\n\n`, { headers: { 'content-type': 'text/event-stream' } }));
+  assert.deepEqual(result.bytes, PNG); assert.equal(result.seed, 7);
+  assert.equal(result.accountingFailed, true);
+  assert.match(result.accountingError, /未收到本地记账回执.*状态未确认/);
+});
+
 
 test('ZIP 与流式响应都只认最终成图并保留费用与清理回执', async () => {
   const zip = new JSZip();

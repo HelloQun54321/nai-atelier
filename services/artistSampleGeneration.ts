@@ -73,8 +73,11 @@ export async function beginArtistSampleGeneration(tag: string, pack: ArtistSampl
       if (!state.sample) throw new Error('图片已保存到历史，但样张保存失败，请重试入库');
       savedSamples = data.samples;
       state.phase = 'saved';
-      if (started.session.accountingFailed) state.error = '图片已保存，但本地记账异常，请核对额度后再继续' + (started.session.accountingError ? `：${started.session.accountingError}` : '');
-      else if (started.session.cleanupError) state.error = started.session.cleanupError;
+      const warnings = [
+        started.session.accountingFailed ? '图片已保存，但本地记账异常，请核对额度后再继续' + (started.session.accountingError ? `：${started.session.accountingError}` : '') : '',
+        started.session.cleanupError,
+      ].filter(Boolean);
+      if (warnings.length) state.error = warnings.join('；');
     } catch (cause) { state.phase = 'save_failed'; state.error = (cause as Error).message; }
   } catch (cause) { state.phase = 'failed'; state.error = (cause as Error).message; }
   finally { state.session = undefined; publish(); }

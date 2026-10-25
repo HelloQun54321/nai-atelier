@@ -77,6 +77,7 @@ export function createMobileGenerationJobs({ tasks, queue, readGatewayUrl }: {
           'Content-Type': 'application/json',
           Authorization: job.context.authorization,
           'X-Nai-Generation-Task': job.token,
+          'X-Nai-Generation-Response': 'events',
           'X-Nai-Queue-Task-Id': queueTaskId,
         },
         body: JSON.stringify(payload),

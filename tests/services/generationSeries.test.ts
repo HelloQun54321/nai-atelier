@@ -43,15 +43,15 @@ beforeEach(() => {
     job.observe.mockReset();
 });
 
-it('已保存结果的记账失败原因跟随后端回执，不再次提交生图', async () => {
-    job.start.mockResolvedValueOnce(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'], accountingFailed: true, accountingError: '本地预算更新失败（HTTP 503）' }));
+it.each(['本地预算更新失败（HTTP 503）', '图片已收齐，但未收到本地记账回执，记账状态未确认'])('已保存结果的记账告警跟随后端回执，不再次提交生图：%s', async accountingError => {
+    job.start.mockResolvedValueOnce(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'], accountingFailed: true, accountingError }));
     const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: descriptor() });
     await expect(settle).resolves.toMatchObject({ success: true, completedCount: 1 });
-    expect(session.accountingFailed).toBe(true); expect(session.accountingError).toBe('本地预算更新失败（HTTP 503）');
+    expect(session.accountingFailed).toBe(true); expect(session.accountingError).toBe(accountingError);
     expect(job.start).toHaveBeenCalledOnce(); expect(job.cancel).not.toHaveBeenCalled();
 });
 
-it('开启预览后实时观察每步与保存终态，不再等待一秒轮询，重连不重复 POST', async () => {
+it.each([false, true])('过程预览 %s 均实时观察状态，断线只重连不重复 POST', async stream => {
     const steps: number[] = [];
     let publishSnapshot: (snapshot: GenerationJobSnapshot) => void = () => {};
     let disconnect: () => void = () => {};
@@ -63,7 +63,7 @@ it('开启预览后实时观察每步与保存终态，不再等待一秒轮询�
         onSnapshot(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'] }));
     });
     job.get.mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 8 }));
-    const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: { ...descriptor(), stream: true } });
+    const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: { ...descriptor(), stream } });
     await vi.advanceTimersByTimeAsync(0);
     const unsubscribe = subscribeGenerationSeries(() => { if (session.preview?.step) steps.push(session.preview.step); });
     for (let step = 1; step <= 8; step++) publishSnapshot(snapshot({ state: 'generating', previewVersion: step, preview: { image: 'data:image/png;base64,AQID', step } }));
@@ -95,6 +95,29 @@ it('实时观察冻结后回前台立即重连，保留后台任务和最新状�
     expect(job.observe).toHaveBeenCalledTimes(2);
     expect(job.get).toHaveBeenCalledOnce(); expect(job.start).toHaveBeenCalledOnce();
     expect(job.cancel).not.toHaveBeenCalled();
+});
+
+it('实时最终图跨同版本保存与失败快照保留，下一张版本清除旧图，累计保存与告警不丢', async () => {
+    const final = { image: 'synthetic-final-unsaved' };
+    let push!: (value: GenerationJobSnapshot) => void;
+    let finish!: () => void;
+    job.observe.mockImplementationOnce((_key, _token, _signal, onSnapshot) => {
+        push = onSnapshot; return new Promise<void>(resolve => { finish = resolve; });
+    });
+    const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'key', count: 3, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    push(snapshot({ state: 'generating', previewVersion: 1, preview: { image: 'old', step: 28 } }));
+    push(snapshot({ state: 'waiting', previewVersion: 2, completedCount: 1, historyIds: ['h1'] }));
+    expect(session.preview).toBeUndefined();
+    push(snapshot({ state: 'generating', previewVersion: 3, preview: final, completedCount: 1, historyIds: ['h1'] }));
+    push(snapshot({ state: 'saving', previewVersion: 3, completedCount: 1, historyIds: ['h1'] }));
+    expect(session.preview).toEqual(final); expect(session.state).toBe('saving');
+    push(snapshot({ state: 'failed', previewVersion: 3, completedCount: 1, historyIds: ['h1'], code: 'history_save_failed', accountingFailed: true, accountingError: '记账失败', cleanupError: '清理失败' }));
+    finish();
+    await expect(settle).resolves.toMatchObject({ outcome: 'failed', historyIds: ['h1'] });
+    expect(session.preview).toEqual(final);
+    expect(session).toMatchObject({ accountingFailed: true, accountingError: '记账失败', cleanupError: '清理失败' });
+    expect(job.start).toHaveBeenCalledOnce(); expect(job.get).not.toHaveBeenCalled();
 });
 
 it('未变化的预览不重复传图，版本变化清除已保存预览，旧快照仍兼容', async () => {
@@ -141,8 +164,7 @@ it.each(['generate', 'img2img', 'inpaint', 'outpaint'].flatMap(operation => [fal
         expect(screen.getByRole('status').textContent).toContain('加入队列中…');
         const deliver = async (next: GenerationJobSnapshot) => {
             await act(async () => {
-                if (stream) { push(next); if (next.state === 'succeeded') finish(); }
-                else { job.get.mockResolvedValueOnce(next); await vi.advanceTimersByTimeAsync(1000); }
+                push(next); if (next.state === 'succeeded') finish();
             });
         };
         await deliver(snapshot({ state: 'generating', cloudQueue: { ...cloud, phase: 'waiting', position: 2, queueSize: 4, greeting: '正在生成中～' } }));

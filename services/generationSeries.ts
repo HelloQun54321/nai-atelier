@@ -219,7 +219,8 @@ const supervise = async (entry: SupervisedSeries, descriptor: GenerationJobDescr
             applySnapshot(session, snapshot);
             if (isGenerationJobTerminal(snapshot.state)) return settleSeries(entry, settleSnapshot(session, snapshot));
         }
-        if (descriptor.stream) {
+        // 过程图开关只控制上游预览；保存、排队和终态始终实时观察。
+        {
             const controller = new AbortController();
             entry.wake = () => controller.abort();
             try {

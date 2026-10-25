@@ -1,5 +1,6 @@
 import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
+import { readGenerationResponse } from './generation-output.mjs';
 import { parseHttpError } from '../services/httpErrors.mjs';
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { execFile as nodeExecFile } from 'node:child_process';
@@ -1987,6 +1988,21 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     const responseBody = Buffer.from(await response.arrayBuffer());
+    // 后台任务用现有 final/用量回执提前保存；公开 ZIP 调用仍保留完整头部回执。
+    const resultEvents = response.ok && req.headers['x-nai-generation-response'] === 'events'
+      && /^[a-zA-Z0-9-]{16,80}$/.test(String(req.headers['x-nai-generation-task'] || ''));
+    let outputError;
+    if (resultEvents) {
+      const estimatedCost = billing.subscription ? billingForPayload(settlementPayload, billing.runtime, billing.opusSubscriber, billing.exhausted).cost : undefined;
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Accel-Buffering': 'no',
+        ...(Number.isFinite(estimatedCost) ? { 'X-Nai-Anlas-Estimated-Spent': String(estimatedCost) } : {}), ...queueHeaders(),
+      });
+      try {
+        const output = await readGenerationResponse(new Response(responseBody));
+        if (!res.destroyed) res.write(`event: final\ndata: ${JSON.stringify({ image: `data:${output.mime};base64,${output.bytes.toString('base64')}`, ...(output.seed === undefined ? {} : { seed: output.seed }) })}\n\n`);
+      } catch (cause) { outputError = cause; }
+    }
     let estimatedCost, anlasBudget, accountingError, accountingFailed = false;
     if (response.ok) {
       try {
@@ -1996,6 +2012,19 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
         accountingFailed = true;
         accountingError = describeAccountingFailure('本地记账', cause);
       }
+    }
+    if (resultEvents) {
+      if (!res.destroyed) res.write(`event: nai_usage\ndata: ${JSON.stringify({ estimatedSpent: estimatedCost, remaining: anlasBudget?.remaining, accountingFailed, ...(accountingFailed ? { accountingError: accountingError || '本地用量记录未完整保存' } : {}) })}\n\n`);
+      await releaseQueue();
+      const cleanupError = cloudQueue.get(keyHash, queueTaskId)?.cleanupError;
+      if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: outputError ? 'error' : 'completed', cancelable: false, controller: null, ...(outputError ? { error: outputError.message } : {}) });
+      responseCompleted = true;
+      if (!res.destroyed) {
+        if (cleanupError) res.write(`event: nai_queue_cleanup_error\ndata: ${JSON.stringify({ message: cleanupError })}\n\n`);
+        if (outputError) res.write(`event: error\ndata: ${JSON.stringify({ message: outputError.message, code: outputError.code || 'generation_output_invalid' })}\n\n`);
+        res.end();
+      }
+      return;
     }
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',

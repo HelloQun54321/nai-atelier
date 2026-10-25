@@ -38,7 +38,13 @@ let items: Inspiration[] = [];
 let unsaved = new Set<string>();
 let revision = 0;
 let owner: User | undefined;
+let ownerRequest: Promise<User> | undefined;
 let loading: Promise<Inspiration[]> | undefined;
+let loadingOwner = '';
+let loadingUsesChainSnapshot = false;
+let requestedOwner = '';
+let aitagCache = new Map<string, Inspiration[]>();
+const ownerKey = (user: User) => JSON.stringify([user.id, user.role, user.username]);
 const listeners = new Set<() => void>();
 export const subscribeCollection = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const collectionRevision = () => revision;
@@ -56,13 +62,13 @@ export function readLegacyFavoriteIds(key: 'nai_chain_favs' | 'nai_character_fav
 }
 
 /** 只汇总旧标记对应的当前封面；没有图片的标记留在原处，不批量写库或复制原图。 */
-async function loadLegacyChainFavorites(user: User): Promise<Inspiration[]> {
+async function loadLegacyChainFavorites(user: User, chainSnapshot?: readonly PromptChain[]): Promise<Inspiration[]> {
   if (user.role === 'guest') return [];
   const legacy = readLegacyFavoriteIds('nai_chain_favs');
   const characters = readLegacyFavoriteIds('nai_character_favorites');
   const custom = new Set([...characters].filter(id => id.startsWith('custom:')).map(id => id.slice(7)));
   if (!legacy.size && !custom.size) return [];
-  const chains: PromptChain[] = await api.get('/chains');
+  const chains: readonly PromptChain[] = chainSnapshot ?? await api.get('/chains');
   if (!Array.isArray(chains)) throw new Error(t('收藏库加载失败，请稍后重试'));
   return chains.filter(chain => (user.role === 'admin' || chain.userId === user.id) &&
     (chain.type === 'style' || chain.type === 'character' && !chain.tags?.includes('__character_catalog__')) &&
@@ -158,16 +164,27 @@ export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspi
   return result.map(item => ({ ...item, tags: getCollectionTags(item) }));
 }
 
-async function loadImageFavorites(user: User): Promise<Inspiration[]> {
+async function loadImageFavorites(user: User, chainSnapshot?: readonly PromptChain[]) {
   const [history, details, legacyChains] = await Promise.all([
     (async () => {
       const result: LocalGenItem[] = [];
       let total = Infinity;
       for (let page = 0; ; page++) {
-        const batch = await localHistory.getPage(page, 200, { favoriteOnly: true }, page === 0);
+        const batch = await localHistory.getPage(page, 100, { favoriteOnly: true }, page === 0);
         if (page === 0) total = batch.count ?? Infinity;
         result.push(...batch.items);
-        if (result.length >= total || batch.items.length < 200) return result;
+        if (result.length >= total || batch.items.length < 100) return result;
+        if (page === 0 && Number.isFinite(total)) {
+          for (let nextPage = 1; nextPage < Math.ceil(total / 100); nextPage += 3) {
+            const batches = await Promise.all(Array.from({ length: Math.min(3, Math.ceil(total / 100) - nextPage) }, (_, offset) =>
+              localHistory.getPage(nextPage + offset, 100, { favoriteOnly: true }, false)));
+            for (const next of batches) {
+              result.push(...next.items);
+              if (result.length >= total || next.items.length < 100) return result;
+            }
+          }
+          return result;
+        }
       }
     })(),
     api.get('/aitag/favorites').catch((cause: unknown) => {
@@ -175,18 +192,42 @@ async function loadImageFavorites(user: User): Promise<Inspiration[]> {
       if (cause instanceof ApiError && cause.status === 404) return [];
       throw cause;
     }) as Promise<AitagWorkDetail[]>,
-    loadLegacyChainFavorites(user),
+    loadLegacyChainFavorites(user, chainSnapshot),
   ]);
-  return [...history.map(item => historyFavorite(item, user)), ...details.flatMap(detail => aitagFavorites(detail, user)), ...legacyChains];
+  const previous = owner && ownerKey(owner) === ownerKey(user) ? aitagCache : new Map<string, Inspiration[]>();
+  const parsed = new Map<string, Inspiration[]>();
+  const aitag = details.flatMap(detail => {
+    const key = JSON.stringify(detail);
+    const favorites = previous.get(key) || aitagFavorites(detail, user);
+    parsed.set(key, favorites);
+    return favorites;
+  });
+  return { favorites: [...history.map(item => historyFavorite(item, user)), ...aitag, ...legacyChains], parsed };
 }
 
-export async function loadCollection(user?: User): Promise<Inspiration[]> {
-  if (loading) return loading;
+export async function loadCollection(user?: User, chainSnapshot?: readonly PromptChain[]): Promise<Inspiration[]> {
+  if (!user && loading) return loading;
+  let requestUser = user || owner;
+  if (!requestUser) {
+    ownerRequest ||= api.get('/auth/me');
+    try { requestUser = await ownerRequest; } finally { ownerRequest = undefined; }
+  }
+  const key = ownerKey(requestUser);
+  requestedOwner = key;
+  if (loading) {
+    if (loadingOwner === key && (chainSnapshot !== undefined || !loadingUsesChainSnapshot)) return loading;
+    try { await loading; } catch { /* 前次读取失败不阻止当前刷新。 */ }
+    return loadCollection(requestUser, chainSnapshot);
+  }
+  loadingOwner = key;
+  loadingUsesChainSnapshot = chainSnapshot !== undefined;
   loading = (async () => {
     const startedAt = revision;
-    owner = user || owner || await api.get('/auth/me');
-    const [stored, favorites] = await Promise.all([api.get('/inspirations') as Promise<Inspiration[]>, loadImageFavorites(owner!)]);
+    const [stored, { favorites, parsed }] = await Promise.all([api.get('/inspirations') as Promise<Inspiration[]>, loadImageFavorites(requestUser, chainSnapshot)]);
+    if (requestedOwner !== key) return [];
     if (revision !== startedAt) return items;
+    owner = requestUser;
+    aitagCache = parsed;
     items = mergeCollectionFavorites(stored.map(item => ({ ...item, imageUrl: item.imageUrl || '' })), favorites);
     const savedIds = new Set(stored.map(item => item.id));
     unsaved = new Set(items.filter(item => !savedIds.has(item.id)).map(item => item.id));

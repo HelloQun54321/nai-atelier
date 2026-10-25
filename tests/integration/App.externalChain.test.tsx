@@ -129,6 +129,19 @@ const setup = async (entry = 'aitag') => {
   await screen.findByRole('button', { name: entry === 'prompts' ? '新建合成服饰' : '保存合成作品' });
 };
 
+it('收藏首次进入复用有效串快照，强制刷新不沿用旧串快照', async () => {
+  const collection = await import('../../services/collectionFavorites');
+  const revision = vi.spyOn(collection, 'collectionRevision').mockReturnValue(0);
+  try {
+    mocks.getAllChains.mockResolvedValue([saved]);
+    await setup('inspiration');
+    expect(mocks.getAllInspirations).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner' }), [saved]);
+    mocks.getAllInspirations.mockClear();
+    await act(async () => { window.dispatchEvent(new Event('nai-collection-changed')); });
+    expect(mocks.getAllInspirations).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'owner' }), undefined);
+  } finally { revision.mockRestore(); }
+});
+
 it.each([false, true])('分享包回读使用真实刷新返回约定，刷新失败=%s 时明确报告已保存', async fails => {
   await setup();
   fireEvent.click(screen.getByRole('button', { name: 'list' }));

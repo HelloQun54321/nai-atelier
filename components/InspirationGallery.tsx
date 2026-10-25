@@ -98,7 +98,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const items = useMemo(() => (inspirationsData || []).map(item => ({ ...item, tags: getCollectionTags(item) })), [inspirationsData]);
   const editableIds = useMemo(() => new Set(items.filter(item => !item.archived && currentUser.role !== 'guest' && canEditItem(item, currentUser)).map(item => item.id)), [items, currentUser.id, currentUser.role]);
   const selectedItems = useMemo(() => items.filter(item => editableIds.has(item.id) && selectedIds.has(item.id)), [items, editableIds, selectedIds]);
-  const selectedWorks = new Set(selectedItems.map(collectionGroupKey)).size;
+  const selectedWorks = useMemo(() => new Set(selectedItems.map(collectionGroupKey)).size, [selectedItems]);
   useEffect(() => {
     setSelectedIds(previous => {
       const next = new Set([...previous].filter(id => editableIds.has(id)));
@@ -152,6 +152,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       .filter(source => (sourceCounts[source] || 0) > 0 || source === sourceFilter);
   }, [sourceCounts, sourceFilter]);
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
+  const boardCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    items.forEach(item => { if (!item.archived && item.boardId) counts.set(item.boardId, (counts.get(item.boardId) || 0) + 1); });
+    return counts;
+  }, [items]);
 
   const filtered = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
@@ -374,7 +379,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         const target = boards[boards.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (target) void reorderBoard(board.id, target.id);
       }}><GripVertical className="h-3.5 w-3.5" /></button>
-    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{items.filter(item => item.boardId === board.id && !item.archived).length}</span></button>{renderBoardActions(board)}
+    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{boardCounts.get(board.id) || 0}</span></button>{renderBoardActions(board)}
   </PressRevealSurface>;
   const renderNavigation = () => <div>
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>

@@ -114,6 +114,8 @@ test('手机共用生图处理器包含通用中转分支，构建注入地址�
   const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
   assert.match(build, /import \{ getCloudQueueGenerationUrl \} from '\/worker\/cloudQueueTarget\.mjs'/);
   assert.match(build, /import \{ normalizeCloudQueueCount \} from '\/worker\/cloudQueueNumbers\.mjs'/);
+  assert.match(build, /import \{ readGenerationResponse \} from 'mobile:generation-output'/);
+  assert.match(source, /readGenerationResponse\(new Response\(responseBody\)\)/);
   assert.match(source, /parseHttpError\(/);
   assert.equal((build.match(/import \{ parseHttpError \} from '\/services\/httpErrors\.mjs'/g) || []).length, 2);
 });

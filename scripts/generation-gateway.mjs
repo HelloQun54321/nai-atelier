@@ -21,6 +21,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: job.context.authorization,
           'X-Nai-Generation-Task': job.token, 'X-Nai-Queue-Task-Id': queueTaskId,
+          'X-Nai-Generation-Response': 'events',
           cookie: job.context.cookie,
         }, body: JSON.stringify(payload),
       });

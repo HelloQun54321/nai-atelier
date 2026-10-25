@@ -16,6 +16,7 @@ import * as promptTranslations from '../../services/tagTranslations';
 import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 import type { GenerationJobDescriptorInput } from '../../services/naiService';
+import { prepareImageEdit, type PreparedImageEdit } from '../../services/imageEdit';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
 
 // Node 22 的 Response.blob() 返回原生 Blob，jsdom FileReader 只接受同一环境的 Blob。
@@ -41,7 +42,7 @@ const state = vi.hoisted(() => ({
   agentConfig: vi.fn<() => Promise<{ permissionMode: 'read_only' | 'standard' | 'full' }>>(),
   classify: vi.fn<typeof import('../../services/promptAgent').promptAgentService.classifyPrompts>(),
   budget: 1666,
-  buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput) => Promise<GenerationJobDescriptor>>(),
+  buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput, preparedEdit?: PreparedImageEdit) => Promise<GenerationJobDescriptor>>(),
   startJob: vi.fn<(key: string, token: string, descriptor: GenerationJobDescriptor, count: number, placement?: GenerationPlacement) => Promise<GenerationJobSnapshot>>(),
   getJob: vi.fn<(key: string, token: string) => Promise<GenerationJobSnapshot>>(),
   observeJob: vi.fn<typeof import('../../services/generationJob').observeGenerationJob>(),
@@ -55,6 +56,7 @@ const state = vi.hoisted(() => ({
   assets: new Map<string, Blob>(),
   delayedAsset: null as Promise<Blob> | null,
   delayedBaseSave: null as Promise<void> | null,
+  delayedMaskSave: null as Promise<void> | null,
   runtime: null as NaiRuntimeConfig | null,
   subscription: null as NovelaiSubscriptionInfo | null,
   subscriptionLoading: false,
@@ -91,7 +93,7 @@ vi.mock('../../services/labWorkspace', async importOriginal => ({
   cleanupLabWorkspaceAssets: async () => {},
   readLabWorkspaceAsset: async (id: string) => id === 'delayed-base' && state.delayedAsset ? state.delayedAsset : state.assets.get(id) || null,
   deleteLabWorkspaceAsset: async () => {},
-  saveLabWorkspaceAsset: async (blob: Blob, id: string) => { state.assets.set(id, blob); return id; },
+  saveLabWorkspaceAsset: async (blob: Blob, id: string) => { if (id.endsWith(':mask') && state.delayedMaskSave) await state.delayedMaskSave; state.assets.set(id, blob); return id; },
   dataUrlToWorkspaceAsset: async (dataUrl: string, id = 'synthetic-pasted-asset') => {
     if (state.delayedBaseSave) await state.delayedBaseSave;
     state.assets.set(id, new Blob([Uint8Array.from(atob(dataUrl.split(',')[1]), character => character.charCodeAt(0))], { type: 'image/png' }));
@@ -100,6 +102,16 @@ vi.mock('../../services/labWorkspace', async importOriginal => ({
 }));
 // 编辑模式的预处理要读画布与像素，jsdom 下不可用；文本模式也走同一入口，便于断言组件真正提交的描述。
 vi.mock('../../services/naiService', () => ({ buildGenerationJobDescriptor: state.buildDescriptor }));
+vi.mock('../../services/imageEdit', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/imageEdit')>(),
+  prepareImageEdit: vi.fn(async (edit: { image: string; mask?: string }) => {
+    const bitmap = await createImageBitmap(new Blob());
+    const prepared = { image: edit.image, mask: edit.mask, originalImage: new Blob(),
+      sourceWidth: bitmap.width, sourceHeight: bitmap.height, requestWidth: bitmap.width, requestHeight: bitmap.height };
+    bitmap.close();
+    return prepared;
+  }),
+}));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
 vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, useCloudQueueEnabled: () => false, CloudQueueButton: () => null }));
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
@@ -148,6 +160,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑底图读取状态">{String(props.isBaseImageLoading)}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
+  <button onClick={() => props.onDraftChange({ maskData: 'data:image/png;base64,TUFTSw==' })}>绘制合成蒙版</button>
   <output aria-label="编辑结果">{props.previewImage}</output>
   <output aria-label="编辑步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览编辑下一张</button>}
@@ -417,6 +430,7 @@ const switchTo = async (label: string) => {
 };
 
 beforeEach(() => {
+  state.delayedMaskSave = null;
   state.classify.mockReset().mockResolvedValue({ items: [] });
   vi.mocked(getGenerationQueue).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
   vi.mocked(setGenerationQueuePaused).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
@@ -702,6 +716,8 @@ it('图生图使用缩放副本的实际像素估费并只提交一次后台任�
   expect(state.confirm).not.toHaveBeenCalled();
   expect(state.buildDescriptor).toHaveBeenCalledOnce();
   expect(state.startJob).toHaveBeenCalledOnce();
+  expect(vi.mocked(prepareImageEdit).mock.calls.at(-1)?.[0]).toMatchObject({ image: 'data:image/png;base64,AQID' });
+  expect(state.buildDescriptor.mock.calls[0][1]).toMatchObject({ sourceWidth: 1024, sourceHeight: 1024 });
   expect(state.buildDescriptor.mock.calls[0][0]).toMatchObject({
     operation: 'image-to-image', approvedCost: 0, stream: false, estimatedCost: 0,
     params: { width: 1024, height: 1024, characters: [{ id: 'edited', x: 0.4, y: 0.7 }] },
@@ -1669,6 +1685,36 @@ describe('后台任务只提交一次并只观察后端状态', () => {
   };
   const mobileActions = () => within(document.querySelector('.mobile-generation-actions') as HTMLElement);
 
+  it('预处理底图失败时不确认费用也不提交后台任务', async () => {
+    prepare();
+    vi.mocked(prepareImageEdit).mockRejectedValueOnce(new Error('合成损坏图片'));
+    setupSeries();
+    await switchTo('图生图');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
+    expect(state.confirm).not.toHaveBeenCalled();
+    expect(state.startJob).not.toHaveBeenCalled();
+    expect(state.buildDescriptor).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('蒙版保存与描述符准备并行，准备失败=%s 仍等待保存结束', async failed => {
+    prepare();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    setupSeries();
+    await switchTo('局部重绘');
+    const saving = Promise.withResolvers<void>();
+    state.delayedMaskSave = saving.promise;
+    if (failed) state.buildDescriptor.mockRejectedValueOnce(new Error('合成描述符失败'));
+    fireEvent.click(screen.getByRole('button', { name: '绘制合成蒙版' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成合成蒙版编辑' }));
+    await waitFor(() => expect(state.buildDescriptor).toHaveBeenCalledOnce());
+    expect(state.startJob).not.toHaveBeenCalled();
+    await act(async () => saving.resolve());
+    if (failed) {
+      await waitFor(() => expect(screen.getByText('合成描述符失败')).toBeTruthy());
+      expect(state.startJob).not.toHaveBeenCalled();
+    } else await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+  });
+
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('实时预览 %s 每步显示，同图片更新步数，新预览不被上一张历史覆盖', async (operation, label) => {
     prepare();
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
@@ -2361,5 +2407,23 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     expect(state.addHistory).not.toHaveBeenCalled();
     expect(state.notifySaved).not.toHaveBeenCalled();
     await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());
+  });
+
+  it('已保存成图的记账与清理双告警合并一次通知，不重发生图', async () => {
+    prepare();
+    const item = savedItem('warning-saved');
+    scriptJobs([{ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: [item.id], lastSavedItem: item,
+      accountingFailed: true, accountingError: '合成记账异常', cleanupError: '合成清理异常' }]);
+    const view = setupSeries();
+    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    fireEvent.click(screen.getByText('生成合成文生图'));
+    const warning = '图片已保存，但本地记账异常，请核对额度后再继续：合成记账异常\n后台任务清理异常：合成清理异常';
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith(warning, 'error'));
+    expect(view.props.notify.mock.calls.filter(([, tone]) => tone === 'error')).toEqual([[warning, 'error']]);
+    expect(view.props.notify).toHaveBeenCalledWith('已生成并保存 1 张图片', 'success');
+    expect(screen.getByLabelText('文生图结果').textContent).toBe(item.imageUrl);
+    expect(state.startJob).toHaveBeenCalledOnce(); expect(state.addHistory).not.toHaveBeenCalled();
+    expect(state.notifySaved).toHaveBeenCalledWith(item.id);
+    expect(getGenerationSeriesSession(chain.id)).toBeNull();
   });
 });

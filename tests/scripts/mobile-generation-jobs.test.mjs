@@ -31,6 +31,7 @@ for (const stream of [false, true]) test(`手机预览 ${stream}：上游尚在�
   const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
   globalThis.fetch = async (url, options) => {
     assert.equal(url, stream ? '/api/generate-stream' : '/api/generate');
+    assert.equal(options.headers['X-Nai-Generation-Response'], 'events');
     const taskId = options.headers['X-Nai-Queue-Task-Id'];
     records.set(taskId, { taskId, phase: 'waiting', position: 0, queueSize: null, proxy: true, cancelable: true, keyHash: 'private', controller: new AbortController() });
     return new Promise(resolve => { finish = () => resolve(new Response('{"error":"synthetic failure"}', { status: 503 })); });

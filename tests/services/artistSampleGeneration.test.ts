@@ -71,6 +71,17 @@ it('样张已归档时保留记账失败的具体原因，不重新编码或生�
   expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled();
 });
 
+it('图片已保存时同时保留记账与公共队列清理告警，不重发生成或补归档', async () => {
+  const service = await import('../../services/artistSampleGeneration');
+  mocks.begin.mockReturnValue({ session: { ...session(), accountingFailed: true, accountingError: '用量记录写入失败（HTTP 503）', cleanupError: '公共队列释放失败' }, settle: Promise.resolve({ success: true }) });
+  await service.beginArtistSampleGeneration('synthetic artist', 'v45', getDefaultArtistSampleTemplate('v45'), 'synthetic-key', 0, false);
+  expect(service.getArtistSampleGeneration('synthetic artist', 'v45')).toMatchObject({
+    phase: 'saved', sample: { id: 'sample-v45-history-one' }, item: { id: 'history-one' },
+    error: '图片已保存，但本地记账异常，请核对额度后再继续：用量记录写入失败（HTTP 503）；公共队列释放失败',
+  });
+  expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.save).not.toHaveBeenCalled();
+});
+
 it('旧画师模板保持原词权重，新模板的角色位置与最终请求保持一致', async () => {
   const service = await import('../../services/artistSampleGeneration');
   const template = { ...getDefaultArtistSampleTemplate('v45'), prompt: 'before, 1.2::artist:{artist} ::, {character}, after', characterPrompt: 'blue hair' };

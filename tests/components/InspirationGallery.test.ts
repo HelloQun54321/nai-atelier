@@ -139,6 +139,46 @@ it.each([390, 1280])('宽度 %s：收藏未读取时显示加载中，读取完�
   expect(view.container.querySelectorAll('article')).toHaveLength(mockInspirations.length);
 });
 
+it.each([390, 1280])('宽度 %s：一次显示超过 100 条独立收藏，末项仍可搜索', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const data: Inspiration[] = Array.from({ length: 105 }, (_, index) => ({
+    id: `large-${index}`, userId: mockUser.id, title: index === 104 ? '最后一条专属收藏' : `收藏 ${index}`,
+    imageUrl: `/large-${index}.png`, prompt: '', createdAt: index,
+  }));
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() }));
+  expect(container.querySelectorAll('article')).toHaveLength(105);
+  const search = screen.getByRole('searchbox', { name: '搜索标题、提示词或标签…' });
+  fireEvent.change(search, { target: { value: '最后一条专属收藏' } });
+  await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(1));
+  expect(screen.getByText('最后一条专属收藏')).toBeTruthy();
+});
+
+it('收藏夹数量排除归档条目，并随数据更新', async () => {
+  const data: Inspiration[] = [
+    { id: 'count-live-1', userId: mockUser.id, title: '活动收藏', imageUrl: '/live.png', prompt: '', boardId: 'board-1', createdAt: 2 },
+    { id: 'count-archived', userId: mockUser.id, title: '归档收藏', imageUrl: '/archived.png', prompt: '', boardId: 'board-1', createdAt: 1, archived: true },
+  ];
+  const props = { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  const folder = await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  expect(folder.textContent).toMatch(/角色设计\s*1/);
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [...data, { ...data[0], id: 'count-live-2', title: '第二条活动收藏' }] }));
+  expect(folder.textContent).toMatch(/角色设计\s*2/);
+});
+
+it('作品组重复页键时保留卡片首图与详情各自的原有顺序', () => {
+  const base: Inspiration = {
+    id: 'same-page-key-old', userId: mockUser.id, title: '同组作品 · 1', imageUrl: '/old-page.png', prompt: '',
+    sourceType: 'pixiv', sourceId: 'same-work', createdAt: 1, analysis: { collectionImageId: 'same-page' },
+  };
+  const newer = { ...base, id: 'same-page-key-new', title: '同组作品 · 2', imageUrl: '/new-page.png', createdAt: 2 };
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [base, newer], onRefresh: vi.fn(), notify: vi.fn() }));
+  const card = screen.getByText('同组作品').closest('article')!;
+  expect(within(card).getByRole('img').getAttribute('src')).toBe('/new-page.png');
+  fireEvent.click(within(card).getByRole('img').closest('button')!);
+  expect(within(screen.getByRole('complementary', { name: '同组作品' })).getAllByRole('img').map(image => image.getAttribute('src'))).toEqual(['/old-page.png', '/new-page.png']);
+});
+
 it.each(['masonry', 'portrait', 'square'])('%s 布局按作品组排序，保持首图页码与组展开，记住排序且不改资料', async layout => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 1, desktopColumns: 1 }));
   const make = (id: string, title: string, createdAt: number): Inspiration => ({ id, userId: mockUser.id, title, createdAt, prompt: '', imageUrl: '/' + id });

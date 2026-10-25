@@ -9,8 +9,120 @@ vi.mock('../../services/aitagService', async original => ({ ...await original<ty
 vi.mock('../../services/pixivService', () => ({ importPixivImageAsFile: mocks.pixivImport }));
 vi.mock('../../services/danbooruCoverImport', () => ({ importDanbooruCoverAsDataUrl: mocks.danbooruImport }));
 vi.mock('../../services/codexService', () => ({ readCodexImageFile: mocks.codexFile, readCodexImageMetadata: mocks.codexMetadata }));
+vi.mock('../../services/metadataService', async original => {
+  const module = await original<typeof import('../../services/metadataService')>();
+  return { ...module, parseNovelAIMetadata: vi.fn(module.parseNovelAIMetadata) };
+});
 
 const user: User = { id: 'test-owner', username: 'test', role: 'admin', createdAt: 1 };
+
+it('完整刷新复用未变的 AITag 解析，变化、移除与账号切换重新核实真实来源', async () => {
+  const { parseNovelAIMetadata } = await import('../../services/metadataService');
+  const service = await import('../../services/collectionFavorites');
+  const originalPrompt = 'original, '.repeat(40);
+  details = [{ work: { id: 3, title: '组' }, images: [{ id: 1, file_name: '3_p1.png', local_image_url: '/one.png', ai_json: { prompt: originalPrompt } }] }];
+  expect((await service.loadCollection(user))[0].prompt).toBe(originalPrompt);
+  expect(parseNovelAIMetadata).toHaveBeenCalledOnce();
+  await service.loadCollection(user);
+  expect(parseNovelAIMetadata).toHaveBeenCalledOnce();
+  expect(mocks.get.mock.calls.filter(([path]) => path === '/aitag/favorites')).toHaveLength(2);
+  details[0].images[0].ai_json.prompt = 'changed, '.repeat(40);
+  expect((await service.loadCollection(user))[0].prompt).toBe('changed, '.repeat(40));
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(2);
+  const other = { ...user, id: 'other-owner' };
+  expect((await service.loadCollection(other))[0].userId).toBe(other.id);
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(3);
+  expect((await service.loadCollection({ ...other, username: 'renamed' }))[0].username).toBe('renamed');
+  expect(parseNovelAIMetadata).toHaveBeenCalledTimes(4);
+  details = [];
+  expect(await service.loadCollection(other)).toEqual([]);
+});
+
+it('不同账号不复用在途快照，旧账号迟到结果不发布', async () => {
+  const service = await import('../../services/collectionFavorites');
+  let complete!: (value: { items: LocalGenItem[]; count: number }) => void;
+  mocks.historyPage.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const published = vi.fn(); service.subscribeCollection(published);
+  const first = service.loadCollection(user);
+  const other = { ...user, id: 'other-owner' };
+  const second = service.loadCollection(other);
+  complete({ items: [{ id: 'old', imageUrl: '/old.png', prompt: '', createdAt: 1 } as LocalGenItem], count: 1 });
+  expect(await first).toEqual([]);
+  expect(await second).toEqual([]);
+  expect(published).toHaveBeenCalledOnce();
+  expect(service.collectionSnapshot()).toEqual([]);
+});
+
+it('多个图片入口同时初始化只鉴权和完整读取一次', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await Promise.all(Array.from({ length: 20 }, () => service.ensureCollection()));
+  for (const endpoint of ['/auth/me', '/inspirations', '/aitag/favorites']) {
+    expect(mocks.get.mock.calls.filter(([path]) => path === endpoint)).toHaveLength(1);
+  }
+  expect(mocks.historyPage).toHaveBeenCalledOnce();
+  expect(service.collectionRevision()).toBe(1);
+});
+
+it('图片入口加入显式账号的在途读取不重复鉴权', async () => {
+  const service = await import('../../services/collectionFavorites');
+  let complete!: (value: { items: LocalGenItem[]; count: number }) => void;
+  mocks.historyPage.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const pending = service.loadCollection(user);
+  const image = service.ensureCollection();
+  complete({ items: [], count: 0 });
+  await Promise.all([pending, image]);
+  expect(mocks.get.mock.calls.some(([path]) => path === '/auth/me')).toBe(false);
+  expect(mocks.historyPage).toHaveBeenCalledOnce();
+});
+
+it('1001 张历史收藏按最多三页并发读取并保持页序，仅完整发布一次', async () => {
+  const service = await import('../../services/collectionFavorites');
+  const histories = Array.from({ length: 1001 }, (_, index) => ({ id: `h${index}`, imageUrl: `/h${index}.png`, prompt: '', createdAt: index } as LocalGenItem));
+  let active = 0, maximum = 0;
+  mocks.historyPage.mockImplementation(async (page, size, _range, count) => {
+    active++; maximum = Math.max(maximum, active);
+    await new Promise(resolve => setTimeout(resolve, page % 2 ? 2 : 0));
+    active--;
+    return { items: histories.slice(page * size, (page + 1) * size), ...(count ? { count: histories.length } : {}) };
+  });
+  const published = vi.fn(); service.subscribeCollection(published);
+  const result = await service.loadCollection(user);
+  expect(maximum).toBe(3);
+  expect(result.map(item => item.sourceId)).toEqual(histories.map(item => item.id));
+  expect(mocks.historyPage).toHaveBeenCalledTimes(11);
+  expect(published).toHaveBeenCalledOnce();
+  expect(mocks.historyPage.mock.calls.slice(1).every(call => call[3] === false)).toBe(true);
+});
+
+it.each([2, 10])('第 %i 页读取失败时保留旧快照，不发布已完成页', async failedPage => {
+  const service = await import('../../services/collectionFavorites');
+  stored = [{ id: 'saved', userId: user.id, title: 'saved', prompt: '', imageUrl: '/saved.png', createdAt: 1 }];
+  const previous = await service.loadCollection(user);
+  const published = vi.fn(); service.subscribeCollection(published);
+  mocks.historyPage.mockImplementation(async (page, _size, _range, count) => {
+    if (page === failedPage) throw new Error('合成分页失败');
+    return { items: Array.from({ length: page === 10 ? 1 : 100 }, (_, index) => ({ id: `h${page * 100 + index}`, imageUrl: `/h${page * 100 + index}.png`, prompt: '', createdAt: index })), ...(count ? { count: 1001 } : {}) };
+  });
+  await expect(service.loadCollection(user)).rejects.toThrow('合成分页失败');
+  expect(service.collectionSnapshot()).toEqual(previous);
+  expect(published).not.toHaveBeenCalled();
+});
+
+it('未知历史总数逐页串行读取，短末页结束且只发布完整结果', async () => {
+  const service = await import('../../services/collectionFavorites');
+  const histories = Array.from({ length: 217 }, (_, index) => ({ id: `h${index}`, imageUrl: `/h${index}.png`, prompt: '', createdAt: index } as LocalGenItem));
+  let active = 0, maximum = 0;
+  mocks.historyPage.mockImplementation(async (page, size) => {
+    active++; maximum = Math.max(maximum, active);
+    await Promise.resolve(); active--;
+    return { items: histories.slice(page * size, (page + 1) * size) };
+  });
+  const published = vi.fn(); service.subscribeCollection(published);
+  expect(await service.loadCollection(user)).toHaveLength(217);
+  expect(maximum).toBe(1);
+  expect(mocks.historyPage).toHaveBeenCalledTimes(3);
+  expect(published).toHaveBeenCalledOnce();
+});
 
 it('画师级偏好保存当前样张版本来源，换图取消偏好不另存新图片', async () => {
   const service = await import('../../services/collectionFavorites');
@@ -81,6 +193,45 @@ const legacyChain = (id: string, type: 'style' | 'character' = 'style', previewI
   id, type, userId: user.id, name: id, description: '', tags: [], previewImage,
   basePrompt: 'original prompt', negativePrompt: 'original negative', modules: [],
   params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 123 }, createdAt: 10, updatedAt: 20,
+});
+
+it('复用调用方有效串快照汇总旧标记，未提供快照的完整刷新重新读取串库', async () => {
+  const service = await import('../../services/collectionFavorites');
+  localStorage.setItem('nai_chain_favs', '["source"]');
+  const snapshot = [legacyChain('source', 'style', '/cached-cover.png')];
+  expect((await service.loadCollection(user, snapshot))[0].imageUrl).toBe('/cached-cover.png');
+  expect(mocks.get.mock.calls.some(([path]) => path === '/chains')).toBe(false);
+  chains = [legacyChain('source', 'style', '/current-cover.png')];
+  expect((await service.loadCollection(user))[0].imageUrl).toBe('/current-cover.png');
+  expect(mocks.get.mock.calls.filter(([path]) => path === '/chains')).toHaveLength(1);
+  localStorage.setItem('nai_chain_favs', '[]');
+  expect(await service.loadCollection(user, snapshot)).toEqual([]);
+});
+
+it('使用串快照读取时强制刷新等待后重新读串库，同快照与图片入口仍共用在途读取', async () => {
+  const service = await import('../../services/collectionFavorites');
+  localStorage.setItem('nai_chain_favs', '["source"]');
+  const snapshot = [legacyChain('source', 'style', '/cached-cover.png')];
+  chains = [legacyChain('source', 'style', '/current-cover.png')];
+  let complete!: (value: { items: LocalGenItem[]; count: number }) => void;
+  mocks.historyPage.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const published = vi.fn(); service.subscribeCollection(published);
+  const cached = service.loadCollection(user, snapshot);
+  const duplicate = service.loadCollection(user, snapshot);
+  const image = service.ensureCollection();
+  const forced = service.loadCollection(user);
+  expect(mocks.historyPage).toHaveBeenCalledOnce();
+  expect(mocks.get.mock.calls.some(([path]) => path === '/chains')).toBe(false);
+  complete({ items: [], count: 0 });
+  const [first, same, , fresh] = await Promise.all([cached, duplicate, image, forced]);
+  expect(first[0].imageUrl).toBe('/cached-cover.png');
+  expect(same).toBe(first);
+  expect(fresh[0].imageUrl).toBe('/current-cover.png');
+  expect(service.collectionSnapshot()).toBe(fresh);
+  expect(mocks.get.mock.calls.filter(([path]) => path === '/chains')).toHaveLength(1);
+  expect(mocks.get.mock.calls.some(([path]) => path === '/auth/me')).toBe(false);
+  expect(mocks.historyPage).toHaveBeenCalledTimes(2);
+  expect(published).toHaveBeenCalledTimes(2);
 });
 
 it('旧串与自建角色只读汇总当前封面，无封面、未知ID与blob不造图片，原名单和源串不改写', async () => {
@@ -227,16 +378,19 @@ it('收藏本地图包样张先保存原件，解除图包关联后不依赖源�
 });
 
 it('只读汇总全部旧历史收藏与 AITag 组内图片，不复制原图或写入旧资料', async () => {
-  const histories = Array.from({ length: 202 }, (_, index) => ({ id: `h${index}`, imageUrl: `/api/local-history/h${index}/image`, prompt: 'source', negativePrompt: 'negative', params: { width: 832, height: 1216, seed: index }, createdAt: index + 1, favoriteAt: 1000 + index } as LocalGenItem));
-  mocks.historyPage.mockImplementation(async page => ({ items: histories.slice(page * 200, (page + 1) * 200), count: 202 }));
+  const histories = Array.from({ length: 257 }, (_, index) => ({ id: `h${index}`, imageUrl: `/api/local-history/h${index}/image`, prompt: 'source', negativePrompt: 'negative', params: { width: 832, height: 1216, seed: index }, createdAt: index + 1, favoriteAt: 1000 + index } as LocalGenItem));
+  mocks.historyPage.mockImplementation(async (page, pageSize, _range, includeCount) => ({ items: histories.slice(page * pageSize, (page + 1) * pageSize), ...(includeCount ? { count: histories.length } : {}) }));
   details = [{ work: { id: 3, title: '组', favoriteAt: 600 }, images: [1, 2].map(id => ({ id, work_id: 3, file_name: `3_p${id}.png`, local_image_url: `/api/assets/aitag/${id}.png`, ai_json: { prompt: 'AITag 原词', uc: 'negative', seed: id, width: 832, height: 1216 } })) }];
-  const { loadCollection } = await import('../../services/collectionFavorites');
+  const { loadCollection, subscribeCollection } = await import('../../services/collectionFavorites');
+  const published = vi.fn(); subscribeCollection(published);
   const result = await loadCollection(user);
-  expect(result).toHaveLength(204);
+  expect(result).toHaveLength(259);
+  expect(published).toHaveBeenCalledOnce();
   expect(result.every(item => item.tags?.length === 0)).toBe(true);
-  expect(mocks.historyPage).toHaveBeenCalledTimes(2);
-  expect(mocks.historyPage).toHaveBeenNthCalledWith(1, 0, 200, { favoriteOnly: true }, true);
-  expect(mocks.historyPage).toHaveBeenNthCalledWith(2, 1, 200, { favoriteOnly: true }, false);
+  expect(mocks.historyPage).toHaveBeenCalledTimes(3);
+  expect(mocks.historyPage).toHaveBeenNthCalledWith(1, 0, 100, { favoriteOnly: true }, true);
+  expect(mocks.historyPage).toHaveBeenNthCalledWith(2, 1, 100, { favoriteOnly: true }, false);
+  expect(mocks.historyPage).toHaveBeenNthCalledWith(3, 2, 100, { favoriteOnly: true }, false);
   expect(result.find(item => item.sourceType === 'aitag')).toEqual(expect.objectContaining({ prompt: 'AITag 原词', tags: [], analysis: { collectionImageId: '3_p1.png', collectionGroupSize: 2 }, params: expect.objectContaining({ seed: 1 }) }));
   expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.uploadFile).not.toHaveBeenCalled();
 });

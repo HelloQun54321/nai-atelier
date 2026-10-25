@@ -8,6 +8,8 @@ import { DEFAULT_NAI_RUNTIME, CloudQueueCoordinator, handleGenerateRequest, hand
 import { normalizeCloudQueueCount } from '../../worker/cloudQueueNumbers.mjs';
 import { getCloudQueueGenerationUrl } from '../../worker/cloudQueueTarget.mjs';
 import { GenerationTasks } from '../../worker/generationTasks.mjs';
+import JSZip from 'jszip';
+import { readGenerationResponse } from '../../scripts/generation-output.mjs';
 
 // 只使用模拟外部请求和注入的结算函数，不启动真实网关、不读取或改写私人数据。
 const preferences = { enabled: true, serviceUrl: 'https://queue.example', greeting: '', showGreeting: true };
@@ -46,6 +48,75 @@ const waitUntil = async predicate => {
   for (let i = 0; i < 400; i++) { if (predicate()) return; await sleep(5); }
   assert.fail('模拟任务未达到预期状态');
 };
+
+for (const member of [false, true]) test(`后台 ZIP 提前 final，记账与清理回执收齐前保留锁，成员网关=${member}`, async () => {
+  let settleStarted = false, finishSettlement, finishCleanup, cleanupStarted = false, requests = 0;
+  const settlement = new Promise(resolve => { finishSettlement = resolve; });
+  const cleanup = new Promise(resolve => { finishCleanup = resolve; });
+  const q = setup(async url => {
+    if (url.endsWith('/join-queue')) return json({ position: 0, lock_token: 'permit' });
+    if (url.endsWith('/complete')) { cleanupStarted = true; await cleanup; }
+    return json({ status: 'ok' });
+  });
+  const zip = new JSZip(); zip.file('result.png', Buffer.from('synthetic-image')); zip.file('metadata.json', '{"seed":42}');
+  const zipped = await zip.generateAsync({ type: 'nodebuffer' });
+  const tasks = new GenerationTasks({ intervalSeconds: 0 }), token = 'synthetic-early-zip-0001';
+  tasks.reserve(testKeyHash, token);
+  const req = requestFor('early-zip-task');
+  req.headers['x-nai-generation-task'] = token; req.headers['x-nai-generation-response'] = 'events';
+  const res = new TestResponse();
+  const pending = (member ? handleGenerateStreamRequest : handleGenerateRequest)(req, res, '', 0, q, preferences, async url => {
+    requests++; assert.equal(url, member ? 'https://member.example/ai/generate-image' : 'https://image.novelai.net/ai/generate-image');
+    return new Response(zipped);
+  }, { ...generationOptions, tasks, gatewayUrl: member ? 'https://member.example' : '', settleGeneration: async () => { settleStarted = true; await settlement; return { estimatedCost: 3, accountingFailed: true, accountingError: 'synthetic accounting' }; } });
+  await waitUntil(() => settleStarted);
+  assert.match(res.body(), /event: final/); assert.doesNotMatch(res.body(), /nai_usage/);
+  assert.equal(res.writableEnded, false); assert.equal(tasks.current(testKeyHash).inFlight, true);
+  finishSettlement();
+  if (!member) {
+    await waitUntil(() => cleanupStarted);
+    assert.match(res.body(), /nai_usage/); assert.equal(res.writableEnded, false);
+    assert.equal(tasks.current(testKeyHash).inFlight, true);
+  }
+  finishCleanup(); await pending;
+  const output = await readGenerationResponse(new Response(res.body(), { headers: { 'Content-Type': 'text/event-stream' } }));
+  assert.equal(output.seed, 42); assert.equal(output.bytes.toString(), 'synthetic-image');
+  assert.equal(output.accountingError, 'synthetic accounting'); assert.equal(requests, 1);
+  assert.equal(tasks.current(testKeyHash).inFlight, false);
+});
+
+test('后台 ZIP 解析失败也完成一次记账和队列清理，不重新生图', async () => {
+  let settlements = 0, releases = 0, requests = 0;
+  const q = setup(async url => {
+    if (url.endsWith('/join-queue')) return json({ position: 0, lock_token: 'permit' });
+    if (url.endsWith('/complete')) releases++;
+    return json({ status: 'ok' });
+  });
+  const tasks = new GenerationTasks({ intervalSeconds: 0 }), token = 'synthetic-invalid-zip-0001'; tasks.reserve(testKeyHash, token);
+  const req = requestFor('invalid-zip-task'); req.headers['x-nai-generation-task'] = token; req.headers['x-nai-generation-response'] = 'events';
+  const res = new TestResponse();
+  await handleGenerateRequest(req, res, '', 0, q, preferences, async () => { requests++; return new Response('invalid zip'); }, {
+    ...generationOptions, tasks, settleGeneration: async () => { settlements++; return { estimatedCost: 2 }; },
+  });
+  assert.equal(requests, 1); assert.equal(settlements, 1); assert.equal(releases, 1);
+  assert.match(res.body(), /event: nai_usage/); assert.match(res.body(), /generation_output_invalid/);
+  await assert.rejects(readGenerationResponse(new Response(res.body(), { headers: { 'Content-Type': 'text/event-stream' } })), { code: 'generation_output_invalid' });
+});
+
+test('公开 ZIP 不因单独协商头改变格式，仍携带结算头部和原始字节', async () => {
+  let settleStarted = false, finishSettlement;
+  const settlement = new Promise(resolve => { finishSettlement = resolve; });
+  const req = requestFor('public-zip-task'); req.headers['x-nai-generation-response'] = 'events';
+  const res = new TestResponse(), bytes = Buffer.from('original zip bytes');
+  const pending = handleGenerateRequest(req, res, '', 0, setup(async () => json({})), { enabled: false }, async () => new Response(bytes, { headers: { 'Content-Type': 'application/zip' } }), {
+    ...generationOptions, tasks: new GenerationTasks({ intervalSeconds: 0 }),
+    settleGeneration: async () => { settleStarted = true; await settlement; return { estimatedCost: 7, accountingFailed: true, accountingError: 'synthetic accounting' }; },
+  });
+  await waitUntil(() => settleStarted); assert.equal(res.headersSent, false); assert.equal(res.body(), '');
+  finishSettlement(); await pending;
+  assert.deepEqual(Buffer.concat(res.chunks), bytes); assert.equal(res.headers['content-type'], 'application/zip');
+  assert.equal(res.headers['x-nai-anlas-accounting-failed'], '1'); assert.equal(res.headers['x-nai-anlas-estimated-spent'], '7');
+});
 
 test('通用中转识别任意域名、端口与前缀，只接受明确的兼容生图接口', () => {
   for (const prefix of ['https://nai.ry.mk', 'https://relay.example/v1', 'http://127.0.0.1:8199/prefix']) {

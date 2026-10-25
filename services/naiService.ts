@@ -110,7 +110,7 @@ export interface GenerationJobDescriptorInput {
  * 一次性构建后台任务描述：复用现有 payload 与编辑预处理代码，只做一次。
  * 随机种子交给后端每张重新抽取；固定种子原样保留。
  */
-export const buildGenerationJobDescriptor = async (input: GenerationJobDescriptorInput): Promise<GenerationJobDescriptor> => {
+export const buildGenerationJobDescriptor = async (input: GenerationJobDescriptorInput, preparedEdit?: PreparedImageEdit): Promise<GenerationJobDescriptor> => {
   const runtime = await getNaiRuntimeConfig();
   let params = applyNaiModelSettings(input.params, runtime);
   if (params.transparent) params = { ...params, transparentWeight: resolveTransparentWeight(params.transparentWeight, input.prompt) };
@@ -134,7 +134,7 @@ export const buildGenerationJobDescriptor = async (input: GenerationJobDescripto
   if (!edit) throw new Error('缺少图片编辑参数');
   const focused = Boolean(edit.focused && input.operation === 'inpaint');
   const randomSeed = Boolean(input.forceEmptySeed) || params.seed === undefined || params.seed === null || params.seed === -1;
-  const prepared = await prepareImageEdit({
+  const prepared = preparedEdit ?? await prepareImageEdit({
     operation: input.operation, image: edit.image, mask: edit.mask,
     focused, focusedRect: edit.focusedRect, minimumContextArea: edit.minimumContextArea,
   });

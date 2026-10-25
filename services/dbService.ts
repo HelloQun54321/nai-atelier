@@ -106,8 +106,8 @@ class DBService {
     return normalizeCollectionTagNames(result.tags);
   }
 
-  async getAllInspirations(user?: User): Promise<Inspiration[]> {
-    return user ? loadCollection(user) : api.get('/inspirations');
+  async getAllInspirations(user?: User, chainSnapshot?: readonly PromptChain[]): Promise<Inspiration[]> {
+    return user ? loadCollection(user, chainSnapshot) : api.get('/inspirations');
   }
 
   async getInspirationsBySource(sourceType: 'danbooru' | 'pixiv', sourceId: string): Promise<Inspiration[]> {
