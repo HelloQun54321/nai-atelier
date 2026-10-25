@@ -3,6 +3,8 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { rollFixture, candidateFixture } from '../fixtures/styleRoll';
+import { useMobileHistoryLayer } from '../../components/MobileUI';
+import { ImageActivityProvider } from '../../components/SmartImage';
 import { StyleRollSetup } from '../../components/roll/StyleRollSetup';
 import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_PROMPT, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
@@ -338,4 +340,65 @@ it('冻结记录不可套用预设但可另存完整配置，在途预设保存�
   await act(async () => finish({ ...snapshot, revision: 1 }));
   expect(screen.getByRole('combobox', { name: '生成配置预设' })).toHaveProperty('disabled', true);
   expect(screen.getByRole('button', { name: '保存配置' })).toHaveProperty('disabled', false);
+});
+
+vi.mock('../../components/roll/StyleRollChainArtistDialog', () => ({ StyleRollChainArtistDialog: ({ source, blocked, onConfirm, onClose }: any) => { const close = useMobileHistoryLayer(true, onClose, 'roll-chain-artists'); return <div role="dialog" aria-label="提取接线" data-source={JSON.stringify(source ?? null)} data-blocked={blocked.join(',')}><button onClick={() => { onConfirm({ chainIds: ['source-chain', 'source-two'], artists: [{ tag: 'beta', count: 2 }, { tag: 'gamma', count: 1 }, { tag: 'delta', count: 1 }, { tag: 'epsilon', count: 1 }] }); onClose(); }}>确认提取接线</button><button onClick={() => { onConfirm(undefined); close(); }}>使用全部画师接线</button><button onClick={close}>取消提取接线</button></div>; } }));
+
+it.each([false, true])('配置内直接提取只改来源草稿，已有候选=%s，取消不应用并保留模板冻结', async frozen => {
+  const initial = rollFixture(); initial.pinnedArtists = ['alpha'];
+  if (frozen) initial.candidates = [candidateFixture('frozen', 'alpha')];
+  const save = vi.fn(async (_value: RollExperiment) => {}), close = vi.fn();
+  render(<StyleRollSetup initial={initial} library={[]} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={save} onClose={close} />);
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  fireEvent.click(screen.getByRole('button', { name: '取消提取接线' }));
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toBe('null');
+  fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].pinnedArtists).toEqual(['alpha']);
+  expect(save.mock.calls[0][0].chainArtistSource?.artists).toHaveLength(4);
+  expect(save.mock.calls[0][0].template).toEqual(initial.template);
+});
+it('配置隐藏释放父子层，返回保留草稿但不恢复提取子窗', () => {
+  const props = { initial: rollFixture(), library: [], onBlockedChange: async () => {}, enforceFreeStepLimit: true, onSave: vi.fn(async () => {}), onClose: vi.fn() };
+  const view = render(<ImageActivityProvider active><StyleRollSetup {...props} /></ImageActivityProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  view.rerender(<ImageActivityProvider active={false}><StyleRollSetup {...props} /></ImageActivityProvider>);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  view.rerender(<ImageActivityProvider active><StyleRollSetup {...props} /></ImageActivityProvider>);
+  expect(screen.getByRole('dialog', { name: 'Roll 串配置' })).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
+});
+
+it('手机返回仅卸提取层，配置草稿仍在且不应用', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  window.history.replaceState(null, '');
+  const save = vi.fn(async () => {});
+  render(<StyleRollSetup initial={rollFixture()} library={[]} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
+  const parentState = window.history.state;
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  expect(window.history.state.__naiMobileLayers).toHaveLength(2);
+  window.history.replaceState(parentState, '');
+  act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: parentState })));
+  expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
+  expect(screen.getByRole('dialog', { name: 'Roll 串配置' })).toBeTruthy();
+  expect(save).not.toHaveBeenCalled();
+  window.history.replaceState(null, '');
+});
+
+it('重新编辑恢复已存来源，清为全库后保存保留固定项及模板', async () => {
+  const initial = rollFixture(); initial.pinnedArtists = ['alpha'];
+  initial.chainArtistSource = { chainIds: ['old-source'], artists: [{ tag: 'beta', count: 1 }] };
+  const save = vi.fn(async (_value: RollExperiment) => {});
+  render(<StyleRollSetup initial={initial} library={[]} onBlockedChange={async () => {}} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  expect(JSON.parse(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')!)).toEqual(initial.chainArtistSource);
+  fireEvent.click(screen.getByRole('button', { name: '使用全部画师接线' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][0].chainArtistSource).toBeUndefined();
+  expect(save.mock.calls[0][0].pinnedArtists).toEqual(['alpha']);
+  expect(save.mock.calls[0][0].template).toEqual(initial.template);
 });

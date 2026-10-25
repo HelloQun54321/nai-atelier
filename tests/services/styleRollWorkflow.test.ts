@@ -1,7 +1,100 @@
 import { expect, it } from 'vitest';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
-import { validateRollExperiment } from '../../services/styleRoll';
+import { rollCandidates, validateRollExperiment } from '../../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../../services/styleRollWorkflow';
+
+it('提取池只限定随机补位，保留原固定项且不从全库补足', () => {
+  const e = rollFixture(); e.artists = []; e.pinnedArtists = ['fixed-outside'];
+  e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+  e.chainArtistSource = { chainIds: ['source'], artists: [{ tag: 'only-source', count: 1 }] };
+  const next = beginRollRound(e, ['whole-library'], 1);
+  expect(next.candidates[0].tags.map(artist => artist.tag)).toEqual(['fixed-outside', 'only-source']);
+  e.rules.maxArtists = 3;
+  expect(() => beginRollRound(e, ['whole-library', 'another'], 1)).toThrow('可用画师不足');
+  e.chainArtistSource = { chainIds: [], artists: [] };
+  expect(() => beginRollRound(e, ['whole-library', 'another'], 1)).toThrow('可用画师不足');
+});
+
+it('提取集合可以超过单图人数上限，快照与JSON往返保留来源且不随后续选择变化', () => {
+  const e = rollFixture(); e.artists = []; e.pinnedArtists = [];
+  e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
+  e.chainArtistSource = { chainIds: ['source'], artists: Array.from({ length: 1100 }, (_, index) => ({ tag: `source-${index}`, count: 1 })) };
+  const next = beginRollRound(e, ['not-source'], 1);
+  expect(next.candidates[0].tags).toHaveLength(1);
+  expect(next.rounds[0].snapshot?.chainArtistSource?.artists).toHaveLength(1100);
+  const snapshot = structuredClone(next.rounds[0].snapshot);
+  e.chainArtistSource.artists[0].tag = 'changed'; e.chainArtistSource.chainIds.push('second');
+  expect(next.rounds[0].snapshot).toEqual(snapshot);
+  expect(() => validateRollExperiment(JSON.parse(JSON.stringify(next)))).not.toThrow();
+});
+
+it('来源频次与偏好倍率相乘，偏好保底同样按来源频次抽取且单串不重复', () => {
+  const e = rollFixture(); e.pinnedArtists = [];
+  e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
+  e.artists = ['alpha', 'beta', 'outside'].map(tag => ({ tag, weight: 1, excluded: false, locked: false }));
+  e.chainArtistSource = { chainIds: ['one', 'two'], artists: [{ tag: 'alpha', count: 2 }, { tag: 'beta', count: 1 }] };
+  expect(rollCandidates(e, 1, { random: () => 0.6 })[0].tags[0].tag).toBe('alpha');
+  e.rules.preferredMultiplier = 3;
+  expect(rollCandidates(e, 1, { random: () => 0.6, preferredTags: ['beta'] })[0].tags[0].tag).toBe('beta');
+  e.rules.preferredMinArtists = 1;
+  expect(rollCandidates(e, 1, { random: () => 0.6, preferredTags: ['alpha', 'beta'] })[0].tags[0].tag).toBe('alpha');
+  e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+  expect(new Set(rollCandidates(e, 1, { random: () => 0.6, preferredTags: ['alpha', 'beta'] })[0].tags.map(artist => artist.tag)).size).toBe(2);
+});
+
+it('提取来源照常受样张、屏蔽和排除约束，偏好不足不借全库', () => {
+  const e = rollFixture(); e.pinnedArtists = []; e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
+  e.artists = [{ tag: 'alpha', weight: 1, excluded: false, locked: false }, { tag: 'beta', weight: 1, excluded: true, locked: false }];
+  e.chainArtistSource = { chainIds: ['one'], artists: [{ tag: 'alpha', count: 1 }, { tag: 'beta', count: 1 }] };
+  expect(() => beginRollRound(e, ['outside'], 1, { sampledOnly: true })).toThrow('可用画师不足');
+  expect(() => beginRollRound(e, ['outside'], 1, { blockedTags: ['alpha'] })).toThrow('可用画师不足');
+  e.rules.preferredMinArtists = 1;
+  expect(() => beginRollRound(e, ['outside'], 1, { preferredTags: ['outside', 'beta'] })).toThrow('可用偏好画师不足');
+});
+
+it('来源计数与快照在保存边界校验，旧无来源记录继续合法', () => {
+  const e = rollFixture();
+  expect(() => validateRollExperiment(e)).not.toThrow();
+  for (const count of [0, -1, 0.5, 2]) {
+    expect(() => validateRollExperiment({ ...e, chainArtistSource: { chainIds: ['source'], artists: [{ tag: 'alpha', count }] } })).toThrow('风格串画师抽取来源无效');
+  }
+  expect(() => validateRollExperiment({ ...e, chainArtistSource: null })).toThrow('风格串画师抽取来源无效');
+  expect(() => validateRollExperiment({ ...e, chainArtistSource: { chainIds: ['source', 'source'], artists: [] } })).toThrow('风格串画师抽取来源无效');
+  expect(() => validateRollExperiment({ ...e, chainArtistSource: { chainIds: ['source'], artists: [{ tag: 'Ａlpha_Name(style)', count: 1 }, { tag: 'alpha name (style)', count: 1 }] } })).toThrow('风格串画师抽取来源无效');
+  const valid = beginRollRound({ ...e, chainArtistSource: { chainIds: ['source'], artists: [{ tag: 'alpha', count: 1 }] }, pinnedArtists: [], rules: { ...e.rules, minArtists: 1, maxArtists: 1 } }, ['alpha'], 1);
+  valid.rounds[0].snapshot!.chainArtistSource!.artists[0].count = 0;
+  expect(() => validateRollExperiment(valid)).toThrow('风格串画师抽取来源无效');
+});
+
+it('提取模式用统一画师身份匹配旧覆盖、固定、样张、屏蔽和偏好，不重复抽别名', () => {
+  const e = rollFixture(); e.pinnedArtists = []; e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+  e.chainArtistSource = { chainIds: ['source'], artists: [{ tag: 'alpha (style)', count: 1 }, { tag: 'beta name', count: 1 }] };
+  e.artists = [{ tag: 'alpha(style)', weight: 1, excluded: false, locked: false }];
+  const next = beginRollRound(e, ['alpha(style)', 'ＢＥＴＡ＿ＮＡＭＥ'], 1, { sampledOnly: true });
+  expect(next.candidates[0].tags.map(artist => artist.tag).sort()).toEqual(['alpha (style)', 'beta name']);
+  expect(() => beginRollRound(e, [], 1, { blockedTags: ['alpha(style)'] })).toThrow('可用画师不足');
+  e.artists[0].excluded = true;
+  expect(() => beginRollRound(e, [], 1)).toThrow('可用画师不足');
+  e.artists = []; e.pinnedArtists = ['Ａlpha(style)']; e.rules.preferredMinArtists = 1;
+  expect(beginRollRound(e, [], 1, { preferredTags: ['alpha (style)'] }).candidates[0].tags.map(artist => artist.tag))
+    .toEqual(['Ａlpha(style)', 'beta name']);
+});
+
+it.each([false, true])('源模式合并合法旧双别名时排除优先，与排列无关：反转=%s', reverse => {
+  const e = rollFixture(); e.pinnedArtists = []; e.rules = { ...e.rules, minArtists: 1, maxArtists: 1 };
+  e.artists = [
+    { tag: 'Ａlpha', weight: 1, excluded: true, locked: false },
+    { tag: 'alpha', weight: 2, excluded: false, locked: false },
+  ];
+  if (reverse) e.artists.reverse();
+  e.chainArtistSource = { chainIds: ['source'], artists: [{ tag: 'alpha', count: 1 }, { tag: 'beta', count: 1 }] };
+  expect(() => validateRollExperiment(e)).not.toThrow();
+  expect(beginRollRound(e, ['alpha', 'beta'], 1).candidates[0].tags[0].tag).toBe('beta');
+  e.chainArtistSource.artists = [{ tag: 'alpha', count: 1 }];
+  expect(() => beginRollRound(e, ['alpha', 'beta'], 1)).toThrow('可用画师不足');
+  e.pinnedArtists = ['alpha'];
+  expect(() => beginRollRound(e, ['alpha', 'beta'], 1)).toThrow('固定画师不可用');
+});
 
 it('新一轮自动从完整目录建普通批次，存档只保留覆盖项', () => {
   const e = rollFixture(); e.artists = [];

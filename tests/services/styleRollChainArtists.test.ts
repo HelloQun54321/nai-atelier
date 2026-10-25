@@ -1,12 +1,34 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { extractArtistParticipation, normalizeArtistUsageKey } from '../../services/artistParticipation';
-import { extractRollChainArtistTags } from '../../services/styleRollChainArtists';
+import { buildRollChainArtistSource, extractRollChainArtistTags } from '../../services/styleRollChainArtists';
 
 const chainOf = (basePrompt: string): PromptChain => ({
   id: 'synthetic-style', userId: 'synthetic-user', type: 'style', name: '合成风格串',
   description: '', tags: [], createdAt: 1, updatedAt: 1, basePrompt, negativePrompt: '', modules: [], variableValues: { subject: '' },
   params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' },
+});
+
+it('按来源串计数，同串重复词或同ID重复选择只贡献一次，重新选择重新计算', () => {
+  const one = chainOf('artist:alpha, artist:alpha, 2::artist:beta::');
+  const two = { ...chainOf('artist:alpha, artist:gamma'), id: 'second-style' };
+  expect(buildRollChainArtistSource([one, one, two], new Set())).toEqual({ chainIds: ['synthetic-style', 'second-style'], artists: [
+    { tag: 'alpha', count: 2 }, { tag: 'beta', count: 1 }, { tag: 'gamma', count: 1 },
+  ] });
+  expect(buildRollChainArtistSource([two], new Set()).artists).toEqual([{ tag: 'alpha', count: 1 }, { tag: 'gamma', count: 1 }]);
+  expect(buildRollChainArtistSource([], new Set())).toEqual({ chainIds: [], artists: [] });
+});
+
+it('允许复用调用方已解析缓存，按唯一来源读取一次并保证同串只贡献一次', () => {
+  const one = chainOf('artist:must-not-parse');
+  const two = { ...chainOf('artist:must-not-parse-either'), id: 'second-style' };
+  const cached = new Map([[one.id, ['alpha', 'alpha', 'beta']], [two.id, ['alpha', 'gamma']]]);
+  const readTags = vi.fn((chain: PromptChain) => cached.get(chain.id)!);
+  expect(buildRollChainArtistSource([one, one, two], new Set(), readTags)).toEqual({
+    chainIds: [one.id, two.id], artists: [{ tag: 'alpha', count: 2 }, { tag: 'beta', count: 1 }, { tag: 'gamma', count: 1 }],
+  });
+  expect(readTags.mock.calls.map(([chain]) => chain.id)).toEqual([one.id, two.id]);
+  expect(cached.get(one.id)).toEqual(['alpha', 'alpha', 'beta']);
 });
 
 it('显式画师与词库已知裸名混合提取，返回名字而非权重或普通词', () => {

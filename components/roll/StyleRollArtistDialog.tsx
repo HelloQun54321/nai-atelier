@@ -14,7 +14,6 @@ import { collectionSnapshot, ensureCollection, subscribeCollection } from '../..
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { normalizeRollArtistKey } from '../../services/styleRollSeed';
-import { normalizeArtistUsageKey } from '../../services/artistParticipation';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { ArtistSampleCover } from '../ArtistSampleCover';
 import { ImageActivityContext } from '../SmartImage';
@@ -28,7 +27,6 @@ import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
-import { StyleRollChainArtistDialog } from './StyleRollChainArtistDialog';
 
 interface Props {
   library: ArtistDictionaryEntry[]; loading?: boolean;
@@ -92,9 +90,6 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const notify = React.useCallback((message: string) => setError(message), []);
   const active = useContext(ImageActivityContext);
-  const [chainDialogOpen, setChainDialogOpen] = useState(false);
-  const knownArtists = useMemo(() => new Set(library.map(artist => normalizeArtistUsageKey(artist.name))), [library]);
-  useEffect(() => { if (!active) setChainDialogOpen(false); }, [active]);
   const { requestingTarget, removeSample, supplementSample, manageGeneration, settingsDialog } = useArtistSampleActions({ active, data: sampleData, setData: setSampleData, notify, enforceFreeStepLimit });
   const dialog = useModalA11y<HTMLDivElement>(active);
   const close = useMobileHistoryLayer(active, () => { if (busy) return false; onClose(); }, 'roll-artists');
@@ -191,7 +186,6 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarButton disabled={busy || loading} onClick={() => { setSettingsOpen(false); setUsageOpen(false); setChainDialogOpen(true); }}>{t('从风格串提取')}</ToolbarButton>
         <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
@@ -249,6 +243,5 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
       </div>
     </div>
     {settingsDialog}
-    {chainDialogOpen && <StyleRollChainArtistDialog knownArtists={knownArtists} pinned={pinned} blocked={[...blocked, ...excluded]} limit={rules.maxArtists} onConfirm={onPinnedChange} onClose={() => setChainDialogOpen(false)} />}
   </div>;
 };

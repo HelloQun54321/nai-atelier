@@ -2,11 +2,14 @@ import type { NAIParams, PromptChain } from '../types';
 import { createUuid } from './id';
 import { applyNaiModelSettings, DEFAULT_NAI_MODEL } from './naiModels';
 import type { NaiRuntimeConfig } from './naiRuntime';
+import { normalizeRollArtistKey } from './styleRollSeed';
 
 export interface RollArtist { tag: string; weight: number; locked: boolean; excluded: boolean }
 /** 候选只记录本次抽到的画师与权重，不保存来源关系或代数。 */
 export interface RollTag { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number }
+/** 所选来源及当时提取次数；抽样范围独立于每张图片的人数上限。 */
+export interface RollChainArtistSource { chainIds: string[]; artists: { tag: string; count: number }[] }
 export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
 export interface RollPreset { id: string; name: string; template: RollTemplate; revision: number; createdAt: number; updatedAt: number }
 /** 只读取旧记录的模式字段；新轮次统一使用固定 Tag 列表。 */
@@ -16,6 +19,7 @@ interface LegacyRollDrawPlan {
 }
 export interface RollRoundSnapshot {
   rules: RollRules;
+  chainArtistSource?: RollChainArtistSource;
   mode?: LegacyRollDrawPlan['mode'];
   pinnedArtists?: string[];
   sampledOnly?: boolean;
@@ -43,6 +47,7 @@ export interface RollExperiment {
   artists: RollArtist[];
   rules: RollRules;
   pinnedArtists?: string[];
+  chainArtistSource?: RollChainArtistSource;
   drawPlan?: LegacyRollDrawPlan;
   /** 只从有样张的画师中抽取；不影响已锁定的覆盖项。 */
   sampledOnly?: boolean;
@@ -75,6 +80,7 @@ export const ROLL_CANDIDATE_LIMIT = 240;
 export const ROLL_MAX_ARTISTS = 64;
 const tenth = (value: number) => Math.round(value * 10) / 10;
 const tagKey = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase();
+const sourceTagKey = (tag: string) => normalizeRollArtistKey(tag.normalize('NFKC').replace(/\\([()])/g, '$1'));
 const validTag = (tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0 && tag.length <= 200 && !/[,\n\r:{}\[\]<>]/.test(tag);
 const validWeight = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0.1 && value <= 3 && Math.abs(value * 10 - Math.round(value * 10)) < 1e-8;
 
@@ -145,6 +151,15 @@ export function validateRollPinnedArtists(tags: string[]): void {
   if (!Array.isArray(tags) || tags.length > ROLL_MAX_ARTISTS || tags.some(tag => !validTag(tag)) || new Set(tags.map(tagKey)).size !== tags.length) throw new Error(`固定画师需要至多 ${ROLL_MAX_ARTISTS} 个不重复的画师 Tag`);
 }
 
+export function validateRollChainArtistSource(value: unknown): asserts value is RollChainArtistSource {
+  const source = value as RollChainArtistSource;
+  if (!source || !Array.isArray(source.chainIds) ||
+    source.chainIds.some(id => typeof id !== 'string' || !id || id.length > 100) || new Set(source.chainIds).size !== source.chainIds.length ||
+    !Array.isArray(source.artists) ||
+    source.artists.some(artist => !artist || !validTag(artist.tag) || !Number.isSafeInteger(artist.count) || artist.count < 1 || artist.count > source.chainIds.length) ||
+    new Set(source.artists.map(artist => sourceTagKey(artist.tag))).size !== source.artists.length) throw new Error('风格串画师抽取来源无效');
+}
+
 /** 显式空列表可清除旧记录的锁定；旧权重与旧候选保持原样。 */
 export function getRollPinnedArtists(experiment: Pick<RollExperiment, 'artists' | 'drawPlan' | 'pinnedArtists'>): string[] {
   if (experiment.pinnedArtists !== undefined) return experiment.pinnedArtists;
@@ -183,6 +198,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
     !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) || e.candidates.length > ROLL_CANDIDATE_LIMIT ||
     (e.archived !== undefined && typeof e.archived !== 'boolean') || (e.sampledOnly !== undefined && typeof e.sampledOnly !== 'boolean')) throw new Error('Roll 串画风记录资料无效');
   validateRollTemplate(e.template);
+  if (e.chainArtistSource !== undefined) validateRollChainArtistSource(e.chainArtistSource);
   const keys = new Set<string>();
   for (const artist of e.artists) {
     if (!artist || !validTag(artist.tag) || !validWeight(artist.weight) || typeof artist.locked !== 'boolean' || typeof artist.excluded !== 'boolean' ||
@@ -214,6 +230,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
       const snapshot = round.snapshot as RollRoundSnapshot;
       if (!snapshot || typeof snapshot !== 'object') throw new Error('画风轮次资料无效');
       validateRuleRanges(snapshot.rules);
+      if (snapshot.chainArtistSource !== undefined) validateRollChainArtistSource(snapshot.chainArtistSource);
       if (snapshot.mode !== undefined) validateLegacyRollPlan({ mode: snapshot.mode, pinnedArtists: snapshot.pinnedArtists }, snapshot.rules);
       else {
         validateRollPinnedArtists(snapshot.pinnedArtists ?? []);
@@ -227,7 +244,11 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
 
 export function rollCandidates(experiment: RollExperiment, count: number, options: { random?: () => number; blockedTags?: string[]; preferredTags?: string[] } = {}): RollCandidate[] {
   validateRuleRanges(experiment.rules);
-  const pinnedTags = getRollPinnedArtists(experiment);
+  if (experiment.chainArtistSource !== undefined) validateRollChainArtistSource(experiment.chainArtistSource);
+  const frequencies = experiment.chainArtistSource === undefined ? null : new Map(experiment.chainArtistSource.artists.map(artist => [sourceTagKey(artist.tag), artist.count]));
+  const keyOf = frequencies ? sourceTagKey : tagKey;
+  const rawPinnedTags = getRollPinnedArtists(experiment);
+  const pinnedTags = frequencies ? [...new Map(rawPinnedTags.map(tag => [keyOf(tag), tag])).values()] : rawPinnedTags;
   validateRollPinnedArtists(pinnedTags);
   if (pinnedTags.length > experiment.rules.maxArtists) throw new Error('固定画师数量不能超过每串总人数');
   if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) {
@@ -235,21 +256,30 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
     throw new Error(`本记录最多保留 ${ROLL_CANDIDATE_LIMIT} 个候选，当前还可 Roll ${remaining} 串；可在回收站永久清理旧候选后继续`);
   }
   const random = options.random || Math.random, rules = experiment.rules;
-  const blocked = new Set((options.blockedTags || []).map(tagKey));
-  const excluded = new Set(experiment.artists.filter(artist => artist.excluded).map(artist => tagKey(artist.tag)));
-  const unavailable = pinnedTags.find(tag => blocked.has(tagKey(tag)) || excluded.has(tagKey(tag)));
+  const blocked = new Set((options.blockedTags || []).map(keyOf));
+  const excluded = new Set(experiment.artists.filter(artist => artist.excluded).map(artist => keyOf(artist.tag)));
+  const unavailable = pinnedTags.find(tag => blocked.has(keyOf(tag)) || excluded.has(keyOf(tag)));
   if (unavailable) throw new Error(`固定画师不可用：${unavailable}（已排除或屏蔽）`);
-  const pinnedKeys = new Set(pinnedTags.map(tagKey));
-  const pool = experiment.artists.filter(artist => !artist.excluded && !blocked.has(tagKey(artist.tag)) && !pinnedKeys.has(tagKey(artist.tag)));
+  const pinnedKeys = new Set(pinnedTags.map(keyOf));
+  const drawArtists = frequencies ? [...new Map(experiment.artists.map(artist => [keyOf(artist.tag), artist])).values()] : experiment.artists;
+  const pool = drawArtists.filter(artist => !artist.excluded && !excluded.has(keyOf(artist.tag)) && !blocked.has(keyOf(artist.tag)) && !pinnedKeys.has(keyOf(artist.tag)) && (!frequencies || frequencies.has(keyOf(artist.tag))));
   if (pool.length + pinnedTags.length < rules.maxArtists) throw new Error('可用画师不足，请调整排除项或降低每串总人数');
-  const preferred = new Set((options.preferredTags || []).map(tagKey));
-  const preferredPool = pool.filter(artist => preferred.has(tagKey(artist.tag)));
-  const ordinaryPool = pool.filter(artist => !preferred.has(tagKey(artist.tag)));
-  const needed = Math.max(0, (rules.preferredMinArtists ?? 0) - pinnedTags.filter(tag => preferred.has(tagKey(tag))).length);
+  const preferred = new Set((options.preferredTags || []).map(keyOf));
+  const preferredPool = pool.filter(artist => preferred.has(keyOf(artist.tag)));
+  const ordinaryPool = pool.filter(artist => !preferred.has(keyOf(artist.tag)));
+  const needed = Math.max(0, (rules.preferredMinArtists ?? 0) - pinnedTags.filter(tag => preferred.has(keyOf(tag))).length);
   if (needed > preferredPool.length) throw new Error('可用偏好画师不足，请减少保底人数或调整屏蔽与样张过滤');
   const minimum = Math.max(rules.minArtists, pinnedTags.length + needed);
   if (minimum > rules.maxArtists) throw new Error('固定画师与偏好保底超出人数上限，请调整抽取条件');
   const choose = <T,>(items: T[]): T => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
+  const chooseFromSource = (items: RollArtist[], applyPreference: boolean): RollArtist => {
+    // 先除以最大倍率再累计，保留来源频次 × 偏好倍率的比例，不使极大偏好数值溢出。
+    const preference = applyPreference ? rules.preferredMultiplier ?? 1 : 1;
+    const weights = items.map(artist => (frequencies?.get(keyOf(artist.tag)) ?? 1) * (preferred.has(keyOf(artist.tag)) ? 1 : 1 / preference));
+    let remaining = random() * weights.reduce((sum, value) => sum + value, 0);
+    for (let index = 0; index < items.length; index++) { remaining -= weights[index]; if (remaining < 0) return items[index]; }
+    return items.at(-1)!;
+  };
   const integer = (min: number, max: number) => min + Math.min(max - min, Math.floor(random() * (max - min + 1)));
   const weight = () => integer(Math.round(rules.minWeight * 10), Math.round(rules.maxWeight * 10)) / 10;
   const signatures = new Set(experiment.candidates.map(candidate => rollSignature(candidate.tags))), result: RollCandidate[] = [];
@@ -257,9 +287,11 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
     const target = integer(minimum, rules.maxArtists);
     const tags: RollTag[] = pinnedTags.map(tag => ({ tag, weight: weight() }));
     const favorites = [...preferredPool], others = [...ordinaryPool];
-    const take = (items: RollArtist[]) => { const artist = choose(items); tags.push({ tag: artist.tag, weight: weight() }); items.splice(items.indexOf(artist), 1); };
+    const take = (items: RollArtist[], applyPreference = false) => { const artist = frequencies ? chooseFromSource(items, applyPreference) : choose(items); tags.push({ tag: artist.tag, weight: weight() }); items.splice(items.indexOf(artist), 1); };
     for (let index = 0; index < needed; index++) take(favorites);
+    const remainingSource = frequencies ? [...favorites, ...others] : null;
     while (tags.length < target) {
+      if (remainingSource) { take(remainingSource, true); continue; }
       // 用相对权重选池，再在池内均匀抽取；每次移除已选项，倍率不改变提示词权重。
       const ordinaryWeight = others.length / (rules.preferredMultiplier ?? 1);
       take(favorites.length && (!others.length || random() * (favorites.length + ordinaryWeight) < favorites.length) ? favorites : others);

@@ -24,6 +24,36 @@ const presetFixture = (id = 'one'): RollPreset => ({ id, name: `质量词 ${id}`
   params: { ...rollFixture().template.params, qualityToggle: true, ucPreset: 2, cfgRescale: 0.25, characters: [{ id: 'role', prompt: 'person', negativePrompt: 'sad', x: 0.2, y: 0.7 }] } }, revision: 0, createdAt: 1, updatedAt: 1 });
 const presetPath = '/api/style-roll/presets';
 
+it('超过单图人数的提取来源完整保存，清除当前来源不改历史轮次且空来源不回落', async () => {
+  const f = fixture(), e = { ...rollFixture(), revision: 0 };
+  e.pinnedArtists = ['alpha'];
+  e.chainArtistSource = { chainIds: ['source-a', 'source-b'], artists: Array.from({ length: 70 }, (_, index) => ({ tag: `source artist ${index}`, count: index ? 1 : 2 })) };
+  const first = await f.invoke(e); expect(first!.status).toBe(200);
+  const { experiment: saved } = await first!.json() as any;
+  const next = beginRollRound(saved, ['outside'], 2);
+  expect(next.candidates.every(candidate => candidate.tags.length === 4 && candidate.tags.some(artist => artist.tag === 'alpha') && candidate.tags.every(artist => artist.tag === 'alpha' || artist.tag.startsWith('source artist ')))).toBe(true);
+  const second = await f.invoke(next); expect(second!.status).toBe(200);
+  const { experiment: withRound } = await second!.json() as any;
+  expect(withRound.chainArtistSource).toEqual(e.chainArtistSource);
+  expect(withRound.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
+  const changed = structuredClone(withRound); changed.rounds[0].snapshot.chainArtistSource.artists[0].count = 1;
+  expect((await f.invoke(changed))!.status).toBe(400);
+  const { experiment: cleared } = await (await f.invoke({ ...withRound, chainArtistSource: undefined }))!.json() as any;
+  expect(cleared.chainArtistSource).toBeUndefined();
+  expect(cleared.rounds[0].snapshot.chainArtistSource).toEqual(e.chainArtistSource);
+  expect((await f.invoke({ ...cleared, chainArtistSource: { chainIds: [], artists: [] } }))!.status).toBe(200);
+  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  expect(restored.chainArtistSource).toEqual({ chainIds: [], artists: [] });
+  expect(() => beginRollRound(restored, e.artists.map(artist => artist.tag), 1)).toThrow('可用画师不足');
+});
+
+it.each([0, 1.5, 3])('来源次数必须是独立所选串数量内的正整数，坏次数=%s不写库', async count => {
+  const f = fixture();
+  const response = await f.invoke({ ...rollFixture(), revision: 0, chainArtistSource: { chainIds: ['source-a', 'source-b'], artists: [{ tag: 'alpha', count }] } });
+  expect(response!.status).toBe(400);
+  expect(f.sqlite.prepare('SELECT count(*) AS n FROM settings').get()?.n).toBe(0);
+});
+
 it('多套预设完整回读与独立更新删除，不携带抽取规则或影响记录和其他用户', async () => {
   const f = fixture(), first = presetFixture(), second = presetFixture('two');
   const invoke = (body?: unknown, owner = 'owner', method = body === undefined ? 'GET' : 'PUT', path = presetPath) => f.invoke(body, owner, 'admin', method, path);

@@ -957,3 +957,79 @@ it('保存阶段即使关闭过程预览仍展示最终图，状态条明确保�
   expect(screen.getByText('正在保存… 0/2')).toBeTruthy();
   expect(mocks.generate).not.toHaveBeenCalled();
 });
+
+vi.mock('../../components/roll/StyleRollChainArtistDialog', () => ({ StyleRollChainArtistDialog: ({ source, blocked, onConfirm, onClose }: any) => <div role="dialog" aria-label="提取接线" data-source={JSON.stringify(source ?? null)} data-blocked={blocked.join(',')}><button onClick={() => { onConfirm({ chainIds: ['source-chain', 'source-two'], artists: [{ tag: 'beta', count: 2 }, { tag: 'gamma', count: 1 }, { tag: 'delta', count: 1 }, { tag: 'epsilon', count: 1 }] }); onClose(); }}>确认提取接线</button><button onClick={() => { onConfirm(undefined); onClose(); }}>使用全部画师接线</button><button onClick={onClose}>取消提取接线</button></div> }));
+
+it('顶部直接提取抽样来源，不打开管理、不生成或保存参数；隐藏与切记录卸载', async () => {
+  const second = { ...rollFixture(), id: 'other-record', name: '另一个记录' };
+  mocks.load.mockImplementation(async () => [structuredClone(experiment), second]);
+  const view = await setup();
+  const open = () => fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  open(); expect(screen.getByRole('dialog', { name: '提取接线' })).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: 'Roll 画师' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
+  open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('beta');
+  view.rerender(<StyleRollPage {...view.props} active={false} />);
+  expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
+  view.rerender(<StyleRollPage {...view.props} />); await waitFor(() => expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false)); open();
+  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: second.id } });
+  expect(screen.queryByRole('dialog', { name: '提取接线' })).toBeNull();
+  open(); expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).not.toContain('beta');
+  expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('提取来源经页面/Agent保存到记录与轮次，可清除恢复全库，Agent=%s', async agent => {
+  experiment.candidates = []; experiment.rules = { ...experiment.rules, minArtists: 2, maxArtists: 2 };
+  const view = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认提取接线' }));
+  const state = await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any;
+  expect(state.chainArtistSource.artists).toHaveLength(4);
+  expect(state.pinnedArtists).toEqual([]);
+  if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });
+  else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
+  const saved = mocks.save.mock.calls.at(-1)![0] as RollExperiment;
+  expect(saved.chainArtistSource?.artists).toHaveLength(4);
+  expect(saved.rounds.at(-1)?.snapshot?.chainArtistSource).toEqual(saved.chainArtistSource);
+  expect(saved.pinnedArtists).toEqual([]);
+  expect(saved.template).toEqual(experiment.template);
+  expect(saved.candidates.every(candidate => candidate.tags.length === 2 && candidate.tags.every(tag => ['beta', 'gamma', 'delta', 'epsilon'].includes(tag.tag)))).toBe(true);
+  await waitFor(() => expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
+  expect(screen.getByRole('dialog', { name: '提取接线' }).getAttribute('data-source')).toContain('source-chain');
+  fireEvent.click(screen.getByRole('button', { name: '使用全部画师接线' }));
+  expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: saved.rounds.at(-1)!.id } });
+  fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
+  expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).chainArtistSource).toEqual(saved.chainArtistSource);
+});
+
+it.each([false, true])('已有提取来源不依赖全词库成功，仍显示词库错误且UI/Agent可抽取，Agent=%s', async agent => {
+  experiment.candidates = []; experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
+  experiment.chainArtistSource = { chainIds: ['saved-source'], artists: [{ tag: 'outside dictionary', count: 1 }] };
+  mocks.dictionary.mockRejectedValue(new Error('合成词库读取失败'));
+  const view = await setup();
+  await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false));
+  expect((await executeAgentCommand(view.container, 'get_roll_state', {}, true) as any).library.error).toContain('合成词库读取失败');
+  expect(screen.getByRole('button', { name: '从风格串提取' }).hasAttribute('disabled')).toBe(false);
+  if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });
+  else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
+  expect(mocks.save.mock.calls.at(-1)![0].candidates.every((candidate: any) => candidate.tags[0].tag === 'outside dictionary')).toBe(true);
+});
+it.each([
+  { tag: 'outside_dictionary', sample: 'outside dictionary', expected: 'outside dictionary' },
+  { tag: 'alpha (style)', sample: 'alpha(style)', expected: 'alpha (style)' },
+  { tag: 'beta (style)', sample: 'ＢＥＴＡ\\(style\\)', expected: 'beta (style)' },
+].flatMap(entry => [false, true].map(agent => ({ ...entry, agent }))))('仅有样张从提取来源过滤词库外画师，来源=$tag 样张=$sample Agent=$agent', async ({ tag, sample, expected, agent }) => {
+  experiment.candidates = []; experiment.artists = []; experiment.sampledOnly = true;
+  experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1 };
+  experiment.chainArtistSource = { chainIds: ['saved-source'], artists: [{ tag, count: 1 }, { tag: 'no source sample', count: 1 }] };
+  mocks.dictionary.mockResolvedValue([{ name: 'unrelated dictionary', chinese: '', postCount: 1 }]);
+  mocks.sampled.mockResolvedValue(new Set([sample]));
+  const view = await setup();
+  await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' }).hasAttribute('disabled')).toBe(false));
+  if (agent) await act(async () => { await executeAgentCommand(view.container, 'run_roll_round', { count: 1, generate: false }, false); });
+  else { fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.save).toHaveBeenCalled()); }
+  expect(mocks.save.mock.calls.at(-1)![0].candidates.every((candidate: any) => candidate.tags.length === 1 && candidate.tags[0].tag === expected)).toBe(true);
+});

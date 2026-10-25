@@ -10,10 +10,8 @@ import { ARTIST_SAMPLES_CHANGED, type ArtistOwnSample } from '../../services/art
 import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { createDefaultRollTemplate } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
-import { ImageActivityProvider } from '../../components/SmartImage';
 
-const mocks = vi.hoisted(() => ({ chains: vi.fn(), block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
-vi.mock('../../services/dbService', () => ({ db: { getAllChains: mocks.chains } }));
+const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleLookup: mocks.lookup }));
@@ -41,41 +39,6 @@ const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '',
   const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(initialRules);
   return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
 };
-
-it('从风格串提取子窗只确认一次合并，Escape仅关闭子层；隐藏后不保留旧选择', async () => {
-  mocks.chains.mockResolvedValue([{ id: 'synthetic', type: 'style', name: '合成风格串', basePrompt: 'artist:alpha', negativePrompt: '', modules: [], params: createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params }]);
-  const view = render(<ImageActivityProvider active><Fixture /></ImageActivityProvider>);
-  await screen.findByAltText('alpha');
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
-  await screen.findByRole('checkbox', { name: '合成风格串' });
-  fireEvent.keyDown(window, { key: 'Escape' });
-  expect(screen.queryByRole('dialog', { name: '从风格串提取' })).toBeNull(); expect(screen.getByRole('dialog', { name: 'Roll 画师' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
-  fireEvent.click(await screen.findByRole('checkbox', { name: '合成风格串' }));
-  view.rerender(<ImageActivityProvider active={false}><Fixture /></ImageActivityProvider>);
-  expect(screen.queryByRole('dialog')).toBeNull(); fireEvent.keyDown(window, { key: 'Escape' });
-  view.rerender(<ImageActivityProvider active><Fixture /></ImageActivityProvider>);
-  expect(screen.queryByRole('dialog', { name: '从风格串提取' })).toBeNull();
-  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('false');
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' })); fireEvent.click(await screen.findByRole('checkbox', { name: '合成风格串' }));
-  fireEvent.click(screen.getByRole('button', { name: '确认提取' }));
-  expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
-});
-
-it('手机返回只关闭提取子窗，画师管理历史层保留', async () => {
-  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
-  window.history.replaceState(null, ''); mocks.chains.mockResolvedValue([]);
-  render(<Fixture />); await screen.findByRole('dialog', { name: 'Roll 画师' });
-  const parentState = window.history.state;
-  fireEvent.click(screen.getByRole('button', { name: '从风格串提取' }));
-  await screen.findByRole('dialog', { name: '从风格串提取' });
-  expect(window.history.state.__naiMobileLayers).toHaveLength(2);
-  window.history.replaceState(parentState, '');
-  act(() => window.dispatchEvent(new PopStateEvent('popstate', { state: parentState })));
-  expect(screen.queryByRole('dialog', { name: '从风格串提取' })).toBeNull();
-  expect(screen.getByRole('dialog', { name: 'Roll 画师' })).toBeTruthy();
-  window.history.replaceState(null, '');
-});
 
 it.each(['masonry', 'portrait', 'square'] as const)('%s 布局与画师库共用偏好，瀑布流使用当前图片真实比例而非固定空框', async layout => {
   setMobileImageDisplayPreferences({ layout, columns: 2, desktopColumns: 3 }, 'artists');

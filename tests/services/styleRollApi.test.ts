@@ -72,3 +72,21 @@ it('普通记录完整读取保存，风格串关联与轮次不丢失', async (
   expect(mocks.put).toHaveBeenCalledWith('/style-roll', e);
   expect(saved.candidates).toEqual(e.candidates); expect(saved.rounds).toEqual(e.rounds);
 });
+
+it('提取来源与频次快照完整往返，清除当前来源不改旧轮次', async () => {
+  const e = rollFixture();
+  e.chainArtistSource = { chainIds: ['source-a', 'source-b'], artists: [{ tag: 'alpha', count: 2 }, { tag: 'beta', count: 1 }] };
+  e.candidates = [candidateFixture('one')];
+  e.rounds = [{ id: 'round', candidateIds: ['one'], createdAt: 1, snapshot: { rules: e.rules, chainArtistSource: structuredClone(e.chainArtistSource) } }];
+  mocks.put.mockResolvedValue({ experiment: { ...e, revision: 2 } });
+  const saved = await saveRollExperiment(e);
+  expect(saved.chainArtistSource).toEqual(e.chainArtistSource);
+  expect(mocks.put).toHaveBeenCalledWith('/style-roll', e);
+  mocks.get.mockResolvedValue({ experiments: [saved] });
+  expect((await loadRollExperiments())[0].rounds[0].snapshot?.chainArtistSource).toEqual(e.chainArtistSource);
+  const cleared = { ...saved, chainArtistSource: undefined };
+  mocks.put.mockResolvedValue({ experiment: JSON.parse(JSON.stringify({ ...cleared, revision: 3 })) });
+  const updated = await saveRollExperiment(cleared);
+  expect(updated.chainArtistSource).toBeUndefined();
+  expect(updated.rounds[0].snapshot?.chainArtistSource).toEqual(e.chainArtistSource);
+});
