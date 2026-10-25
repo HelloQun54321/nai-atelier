@@ -89,7 +89,7 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
       if (Array.isArray(ids)) void onMove(ids.filter((item): item is string => typeof item === 'string' && chainIds.includes(item)), id);
     } catch { /* 外部文件和文字不作为风格串移动。 */ }
   };
-  return <aside hidden={!expanded} aria-label={t('风格串文件夹')} className={expanded ? "workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0 flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r" : "hidden"}>
+  return <aside hidden={!expanded} aria-label={t('风格串文件夹')} className={expanded ? "workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0 workspace-category-navigation flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r" : "hidden"}>
     <div className="mb-2 flex items-center justify-between gap-1"><span className="text-xs font-semibold text-gray-500">{t('文件夹')}</span><div className="flex gap-1">
       <ToolbarButton aria-label={t('新建文件夹')} title={t('新建文件夹')} disabled={blocked} onClick={() => open('new')} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>
       {current && <><ToolbarButton aria-label={t('编辑文件夹')} title={t('重命名或移动文件夹')} disabled={blocked} onClick={() => open(current)} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton><ToolbarButton aria-label={t('删除文件夹')} disabled={blocked} onClick={() => void remove()} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton></>}

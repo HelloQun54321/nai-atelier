@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as libraries from '../../components/PromptLibrary';
 import { promptAgentService } from '../../services/promptAgent';
 import type { PromptChain } from '../../types';
@@ -26,6 +26,7 @@ const props = () => ({chains,onCreate:vi.fn(),onSelect:vi.fn(),onUpdateChain:vi.
 const Hub = () => libraries.PromptLibraryHub;
 
 describe('图片提示词库', () => {
+  beforeEach(() => localStorage.setItem('nai-prompt-library-categories-expanded', 'true'));
   it.each(['name', 'prompt'])('已有超过12个标签的片段只改%s，编辑保存仍保留全部标签', async field => {
     const tags = Array.from({ length: 15 }, (_, index) => `标签${index + 1}`);
     const entry = { ...chains[0], tags };
@@ -131,8 +132,9 @@ describe('图片提示词库', () => {
     expect(create.closest('.workspace-scroll-viewport')).toBeTruthy();
     const toolbar = screen.getByRole('banner');
     const controls = toolbar.querySelectorAll('button,input');
-    expect(controls[0].getAttribute('aria-label')).toBe('筛选');
-    expect(controls[1].getAttribute('type')).toBe('search');
+    expect(controls[0].getAttribute('aria-label')).toBe('收起分类');
+    expect(controls[1].getAttribute('aria-label')).toBe('筛选');
+    expect(controls[2].getAttribute('type')).toBe('search');
   });
   it('分类独立记住搜索、排序与位置，新搜索重置位置，默认内容视图可切换封面', async () => {
     const Component = Hub(); render(<Component {...props()} />);
@@ -273,5 +275,63 @@ describe('图片提示词库', () => {
     expect(screen.getAllByRole('textbox',{name:'条目名称'})).toHaveLength(1);
     await act(async()=>finish());
     expect((screen.getByRole('button',{name:'重命名雨夜'}) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+
+describe('管理提示词分类按需展开', () => {
+  it.each([false, true])('embedded=%s默认收起，记住本端偏好且保持原手机横排/桌面纵排', embedded => {
+    const view = render(<libraries.PromptLibraryHub {...props()} embedded={embedded} />);
+    const toggle = screen.getByRole('button', { name: '展开分类' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const navigation = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    expect(navigation.hidden).toBe(true); expect(navigation.className).toBe('hidden');
+    expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
+    expect(toggle.textContent).toBe(''); expect(toggle.title).toContain('全部');
+    fireEvent.click(toggle);
+    expect(navigation.hidden).toBe(false);
+    expect(navigation.className).toContain('overflow-x-auto');
+    expect(navigation.className).toContain('md:flex-col');
+    expect(localStorage.getItem('nai-prompt-library-categories-expanded')).toBe('true');
+    view.unmount();
+    render(<libraries.PromptLibraryHub {...props()} embedded={embedded} />);
+    expect(screen.getByRole('button', { name: '收起分类' }).getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '收起分类' }));
+    cleanup(); render(<libraries.PromptLibraryHub {...props()} embedded={embedded} />);
+    expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
+  });
+  it('切分类后收起保留搜索、标签、未存编辑，按钮继续标明当前用途', async () => {
+    render(<libraries.PromptLibraryHub {...props()} chains={[{ ...chains[0], tags: ['保留标签'] }, chains[1]]} />);
+    fireEvent.click(screen.getByRole('button', { name: '展开分类' }));
+    fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
+    await screen.findByRole('button', { name: '新建形象' });
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'silver' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(screen.getByRole('button', { name: '保留标签（1）' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: '收起分类' }));
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('silver');
+    expect(screen.getByRole('button', { name: '展开分类' }).title).toContain('外貌');
+    expect(screen.getByRole('button', { name: '展开分类' }).getAttribute('data-active')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /形象：形象甲/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '形象名称' }), { target: { value: '未保存草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '展开分类' }));
+    fireEvent.click(screen.getByRole('button', { name: '收起分类' }));
+    expect((screen.getByRole('textbox', { name: '形象名称' }) as HTMLInputElement).value).toBe('未保存草稿');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('嵌入portal工具栏与独立Hub各有唯一控制id，分类展开不重挂载搜索', () => {
+    const slot = document.createElement('div'); document.body.appendChild(slot);
+    const view = render(<><libraries.PromptLibraryHub {...props()} embedded toolbarSlot={slot} /><libraries.PromptLibraryHub {...props()} /></>);
+    const toggles = screen.getAllByRole('button', { name: '展开分类' });
+    expect(slot.contains(toggles[0])).toBe(true);
+    expect(toggles[0].getAttribute('aria-controls')).not.toBe(toggles[1].getAttribute('aria-controls'));
+    const searches = screen.getAllByRole('searchbox');
+    fireEvent.change(searches[0], { target: { value: '保留查询' } });
+    fireEvent.click(toggles[0]);
+    expect(screen.getAllByRole('searchbox')[0]).toBe(searches[0]);
+    expect((searches[0] as HTMLInputElement).value).toBe('保留查询');
+    expect(screen.getAllByRole('button', { name: '展开分类' })).toHaveLength(1);
+    view.unmount(); slot.remove();
   });
 });

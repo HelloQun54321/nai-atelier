@@ -17,13 +17,14 @@
  * 组件自身不直接 fetch /api/chains，避免与 App 的刷新与乐观更新逻辑分叉。
  */
 import { t, useLanguage } from '../services/i18n';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Copy,
+  Folder,
   Library,
   ImagePlus,
   LoaderCircle,
@@ -172,6 +173,7 @@ interface PromptLibraryInternalProps extends PromptLibraryProps {
   initialEntry?: PromptChain;
   onEditorClose?: () => void;
   categoryNavigation?: React.ReactNode;
+  categoryToggle?: React.ReactNode;
   registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void;
   browsing?: LibraryBrowsing;
   rememberBrowsing?: (state: LibraryBrowsing) => void;
@@ -197,6 +199,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   onEditorClose,
   requestCloseRef,
   categoryNavigation,
+  categoryToggle,
   registerLeaveGuard,
   chains,
   onCreate,
@@ -791,6 +794,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const listToolbarContent = (
     <>
+      {categoryToggle}
       <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
@@ -881,6 +885,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const detailToolbarContent = detail ? (
     <>
+      {categoryToggle}
       <ToolbarButton onClick={() => void closeDetail()} disabled={savingDetail} aria-label={t('返回{0}', [t(config.title)])} title={t('返回{0}', [t(config.title)])} className="mobile-touch !px-2.5 md:!px-3">
         <ArrowLeft /><span className="hidden sm:inline">{t('返回')}</span>
       </ToolbarButton>
@@ -1300,7 +1305,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   );
   if (embedded) return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {toolbarSlot ? createPortal(detail ? detailToolbarContent : listToolbarContent, toolbarSlot) : null}
+      {toolbarSlot ? createPortal(detail ? detailToolbarContent : listToolbarContent, toolbarSlot) : categoryToggle ? (detail ? detailToolbar : listToolbar) : null}
       {body}
     </div>
   );
@@ -1331,6 +1336,13 @@ const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','s
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();
+  const navigationId = useId();
+  const [categoriesExpanded, setCategoriesExpanded] = useState(() => { try { return localStorage.getItem('nai-prompt-library-categories-expanded') === 'true'; } catch { return false; } });
+  const toggleCategories = () => {
+    const next = !categoriesExpanded;
+    setCategoriesExpanded(next);
+    try { localStorage.setItem('nai-prompt-library-categories-expanded', String(next)); } catch { /* 存储受限时仍可展开。 */ }
+  };
   const leaveGuards = useRef<Partial<Record<LibraryCategory, () => Promise<boolean>>>>({});
   const browsing = useRef<Partial<Record<LibraryCategory, LibraryBrowsing>>>({});
   const [kind, setKind] = useState<LibraryCategory>(() => {
@@ -1355,9 +1367,11 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     setKind(category);
     try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
   };
+  const categoryLabel = t(kind === 'all' ? '全部' : FRAGMENT_LABELS[kind]);
+  const categoryToggle = <ToolbarButton aria-label={t(categoriesExpanded ? '收起分类' : '展开分类')} title={[t(categoriesExpanded ? '收起分类' : '展开分类'), categoryLabel].join(' · ')} aria-expanded={categoriesExpanded} aria-controls={navigationId} active={categoriesExpanded || kind !== 'all'} onClick={toggleCategories}><Folder className="h-4 w-4" /></ToolbarButton>;
   return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
-    {/* 分类沿用收藏库的二级侧栏样式：桌面为带图标与数量的白色选中项，手机横排。 */}
-    <nav role="tablist" aria-label={t('提示词分类')} className="appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60">
+    {/* 展开时桌面竖排、手机横排；收起保留分类与内容草稿。 */}
+    <nav id={navigationId} hidden={!categoriesExpanded} role="tablist" aria-label={t('提示词分类')} className={categoriesExpanded ? "appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60" : "hidden"}>
       <p className="hidden text-gray-500 dark:text-gray-400 md:mb-2 md:block md:px-2 md:text-meta md:font-bold">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? !!fragmentKindOf(chain) : fragmentKindOf(chain)===category).length;
@@ -1373,7 +1387,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
       })}
     </nav>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PromptLibrary key={kind} {...props} requestCloseRef={undefined} config={kind==='all' ? ALL_CONFIG : kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+      <PromptLibrary key={kind} {...props} categoryToggle={categoryToggle} requestCloseRef={undefined} config={kind==='all' ? ALL_CONFIG : kind === 'general' ? GENERAL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
         browsing={browsing.current[kind]} rememberBrowsing={state => { browsing.current[kind] = state; }}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>

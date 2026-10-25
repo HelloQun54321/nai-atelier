@@ -452,7 +452,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
     border-width: 1px;
     border-radius: var(--nai-panel-radius, 24px);
   }
-  html[data-theme-material='glass'] .chain-folder-navigation { margin-bottom: var(--nai-chrome-inset, 8px); }
+  html[data-theme-material='glass'] .workspace-category-navigation { margin-bottom: var(--nai-chrome-inset, 8px); }
   html[data-theme-material='glass'] .workspace-command-bar {
     margin: var(--nai-chrome-inset, 8px);
     border-width: 1px;

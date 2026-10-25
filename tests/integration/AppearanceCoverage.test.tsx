@@ -1047,7 +1047,7 @@ it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚�
   expect(declarations(sibling, '(max-width: 767px)', source)['--workspace-chrome-height']).toBe('0px');
   expect(declarations(sibling, undefined, source)).toEqual({});
   expect(declarations(sibling, '(min-width: 768px)', source)).toEqual({});
-  const folderBottom = "html[data-theme-material='glass'] .chain-folder-navigation";
+  const folderBottom = "html[data-theme-material='glass'] .workspace-category-navigation";
   expect(declarations(folderBottom, '(min-width: 768px)', source)['margin-bottom']).toBe('var(--nai-chrome-inset, 8px)');
   expect(declarations(folderBottom, '(max-width: 767px)', source)).toEqual({});
   expect(declarations(folderBottom, undefined, source)).toEqual({});
@@ -1058,5 +1058,8 @@ it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚�
   expect(declarations('.chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport', '(max-width: 767px)', source)).toEqual({});
   const component = readFileSync('components/chain/ChainFolders.tsx', 'utf8');
   expect(component).toContain('workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0');
+  expect(component).toContain('workspace-category-navigation');
+  const collection = readFileSync('components/InspirationGallery.tsx', 'utf8');
+  expect(collection).toContain('workspace-category-navigation');
   expect(component).toContain('md:overflow-y-auto');
 });

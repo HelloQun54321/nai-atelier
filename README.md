@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.126.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.127.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -309,6 +309,8 @@ flowchart LR
 ## 📚 Tag 与资源资料库
 
 桌面侧栏的「素材浏览」集中提供 AITag、法典、Danbooru、Pixiv。展开侧栏时可原位展开／收起该组，并记住本端选择；分组收起时仍显示当前来源。侧栏收成图标时，点击该入口在右侧打开来源菜单，选中项高亮。画师库、角色库、收藏库仍可直接进入；手机沿用底部「资源库」面板。
+
+已有内容分类导航按需展开：风格串、电脑收藏库及「管理提示词」窗口从原工具栏的文件夹图标收展，默认收起并分别记住本端偏好，收起后保留当前分类、筛选与编辑内容。收藏库手机分类仍在原筛选面板；管理提示词手机展开原有横向用途列表。
 
 实验室及预设工作台的全局与角色正负提示词共用 Tag 补全。在词库识别出的画师或角色 Tag 右下角点击圆形资料按钮，可查看名称、中文名、有效作品数与图片；权重组里的每个匹配 Tag 也可分别查看。普通 Tag 不显示资料按钮。资料弹窗复用画师样张与角色封面及已有的偏好、屏蔽、收藏、样张维护和费用确认操作，不会自动生成图片；分类由词库标记决定，不要求 Tag 有中文翻译。
 

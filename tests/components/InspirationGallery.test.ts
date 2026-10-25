@@ -58,7 +58,7 @@ beforeEach(() => {
     }
     unobserve() {} disconnect() {}
   });
-  vi.clearAllMocks(); localStorage.clear(); confirmAction.mockResolvedValue(true);
+  vi.clearAllMocks(); localStorage.clear(); localStorage.setItem('nai-collection-navigation-expanded', 'true'); confirmAction.mockResolvedValue(true);
   vi.mocked(db.getCollectionTagNames).mockReset().mockResolvedValue([]);
   vi.mocked(db.saveCollectionTagNames).mockReset().mockImplementation(async tags => tags);
   vi.mocked(db.getInspirationBoards).mockReset().mockResolvedValue([{ id: 'board-1', name: '角色设计', color: '#6366f1', sortOrder: 0, userId: 'user-1', createdAt: 1, updatedAt: 1 }]);
@@ -333,6 +333,70 @@ const mockInspirations: Inspiration[] = [
     createdAt: 3000,
   },
 ];
+
+it('收藏分类默认收起无导航节点，桌面入口记住独立展开偏好并复用公共避让类', async () => {
+  localStorage.removeItem('nai-collection-navigation-expanded');
+  const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  const toggle = screen.getByRole('button', { name: '展开收藏分类' });
+  const navigation = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+  expect(toggle.className).toContain('hidden md:inline-flex');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(navigation.hidden).toBe(true);
+  expect(navigation.className).toBe('hidden');
+  expect(navigation.querySelector('button,select,input')).toBeNull();
+  fireEvent.click(toggle);
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  expect(navigation.hidden).toBe(false);
+  expect(navigation.className).toContain('workspace-fixed-pane workspace-category-navigation');
+  expect(navigation.className).toContain('hidden w-44');
+  expect(navigation.className).toContain('md:block');
+  expect(navigation.className).not.toContain('!mt-');
+  expect(navigation.className).not.toContain('mb-1.5');
+  view.unmount();
+  render(React.createElement(InspirationGallery, props));
+  expect(screen.getByRole('button', { name: '收起收藏分类' }).getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '收起收藏分类' }));
+  expect(localStorage.getItem('nai-collection-navigation-expanded')).toBe('false');
+});
+
+it('收起分类保持收藏夹、来源、搜索和已打开作品详情', async () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  const search = screen.getByRole('searchbox', { name: '搜索标题、提示词或标签…' }) as HTMLInputElement;
+  fireEvent.change(search, { target: { value: '角色' } });
+  fireEvent.click(screen.getByText('已整理角色图').closest('article')!.querySelector('button.absolute.inset-0')!);
+  const detail = screen.getByRole('complementary', { name: '已整理角色图' });
+  fireEvent.click(screen.getByRole('button', { name: '收起收藏分类' }));
+  expect(search.value).toBe('角色');
+  expect(screen.getByRole('button', { name: '展开收藏分类' }).title).toContain('角色设计');
+  expect(screen.queryByText('未整理带有标签的图')).toBeNull();
+  expect(screen.getByRole('complementary', { name: '已整理角色图' })).toBe(detail);
+  fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  expect(screen.getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.change(search, { target: { value: '' } });
+  fireEvent.click(within(screen.getByRole('complementary', { name: '收藏分类' })).getByRole('button', { name: /Pixiv/ }));
+  fireEvent.click(screen.getByRole('button', { name: '收起收藏分类' }));
+  expect(screen.getByRole('button', { name: '展开收藏分类' }).title).toContain('Pixiv');
+  await screen.findByText('Pixiv 收藏图');
+  expect(screen.queryByText('未整理带有标签的图')).toBeNull();
+});
+
+it('收展分类保留多选，重新展开仍可拖入收藏夹', async () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  const card = screen.getByText(mockInspirations[1].title).closest('article')!;
+  selectCollectionCard(card);
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '收起收藏分类' }));
+  expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
+  const folder = screen.getByRole('button', { name: '选择收藏夹：角色设计' }).closest('.press-reveal-surface')!;
+  const dataTransfer = dragData();
+  fireEvent.dragStart(card, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(['insp-2'], { boardId: 'board-1' }));
+});
 
 it.each(['masonry', 'portrait', 'square'])('收藏 %s 布局保留真实高度，图片加载与参数更新不重建卡片或换列', layout => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));

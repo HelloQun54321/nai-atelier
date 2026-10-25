@@ -262,6 +262,17 @@ describe('界面语言', () => {
     }
   });
 
+  it('分类侧栏展开控制与收藏分类名称具备四种译文', () => {
+    const keys = ['展开分类', '收起分类', '展开收藏分类', '收起收藏分类', '收藏分类'];
+    const catalog = messages as Record<string, string[]>;
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
+      }
+    }
+  });
+
   it('词典包含所有界面显式翻译入口，四种译文都完整保留占位符', () => {
     const catalog = messages as Record<string, string[]>;
     const placeholders = (value: string) => [...value.matchAll(/\{(?:\d+|count|tag)\}/g)].map(item => item[0]).sort();

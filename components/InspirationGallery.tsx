@@ -1,8 +1,8 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, FolderPlus, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Tags, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDownUp, Folder, FolderPlus, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Tags, Trash2, Upload, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User } from '../types';
 import { createUuid } from '../services/id';
@@ -56,6 +56,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const active = useContext(ImageActivityContext);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
+  const navigationId = useId();
+  const [navigationExpanded, setNavigationExpanded] = useState(() => { try { return localStorage.getItem('nai-collection-navigation-expanded') === 'true'; } catch { return false; } });
+  const toggleNavigation = () => setNavigationExpanded(previous => {
+    const next = !previous;
+    try { localStorage.setItem('nai-collection-navigation-expanded', String(next)); } catch { /* 本端偏好不可写时仍可收展。 */ }
+    return next;
+  });
   const [collection, setCollection] = useState<SmartCollection>('all');
   const [boardId, setBoardId] = useState('');
   const [search, setSearch] = useState('');
@@ -451,6 +458,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return <div {...fileDropProps} data-collection-file-dropzone="true" className="workspace-canvas relative flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceChrome>
 <WorkspaceToolbar>
+      <ToolbarButton aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
+        title={[t(navigationExpanded ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
+        active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /></ToolbarButton>
       {selectionMode ? <>
         <div role="group" aria-label={t("收藏批量操作")} className="flex h-full min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <b className="flex-none text-xs font-semibold text-gray-600 dark:text-gray-300">{t("已选 {0} 个作品，共 {1} 页", [selectedWorks, selectedItems.length])}</b>
@@ -483,8 +493,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
     </WorkspaceChrome>
     <div className="flex min-h-0 flex-1">
-      <aside className="workspace-fixed-pane appearance-group mb-1.5 !mt-[calc(var(--workspace-chrome-height,0px)+0.375rem)] hidden w-44 flex-none overflow-y-auto rounded-2xl border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block">
-        {renderNavigation()}
+      <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-group hidden w-44 flex-none overflow-y-auto rounded-2xl border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block" : "hidden"}>
+        {navigationExpanded && renderNavigation()}
       </aside>
 
       <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${openedGroup ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
