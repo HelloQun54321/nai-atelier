@@ -1043,7 +1043,7 @@ it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚�
   const source = readFileSync('components/themeDetails.css', 'utf8');
   const root = "html[data-surfaces='translucent']";
   expect(declarations(root + ' .workspace-fixed-pane', undefined, source)['margin-top']).toBe('var(--workspace-chrome-height, 0px)');
-  const sibling = root + ' .chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport';
+  const sibling = root + ' .workspace-category-navigation:not([hidden]) + .workspace-scroll-viewport';
   expect(declarations(sibling, '(max-width: 767px)', source)['--workspace-chrome-height']).toBe('0px');
   expect(declarations(sibling, undefined, source)).toEqual({});
   expect(declarations(sibling, '(min-width: 768px)', source)).toEqual({});
@@ -1055,7 +1055,7 @@ it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚�
     'padding-top': 'calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px))',
     'scroll-padding-top': 'calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px))',
   });
-  expect(declarations('.chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport', '(max-width: 767px)', source)).toEqual({});
+  expect(declarations('.workspace-category-navigation:not([hidden]) + .workspace-scroll-viewport', '(max-width: 767px)', source)).toEqual({});
   const component = readFileSync('components/chain/ChainFolders.tsx', 'utf8');
   expect(component).toContain('workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0');
   expect(component).toContain('workspace-category-navigation');

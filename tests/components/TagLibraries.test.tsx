@@ -10,6 +10,7 @@ import { ArtistLibrary } from '../../components/ArtistLibrary';
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: vi.fn(async () => ({ byTag: new Map(), indexed: 0, total: 0 })) }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 import { CharacterLibrary } from '../../components/CharacterLibrary';
+vi.mock('../../services/useCatalogGroups', () => ({ useCatalogGroups: () => ({ state: { revision: 0, groups: [], memberships: {} }, ready: true, busy: false, error: '', save: async () => {}, reload: async () => {} }) }));
 import type { PromptChain } from '../../types';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
@@ -371,7 +372,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
     const toolbar = within(container.querySelector('header')!);
     expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      ...(kind === 'artist' ? [null, null] : []),
+      '分组导航', ...(kind === 'artist' ? [null, null] : []),
       '筛选', kindLabels(kind).draw, kind === 'artist' ? '画师库设置' : '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
     ]);
     expect(toolbar.getByRole('searchbox')).toBeTruthy();

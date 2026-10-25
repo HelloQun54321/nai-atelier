@@ -280,6 +280,23 @@ describe('图片提示词库', () => {
 
 
 describe('管理提示词分类按需展开', () => {
+  it('用途导航沿用风格串侧栏材质和选中色，仍保留固定用途图标与计数', async () => {
+    render(<libraries.PromptLibraryHub {...props()} />);
+    fireEvent.click(screen.getByRole('button', { name: '展开分类' }));
+    const navigation = screen.getByRole('tablist', { name: '提示词分类' });
+    expect(navigation.classList.contains('appearance-panel')).toBe(true);
+    expect(navigation.classList.contains('md:w-52')).toBe(true);
+    const appearance = screen.getByRole('tab', { name: '外貌 1' });
+    expect(appearance.querySelector('svg')).toBeTruthy();
+    fireEvent.click(appearance);
+    await waitFor(() => expect(appearance.getAttribute('aria-selected')).toBe('true'));
+    expect(appearance.classList.contains('bg-indigo-100')).toBe(true);
+    expect(appearance.classList.contains('dark:bg-indigo-950/50')).toBe(true);
+    expect(appearance.classList.contains('!bg-indigo-600')).toBe(false);
+    expect(appearance.textContent).toContain('1');
+    expect(screen.queryByRole('button', { name: '新建文件夹' })).toBeNull();
+  });
+
   it.each([false, true])('embedded=%s默认收起，记住本端偏好且保持原手机横排/桌面纵排', embedded => {
     const view = render(<libraries.PromptLibraryHub {...props()} embedded={embedded} />);
     const toggle = screen.getByRole('button', { name: '展开分类' });

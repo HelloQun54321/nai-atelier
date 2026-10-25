@@ -16,6 +16,7 @@ import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import { handleChainFolderRoute } from './routes/chainFolderRoutes';
+import { handleCatalogGroupRoute } from './routes/catalogGroupRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -191,6 +192,8 @@ export default {
       if (appearanceResult) return appearanceResult;
       const chainFolderResult = await handleChainFolderRoute(routeContext);
       if (chainFolderResult) return chainFolderResult;
+      const catalogGroupResult = await handleCatalogGroupRoute(routeContext);
+      if (catalogGroupResult) return catalogGroupResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 

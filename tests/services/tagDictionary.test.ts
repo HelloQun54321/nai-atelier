@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { lookupTagCatalogEntries, resetTagDictionaryCache, searchTagDictionary } from '../../services/tagDictionary';
+import { filterCharacterDictionaryEntries, getCharacterDictionaryEntries, lookupTagCatalogEntries, resetTagDictionaryCache, searchTagDictionary } from '../../services/tagDictionary';
 
 type ShardEntry = [name: string, chinese: string, category: number, postCount: number, source: number];
 
@@ -43,6 +43,32 @@ describe('tagDictionary reset 竞态', () => {
     status: 200,
     json: async () => payload,
   }) as Response;
+
+  it('角色分组读取完整轻量名单且共享缓存，不受普通分页或搜索200条限制', async () => {
+    const records = Array.from({ length: 260 }, (_, index) => [`role_${index}`, `角色${index}`, 260 - index]);
+    const fetchMock = vi.fn(async (url: string) => respondJson(String(url).includes('manifest.json')
+      ? { ...makeManifest('groups'), characterSearchRecords: 'character-records.json' } : records));
+    vi.stubGlobal('fetch', fetchMock);
+    const first = await getCharacterDictionaryEntries();
+    expect(first).toHaveLength(260);
+    expect(first[259]).toEqual({ name: 'role_259', chinese: '角色259', postCount: 1 });
+    first[0].name = '本次调用的副本';
+    expect((await getCharacterDictionaryEntries())[0].name).toBe('role_0');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('/tag-data/character-records.json?v=groups');
+  });
+
+  it('分组角色筛选复用中英文多字段匹配和相关度排序，不截断后面的精确成员', () => {
+    const entries = [
+      ...Array.from({ length: 230 }, (_, index) => ({ name: `rem_variant_${index}`, chinese: '雷姆（其他作品）', postCount: 500 - index })),
+      { name: 'rem_(re:zero)', chinese: '雷姆（从零开始）', postCount: 1 },
+      { name: 'emilia_(re:zero)', chinese: '爱蜜莉雅（从零开始）', postCount: 900 },
+    ];
+    expect(filterCharacterDictionaryEntries(entries, '雷姆 从零').map(entry => entry.name)).toEqual(['rem_(re:zero)']);
+    expect(filterCharacterDictionaryEntries(entries, 'rem re zero').map(entry => entry.name)).toEqual(['rem_(re:zero)']);
+    expect(filterCharacterDictionaryEntries(entries, '', 'least')[0].name).toBe('rem_(re:zero)');
+    expect(entries.at(-2)).not.toHaveProperty('matchReason');
+  });
 
   it('批量精确识别画师和角色，不依赖中文，不把前缀或普通Tag当目录项，重复共享分片缓存', async () => {
     const entries: ShardEntry[] = [

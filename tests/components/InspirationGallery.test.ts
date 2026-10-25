@@ -349,7 +349,8 @@ it('收藏分类默认收起无导航节点，桌面入口记住独立展开偏�
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   expect(navigation.hidden).toBe(false);
   expect(navigation.className).toContain('workspace-fixed-pane workspace-category-navigation');
-  expect(navigation.className).toContain('hidden w-44');
+  expect(navigation.className).toContain('hidden w-52');
+  expect(navigation.classList.contains('appearance-panel')).toBe(true);
   expect(navigation.className).toContain('md:block');
   expect(navigation.className).not.toContain('!mt-');
   expect(navigation.className).not.toContain('mb-1.5');
@@ -440,11 +441,11 @@ it('收藏瀑布流的无尺寸图片先完整显示，加载后按真实比例�
   expect(container.querySelector('.chain-masonry-column')).toBeTruthy();
 });
 
-it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签，图片左下不遮挡', () => {
+it('列表移除重复标题栏，侧栏与风格串同宽；卡片只保留名称和标签，图片左下不遮挡', () => {
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   expect(container.querySelector('main h1')).toBeNull();
   const sidebar = container.querySelector('aside')!;
-  expect(sidebar.classList.contains('w-44')).toBe(true);
+  expect(sidebar.classList.contains('w-52')).toBe(true);
   expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:block')).toBe(true);
   for (const item of mockInspirations) {
     const card = screen.getByText(item.title).closest('article')!;
@@ -624,6 +625,29 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
   });
+});
+
+it.each([390, 1280])('宽度 %s 的收藏夹使用标题加号和同色文件夹图标，选中态沿用风格串', async width => {
+  vi.stubGlobal('innerWidth', width);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : screen.getByRole('complementary', { name: '收藏分类' });
+  const create = within(root).getByRole('button', { name: '新建收藏夹' });
+  expect(create.textContent).toBe('');
+  expect(create.querySelector('svg.lucide-plus')).toBeTruthy();
+  expect(create.querySelector('svg.lucide-folder-plus')).toBeNull();
+  expect(create.getAttribute('data-appearance')).toBe('control');
+  const folder = within(root).getByRole('button', { name: '选择收藏夹：角色设计' });
+  expect((folder.querySelector('svg.lucide-folder') as SVGElement).style.color).toBe('rgb(99, 102, 241)');
+  fireEvent.click(folder);
+  const row = folder.closest('.press-reveal-surface')!;
+  expect(row.classList.contains('bg-indigo-100')).toBe(true);
+  expect(row.classList.contains('dark:bg-indigo-950/50')).toBe(true);
+  expect(folder.getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(create);
+  expect(screen.getByRole('dialog', { name: '新建收藏夹' })).toBeTruthy();
+  expect(db.updateInspirationBoard).not.toHaveBeenCalled();
 });
 
 it('实际新建收藏夹窗口和颜色选择可被 Agent 读取', async () => {
@@ -1030,21 +1054,26 @@ it('收藏夹顺序保存期间禁止重复提交，访客的排序把手不可�
 
 const dragData = () => ({ setData: vi.fn(), effectAllowed: 'all', dropEffect: 'none' }) as unknown as DataTransfer;
 
-it('本地多文件拖入收藏页面进入同一导入窗口，逐图保留配置，公共标签和收藏夹整批生效', async () => {
+it('画廊拒绝文件拖入且无覆盖层，按钮选择多图仍保留配置并整批设置标签和收藏夹', async () => {
   vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '第一张独立提示词', width: 1024, height: 1024, seed: 123 })).mockResolvedValueOnce(null);
   const refresh = vi.fn(async () => {});
   const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), onImportRefresh: refresh, notify: vi.fn() }));
   const zone = view.container.querySelector('[data-collection-file-dropzone]')!;
   const files = [new File(['A'], '第一张.png', { type: 'image/png' }), new File(['B'], '第二张.jpg', { type: 'image/jpeg' })];
   const dataTransfer = { ...dragData(), types: ['Files'], files };
-  expect(fireEvent.dragEnter(zone, { dataTransfer })).toBe(false);
-  expect(screen.getByText('拖入本地图片，加入收藏库')).toBeTruthy();
-  expect(fireEvent.dragOver(zone, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('copy');
+  fireEvent.dragEnter(zone, { dataTransfer });
+  expect(screen.queryByText('拖入本地图片，加入收藏库')).toBeNull();
+  expect(fireEvent.dragOver(zone, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('none');
   expect(fireEvent.drop(zone, { dataTransfer })).toBe(false);
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  expect(extractMetadata).not.toHaveBeenCalled();
+  expect(api.uploadFile).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
   const dialog = await screen.findByRole('dialog', { name: '加入收藏库' });
   expect(screen.queryByText('拖入本地图片，加入收藏库')).toBeNull();
   const chooser = within(dialog).getByLabelText('上传收藏图片') as HTMLInputElement;
   expect(chooser.multiple).toBe(true);
+  fireEvent.change(chooser, { target: { files } });
   await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.change(within(dialog).getByRole('combobox', { name: '收藏夹' }), { target: { value: 'board-1' } });
   fireEvent.change(within(dialog).getByRole('textbox', { name: '公共标签' }), { target: { value: '夜景, 构图' } });
@@ -1058,19 +1087,29 @@ it('本地多文件拖入收藏页面进入同一导入窗口，逐图保留配�
   expect(screen.getByRole('dialog', { name: '加入收藏库' })).toBe(dialog);
 });
 
-it('文件拖入收藏夹预选目标，已收藏卡片继续走移动，网页链接不进入导入', async () => {
+it('收藏夹拒绝外部文件与网页链接，内部图片携带Files类型仍只移动作品', async () => {
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
   fireEvent.drop(folder, { dataTransfer: { ...dragData(), types: ['text/uri-list'], files: [], getData: () => 'https://example.com/image.png' } });
   expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
   const file = new File(['synthetic'], 'local.png', { type: 'image/png' });
-  fireEvent.dragOver(folder, { dataTransfer: { ...dragData(), types: ['Files'], files: [file] } });
-  fireEvent.drop(folder, { dataTransfer: { ...dragData(), types: ['Files'], files: [file] } });
-  const dialog = await screen.findByRole('dialog', { name: '加入收藏库' });
-  expect((within(dialog).getByRole('combobox', { name: '收藏夹' }) as HTMLSelectElement).value).toBe('board-1');
-  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
-  expect(extractMetadata).toHaveBeenCalledOnce();
+  const dataTransfer = { ...dragData(), types: ['Files'], files: [file] };
+  expect(fireEvent.dragOver(folder, { dataTransfer })).toBe(false);
+  expect(dataTransfer.dropEffect).toBe('none');
+  expect(fireEvent.drop(folder, { dataTransfer })).toBe(false);
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  expect(extractMetadata).not.toHaveBeenCalled();
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(db.saveInspiration).not.toHaveBeenCalled();
+  const card = screen.getByText(mockInspirations[1].title).closest('article')!;
+  fireEvent.dragStart(card, { dataTransfer });
+  fireEvent.dragEnter(card, { dataTransfer });
+  expect(fireEvent.dragOver(folder, { dataTransfer })).toBe(false);
+  expect(dataTransfer.dropEffect).toBe('move');
+  expect(screen.queryByText('拖入本地图片，加入收藏库')).toBeNull();
+  fireEvent.drop(folder, { dataTransfer });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledExactlyOnceWith(['insp-2'], { boardId: 'board-1' }));
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  expect(api.uploadFile).not.toHaveBeenCalled();
 });
 
 it('访客的文件导入入口禁用，拖入本地文件不写入且阻止浏览器打开文件', () => {

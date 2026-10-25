@@ -26,10 +26,11 @@ import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
+import { useCatalogGroupBrowser } from '../CatalogGroups';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
 interface Props {
-  library: ArtistDictionaryEntry[]; loading?: boolean;
+  library: ArtistDictionaryEntry[]; loading?: boolean; libraryError?: string;
   pinned: string[]; onPinnedChange: (tags: string[]) => void;
   blocked: string[]; onBlockedChange: (tags: string[]) => Promise<void>;
   excluded: string[]; onExcludedChange: (tags: string[]) => void;
@@ -41,7 +42,7 @@ interface Props {
 
 export const StyleRollArtistDialog: React.FC<Props> = props => <ImagePreviewPortal><ArtistDialog {...props} /></ImagePreviewPortal>;
 
-const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, sampledOnly, onSampledOnlyChange, rules, onRulesChange, enforceFreeStepLimit, onClose }) => {
+const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned, onPinnedChange, blocked, onBlockedChange, excluded, onExcludedChange, sampledOnly, onSampledOnlyChange, rules, onRulesChange, enforceFreeStepLimit, onClose }) => {
   useLanguage();
   const collection = useSyncExternalStore(subscribeCollection, collectionSnapshot);
   const preferred = useMemo(() => new Set(collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => normalizeRollArtistKey(item.sourceId!))), [collection]);
@@ -88,7 +89,12 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
   const settingsAnchor = useRef<HTMLDivElement>(null);
   const closeSettings = React.useCallback(() => setSettingsOpen(false), []);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const notify = React.useCallback((message: string) => setError(message), []);
+  const notify = React.useCallback((message: string, type?: 'success' | 'error') => setError(type === 'success' ? '' : message), []);
+  const groupSelection = useMemo(() => library.filter(entry => pinned.includes(entry.name)).map(entry => 'artist:' + entry.name), [library, pinned]);
+  const catalogKeys = useMemo(() => loading || sampleLoading || libraryError ? undefined : library.map(entry => 'artist:' + entry.name), [library, loading, sampleLoading, libraryError]);
+  const groups = useCatalogGroupBrowser('artist', groupSelection, notify, 'roll-artists', catalogKeys);
+  const groupRevision = groups.activeGroup === '*' ? 0 : groups.state.revision;
+  useEffect(() => { setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }, [groups.activeGroup, groupRevision]);
   const active = useContext(ImageActivityContext);
   const { requestingTarget, removeSample, supplementSample, manageGeneration, settingsDialog } = useArtistSampleActions({ active, data: sampleData, setData: setSampleData, notify, enforceFreeStepLimit });
   const dialog = useModalA11y<HTMLDivElement>(active);
@@ -138,9 +144,9 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
     return catalogArtists.filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
-      return matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
+      return groups.matches('artist:' + entry.name) && matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
     }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
-  }, [catalogArtists, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter]);
+  }, [catalogArtists, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter, groups.matches]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
   const perform = async (action: () => Promise<void>) => {
     if (busy) return; setBusy(true); setError('');
@@ -160,7 +166,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     else onPinnedChange(pinned.filter(value => normalizeRollArtistKey(value) !== key));
   });
   const visibleArtists = useMemo(() => artists.slice(0, limit), [artists, limit]);
-  const resultKey = JSON.stringify([query, filter, sort, chainsFilter, imagesFilter]);
+  const resultKey = JSON.stringify([query, filter, sort, chainsFilter, imagesFilter, groups.activeGroup]);
   const estimateCardHeight = React.useCallback((artist: ArtistDictionaryEntry, width: number) => {
     const pack = cardPacks[artist.name] || defaultPack;
     return Math.max(1, width) / Math.max(0.1, artistRatios[`${pack}:${artist.name}`] || 2 / 3) + (frostedCaption ? 2 : 92);
@@ -170,7 +176,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     const samples = samplesByPack[pack], ratioKey = `${pack}:${artist.name}`;
     const ownSamples = samples.ownNames.has(artist.name) ? samples.own.filter(sample => sample.tag === artist.name || (!samples.ownTags.has(artist.name) && normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name))) : [];
     const generation = getArtistSampleGeneration(artist.name, pack), generating = artistSampleGenerationBusy(generation) || requestingTarget === ratioKey;
-    return <PressRevealSurface as="article" key={artist.name} pressResetKey={pack} pressDisabled={busy} data-gallery-work-id={artist.name} data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+    return <PressRevealSurface as="article" key={artist.name} {...groups.cardDragProps('artist:' + artist.name)} pressResetKey={pack} pressDisabled={busy} data-gallery-work-id={artist.name} data-safe-mode-work="true" role="button" aria-label={t('锁定画师：{0}', [artist.name])} aria-pressed={selected} aria-disabled={busy} tabIndex={busy ? -1 : 0} onClick={() => { if (!busy) pin(artist.name); }} onKeyDown={event => { if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key) || busy) return; event.preventDefault(); pin(artist.name); }} className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-800 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <div className="appearance-media mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[ratioKey] ? `${Math.round(artistRatios[ratioKey] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
         <ArtistSampleCover tag={artist.name} pack={pack} revision={sampleCatalogs[pack]?.revision || ''} hasPackSample={samples.packedNames.has(artist.name)} packTag={samples.packTagNames.has(artist.name) ? artist.name : samples.normalizedPackTags.get(normalizeArtistSampleTag(artist.name))} ownSamples={ownSamples} removedSamples={sampleData.removedSamples} alt={artist.chinese || artist.name} imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined} onImageLoad={(width, height) => updateImageRatio(ratioKey, width, height)} generation={generation} pending={generating} onGenerate={() => { supplementSample(artist.name, pack, true); }} onSupplement={() => { supplementSample(artist.name, pack); }} onDelete={removeSample} preferred={preferred.has(key)} blocked={banned} blockPending={busy} onBlock={() => block(artist.name)} onPackChange={value => setCardPacks(current => ({ ...current, [artist.name]: value }))} notify={notify} />
         {selected && <div className="pointer-events-none absolute inset-0 border-4 border-indigo-500/80" />}
@@ -183,10 +189,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('Roll 画师')} className="appearance-panel flex h-dvh w-full max-w-7xl flex-col overflow-hidden border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900 sm:h-[92dvh] sm:rounded-2xl">
       <header data-toolbar-caption-host="true" className="relative flex shrink-0 flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800 lg:px-5">
         <h2 className="min-w-0 flex-1 text-base font-semibold tracking-tight sm:flex-none">{t('管理画师与偏好')}</h2>
+        {groups.toolbar}
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
+        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
@@ -235,11 +242,14 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, pinned, onPinnedChang
           <details><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('手动添加固定 Tag')}</summary><div className="mt-2"><StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} /></div></details>
         </div>
       </AnchoredToolbarPopover>}
-      <div ref={gallery} data-roll-artist-gallery className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      {groups.navigation}
+      <div ref={gallery} data-roll-artist-gallery className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
         {(loading || sampleLoading) && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取画师样张…')}</p>}
         {imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>}
         {artists.length > limit && <ToolbarButton className="mt-5 w-full" onClick={() => setLimit(current => current + 60)}>{t('加载更多')}</ToolbarButton>}
         {!loading && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
+      </div>
       </div>
     </div>
     {settingsDialog}

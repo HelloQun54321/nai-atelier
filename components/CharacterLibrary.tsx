@@ -15,6 +15,8 @@ import {
   CharacterDictionaryEntry,
   CharacterDictionarySort,
   getCharacterDictionaryEntriesAt,
+  getCharacterDictionaryEntries,
+  filterCharacterDictionaryEntries,
   getCharacterDictionaryPage,
   searchCharacterDictionary,
 } from '../services/tagDictionary';
@@ -39,6 +41,7 @@ import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useCatalogGroupBrowser } from './CatalogGroups';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 
 const CATALOG_MARKER = '__character_catalog__';
@@ -109,7 +112,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     const renderCharacterCard = (card: CharacterCard) => {
             const selected = selectedKeys.has(card.key);
             return (
-              <PressRevealSurface as="article" key={card.key} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
+              <PressRevealSurface as="article" key={card.key} {...groups.cardDragProps(card.key)} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
               }} aria-pressed={selected} className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectionFocusEnabled && selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
@@ -205,6 +208,21 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     catch { return {}; }
   });
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const groupKeys = useMemo(() => [...selectedKeys], [selectedKeys]);
+  const [groupCatalog, setGroupCatalog] = useState<CharacterDictionaryEntry[]>([]);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [groupError, setGroupError] = useState(false);
+  const [groupRetry, setGroupRetry] = useState(0);
+  const [groupLimit, setGroupLimit] = useState(60);
+  const [groupCatalogReady, setGroupCatalogReady] = useState(false);
+  const characterChains = useMemo(() => chains.filter(chain => chain.type === 'character'), [chains]);
+  const catalogChains = useMemo(() => characterChains.filter(chain => chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
+  const customChains = useMemo(() => characterChains.filter(chain => !chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
+  const catalogKeys = useMemo(() => groupCatalogReady && !groupLoading && !groupError
+    ? [...groupCatalog.map(entry => `catalog:${entry.name}`), ...customChains.map(chain => `custom:${chain.id}`)] : undefined,
+  [groupCatalogReady, groupLoading, groupError, groupCatalog, customChains]);
+  const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys);
+  const grouped = groups.activeGroup !== '*';
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
@@ -243,6 +261,16 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       setIsGachaLoading(false);
   }, []);
   useEffect(() => () => { gachaGenerationRef.current++; }, []);
+  useEffect(() => { leaveGacha(); recentGachaRef.current = []; setGroupLimit(60); scrollRef.current?.scrollTo({ top: 0 }); }, [groups.activeGroup, leaveGacha]);
+  useEffect(() => {
+    if ((!grouped && !groups.expanded) || groupCatalogReady) { setGroupLoading(false); return; }
+    let current = true; setGroupLoading(true); setGroupError(false);
+    void getCharacterDictionaryEntries().then(entries => { if (current) { setGroupCatalog(entries); setGroupCatalogReady(true); } })
+      .catch(() => { if (current) { setGroupError(true); notify('角色 Tag 目录加载失败', 'error'); } })
+      .finally(() => { if (current) setGroupLoading(false); });
+    return () => { current = false; };
+  }, [grouped, groups.expanded, groupCatalogReady, groupRetry, notify]);
+  useEffect(() => { setGroupLimit(60); }, [searchTerm, tab, showFavOnly, sort, groups.state]);
   // 无限加载失败的时间戳：失败后 300ms 内挡住哨兵的立即重触发，避免静默失败循环。
   const lastLoadMoreErrorAtRef = useRef(0);
 
@@ -259,9 +287,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showCreate, lightbox]);
 
-  const characterChains = useMemo(() => chains.filter(chain => chain.type === 'character'), [chains]);
-  const catalogChains = useMemo(() => characterChains.filter(chain => chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
-  const customChains = useMemo(() => characterChains.filter(chain => !chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
+  const groupedCatalogPool = useMemo(() => groupCatalog.filter(entry => groups.matches(`catalog:${entry.name}`)).sort((a, b) => b.postCount - a.postCount || a.name.localeCompare(b.name)), [groupCatalog, groups.matches]);
+  const groupedCustomPool = useMemo(() => customChains.filter(chain => groups.matches(`custom:${chain.id}`)), [customChains, groups.matches]);
+  const drawCatalogTotal = grouped ? groupedCatalogPool.length : catalogTotal;
+  const drawCustomChains = grouped ? groupedCustomPool : customChains;
+  const drawReady = !grouped || groups.ready && !groups.error && (gachaMode === 'custom' || !groupLoading && !groupError);
+  const drawAvailable = gachaMode === 'custom' ? drawCustomChains.length : grouped && gachaMode === 'mixed' ? drawCustomChains.length + drawCatalogTotal : drawCatalogTotal;
   const persistedCatalog = useMemo(() => new Map(catalogChains.map(chain => [chain.basePrompt.trim().toLowerCase(), chain])), [catalogChains]);
 
   useEffect(() => {
@@ -326,7 +357,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useEffect(() => {
     const query = searchTerm.trim();
     const generation = ++searchGenerationRef.current;
-    if (!query) {
+    if (grouped || !query) {
       setSearchResults([]);
       // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
       setIsLoading(false);
@@ -340,9 +371,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         .finally(() => generation === searchGenerationRef.current && setIsLoading(false));
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [searchTerm, sort]);
+  }, [grouped, searchTerm, sort]);
 
   const loadMore = useCallback(async () => {
+    if (grouped) { setGroupLimit(value => value + 60); return; }
     if (isLoadingMore || nextPage >= pageCount || searchTerm.trim() || gachaCards) return;
     // 失败后 300ms 内防抖：哨兵仍在视口内会立即再次触发，失败静默会变成无限重试循环。
     if (Date.now() - lastLoadMoreErrorAtRef.current < 300) return;
@@ -361,7 +393,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     } finally {
       if (generation === catalogGenerationRef.current) setIsLoadingMore(false);
     }
-  }, [gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
+  }, [grouped, gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
 
   useGalleryLoadMore(scrollRef, sentinelRef, !searchTerm.trim() && !gachaCards && nextPage < pageCount, () => { void loadMore(); }, '800px', nextPage);
 
@@ -388,7 +420,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     chain,
   }), []);
 
-  const visibleCards = useMemo(() => {
+  const ungroupedCards = useMemo(() => {
     if (gachaCards) return gachaCards.flatMap(card => {
       if (card.kind !== 'custom') return [card];
       const current = customChains.find(chain => chain.id === card.chain?.id);
@@ -432,7 +464,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       }
       return cards.sort((left, right) => compareLibraryTags(left, right, sort));
     }
-    const catalog = (query ? searchResults : loadedCatalog).map(catalogToCard);
+    const catalog = (grouped ? filterCharacterDictionaryEntries(groupedCatalogPool, searchTerm, sort) : query ? searchResults : loadedCatalog).map(catalogToCard);
     const custom = customChains
       .filter(chain => !query || chain.name.toLowerCase().includes(query) || chain.basePrompt.toLowerCase().includes(query))
       .map(customToCard)
@@ -440,8 +472,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     let cards = tab === 'catalog' ? catalog : tab === 'custom' ? custom : [...custom, ...catalog];
     if (showFavOnly) cards = cards.filter(card => favorites.has(card.key));
     return cards;
-  }, [catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
-  const resultKey = JSON.stringify([searchTerm, tab, showFavOnly, sort]);
+  }, [grouped, groupedCatalogPool, catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
+  const groupCards = useMemo(() => grouped && !groups.ready ? [] : ungroupedCards.filter(card => groups.matches(card.key)), [grouped, groups.ready, ungroupedCards, groups.matches]);
+  const visibleCards = grouped && !gachaCards ? groupCards.slice(0, groupLimit) : groupCards;
+  const resultKey = JSON.stringify([searchTerm, tab, showFavOnly, sort, groups.activeGroup]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`, resultKey);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
@@ -574,8 +608,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     onNavigateToPlayground();
   };
   const drawGacha = async () => {
-    if (isGachaLoading || (gachaMode !== 'custom' && catalogTotal <= 0)) return;
-    if (gachaMode === 'custom' && customChains.length === 0) {
+    if (!drawReady || isGachaLoading || (gachaMode !== 'custom' && drawAvailable <= 0)) return;
+    if (gachaMode === 'custom' && drawCustomChains.length === 0) {
       notify('还没有自定义还原角色', 'error');
       return;
     }
@@ -588,11 +622,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     localStorage.setItem('nai_character_gacha_mode', gachaMode);
     localStorage.setItem('nai_character_gacha_count', String(gachaCount));
     try {
-      const customCards = [...customChains].sort(() => Math.random() - 0.5).slice(0, gachaCount).map(customToCard);
-      const customTarget = gachaMode === 'custom' ? gachaCount : gachaMode === 'mixed' ? Math.min(customCards.length, Math.max(1, Math.round(gachaCount * 0.25))) : 0;
-      const catalogTarget = Math.min(catalogTotal, gachaCount - customTarget);
-      const indices = drawLibraryIndices(catalogTotal, catalogTarget, 'mixed', recentGachaRef.current);
-      const entries = indices.length ? await getCharacterDictionaryEntriesAt(indices) : [];
+      const customCards = [...drawCustomChains].sort(() => Math.random() - 0.5).slice(0, gachaCount).map(customToCard);
+      let customTarget = gachaMode === 'custom' ? gachaCount : gachaMode === 'mixed' ? Math.min(customCards.length, Math.max(1, Math.round(gachaCount * 0.25))) : 0;
+      const catalogTarget = Math.min(drawCatalogTotal, gachaCount - customTarget);
+      if (grouped && gachaMode === 'mixed') customTarget += Math.min(customCards.length - customTarget, gachaCount - customTarget - catalogTarget);
+      const indices = drawLibraryIndices(drawCatalogTotal, catalogTarget, 'mixed', recentGachaRef.current);
+      const entries = grouped ? indices.map(index => groupedCatalogPool[index]) : indices.length ? await getCharacterDictionaryEntriesAt(indices) : [];
       const cards = [...customCards.slice(0, customTarget), ...entries.map(catalogToCard)].sort(() => Math.random() - 0.5);
       if (generation !== gachaGenerationRef.current) return;
       setGachaCards(cards);
@@ -644,6 +679,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
        <WorkspaceChrome>
 <WorkspaceToolbar>
+         {groups.toolbar}
          <div className="relative min-w-0 flex-1">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
            {isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
@@ -657,7 +693,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
            </div>
          </ToolbarPopover>
          <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || (gachaMode === 'custom' ? customChains.length === 0 : catalogTotal <= 0)} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
+           <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
            <ToolbarPopover label={t("抽卡设置")} title={t("角色抽卡设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
              <div className="grid grid-cols-2 gap-3">
                <label className="text-sm font-semibold dark:text-white">{t("抽卡范围")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("Tag + 自定义")}</option><option value="catalog">{t("只抽角色 Tag")}</option><option value="custom">{t("只抽自定义")}</option></select></label>
@@ -667,7 +703,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
          <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
        </WorkspaceToolbar>
-       {!isLoading && !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0) && <ToolbarCountCaption>{searchTerm.trim()
+       {!isLoading && (!grouped || groups.ready && !groupLoading && !groupError) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{grouped && !gachaCards ? t(groupCards.length > groupLimit ? '已加载 {0} 位' : '共 {0} 位', [visibleCards.length]) : searchTerm.trim()
          ? t(tab === 'custom' ? '匹配 {0} 位' : '已加载中匹配 {0} 位', [visibleCards.length])
          : gachaCards ? t('本次抽取 {0} 位', [visibleCards.length])
          : showFavOnly ? t('匹配 {0} 位', [visibleCards.length])
@@ -677,7 +713,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
       </WorkspaceChrome>
-      <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">{groups.navigation}
+      <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-scroll-viewport relative min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>
             resetKey={resultKey}
@@ -694,12 +731,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         </div>
         )}
 
-        {!searchTerm.trim() && !gachaCards && tab !== 'custom' && !showFavOnly && (
+        {!grouped && !searchTerm.trim() && !gachaCards && tab !== 'custom' && !showFavOnly && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
             {isLoadingMore ? t("正在加载更多角色…") : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
           </div>
         )}
-        {!isLoading && visibleCards.length === 0 && (
+        {grouped && !gachaCards && groupCards.length > groupLimit && <button type="button" className="mobile-touch mx-auto block py-6 text-sm" onClick={() => setGroupLimit(value => value + 60)}>{t("继续向下滚动加载更多")}</button>}
+        {grouped && groupError && <ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton>}
+        {grouped && groupLoading && <p role="status">{t("正在加载更多角色…")}</p>}
+        {!isLoading && (!grouped || groups.ready) && !groupLoading && !groupError && visibleCards.length === 0 && (
           <EmptyState
             title={t("没有找到符合条件的角色")}
             className="py-20"
@@ -708,6 +748,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         )}
       </div>
 
+      </div>
       <TagSelectionBar count={selectedCards.length} unit={t("个角色")} onClear={clearSelection} onCopy={copyAllSelected} onImport={importAllSelected} />
 
        <ImagePreviewPortal>{desktopPreview && lightbox?.previewImage && (

@@ -273,6 +273,31 @@ describe('界面语言', () => {
     }
   });
 
+  it('画师与角色分组界面及后台错误具备四种译文', () => {
+    const keys = [
+      '分组数据无效', '分组名称无效', '已有同名分组', '分组归属无效', '分组类型无效', '不支持的分组操作',
+      '分组资料无法读取，请保留现有数据并检查备份', '分组资料过大', '分组已在其他窗口更新，请按最新分组重试',
+      '分组加载失败', '分组尚未就绪，请重新加载后再试', '分组回读失败，请重新加载后再整理',
+      '分组导航', '分组：{0}', '分组', '分组名称', '重命名分组', '删除分组', '未分组', '设置分组', '选择分组', '已选 {0} 项', '分组名称：{0}',
+      '删除分组仅移除分组归属，条目和图片仍保留。', '确认删除分组', '新分组名称', '新建分组', '分组已保存', '保存分组', '分组保存失败',
+      '角色 Tag 目录加载失败', '正在加载画师…',
+    ];
+    const catalog = messages as Record<string, string[]>;
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        const translated = translate(language.code, key, key.includes('{0}') ? ['My group'] : []);
+        expect(translated, `${language.code}: ${key}`).not.toBe(key);
+        expect(translated, `${language.code}: ${key}`).not.toContain('{0}');
+      }
+    }
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      expect(translate(language.code, '分组：{0}', ['My group'])).toContain('My group');
+      expect(translate(language.code, '分组名称：{0}', ['My group'])).toContain('My group');
+      expect(translate(language.code, '已选 {0} 项', [3])).toContain('3');
+    }
+  });
+
   it('词典包含所有界面显式翻译入口，四种译文都完整保留占位符', () => {
     const catalog = messages as Record<string, string[]>;
     const placeholders = (value: string) => [...value.matchAll(/\{(?:\d+|count|tag)\}/g)].map(item => item[0]).sort();

@@ -525,6 +525,30 @@ const getCharacterMatch = (entry: CharacterDictionaryEntry, rawQuery: string) =>
   return { score: 620, reason: '多字段匹配' };
 };
 
+/** 分组按完整的轻量检索名单筛选，避免只过滤已加载分页而遗漏组员。 */
+export const getCharacterDictionaryEntries = async (): Promise<CharacterDictionaryEntry[]> => {
+  const records = await loadCharacterSearchRecords(await loadManifest());
+  return records.map(([name, chinese, postCount]) => ({ name, chinese, postCount }));
+};
+
+export const filterCharacterDictionaryEntries = (entries: readonly CharacterDictionaryEntry[], rawQuery: string, sort: CharacterDictionarySort = 'popular'): CharacterDictionaryEntry[] => {
+  const query = normalizeTagQuery(rawQuery);
+  const ranked = entries.flatMap(entry => {
+    if (!query) return [{ entry, score: 0 }];
+    const match = getCharacterMatch(entry, query);
+    return match ? [{ entry: { ...entry, matchReason: match.reason }, score: match.score }] : [];
+  });
+  ranked.sort((a, b) => {
+    const relevance = b.score - a.score;
+    if (relevance) return relevance;
+    if (sort === 'least') return a.entry.postCount - b.entry.postCount || a.entry.name.localeCompare(b.entry.name);
+    if (sort === 'name-asc') return a.entry.name.localeCompare(b.entry.name);
+    if (sort === 'name-desc') return b.entry.name.localeCompare(a.entry.name);
+    return b.entry.postCount - a.entry.postCount || a.entry.name.localeCompare(b.entry.name);
+  });
+  return ranked.map(result => result.entry);
+};
+
 export const searchCharacterDictionary = async (rawQuery: string, limit = 200, sort: CharacterDictionarySort = 'popular'): Promise<CharacterDictionaryEntry[]> => {
   const query = normalizeTagQuery(rawQuery);
   if (!query) return [];
@@ -559,21 +583,7 @@ export const searchCharacterDictionary = async (rawQuery: string, limit = 200, s
     const record = records[index];
     return record ? [{ name: record[0], chinese: record[1], postCount: record[2] }] : [];
   });
-  const ranked = candidates.flatMap(entry => {
-    const match = getCharacterMatch(entry, query);
-    return match ? [{ entry: { ...entry, matchReason: match.reason }, score: match.score }] : [];
-  });
-
-  ranked.sort((a, b) => {
-    const relevance = b.score - a.score;
-    if (relevance) return relevance;
-    if (sort === 'least') return a.entry.postCount - b.entry.postCount || a.entry.name.localeCompare(b.entry.name);
-    if (sort === 'name-asc') return a.entry.name.localeCompare(b.entry.name);
-    if (sort === 'name-desc') return b.entry.name.localeCompare(a.entry.name);
-    return b.entry.postCount - a.entry.postCount || a.entry.name.localeCompare(b.entry.name);
-  });
-
-  return ranked.slice(0, limit).map(result => result.entry);
+  return filterCharacterDictionaryEntries(candidates, query, sort).slice(0, limit);
 };
 
 export const preloadTagDictionary = () => {

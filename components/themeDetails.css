@@ -66,7 +66,7 @@ html[data-surfaces='translucent'] .workspace-scroll-viewport {
 html[data-surfaces='translucent'] .workspace-fixed-pane { margin-top: var(--workspace-chrome-height, 0px); }
 /* 手机目录在图片上方，目录已避让顶栏，后续滚动区只保留自身边距。 */
 @media (max-width: 767px) {
-  html[data-surfaces='translucent'] .chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport { --workspace-chrome-height: 0px; }
+  html[data-surfaces='translucent'] .workspace-category-navigation:not([hidden]) + .workspace-scroll-viewport { --workspace-chrome-height: 0px; }
 }
 @media (min-width: 768px) {
   .workspace-scroll-viewport[class~='md:p-5'] { --workspace-scroll-gutter: calc(var(--spacing) * 5); }

@@ -1371,18 +1371,18 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const categoryToggle = <ToolbarButton aria-label={t(categoriesExpanded ? '收起分类' : '展开分类')} title={[t(categoriesExpanded ? '收起分类' : '展开分类'), categoryLabel].join(' · ')} aria-expanded={categoriesExpanded} aria-controls={navigationId} active={categoriesExpanded || kind !== 'all'} onClick={toggleCategories}><Folder className="h-4 w-4" /></ToolbarButton>;
   return <div className="prompt-library-hub flex h-full min-h-0 flex-1 flex-col md:flex-row">
     {/* 展开时桌面竖排、手机横排；收起保留分类与内容草稿。 */}
-    <nav id={navigationId} hidden={!categoriesExpanded} role="tablist" aria-label={t('提示词分类')} className={categoriesExpanded ? "appearance-group m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900 md:w-40 md:flex-col md:overflow-y-auto md:bg-gray-50/70 md:dark:bg-gray-900/60" : "hidden"}>
-      <p className="hidden text-gray-500 dark:text-gray-400 md:mb-2 md:block md:px-2 md:text-meta md:font-bold">{t('提示词分类')}</p>
+    <nav id={navigationId} hidden={!categoriesExpanded} role="tablist" aria-label={t('提示词分类')} className={categoriesExpanded ? "appearance-panel m-2 flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-gray-200 p-3 dark:border-gray-800 md:w-52 md:flex-col md:overflow-y-auto" : "hidden"}>
+      <p className="hidden text-xs font-semibold text-gray-500 md:mb-2 md:block md:px-2">{t('提示词分类')}</p>
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? !!fragmentKindOf(chain) : fragmentKindOf(chain)===category).length;
         const label=category==='all' ? '全部' : FRAGMENT_LABELS[category];
         const Icon = category === 'all' || category === 'general' ? Library : KIND_ICONS[category];
         return <button key={category} type="button" role="tab" aria-selected={kind===category}
-          className={`mobile-touch flex h-9 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition md:h-10 md:w-full md:text-left ${kind===category ? '!border-indigo-500 !bg-indigo-600 !text-white shadow-sm' : 'border-transparent text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-gray-800'}`}
+          className={`mobile-touch flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm transition md:h-10 md:w-full md:text-left ${kind===category ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}
           onClick={() => { void selectKind(category); }}>
           <span className="flex h-5 w-5 flex-none items-center justify-center [&_svg]:h-4 [&_svg]:w-4"><Icon /></span>
           <span className="min-w-0 flex-1 truncate">{t(label)}</span>{' '}
-          <span className={`text-meta font-medium ${kind===category ? 'text-white/80' : 'text-gray-400'}`}>{count}</span>
+          <span className="text-xs opacity-60">{count}</span>
         </button>;
       })}
     </nav>

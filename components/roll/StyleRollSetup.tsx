@@ -16,11 +16,11 @@ import { useMobileHistoryLayer } from '../MobileUI';
 
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-interface Props { initial: RollExperiment; libraryCount?: number; libraryLoading?: boolean; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
+interface Props { initial: RollExperiment; libraryCount?: number; libraryLoading?: boolean; libraryError?: string; blockedTags?: string[]; library?: ArtistDictionaryEntry[]; onBlockedChange: (tags: string[]) => Promise<void>; enforceFreeStepLimit: boolean; onSave: (value: RollExperiment) => Promise<void>; onClose: () => void }
 
 export const StyleRollSetup: React.FC<Props> = props => <ImagePreviewPortal><SetupForm {...props} /></ImagePreviewPortal>;
 
-const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, onSave, onClose }) => {
+const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading = false, libraryError, blockedTags = [], library = [], onBlockedChange, enforceFreeStepLimit, onSave, onClose }) => {
   useLanguage();
   const [draft, setDraft] = useState(() => structuredClone({ ...initial, drawPlan: undefined, pinnedArtists: getRollPinnedArtists(initial), rules: { ...initial.rules, ...getRollArtistRange(initial) } }));
   const excludedArtistTags = useMemo(() => draft.artists.filter(artist => artist.excluded).map(artist => artist.tag), [draft.artists]);
@@ -76,7 +76,7 @@ const SetupForm: React.FC<Props> = ({ initial, libraryCount = 0, libraryLoading 
         <ToolbarButton className="!border-emerald-600 !bg-emerald-700 !text-white" disabled={busy || presetBusy} onClick={() => void save()}>{t(busy ? '正在保存…' : '保存配置')}</ToolbarButton>
       </footer>
       {active && chainDialogOpen && <StyleRollChainArtistDialog knownArtists={knownArtists} source={draft.chainArtistSource} blocked={[...blockedTags, ...excludedArtistTags]} onConfirm={chainArtistSource => { if (active && !editingBusy) setDraft(current => ({ ...current, chainArtistSource })); }} onClose={() => setChainDialogOpen(false)} />}
-      {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={library} loading={libraryLoading} pinned={draft.pinnedArtists ?? []} onPinnedChange={pinnedArtists => setDraft(current => ({ ...current, pinnedArtists }))} blocked={blockedTags} onBlockedChange={onBlockedChange} excluded={excludedArtistTags} onExcludedChange={tags => setDraft(current => ({ ...current, artists: current.artists.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })) }))} sampledOnly={draft.sampledOnly ?? false} onSampledOnlyChange={sampledOnly => setDraft(current => ({ ...current, sampledOnly }))} rules={draft.rules} onRulesChange={rules => setDraft(current => ({ ...current, rules }))} onClose={() => setArtistDialogOpen(false)} />}
+      {artistDialogOpen && <StyleRollArtistDialog enforceFreeStepLimit={enforceFreeStepLimit} library={library} loading={libraryLoading} libraryError={libraryError} pinned={draft.pinnedArtists ?? []} onPinnedChange={pinnedArtists => setDraft(current => ({ ...current, pinnedArtists }))} blocked={blockedTags} onBlockedChange={onBlockedChange} excluded={excludedArtistTags} onExcludedChange={tags => setDraft(current => ({ ...current, artists: current.artists.map(artist => ({ ...artist, excluded: tags.includes(artist.tag) })) }))} sampledOnly={draft.sampledOnly ?? false} onSampledOnlyChange={sampledOnly => setDraft(current => ({ ...current, sampledOnly }))} rules={draft.rules} onRulesChange={rules => setDraft(current => ({ ...current, rules }))} onClose={() => setArtistDialogOpen(false)} />}
 
     </div>
   </div>;

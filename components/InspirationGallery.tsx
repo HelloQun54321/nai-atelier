@@ -2,7 +2,7 @@ import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, Folder, FolderPlus, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Tags, Trash2, Upload, X } from 'lucide-react';
+import { ArrowDownUp, Folder, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User } from '../types';
 import { createUuid } from '../services/id';
@@ -49,8 +49,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences('favorites');
-  const fileDragDepth = useRef(0);
-  const [fileDragOver, setFileDragOver] = useState(false);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
@@ -248,32 +246,20 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     catch (error: any) { notify(error.message || '删除失败', 'error'); }
   };
 
-  const clearFileDrag = () => { fileDragDepth.current = 0; setFileDragOver(false); };
   const openImport = (files: File[] = [], target = boardId) => {
-    clearFileDrag();
     if (currentUser.role === 'guest' || busy || importRequest || boardEditor || tagManagerOpen || !active) return;
     setImportRequest({ files, boardId: target });
   };
   const fileDropProps: React.HTMLAttributes<HTMLDivElement> = {
-    onDragEnter: event => {
-      if (!isLocalFileDrag(event.dataTransfer) || (event.target as Element).closest('[role="dialog"]')) return;
-      event.preventDefault();
-      if (currentUser.role !== 'guest' && !busy && !importRequest && !boardEditor && !tagManagerOpen && active) {
-        fileDragDepth.current++; setFileDragOver(true);
-      }
-    },
+    // 画廊只整理已有作品；外部文件不导入，也不交给浏览器默认打开。
     onDragOver: event => {
-      if (!isLocalFileDrag(event.dataTransfer)) return;
+      if (draggedIdsRef.current.length || !isLocalFileDrag(event.dataTransfer)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = currentUser.role === 'guest' || busy || importRequest || boardEditor || tagManagerOpen || !active || (event.target as Element).closest('[role="dialog"]') ? 'none' : 'copy';
+      event.dataTransfer.dropEffect = 'none';
     },
-    onDragLeave: () => { if (--fileDragDepth.current <= 0) clearFileDrag(); },
-    onDragEnd: clearFileDrag,
     onDrop: event => {
       if (!isLocalFileDrag(event.dataTransfer)) return;
-      event.preventDefault(); clearFileDrag();
-      if ((event.target as Element).closest('[role="dialog"]')) return;
-      openImport(Array.from(event.dataTransfer.files || []));
+      event.preventDefault();
     },
   };
 
@@ -313,20 +299,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const folderDropProps = (target: string): React.HTMLAttributes<HTMLElement> => ({
     onDragOver: event => {
       event.preventDefault();
-      if (isLocalFileDrag(event.dataTransfer)) {
-        event.dataTransfer.dropEffect = currentUser.role === 'guest' || busy || (event.currentTarget as Element).closest('[role="dialog"]') ? 'none' : 'copy'; return;
-      }
       if (!draggedIdsRef.current.length || busy) { event.dataTransfer.dropEffect = 'none'; return; }
       event.dataTransfer.dropEffect = 'move'; setDropTarget(target);
     },
     onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); },
     onDrop: event => {
       event.preventDefault(); event.stopPropagation();
-      if (isLocalFileDrag(event.dataTransfer)) {
-        draggedIdsRef.current = []; clearFileDrag();
-        if (!(event.currentTarget as Element).closest('[role="dialog"]')) openImport(Array.from(event.dataTransfer.files || []), target);
-        return;
-      }
       if (!draggedIdsRef.current.length) return;
       const ids = draggedIdsRef.current; draggedIdsRef.current = []; setDropTarget(null);
       void moveToFolder(ids, target);
@@ -358,7 +336,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <button type="button" disabled={busy === 'board-order'} aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
     <button type="button" disabled={busy === 'board-order'} aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
   </div>;
-  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} data-collection-folder={board.id} {...folderDropProps(board.id)} className={`group relative flex items-center rounded-xl border ${boardDrag?.id === board.id ? 'opacity-50' : ''} ${boardDrag?.targetId === board.id && boardDrag.id !== board.id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'appearance-group border-gray-200 bg-white text-indigo-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-300' : 'border-transparent hover:bg-white dark:hover:bg-gray-800'}`}>
+  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} data-collection-folder={board.id} {...folderDropProps(board.id)} className={`group relative flex items-center rounded-lg border ${boardDrag?.id === board.id ? 'opacity-50' : ''} ${boardDrag?.targetId === board.id && boardDrag.id !== board.id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-transparent bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
     <button type="button" data-card-action="true" data-agent-interaction="drag" aria-label={t("排序收藏夹：{0}", [board.name])} title={t("拖动排序；上下方向键调整")}
       disabled={boards.length < 2 || currentUser.role === 'guest'} aria-disabled={Boolean(busy) || boards.length < 2 || currentUser.role === 'guest'}
       className="mobile-touch flex h-10 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-gray-400 hover:text-indigo-600 active:cursor-grabbing disabled:opacity-20 aria-disabled:opacity-20 cursor-grab dark:hover:text-indigo-300"
@@ -386,7 +364,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         const target = boards[boards.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (target) void reorderBoard(board.id, target.id);
       }}><GripVertical className="h-3.5 w-3.5" /></button>
-    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm font-semibold"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: board.color }} /><span className="truncate">{board.name}</span><span className="ml-auto text-micro text-gray-400">{boardCounts.get(board.id) || 0}</span></button>{renderBoardActions(board)}
+    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm"><Folder className="h-4 w-4 flex-none" style={{ color: board.color }} /><span className="min-w-0 flex-1 truncate">{board.name}</span><span className="text-xs opacity-60">{boardCounts.get(board.id) || 0}</span></button>{renderBoardActions(board)}
   </PressRevealSurface>;
   const renderNavigation = () => <div>
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>
@@ -398,7 +376,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p>
     <div className="space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div>
     <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
-    <div className="mb-2 flex items-center justify-between px-2"><span className="text-meta font-bold text-gray-400">{t('自定义收藏夹')}</span><button type="button" disabled={busy === 'board-order'} aria-label={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="mobile-touch flex h-8 w-8 items-center justify-center text-indigo-600"><FolderPlus className="h-4 w-4" /></button></div>
+    <div className="mb-2 flex items-center justify-between gap-1 px-2"><span className="text-xs font-semibold text-gray-500">{t('自定义收藏夹')}</span><ToolbarButton disabled={busy === 'board-order'} aria-label={t('新建收藏夹')} title={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton></div>
     <div data-collection-folders="true" className="space-y-1">{boards.map(renderBoardRow)}{!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="mobile-touch w-full rounded-xl border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-400 dark:border-gray-700">{t('创建第一个收藏夹')}</button>}</div>
   </div>;
   const renderFilterControls = (mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
@@ -493,7 +471,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
     </WorkspaceChrome>
     <div className="flex min-h-0 flex-1">
-      <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-group hidden w-44 flex-none overflow-y-auto rounded-2xl border-r border-gray-200 bg-gray-50/70 p-2 dark:border-gray-800 dark:bg-gray-900/60 md:block" : "hidden"}>
+      <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-panel min-h-0 hidden w-52 flex-none overflow-y-auto border-r border-gray-200 p-3 dark:border-gray-800 md:block" : "hidden"}>
         {navigationExpanded && renderNavigation()}
       </aside>
 
@@ -543,7 +521,6 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     {boardEditor && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-4" onClick={() => setBoardEditor(null)}><div ref={boardDialogRef} role="dialog" aria-modal="true" aria-label={boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")} className="appearance-panel ui-sheet-enter mobile-safe-bottom w-full max-w-sm rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}><h2 className="text-lg font-black">{boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")}</h2><input autoFocus value={boardEditor.name} onChange={event => setBoardEditor({ ...boardEditor, name: event.target.value })} placeholder={t("例如：电影感光影")} className="mt-4 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /><div className="mt-4 flex gap-2">{BOARD_COLORS.map(color => <button key={color} type="button" aria-pressed={boardEditor.color === color} onClick={() => setBoardEditor({ ...boardEditor, color })} className={`mobile-size-locked h-8 w-8 rounded-full transition ${boardEditor.color === color ? 'ring-2 ring-offset-2 dark:ring-offset-gray-900' : ''}`} style={{ backgroundColor: color }} aria-label={t("颜色 {0}", [color])} />)}</div><div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end"><button type="button" onClick={() => setBoardEditor(null)} className="mobile-touch rounded-xl border border-gray-200 px-4 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!boardEditor.name.trim() || busy === 'board'} onClick={() => void saveBoard()} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'board' ? t("正在保存…") : t("保存")}</button></div></div></div></ImagePreviewPortal>}
 
     {importRequest && <CollectionImportDialog currentUser={currentUser} boards={boards} tagSuggestions={allTags.map(([tag]) => tag)} initialFiles={importRequest.files} initialBoardId={importRequest.boardId} onClose={() => setImportRequest(null)} onRefresh={onImportRefresh || onRefresh} notify={notify} />}
-    {fileDragOver && <div aria-hidden="true" className="pointer-events-none absolute inset-3 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-indigo-400 bg-indigo-50/95 text-indigo-600 dark:bg-gray-900/95 dark:text-indigo-300"><span className="flex items-center gap-3 text-sm font-semibold"><Upload className="h-6 w-6" />{t('拖入本地图片，加入收藏库')}</span></div>}
 
   </div>;
 };

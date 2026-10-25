@@ -11,7 +11,8 @@ import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPre
 import { createDefaultRollTemplate } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
-const mocks = vi.hoisted(() => ({ block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+const mocks = vi.hoisted(() => ({ groupGet: vi.fn(), groupPut: vi.fn(), block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { ...(await original<typeof import('../../services/api')>()).api, get: mocks.groupGet, put: mocks.groupPut } }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleLookup: mocks.lookup }));
@@ -26,6 +27,8 @@ vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () =>
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, onLoad, previewTransform }: any) => <img src={src} alt={alt} className={className} onLoad={onLoad} data-preview-transform={previewTransform} /> }));
 const ownSample = (tag: string, imageUrl: string, pack: 'v45' | 'v5' = 'v45', id = imageUrl): ArtistOwnSample => ({ ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), id, tag, pack, imageUrl, createdAt: 1, params: { ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, model: pack === 'v5' ? 'nai-diffusion-5-full' : 'nai-diffusion-4-5-full' } });
 beforeEach(() => {
+  mocks.groupGet.mockResolvedValue({ revision: 1, groups: [], memberships: {} });
+  mocks.groupPut.mockImplementation(async (_path, state) => ({ ...state, revision: state.revision + 1 }));
   mocks.catalog.mockReset();
   mocks.status.mockResolvedValue({ available: true, canManage: true, packs: [] });
   mocks.data.mockImplementation(async () => ({ templates: {}, samples: (await Promise.all((['v45', 'v5'] as const).map(async pack => [...await mocks.urls(pack)].map(([tag, url]: [string, string]) => ownSample(url.startsWith('/api/artist-samples/image?') ? new URLSearchParams(url.split('?')[1]).get('tag') || tag : tag, url, pack))))).flat() }));
@@ -484,4 +487,159 @@ it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改�
   expect(names()).toEqual(['alpha_tag']);
   for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange]) expect(callback).not.toHaveBeenCalled();
   expect(mocks.favorite).not.toHaveBeenCalled();
+});
+
+
+it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单或抽取规则', async () => {
+  mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '测试组' }], memberships: { 'artist:alpha_tag': ['g'], 'artist:beta_tag': ['g'] } });
+  mocks.items = [{ sourceType: 'artist', sourceId: 'beta_tag' }];
+  const library = ['alpha_tag', 'beta_tag', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 }));
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
+  render(<StyleRollArtistDialog library={library} pinned={['beta_tag']} onPinnedChange={onPinnedChange} blocked={['alpha_tag']} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  await waitFor(() => expect(mocks.groupGet).toHaveBeenCalledWith('/catalog-groups/artist', expect.anything()));
+  expect(screen.queryByRole('complementary', { name: '分组导航' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  fireEvent.change(await screen.findByLabelText('选择分组'), { target: { value: 'g' } });
+  const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label'));
+  expect(names()).toEqual(['锁定画师：alpha_tag', '锁定画师：beta_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '偏好画师' })); expect(names()).toEqual(['锁定画师：beta_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['锁定画师：alpha_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '全部画师' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'beta' } });
+  expect(names()).toEqual(['锁定画师：beta_tag']);
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  expect(names()).toEqual(['锁定画师：beta_tag']);
+  expect(JSON.parse(localStorage.getItem('nai_catalog_groups_roll-artists')!).active).toBe('g');
+  expect(localStorage.getItem('nai_catalog_groups_artist')).toBeNull();
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange]) expect(callback).not.toHaveBeenCalled();
+});
+
+it('分组筛选先覆盖完整目录再分页，精确原名区分同义画师且设组仅包含库内固定项', async () => {
+  const library = Array.from({ length: 82 }, (_, index) => ({ name: 'artist_' + index, chinese: '', postCount: 100 - index }));
+  library.push({ name: 'artist 80', chinese: '', postCount: 1 });
+  mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '末页组' }], memberships: { 'artist:artist_80': ['g'], 'artist:artist_81': ['g'] } });
+  const onPinnedChange = vi.fn();
+  render(<StyleRollArtistDialog library={library} pinned={['artist_80', 'artist 80', 'missing']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={mocks.block} excluded={[]} onExcludedChange={vi.fn()} sampledOnly={false} onSampledOnlyChange={vi.fn()} rules={DEFAULT_ROLL_RULES} onRulesChange={vi.fn()} onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: '设置分组' })).toHaveProperty('disabled', false));
+  expect(screen.queryByRole('button', { name: '锁定画师：artist_80' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: 'g' } });
+  expect(screen.getByRole('button', { name: '锁定画师：artist_80' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '锁定画师：artist_81' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '锁定画师：artist 80' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '设置分组' }));
+  const management = screen.getByRole('dialog', { name: '设置分组' });
+  expect(within(management).getByText('已选 2 项')).toBeTruthy();
+  fireEvent.click(within(management).getByRole('checkbox', { name: '末页组' }));
+  fireEvent.click(within(management).getByRole('button', { name: '保存分组' }));
+  await waitFor(() => expect(mocks.groupPut).toHaveBeenCalledOnce());
+  const memberships = mocks.groupPut.mock.calls[0][1].memberships;
+  expect(memberships['artist:missing']).toBeUndefined();
+  expect(Object.keys(memberships)).toContain('artist:artist 80');
+  expect(onPinnedChange).not.toHaveBeenCalled();
+});
+
+
+it('分组元数据更新不重置全部画师浏览的已加载页与滚动', async () => {
+  const library = Array.from({ length: 82 }, (_, index) => ({ name: 'entry_' + index, chinese: '', postCount: 100 - index }));
+  render(<Fixture library={library} />);
+  await waitFor(() => expect(mocks.groupGet).toHaveBeenCalledWith('/catalog-groups/artist', expect.anything()));
+  expect(screen.queryByRole('button', { name: '锁定画师：entry_80' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  expect(screen.getByRole('button', { name: '锁定画师：entry_80' })).toBeTruthy();
+  const gallery = document.querySelector<HTMLElement>('[data-roll-artist-gallery]')!;
+  gallery.scrollTop = 640;
+  act(() => window.dispatchEvent(new CustomEvent('nai-catalog-groups-updated', { detail: {
+    kind: 'artist', state: { revision: 2, groups: [{ id: 'new', name: '新分组' }], memberships: {} },
+  } })));
+  expect(gallery.scrollTop).toBe(640);
+  expect(screen.getByRole('button', { name: '锁定画师：entry_80' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  expect(screen.getByRole('option', { name: '新分组 (0)' })).toBeTruthy();
+});
+
+
+it.each([false, true])('真实Roll卡片拖入分组：固定来源=%s，追加归属且不改变任何抽取状态', async selected => {
+  const state = { revision: 1, groups: [{ id: 'old', name: '原组' }, { id: 'target', name: '目标组' }], memberships: { 'artist:alpha': ['old'], 'artist:beta': ['old'] } };
+  mocks.groupGet.mockResolvedValue(state);
+  const onPinnedChange = vi.fn(), onBlockedChange = vi.fn(), onExcludedChange = vi.fn(), onRulesChange = vi.fn(), onSampledOnlyChange = vi.fn();
+  render(<StyleRollArtistDialog library={['alpha', 'beta', 'gamma'].map(name => ({ name, chinese: '', postCount: 1 }))} pinned={['alpha', 'beta']} onPinnedChange={onPinnedChange} blocked={[]} onBlockedChange={onBlockedChange} excluded={[]} onExcludedChange={onExcludedChange} sampledOnly={false} onSampledOnlyChange={onSampledOnlyChange} rules={DEFAULT_ROLL_RULES} onRulesChange={onRulesChange} onClose={() => {}} />);
+  const source = screen.getByRole('button', { name: selected ? '锁定画师：alpha' : '锁定画师：gamma' });
+  await waitFor(() => expect(source.draggable).toBe(true));
+  const dragOrigin = selected ? await within(source).findByRole('img') : source;
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  const navigation = screen.getByRole('complementary', { name: '分组导航' });
+  const destination = within(navigation).getByRole('button', { name: '目标组' });
+  const values = new Map<string, string>();
+  const transfer = { get types() { return [...values.keys()]; }, setData: (key: string, value: string) => values.set(key, value), getData: (key: string) => values.get(key) || '', effectAllowed: '', dropEffect: '' };
+  // 开始拖动后取消，旧拖动令牌失效；无归属写入。
+  fireEvent.dragStart(dragOrigin, { dataTransfer: transfer });
+  fireEvent.dragEnd(source, { dataTransfer: transfer });
+  fireEvent.drop(destination, { dataTransfer: transfer });
+  expect(mocks.groupPut).not.toHaveBeenCalled();
+  for (const name of ['全部', '未分组']) {
+    fireEvent.dragStart(dragOrigin, { dataTransfer: transfer });
+    fireEvent.drop(within(navigation).getByRole('button', { name }), { dataTransfer: transfer });
+  }
+  expect(mocks.groupPut).not.toHaveBeenCalled();
+  fireEvent.dragStart(dragOrigin, { dataTransfer: transfer });
+  fireEvent.dragOver(destination, { dataTransfer: transfer });
+  expect(transfer.dropEffect).toBe('copy');
+  fireEvent.drop(destination, { dataTransfer: transfer });
+  await waitFor(() => expect(mocks.groupPut).toHaveBeenCalledOnce());
+  const expected = selected
+    ? { 'artist:alpha': ['old', 'target'], 'artist:beta': ['old', 'target'] }
+    : { 'artist:alpha': ['old'], 'artist:beta': ['old'], 'artist:gamma': ['target'] };
+  expect(mocks.groupPut).toHaveBeenCalledWith('/catalog-groups/artist', expect.objectContaining({ memberships: expected }));
+  await waitFor(() => expect(destination).toHaveProperty('disabled', false));
+  expect(screen.queryByRole('alert')).toBeNull();
+  // 同组再次拖入不重复保存。
+  fireEvent.dragStart(dragOrigin, { dataTransfer: transfer }); fireEvent.drop(destination, { dataTransfer: transfer });
+  expect(mocks.groupPut).toHaveBeenCalledOnce();
+  for (const callback of [onPinnedChange, onBlockedChange, onExcludedChange, onRulesChange, onSampledOnlyChange, mocks.favorite, mocks.begin]) expect(callback).not.toHaveBeenCalled();
+});
+
+
+it('Roll分组计数使用未筛选完整真实目录，分页外和资料变化均反映但不计临时固定项', async () => {
+  const library = Array.from({ length: 82 }, (_, index) => ({ name: 'count_' + index, chinese: '', postCount: 100 - index }));
+  const memberships = Object.fromEntries(library.map(entry => ['artist:' + entry.name, ['g']]));
+  memberships['artist:ghost'] = ['g'];
+  mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '完整组' }], memberships });
+  const props = { library, pinned: ['ghost'], onPinnedChange: vi.fn(), blocked: ['unknown'], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
+  const view = render(<StyleRollArtistDialog {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  await screen.findByRole('option', { name: '完整组 (82)' });
+  expect(screen.getByRole('option', { name: '全部 (82)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '未分组 (0)' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '锁定画师：count_80' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'count_0' } });
+  expect(screen.getAllByRole('button', { name: /^锁定画师：/ })).toHaveLength(1);
+  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '已锁定' }));
+  expect(screen.queryByRole('button', { name: /^锁定画师：/ })).toBeNull();
+  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
+  view.rerender(<StyleRollArtistDialog {...props} library={[...library, { name: 'new_actual', chinese: '', postCount: 0 }]} />);
+  expect(screen.getByRole('option', { name: '全部 (83)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '完整组 (82)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '未分组 (1)' })).toBeTruthy();
+  expect(props.onPinnedChange).not.toHaveBeenCalled(); expect(props.onRulesChange).not.toHaveBeenCalled();
+});
+
+it('Roll目录或样张读取中及真实目录读取失败时分组计数未知，恢复后显示真实数', async () => {
+  let resolveSamples!: (value: { templates: Record<string, never>; samples: [] }) => void;
+  mocks.data.mockImplementationOnce(() => new Promise(resolve => { resolveSamples = resolve; }));
+  mocks.groupGet.mockResolvedValue({ revision: 1, groups: [{ id: 'g', name: '未知组' }], memberships: { 'artist:alpha': ['g'] } });
+  const props = { library: [{ name: 'alpha', chinese: '', postCount: 1 }], pinned: [], onPinnedChange: vi.fn(), blocked: [], onBlockedChange: mocks.block, excluded: [], onExcludedChange: vi.fn(), sampledOnly: false, onSampledOnlyChange: vi.fn(), rules: DEFAULT_ROLL_RULES, onRulesChange: vi.fn(), onClose: vi.fn() };
+  const view = render(<StyleRollArtistDialog {...props} />);
+  fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  await screen.findByRole('option', { name: '未知组 (—)' });
+  await act(async () => { resolveSamples({ templates: {}, samples: [] }); });
+  await screen.findByRole('option', { name: '未知组 (1)' });
+  view.rerender(<StyleRollArtistDialog {...props} loading />);
+  expect(screen.getByRole('option', { name: '未知组 (—)' })).toBeTruthy();
+  view.rerender(<StyleRollArtistDialog {...props} libraryError="合成目录失败" />);
+  expect(screen.getByRole('option', { name: '未知组 (—)' })).toBeTruthy();
+  view.rerender(<StyleRollArtistDialog {...props} />);
+  expect(screen.getByRole('option', { name: '未知组 (1)' })).toBeTruthy();
 });
