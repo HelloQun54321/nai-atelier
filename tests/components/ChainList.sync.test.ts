@@ -16,6 +16,8 @@ const collectionState = vi.hoisted(() => ({ rows: [] as any[], revision: 0, list
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
 vi.mock('../../services/api', () => ({ api: { get, post, put } }));
+// 文件夹的真实读写由 ChainList.folders.test.tsx 覆盖，酒馆测试只统计酒馆请求。
+vi.mock('../../services/useChainFolders', () => ({ useChainFolders: () => ({ state: { revision: 0, folders: [], assignments: {} }, ready: true, busy: false, error: '', reload: vi.fn(), save: vi.fn() }) }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => React.createElement('button', { role: 'switch', 'aria-label': '收集模式' }) }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => React.createElement('button', { 'aria-label': '图片反推' }) }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: ({ isOpen, onSuccess }: { isOpen: boolean; onSuccess: () => void }) => isOpen ? React.createElement('button', { onClick: onSuccess }, '完成测试导入') : null }));
@@ -60,6 +62,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
     '收藏', '下载图片', '复制图片',
     ...(type === 'style' ? ['发送到实验室：风格 A'] : []),
     `编辑${label}信息：风格 A`,
+    ...(type === 'style' ? ['移动到文件夹：风格 A'] : []),
   ]);
   for (const button of buttons) {
     for (const token of ['bg-black/45', 'border-white/60', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(button.classList.contains(token)).toBe(true);
@@ -455,7 +458,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(card.hasAttribute('data-press-revealed')).toBe(false); longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
     const controls = card.querySelector('[data-card-action].right-2')!;
-    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '发送到实验室：风格 A', '编辑风格串信息：风格 A']);
+    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '发送到实验室：风格 A', '编辑风格串信息：风格 A', '移动到文件夹：风格 A']);
     fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
     fireEvent.click(within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }));
@@ -489,8 +492,10 @@ describe('风格串列表的酒馆筛选交互', () => {
     const p = props(); const view = render(React.createElement(ChainList, p));
     const header = view.container.querySelector('header')!;
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
-    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['筛选', '智慧姬同步', '查找相似', '风格串分享包', '收集模式', '批量导入', '新建风格串']);
-    expect(header.firstElementChild?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
+    expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '智慧姬同步', '查找相似', '风格串分享包', '收集模式', '批量导入', '新建风格串']);
+    const folderToggle = screen.getByRole('button', { name: '展开文件夹' });
+    expect(header.firstElementChild).toBe(folderToggle);
+    expect(folderToggle.nextElementSibling?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();
     fireEvent.click(desktop.find(button => button.getAttribute('aria-label') === '批量导入')!);

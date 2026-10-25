@@ -180,10 +180,10 @@ async function ensureDependencies() {
     }
   }
   
-  const localWrangler = join(APP_ROOT, IS_WINDOWS ? 'node_modules/.bin/wrangler.cmd' : 'node_modules/.bin/wrangler');
+  const localWrangler = join(APP_ROOT, 'node_modules/wrangler/wrangler-dist/cli.js');
   if (!existsSync(localWrangler)) {
-    console.log('\x1b[33mwrangler 未安装，正在安装...\x1b[0m');
-    await runStartupCommand('npm install wrangler --save-dev');
+    console.log('\x1b[33m本地运行依赖缺失，正在按项目配置恢复...\x1b[0m');
+    await runStartupCommand(existsSync(join(APP_ROOT, 'package-lock.json')) ? 'npm ci' : 'npm install');
   }
 }
 

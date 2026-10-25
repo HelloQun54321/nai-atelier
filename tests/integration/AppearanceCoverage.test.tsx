@@ -1037,3 +1037,26 @@ describe('全局外观覆盖审计', () => {
     expect(appearanceScrollBehavior()).toBe(expected);
   });
 });
+
+
+it('文件夹复用固定面板避让，只有手机展开目录抵消相邻滚动区的重复顶栏高度', () => {
+  const source = readFileSync('components/themeDetails.css', 'utf8');
+  const root = "html[data-surfaces='translucent']";
+  expect(declarations(root + ' .workspace-fixed-pane', undefined, source)['margin-top']).toBe('var(--workspace-chrome-height, 0px)');
+  const sibling = root + ' .chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport';
+  expect(declarations(sibling, '(max-width: 767px)', source)['--workspace-chrome-height']).toBe('0px');
+  expect(declarations(sibling, undefined, source)).toEqual({});
+  expect(declarations(sibling, '(min-width: 768px)', source)).toEqual({});
+  const folderBottom = "html[data-theme-material='glass'] .chain-folder-navigation";
+  expect(declarations(folderBottom, '(min-width: 768px)', source)['margin-bottom']).toBe('var(--nai-chrome-inset, 8px)');
+  expect(declarations(folderBottom, '(max-width: 767px)', source)).toEqual({});
+  expect(declarations(folderBottom, undefined, source)).toEqual({});
+  expect(declarations(root + ' .workspace-scroll-viewport', undefined, source)).toMatchObject({
+    'padding-top': 'calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px))',
+    'scroll-padding-top': 'calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px))',
+  });
+  expect(declarations('.chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport', '(max-width: 767px)', source)).toEqual({});
+  const component = readFileSync('components/chain/ChainFolders.tsx', 'utf8');
+  expect(component).toContain('workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0');
+  expect(component).toContain('md:overflow-y-auto');
+});

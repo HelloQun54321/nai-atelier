@@ -94,7 +94,14 @@ final class AtelierStore implements AutoCloseable {
                 rows.put(row);
             }
             JSObject result = new JSObject(); result.put("results", rows); result.put("success", true);
-            result.put("meta", new JSObject()); return result;
+            // 同一连接、同一同步锁内读取本次写入行数，供 Worker 的条件更新判断冲突。
+            SQLiteStatement changed = db.prepare("SELECT changes()");
+            try {
+                changed.step();
+                JSObject meta = new JSObject(); meta.put("changes", changed.getLong(0));
+                result.put("meta", meta);
+            } finally { changed.close(); }
+            return result;
         } finally { statement.close(); }
     }
     synchronized JSArray batch(JSONArray statements) throws Exception {

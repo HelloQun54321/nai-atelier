@@ -32,7 +32,7 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
   <button onClick={() => setAppearancePreferences({ ...appearancePreferences, gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })}>切换合成选中聚焦</button>
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onBundleImported, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onBundleImported?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onBundleImported && <button onClick={async () => {
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onCreate, onDelete, onBulkDelete, onReloadTags, onBundleImported, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onCreate: (name: string, description: string, type: string, folderId?: string) => Promise<void>; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onBundleImported?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}<button onClick={() => void onCreate('目录中新串', '', 'style', 'synthetic-folder')}>在合成目录中新建</button>{onBundleImported && <button onClick={async () => {
   try { await onBundleImported(); notify('合成分享包已回读'); }
   catch (error: any) { notify('风格串已保存，列表刷新失败：' + error.message, 'error'); }
 }}>回读合成分享包</button>}{onReloadTags && <button onClick={async () => {
@@ -142,6 +142,32 @@ const openCombinationCategories = async () => {
   await waitFor(() => expect((within(manager).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).disabled).toBe(false));
   return manager;
 };
+
+it('文件夹内新建通过真实App回调广播保存回执，返回时保留新串', async () => {
+  const folders = { revision: 1, folders: [{ id: 'synthetic-folder', name: '合成文件夹', parentId: null }], assignments: {} };
+  const persisted = { ...folders, revision: 2, assignments: { [saved.id]: 'synthetic-folder' } };
+  const get = vi.spyOn(api, 'get').mockResolvedValue(folders);
+  const put = vi.spyOn(api, 'put').mockResolvedValue(persisted);
+  const updated = vi.fn();
+  window.addEventListener('nai-chain-folders-updated', updated);
+  try {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'list' }));
+    mocks.getAllChains.mockResolvedValue([saved]);
+    fireEvent.click(screen.getByRole('button', { name: '在合成目录中新建' }));
+    await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('edit'));
+    expect(put).toHaveBeenCalledWith('/chain-folders', { ...folders, assignments: persisted.assignments });
+    expect(updated).toHaveBeenCalledTimes(1);
+    expect((updated.mock.calls[0][0] as CustomEvent).detail).toEqual(persisted);
+    expect(mocks.createChain).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole('button', { name: '返回资料库' }));
+    await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('list'));
+    expect(screen.getByTestId('list').textContent).toContain(saved.id);
+  } finally {
+    window.removeEventListener('nai-chain-folders-updated', updated);
+    get.mockRestore(); put.mockRestore();
+  }
+});
 
 it('零条组合也能预建分类，冷回读后保存与详情均可选用', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');

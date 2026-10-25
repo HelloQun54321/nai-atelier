@@ -231,6 +231,37 @@ describe('界面语言', () => {
     }
   });
 
+  it('风格串文件夹界面、通知与服务错误具备四种译文', () => {
+    const keys = [
+      '文件夹', '新建文件夹', '编辑文件夹', '重命名或移动文件夹', '删除文件夹', '正在加载文件夹…', '风格串文件夹',
+      '移动到文件夹', '移动到文件夹：{0}', '已移动 {0} 条风格串', '移动失败，请重试', '已选 {0} 条风格串', '目标文件夹', '文件夹名称', '上级文件夹', '顶层',
+      '删除文件夹「{0}」？', '其中的风格串移回未整理，子文件夹移到上一级，同名时加编号。所有配方与图片保留。',
+      '文件夹已保存', '保存文件夹失败', '文件夹已删除，风格串已保留', '删除文件夹失败', '文件夹加载失败',
+      '文件夹尚未就绪，请重新加载后再试', '文件夹回读失败，请重新加载后再整理', '不支持的文件夹操作',
+      '文件夹资料无法读取，请保留现有数据并检查备份', '文件夹资料过大', '文件夹数据无效', '文件夹名称或位置无效',
+      '同一位置已有同名文件夹', '文件夹层级无效', '风格串归属无效', '文件夹已在其他窗口更新，请按最新目录重试',
+      '展开文件夹', '收起文件夹',
+    ];
+    const catalog = messages as Record<string, string[]>;
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        const translated = translate(language.code, key, key.includes('{0}') ? ['示例'] : []);
+        expect(translated, `${language.code}: ${key}`).not.toBe(key);
+        expect(translated, `${language.code}: ${key}`).not.toContain('{0}');
+      }
+    }
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      const name = '我的画风';
+      for (const key of ['移动到文件夹：{0}', '删除文件夹「{0}」？']) {
+        const expected = catalog[key][LANGUAGES.findIndex(item => item.code === language.code) - 1].replace('{0}', name);
+        expect(translate(language.code, key, [name])).toBe(expected);
+        expect(translate(language.code, key, [name])).toContain(name);
+        expect(translate(language.code, key, [name])).not.toContain('{0}');
+      }
+    }
+  });
+
   it('词典包含所有界面显式翻译入口，四种译文都完整保留占位符', () => {
     const catalog = messages as Record<string, string[]>;
     const placeholders = (value: string) => [...value.matchAll(/\{(?:\d+|count|tag)\}/g)].map(item => item[0]).sort();

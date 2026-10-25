@@ -15,6 +15,7 @@ import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
+import { handleChainFolderRoute } from './routes/chainFolderRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -188,6 +189,8 @@ export default {
       if (collectorResult) return collectorResult;
       const appearanceResult = await handleAppearancePresetRoute(routeContext);
       if (appearanceResult) return appearanceResult;
+      const chainFolderResult = await handleChainFolderRoute(routeContext);
+      if (chainFolderResult) return chainFolderResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 
