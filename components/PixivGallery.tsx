@@ -198,6 +198,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     loginPollInFlightRef.current = true;
     try {
       const next = await pixivService.getPixivLoginStatus(sessionId);
+      // 手动完成、取消或换会话后，旧轮询不能恢复已结束的登录状态。
+      if (loginSessionRef.current?.id !== sessionId || !isActiveLoginState(loginSessionRef.current.state)) return;
       loginPollFailureCountRef.current = 0;
       if (next.state === 'connected') {
         clearLoginPoll();
@@ -214,6 +216,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         applyLoginSession(next);
       }
     } catch (pollError) {
+      if (loginSessionRef.current?.id !== sessionId || !isActiveLoginState(loginSessionRef.current.state)) return;
       // 网络抖动不应终止登录轮询：连续失败多次才停止并提示，避免卡死在"等待登录"
       loginPollFailureCountRef.current += 1;
       if (loginPollFailureCountRef.current >= 15) {
@@ -746,20 +749,18 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                 <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-meta leading-relaxed text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-300">
                   {t(activeLogin.message) || t("请在默认浏览器完成登录")}
                 </div>
-                {!activeLogin.automaticCallback && (
-                  <form onSubmit={handleCompleteLogin} className="space-y-2">
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      value={callbackUrl}
-                      onChange={event => setCallbackUrl(event.target.value)}
-                      placeholder={t("备用：粘贴官方 callback 地址")}
-                      aria-label={t("Pixiv 登录完成地址")}
-                      className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
-                    />
-                    <ToolbarButton type="submit" tone="primary" className="w-full" disabled={!callbackUrl.trim() || loginBusy}><LogIn />{t("完成连接")}</ToolbarButton>
-                  </form>
-                )}
+                <form onSubmit={handleCompleteLogin} className="space-y-2">
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={callbackUrl}
+                    onChange={event => setCallbackUrl(event.target.value)}
+                    placeholder={t("备用：粘贴官方 callback 地址")}
+                    aria-label={t("Pixiv 登录完成地址")}
+                    className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-500/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-500 dark:focus:bg-gray-900"
+                  />
+                  <ToolbarButton type="submit" tone="primary" className="w-full" disabled={!callbackUrl.trim() || loginBusy}><LogIn />{t("完成连接")}</ToolbarButton>
+                </form>
                 <ToolbarButton type="button" tone="danger" className="w-full" disabled={loginBusy} onClick={() => void handleCancelLogin()}><X />{t("取消登录")}</ToolbarButton>
               </div>
             )}
