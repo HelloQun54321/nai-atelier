@@ -43,6 +43,17 @@ public class AtelierAndroidTest {
         assertEquals(0,store.query("SELECT key FROM settings WHERE key='rollback'",new JSONArray()).getJSONArray("results").length());
         try{store.file("../outside",false);fail("不能访问保护目录之外的文件");}catch(IOException expected){}
     }
+    @Test public void sqliteChangesDistinguishesCommittedAndConflictingWrites()throws Exception{
+        store.query("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)",new JSONArray());
+        assertEquals(1,store.query("INSERT OR IGNORE INTO settings VALUES ('folders','revision-1')",new JSONArray()).getJSONObject("meta").getLong("changes"));
+        assertEquals(0,store.query("INSERT OR IGNORE INTO settings VALUES ('folders','stale')",new JSONArray()).getJSONObject("meta").getLong("changes"));
+        assertEquals(0,store.query("UPDATE settings SET value='stale' WHERE key='folders' AND value='revision-0'",new JSONArray()).getJSONObject("meta").getLong("changes"));
+        assertEquals(1,store.query("UPDATE settings SET value='revision-2' WHERE key='folders' AND value='revision-1'",new JSONArray()).getJSONObject("meta").getLong("changes"));
+        JSONArray results=store.batch(new JSONArray().put(new JSONObject().put("sql","UPDATE settings SET value='revision-3' WHERE value='revision-2'")).put(new JSONObject().put("sql","DELETE FROM settings WHERE key='missing'")));
+        assertEquals(1,results.getJSONObject(0).getJSONObject("meta").getLong("changes"));
+        assertEquals(0,results.getJSONObject(1).getJSONObject("meta").getLong("changes"));
+        assertEquals("revision-3",store.query("SELECT value FROM settings WHERE key='folders'",new JSONArray()).getJSONArray("results").getJSONObject(0).getString("value"));
+    }
     @Test public void contentAddressedObjectsKeepIndependentReferences()throws Exception{
         for(String id:new String[]{"a","b"}){File temporary=store.file("transfer/"+id,true);temporary.getParentFile().mkdirs();Files.write(temporary.toPath(),new byte[]{1,2,3});store.putObject(id,"transfer/"+id,"image/png");}
         assertEquals(store.object("a").getString("path"),store.object("b").getString("path"));

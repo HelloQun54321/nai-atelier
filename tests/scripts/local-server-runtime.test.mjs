@@ -9,6 +9,32 @@ import { spawn, execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getLanUrls, inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy } from '../../scripts/local-server-runtime.mjs';
 
+test('启动依赖检查实际 CLI，缺失时遵循锁文件且不指定包名改写声明', async () => {
+  const source = await readFile(new URL('../../scripts/local-server.mjs', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('async function ensureDependencies()'), source.indexOf("const BUILD_OUTPUTS ="));
+  const root = resolve('synthetic-dependency-project');
+  const cli = join(root, 'node_modules/wrangler/wrangler-dist/cli.js');
+  const wrapper = join(root, 'node_modules/.bin/wrangler.cmd');
+  const lock = join(root, 'package-lock.json');
+  const manifest = JSON.stringify({ devDependencies: { wrangler: '4.81.1' } });
+  const locked = JSON.stringify({ lockfileVersion: 3, packages: { '': { devDependencies: { wrangler: '4.81.1' } } } });
+  for (const fixture of [
+    { files: [cli, lock], expected: [] }, // 包装文件丢失不影响直接启动 CLI。
+    { files: [wrapper, lock], expected: ['npm ci'] }, // 包装文件存在也不能掩盖 CLI 真缺失。
+    { files: [], expected: ['npm install'] },
+  ]) {
+    const files = new Map([[join(root, 'package.json'), manifest], ...fixture.files.map(path => [path, path === lock ? locked : 'synthetic'])]);
+    const commands = [];
+    // 只执行真实检查函数；安装器被替换为命令记录器，不启动 npm 或真实服务。
+    const ensure = new Function('APP_ROOT', 'PACKAGED', 'IS_TERMUX', 'join', 'existsSync', 'runStartupCommand', 'console', `${body}; return ensureDependencies;`)(root, false, false, join, path => files.has(path), async command => commands.push(command), { log() {} });
+    await ensure();
+    assert.deepEqual(commands, fixture.expected);
+    assert.equal(files.get(join(root, 'package.json')), manifest);
+    if (fixture.files.includes(lock)) assert.equal(files.get(lock), locked);
+    assert.ok(commands.every(command => !command.includes('wrangler') && !command.includes('--save-dev')));
+  }
+});
+
 test('手机地址排除虚拟网卡与无效地址、去重并使用实际端口', () => {
   const entry = (address, extra = {}) => ({ address, family: 'IPv4', internal: false, ...extra });
   assert.deepEqual(getLanUrls(4123, {
@@ -289,8 +315,8 @@ test('真实构建期间可快速合并第二次启动，构建失败释放占�
     const source = await readFile(script, 'utf8');
     await writeFile(entry, source.replace(/from '(\.\/[^']+)'/g, (_match, relative) => `from '${relative === './local-server-runtime.mjs' ? pathToFileURL(runtimePath).href : new URL(relative, script).href}'`));
     await writeFile(join(root, 'package.json'), JSON.stringify({ version: 'synthetic', scripts: { 'build:local': 'node -e "setTimeout(()=>process.exit(1),3000)"' } }));
-    await mkdir(join(root, 'node_modules', '.bin'), { recursive: true });
-    await writeFile(join(root, 'node_modules', '.bin', platform() === 'win32' ? 'wrangler.cmd' : 'wrangler'), '');
+    await mkdir(join(root, 'node_modules', 'wrangler', 'wrangler-dist'), { recursive: true });
+    await writeFile(join(root, 'node_modules', 'wrangler', 'wrangler-dist', 'cli.js'), '');
     const options = { cwd: root, env: { ...process.env, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1', NAI_GATEWAY_PORT: String(gatewayPort) }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] };
     first = spawn(process.execPath, [entry], options);
     let firstOutput = '';

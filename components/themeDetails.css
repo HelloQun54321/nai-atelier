@@ -64,6 +64,10 @@ html[data-surfaces='translucent'] .workspace-scroll-viewport {
   scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px));
 }
 html[data-surfaces='translucent'] .workspace-fixed-pane { margin-top: var(--workspace-chrome-height, 0px); }
+/* 手机目录在图片上方，目录已避让顶栏，后续滚动区只保留自身边距。 */
+@media (max-width: 767px) {
+  html[data-surfaces='translucent'] .chain-folder-navigation:not([hidden]) + .workspace-scroll-viewport { --workspace-chrome-height: 0px; }
+}
 @media (min-width: 768px) {
   .workspace-scroll-viewport[class~='md:p-5'] { --workspace-scroll-gutter: calc(var(--spacing) * 5); }
   .workspace-scroll-viewport[class~='md:p-6'] { --workspace-scroll-gutter: calc(var(--spacing) * 6); }
@@ -448,6 +452,7 @@ html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-them
     border-width: 1px;
     border-radius: var(--nai-panel-radius, 24px);
   }
+  html[data-theme-material='glass'] .chain-folder-navigation { margin-bottom: var(--nai-chrome-inset, 8px); }
   html[data-theme-material='glass'] .workspace-command-bar {
     margin: var(--nai-chrome-inset, 8px);
     border-width: 1px;
