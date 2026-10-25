@@ -1,3 +1,4 @@
+import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 /**
  * AI 生成搭配：用一段话一次生成外貌 / 服饰 / 动作 / 表情 / 场景 / 镜头六类提示词，
  * 逐条勾选、改名、改提示词后一次性保存到对应提示词库。
@@ -212,7 +213,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   };
 
   const pickedDrafts = drafts.filter(draft => draft.picked && String(draft.prompt || '').trim());
-  const tagSuggestions = [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort();
+  const tagSuggestions = promptLibraryCategoryNames(library?.chains || [], library?.categoryNames);
   const selectedChain = styleChains.find(item => item.id === chainTarget) || null;
 
   /**

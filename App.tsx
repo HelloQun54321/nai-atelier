@@ -1,3 +1,4 @@
+import { getCustomChainTags, replaceCustomChainTags } from './services/chainTags';
 import { t, useLanguage } from './services/i18n';
 
 import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
@@ -32,6 +33,8 @@ import type { HistoryBrowseQuery } from './services/historyBrowse';
 import { ContentLibraryPage, type ContentLibrarySection } from './components/ContentLibraryPage';
 import { LibraryDialog, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryUseDialog, type WorkspaceAccess } from './components/PromptLibraryAccess';
 import { parsePromptLibraryTags, combinationPicks, createCombinationData, libraryPicksWithSources, librarySectionOf } from './services/promptLibraryEntries';
+import { PromptLibraryCategoryManager } from './components/PromptLibraryCategoryManager';
+import { promptLibraryCategoryNames } from './services/promptLibraryCategories';
 import { PromptLibraryBrowser } from './components/PromptLibraryBrowser';
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
@@ -191,6 +194,11 @@ const App = () => {
   const [libraryWorkspace, setLibraryWorkspace] = useState<WorkspaceAccess | null>(null);
   const [libraryEditEntry, setLibraryEditEntry] = useState<PromptChain | null>(null);
   const [libraryFocusId, setLibraryFocusId] = useState('');
+  const [libraryCategoryNames, setLibraryCategoryNames] = useState<string[] | null>(null);
+  const [libraryCategoriesOpen, setLibraryCategoriesOpen] = useState(false);
+  const [libraryCategoryChange, setLibraryCategoryChange] = useState<{ from: string; to: string; token: number }>();
+  const categoryRevisionRef = useRef(0);
+
   const [libraryManageOpen, setLibraryManageOpen] = useState(false);
   const [libraryManageSection, setLibraryManageSection] = useState<ContentLibrarySection>('items');
   const [libraryManageToolbar, setLibraryManageToolbar] = useState<HTMLElement | null>(null);
@@ -232,6 +240,13 @@ const App = () => {
 
   // Personal-mode owner loaded from the local service.
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    const revision = categoryRevisionRef.current;
+    void db.getPromptLibraryTagNames().then(names => { if (!cancelled && revision === categoryRevisionRef.current) setLibraryCategoryNames(names); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
 
   // 设计主题、明暗模式和个性化覆盖统一由外观偏好管理。
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(loadAppearancePreferences);
@@ -712,7 +727,7 @@ const App = () => {
     if (contentRollEditId && !copy) {
       const existing = chains.find(item => item.id === contentRollEditId);
       if (!existing) throw new Error(t('原组合已不存在，请另存为新组合'));
-      await handleUpdateChain(existing.id, { name, tags: savedTags, params: { ...existing.params, _rollContentSnapshot: snapshot } as NAIParams });
+      await handleUpdateChain(existing.id, { name, tags: replaceCustomChainTags(existing.tags, savedTags), params: { ...existing.params, _rollContentSnapshot: snapshot } as NAIParams });
       return existing.id;
     }
     /* 稳定操作标识：重复点击 / 网络重试复用同一条记录，不产生重复 */
@@ -720,12 +735,12 @@ const App = () => {
     const existingId = contentRollSaveIndexRef.current.get(operationId);
     if (existingId) {
       const existing = chains.find(item => item.id === existingId);
-      await handleUpdateChain(existingId, { name, tags: savedTags, params: { ...existing?.params, _rollContentSnapshot: snapshot } as unknown as NAIParams });
+      await handleUpdateChain(existingId, { name, tags: replaceCustomChainTags(existing?.tags, savedTags), params: { ...existing?.params, _rollContentSnapshot: snapshot } as unknown as NAIParams });
       return existingId;
     }
     const source = contentRollSourceRef.current;
     const created = await createLibraryChain(name, source?.description || t('一键 Roll 存下的六类内容组合'), 'preset', {
-      tags: savedTags, previewImage: source?.previewImage,
+      tags: replaceCustomChainTags(source?.tags, savedTags), previewImage: source?.previewImage,
       params: { ...source?.params, _rollContentSnapshot: snapshot } as unknown as NAIParams,
     });
     contentRollSaveIndexRef.current.set(operationId, created);
@@ -761,7 +776,7 @@ const App = () => {
   const handleLoadContentRoll = (chain: PromptChain, selectedRole?: number) => {
     contentRollSourceRef.current = chain;
     setContentRollEditId(chain.id || '');
-    if (!chain.id) { setContentRollSeed({ picks: {}, seed: chain.name || t('新组合'), seeds: {}, sourceText: chain.basePrompt, tags: chain.tags }); void handleNavigate('content-roll'); return; }
+    if (!chain.id) { setContentRollSeed({ picks: {}, seed: chain.name || t('新组合'), seeds: {}, sourceText: chain.basePrompt, tags: getCustomChainTags(chain.tags) }); void handleNavigate('content-roll'); return; }
     const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
     if (!read.ok) {
       notify(t('这条记录不能按纯内容载入'), 'error');
@@ -770,7 +785,7 @@ const App = () => {
     if (read.roles.length > 1 && selectedRole === undefined) { notify(t('请先选择组合中的角色'), 'error'); return; }
     if (read.roles.length > 1) setContentRollEditId('');
     const picks = combinationPicks(chain, selectedRole || 0);
-    setContentRollSeed({ picks, seed: chain.name, seeds: {}, tags: chain.tags });
+    setContentRollSeed({ picks, seed: chain.name, seeds: {}, tags: getCustomChainTags(chain.tags) });
     void handleNavigate('content-roll');
   };
 
@@ -901,6 +916,16 @@ const App = () => {
     }
   };
 
+  const handleDeleteLibraryEntry = async (chain: PromptChain) => {
+    if (!await confirmAction({
+      title: t('删除“{0}”？', [chain.name || t('未命名')]),
+      message: t('将永久删除这条提示词记录及其封面、参考图引用，其他历史原图保留。此操作无法撤销。'),
+      confirmLabel: t('确认删除'),
+      tone: 'danger',
+    })) return;
+    await handleDelete(chain.id);
+  };
+
   const handleBulkDelete = async (ids: string[], onProgress: (completed: number) => void) => {
     let errorCount = 0;
     for (const [index, id] of ids.entries()) {
@@ -960,7 +985,9 @@ const App = () => {
           }}
           onViewCaptured={setLibraryFocusId}
           browse={toolbarSlot => <PromptLibraryBrowser chains={chains} toolbarSlot={toolbarSlot} notify={notify}
-            onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags }); }} onManage={() => setLibraryManageOpen(true)} focusEntryId={libraryFocusId} />}
+            categoryNames={libraryCategoryNames || []} categoryChange={libraryCategoryChange} onManageCategories={() => setLibraryCategoriesOpen(true)}
+            onDelete={handleDeleteLibraryEntry}
+            onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags: replaceCustomChainTags((chains.find(item => item.id === chain.id) || chain).tags, tags) }); }} onManage={() => setLibraryManageOpen(true)} focusEntryId={libraryFocusId} />}
           rollOpen={contentRollOpen}
           rollTitle={contentRollEntryTarget ? '随机搭配' : '搭配'}
           onRollOpenChange={open => {
@@ -971,7 +998,7 @@ const App = () => {
           }}
           items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
             onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
-          roll={toolbarSlot => <ContentRollWorkspace active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+          roll={toolbarSlot => <ContentRollWorkspace categoryNames={libraryCategoryNames || []} active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
             editing={!!contentRollEditId}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
@@ -1178,7 +1205,7 @@ const App = () => {
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
     view, chains, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
-    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, language,
+    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, language,
   ]);
   const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
     if (data.id) { await handleUpdateChain(data.id, data); return; }
@@ -1188,8 +1215,8 @@ const App = () => {
   });
   const clearLibraryRequest = React.useCallback(() => setLibraryEntryRequest(null), []);
   const promptLibrary = useMemo(() => ({ chains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
-    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace,
-  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry]);
+    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace, categoryNames: promptLibraryCategoryNames(chains, libraryCategoryNames || []),
+  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames]);
 
   if (!currentUser && !dbConfigError) {
     return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
@@ -1270,6 +1297,10 @@ const App = () => {
       >
         <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("正在加载工作区…")}</div>}>
           {renderContent()}
+          {libraryCategoriesOpen && <PromptLibraryCategoryManager onClose={() => setLibraryCategoriesOpen(false)} onSnapshot={({ chains: latestChains, names }) => {
+            categoryRevisionRef.current++; refreshDataSeqRef.current++;
+            setChains(latestChains); setLibraryCategoryNames(names); setLastChainFetch(Date.now()); setLoading(false);
+          }} onChanged={(from, to) => setLibraryCategoryChange(previous => ({ from, to, token: (previous?.token || 0) + 1 }))} />}
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
             onChange={libraryWorkspace.change} onClose={() => setLibraryUseEntry(null)} onApplied={() => { void handleNavigate('playground'); }} />
             : <LibraryDialog title="使用" historyLayer={false} onClose={() => setLibraryUseEntry(null)}><p>{t('正在读取实验室草稿…')}</p></LibraryDialog>)}

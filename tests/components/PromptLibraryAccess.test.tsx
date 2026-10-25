@@ -12,12 +12,13 @@ import type { PromptChain } from '../../types';
 afterEach(cleanup);
 it('分栏收录组合可填写多个自定义标签并选择已有标签', async () => {
   const save = vi.fn().mockResolvedValue(undefined);
-  const chain = { id: 'existing', tags: ['已有分类'], type: 'appearance', name: '片段' } as PromptChain;
-  render(<PromptLibraryContext.Provider value={{ chains: [chain], save }}><PromptLibrarySaveDialog text="rain" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'rain' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  const chain = { id: 'existing', ...createCombinationData('组合', { scene: { kind: 'scene', text: 'rain', filled: true } }), tags: ['已有分类'] } as PromptChain;
+  render(<PromptLibraryContext.Provider value={{ chains: [chain], categoryNames: ['预建分类'], save }}><PromptLibrarySaveDialog text="rain" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'rain' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } });
   const tags = screen.getByRole('textbox', { name: '自定义标签' });
   fireEvent.change(tags, { target: { value: ' 新分类， 新分类, ' } });
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(screen.getByRole('button', { name: '#预建分类' })).toBeTruthy();
   fireEvent.click(await screen.findByRole('button', { name: '#已有分类' }));
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());

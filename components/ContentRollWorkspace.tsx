@@ -1,3 +1,4 @@
+import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import { parsePromptLibraryTags, FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { CollectionTagInput } from './inspiration/CollectionControls';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +19,7 @@ import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToo
 
 interface ContentRollWorkspaceProps {
   editing?: boolean;
+  categoryNames?: string[];
   active: boolean;
   chains: PromptChain[];
   notify: (message: string, kind?: 'success' | 'error') => void;
@@ -93,7 +95,7 @@ const readStore = (): { history: RollRecord[]; cursor: number } => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ editing = false, active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ editing = false, active, chains, categoryNames = [], notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
   useLanguage();
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
@@ -117,7 +119,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ edit
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saveTags, setSaveTags] = useState('');
-  const tagSuggestions = [...new Set(chains.flatMap(chain => chain.tags || []))].sort();
+  const tagSuggestions = promptLibraryCategoryNames(chains, categoryNames);
   const [saving, setSaving] = useState(false);
   const [sourceText, setSourceText] = useState('');
 

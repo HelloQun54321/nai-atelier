@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
   updateChain: vi.fn(),
+  getPromptLibraryTagNames: vi.fn(), savePromptLibraryTagNames: vi.fn(),
   editorDraft: null as PromptChain | null,
   updatePlayground: null as ((id: string, updates: Partial<PromptChain>) => Promise<void>) | null,
   confirm: vi.fn(), save: vi.fn(), canSave: true, bulkProgress: vi.fn(), bulkResult: vi.fn(),
@@ -109,6 +110,8 @@ vi.mock('../../components/PromptLibrary', () => ({ PromptLibraryHub: ({ chains, 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   mocks.createChainWithData.mockReset();
+  mocks.getPromptLibraryTagNames.mockReset().mockResolvedValue([]);
+  mocks.savePromptLibraryTagNames.mockReset().mockImplementation(async (tags: string[]) => tags);
   mocks.getMe.mockResolvedValue({ id: 'owner', username: '合成用户', role: 'admin' });
   mocks.getAllChains.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
   mocks.createChain.mockResolvedValue(saved.id); mocks.createChainWithData.mockResolvedValue(saved);
@@ -130,6 +133,191 @@ const setup = async (entry = 'aitag') => {
   if (entry === 'prompts') await screen.findByRole('searchbox', { name: '搜索名称、正文或标签' });
   else await screen.findByRole('button', { name: '保存合成作品' });
 };
+
+const openCombinationCategories = async () => {
+  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(await screen.findByRole('button', { name: '管理分类' }));
+  const manager = await screen.findByRole('dialog', { name: '管理组合分类' });
+  await waitFor(() => expect((within(manager).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).disabled).toBe(false));
+  return manager;
+};
+
+it('零条组合也能预建分类，冷回读后保存与详情均可选用', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
+  let directory: string[] = [];
+  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...directory]);
+  mocks.savePromptLibraryTagNames.mockImplementation(async (tags: string[]) => { directory = [...tags]; return [...directory]; });
+  await setup('prompts');
+  let manager = await openCombinationCategories();
+  fireEvent.change(within(manager).getByRole('textbox', { name: '新分类名称' }), { target: { value: '未来项目' } });
+  fireEvent.click(within(manager).getByRole('button', { name: '新增分类' }));
+  await waitFor(() => expect(directory).toEqual(['未来项目']));
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+  expect(mocks.createChainWithData).not.toHaveBeenCalled();
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  manager = await openCombinationCategories();
+  const row = (await within(manager).findByRole('button', { name: '重命名分类：未来项目' })).closest('li');
+  expect(row?.textContent).toContain('0');
+  cleanup(); mocks.getAllChains.mockClear();
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
+  const combo = { ...saved, id: 'empty-directory-combo', name: '准备分类的组合', type: 'preset', tags: [], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
+  mocks.getAllChains.mockResolvedValue([combo]);
+  await setup('prompts');
+  expect(mocks.getPromptLibraryTagNames.mock.calls.length).toBeGreaterThan(1);
+  fireEvent.click(screen.getByRole('button', { name: '编辑准备分类的组合' }));
+  const roll = await screen.findByRole('dialog', { name: '搭配' });
+  await waitFor(() => expect(roll.querySelector('[data-content-roll-row="scene"]')?.textContent).toContain('night'));
+  fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
+  fireEvent.click(within(roll).getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(await screen.findByRole('button', { name: '#未来项目' }));
+  expect((within(roll).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('未来项目');
+  fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
+  fireEvent.click(screen.getByRole('button', { name: '查看准备分类的组合' }));
+  const detail = await screen.findByLabelText('准备分类的组合', { selector: 'aside' });
+  fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
+  fireEvent.click(within(detail).getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(await within(detail).findByRole('button', { name: '#未来项目' }));
+  expect((within(detail).getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('未来项目');
+});
+
+it.each([false, true])('组合分类管理只更新组合标签并同步已选筛选，合并=%s', async merge => {
+  let directory = ['来源类', '目标类'];
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
+  let records = [
+    { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['来源类', '目标类', '保留'], params: { ...saved.params, seed: 42, _rollContentSnapshot: snapshot } },
+    { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['来源类', '另一标签'], params: { _rollContentSnapshot: snapshot } },
+    { ...saved, id: 'fragment-same', name: '同名片段标签', type: 'scene', tags: ['来源类'], basePrompt: 'forest' },
+    { ...saved, id: 'raw-same', name: '同名原文标签', type: 'preset', tags: ['来源类'], params: { _collectedPrompt: 1 }, basePrompt: 'raw forest' },
+  ] as unknown as PromptChain[];
+  const before = structuredClone(records);
+  mocks.getAllChains.mockImplementation(async () => records);
+  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...directory]);
+  mocks.savePromptLibraryTagNames.mockImplementation(async (tags: string[]) => { directory = [...tags]; return directory; });
+  mocks.updateChain.mockImplementation(async (id: string, updates: Partial<PromptChain>) => { records = records.map(chain => chain.id === id ? { ...chain, ...updates } : chain); });
+  try {
+    await setup('prompts');
+    fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(await screen.findByRole('button', { name: '来源类' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理分类' }));
+    const manager = await screen.findByRole('dialog', { name: '管理组合分类' });
+    fireEvent.click(await within(manager).findByRole('button', { name: `${merge ? '合并' : '重命名'}分类：来源类` }));
+    const target = merge ? '目标类' : '新名称';
+    if (merge) fireEvent.change(within(manager).getByRole('combobox', { name: '目标分类' }), { target: { value: target } });
+    else fireEvent.change(within(manager).getByRole('textbox', { name: '分类名称' }), { target: { value: target } });
+    fireEvent.click(within(manager).getByRole('button', { name: merge ? '合并' : '保存' }));
+    await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(records[0].tags).toEqual(merge ? ['目标类', '保留'] : ['新名称', '目标类', '保留']));
+    expect(records[1].tags).toEqual([target, '另一标签']);
+    expect(mocks.updateChain.mock.calls.every(([, patch]) => Object.keys(patch).join(',') === 'tags')).toBe(true);
+    for (const item of records) expect({ ...item, tags: [] }).toEqual({ ...before.find(chain => chain.id === item.id), tags: [] });
+    expect(records[2].tags).toEqual(['来源类']); expect(records[3].tags).toEqual(['来源类']);
+    await waitFor(() => expect(directory.includes('来源类')).toBe(false));
+    fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    expect((await screen.findByRole('button', { name: target })).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByRole('button', { name: '来源类' })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看源目标共存' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '查看仅源组合' })).toBeTruthy();
+  } finally { mocks.updateChain.mockReset().mockResolvedValue(undefined); }
+});
+
+it('分类目录保存失败保留新增输入，不显示成功且不写组合', async () => {
+  mocks.savePromptLibraryTagNames.mockRejectedValueOnce(new Error('合成目录不可写'));
+  await setup('prompts');
+  const manager = await openCombinationCategories();
+  fireEvent.change(within(manager).getByRole('textbox', { name: '新分类名称' }), { target: { value: '失败后保留' } });
+  fireEvent.click(within(manager).getByRole('button', { name: '新增分类' }));
+  await waitFor(() => expect(mocks.savePromptLibraryTagNames).toHaveBeenCalledWith(['失败后保留']));
+  await waitFor(() => expect(manager.textContent).toContain('合成目录不可写'));
+  expect((within(manager).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).value).toBe('失败后保留');
+  expect(within(manager).queryByRole('button', { name: '重命名分类：失败后保留' })).toBeNull();
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+});
+
+it('片段分类统一在筛选切换并保留搜索标签，其他范围不受用途限制且组合管理仍可达', async () => {
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night sky', filled: true } } }, '2026-10-21')!;
+  mocks.getAllChains.mockResolvedValue([
+    { ...saved, id: 'night-scene', name: '夜景', type: 'scene', basePrompt: 'night street', tags: ['夜间'] },
+    { ...saved, id: 'night-pose', name: '夜间动作', type: 'pose', basePrompt: 'night walk', tags: ['夜间'] },
+    { ...saved, id: 'night-untagged', name: '未分类动作', type: 'pose', basePrompt: 'night sit', tags: [] },
+    { ...saved, id: 'night-original', name: '夜间原文', type: 'preset', basePrompt: 'night fog', tags: ['夜间'], params: { _collectedPrompt: 1 } },
+    { ...saved, id: 'night-combination', name: '夜间组合', type: 'preset', tags: ['夜间'], params: { _rollContentSnapshot: snapshot } },
+  ]);
+  await setup('prompts');
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: 'night' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } });
+  expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: '夜间' }));
+  const usage = screen.getByRole('combobox', { name: '片段用途' });
+  fireEvent.change(usage, { target: { value: 'scene' } });
+  expect(screen.getByRole('button', { name: /^场景/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看夜景' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看夜间动作' })).toBeNull();
+  expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('night');
+  fireEvent.change(usage, { target: { value: 'pose' } });
+  expect(screen.getByRole('button', { name: /^动作/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '夜间' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '查看夜间动作' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看未分类动作' })).toBeNull();
+  expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('night');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'originals' } });
+  expect(screen.getByRole('button', { name: '查看夜间原文' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /^动作/ })).toBeNull();
+  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
+  expect(screen.getByRole('button', { name: '查看夜间组合' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect(screen.getByRole('button', { name: '夜间' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '管理分类' })).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: '片段用途' })).toBeNull();
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+});
+
+it.each(['items', 'saved', 'originals'] as const)('提示词卡片删除%s：取消与失败保留详情，成功仅移除目标且不触发使用编辑', async scope => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
+  const target = { ...saved, id: 'delete-target', name: '删除目标', type: scope === 'items' ? 'scene' : 'preset',
+    params: scope === 'saved' ? { _rollContentSnapshot: snapshot } : scope === 'originals' ? { _collectedPrompt: 1 } : saved.params } as unknown as PromptChain;
+  const other = { ...target, id: 'delete-other', name: '保留记录' };
+  let records = [target, other];
+  mocks.getAllChains.mockImplementation(async () => records);
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await setup('prompts');
+    fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: scope } });
+    fireEvent.click(screen.getByRole('button', { name: '查看删除目标' }));
+    const detail = await screen.findByLabelText('删除目标', { selector: 'aside' });
+    mocks.confirm.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '删除「删除目标」' }));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: '删除“删除目标”？', confirmLabel: '确认删除', tone: 'danger' }));
+    expect(mocks.deleteChain).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('删除目标', { selector: 'aside' })).toBe(detail);
+
+    mocks.deleteChain.mockRejectedValueOnce(new Error('合成删除失败'));
+    fireEvent.click(screen.getByRole('button', { name: '删除「删除目标」' }));
+    expect(await screen.findByText('删除失败：合成删除失败')).toBeTruthy();
+    expect(mocks.deleteChain).toHaveBeenCalledExactlyOnceWith(target.id);
+    expect(screen.getByLabelText('删除目标', { selector: 'aside' })).toBe(detail);
+    expect(screen.getByRole('button', { name: '查看删除目标' })).toBeTruthy();
+
+    mocks.deleteChain.mockImplementationOnce(async (id: string) => { records = records.filter(chain => chain.id !== id); });
+    fireEvent.click(screen.getByRole('button', { name: '删除「删除目标」' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '查看删除目标' })).toBeNull());
+    expect(mocks.deleteChain.mock.calls).toEqual([[target.id], [target.id]]);
+    expect(screen.queryByLabelText('删除目标', { selector: 'aside' })).toBeNull();
+    expect(screen.getByRole('button', { name: '查看保留记录' })).toBeTruthy();
+    expect(records).toEqual([other]);
+    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '使用提示词' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '搭配' })).toBeNull();
+    expect(mocks.updateChain).not.toHaveBeenCalled();
+    expect(mocks.createChainWithData).not.toHaveBeenCalled();
+  } finally { error.mockRestore(); }
+});
 
 it('收藏首次进入复用有效串快照，强制刷新不沿用旧串快照', async () => {
   const collection = await import('../../services/collectionFavorites');
@@ -351,6 +539,34 @@ it('组合详情只修改标签，保留全部内容与封面并即时进入更�
   expect(screen.queryByRole('button', { name: '旧标签' })).toBeNull();
   expect(original.params).toEqual(expect.objectContaining({ _rollContentSnapshot: snapshot }));
   expect(original.tags).toEqual(['旧标签']);
+  expect(mocks.createChainWithData).not.toHaveBeenCalled();
+});
+
+it('组合详情清空自定义标签仍保留内部状态且不改创作内容', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', negative: 'day', filled: true } } }, '2026-10-21')!;
+  const original = { ...saved, id: 'internal-tag-combination', name: '带内部状态组合', type: 'preset',
+    tags: ['__内部__', '旧分类', '另一分类'], basePrompt: 'keep original prompt', negativePrompt: 'keep negative',
+    params: { ...saved.params, seed: 42, _rollContentSnapshot: snapshot }, previewImage: '/api/assets/covers/internal-keep.png' } as unknown as PromptChain;
+  let stored = structuredClone(original);
+  mocks.getAllChains.mockImplementation(async () => [stored]);
+  mocks.updateChain.mockImplementationOnce(async (_id: string, updates: Partial<PromptChain>) => { stored = { ...stored, ...updates }; });
+  await setup('prompts');
+  fireEvent.click(screen.getByRole('button', { name: '查看带内部状态组合' }));
+  const detail = await screen.findByLabelText('带内部状态组合', { selector: 'aside' });
+  expect(within(detail).queryByText('__内部__')).toBeNull();
+  expect(within(detail).getByText('旧分类')).toBeTruthy();
+  expect(within(detail).getByText('另一分类')).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
+  const field = within(detail).getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement;
+  expect(field.value).toBe('旧分类, 另一分类');
+  fireEvent.change(field, { target: { value: '' } });
+  fireEvent.click(within(detail).getByRole('button', { name: '保存标签' }));
+  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledExactlyOnceWith(original.id, { tags: ['__内部__'] }));
+  await within(detail).findByText('暂无标签');
+  expect(stored).toEqual({ ...original, tags: ['__内部__'] });
+  expect(within(detail).getByText('night')).toBeTruthy();
+  expect(decodeURIComponent(within(detail).getByRole('img', { name: '带内部状态组合' }).getAttribute('src') || '')).toContain(original.previewImage);
   expect(mocks.createChainWithData).not.toHaveBeenCalled();
 });
 

@@ -32,6 +32,15 @@ it('编辑与另存组合预填标签，失败保留输入，明确留空会保�
   expect(save.mock.calls[1][5]).toEqual([]);
 });
 
+it('组合保存候选包含预建空分类，不混入片段标签', () => {
+  render(<ContentRollWorkspace active chains={[{ ...chains[0], tags: ['仅片段标签'] }]} categoryNames={['预建空类']} notify={vi.fn()} onSaveRoll={vi.fn()} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '服饰内容' }), { target: { value: 'dress' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存组合' }));
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  expect(screen.getByRole('button', { name: '#预建空类' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '#仅片段标签' })).toBeNull();
+});
+
 it('全局随机搭配提供五类选择，未选栏不进入保存与填入计划，全不选时禁止抽取', async () => {
   const onApplyRoll = vi.fn(async (_plan: ContentRollApplyPlan) => true);
   render(<ContentRollWorkspace active entryTarget={{ mode: 'global' }} chains={chains} notify={vi.fn()} playgroundParams={LAB_DEFAULT_PARAMS} onApplyRoll={onApplyRoll} />);

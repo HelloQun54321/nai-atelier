@@ -9,6 +9,7 @@ import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
 import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
+import { readPromptLibraryTagNames } from '../../services/promptLibraryTags';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
 import {
   deletePromptLibraryLinksByHistory, ensurePromptLibraryLinkSchema, promptLibraryHistoryText, promptLibraryLinkHint,
@@ -1091,6 +1092,23 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       if (row) await deleteHistoryRows([row]);
       return json({ success: true });
     }
+  }
+
+  if (path === '/api/prompt-library-tags') {
+    const key = `prompt_library_tags_v1:${currentUser.id}`;
+    if (method === 'GET') {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+      try { return json({ tags: row ? readPromptLibraryTagNames(JSON.parse(row.value)) : [] }); }
+      catch { return error('组合分类目录读取失败', 500); }
+    }
+    if (method !== 'PUT') return error('Method not allowed', 405);
+    if (currentUser.role === 'guest') return error('Forbidden', 403);
+    const body = await request.json().catch(() => null) as { tags?: unknown } | null;
+    let tags: string[];
+    try { tags = readPromptLibraryTagNames(body?.tags); }
+    catch { return error('组合分类目录无效', 400); }
+    await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, JSON.stringify(tags)).run();
+    return json({ tags });
   }
 
   // Inspiration boards and curated inspiration library

@@ -15,6 +15,25 @@ import { db } from '../../services/dbService';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('组合分类目录严格回读与保存，不吞掉损坏响应或请求失败', async () => {
+  apiMock.get.mockResolvedValue({ tags: [' 空分类 ', '空分类', '夜景'] });
+  expect(await db.getPromptLibraryTagNames()).toEqual(['空分类', '夜景']);
+  expect(apiMock.get).toHaveBeenLastCalledWith('/prompt-library-tags');
+  apiMock.put.mockResolvedValue({ tags: ['夜景'] });
+  expect(await db.savePromptLibraryTagNames([' 夜景 ', '夜景'])).toEqual(['夜景']);
+  expect(apiMock.put).toHaveBeenLastCalledWith('/prompt-library-tags', { tags: ['夜景'] });
+  for (const tags of [undefined, [9], ['__internal__'], ['AITag'], ['bad,name'], ['bad\nname']]) {
+    apiMock.get.mockResolvedValue({ tags });
+    await expect(db.getPromptLibraryTagNames()).rejects.toThrow('组合分类目录无效');
+  }
+  apiMock.put.mockResolvedValue({ tags: null });
+  await expect(db.savePromptLibraryTagNames(['夜景'])).rejects.toThrow('组合分类目录无效');
+  apiMock.get.mockRejectedValue(new Error('合成读取失败'));
+  await expect(db.getPromptLibraryTagNames()).rejects.toThrow('合成读取失败');
+  apiMock.put.mockRejectedValue(new Error('合成保存失败'));
+  await expect(db.savePromptLibraryTagNames(['夜景'])).rejects.toThrow('合成保存失败');
+});
+
 it('收藏独立标签使用同一持久接口，规范化候选，不接受无效响应或吞掉保存失败', async () => {
   apiMock.get.mockResolvedValue({ tags: [' #构图 ', '构图', '光影'] });
   expect(await db.getCollectionTagNames()).toEqual(['构图', '光影']);

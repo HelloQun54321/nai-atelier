@@ -64,7 +64,7 @@ const setupWithChain = () => render(
   />,
 );
 const setupWithLibrary = (chains: Array<{ tags?: string[] }> = []) => render(
-  <PromptLibraryContext.Provider value={{ chains, save: mocks.saveCombination } as never}>
+  <PromptLibraryContext.Provider value={{ chains, categoryNames: ['已有标签'], save: mocks.saveCombination } as never}>
     <PromptLibraryBundleDialog open onClose={mocks.close} notify={mocks.notify} onCreate={mocks.create} onSaved={mocks.saved} />
   </PromptLibraryContext.Provider>,
 );

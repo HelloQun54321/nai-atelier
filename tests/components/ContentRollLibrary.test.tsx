@@ -82,24 +82,26 @@ it('改名回车与失焦只提交一次，失败保留输入，Esc 不提交', 
   expect(p.onRename).toHaveBeenCalledTimes(1);
 });
 
-it('旧组合管理标签同样显式保存去重与空数组，失败保留草稿且只patch标签', async () => {
+it('旧组合管理标签显式保存与清空自定义项，保留内部状态且只patch标签', async () => {
   const p = props();
+  p.chains = p.chains.map(chain => chain.id === 'saved' ? { ...chain, tags: ['__内部__', '旧分类', '另一类'] } : chain);
   const save = vi.fn().mockRejectedValueOnce(new Error('synthetic failure')).mockResolvedValue(undefined);
   render(<PromptLibraryContext.Provider value={{ chains: p.chains, save }}><ContentRollLibrary {...p} /></PromptLibraryContext.Provider>);
   fireEvent.click(screen.getByRole('button', { name: /夜游/ }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
   const input = screen.getByRole('textbox', { name: '编辑自定义标签' });
+  expect((input as HTMLInputElement).value).not.toContain('__内部__');
   fireEvent.change(input, { target: { value: ' 城市,城市，夜晚 ' } }); fireEvent.blur(input);
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
   await screen.findByRole('alert');
   expect((input as HTMLInputElement).value).toBe(' 城市,城市，夜晚 ');
-  expect(save).toHaveBeenLastCalledWith({ id: 'saved', tags: ['城市', '夜晚'] });
+  expect(save).toHaveBeenLastCalledWith({ id: 'saved', tags: ['__内部__', '城市', '夜晚'] });
   fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
   await waitFor(() => expect(screen.queryByRole('textbox', { name: '编辑自定义标签' })).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
   fireEvent.change(screen.getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '' } });
   fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
-  await waitFor(() => expect(save).toHaveBeenLastCalledWith({ id: 'saved', tags: [] }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith({ id: 'saved', tags: ['__内部__'] }));
   expect(record.params).toEqual(p.chains[0].params);
 });

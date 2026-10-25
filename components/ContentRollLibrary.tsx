@@ -1,3 +1,5 @@
+import { getCustomChainTags, replaceCustomChainTags } from '../services/chainTags';
+import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import React, { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Copy, ImagePlus, Layers, LoaderCircle, Trash2 } from 'lucide-react';
@@ -92,7 +94,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
   };
   const toolbar = <>
     <ToolbarPopover title={t('筛选组合库')} width={280}>
-      <label className="block text-xs font-semibold text-gray-500">{t('自定义标签')}<select aria-label={t('自定义标签')} className={TOOLBAR_FIELD_CLASS} value={tag} onChange={event => { setTag(event.target.value); resetScroll(); }}><option value="">{t('全部标签')}</option>{[...new Set(records.flatMap(({ chain }) => chain.tags || []))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-gray-500">{t('自定义标签')}<select aria-label={t('自定义标签')} className={TOOLBAR_FIELD_CLASS} value={tag} onChange={event => { setTag(event.target.value); resetScroll(); }}><option value="">{t('全部标签')}</option>{(section === 'saved' ? promptLibraryCategoryNames(chains, library?.categoryNames) : [...new Set(records.flatMap(({ chain }) => chain.tags || []))].sort()).map(value => <option key={value}>{value}</option>)}</select></label>
       <label className="block text-xs font-semibold text-gray-500">{t('排序')}
         <select className={TOOLBAR_FIELD_CLASS} aria-label={t('排序')} value={sort} onChange={event => { setSort(event.target.value); resetScroll(); }}>
           <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
@@ -149,7 +151,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
               </div>
               <div className="space-y-3">
                 {read.roles.length > 1 && <select aria-label={t('组合中的角色')} value={roleChoices[chain.id] ?? ''} onChange={event => setRoleChoices(previous => ({ ...previous, [chain.id]: Number(event.target.value) }))} className={TOOLBAR_FIELD_CLASS}><option value="" disabled>{t('请选择角色')}</option>{read.roles.map((role, index) => <option key={role.key} value={index}>{role.name}</option>)}</select>}
-                {library && <PromptLibraryTagEditor key={chain.id} tags={chain.tags || []} suggestions={[...new Set(chains.flatMap(item => item.tags || []))].sort()} onSave={async tags => { await library.save({ id: chain.id, tags }); }} />}
+                {library && <PromptLibraryTagEditor key={chain.id} tags={getCustomChainTags(chain.tags)} suggestions={section === 'saved' ? promptLibraryCategoryNames(chains, library.categoryNames) : [...new Set(chains.flatMap(item => item.tags || []))].sort()} onSave={async tags => { await library.save({ id: chain.id, tags: replaceCustomChainTags(chain.tags, tags) }); }} />}
                 {original !== null && <p className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{original}</p>}
                 {fields.map(({ kind, text, negative }) => <div key={kind}>
                   <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</h3>

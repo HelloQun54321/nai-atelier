@@ -1,3 +1,4 @@
+import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BookOpen, BookmarkPlus, Dice5, RotateCcw, X } from 'lucide-react';
@@ -28,6 +29,7 @@ import { useNaiRuntime } from '../services/naiRuntime';
 
 interface LibraryAccess {
   chains: PromptChain[];
+  categoryNames?: string[];
   save: (data: Partial<PromptChain>) => Promise<void>;
   useEntry?: (entry: PromptChain) => void;
   requestedEntry?: PromptChain | null;
@@ -149,7 +151,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     catch (cause) { planningError = (cause as Error).message; }
   }
   const entries = (library?.chains || []).filter(item => librarySectionOf(item) === section);
-  const tags = [...new Set(entries.flatMap(item => item.tags || []))].sort();
+  const tags = section === 'saved' ? promptLibraryCategoryNames(entries, library?.categoryNames) : [...new Set(entries.flatMap(item => item.tags || []))].sort();
   const shown = entries.filter(item => (libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)) && (!kind || section !== 'items' || fragmentKindOf(item) === kind) && (!tag || item.tags?.includes(tag))
     && [item.name, item.basePrompt, ...(item.tags || []), libraryEntryText(item)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const captionTotal = entries.filter(item => libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)).length;
@@ -257,7 +259,7 @@ export function PromptLibrarySaveDialog({ text, field = {}, onClose, initialPara
     <label className="block text-sm">{t('名称（可选）')}<input aria-label={t('名称（可选）')} value={name} onChange={event => setName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
     <select aria-label={t('保存为')} value={category} disabled={busy} onChange={event => setCategory(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('原文')}</option>{!field.negative && Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t('片段')} · {t(label)}</option>)}{params && !field.negative && <option value="combination">{t('组合（保存已分栏内容）')}</option>}</select>
     {category === 'combination' && !!params?.characters?.length && <select aria-label={t('保存哪个角色')} value={roleId} onChange={event => setRoleId(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('请选择角色')}</option>{params.characters.map((role, index) => <option key={role.id} value={role.id}>{t('角色 {0}', [index + 1])}</option>)}</select>}
-    <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('自定义标签')} value={tags} suggestions={[...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort()} onPick={setTags} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} disabled={busy} className={TOOLBAR_FIELD_CLASS} /></label>
+    <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('自定义标签')} value={tags} suggestions={category === 'combination' ? promptLibraryCategoryNames(library?.chains || [], library?.categoryNames) : [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort()} onPick={setTags} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} disabled={busy} className={TOOLBAR_FIELD_CLASS} /></label>
     <p className="max-h-44 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-500">{text}</p>
     {error && <p role="alert" className="text-sm text-red-600">{t(error)}</p>}
     <ToolbarButton tone="primary" disabled={busy || !text.trim() && category !== 'combination'} onClick={() => void save()}>{t(busy ? '保存中…' : '保存')}</ToolbarButton>
@@ -304,7 +306,7 @@ export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant 
   return <>{placeTrigger(<>{!roleId && workspace.canUndo && (variant === 'menu'
     ? <ToolbarActionRow icon={<RotateCcw className="h-4 w-4" />} label="撤销上次填入" onClick={workspace.undo} />
     : <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>)}{trigger}</>)}
-    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><div ref={setToolbarSlot} className="flex items-center gap-2" /><ContentRollWorkspace active={active} chains={library.chains} embedded toolbarSlot={toolbarSlot} notify={setNotice}
+    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><div ref={setToolbarSlot} className="flex items-center gap-2" /><ContentRollWorkspace active={active} chains={library.chains} categoryNames={library.categoryNames} embedded toolbarSlot={toolbarSlot} notify={setNotice}
       playgroundParams={params} entryTarget={entryTarget}
       onApplyRoll={async plan => { workspace.change(applyLibrarySelection({ before: workspace.state, params, plan })); return true; }}
       canUndo={workspace.canUndo} onUndoApply={async () => { workspace.undo(); return true; }}

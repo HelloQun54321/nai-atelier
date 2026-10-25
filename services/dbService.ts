@@ -3,6 +3,7 @@ import { PromptChain, Inspiration, InspirationBoard, User, ChainType } from '../
 import { api } from './api';
 import { normalizeChainTags } from './chainTags';
 import { normalizeCollectionTagNames } from './inspirationUtils';
+import { readPromptLibraryTagNames } from './promptLibraryTags';
 import { loadCollection, updateCollection, removeCollection, markCollectionUsed } from './collectionFavorites';
 import { getMobileOriginalUrl } from './mobileImageCache';
 import { blobToDataUrl } from './labWorkspace';
@@ -91,6 +92,16 @@ class DBService {
 
   async deleteChain(id: string): Promise<void> {
     await api.delete(`/chains/${id}`);
+  }
+
+  async getPromptLibraryTagNames(): Promise<string[]> {
+    const result = await api.get('/prompt-library-tags');
+    return readPromptLibraryTagNames(result?.tags);
+  }
+
+  async savePromptLibraryTagNames(tags: string[]): Promise<string[]> {
+    const result = await api.put('/prompt-library-tags', { tags: readPromptLibraryTagNames(tags) });
+    return readPromptLibraryTagNames(result?.tags);
   }
 
   // --- Inspirations ---

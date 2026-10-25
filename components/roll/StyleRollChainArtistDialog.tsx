@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Dice5, Filter, Layers, X } from 'lucide-react';
+import { Check, ChevronDown, Dice5, Filter, Layers, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
 import { buildRollChainArtistSource, extractRollChainArtistTags } from '../../services/styleRollChainArtists';
@@ -45,6 +45,9 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   const [selectedTags, setSelectedTags] = useState(new Set<string>()), [tagSearch, setTagSearch] = useState('');
   const [sort, setSort] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [filterOpen, setFilterOpen] = useState(false), [favorites, setFavorites] = useState(new Set<string>());
+  const [artistsOpen, setArtistsOpen] = useState(false);
+  const artistsAnchor = useRef<HTMLDivElement>(null);
+  const closeArtists = useCallback(() => setArtistsOpen(false), []);
   const [favoriteStatus, setFavoriteStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle'), [favoriteError, setFavoriteError] = useState(''), [favoriteRetry, setFavoriteRetry] = useState(0);
   const filterAnchor = useRef<HTMLDivElement>(null);
   const closeFilters = useCallback(() => setFilterOpen(false), []);
@@ -99,7 +102,7 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
     return () => { current = false; };
   }, [active, favOnly, favoriteRetry, refreshFavorites]);
   const favoritePending = favOnly && favoriteStatus !== 'ready';
-  useEffect(() => { if (!active) setFilterOpen(false); }, [active]);
+  useEffect(() => { if (!active) { setFilterOpen(false); setArtistsOpen(false); } }, [active]);
   const customTags = useMemo(() => [...new Set(chains.flatMap(chain => getCustomChainTags(chain.tags)))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [chains]);
   useEffect(() => { setSelectedTags(current => { const next = new Set([...current].filter(tag => customTags.includes(tag))); return next.size === current.size ? current : next; }); }, [customTags]);
   const tagOptions = customTags.filter(tag => customTags.length <= 12 || tag.toLowerCase().includes(tagSearch.trim().toLowerCase()));
@@ -123,6 +126,7 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   const missingSources = loading ? 0 : [...selectedChains].filter(id => !chains.some(chain => chain.id === id)).length;
   const available = pool.artists.filter(artist => !blockedKeys.has(normalizeArtistUsageKey(artist.tag)));
   const chosen = available.filter(artist => !unchecked.has(artist.tag));
+  useEffect(() => { if (!pool.artists.length) setArtistsOpen(false); }, [pool.artists.length]);
   useEffect(() => {
     if (!active) return;
     const key = (event: KeyboardEvent) => {
@@ -164,6 +168,7 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
     setSelectedChains(new Set(ids)); setRandomPriority(ids); setRandomError(''); changeResults();
   };
   const filterCount = Number(artistsOnly) + Number(favOnly) + Number(untestedOnly) + Number(Boolean(selectedModel)) + selectedTags.size;
+  const resultCount = !loading && !favoritePending ? (filterCount || query ? t('匹配 {0} 条 · 共 {1} 条', [filtered.length, chains.length]) : t('共 {0} 条', [filtered.length])) : '';
   const resetFilters = () => { setArtistsOnly(false); setFavOnly(false); setUntestedOnly(false); setSelectedModel(''); setSelectedTags(new Set()); setTagSearch(''); setSort('updated_desc'); };
   const ratio = (chain: PromptChain) => ratios[chain.id] || (chain.params?.width && chain.params?.height ? chain.params.width / chain.params.height : 2 / 3);
   const toggleChain = (id: string) => { setError(''); setSelectedChains(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
@@ -181,8 +186,17 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
   };
   return <div hidden={!active} className={active ? 'fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm sm:p-6' : 'hidden'} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('从风格串提取')} className="appearance-panel flex h-[94dvh] w-full max-w-7xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
-      <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 p-3 dark:border-gray-800"><h2 className="min-w-0 flex-1 text-sm font-semibold">{t('从风格串提取')}</h2><IconButton label="关闭" onClick={close}><X /></IconButton></header>
-      <div className="flex shrink-0 flex-wrap items-center gap-3 p-3"><ToolbarSearch aria-label={t('搜索风格串')} placeholder={t('搜索风格串')} value={query} onChange={event => setQuery(event.target.value)} containerClassName="min-w-40 flex-1 !max-w-none" /><label className="mobile-touch flex items-center gap-2 text-xs"><input type="checkbox" checked={artistsOnly} onChange={event => setArtistsOnly(event.target.checked)} />{t('只看有画师 Tag')}</label><div ref={filterAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={filterOpen} active={filterCount > 0 || sort !== 'updated_desc'} onClick={() => setFilterOpen(value => !value)}><Filter />{t('筛选')}{filterCount > 0 && <span>{filterCount}</span>}</ToolbarButton></div><div className="flex shrink-0 items-center gap-1"><input type="number" min={1} step={1} aria-label={t('随机选取风格串数量')} value={randomCount} disabled={randomDisabled} onChange={event => { setRandomCount(event.target.value); setRandomError(''); }} className="mobile-touch h-10 w-16 rounded-xl border border-gray-200 bg-transparent px-2 text-center text-sm tabular-nums dark:border-gray-700" /><ToolbarButton disabled={randomDisabled} onClick={randomlySelect}><Dice5 />{t('随机选取')}</ToolbarButton></div></div>
+      <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
+        <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold">{t('从风格串提取')}</h2>{resultCount && <p className="truncate text-xs tabular-nums text-gray-500" title={resultCount}>{resultCount}</p>}</div>
+        <ToolbarButton tone="primary" className="!px-2 sm:!px-3" disabled={!chosen.length || !active || loading || Boolean(error)} onClick={confirm}>{t('设为抽取来源')}</ToolbarButton>
+        <IconButton label="关闭" onClick={close}><X /></IconButton>
+      </header>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2"><ToolbarButton disabled={!active} onClick={useAllArtists}>{t('使用画师库')}</ToolbarButton><ToolbarButton disabled={!active || loading || Boolean(error)} onClick={useAllChains}>{t('使用全部风格串')}</ToolbarButton></div>
+        <ToolbarSearch aria-label={t('搜索风格串')} placeholder={t('搜索风格串')} value={query} onChange={event => setQuery(event.target.value)} containerClassName="min-w-0 basis-40 flex-1 !max-w-none" />
+        <div ref={filterAnchor}><ToolbarButton aria-label={t('筛选')} aria-expanded={filterOpen} active={filterCount > 0 || sort !== 'updated_desc'} onClick={() => { setArtistsOpen(false); setFilterOpen(value => !value); }}><Filter />{t('筛选')}{filterCount > 0 && <span>{filterCount}</span>}</ToolbarButton></div>
+        <div className="flex shrink-0 items-center gap-1"><input type="number" min={1} step={1} aria-label={t('随机选取风格串数量')} value={randomCount} disabled={randomDisabled} onChange={event => { setRandomCount(event.target.value); setRandomError(''); }} className="mobile-touch h-10 w-16 rounded-xl border border-gray-200 bg-transparent px-2 text-center text-sm tabular-nums dark:border-gray-700" /><ToolbarButton disabled={randomDisabled} onClick={randomlySelect}><Dice5 />{t('随机选取')}</ToolbarButton></div>
+      </div>
       {randomError && <p role="alert" className="shrink-0 px-3 pb-2 text-xs text-red-500">{randomError}</p>}
       {filterOpen && active && <AnchoredToolbarPopover anchorRef={filterAnchor} title={t('筛选')} width={360} allowMobile onClose={closeFilters}>
         <div className="space-y-3">
@@ -196,27 +210,26 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
           </div>
         </div>
       </AnchoredToolbarPopover>}
-      {!loading && <div className="flex shrink-0 flex-wrap justify-between gap-2 px-3 pb-2 text-xs tabular-nums text-gray-500"><span>{!favoritePending && (filterCount || query ? t('匹配 {0} 条 · 共 {1} 条', [filtered.length, chains.length]) : t('共 {0} 条', [filtered.length]))}</span><span aria-live="polite">{t('已选 {0} 串 · {1} 位画师', [pool.chainIds.length, chosen.length])}</span></div>}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 pb-2 text-xs tabular-nums text-gray-500">
+        <label className="mobile-touch flex items-center gap-2"><input type="checkbox" checked={artistsOnly} onChange={event => setArtistsOnly(event.target.checked)} />{t('只看有画师 Tag')}</label>
+        <div ref={artistsAnchor} className="ml-auto min-w-0"><ToolbarButton className="!px-2 !text-xs" aria-label={t('画师 Tag')} title={t('画师 Tag')} disabled={!pool.artists.length} aria-expanded={artistsOpen} aria-haspopup="dialog" onClick={() => { setFilterOpen(false); setArtistsOpen(value => !value); }}><span aria-live="polite">{t('已选 {0} 串 · {1} 位画师', [pool.chainIds.length, chosen.length])}</span><ChevronDown /></ToolbarButton></div>
+      </div>
+      {artistsOpen && active && pool.artists.length > 0 && <AnchoredToolbarPopover anchorRef={artistsAnchor} title={t('画师 Tag')} width={440} allowMobile onClose={closeArtists}>
+        <div className="mb-2 flex items-center gap-3 text-xs"><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set())}>{t('全选')}</button><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set(available.map(artist => artist.tag)))}>{t('取消全选')}</button></div>
+        <div className="flex max-h-[50dvh] flex-wrap gap-2 overflow-y-auto">{pool.artists.map(({ tag, count }) => {
+          const banned = blockedKeys.has(normalizeArtistUsageKey(tag));
+          return <label key={tag} className="mobile-touch flex max-w-full items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs dark:border-gray-700"><input type="checkbox" aria-label={tag} disabled={banned} checked={!banned && !unchecked.has(tag)} onChange={() => setUnchecked(current => { const next = new Set(current); if (next.has(tag)) next.delete(tag); else next.add(tag); return next; })} /><span className="min-w-0 [overflow-wrap:anywhere]">{tag}</span><span className="shrink-0 text-gray-500">{t('出现 {0} 次', [count])}</span>{banned && <span className="text-red-500">{t('已屏蔽 · 不参与 Roll')}</span>}</label>;
+        })}</div>
+      </AnchoredToolbarPopover>}
+      {!loading && !error && missingSources > 0 && <p role="status" className="px-3 pb-2 text-xs text-amber-600">{t('有 {0} 条来源风格串不可用，将按现有条目重新计算', [missingSources])}</p>}
+      {error && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{error}{!chains.length && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>}</p>}
+      {favOnly && favoriteStatus === 'error' && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{favoriteError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoriteRetry(value => value + 1)}>{t('重试')}</button></p>}
       <div ref={gallery} className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 400) setVisibleLimit(value => value + 60); }}>
         {(loading || favoritePending && favoriteStatus !== 'error') && <p role="status" className="p-3 text-xs text-gray-500">{t('加载中…')}</p>}
-        {favOnly && favoriteStatus === 'error' && <p role="alert" className="p-3 text-xs text-red-500">{favoriteError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoriteRetry(value => value + 1)}>{t('重试')}</button></p>}
         {!favoritePending && (display.layout === 'masonry' ? <ShortestColumnMasonry items={visible} columns={columns} getItemKey={chain => chain.id} estimateItemHeight={(chain, width) => width / ratio(chain) + 48} renderItem={renderChain} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(display)} workspace-card-grid`} style={mobileGalleryStyle(display, columns)}>{visible.map(renderChain)}</div>)}
         {!favoritePending && filtered.length > visibleLimit && <ToolbarButton className="my-2 w-full" onClick={() => setVisibleLimit(value => value + 60)}>{t('加载更多')}</ToolbarButton>}
         {!loading && !favoritePending && !error && !filtered.length && <p className="p-5 text-center text-xs text-gray-500">{t('没有匹配的风格串')}</p>}
       </div>
-      {!loading && !error && missingSources > 0 && <p role="status" className="px-3 pb-2 text-xs text-amber-600">{t('有 {0} 条来源风格串不可用，将按现有条目重新计算', [missingSources])}</p>}
-      {pool.artists.length > 0 && <section className="shrink-0 border-t border-gray-200 p-3 dark:border-gray-800" aria-label={t('画师 Tag')}>
-        <div className="mb-2 flex items-center gap-3 text-xs"><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set())}>{t('全选')}</button><button type="button" className="mobile-touch" onClick={() => setUnchecked(new Set(available.map(artist => artist.tag)))}>{t('取消全选')}</button></div>
-        <div className="flex max-h-[24dvh] flex-wrap gap-2 overflow-y-auto">{pool.artists.map(({ tag, count }) => {
-          const banned = blockedKeys.has(normalizeArtistUsageKey(tag));
-          return <label key={tag} className="mobile-touch flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs dark:border-gray-700"><input type="checkbox" aria-label={tag} disabled={banned} checked={!banned && !unchecked.has(tag)} onChange={() => setUnchecked(current => { const next = new Set(current); if (next.has(tag)) next.delete(tag); else next.add(tag); return next; })} /><span>{tag}</span><span className="text-gray-500">{t('出现 {0} 次', [count])}</span>{banned && <span className="text-red-500">{t('已屏蔽 · 不参与 Roll')}</span>}</label>;
-        })}</div>
-      </section>}
-      {error && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{error}{!chains.length && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>}</p>}
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
-        <div className="flex shrink-0 items-center gap-2"><ToolbarButton disabled={!active} onClick={useAllArtists}>{t('使用画师库')}</ToolbarButton><ToolbarButton disabled={!active || loading || Boolean(error)} onClick={useAllChains}>{t('使用全部风格串')}</ToolbarButton></div>
-        <div className="ml-auto flex shrink-0 items-center gap-2"><ToolbarButton onClick={close}>{t('取消')}</ToolbarButton><ToolbarButton tone="primary" disabled={!chosen.length || !active || loading || Boolean(error)} onClick={confirm}>{t('设为抽取来源')}</ToolbarButton></div>
-      </footer>
     </div>
   </div>;
 };
