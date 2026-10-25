@@ -33,6 +33,7 @@ import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../
 import { getLanUrls } from './local-server-runtime.mjs';
 import { storageLocationStatus, getStoragePreferences, updateStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
 import { createArtistSamples, validateArtistSampleSource, pickArtistSampleFile } from './artist-samples.mjs';
+import { createArtistReference, validateArtistReferenceSource } from './artist-reference.mjs';
 import { handleExportLocationRequest } from './export-locations.mjs';
 
 const CACHE_VERSION = 'v1';
@@ -2419,6 +2420,7 @@ export const createThumbnailPreWarmer = ({ cache, loadOriginal, concurrency = PR
 export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
   if (source.startsWith('/api/artist-samples/')) { validateArtistSampleSource(source); return { type: 'artist-sample', source }; }
+  if (source.startsWith('/api/artist-reference/')) { validateArtistReferenceSource(source); return { type: 'artist-reference', source }; }
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
   if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
@@ -3096,6 +3098,7 @@ const serveDistFile = async (req, res, url) => {
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
   const artistSamples = createArtistSamples({ cacheDir: join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'artist-samples'), loadPreferences: () => getStoragePreferences(), savePreferences: patch => updateStoragePreferences(patch), pickFile: pickArtistFile, fetchRemote: remoteFetch });
+  const artistReference = createArtistReference({ cacheDir: join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'artist-reference'), fetchRemote: remoteFetch });
   const danbooruResponseCache = createResponseMemoryCache({
     maxEntries: 256, maxBytes: 64 * 1024 * 1024,
     cacheable: value => {
@@ -3171,9 +3174,9 @@ const serveDistFile = async (req, res, url) => {
   // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
   const thumbnailPreWarmer = createThumbnailPreWarmer({
     cache,
-    loadOriginal: source => source.startsWith('/api/artist-samples/') ? artistSamples.readImage(source) : requestRemoteBuffer(source, remoteFetch),
+    loadOriginal: source => source.startsWith('/api/artist-samples/') ? artistSamples.readImage(source) : source.startsWith('/api/artist-reference/') ? artistReference.readImage(source) : requestRemoteBuffer(source, remoteFetch),
   });
-  const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl, getDefaultExportDirectory: () => getDefaultExportDirectory(process.cwd()) });
+  const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl, getDefaultExportDirectory: () => getDefaultExportDirectory(process.cwd()), searchArtistReference: options => artistReference.search(options), composeArtistChain: options => artistReference.compose(options) });
   const stChatu8Bridge = new StChatu8Bridge({
     projectRoot: process.cwd(),
     requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
@@ -3232,6 +3235,7 @@ const serveDistFile = async (req, res, url) => {
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, internalWorkerRequest, workerPort)
         : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
+        : validated.type === 'artist-reference' ? artistReference.readImage(validated.source)
         : validated.type === 'st-chatu8-history'
           ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
             status: 200,
@@ -3325,6 +3329,31 @@ const serveDistFile = async (req, res, url) => {
         }
         return sendJson(res, 404, { error: '未知画师样张接口' });
       } catch (error) { return sendJson(res, error.status || 400, { error: error.code ? '画师图包文件不可读取，请重新选择或建立索引' : error.message || '画师图包读取失败' }); }
+    }
+    if (url.pathname.startsWith('/api/artist-reference/')) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const canManage = process.platform === 'win32' && collectorLocalRequest(req);
+      try {
+        if (req.method === 'GET' && url.pathname === '/api/artist-reference/status') return sendJson(res, 200, await artistReference.status(canManage));
+        if (req.method === 'GET' && url.pathname === '/api/artist-reference/data') {
+          const data = await artistReference.data();
+          if (!data) return sendJson(res, 404, { error: '尚未下载画师组串参考' });
+          const etag = `"${data.version}"`;
+          if (req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': 'no-cache' }); return res.end(); }
+          const body = Buffer.from(JSON.stringify(data));
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': body.length, ETag: etag, 'Cache-Control': 'no-cache' }); return res.end(body);
+        }
+        if (req.method === 'GET' && url.pathname === '/api/artist-reference/image') {
+          const image = await artistReference.readImage(url.pathname + url.search);
+          res.writeHead(200, { 'Content-Type': image.headers['content-type'], 'Content-Length': image.buffer.length, 'Cache-Control': 'private, max-age=86400' }); return res.end(image.buffer);
+        }
+        if (url.pathname === '/api/artist-reference/control') {
+          if (req.method !== 'POST' || !canManage || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '画师组串参考只允许 Windows 电脑本机页面管理' });
+          const body = await readJsonBody(req, 4096), result = await artistReference.control(body.action);
+          return sendJson(res, 200, { ...result, status: await artistReference.status(canManage) });
+        }
+        return sendJson(res, 404, { error: '未知画师参考接口' });
+      } catch (error) { return sendJson(res, error.status || 400, { error: error.code ? '画师参考缓存不可读取，请重新下载' : error.message || '画师参考读取失败' }); }
     }
     if (url.pathname === '/api/local-maintenance/export-location') {
       return handleExportLocationRequest(req, res, { workspace: process.cwd(), canManage: collectorLocalRequest(req), pickDirectory,
@@ -4080,6 +4109,7 @@ const serveDistFile = async (req, res, url) => {
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, req, workerPort)
         : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
+        : validated.type === 'artist-reference' ? artistReference.readImage(validated.source)
         : validated.type === 'st-chatu8-history'
           ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
             status: 200,
@@ -4151,6 +4181,7 @@ const serveDistFile = async (req, res, url) => {
   });
   server.on('close', () => {
     void artistSamples.close();
+    void artistReference.close();
     generationJobs.close();
     void imageTagger.pauseDownload();
     styleCollector.shutdown();
@@ -4159,7 +4190,7 @@ const serveDistFile = async (req, res, url) => {
   });
   // close 可能等待 SSE 连接，先同步结束监听再进入 HTTP 关闭流程。
   const closeServer = server.close.bind(server);
-  server.close = (...args) => { artistSamples.close(); generationJobs.close(); void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
+  server.close = (...args) => { artistSamples.close(); void artistReference.close(); generationJobs.close(); void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
   const exitCollector = () => styleCollector.shutdown();
   process.once('exit', exitCollector);
   server.once('close', () => process.off('exit', exitCollector));
@@ -4180,14 +4211,14 @@ const serveDistFile = async (req, res, url) => {
     const otherRequest = req => !String(req.url).startsWith('/api/local-maintenance/storage');
     const writingHandler = req => otherRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     if (tasks.size || [...activeWrites].some(otherRequest) || [...activeHandlers].some(writingHandler) || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || artistReference.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
       throw new Error('请先结束生成、助手、收集、备份、模型或词库任务，再切换存储位置');
     }
     updating = true;
   };
   server.prepareUpdate = () => {
     if (tasks.size || activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || artistReference.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
       throw new Error('生成、Agent、收集、备份或数据写入仍在进行，请完成并关闭收集模式后再安装');
     }
     updating = true;

@@ -10,7 +10,8 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { installPointerEvents, longPress } from '../support/touchEvents';
-const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), referenceStatus: vi.fn(), referenceData: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+vi.mock('../../services/artistReference', async original => ({ ...await original<typeof import('../../services/artistReference')>(), getArtistReferenceStatus: mocks.referenceStatus, getArtistReferenceData: mocks.referenceData }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', async original => {
   const module = await original<typeof import('../../services/localHistory')>();
@@ -28,7 +29,7 @@ vi.mock('../../services/artistSampleDrafts', async original => ({ ...await origi
 vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, generateAfterSave, enforceFreeStepLimit, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置" data-free-step-limit={enforceFreeStepLimit}><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{generateAfterSave ? '保存并生成样张' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page }));
 vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
-vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ blocked, preferred, onBlock, notify, tag, pack, packTag, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-blocked={blocked} data-preferred={preferred} data-pack={pack} data-pack-tag={packTag} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
+vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ blocked, preferred, onBlock, notify, tag, pack, packTag, onPackChange, revision, hasPackSample, ownSamples, referenceImages, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-references={referenceImages?.map((image: any) => image.thumb).join(',') || ''} data-blocked={blocked} data-preferred={preferred} data-pack={pack} data-pack-tag={packTag} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
   <button aria-label={'屏蔽 ' + tag} onClick={event => { event.stopPropagation(); void onBlock().catch((error: Error) => notify(error.message, 'error')); }}>屏蔽</button>
   <div data-card-action="true" onClick={event => event.stopPropagation()}>{['v45', 'v5'].map(value => <button key={value} aria-label={'卡片 ' + value} aria-pressed={pack === value} onClick={() => onPackChange(value)}>{value}</button>)}</div>
   {(hasPackSample || ownSamples.length > 0) ? <><img alt={tag} src={'/synthetic-' + pack + '.png'} onLoad={event => onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /><div data-card-action="true" onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button></div></> : sampleStatusText && <span>{sampleStatusText}</span>}
@@ -44,12 +45,21 @@ const entries = [
   { name: 'missing artist', chinese: '缺图画师', postCount: 10 },
 ];
 const template = { prompt: 'artist:{artist}', negativePrompt: '', params: { model: 'nai-diffusion-4-5-full', seed: 1, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };
+const referenceRecord = (id: string, tag: string, extra: Record<string, unknown> = {}) => ({ id, tag, artist: tag, testedPrompt: `artist:${tag}, year 2025`, tester: '合成测试者', danbooruTag: tag, danbooruPosts: 5, look: '合成例图观察', danbooruLook: '', fidelity: '高', usability: '可用', tags: [], roles: [], note: '', model: 'novelai-v5-full', evidenceNote: '', effects: ['合成预期作用'], biases: ['合成可能偏向'], assessment: 'inferred', images: [{ full: `images/${id}.webp`, thumb: `thumbs/${id}.webp` }], ...extra });
+const referenceData = { version: '1:1', source: { label: '画师串工作室', url: 'https://example.invalid' }, revision: 1, updatedAt: '2026-10-24T00:00:00Z', fetchedAt: 1, entries: [
+  referenceRecord('a1', 'alpha_artist', { tags: ['涂-厚涂', '光-强明暗'], roles: ['主'] }),
+  referenceRecord('b1', 'beta_artist', { tags: ['涂-厚涂'], roles: ['副'], usability: '稳定' }),
+  referenceRecord('b2', 'beta_artist', { tags: ['涂-平涂'], roles: ['附加-背景'], usability: '慎用', tester: '另一位测试者' }),
+  referenceRecord('g1', 'gamma_extra', { tags: ['涂-平涂'], roles: ['主'] }),
+] };
+const referenceStatus = (phase: string) => ({ available: true, canManage: true, phase, version: phase === 'ready' ? '1:1' : '', revision: 1, updatedAt: '', fetchedAt: 1, count: 4, artistCount: 3, thumbnails: { cached: 4, total: 4 }, sync: { stage: 'idle', done: 0, total: 0, failed: 0, error: '' } });
 const status = (phase = 'ready', error?: string) => ({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, model: id === 'v5' ? 'nai-diffusion-5-full' : undefined, label: id, filename: id + '.tar', phase, progress: 25, count: 2, revision: id + '-one', error })) });
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear();
   mocks.key = 'synthetic-key'; mocks.begin.mockResolvedValue(undefined); mocks.confirm.mockResolvedValue(true); mocks.states.clear(); mocks.generationListeners.clear(); mocks.generationRevision = 0; mocks.generatedSamples = [];
   mocks.collection = []; mocks.collectionListeners.clear(); mocks.historyListeners.clear();
   mocks.historySubscribe.mockImplementation((listener: (change: any) => void) => { mocks.historyListeners.add(listener); return () => { mocks.historyListeners.delete(listener); }; });
+  mocks.referenceStatus.mockResolvedValue(referenceStatus('missing')); mocks.referenceData.mockResolvedValue(referenceData);
   mocks.blockLoad.mockResolvedValue([]); mocks.blockSave.mockImplementation(async tags => tags);
   mocks.status.mockResolvedValue(status());
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pack === 'v45' ? ['alpha_artist'] : ['alpha_artist', 'beta artist'] }));
@@ -1132,4 +1142,115 @@ it('统计刷新期间沿用上次完整快照，完成后按最新数据更新�
   await act(async () => finishRefresh({ byTag: new Map(), indexed: 3, total: 3 }));
   await waitFor(() => expect(sampleCards()).toHaveLength(0));
   expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).value).toBe('used');
+});
+
+it('组串参考按单条记录筛选画师，胶囊只打开参考不选中卡片，重置后恢复目录', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  mocks.referenceStatus.mockResolvedValue(referenceStatus('ready'));
+  const { notify } = setup();
+  await screen.findByTestId('cover-alpha artist');
+  const beta = await screen.findByRole('button', { name: '选择画师：beta artist' });
+  const badge = await within(beta).findByRole('button', { name: '组串参考' });
+  expect(badge.textContent).toContain('慎用'); expect(badge.textContent).toContain('×2');
+  fireEvent.click(badge);
+  const detail = await screen.findByRole('dialog', { name: '组串参考' });
+  expect(detail.textContent).toContain('合成预期作用'); expect(detail.textContent).toContain('另一位测试者');
+  expect(within(detail).getByRole('link', { name: '画师串工作室' }).getAttribute('href')).toBe('https://example.invalid');
+  expect(beta.getAttribute('aria-pressed')).toBe('false');
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  fireEvent.click(within(detail).getAllByRole('button', { name: '复制测试提示词' })[0]);
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('已复制'));
+  expect(writeText).toHaveBeenCalledWith('artist:beta_artist, year 2025');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '组串参考' })).toBeNull());
+
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const filters = await screen.findByRole('dialog', { name: '筛选画师' });
+  fireEvent.click(within(filters).getByRole('button', { name: /^厚涂/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-missing artist')).toBeNull());
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy(); expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
+  // beta 的厚涂与平涂分属两位测试者，不能拼成同一条命中。
+  fireEvent.click(within(filters).getByRole('button', { name: /^平涂/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-beta artist')).toBeNull());
+  expect(screen.getByText('没有符合组串参考筛选的画师')).toBeTruthy();
+  fireEvent.click(within(filters).getByRole('button', { name: /^平涂/ }));
+  fireEvent.click(within(filters).getByRole('button', { name: /^强明暗/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-beta artist')).toBeNull());
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^筛选 3$/ })).toBeTruthy();
+  // 重置沿用原有语义，同时恢复「只看有样张」，并清空组串参考筛选。
+  fireEvent.click(within(filters).getByRole('button', { name: '重置筛选' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '筛选' })).toBeTruthy());
+  expect(within(filters).getByRole('button', { name: /^厚涂/ }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+  expect(screen.queryByTestId('cover-gamma_extra')).toBeNull();
+});
+
+it('V5 视图把来源例图作为样张来源，随机选画师只在组串参考筛选内抽取', async () => {
+  localStorage.setItem('nai_artist_sample_pack', 'v5');
+  mocks.referenceStatus.mockResolvedValue(referenceStatus('ready'));
+  setup();
+  const gamma = await screen.findByTestId('cover-gamma_extra');
+  expect(gamma.getAttribute('data-references')).toBe('thumbs/g1.webp');
+  expect(screen.getByTestId('cover-beta artist').getAttribute('data-references')).toBe('thumbs/b1.webp,thumbs/b2.webp');
+  expect(screen.getByTestId('cover-alpha artist').getAttribute('data-packed')).toBe('true');
+  fireEvent.click(within(screen.getByTestId('cover-alpha artist')).getByRole('button', { name: '卡片 v45' }));
+  await waitFor(() => expect(screen.getByTestId('cover-alpha artist').getAttribute('data-references')).toBe(''));
+
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const filters = await screen.findByRole('dialog', { name: '筛选画师' });
+  fireEvent.click(within(filters).getByRole('button', { name: /^平涂/ }));
+  fireEvent.click(within(filters).getByRole('button', { name: /^主/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-beta artist')).toBeNull());
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  await waitFor(() => expect(screen.getAllByTestId(/^cover-/).map(node => node.dataset.testid)).toEqual(['cover-gamma_extra']));
+});
+
+it('未下载组串参考时筛选面板引导到数据维护', async () => {
+  const opened = vi.fn();
+  window.addEventListener('nai-open-global-settings', opened);
+  try {
+    setup();
+    await screen.findByTestId('cover-alpha artist');
+    fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+    const filters = await screen.findByRole('dialog', { name: '筛选画师' });
+    expect(within(filters).getByText('尚未下载组串参考，可在数据维护中下载。')).toBeTruthy();
+    fireEvent.click(within(filters).getByRole('button', { name: '下载组串参考' }));
+    expect(opened).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '筛选画师' })).toBeNull());
+    expect(within(screen.getByRole('button', { name: '选择画师：alpha artist' })).queryByRole('button', { name: '组串参考' })).toBeNull();
+  } finally { window.removeEventListener('nai-open-global-settings', opened); }
+});
+
+it('按风格探索沿用来源站点的维度与条目数，选中后只列该维度标签；还原度与测试者可继续筛选', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  mocks.referenceStatus.mockResolvedValue(referenceStatus('ready'));
+  setup();
+  await screen.findByTestId('cover-alpha artist');
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  const filters = await screen.findByRole('dialog', { name: '筛选画师' });
+  const explore = within(filters).getByRole('group', { name: '按风格探索' });
+  expect(within(explore).getAllByRole('button').map(button => button.textContent)).toEqual(['上色与材质4', '光影氛围1']);
+  fireEvent.click(within(explore).getByRole('button', { name: /^光影氛围/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-beta artist')).toBeNull());
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+  const tagGroup = within(filters).getByRole('group', { name: '风格标签' });
+  expect(within(tagGroup).queryByRole('button', { name: /^厚涂/ })).toBeNull();
+  expect(within(tagGroup).getByRole('button', { name: /^强明暗/ })).toBeTruthy();
+  expect(screen.getByRole('button', { name: /^筛选 2$/ })).toBeTruthy();
+  // 再次点击取消维度；测试者与还原度按所选任一命中，并且出自同一条记录。
+  fireEvent.click(within(explore).getByRole('button', { name: /^光影氛围/ }));
+  fireEvent.click(within(within(filters).getByRole('group', { name: '测试者' })).getByRole('button', { name: /^另一位测试者/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-alpha artist')).toBeNull());
+  expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
+  fireEvent.click(within(within(filters).getByRole('group', { name: '还原度' })).getByRole('button', { name: /^高/ }));
+  expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
+  fireEvent.click(within(within(filters).getByRole('group', { name: '可用性' })).getByRole('button', { name: /^稳定/ }));
+  await waitFor(() => expect(screen.queryByTestId('cover-beta artist')).toBeNull());
+  expect(screen.getByText('没有符合组串参考筛选的画师')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '清除组串参考筛选' }));
+  await screen.findByTestId('cover-missing artist');
+  expect(screen.getByRole('button', { name: /^筛选 1$/ })).toBeTruthy();
 });

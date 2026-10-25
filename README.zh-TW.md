@@ -231,6 +231,7 @@ SillyTavern 連接器與 st-chatu8 互通選定的風格串、Vibe 編碼與歷�
 - 中英 Tag 資料：[ffdkj Danbooru 翻譯表](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)。
 - 互通與公共排隊參考：[damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8)。
 - Roll 串流程與畫風庫體驗參考：[@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab)，配合工坊獨立實作，未複製其程式碼或素材。
+- 畫師組串參考：[畫師串工作室（Artist String Studio）](https://artist-string-library-moran.navyolm32.chatgpt.site/)公開維護的畫師資料庫，以及其中署名的測試者雨燕、花枝鱼、九七提供的範例圖與評價；風格標籤、組串定位、按風格探索篩選、V5 來源範例圖與助手組串均基於這份資料。工坊唯讀引用、按需下載，不隨安裝包散布；來源未聲明授權，介面與助手回覆皆標註來源。
 - 本地反推模型：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)，Apache-2.0。
 
 本 README 提供繁中使用說明。[簡中完整介紹](./README.md)、[產品決策](./docs/PRODUCT_DECISIONS.md)、[技術文檔](./docs/WINDOWS_DESKTOP.md)、[變更歷史](./CHANGELOG.md) 與 [作者個人吐槽原文](./README.md#一点个人吐槽) 目前以簡中維護。

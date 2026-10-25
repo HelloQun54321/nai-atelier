@@ -231,6 +231,7 @@ PC 패키지는 Windows 빌드 환경이 필요하고 Android는 추가로 JDK 2
 - 중국어·영어 Tag 데이터: [ffdkj Danbooru 번역표](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table).
 - 연동과 공유 대기열 참고: [damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8).
 - 화풍 롤 흐름과 갤러리 경험 참고: [@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab). Atelier에 맞게 독립 구현했으며 코드나 자료를 복사하지 않았습니다.
+- 작가 조합 참고: [画师串工作室(Artist String Studio)](https://artist-string-library-moran.navyolm32.chatgpt.site/)가 공개·관리하는 작가 자료와 서명된 테스터 雨燕, 花枝鱼, 九七의 예시 이미지와 평가. 스타일 태그, 조합 역할, 스타일별 필터, V5 예시 이미지와 도우미의 작가 체인 구성은 이 자료를 기반으로 합니다. 공방은 읽기 전용으로 필요할 때 내려받으며 재배포하지 않습니다. 출처에 라이선스 표기는 없으며 화면과 도우미 답변에 출처를 표시합니다.
 - 로컬 태깅 모델: [SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3), Apache-2.0.
 
 이 README는 한국어 사용 안내입니다. [중국어 상세 소개](./README.md), [제품 결정 기록](./docs/PRODUCT_DECISIONS.md), [기술 문서](./docs/WINDOWS_DESKTOP.md), [변경 이력](./CHANGELOG.md)과 [작성자의 개인 의견 원문](./README.md#一点个人吐槽)은 현재 중국어 간체로 유지보수합니다.

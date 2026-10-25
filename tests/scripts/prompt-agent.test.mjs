@@ -1551,3 +1551,33 @@ test('风格串工具补齐自定义变量、游客隐藏与历史封面字段',
   assert.equal(body.guestHidden, true);
   assert.match(body.previewImage, /^data:image\/png;base64,/);
 }));
+
+test('画师组串参考检索交给工坊数据源，截断参数并如实说明未下载', () => isolated(async service => {
+  const tool = service.createTools({ params: {} }, {}, () => {}, {}).find(item => item.name === 'search_artist_reference');
+  assert.ok(tool);
+  assert.equal(JSON.parse((await tool.execute('id', {})).content[0].text).available, false);
+  const calls = [];
+  service.searchArtistReference = async options => { calls.push(options); return { available: true, totalArtists: 0, artists: [] }; };
+  const result = JSON.parse((await tool.execute('id', { query: 'x'.repeat(500), tags: ['涂-厚涂', 3], roles: ['主'], usability: ['稳定'], limit: 99 })).content[0].text);
+  assert.equal(result.available, true);
+  assert.equal(calls[0].query.length, 200);
+  assert.deepEqual(calls[0].tags, ['涂-厚涂', '3']); assert.deepEqual(calls[0].roles, ['主']); assert.deepEqual(calls[0].usability, ['稳定']);
+  assert.equal(calls[0].limit, 30);
+  await tool.execute('id', { dimension: '光影氛围', fidelity: ['高'], testers: ['花枝鱼'] });
+  assert.deepEqual(calls[1], { query: '', dimension: '光影氛围', tags: [], roles: [], usability: [], fidelity: ['高'], testers: ['花枝鱼'], limit: 12 });
+}));
+
+test('组装画师串工具交给工坊参考生成组合与权重，参数截断且只读不改草稿', () => isolated(async service => {
+  const emitted = [];
+  const tool = service.createTools({ params: {} }, {}, event => emitted.push(event), {}).find(item => item.name === 'compose_artist_chain');
+  assert.ok(tool);
+  assert.equal(JSON.parse((await tool.execute('id', {})).content[0].text).available, false);
+  const calls = [];
+  service.composeArtistChain = async options => { calls.push(options); return { available: true, artistString: '1.2::artist:a ::' }; };
+  const result = JSON.parse((await tool.execute('id', { tags: ['涂-厚涂', '光-强明暗'], dimension: '光影氛围', query: 'q'.repeat(400), count: 9, keep: ['artist:kept'], exclude: ['artist:x'], includeCaution: 'yes' })).content[0].text);
+  assert.equal(result.artistString, '1.2::artist:a ::');
+  assert.deepEqual(calls[0], { tags: ['涂-厚涂', '光-强明暗'], dimension: '光影氛围', query: 'q'.repeat(200), count: 6, keep: ['artist:kept'], exclude: ['artist:x'], includeCaution: false });
+  await tool.execute('id', { count: 1, includeCaution: true });
+  assert.equal(calls[1].count, 2); assert.equal(calls[1].includeCaution, true);
+  assert.deepEqual(emitted, []);
+}));

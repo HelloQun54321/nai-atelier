@@ -16,6 +16,7 @@ test('分发边界识别数据、缓存、词库、环境变量与测试资料�
   assert.ok(RUNTIME_FILES.includes('worker/cloudQueueTarget.mjs'), '安装版必须包含通用生图中转地址识别');
   assert.ok(RUNTIME_FILES.includes('worker/codexRemote.mjs'), '安装版必须包含法典远端读取模块');
   assert.ok(RUNTIME_FILES.includes('scripts/artist-samples.mjs'), '安装版必须包含画师图包下载与索引模块');
+  assert.ok(RUNTIME_FILES.includes('scripts/artist-reference.mjs'), '安装版必须包含画师组串参考下载模块');
   assert.ok(RUNTIME_FILES.includes('scripts/style-collector-view.cs'), '安装版必须包含 WPF 收集悬浮窗显示层');
   for (const name of ['day', 'night']) assert.ok(RUNTIME_FILES.includes(`public/themes/wallpapers/cupertino-${name}.webp`), '安装版必须包含收集窗配套明暗壁纸');
   for (const name of ['local-data/prompt-agent.key', 'PUBLIC/TAG-DATA/tags.json', 'x\\local-cache\\model.onnx', '.env.local', '.dev.vars', '.git/config', 'logs/tests/gateway.log', 'tests/fixtures/synthetic.json', '.wrangler/tmp/test']) assert.equal(isPrivateDistributionPath(name), true, name);

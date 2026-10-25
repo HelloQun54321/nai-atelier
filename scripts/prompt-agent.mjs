@@ -1499,9 +1499,11 @@ export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', 
 };
 
 export class PromptAgentService {
-  constructor({ lanSecret, outboundProxyUrl = '', configFile = '', getDefaultExportDirectory = async () => '' }) {
+  constructor({ lanSecret, outboundProxyUrl = '', configFile = '', getDefaultExportDirectory = async () => '', searchArtistReference = async () => ({ available: false, note: '画师组串参考仅在电脑工坊可用。' }), composeArtistChain = async () => ({ available: false, note: '画师组串参考仅在电脑工坊可用。' }) }) {
     this.runtimeStartedAt = Date.now();
     this.getDefaultExportDirectory = getDefaultExportDirectory;
+    this.searchArtistReference = searchArtistReference;
+    this.composeArtistChain = composeArtistChain;
     this.localImages = new AgentLocalImages({ getMode: () => this.config?.permissionMode || 'standard' });
     this.customProviders = new Map();
     this.sessionSummaries = new Map();
@@ -3375,6 +3377,25 @@ export class PromptAgentService {
         name: 'search_character_catalog', label: '搜索角色 Tag', description: '按中文名、英文名、作品名或多个关键词搜索本地角色 Tag 目录。',
         parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => { const results = await this.searchCharacterCatalog(args.query, args.limit); return { content: jsonText(results), details: results }; },
+      },
+      {
+        name: 'search_artist_reference', label: '检索画师组串参考', description: '读取已下载的画师组串参考：按风格维度（按风格探索的八类，如“光影氛围”）、风格标签（如“涂-厚涂”“光-强明暗”，多个须同一条记录同时包含）、组串定位（如“主”“附加-背景”）、可用性、还原度、测试者或关键词检索，返回画师 Tag、例图观察、预期作用、可能偏向与测试提示词。不传任何条件时返回完整词表：八个维度的条目数与各自标签、定位、可用性、还原度和测试者。资料是外部 V5 例图的观察与组串假设，未经工坊复测；同一画师不同测试者的记录分别返回。',
+        parameters: Type.Object({ query: Type.Optional(Type.String()), dimension: Type.Optional(Type.String()), tags: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), roles: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), usability: Type.Optional(Type.Array(Type.Union(['稳定', '可用', '慎用', '失效', '待验证'].map(value => Type.Literal(value))), { maxItems: 5 })), fidelity: Type.Optional(Type.Array(Type.Union(['高', '中', '低', '未知'].map(value => Type.Literal(value))), { maxItems: 4 })), testers: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 30 })) }),
+        execute: async (_id, args) => {
+          const strings = (value, length = 40) => Array.isArray(value) ? value.slice(0, 12).map(item => text(item).slice(0, length)) : [];
+          const results = await this.searchArtistReference({ query: text(args.query).slice(0, 200), dimension: text(args.dimension).slice(0, 20), tags: strings(args.tags), roles: strings(args.roles), usability: strings(args.usability), fidelity: strings(args.fidelity), testers: strings(args.testers, 80), limit: clamp(args.limit, 1, 30, 12) });
+          return { content: jsonText(results), details: results };
+        },
+      },
+      {
+        name: 'compose_artist_chain', label: '组装画师串', description: '组装或更换画师串时调用：依据已下载的画师组串参考，按风格目标自动挑选主画师、副画师与附加画师并给出起始权重，返回可直接写入画师串的 artistString，以及每位画师的定位、匹配标签、作用、可能偏向和备选。tags 使用 search_artist_reference 词表中的风格标签，dimension 为八个风格维度之一，query 为关键词；count 为画师数（2~6，默认 3）；keep 保留用户指定的画师，exclude 排除画师；includeCaution 为 true 时才考虑“慎用”画师。只读，不修改草稿；写入时用 update_prompts 替换画师串里的画师部分。',
+        parameters: Type.Object({ tags: Type.Optional(Type.Array(Type.String(), { maxItems: 12 })), dimension: Type.Optional(Type.String()), query: Type.Optional(Type.String()), count: Type.Optional(Type.Integer({ minimum: 2, maximum: 6 })), keep: Type.Optional(Type.Array(Type.String(), { maxItems: 6 })), exclude: Type.Optional(Type.Array(Type.String(), { maxItems: 30 })), includeCaution: Type.Optional(Type.Boolean()) }),
+        execute: async (_id, args) => {
+          const strings = (value, max, length) => Array.isArray(value) ? value.slice(0, max).map(item => text(item).slice(0, length)) : [];
+          const result = await this.composeArtistChain({ tags: strings(args.tags, 12, 40), dimension: text(args.dimension).slice(0, 20), query: text(args.query).slice(0, 200), count: clamp(args.count, 2, 6, 3),
+            keep: strings(args.keep, 6, 300), exclude: strings(args.exclude, 30, 300), includeCaution: args.includeCaution === true });
+          return { content: jsonText(result), details: result };
+        },
       },
       {
         name: 'search_vibes', label: '搜索 Vibe', description: '搜索电脑中已经永久保存的 Vibe。',

@@ -176,6 +176,7 @@ test('缓存单独迁移包含图包及续传副本，不带原图/会话/付费
     assert.equal(storageResourcePaths(job.workspace).tagData, join(job.workspace, 'public', 'tag-data'));
     assert.equal(storageResourcePaths(job.workspace, job.target).tagData, join(job.target, 'tag-data'));
     assert.equal(storageResourcePaths(job.workspace, job.target).artistSamples, join(job.target, 'artist-samples'));
+    assert.equal(storageResourcePaths(job.workspace, job.target).artistReference, join(job.target, 'artist-reference'));
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
   } finally { removeWorkspace(root); }
 });

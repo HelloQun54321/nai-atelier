@@ -76,6 +76,9 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
   getArtistSampleDictionary: vi.fn(async () => fixtures.artists),
 }));
 vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: vi.fn(async () => ({ templates: {}, samples: [] })), prepareArtistSampleImport: vi.fn() }));
+vi.mock('../../services/artistReference', async original => ({ ...await original<typeof import('../../services/artistReference')>(),
+  getArtistReferenceStatus: vi.fn(async () => ({ available: true, canManage: true, phase: 'missing', version: '', revision: 0, updatedAt: '', fetchedAt: 0, count: 0, artistCount: 0, thumbnails: { cached: 0, total: 0 }, sync: { stage: 'idle', done: 0, total: 0, failed: 0, error: '' } })),
+}));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, columns, renderItem }: { items: unknown[]; columns: number; renderItem: (item: unknown) => React.ReactNode }) =>
   <div data-testid="masonry" data-columns={columns}>{items.map((item, index) => <React.Fragment key={index}>{renderItem(item)}</React.Fragment>)}</div>,

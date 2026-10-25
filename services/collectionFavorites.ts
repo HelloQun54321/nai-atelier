@@ -314,7 +314,7 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
       }
       else if (image.sourceType === 'pixiv' && /^https:\/\/i\.pximg\.net\//i.test(imageUrl)) imageUrl = (await api.uploadFile(await importPixivImageAsFile(imageUrl), 'inspirations')).url;
       else if (/^https:\/\/cdn\.donmai\.us\//i.test(imageUrl)) imageUrl = await importDanbooruCoverAsDataUrl(imageUrl);
-      else if (imageUrl.startsWith('blob:') || imageUrl.startsWith('/api/artist-samples/image?')) {
+      else if (imageUrl.startsWith('blob:') || imageUrl.startsWith('/api/artist-samples/image?') || imageUrl.startsWith('/api/artist-reference/image?')) {
         const response = await fetch(imageUrl);
         if (!response.ok) throw new Error('无法读取收藏图片');
         const blob = await response.blob();

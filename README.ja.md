@@ -231,6 +231,7 @@ PC パッケージには Windows のビルド環境、Android には追加で JD
 - 中英 Tag データ：[ffdkj の Danbooru 翻訳表](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)。
 - 連携と共有キューの参考：[damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8)。
 - 画風ロールのフローとギャラリーの参考：[@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab)。Atelier向けに独自実装し、コードや素材はコピーしていません。
+- 絵師組み合わせ参考：[画师串工作室（Artist String Studio）](https://artist-string-library-moran.navyolm32.chatgpt.site/)が公開・管理する絵師資料と、署名されたテスター雨燕、花枝鱼、九七による例画像と評価。スタイルタグ、組み合わせでの役割、スタイル別の絞り込み、V5 の例画像とアシスタントの絵師チェーン組み立てはこの資料に基づきます。工房は読み取り専用で必要時にダウンロードし、再配布しません。出典はライセンスを明示しておらず、画面とアシスタントの返答で出典を表示します。
 - ローカル Tag 推定モデル：[SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3)、Apache-2.0。
 
 この README は日本語の利用ガイドです。[中国語の詳しい紹介](./README.md)、[製品の決定事項](./docs/PRODUCT_DECISIONS.md)、[技術文書](./docs/WINDOWS_DESKTOP.md)、[変更履歴](./CHANGELOG.md)、[作者の個人的な所感](./README.md#一点个人吐槽)は現在、簡体字中国語で保守しています。
