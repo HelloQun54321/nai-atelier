@@ -8,7 +8,7 @@ export interface StorageLocationStatus {
   workspaceDir: string;
   cacheDir: string;
   cacheFollowsData: boolean;
-  resourcePaths: { thumbnails: string; danbooru: string; models: string; tagData: string; artistSamples?: string };
+  resourcePaths: { thumbnails: string; danbooru: string; models: string; tagData: string; artistSamples?: string; artistReference?: string };
   state: { phase: string; error?: string; copiedBytes?: number; totalBytes?: number };
 }
 export const getStorageLocationStatus = (): Promise<StorageLocationStatus> => api.get('/local-maintenance/storage');

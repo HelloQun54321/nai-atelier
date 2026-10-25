@@ -64,6 +64,7 @@ export const storageResourcePaths = (workspace, cacheDir = '', unified = false) 
   danbooru: join(cacheDir || join(workspace, 'local-cache'), 'danbooru-queries'),
   models: join(cacheDir || join(workspace, 'local-cache'), 'models'),
   artistSamples: join(cacheDir || join(workspace, 'local-cache'), 'artist-samples'),
+  artistReference: join(cacheDir || join(workspace, 'local-cache'), 'artist-reference'),
   tagData: cacheDir || unified ? join(cacheDir || join(workspace, 'local-cache'), 'tag-data') : join(workspace, 'public', 'tag-data'),
 });
 export async function storageLocationStatus({ anchor, dataDir, workspace, mode, canManage }) {
@@ -177,7 +178,7 @@ export async function executeStorageSwitch(job, { progress = async () => {}, cop
   if (job.operation === 'migrate') {
     await mkdir(dirname(stage), { recursive: true });
     await mkdir(stage, { recursive: false });
-    const mappings = job.kind === 'cache' ? Object.entries(storageResourcePaths(job.workspace, job.currentCacheDir || '', job.currentResourceLayout === 'unified')).map(([key, from]) => ({ from, to: key === 'tagData' ? 'tag-data' : key === 'danbooru' ? 'danbooru-queries' : key === 'artistSamples' ? 'artist-samples' : key }))
+    const mappings = job.kind === 'cache' ? Object.entries(storageResourcePaths(job.workspace, job.currentCacheDir || '', job.currentResourceLayout === 'unified')).map(([key, from]) => ({ from, to: key === 'tagData' ? 'tag-data' : key === 'danbooru' ? 'danbooru-queries' : key === 'artistSamples' ? 'artist-samples' : key === 'artistReference' ? 'artist-reference' : key }))
       : job.mode === 'desktop' ? ['workspace', 'browser', 'language-preferences.json', 'update-preferences.json', 'logs'].map(name => ({ from: join(source, name), to: name }))
       : ['local-data', 'local-cache', 'public/tag-data', 'wrangler.toml'].map(name => ({ from: join(source, name), to: name }));
     const manifest = [];

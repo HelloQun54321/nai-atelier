@@ -958,6 +958,11 @@ test('media thumbnails accept project and st-chatu8 history sources without open
   });
   assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/history/not-a-hash/image'), /Unsupported image source/);
   assert.throws(() => getValidatedSource('/api/integrations/st-chatu8/status'), /Unsupported image source/);
+  assert.deepEqual(getValidatedSource('/api/artist-reference/image?file=thumbs%2Fa_1.webp'), {
+    type: 'artist-reference', source: '/api/artist-reference/image?file=thumbs%2Fa_1.webp',
+  });
+  assert.throws(() => getValidatedSource('/api/artist-reference/image?file=..%2Fsecret.webp'), /无效的画师参考例图地址/);
+  assert.throws(() => getValidatedSource('/api/artist-reference/status'), /无效的画师参考例图地址/);
 });
 
 test('thumbnail generation concurrency scales conservatively with CPU and memory', () => {

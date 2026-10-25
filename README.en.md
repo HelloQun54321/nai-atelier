@@ -232,6 +232,7 @@ Desktop builds require a Windows build environment; Android also needs JDK 21 an
 - Chinese–English Tag data: [ffdkj's Danbooru translation table](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table).
 - Integration and shared queue inspiration: [damoshen123/st-chatu8](https://github.com/damoshen123/st-chatu8).
 - Style Roll workflow and gallery inspiration: [@sdnwls](https://github.com/sdnwls) / [nai-style-lab](https://github.com/sdnwls/nai-style-lab). Independently implemented for Atelier without copying its code or assets.
+- Artist mix reference: [Artist String Studio (画师串工作室)](https://artist-string-library-moran.navyolm32.chatgpt.site/) and its credited testers 雨燕, 花枝鱼 and 九七. The style tags, mix roles, explore-by-style filters, V5 example images and assistant artist-chain composition are based on this public library. Atelier reads it on demand and does not redistribute it; the source declares no license, and the source is credited in the interface and assistant replies.
 - Local tagging model: [SmilingWolf WD ViT Tagger V3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3), Apache-2.0.
 
 This README provides the localized usage guide. The [complete Chinese introduction](./README.md), [product decisions](./docs/PRODUCT_DECISIONS.md), [technical documents](./docs/WINDOWS_DESKTOP.md), [change history](./CHANGELOG.md) and [author's personal note](./README.md#一点个人吐槽) are currently maintained in Simplified Chinese.

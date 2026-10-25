@@ -398,7 +398,7 @@ export const isMobileViewport = () => typeof window !== 'undefined' && window.ma
 const getBaseOrigin = () => (typeof window !== 'undefined' && window.location?.origin) ? window.location.origin : 'http://127.0.0.1';
 
 export const canUseMediaGateway = (source: string) => {
-  if (source.startsWith('/api/assets/') || /^\/api\/(?:artist-samples\/image|local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
+  if (source.startsWith('/api/assets/') || /^\/api\/(?:artist-samples\/image|artist-reference\/image|local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
   try {
     const url = new URL(source, getBaseOrigin());
     return url.protocol === 'https:' && [...MEDIA_REMOTE_HOSTS, 'i.pximg.net'].includes(url.hostname.toLowerCase());

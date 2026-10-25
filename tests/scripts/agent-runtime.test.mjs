@@ -97,6 +97,8 @@ test('长资料、编码与成组结果有界，明确省略且不修改源资�
 });
 test('工具分组只提供能力目录，思考输出预算保留原有边界', () => {
   assert.ok(AGENT_TOOL_GROUPS.creative.includes('update_prompts'));
+  assert.ok(AGENT_TOOL_GROUPS.creative.includes('search_artist_reference'));
+  assert.ok(AGENT_TOOL_GROUPS.creative.includes('compose_artist_chain'));
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
   assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
   assert.equal(AGENT_TOOL_GROUPS.library.includes('manage_artist_favorite'), false);

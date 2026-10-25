@@ -314,3 +314,39 @@ it('V5 Full 只浏览 Full 与 Medium 自建图，旧 Curated 及其元数据保
   fireEvent.click(screen.getByRole('button', { name: '下一张' })); expect(screen.getByRole('img').getAttribute('src')).toBe(samples[2].imageUrl);
   expect(samples).toHaveLength(3); expect(samples[0].params.model).toBe('nai-diffusion-5-curated');
 });
+
+it('V5 来源例图排在图包样张之后，卡片用缩略图，偏好收藏取原图并标明来源，不提供删除', async () => {
+  mocks.lookup.mockResolvedValue({ pack: 'v5', model: 'nai-diffusion-5-full', tag: 'synthetic artist', revision: 'one', imageCount: 1, sourceUrl: 'https://synthetic.invalid/pack' });
+  const props = { ...actions, tag: 'synthetic artist', pack: 'v5' as const, revision: 'one', hasPackSample: true, ownSamples: [], alt: '合成画师', onPackChange: vi.fn(), onSupplement: vi.fn(), notify: vi.fn(), onDelete: vi.fn(async () => {}),
+    referenceImages: [{ entryId: 'entry_1', index: 0, full: 'images/entry_1.webp', thumb: 'thumbs/entry_1.webp' }], referenceSource: { url: 'https://reference.invalid', version: '4:1' } };
+  render(<ArtistSampleCover {...props} />);
+  // 图包查询返回前不先露出例图，避免随后被图包样张替换。
+  expect(screen.queryByRole('img')).toBeNull();
+  visible(); await screen.findByRole('img');
+  expect(screen.getByRole('img').getAttribute('src')).toContain('/api/artist-samples/image?');
+  expect(screen.queryByText('来源例图')).toBeNull();
+  expect(screen.getByRole('button', { name: '删除当前样张' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(screen.getByRole('img').getAttribute('src')).toBe('/api/artist-reference/image?file=thumbs%2Fentry_1.webp');
+  expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBeNull();
+  expect(screen.getByText('来源例图')).toBeTruthy();
+  expect(screen.getByText('2 / 2')).toBeTruthy();
+  // 来源例图不是用户样张，不能当作样张删除。
+  expect(screen.queryByRole('button', { name: '删除当前样张' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '偏好画师：synthetic artist' }));
+  await waitFor(() => expect(mocks.preference).toHaveBeenCalledOnce());
+  const [tag, imageUrl, favorite] = mocks.preference.mock.calls[0];
+  expect(tag).toBe('synthetic artist'); expect(imageUrl).toBe('/api/artist-reference/image?file=images%2Fentry_1.webp');
+  expect(favorite).toMatchObject({ imageUrl, sourceType: 'artist', sourceId: 'synthetic artist', sourceUrl: 'https://reference.invalid', analysis: { artistReference: { entryId: 'entry_1', file: 'images/entry_1.webp', version: '4:1' } } });
+  expect(favorite.imageId).toBe(JSON.stringify(['v5', 'reference', 'entry_1', 0]));
+});
+
+it('图包没有这位画师时直接显示来源例图，按已有样张处理而不提示补充', async () => {
+  const props = { ...actions, tag: 'reference only', pack: 'v5' as const, revision: '', hasPackSample: false, ownSamples: [], alt: 'reference only', onPackChange: vi.fn(), onSupplement: vi.fn(), onGenerate: vi.fn(), notify: vi.fn(),
+    referenceImages: [{ entryId: 'entry_2', index: 0, full: 'images/entry_2.webp', thumb: 'thumbs/entry_2.webp' }] };
+  render(<ArtistSampleCover {...props} />);
+  expect(screen.getByRole('img').getAttribute('src')).toBe('/api/artist-reference/image?file=thumbs%2Fentry_2.webp');
+  expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull();
+  expect(screen.getByRole('button', { name: '重新生成样张' })).toBeTruthy();
+  expect(mocks.lookup).not.toHaveBeenCalled();
+});
