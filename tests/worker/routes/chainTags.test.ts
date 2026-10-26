@@ -40,9 +40,9 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
     if (url.pathname === '/tag-data/artist-pages/artists-synthetic.json') return Response.json([['synthetic_artist', 1]]);
     throw new Error('不允许访问真实资产');
   } };
-  const invoke = async (path = '/api/chains', method = 'GET', body?: unknown) => {
+  const invoke = async (path = '/api/chains', method = 'GET', body?: unknown, userId = 'test-owner') => {
     const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: 'test-owner', username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: assets, ...envOverrides }, initDB };
+    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { id: userId, username: 'test', role: 'admin' }, env: { BUCKET: bucket, ASSETS: assets, ...envOverrides }, initDB };
     const response = path.startsWith('/api/agent/') ? await handleAgentRoute(context) : await handleSettingsRoute(context);
     return response!;
   };
@@ -50,6 +50,40 @@ const fixture = (bucket?: R2Bucket, envOverrides: Partial<Env> = {}) => {
 };
 
 describe('风格串标签读写链路（隔离 SQLite）', () => {
+  it('稳定创建身份在成功回执丢失后重试返回原条目，改过的条目不被覆盖', async () => {
+    const f = fixture(); const payload = { creationId: 'b2b742fb-2ff1-4eaf-a726-083d24b8af63', name: '提取候选', type: 'scene', basePrompt: 'night sky', params: { seed: 17 } };
+    await f.invoke('/api/chains', 'POST', payload); // 服务端成功，模拟客户端没有取得这次回执。
+    const first = f.sqlite.prepare('SELECT id FROM chains').get()!;
+    f.sqlite.prepare('UPDATE chains SET name = ? WHERE id = ?').run('用户后来改名', first.id);
+    const replay = await f.invoke('/api/chains', 'POST', { ...payload, params: { seed: 17 } });
+    expect(replay.status).toBe(200); const result = await replay.json() as any;
+    expect(result).toMatchObject({ id: first.id, replayed: true, chain: { name: '用户后来改名', basePrompt: 'night sky' } });
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(1);
+    expect((await f.invoke('/api/chains', 'POST', { ...payload, basePrompt: 'different content' })).status).toBe(409);
+    expect(f.sqlite.prepare('SELECT base_prompt FROM chains').get()?.base_prompt).toBe('night sky');
+    expect(f.initDB).not.toHaveBeenCalled();
+  });
+
+  it('并发同创建身份只有一个赢家，相同内容重放，不同内容冲突且不覆盖', async () => {
+    const f = fixture(); const payload = { creationId: 'ed7244c1-3ff1-4eaf-a726-083d24b8af63', name: '并发候选', basePrompt: 'artist:synthetic_artist' };
+    const equal = await Promise.all([f.invoke('/api/chains', 'POST', payload), f.invoke('/api/chains', 'POST', payload)]);
+    expect(equal.map(response => response.status)).toEqual([200, 200]);
+    expect((await equal[0].json() as any).id).toBe((await equal[1].json() as any).id);
+    const next = { ...payload, creationId: 'fa7244c1-3ff1-4eaf-a726-083d24b8af63' };
+    const conflict = await Promise.all([f.invoke('/api/chains', 'POST', next), f.invoke('/api/chains', 'POST', { ...next, name: '另一份内容' })]);
+    expect(conflict.map(response => response.status).sort()).toEqual([200, 409]);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(2);
+  });
+
+  it('创建身份按所有者隔离，非法身份不写入，普通创建不继承任意id', async () => {
+    const f = fixture(); const payload = { creationId: 'ee7244c1-3ff1-4eaf-a726-083d24b8af63', name: '私人候选' };
+    const first = await (await f.invoke('/api/chains', 'POST', payload)).json() as any;
+    const other = await (await f.invoke('/api/chains', 'POST', { ...payload, name: '另一个人的候选' }, 'other-owner')).json() as any;
+    expect(other.id).not.toBe(first.id); expect(other.chain.userId).toBe('other-owner'); expect(other.chain.name).toBe('另一个人的候选');
+    for (const creationId of ['', '../bad', null, 12]) expect((await f.invoke('/api/chains', 'POST', { ...payload, creationId })).status).toBe(400);
+    const copied = await (await f.invoke('/api/chains', 'POST', { id: first.id, name: '普通复制' })).json() as any;
+    expect(copied.id).not.toBe(first.id); expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()?.n).toBe(3);
+  });
   it('分享来源随创建与读取保留，替换生成参数或普通编辑不会抹掉原出处', async () => {
     const f = fixture();
     const original = { author: '合成作者', sourceUrl: 'https://example.org/free', note: '免费分享' };

@@ -755,7 +755,11 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   if (path === '/api/chains' && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const body = await request.json() as any;
-    const id = /^(?:agent|naia)-[a-f0-9]{64}$/.test(String(body.id || '')) ? String(body.id) : crypto.randomUUID();
+    const creationId = body.creationId;
+    if (creationId !== undefined && (typeof creationId !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(creationId))) return error('创建身份无效', 400);
+    const hash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), byte => byte.toString(16).padStart(2, '0')).join('');
+    const id = creationId === undefined ? (/^(?:agent|naia)-[a-f0-9]{64}$/.test(String(body.id || '')) ? String(body.id) : crypto.randomUUID())
+      : `extraction-${await hash(`${currentUser.id}\0${creationId.toLowerCase()}`)}`;
     if (/^(?:agent|naia)-/.test(id)) {
       const existing = await db.prepare('SELECT id, user_id FROM chains WHERE id = ?').bind(id).first<any>();
       if (existing) return existing.user_id === currentUser.id ? json({ id, replayed: true }) : error('操作 ID 冲突', 409);
@@ -764,14 +768,48 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const guestHidden = body.guestHidden ? 1 : 0;
     const tags = JSON.stringify(normalizeChainTags(Array.isArray(body.tags)
       ? body.tags.map((tag: unknown) => typeof tag === 'string' ? tag.trim().substring(0, 50) : '') : []));
+    const receiptKey = `chain_creation_v1:${id}`;
+    // 指纹只描述本次创建输入，不随后续人工编辑变化；对象键序不影响重试身份。
+    const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+    const fingerprint = creationId === undefined ? '' : await hash(JSON.stringify(canonical({
+      type, name: String(body.name || ''), description: String(body.description || ''), tags: JSON.parse(tags),
+      previewImage: body.previewImage || null, basePrompt: body.basePrompt || '', negativePrompt: body.negativePrompt || '',
+      modules: body.modules || [], params: { ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) },
+      variableValues: body.variableValues || {}, guestHidden,
+    })));
+    const replay = async () => {
+      const chain = await db.prepare('SELECT c.*, s.value AS creation_fingerprint FROM settings s LEFT JOIN chains c ON c.id = ? WHERE s.key = ?').bind(id, receiptKey).first<any>();
+      if (!chain) return null;
+      if (chain.creation_fingerprint !== fingerprint || !chain.id || chain.user_id !== currentUser.id) return error('创建身份已用于不同内容或条目已不可用', 409);
+      return json({ id, replayed: true, chain: {
+        id: chain.id, userId: chain.user_id, username: chain.username, type: chain.type || 'style', name: chain.name, description: chain.description,
+        tags: normalizeChainTags(parseStoredJson(chain.tags, [])), previewImage: chain.preview_image,
+        basePrompt: chain.base_prompt, negativePrompt: chain.negative_prompt, modules: parseStoredJson(chain.modules, []),
+        params: parseStoredJson(chain.params, {}), variableValues: parseStoredJson(chain.variable_values, {}),
+        guestHidden: chain.guest_hidden === 1, createdAt: chain.created_at, updatedAt: chain.updated_at,
+      } });
+    };
+    const syncCreatedChain = async () => {
+      try { await queuePromptLibraryLinkBackfill(db, currentUser.id, id, type); }
+      catch (cause) { console.error('提示词库回填标记更新失败，条目已保存', cause); }
+      try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
+      catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
+    };
+    if (creationId !== undefined) { const existing = await replay(); if (existing) { if (existing.status === 200) await syncCreatedChain(); return existing; } }
     let paramsToStore: string;
     let previewImage: string | null;
     try {
       paramsToStore = JSON.stringify(await preparePromptLibraryParams({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) }, db, currentUser.id));
-      previewImage = await createChainCover(env, db, body.previewImage, id, currentUser);
+      previewImage = await createChainCover(env, db, body.previewImage, creationId === undefined ? id : `${id}-${fingerprint}`, currentUser);
     } catch (e: any) { return error(e.message || '保存封面失败', 422); }
     const now = Date.now();
-    const insert = () => db.prepare(`INSERT INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, previewImage, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, now, now).run();
+    const insert = () => {
+      const statement = db.prepare(`INSERT ${creationId === undefined ? '' : 'OR IGNORE '}INTO chains (id, user_id, username, type, name, description, tags, preview_image, base_prompt, negative_prompt, modules, params, variable_values, guest_hidden, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, currentUser.id, currentUser.username, type, String(body.name || ''), String(body.description || ''), tags, previewImage, body.basePrompt || '', body.negativePrompt || '', body.modules ? JSON.stringify(body.modules) : '[]', paramsToStore, body.variableValues ? JSON.stringify(body.variableValues) : '{}', guestHidden, now, now);
+      // D1 与独立 Android 共用事务批次：只有实际插入链的请求能留下它的创建指纹。
+      return creationId === undefined ? statement.run() : db.batch([statement,
+        db.prepare('INSERT OR IGNORE INTO settings (key, value) SELECT ?, ? WHERE changes() = 1').bind(receiptKey, fingerprint)]);
+    };
     try {
       await insert();
     } catch (e: any) {
@@ -782,10 +820,13 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
         throw e;
       }
     }
-    try { await queuePromptLibraryLinkBackfill(db, currentUser.id, id, type); }
-    catch (cause) { console.error('提示词库回填标记更新失败，条目已保存', cause); }
-    try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
-    catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
+    if (creationId !== undefined) {
+      const saved = await replay();
+      if (!saved || saved.status !== 200) return saved || error('创建回执无法确认，请保留候选后重试', 503);
+      await syncCreatedChain();
+      return saved;
+    }
+    await syncCreatedChain();
     // 保留旧调用方的 id，同时返回实际落库内容；打开新条目无需重新读取整库。
     return json({ id, chain: {
       id, userId: currentUser.id, username: currentUser.username, type,

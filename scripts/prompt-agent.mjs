@@ -25,9 +25,10 @@ import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLe
 
 import { agentLanguagePolicy } from '../locales/index.mjs';
 import { preparePromptClassification, parsePromptClassification } from '../services/promptClassification.mjs';
+import { TEXT_EXTRACTION_SYSTEM_PROMPT, VISION_EXTRACTION_SYSTEM_PROMPT, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/promptExtraction.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -1879,6 +1880,54 @@ export class PromptAgentService {
       await agent.prompt(JSON.stringify(documents));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       return { items: parsePromptClassification(extractAssistantText(agent.state.messages), documents), provider, model: modelId };
+    } finally { leaveOutboundProxy(); }
+  }
+
+  /**
+   * 提示词／图片 → 六类库候选（忠实提取，不做创作补全）。
+   * - text：本地切好片段，模型只回类别与中文译法，原词由程序按原顺序重组；
+   * - vision：图片交给当前助手模型看图提取，结果属于视觉推断，不冒充原始提示词。
+   * 只调用当前助手模型一次，不写助手对话，不触发生图，失败直接抛出由界面保留输入。
+   */
+  async extractCandidates(input = {}) {
+    const requestedMode = String(input?.mode ?? '').trim() || 'text';
+    if (requestedMode !== 'text' && requestedMode !== 'vision') throw Object.assign(new Error('提取方式无效，请重新打开面板再试'), { status: 400 });
+    const mode = requestedMode;
+    const prepared = mode === 'vision' ? null : prepareExtractionChunks({ text: input?.text, characters: input?.characters });
+    const images = mode === 'vision' ? sanitizeAgentImages(input?.images) : [];
+    if (mode === 'vision' && !images.length) throw Object.assign(new Error('请先选择一张本地图片，图片只用于本次提取'), { status: 400 });
+    const { provider: selectedProvider, model: modelId } = this.publicConfig();
+    const provider = this.normalizeProvider(selectedProvider);
+    const storedCredential = this.getCredential(provider);
+    if (!storedCredential) throw Object.assign(new Error('请先在设置中配置创作助手的模型服务'), { status: 400 });
+    const modelInfo = this.listModels(provider).find(item => item.id === modelId);
+    if (!modelInfo) throw Object.assign(new Error('当前助手模型不可用，请在设置中重新选择'), { status: 400 });
+    if (mode === 'vision' && !modelInfo.imageInput) throw Object.assign(new Error(`${imageCapabilityError(modelInfo)}；不会调用其他模型`), { status: 400 });
+    const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+    try {
+      const credentials = new InMemoryCredentialStore();
+      await credentials.modify(provider, async () => ({ ...storedCredential,
+        ...(this.outboundProxyUrl ? { env: { ...(storedCredential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}),
+      }));
+      const runtime = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
+      const customProvider = this.customProviders.get(provider);
+      if (customProvider) runtime.setProvider(customProviderRuntime(customProvider));
+      const model = runtime.getModel(provider, modelId);
+      if (!model) throw Object.assign(new Error('无法加载当前助手模型'), { status: 400 });
+      const agent = new Agent({ initialState: {
+        systemPrompt: mode === 'vision' ? VISION_EXTRACTION_SYSTEM_PROMPT : TEXT_EXTRACTION_SYSTEM_PROMPT,
+        model, thinkingLevel: 'off', tools: [], messages: [],
+      }, streamFn: runtime.streamSimple.bind(runtime), sessionId: `nai-extraction-${randomUUID()}` });
+      if (mode === 'vision') await agent.prompt('请提取这张图片里看得见的内容。', images);
+      else await agent.prompt(JSON.stringify({ chunks: prepared.chunks }));
+      if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
+      const raw = extractAssistantText(agent.state.messages);
+      if (mode === 'vision') {
+        const parsed = parseVisionExtractionResponse(raw);
+        return { mode, provider, model: modelId, items: parsed.items, unclassified: parsed.unclassified, ignored: parsed.ignored };
+      }
+      const { items, unclassified } = assembleTextExtraction(prepared.chunks, parseTextExtractionResponse(raw, prepared.chunks));
+      return { mode, provider, model: modelId, items, unclassified, excluded: prepared.excluded };
     } finally { leaveOutboundProxy(); }
   }
 

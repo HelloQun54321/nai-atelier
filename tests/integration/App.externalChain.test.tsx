@@ -12,6 +12,7 @@ import { contentSnapshotOf } from '../../services/contentRoll';
 import { ImageActivityContext } from '../../components/SmartImage';
 import { getLanguage, setLanguage } from '../../services/i18n';
 import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
+import { promptAgentService } from '../../services/promptAgent';
 
 const mocks = vi.hoisted(() => ({
   artistRenders: 0,
@@ -384,6 +385,63 @@ it('内容库粘贴原文直接保存并显示，保存不切库、不修改实�
   expect(await screen.findByRole('button', { name: '查看{{snow}}, 1.2::hair::' })).toBeTruthy();
   expect(screen.queryByRole('dialog', { name: '随机搭配' })).toBeNull();
   expect(mocks.updateChain).not.toHaveBeenCalled();
+});
+
+it('提取候选接入现有列表，保存回执丢失后重试沿用身份且不重存成功项', async () => {
+  const dictionary = await import('../../services/tagDictionary');
+  const dictionarySpies = [
+    vi.spyOn(dictionary, 'preloadTagDictionary').mockImplementation(() => {}),
+    vi.spyOn(dictionary, 'searchTagDictionary').mockResolvedValue([]),
+    vi.spyOn(dictionary, 'lookupTagTranslations').mockResolvedValue(new Map()),
+    vi.spyOn(dictionary, 'lookupTagCatalogEntries').mockResolvedValue(new Map()),
+  ];
+  const config = vi.spyOn(promptAgentService, 'getConfig').mockResolvedValue({
+    provider: 'test-provider', model: 'test-model', imageInput: false, configured: true,
+    configuredProviders: ['test-provider'], policyVersion: 'test', policyFingerprint: 'test', runtimeStartedAt: 0,
+  });
+  const extract = vi.spyOn(promptAgentService, 'extractCandidates').mockResolvedValue({
+    mode: 'text', provider: 'test-provider', model: 'test-model',
+    items: [
+      { kind: 'wardrobe', name: '合成红裙', prompt: '1.2::red dress::' },
+      { kind: 'scene', name: '合成咖啡馆', prompt: 'cafe' },
+    ], unclassified: { name: '未归类内容', prompt: 'masterpiece' },
+  });
+  const stored = new Map<string, PromptChain>();
+  let loseReceipt = true;
+  mocks.createChainWithData.mockImplementation(async (name, description, data, type, creationId) => {
+    expect(creationId).toMatch(/^[a-f\d-]{36}$/i);
+    if (!stored.has(creationId)) stored.set(creationId, { ...saved, ...data, id: creationId, name, description, type });
+    if (type === 'wardrobe' && loseReceipt) { loseReceipt = false; throw new Error('合成保存回执丢失'); }
+    return stored.get(creationId);
+  });
+  try {
+    await setup('prompts');
+    fireEvent.click(screen.getByRole('button', { name: 'AI 提取分类' }));
+    const dialog = await screen.findByRole('dialog', { name: 'AI 提取分类' });
+    expect(extract).not.toHaveBeenCalled();
+    expect(mocks.createChainWithData).not.toHaveBeenCalled();
+    fireEvent.change(within(dialog).getByLabelText('提示词原文'), { target: { value: '1.2::red dress::, cafe, masterpiece' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '开始分类' }));
+    await within(dialog).findByDisplayValue('合成红裙');
+    const listReadsBeforeSave = mocks.getAllChains.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存勾选项（2）' }));
+    await within(dialog).findByText(/合成保存回执丢失/);
+    expect(mocks.createChainWithData).toHaveBeenCalledTimes(2);
+    expect(within(dialog).queryByDisplayValue('合成咖啡馆')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存勾选项（1）' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'AI 提取分类' })).toBeNull());
+    const wardrobeCalls = mocks.createChainWithData.mock.calls.filter(call => call[3] === 'wardrobe');
+    expect(wardrobeCalls).toHaveLength(2);
+    expect(wardrobeCalls[0][4]).toBe(wardrobeCalls[1][4]);
+    expect(mocks.createChainWithData.mock.calls.filter(call => call[3] === 'scene')).toHaveLength(1);
+    expect(stored.size).toBe(2);
+    expect(wardrobeCalls[1][2]).toMatchObject({ basePrompt: '1.2::red dress::', variableValues: { subject: '' }, modules: [] });
+    expect(mocks.getAllChains).toHaveBeenCalledTimes(listReadsBeforeSave);
+    expect(mocks.updateChain).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: '查看合成红裙' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '查看合成咖啡馆' })).toBeTruthy();
+    expect(screen.getByTestId('view').textContent).toBe('content-library');
+  } finally { config.mockRestore(); extract.mockRestore(); dictionarySpies.forEach(spy => spy.mockRestore()); }
 });
 
 it('粘贴原文可选指定分类，直接创建对应条目库记录', async () => {
