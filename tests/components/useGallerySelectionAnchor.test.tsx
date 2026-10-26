@@ -63,6 +63,14 @@ const setup = (selectedId: number | null = 1) => {
 };
 
 describe('作品选择定位', () => {
+  it('同一作品的尺寸与位置补偿复用卡片节点，不反复扫描整个列表', () => {
+    const { root, geometry } = setup(1);
+    const scan = vi.spyOn(root, 'querySelectorAll');
+    for (let i = 0; i < 5; i++) { geometry.tops[1] += 20; resize(); }
+    expect(scan).not.toHaveBeenCalled();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1750, behavior: 'instant' });
+    scan.mockRestore();
+  });
   it('作品在顶栏下方的可见区域居中，不把被玻璃覆盖的区域计入中心', () => {
     const { root, rerender, draw } = setup(null);
     root.style.scrollPaddingTop = '100px';

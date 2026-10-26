@@ -58,14 +58,14 @@ export const useMobileHistoryLayer = (open: boolean, onClose: () => void | boole
     };
   }, [historyReady, open, active]);
 
-  return () => {
+  return React.useCallback(() => {
     const marker = markerRef.current;
     if (typeof window !== 'undefined' && window.history.state?.__naiMobileLayer === marker) {
       window.history.back();
     } else {
       onCloseRef.current();
     }
-  };
+  }, []);
 };
 
 export const MobileBottomSheet: React.FC<{

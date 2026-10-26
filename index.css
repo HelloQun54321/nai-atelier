@@ -54,6 +54,10 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
 }
+/* 聚焦只切换容器状态，未选中的收藏卡片不为明暗效果重新渲染。 */
+[data-collection-focused='true'] .collection-work-card:not([data-collection-active='true']) {
+  filter: brightness(.7);
+}
 /* 参数区按面板的实际宽度换行，窄侧栏不能沿用整窗的多列断点。 */
 .chain-editor-model-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
 .chain-editor-param-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }

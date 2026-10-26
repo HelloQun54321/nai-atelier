@@ -29,9 +29,8 @@ import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from '
 
 interface Props {
   item: Inspiration;
-  items: Inspiration[];
+  tagSuggestions: string[];
   boards?: InspirationBoard[];
-  tagNames?: string[];
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
@@ -39,17 +38,16 @@ interface Props {
   onNavigateToPlayground?: () => void;
 }
 
-export const InspirationDetail: React.FC<Props> = ({
+export const InspirationDetail = React.memo(function InspirationDetail({
   item,
-  items,
+  tagSuggestions,
   boards = [],
-  tagNames = [],
   currentUser,
   notify,
   onClose,
   onRefresh,
   onNavigateToPlayground,
-}) => {
+}: Props) {
   useLanguage();
   const displayedItem = useRef(item);
   const [draft, setDraft] = useState(item);
@@ -60,8 +58,9 @@ export const InspirationDetail: React.FC<Props> = ({
   const [labMenuOpen, setLabMenuOpen] = useState(false);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const [paramsMounted, setParamsMounted] = useState(false);
   const editable = canEditItem(item, currentUser);
-  const tagSuggestions = useMemo(() => Array.from(new Set([...tagNames, ...items.flatMap(getCollectionTags)])).filter(tag => tag !== sourceLabel(item.sourceType)).sort((a, b) => a.localeCompare(b)), [items, tagNames, item.sourceType]);
+  const tagOptions = useMemo(() => isAddingTag ? tagSuggestions.filter(tag => tag !== sourceLabel(item.sourceType)) : [], [isAddingTag, tagSuggestions, item.sourceType]);
   const tags = getCollectionTags(draft);
   const reverseTags = readExternalImageTags(draft);
   const sourceTags = Array.isArray(draft.analysis?.externalSourceTags) ? draft.analysis.externalSourceTags.filter((tag): tag is string => typeof tag === 'string') : [];
@@ -69,6 +68,7 @@ export const InspirationDetail: React.FC<Props> = ({
   useEffect(() => {
     const previous = displayedItem.current;
     displayedItem.current = item;
+    if (previous === item) return;
     setDraft(draft => {
       if (draft.id !== item.id) return item;
       const next = { ...item };
@@ -84,6 +84,7 @@ export const InspirationDetail: React.FC<Props> = ({
     setLabMenuOpen(false);
     setIsAddingTag(false);
     setNewTagInput('');
+    setParamsMounted(false);
   }, [item]);
 
   const promptTagCount = useMemo(() => {
@@ -253,7 +254,7 @@ export const InspirationDetail: React.FC<Props> = ({
         />
       </details>
     ) : null),
-    params: (<details data-collection-section="params" className="group rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
+    params: (<details key={item.id} data-collection-section="params" onToggle={event => { if (event.currentTarget.open) setParamsMounted(true); }} className="group rounded-2xl border border-gray-200 p-3 dark:border-gray-800">
       <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-700 select-none dark:text-gray-200">
         <span className="flex items-center gap-1.5">
           <span>{t("生成参数与来源详情")}</span>
@@ -261,7 +262,7 @@ export const InspirationDetail: React.FC<Props> = ({
         </span>
         <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
       </summary>
-      <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
+      {paramsMounted && <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60">
         <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-1.5">
             <SourceIcon className="h-3.5 w-3.5 text-gray-400" />
@@ -287,7 +288,7 @@ export const InspirationDetail: React.FC<Props> = ({
           )}
         </div>
         {draft.params ? <ParamsViewer section="params" params={draft.params} notify={notify} /> : <p className="text-xs text-gray-400">{t("未记录生成参数")}</p>}
-      </div>
+      </div>}
     </details>),
     characters: draft.params?.characters?.length ? <section data-collection-section="characters"><ParamsViewer section="characters" params={draft.params} notify={notify} /></section> : null,
     characterReference: draft.params?.characterReferences?.enabled && draft.params.characterReferences.slots.length ? <section data-collection-section="characterReference"><ParamsViewer section="characterReference" params={draft.params} notify={notify} /></section> : null,
@@ -361,7 +362,7 @@ export const InspirationDetail: React.FC<Props> = ({
                 ))}
                 {isAddingTag ? (
                   <CollectionTagInput
-                    suggestions={tagSuggestions.filter(tag => !tags.includes(tag))}
+                    suggestions={tagOptions.filter(tag => !tags.includes(tag))}
                     onPick={value => { handleAddTag(value); setIsAddingTag(false); }}
                     disabled={Boolean(busy)}
                     autoFocus
@@ -499,4 +500,4 @@ export const InspirationDetail: React.FC<Props> = ({
       )}
     </article>
   );
-};
+});

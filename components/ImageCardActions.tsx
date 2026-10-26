@@ -18,6 +18,22 @@ export function imageCardActionLayout({ width, height, count, buttonWidth, butto
 
 type ImageCardActionsProps = React.HTMLAttributes<HTMLDivElement> & { singleColumn?: boolean };
 
+type LayoutMeasure = () => (() => void) | undefined;
+const pendingLayouts = new Set<LayoutMeasure>();
+let layoutFrame: number | null = null;
+// 整个图库缩放时先统一读尺寸，再统一写样式，避免每张卡片都迫使下一张同步排版。
+function scheduleLayout(measure: LayoutMeasure) {
+  pendingLayouts.add(measure);
+  if (layoutFrame !== null) return;
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = null;
+    const batch = [...pendingLayouts];
+    pendingLayouts.clear();
+    const writes = batch.map(read => read());
+    writes.forEach(write => write?.());
+  });
+}
+
 export const ImageCardActions: React.FC<ImageCardActionsProps> = ({ children, className = '', singleColumn = false, ...props }) => {
   const ref = useRef<HTMLDivElement>(null);
   const frostedCaption = useGalleryFrostedCaption();
@@ -35,12 +51,13 @@ export const ImageCardActions: React.FC<ImageCardActionsProps> = ({ children, cl
       frame.style.removeProperty('--image-card-caption-height');
       frame.removeAttribute('data-image-action-frame');
     };
-    const update = () => {
+    const measure: LayoutMeasure = () => {
       if (!items.length) {
-        restoreFrame();
-        root.style.removeProperty('grid-template-rows');
-        root.style.removeProperty('top');
-        return;
+        return () => {
+          restoreFrame();
+          root.style.removeProperty('grid-template-rows');
+          root.style.removeProperty('top');
+        };
       }
       const bounds = frame.getBoundingClientRect();
       const buttonWidth = Math.max(0, ...items.map(item => item.offsetWidth));
@@ -63,13 +80,16 @@ export const ImageCardActions: React.FC<ImageCardActionsProps> = ({ children, cl
       });
       const rows = `repeat(${layout.rows}, ${buttonHeight}px)`, top = `${layout.top}px`;
       const minHeight = originalMinHeight ? `max(${originalMinHeight}, ${Math.ceil(layout.minHeight)}px)` : `${Math.ceil(layout.minHeight)}px`;
-      if (root.style.gridTemplateRows !== rows) root.style.gridTemplateRows = rows;
-      if (root.style.top !== top) root.style.top = top;
-      if (frame.style.minHeight !== minHeight) frame.style.minHeight = minHeight;
-      if (frame.style.getPropertyValue('--image-card-caption-height') !== `${captionHeight}px`) frame.style.setProperty('--image-card-caption-height', `${captionHeight}px`);
-      if (frame.getAttribute('data-image-action-frame') !== 'true') frame.setAttribute('data-image-action-frame', 'true');
+      return () => {
+        if (root.style.gridTemplateRows !== rows) root.style.gridTemplateRows = rows;
+        if (root.style.top !== top) root.style.top = top;
+        if (frame.style.minHeight !== minHeight) frame.style.minHeight = minHeight;
+        if (frame.style.getPropertyValue('--image-card-caption-height') !== `${captionHeight}px`) frame.style.setProperty('--image-card-caption-height', `${captionHeight}px`);
+        if (frame.getAttribute('data-image-action-frame') !== 'true') frame.setAttribute('data-image-action-frame', 'true');
+      };
     };
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    const schedule = () => scheduleLayout(measure);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
     // JSX 引用、收藏色及忙碌图标变化不重测；只同步实际参与排布的节点。
     const syncTargets = () => {
       captions = [...card.querySelectorAll<HTMLElement>('.gallery-card-caption, [data-image-action-caption]')];
@@ -81,16 +101,18 @@ export const ImageCardActions: React.FC<ImageCardActionsProps> = ({ children, cl
       for (const element of observed) if (!next.has(element)) observer?.unobserve(element);
       for (const element of next) if (!observed.has(element)) observer?.observe(element);
       observed = next;
-      update();
+      measure()?.();
     };
     syncTargets();
     const mutation = new MutationObserver(syncTargets);
     mutation.observe(card, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-image-action-item', 'data-image-action-caption', 'data-image-action-left'] });
-    window.addEventListener('resize', update);
+    window.addEventListener('resize', schedule);
     return () => {
       observer?.disconnect();
       mutation.disconnect();
-      window.removeEventListener('resize', update);
+      window.removeEventListener('resize', schedule);
+      pendingLayouts.delete(measure);
+      if (!pendingLayouts.size && layoutFrame !== null) { cancelAnimationFrame(layoutFrame); layoutFrame = null; }
       restoreFrame();
     };
   }, [frostedCaption, singleColumn]);

@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useLayoutEffect, useRef } from 'react';
+import { RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
 interface SelectionAnchor {
@@ -23,6 +23,7 @@ export const useGallerySelectionAnchor = (
   const smoothTargetRef = useRef<number | null>(null);
   const smoothCardPositionRef = useRef<number | null>(null);
   const pendingSelectionRef = useRef<SelectionAnchor | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const stopSmoothScroll = () => {
     if (smoothTargetRef.current === null) return;
     smoothTargetRef.current = null;
@@ -31,18 +32,27 @@ export const useGallerySelectionAnchor = (
     if (root && root.clientHeight > 0) root.scrollTo({ top: root.scrollTop, behavior: 'instant' });
   };
 
-  const getCard = (id = anchorRef.current?.id) => {
-    return id !== undefined ? Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-gallery-work-id]') || [])
-      .find(card => card.dataset.galleryWorkId === String(id)) : null;
-  };
-  const readOffset = (id = anchorRef.current?.id) => {
+  const getCard = useCallback((id = anchorRef.current?.id) => {
+    const root = rootRef.current;
+    if (id === undefined || !root) return null;
+    const cached = cardRef.current;
+    if (cached?.dataset.galleryWorkId === String(id) && root.contains(cached)) return cached;
+    // 同一作品的重排沿用节点；换作品、换列或删除后才重新查找。
+    cardRef.current = Array.from(root.querySelectorAll<HTMLElement>('[data-gallery-work-id]'))
+      .find(card => card.dataset.galleryWorkId === String(id)) ?? null;
+    return cardRef.current;
+  }, [rootRef]);
+  const readOffset = useCallback((id = anchorRef.current?.id) => {
     const root = rootRef.current;
     const card = getCard(id);
     if (!root || root.clientHeight === 0 || !card) return null;
     const rect = card.getBoundingClientRect();
     if (rect.height === 0) return null;
     return rect.top + rect.height / 2 - root.getBoundingClientRect().top - root.clientTop;
-  };
+  }, [getCard, rootRef]);
+  const prepareSelection = useCallback((id: string | number) => {
+    if (enabled) pendingSelectionRef.current = { id, offset: readOffset(id) };
+  }, [enabled, readOffset]);
   const adjust = (smooth = false) => {
     const root = rootRef.current;
     const anchor = anchorRef.current;
@@ -133,7 +143,9 @@ export const useGallerySelectionAnchor = (
         adjust();
       });
     };
-    const mutation = new MutationObserver(schedule);
+    const mutation = new MutationObserver(records => {
+      if (records.some(record => record.type === 'childList' || !(record.target instanceof Element) || !record.target.closest('[data-card-action]'))) schedule();
+    });
     resize.observe(root);
     resize.observe(content);
     observeCard();
@@ -180,7 +192,7 @@ export const useGallerySelectionAnchor = (
   return {
     // 关闭详情后的重排也交给作品锚点，避免像素恢复定时器与它争抢滚动。
     hasAnchor: enabled && (selectedId !== null || anchorRef.current !== null),
-    prepareSelection: (id: string | number) => { if (enabled) pendingSelectionRef.current = { id, offset: readOffset(id) }; },
+    prepareSelection,
     preserveOnClose: () => {
       if (!enabled) return;
       stopSmoothScroll();

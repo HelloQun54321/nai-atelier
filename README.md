@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.130.2-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.130.3-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -318,7 +318,7 @@ AITag 详情标题栏关闭钮左侧有两个仅图标按钮：叠层文件加�
 
 收藏库、AITag、Pixiv、Danbooru、画师库与角色库统一突出选中卡片，其余卡片适度变暗，并通过平滑滚动将最近点击的卡片在列表可视区域垂直居中，遵循项目与系统减少动画设置；图片加载或详情展开导致重排时保留定位，主动滚动立即打断居中动画、保持新位置，关闭详情或清空选择后恢复亮度。画师／角色目录保留多选，已选项都保持明亮，抽卡、返回目录或切换筛选释放旧定位。
 
-收藏库、Pixiv 与 Danbooru 的浏览足迹在瀑布流模式下使用稳定分列，已显示卡片不会因异步加载重新换列；这三处按真实卡片高度排版，缩略图仍按可见范围加载。
+收藏库、Pixiv 与 Danbooru 的浏览足迹在瀑布流模式下使用稳定分列，已显示卡片不会因异步加载重新换列；这三处按真实卡片高度排版，缩略图仍按可见范围加载。收藏库保持一次完整展示，开关与切换详情复用未变化的卡片；折叠的生成参数第一次展开时才创建，之后收起再展开保留内容。
 
 收藏库通过「加入收藏库」按钮打开导入窗口，可一次选择多张本地图片，或在导入窗口内拖入文件；画廊内拖动仅用于把已有作品追加到具体收藏夹，保留其他归属；全部／未整理只作浏览，不显示整页导入遮罩。导入窗口支持追加、移除候选，整批多选收藏夹与公共标签，各图分别读取原有提示词、完整参数和角色，缺少元数据时不补造配置，也无需填写提示词。空窗口可点击整块区域选图；选图后主要显示图片预览和文件名标题，「生成信息（可选）」默认收起，仅在需要修改正负词时展开。桌面为候选与当前图片双栏，手机上下排列，候选独立滚动并保持选中项可见，进度和操作固定在底部。支持 PNG／JPEG／WebP，每图最多 12 MB；逐张显示保存结果，失败项保留供主动重试，成功项不重复提交，列表刷新失败单独提示。仅支持本地文件，不读取网页链接或整目录。
 

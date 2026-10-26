@@ -20,6 +20,20 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState({}, ''); });
 
+it('关闭回调身份稳定，仍使用最新作品的关闭处理', () => {
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: false } as MediaQueryList);
+  const first = vi.fn(), latest = vi.fn();
+  let close: () => void;
+  const Harness = ({ handler }: { handler: () => void }) => { close = useMobileHistoryLayer(true, handler, 'stable'); return null; };
+  const view = render(<Harness handler={first} />);
+  const original = close!;
+  view.rerender(<Harness handler={latest} />);
+  expect(close!).toBe(original);
+  act(() => close());
+  expect(first).not.toHaveBeenCalled();
+  expect(latest).toHaveBeenCalledOnce();
+});
+
 it('StrictMode 新挂载只登记一次，真实关闭仍只返回一次', async () => {
   const push = vi.spyOn(window.history, 'pushState');
   vi.mocked(window.history.back).mockImplementation(() => {

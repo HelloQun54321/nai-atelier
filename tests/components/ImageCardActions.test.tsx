@@ -3,8 +3,17 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ImageCardActions, imageCardActionLayout } from '../../components/ImageCardActions';
+
+let queuedFrames = new Map<number, FrameRequestCallback>();
+let frameId = 0;
+beforeEach(() => {
+  queuedFrames = new Map();
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { queuedFrames.set(++frameId, callback); return frameId; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => queuedFrames.delete(id));
+});
+const flushLayout = () => { const callbacks = [...queuedFrames.values()]; queuedFrames.clear(); callbacks.forEach(callback => callback(0)); };
 
 afterEach(() => { cleanup(); delete document.documentElement.dataset.galleryFrostedCaption; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -84,7 +93,7 @@ function mockGeometry({ siblingActions = false, navigation = false, aspectRatio 
   const group = view.container.querySelector<HTMLElement>('.image-card-actions')!;
   return { ...view, draw, frame, group, observe, unobserve, disconnect, callbacks, resize: (next: { width?: number; height?: number; caption?: number; size?: number }) => {
     width = next.width ?? width; height = next.height ?? height; caption = next.caption ?? caption; size = next.size ?? size;
-    act(() => callbacks.forEach(callback => callback()));
+    act(() => { callbacks.forEach(callback => callback()); flushLayout(); });
   } };
 }
 
@@ -108,6 +117,31 @@ it('选中、保存状态与图标更新不重建观察器、不测尺寸或写�
   view.resize({});
   expect([...changes, ...writes.takeRecords()]).toHaveLength(0);
   writes.disconnect();
+});
+
+it('同一帧的重复尺寸通知只测一次，多张卡片先全部测量再写入，卸载取消待测项', () => {
+  const view = mockGeometry();
+  const second = render(view.draw());
+  const frames = [view.frame, second.container.querySelector<HTMLElement>('.mobile-gallery-frame')!];
+  const read = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  read.mockClear();
+  act(() => { for (let i = 0; i < 4; i++) view.callbacks.forEach(callback => callback()); });
+  expect(read).not.toHaveBeenCalled();
+  act(flushLayout);
+  expect(read.mock.contexts.filter(node => frames.some(frame => frame === node))).toHaveLength(2);
+  const original = read.getMockImplementation()!;
+  const observed: string[][] = [];
+  read.mockImplementation(function (this: HTMLElement) {
+    if (frames.includes(this)) observed.push(frames.map(frame => frame.style.minHeight));
+    return original.call(this);
+  });
+  view.resize({ caption: 80 });
+  expect(observed).toEqual([['108px', '108px'], ['108px', '108px']]);
+  expect(frames.map(frame => frame.style.minHeight)).toEqual(['128px', '128px']);
+  act(() => view.callbacks.forEach(callback => callback()));
+  second.unmount(); view.unmount(); read.mockClear();
+  act(flushLayout);
+  expect(read).not.toHaveBeenCalled();
 });
 
 it('按钮增减与保存按钮替换为状态标记只调整当前观察目标，空操作恢复封面高度', async () => {

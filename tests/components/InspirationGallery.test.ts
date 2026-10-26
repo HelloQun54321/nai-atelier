@@ -20,7 +20,7 @@ vi.mock('../../services/api', async original => {
 });
 vi.mock('../../services/metadataService', async original => ({ ...await original<typeof import('../../services/metadataService')>(), extractMetadata: vi.fn(async () => null) }));
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
-const { confirmAction } = vi.hoisted(() => ({ confirmAction: vi.fn() }));
+const { confirmAction, imageRender } = vi.hoisted(() => ({ confirmAction: vi.fn(), imageRender: vi.fn() }));
 
 vi.mock('../../services/dbService', () => ({
   db: {
@@ -41,7 +41,7 @@ vi.mock('../../services/dbService', () => ({
 
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
-  SmartImage: ({ thumbnailVariant: _thumbnailVariant, previewTransform, className = 'h-full w-full object-cover', ...props }: any) => React.createElement('img', { ...props, className, 'data-preview-transform': previewTransform }),
+  SmartImage: ({ thumbnailVariant: _thumbnailVariant, previewTransform, className = 'h-full w-full object-cover', ...props }: any) => { imageRender(props.alt); return React.createElement('img', { ...props, className, 'data-preview-transform': previewTransform }); },
   OriginalImage: (props: any) => React.createElement('img', props),
 }));
 
@@ -83,6 +83,25 @@ const mockUser: User = {
   role: 'user',
   createdAt: 1,
 };
+
+it('全部收藏仍在列表中，打开、切换和关闭详情只重渲染发生选择变化的封面', async () => {
+  const data = Array.from({ length: 120 }, (_, index) => ({ id: `perf-${index}`, userId: mockUser.id, title: `性能作品 ${index}`, imageUrl: `/synthetic-${index}.png`, prompt: '', createdAt: 200 - index } as Inspiration));
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  await waitFor(() => expect(db.getInspirationBoards).toHaveBeenCalledOnce());
+  const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-gallery-work-id]'));
+  expect(cards).toHaveLength(120);
+  imageRender.mockClear();
+  fireEvent.click(cards[0].querySelector('button.gallery-card-caption')!);
+  expect(imageRender.mock.calls.map(([title]) => title)).toEqual([cards[0].querySelector('h3')!.textContent]);
+  imageRender.mockClear();
+  fireEvent.click(cards[1].querySelector('button.gallery-card-caption')!);
+  expect(new Set(imageRender.mock.calls.map(([title]) => title))).toEqual(new Set(cards.slice(0, 2).map(card => card.querySelector('h3')!.textContent)));
+  imageRender.mockClear();
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(imageRender.mock.calls.map(([title]) => title)).toEqual([cards[1].querySelector('h3')!.textContent]);
+  expect(Array.from(container.querySelectorAll('[data-gallery-work-id]'))).toEqual(cards);
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+});
 
 it.each([390, 1280])('宽度 %s：同一收藏命中多个夹，批量部分选中只增删触及关系，未整理仅无归属', async width => {
   vi.stubGlobal('innerWidth', width);
@@ -1270,19 +1289,20 @@ it.each(['image', 'title'])('收藏单张和多图组从 %s 打开先抵消挤�
   const cards = Array.from(container.querySelectorAll('article'));
   const { root, scrollCalls } = mockGalleryGeometry(cards, () => container.querySelector('.aitag-detail-panel--open') ? -600 : 0);
   root.scrollTop = 1400;
-  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  expect(container.querySelector('[data-collection-focused]')).toBeNull();
   fireEvent.click(target === 'image' ? within(cards[0]).getByRole('img').closest('button')! : cards[0].querySelector('button.gallery-card-caption')!);
   expect(root.scrollTop).toBe(1050);
   expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
-  expect(cards[0].className).not.toContain('brightness-');
-  expect(cards[1].className).toContain('brightness-[.7]');
+  expect(cards[0].dataset.collectionActive).toBe('true');
+  expect(cards[1].dataset.collectionActive).toBeUndefined();
+  expect(cards[1].closest('[data-collection-focused]')?.getAttribute('data-collection-focused')).toBe('true');
   fireEvent.click(within(cards[1]).getByRole('img').closest('button')!);
   expect(root.scrollTop).toBe(1850);
-  expect(cards[0].className).toContain('brightness-[.7]');
-  expect(cards[1].className).not.toContain('brightness-');
+  expect(cards[0].dataset.collectionActive).toBeUndefined();
+  expect(cards[1].dataset.collectionActive).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   expect(root.scrollTop).toBe(2450);
-  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  expect(container.querySelector('[data-collection-focused]')).toBeNull();
   expect(db.updateInspiration).not.toHaveBeenCalled();
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
 });
@@ -1295,7 +1315,7 @@ it('关闭选中作品聚焦后仍可打开收藏详情，但不压暗其他组�
   fireEvent.click(cards[0].querySelector('button.gallery-card-caption')!);
   expect(root.scrollTop).toBe(1400);
   expect(scrollCalls).toEqual([]);
-  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  expect(container.querySelector('[data-collection-focused]')).toBeNull();
   expect(container.querySelector('.aitag-detail-panel--open')).toBeTruthy();
 });
 
