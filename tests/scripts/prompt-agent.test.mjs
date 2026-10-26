@@ -231,6 +231,8 @@ test('独立 Agent 规则文件实际进入固定系统前缀，包含交流语�
     assert.match(requests[0].messages[0].content, /你是 NAI Atelier 的创作助手/);
     assert.match(requests[0].messages[0].content, /文件路径.*保留准确原文/);
     assert.match(requests[0].messages[0].content, /只有用户明确拒绝确认或主动停止才描述为用户取消/);
+    assert.match(requests[0].messages[0].content, /分析、解释、标题与列表使用普通 Markdown 正文/);
+    assert.match(requests[0].messages[0].content, /```prompt.*框内只放提示词原文，说明写在框外/);
   } finally { globalThis.fetch = previous; }
 }));
 

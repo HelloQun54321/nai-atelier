@@ -38,6 +38,13 @@ it('主题配色、修改状态及导入错误具备完整译文', () => {
   }
 });
 
+it('助手提示词、文本与代码框标签具备四语译文', () => {
+  for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+    for (const key of ['提示词', '文本', '代码 · {0}']) expect(translate(language.code, key)).not.toBe(key);
+    expect(translate(language.code, '代码 · {0}', ['json'])).toContain('json');
+  }
+});
+
 beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreLanguage(); });
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 

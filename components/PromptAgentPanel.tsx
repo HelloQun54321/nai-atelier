@@ -110,17 +110,16 @@ const AgentMarkdown: React.FC<{ text: string }> = React.memo(({ text }) => {
   const output: React.ReactNode[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (line.trim().startsWith('```')) {
-      const language = line.trim().slice(3).trim();
+    const fence = line.trim().match(/^(`{3,}|~{3,})([^`]*)$/);
+    if (fence) {
+      const language = fence[2].trim();
+      const isPrompt = language.toLowerCase() === 'prompt';
+      const isText = !language || /^(text|plaintext)$/i.test(language);
+      const closingFence = new RegExp(`^${fence[1][0]}{${fence[1].length},}\\s*$`);
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith('```')) { codeLines.push(lines[index]); index += 1; }
-      output.push(<AgentContentCard key={`code-${index}`} title={language ? t("代码 · {0}", [language]) : t("代码")} content={codeLines.join('\n')} code />);
-      continue;
-    }
-    const commaCount = (line.match(/[,，]/g) || []).length;
-    if (line.length >= 120 && commaCount >= 5) {
-      output.push(<AgentContentCard key={`prompt-${index}`} title={t("提示词")} content={line} />);
+      while (index < lines.length && !closingFence.test(lines[index].trim())) { codeLines.push(lines[index]); index += 1; }
+      output.push(<AgentContentCard key={`code-${index}`} title={isPrompt ? t("提示词") : isText ? t("文本") : t("代码 · {0}", [language])} content={codeLines.join('\n')} code={!isPrompt && !isText} />);
       continue;
     }
     const heading = line.match(/^(#{1,3})\s+(.+)$/);

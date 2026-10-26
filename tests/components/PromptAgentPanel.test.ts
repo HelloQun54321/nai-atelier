@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { PromptAgentPanel } from '../../components/PromptAgentPanel';
@@ -478,6 +478,81 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
     fireEvent.click(screen.getByRole('switch', { name: '默认展开工具' }));
     await waitFor(() => expect(screen.getByText('失败 · 查询本机时间与时区')).toBeTruthy());
+  });
+  it('长分析、标题及列表不因逗号多被套成提示词框，保留加粗、引用和链接', async () => {
+    const explanation = '**数值权重 6** 会强调细节，皮肤纹理会更明显，布料也会更明显，头发也会被强调，多个概念还会共同影响画面，因此需要结合实际图片判断。'.repeat(2)
+      + ' 例如 `realistic_skin`，可参考[官方文档](https://docs.novelai.net/)。';
+    const answer = [`### ${explanation}`, explanation, `- ${explanation}`, `1. ${explanation}`].join('\n');
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ role: 'agent', id: 'format', text: answer }]);
+    renderPanel();
+    const article = (await screen.findAllByText('数值权重 6'))[0].closest('article')!;
+    expect(article.querySelector('section')).toBeNull();
+    expect(article.querySelectorAll('strong')).toHaveLength(8);
+    expect(article.querySelectorAll('code')).toHaveLength(4);
+    expect(within(article).getAllByRole('link', { name: '官方文档' })).toHaveLength(4);
+    expect(article.textContent).not.toContain('**数值权重 6**');
+    expect(article.textContent).toContain('•');
+    expect(article.textContent).toContain('1.');
+  });
+  it.each([
+    ['```prompt', '```', '提示词'],
+    ['~~~PROMPT', '~~~', '提示词'],
+    ['```', '```', '文本'],
+    ['```text', '```', '文本'],
+    ['```plaintext', '```', '文本'],
+    ['```json', '```', '代码 · json'],
+  ])('明确围栏 %s 的类型并原样复制，仅复制框内正文', async (opening, closing, title) => {
+    const content = '6::realistic_skin, fine fabric, 发丝细节::\n  **保留原文**, {braces}, [brackets]';
+    const copy = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: copy } });
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ role: 'agent', id: 'format', text: `${opening}\n${content}\n${closing}\n**框外说明**` }]);
+    renderPanel();
+    const card = (await screen.findByText(title)).closest('section')!;
+    expect(card.textContent).toContain(content);
+    expect(card.querySelector('strong')).toBeNull();
+    expect(screen.getByText('框外说明').tagName).toBe('STRONG');
+    fireEvent.click(within(card).getByRole('button', { name: '复制' }));
+    await waitFor(() => expect(copy).toHaveBeenCalledWith(content));
+    expect(copy).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(card).getByRole('button', { name: '收起' }));
+    expect(within(card).queryByRole('button', { name: '展开' })).toBeTruthy();
+    fireEvent.click(within(card).getByRole('button', { name: '展开' }));
+    expect(card.textContent).toContain(content);
+  });
+  it('未闭合提示词围栏支持流式补全，闭合后分析恢复正文格式', async () => {
+    stubServices();
+    let emit!: Parameters<typeof promptAgentService.run>[1]; let finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      emit = onEvent; await new Promise<void>(resolve => { finish = resolve; });
+      onEvent({ type: 'done', draft: input.draft, message: '```prompt\n1.2::artist:sample::, soft light\n```\n**解释在框外**', provider: 'synthetic', model: 'synthetic' });
+    });
+    renderPanel();
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: '合成格式检查' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    await act(async () => { emit({ type: 'text_delta', delta: '```prompt\n1.2::artist:sample::' }); });
+    expect((await screen.findByText('提示词')).closest('section')?.textContent).toContain('1.2::artist:sample::');
+    await act(async () => {
+      emit({ type: 'text_delta', delta: ', soft light\n```\n**解释在框外**' });
+      finish();
+    });
+    expect(screen.getByText('解释在框外').tagName).toBe('STRONG');
+    const card = screen.getByText('提示词').closest('section')!;
+    expect(card.textContent).toContain('1.2::artist:sample::, soft light');
+    expect(card.textContent).not.toContain('解释在框外');
+  });
+  it('围栏示例里的较短或异类围栏不会提前结束外层文本框', async () => {
+    const content = '```prompt\nsoft light\n```\n~~~';
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ role: 'agent', id: 'format', text: `\`\`\`\`text\n${content}\n\`\`\`\`\n**外层之后**` }]);
+    renderPanel();
+    const card = (await screen.findByText('文本')).closest('section')!;
+    expect(card.textContent).toContain(content);
+    expect(card.textContent).not.toContain('外层之后');
+    expect(screen.getByText('外层之后').tagName).toBe('STRONG');
   });
   it('自动中止显示具体原因，不应用草稿也不补已完成文案', async () => {
     stubServices(); const apply = vi.fn(), interrupted = vi.fn();
