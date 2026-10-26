@@ -60,6 +60,12 @@ test('Electron 主进程的脚本依赖同时放入 app 包，迁移后台使用
     for (const name of DESKTOP_SCRIPT_FILES) assert.ok((await readFile(join(root, 'scripts', name), 'utf8')).length > 0);
     const source = await readFile(new URL('../../desktop/main.mjs', import.meta.url), 'utf8');
     assert.match(source, /join\(runtimeRoot, 'scripts', 'storage-locations\.mjs'\)/);
+    const importedScripts = [...source.matchAll(/from\s*['"]\.\.\/scripts\/([^'"]+)['"]/g)].map(match => match[1]);
+    assert.ok(importedScripts.length > 0, '主进程应具有可检查的静态 scripts 导入');
+    for (const name of importedScripts) {
+      assert.ok(DESKTOP_SCRIPT_FILES.includes(name), `主进程导入的 scripts/${name} 不在复制清单中`);
+      assert.ok(builder.files.includes(`scripts/${name}`), `主进程导入的 scripts/${name} 不在 Electron files 白名单中`);
+    }
   } finally { removeWorkspace(root); }
 });
 
