@@ -1,11 +1,11 @@
 export type LibraryRandomMode = 'mixed' | 'uniform' | 'popular';
 
-/** 目录按热度降序传入；先避让近期条目，不足时按同一概率补足，整批无重复。 */
-export function drawLibraryIndices(total: number, count: number, mode: LibraryRandomMode, recent: readonly (readonly number[])[]): number[] {
+/** 目录按热度降序传入；跳过排除项后先避让近期条目，不足时按同一概率补足，整批无重复。 */
+export function drawLibraryIndices(total: number, count: number, mode: LibraryRandomMode, recent: readonly (readonly number[])[], excluded?: ReadonlySet<number>): number[] {
   if (total <= 0 || count <= 0) return [];
   const recentIndices = new Set(recent.flat());
   const activePool = Math.min(total, 20_000);
-  return Array.from({ length: total }, (_, index) => {
+  return Array.from({ length: total }, (_, index) => index).filter(index => !excluded?.has(index)).map(index => {
     const weight = mode === 'popular'
       ? Math.pow((index + 1) / total, 1 / 2.3) - Math.pow(index / total, 1 / 2.3)
       : mode === 'mixed' ? 0.3 / total + (index < activePool ? 0.7 / activePool : 0) : 1 / total;

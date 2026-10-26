@@ -122,8 +122,28 @@ CREATE TABLE IF NOT EXISTS vibe_encodings (
   encoding_key TEXT NOT NULL,
   encoding_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  parameters TEXT,
+  information_known INTEGER NOT NULL DEFAULT 1,
   UNIQUE(vibe_id, model, information_extracted)
 );
+CREATE TABLE IF NOT EXISTS vibe_encoding_variants (
+  id TEXT PRIMARY KEY,
+  vibe_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  model_key TEXT NOT NULL,
+  information_extracted REAL NOT NULL,
+  encoding_key TEXT NOT NULL,
+  encoding_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  parameters TEXT,
+  information_known INTEGER NOT NULL DEFAULT 1,
+  parameter_key TEXT NOT NULL,
+  UNIQUE(vibe_id, model, parameter_key)
+);
+CREATE VIEW IF NOT EXISTS vibe_encodings_all AS
+  SELECT id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known FROM vibe_encodings
+  UNION ALL
+  SELECT id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known FROM vibe_encoding_variants;
 CREATE TABLE IF NOT EXISTS vibe_groups (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -164,7 +184,7 @@ CREATE TABLE IF NOT EXISTS character_reference_assets (
 -- ALTER TABLE artists ADD COLUMN benchmarks TEXT DEFAULT '[]';
 
 -- 延迟创建的表（结构以 worker/index.ts 的 ensure* 函数为准）：
---   settings、vibe_assets、vibe_encodings、vibe_groups、character_reference_assets、
+--   settings、vibe_assets、vibe_encodings、vibe_encoding_variants、vibe_groups、character_reference_assets、
 --   aitag_cache_*、local_generation_history（含 external_source/external_id 唯一索引）
 
 CREATE TABLE IF NOT EXISTS local_usage_events (

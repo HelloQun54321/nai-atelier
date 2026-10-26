@@ -33,6 +33,7 @@ const buildImageEditResultParams = (params: NAIParams, requestParams: NAIParams,
 const validateGenerationCapabilities = (params: NAIParams, runtime: NaiRuntimeConfig, operation: 'text-to-image' | ImageEditOperation = 'text-to-image') => {
   const modelInfo = getRuntimeNaiModelInfo(params.model, runtime);
   const canSendVibes = operation === 'text-to-image' || operation === 'image-to-image';
+  if (canSendVibes && params.vibes?.enabled && params.vibes.embedded) throw new Error('图片中的 Vibe 编码尚未完成导入，请在 Vibe 管理中重试');
   if (canSendVibes && params.vibes?.enabled && params.vibes.slots.length > 0 && !modelInfo.supportsVibes) {
     throw new Error(`NovelAI ${modelInfo.label} 暂不支持 Vibe Transfer，请先移除 Vibe 或切换模型`);
   }

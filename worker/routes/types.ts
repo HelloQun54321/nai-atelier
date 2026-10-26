@@ -220,8 +220,28 @@ export const INIT_SQL = `
     encoding_key TEXT NOT NULL,
     encoding_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL,
+    parameters TEXT,
+    information_known INTEGER NOT NULL DEFAULT 1,
     UNIQUE(vibe_id, model, information_extracted)
   );
+  CREATE TABLE IF NOT EXISTS vibe_encoding_variants (
+    id TEXT PRIMARY KEY,
+    vibe_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    model_key TEXT NOT NULL,
+    information_extracted REAL NOT NULL,
+    encoding_key TEXT NOT NULL,
+    encoding_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    parameters TEXT,
+    information_known INTEGER NOT NULL DEFAULT 1,
+    parameter_key TEXT NOT NULL,
+    UNIQUE(vibe_id, model, parameter_key)
+  );
+  CREATE VIEW IF NOT EXISTS vibe_encodings_all AS
+    SELECT id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known FROM vibe_encodings
+    UNION ALL
+    SELECT id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known FROM vibe_encoding_variants;
   CREATE TABLE IF NOT EXISTS vibe_groups (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

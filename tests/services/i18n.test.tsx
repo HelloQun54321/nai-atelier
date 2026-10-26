@@ -48,6 +48,19 @@ describe('界面语言', () => {
       for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), key).not.toBe(key);
     }
   });
+  it('画师抽取排除选项与提示具备四种译文', () => {
+    const keys = ['抽取时排除已偏好画师', '抽取时排除已屏蔽画师', '仅影响下一批抽取，剩余不足时按实际人数显示。', '排除后没有可抽取的画师，请调整抽取设置'];
+    for (const key of keys) {
+      expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
+    }
+  });
+  it('画师状态加载提示具备四种译文', () => {
+    for (const key of ['正在读取画师状态…', '画师状态读取失败']) {
+      expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
+    }
+  });
   it('画师目录的逗号多词搜索提示具备四种译文', () => {
     const key = '搜索画师，多个词用逗号分隔';
     expect((messages as Record<string, string[]>)[key]).toHaveLength(4);
@@ -273,6 +286,25 @@ describe('界面语言', () => {
       for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
         expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
       }
+    }
+  });
+
+  it('分享包封面、配方详情与原始描述具备四种译文', () => {
+    const keys = ['查看封面：{0}', '配方详情', '原始描述', '分享包信息', '选择与导入'];
+    const catalog = messages as Record<string, string[]>;
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        const translated = translate(language.code, key, key.includes('{0}') ? ['水彩'] : []);
+        expect(translated, `${language.code}: ${key}`).not.toBe(key);
+        expect(translated, `${language.code}: ${key}`).not.toContain('{0}');
+      }
+    }
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      const index = LANGUAGES.findIndex(item => item.code === language.code) - 1;
+      const translated = translate(language.code, '查看封面：{0}', ['水彩']);
+      expect(translated).toBe(catalog['查看封面：{0}'][index].replace('{0}', '水彩'));
+      expect(translated).toContain('水彩');
     }
   });
 

@@ -1,3 +1,4 @@
+import { vibeStrength } from '../services/vibeProtocol.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, rename, stat, writeFile } from 'node:fs/promises';
@@ -648,7 +649,7 @@ export class StChatu8Bridge {
       const requestedName = String(document.name || '').trim();
       const vibeId = result?.item?.id || null;
       if (vibeId) this.state.vibeLinks[sourceHash] = { vibeId, lastSeenAt: Date.now() };
-      const requestedStrength = clamp(document.importInfo?.strength, 0, 1, 0.6);
+      const requestedStrength = vibeStrength(document.importInfo?.strength);
       if (vibeId && requestedName && (result?.item?.name !== requestedName || Number(result?.item?.defaultStrength) !== requestedStrength)) {
         await this.requestSyncJson(generation, `/api/vibes/${encodeURIComponent(vibeId)}`, {
           method: 'PUT', body: { name: requestedName, defaultStrength: requestedStrength },
@@ -665,12 +666,12 @@ export class StChatu8Bridge {
       const name = String(group?.name || '').trim().slice(0, 100);
       if (!name || !Array.isArray(group.vibes)) continue;
       const externalGroupId = String(group.externalId || name);
-      const slots = group.vibes.slice(0, 4).map(reference => {
+      const slots = group.vibes.slice(0, 16).map(reference => {
         const vibe = bySourceHash.get(reference.sourceHash);
         const encoding = vibe?.encodings?.find(item => Math.abs(Number(item.informationExtracted) - 1) < 0.001) || vibe?.encodings?.[0];
         return vibe && encoding ? {
           vibeId: vibe.id, vibeName: vibe.name, encodingId: encoding.id,
-          informationExtracted: Number(encoding.informationExtracted), strength: clamp(reference.strength, 0, 1, 0.6),
+          informationExtracted: Number(encoding.informationExtracted), strength: vibeStrength(reference.strength),
         } : null;
       }).filter(Boolean);
       if (!slots.length) continue;

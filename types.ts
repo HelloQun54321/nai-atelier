@@ -48,6 +48,9 @@ export interface VibeEncodingVariant {
   model: 'nai-diffusion-4-5-full' | (string & {});
   modelKey: 'v4-5full' | (string & {});
   informationExtracted: number;
+  /** 纯编码可能没有已知提取参数；旧记录缺省为已知。 */
+  informationKnown?: boolean;
+  parameters?: Record<string, unknown> | null;
   encodingHash: string;
   createdAt: number;
 }
@@ -57,6 +60,7 @@ export interface VibeSelection {
   vibeName?: string;
   encodingId: string;
   informationExtracted: number;
+  informationKnown?: boolean;
   strength: number;
   effectiveStrength?: number;
 }
@@ -68,6 +72,7 @@ export interface VibeAsset {
   originalImageUrl?: string;
   thumbnailUrl?: string;
   hasOriginal: boolean;
+  sourceType?: 'image' | 'encoding';
   defaultStrength: number;
   encodings: VibeEncodingVariant[];
   archived: boolean;
@@ -147,6 +152,8 @@ export interface NAIParams {
     sourceGroupName?: string;
     normalizeStrengths: boolean;
     slots: VibeSelection[];
+    /** 外部 PNG 的已有编码，取用时免费落入本地资料库，浏览解析不产生写入。 */
+    embedded?: { model: string; encodings: string[]; strengths: number[]; information?: number[] };
   };
   characterReferences?: {
     enabled: boolean;

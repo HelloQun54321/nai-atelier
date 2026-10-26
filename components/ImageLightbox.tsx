@@ -15,9 +15,9 @@ import { buildMediaUrl, type MediaPreviewTransform } from '../services/mobileIma
 export const ImageLightbox:React.FC<React.PropsWithChildren<{
   src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;
   notify?:(message:string,type?:'success'|'error')=>void;
-  onClose:()=>void;onSwipe?:(delta:number)=>void;customActions?:boolean;
+  onClose:()=>void;onSwipe?:(delta:number)=>void;customActions?:boolean;hideShareActions?:boolean;
   pager?: { index: number; count: number; onChange: (index: number) => void };
-}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,pager,children})=>{
+}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,hideShareActions=false,pager,children})=>{
   useLanguage();
   const dialog=useModalA11y<HTMLDivElement>(true);
   const close=useMobileHistoryLayer(true,onClose,'image-zoom');
@@ -46,7 +46,7 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
       {failed&&<button type="button" data-card-action="true" className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-black/75 px-4 py-3 text-sm text-white" onClick={()=>{setFailedSrc(null);setRetry(value=>value+1);}}>{t('原图加载失败 · 重试')}</button>}
       {!customActions&&<>
         <button type="button" data-card-action="true" aria-label={t("返回图片详情")} className={`${IMAGE_CARD_ACTION_CLASS} absolute left-4 top-4 z-30 flex items-center justify-center`} onClick={close}><ArrowLeft className="h-5 w-5" /></button>
-        <ImageShareOverlay imageUrl={src} filename={filename} generationData={generationData} favorite={favorite} notify={notify} className="!top-4 !right-4" />
+        {!hideShareActions&&<ImageShareOverlay imageUrl={src} filename={filename} generationData={generationData} favorite={favorite} notify={notify} className="!top-4 !right-4" />}
       </>}
       {children}
     </PressRevealSurface>

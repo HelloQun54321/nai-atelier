@@ -99,7 +99,7 @@ it('确认框打开时 Tab 与 Esc 只作用于确认框，父资料详情保持
   fireEvent.click(screen.getByRole('button', { name: '归档' }));
   const confirm = screen.getByRole('alertdialog');
   const buttons = within(confirm).getAllByRole('button'); buttons.at(-1)!.focus();
-  fireEvent.keyDown(document, { key: 'Tab' }); expect(document.activeElement).toBe(buttons[0]);
+  fireEvent.keyDown(document, { key: 'Tab' }); expect(document.activeElement).toBe(within(confirm).getByRole('checkbox'));
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByRole('alertdialog')).toBeNull(); expect(screen.getByRole('dialog', { name: '测试参考' })).toBeTruthy(); expect(fixtures.archive).not.toHaveBeenCalled();
 });
@@ -138,7 +138,7 @@ it('编码完成不会覆盖等待期间移除的选择，永久编码仍保存�
   fireEvent.click(await screen.findByRole('button', { name: '支付 2 Anlas 并生成' }));
   await waitFor(() => expect(fixtures.encode).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: '移除' }));
-  resolve({ item: vibe });
+  resolve({ item: { ...vibe, encodings: vibe.encodings.map(encoding => ({ ...encoding, informationExtracted: 0.7 })) } });
   await waitFor(() => expect(notify).toHaveBeenCalledWith('编码已保存，当前选择已变化，请重新选择该 Vibe'));
   expect(changed).toHaveBeenCalledTimes(1);
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: [] }) }));

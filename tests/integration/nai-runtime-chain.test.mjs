@@ -238,14 +238,24 @@ for (const protocol of ['node:http', 'node:https']) {
     const variant = saved.item.encodings[0];
     const stored = await request(path + '/encodings/' + variant.id + '/data');
     assert.deepEqual(Buffer.from(stored.encoding, 'base64'), encoding);
-    const d = descriptor(); d.payload.model = 'nai-diffusion-4-5-full';
-    d.payload.parameters._local_vibes = { enabled: true,
-      slots: [{ vibeId: asset.item.id, encodingId: variant.id, informationExtracted: 1, strength: 0.6 }] };
-    await run(d);
-    assert.equal(upstreamBodies.at(-1).parameters.reference_image_multiple_cached[0].data, encoding.toString('base64'));
+    for (const stream of [false, true]) {
+      const d = descriptor('generate', stream); d.payload.model = 'nai-diffusion-4-5-full';
+      d.history.sourceChainId = 'synthetic:vibe:' + stream;
+      d.payload.parameters._local_vibes = { enabled: true,
+        slots: [{ vibeId: asset.item.id, encodingId: variant.id, informationExtracted: 1, strength: 0.6 }] };
+      await run(d);
+      const parameters = upstreamBodies.at(-1).parameters;
+      assert.equal(parameters.reference_image_multiple_cached.length, 1);
+      assert.equal(parameters.reference_strength_multiple[0], 0.6);
+      assert.equal(parameters._local_vibes, undefined);
+      assert.equal(parameters.stream, stream ? 'sse' : undefined);
+      if (!stream) assert.equal(parameters.reference_image_multiple_cached[0].data, encoding.toString('base64'));
+      const history = await request('/api/local-history?sourceChainId=' + d.history.sourceChainId);
+      assert.equal(history.items.length, 1); assert.deepEqual(await assetBytes(history.items[0].imageUrl), png);
+    }
     assert.equal(encoded, 1, '生图使用既有编码，不能再次付费编码');
   });
-  assert.equal(generated, 17);
+  assert.equal(generated, 18);
   const budget = (await nativeJson(port, '/api/anlas-budget?keyHash=' + keyHash)).body;
   assert.equal(budget.remaining, 100 - generationCost - DEFAULT_NAI_RUNTIME.billing.vibeEncodingCost);
   assert.equal(budget.personal[keyHash].anlasSpent, generationCost + DEFAULT_NAI_RUNTIME.billing.vibeEncodingCost);

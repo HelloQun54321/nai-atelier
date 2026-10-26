@@ -301,6 +301,135 @@ test('中转完整发送已在官方缓存的 Vibe 编码，缓存拒绝不重�
   } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
 });
 
+for (const handler of handlers) test(`${handler === handleGenerateRequest ? 'ZIP' : 'SSE'}：编码模型不符时停止，匹配时保留负强度并按绝对值归一化`, async () => {
+  const encoding = Buffer.alloc(64, 2).toString('base64');
+  const worker = createServer((req, res) => {
+    assert.match(req.url, /\/encodings\/e\/data$/);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ variant: { model: 'nai-diffusion-4-5-curated' }, encoding }));
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    let calls = 0;
+    for (const model of ['nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated']) {
+      const body = payload('generate'); body.model = model;
+      body.parameters._local_vibes = { enabled: true, normalizeStrengths: true, slots: [
+        { vibeId: `model-${model}`, encodingId: 'e', strength: 1.5 }, { vibeId: `model-${model}`, encodingId: 'e', strength: -0.5 },
+      ] };
+      const res = new TestResponse();
+      await handler(requestFor(`matching-${model}-${handler.name}`, 'generate', body), res, '', worker.address().port,
+        setup(() => assert.fail('不调用排队')), { enabled: false }, async (_url, options) => {
+          calls++; const parameters = JSON.parse(options.body).parameters;
+          assert.deepEqual(parameters.reference_strength_multiple, [0.75, -0.25]);
+          assert.equal(parameters.normalize_reference_strength_multiple, false);
+          assert.equal(parameters._local_vibes, undefined);
+          assert.equal(parameters.stream, handler === handleGenerateStreamRequest ? 'sse' : undefined);
+          return new Response(handler === handleGenerateRequest ? 'zip' : finalFrame);
+        }, generationOptions);
+      if (model.endsWith('full')) { assert.equal(res.statusCode, 400); assert.match(res.body(), /模型不匹配/); assert.equal(calls, 0); }
+      else assert.equal(res.statusCode, 200, res.body());
+    }
+    assert.equal(calls, 1);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
+
+test('SSE Vibe：复用编码、缓存失效补数据，过程帧与最终图原样交付且仅结算一次', async () => {
+  const encoding = Buffer.alloc(128, 81).toString('base64');
+  const worker = createServer((req, res) => {
+    assert.match(req.url, /\/encodings\/stream-cache\/data$/);
+    res.end(JSON.stringify({ variant: { model: 'nai-diffusion-4-5-full' }, encoding }));
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    const bodies = [], settled = [];
+    const frames = 'event: intermediate\ndata: {"image":"preview","step":2}\n\n' + finalFrame;
+    for (const retry of [false, true]) {
+      const body = payload('img2img'); body.parameters._local_edit_operation = 'image-to-image';
+      body.parameters._local_vibes = { enabled: true, normalizeStrengths: false,
+        slots: [{ vibeId: 'stream-cache', encodingId: 'stream-cache', strength: -1.5 }] };
+      const res = new TestResponse(); let calls = 0;
+      await handleGenerateStreamRequest(requestFor(`stream-cache-${retry}`, 'img2img', body), res, '', worker.address().port,
+        setup(() => assert.fail('未开启公共队列')), { enabled: false }, async (url, options) => {
+          assert.equal(url, 'https://image.novelai.net/ai/generate-image-stream'); calls++;
+          const sent = JSON.parse(options.body); bodies.push(sent);
+          assert.equal(sent.parameters.stream, 'sse');
+          assert.deepEqual(sent.parameters.reference_strength_multiple, [-1.5]);
+          assert.equal(sent.parameters._local_vibes, undefined);
+          assert.equal(sent.parameters._local_edit_operation, undefined);
+          const reference = sent.parameters.reference_image_multiple_cached[0];
+          if (retry && calls === 1) {
+            assert.equal(reference.data, undefined);
+            return new Response(JSON.stringify({ message: 'INVALID_CACHE_KEYS', details: { invalidKeys: [reference.cache_secret_key] } }), { status: 400 });
+          }
+          assert.equal(reference.data, encoding);
+          return new Response(frames);
+        }, { ...generationOptions, settleGeneration: async ({ payload }) => { settled.push(payload); return { estimatedCost: 0 }; } });
+      assert.equal(res.statusCode, 200, res.body()); assert.ok(res.body().startsWith(frames));
+      assert.equal(calls, retry ? 2 : 1); assert.match(res.body(), /event: nai_usage/);
+    }
+    assert.equal(settled.length, 2); assert.equal(bodies.length, 3);
+    assert.deepEqual(settled[1].parameters.reference_strength_multiple, [-1.5]);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
+
+test('SSE Vibe：收到生成错误后不改走普通生成、不重发、不结算', async () => {
+  const worker = createServer((_req, res) => res.end(JSON.stringify({ variant: { model: 'nai-diffusion-4-5-full' }, encoding: Buffer.alloc(128, 82).toString('base64') })));
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    const body = payload('generate'); body.parameters._local_vibes = { enabled: true, slots: [{ vibeId: 'stream-error', encodingId: 'e', strength: 0.6 }] };
+    let calls = 0; const res = new TestResponse();
+    await handleGenerateStreamRequest(requestFor('stream-error', 'generate', body), res, '', worker.address().port,
+      setup(() => assert.fail('未开启公共队列')), { enabled: false }, async () => { calls++; return new Response('event: error\ndata: {"message":"synthetic failure"}\n\n'); },
+      { ...generationOptions, settleGeneration: () => assert.fail('失败不能结算') });
+    assert.equal(calls, 1); assert.match(res.body(), /synthetic failure/); assert.doesNotMatch(res.body(), /event: final|event: nai_usage/);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
+
+for (const handler of handlers) test(`${handler === handleGenerateRequest ? 'ZIP' : 'SSE'}：参考数量、互斥与模式校验在发出生成前生效`, async () => {
+  const vibe = { vibeId: 'v', encodingId: 'e', strength: 0.6 };
+  const reference = { assetId: 'a', type: 'character', strength: 0.6, fidelity: 0.6 };
+  const cases = [
+    [{ _local_vibes: { enabled: true, slots: Array(17).fill(vibe) } }, 'generate', /最多使用 16/],
+    [{ _local_vibes: { enabled: true, slots: [{ ...vibe, strength: null }] } }, 'generate', /有限数值/],
+    [{ _local_vibes: { enabled: true, slots: [vibe] }, _local_character_references: { enabled: true, slots: [reference] } }, 'generate', /不能同时/],
+    [{ _local_vibes: { enabled: true, slots: [vibe] } }, 'infill', /重绘和扩图/],
+    [{ _local_character_references: { enabled: true, slots: Array(5).fill(reference) } }, 'generate', /最多使用 4/],
+  ];
+  for (const [parameters, action, message] of cases) {
+    const body = payload(action); Object.assign(body.parameters, parameters);
+    const res = new TestResponse();
+    await handler(requestFor('reference-validation', action, body), res, '', 0, setup(() => assert.fail('校验失败不排队')),
+      { enabled: false }, () => assert.fail('校验失败不生图'), { ...generationOptions, prepareBilling: () => assert.fail('校验失败不进入计费') });
+    assert.equal(res.statusCode, 400, res.body()); assert.match(res.body(), message);
+  }
+});
+
+test('SSE 角色参考：文生图、图生图、重绘与扩图共用原图解析并保留参考参数', async () => {
+  const { default: sharp } = await import('sharp');
+  const image = await sharp({ create: { width: 32, height: 48, channels: 3, background: '#38bdf8' } }).png().toBuffer();
+  const worker = createServer((req, res) => { assert.equal(req.url, '/api/character-references/stream-character/image'); res.setHeader('etag', 'synthetic'); res.end(image); });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    for (const operation of ['generate', 'image-to-image', 'inpaint', 'outpaint']) {
+      const body = payload(operation === 'generate' ? 'generate' : operation === 'image-to-image' ? 'img2img' : 'infill');
+      if (operation !== 'generate') body.parameters._local_edit_operation = operation;
+      body.parameters._local_character_references = { enabled: true, slots: [{ assetId: 'stream-character', type: 'character_style', strength: -0.5, fidelity: 0.8 }] };
+      let calls = 0, settlements = 0; const res = new TestResponse();
+      await handleGenerateStreamRequest(requestFor(`stream-character-${operation}`, body.action, body), res, '', worker.address().port,
+        setup(() => assert.fail('未开启公共队列')), { enabled: false }, async (_url, options) => {
+          calls++; const parameters = JSON.parse(options.body).parameters;
+          assert.equal(parameters._local_character_references, undefined);
+          assert.equal(parameters.director_reference_images.length, 1);
+          assert.ok(Buffer.from(parameters.director_reference_images[0], 'base64').length > image.length);
+          assert.deepEqual(parameters.director_reference_strength_values, [-0.5]);
+          assert.deepEqual(parameters.director_reference_descriptions.map(d => d.caption.base_caption), ['character&style']);
+          return new Response(finalFrame);
+        }, { ...generationOptions, settleGeneration: async ({ payload }) => { settlements++; assert.equal(payload.parameters.director_reference_images.length, 1); return { estimatedCost: 0 }; } });
+      assert.equal(res.statusCode, 200, res.body()); assert.equal(calls, 1); assert.equal(settlements, 1);
+    }
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
+
 test('队列数量：保留 0，缺失和非法值保持未知', () => {
   for (const value of [0, '0', ' 0 ']) assert.equal(normalizeCloudQueueCount(value), 0);
   for (const value of [3, '3']) assert.equal(normalizeCloudQueueCount(value), 3);

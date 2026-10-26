@@ -600,7 +600,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               const isEncoding = patch.action === 'encode_vibe';
               const encodingCost = Number(patch.payload?.estimatedCost);
               const isLocalAccess = patch.action === 'grant_local_image_folder';
-              const accepted = await confirmAction({ rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, patch.payload?.informationExtracted) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload, title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
+              const accepted = await confirmAction({ rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, [patch.payload?.model, patch.payload?.informationExtracted]) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload, title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
@@ -612,7 +612,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 approved = true;
                 if (patch.action === 'encode_vibe') {
                   if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
-                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey);
+                  await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey, typeof patch.payload?.model === 'string' ? patch.payload.model : undefined);
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action, resourceId: patch.resourceId } });
                 } else if (patch.action === 'clear_mobile_cache') {
                   await clearMobileThumbnailCache();

@@ -1,3 +1,4 @@
+import { vibeBaseModel, vibeStrength } from '../services/vibeProtocol.mjs';
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isProjectImagePath, localTimeInfo, publicAgentToolContent } from './agent-runtime.mjs';
 import { humanizeAgentError } from './agent-errors.mjs';
 import { normalizeAgentGenerationResult, agentOperationError, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
@@ -28,7 +29,7 @@ import { preparePromptClassification, parsePromptClassification } from '../servi
 import { TEXT_EXTRACTION_SYSTEM_PROMPT, VISION_EXTRACTION_SYSTEM_PROMPT, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/promptExtraction.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -3753,7 +3754,7 @@ export class PromptAgentService {
         parameters: Type.Object({ id: Type.Optional(Type.String()), name: Type.String(), normalizeStrengths: Type.Optional(Type.Boolean()), slots: Type.Array(Type.Object({ vibeId: Type.String(), encodingId: Type.String(), informationExtracted: Type.Number(), strength: Type.Number() }), { maxItems: 16 }) }),
         execute: async (_id, args) => {
           if (!args.slots.length) throw new Error('Vibe组合至少需要一项');
-          const body = { name: text(args.name).slice(0, 100), normalizeStrengths: args.normalizeStrengths !== false, slots: args.slots.slice(0, 16).map(slot => ({ ...slot, strength: clamp(slot.strength, 0, 1, 0.6) })) };
+          const body = { name: text(args.name).slice(0, 100), normalizeStrengths: args.normalizeStrengths !== false, slots: args.slots.slice(0, 16).map(slot => ({ ...slot, strength: vibeStrength(slot.strength) })) };
           const result = args.id
             ? await readProject(`/api/vibe-groups/${encodeURIComponent(args.id)}`, { method: 'PUT', body })
             : await readProject('/api/vibe-groups', { method: 'POST', body });
@@ -3763,11 +3764,12 @@ export class PromptAgentService {
       },
       {
         name: 'request_vibe_encoding', label: '准备 Vibe 编码', description: '请求为已有Vibe生成指定提取量的永久编码。每个新编码费用以当前官方同步规则估算，必须由用户确认。',
-        parameters: Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), informationExtracted: Type.Number() }),
+        parameters: Type.Object({ vibeId: Type.String(), vibeName: Type.Optional(Type.String()), informationExtracted: Type.Number(), model: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const cost = project.getNaiRuntime?.().billing?.vibeEncodingCost;
           if (!Number.isFinite(cost) || cost < 0) throw new Error('当前编码费用不可用，请刷新官方规则后重试');
-          return pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次估算：${cost} Anlas。编码永久复用；生成仍按参考数量计费。`, { informationExtracted: clamp(args.informationExtracted, 0, 1, 1), estimatedCost: cost });
+          const model = vibeBaseModel(args.model || draft.params?.model);
+          return pending('encode_vibe', text(args.vibeId).slice(0, 200), `为${text(args.vibeName || '这个 Vibe').slice(0, 100)}生成永久编码？`, `模型：${model}\n信息提取量：${clamp(args.informationExtracted, 0, 1, 1).toFixed(2)}\n本次估算：${cost} Anlas。编码永久复用；生成仍按参考数量计费。`, { model, informationExtracted: clamp(args.informationExtracted, 0, 1, 1), estimatedCost: cost });
         },
       },
       {
@@ -3965,7 +3967,8 @@ export class PromptAgentService {
               try { const value = await readProject(`/api/vibes/${encodeURIComponent(slot.vibeId)}`); asset = value.item || value; } catch { /* invalid id */ }
             }
             const encoding = asset?.encodings?.find(item => item.id === slot.encodingId);
-            if (asset && encoding) slots.push({ vibeId: asset.id, vibeName: asset.name, encodingId: encoding.id, informationExtracted: encoding.informationExtracted, strength: clamp(slot.strength, 0, 1, asset.defaultStrength || 0.6) });
+            if (encoding?.model && encoding.model !== vibeBaseModel(draft.params?.model)) throw new Error('Vibe 编码与当前生成模型不匹配');
+            if (asset && encoding) slots.push({ vibeId: asset.id, vibeName: asset.name, encodingId: encoding.id, informationExtracted: encoding.informationExtracted, ...(encoding.informationKnown === false ? { informationKnown: false } : {}), strength: vibeStrength(slot.strength, asset.defaultStrength ?? 0.6) });
           }
           draft.params.vibes = { enabled: slots.length > 0, normalizeStrengths: args.normalizeStrengths !== false, slots };
           if (slots.length && draft.params.characterReferences) draft.params.characterReferences.enabled = false;

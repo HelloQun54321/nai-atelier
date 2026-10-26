@@ -1,5 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { api } from './api';
+import { vibeService } from './vibeService';
+import { VIBE_MODELS, vibeParameterKey } from './vibeProtocol.mjs';
 import { createUuid } from './id';
 import { characterReferenceService } from './characterReferenceService';
 import { prepareImageBlob, getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent } from './imageSharing';
@@ -16,10 +18,11 @@ export interface StyleBundlePreview {
   warnings: string[];
 }
 interface Asset { id: string; offset: number; size: number; mime: string; hash: string }
-interface Encoding { id: string; asset: string; sourceHash: string; name: string; model: string; modelKey: string; information: number }
+interface Encoding { id: string; asset: string; sourceHash: string; name: string; model: string; modelKey: string; information: number; informationKnown?: boolean; parameters?: Record<string, unknown> | null }
 interface Entry extends Pick<PromptChain, 'name' | 'description' | 'tags' | 'basePrompt' | 'negativePrompt' | 'modules' | 'params' | 'variableValues'> { id: string; cover?: string }
+export interface StyleBundleEntryPreview extends Omit<Entry, 'cover'> { coverBlob?: Blob }
 interface Manifest { coverage?: 'full' | 'partial'; entries: Entry[]; assets: Asset[]; encodings: Encoding[] }
-interface Parsed { manifest: Manifest; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string }>; busy: boolean }
+interface Parsed { manifest: Manifest; entriesById: Map<string, Entry>; assetsById: Map<string, Asset>; file: Blob; offset: number; imported: Map<string, string>; covers: Map<string, string>; operationIds: Map<string, string>; references: Map<string, string>; vibes: Map<string, { vibeId: string; encodingId: string; informationExtracted: number; informationKnown: boolean }>; busy: boolean }
 const parsedBundles = new WeakMap<StyleBundlePreview, Parsed>();
 const MAGIC = new Uint8Array([78, 65, 73, 65, 13, 10, 26, 10]);
 const HEADER = 48;
@@ -112,7 +115,7 @@ const cleanParams = (value: unknown): NAIParams => {
   if (item.vibes !== undefined) {
     const vibes = object(item.vibes);
     result.vibes = { enabled: bool(vibes.enabled), normalizeStrengths: bool(vibes.normalizeStrengths), ...(vibes.sourceGroupName !== undefined ? { sourceGroupName: text(vibes.sourceGroupName, 200) } : {}), slots: list(vibes.slots, 16).map(value => {
-      const slot = object(value); return { vibeId: text(slot.vibeId, 200), encodingId: text(slot.encodingId, 200), ...(slot.vibeName !== undefined ? { vibeName: text(slot.vibeName, 200) } : {}), informationExtracted: finite(slot.informationExtracted), strength: finite(slot.strength), ...(slot.effectiveStrength !== undefined ? { effectiveStrength: finite(slot.effectiveStrength) } : {}) };
+      const slot = object(value); return { vibeId: text(slot.vibeId, 200), encodingId: text(slot.encodingId, 200), ...(slot.vibeName !== undefined ? { vibeName: text(slot.vibeName, 200) } : {}), informationExtracted: finite(slot.informationExtracted), ...(slot.informationKnown !== undefined ? { informationKnown: bool(slot.informationKnown) } : {}), strength: finite(slot.strength), ...(slot.effectiveStrength !== undefined ? { effectiveStrength: finite(slot.effectiveStrength) } : {}) };
     }) };
   }
   if (item.characterReferences !== undefined) {
@@ -212,7 +215,7 @@ export async function exportStyleBundle(chains: PromptChain[], options: { allCha
   const coverage = allIds.size === exportedIds.size && [...allIds].every(id => exportedIds.has(id)) ? 'full' : 'partial';
   if (!['none', 'compressed', 'original'].includes(options.coverMode)) fail('封面导出选项无效');
   const declaration = source(options), assets: Asset[] = [], blobs: Blob[] = [], entries: Entry[] = [], encodings: Encoding[] = [];
-  const referenceIds = new Map<string, string>(), encodingIds = new Map<string, string>(), assetHashes = new Map<string, string>(); let total = 0;
+  const referenceIds = new Map<string, string>(), encodingIds = new Map<string, Encoding>(), assetHashes = new Map<string, string>(); let total = 0;
   const addAsset = async (blob: Blob) => {
     if (!blob.size || blob.size > STYLE_BUNDLE_LIMITS.assetBytes) fail('单张素材不能超过 30 MiB');
     const hash = await hashBlob(blob), key = `${hash}:${blob.type}`, existing = assetHashes.get(key); if (existing) return existing;
@@ -221,7 +224,8 @@ export async function exportStyleBundle(chains: PromptChain[], options: { allCha
   };
   for (const [index, chain] of chains.entries()) {
     if (chain.type && chain.type !== 'style') fail('分享包仅支持风格串');
-    const entry = cleanEntry({ ...chain, id: `s${index}`, description: chain.description ?? '', basePrompt: chain.basePrompt ?? '', negativePrompt: chain.negativePrompt ?? '', modules: chain.modules ?? [], tags: chain.tags ?? [] });
+    const resolvedParams = await vibeService.resolveParams(chain.params);
+    const entry = cleanEntry({ ...chain, params: resolvedParams, id: `s${index}`, description: chain.description ?? '', basePrompt: chain.basePrompt ?? '', negativePrompt: chain.negativePrompt ?? '', modules: chain.modules ?? [], tags: chain.tags ?? [] });
     entry.params._styleBundleSources = sources([...(entry.params._styleBundleSources || []), declaration]);
     if (options.coverMode !== 'none' && chain.previewImage) {
       const cover = await sharedImage(await fetchBlob(chain.previewImage), options.coverMode);
@@ -239,14 +243,15 @@ export async function exportStyleBundle(chains: PromptChain[], options: { allCha
         const asset = object(object(await api.get(`/vibes/${encodeURIComponent(slot.vibeId)}`)).item);
         const response = object(await api.get(`/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`));
         const variant = object(response.variant), bytes = decodeBase64(response.encoding);
-        if (variant.modelKey === 'v4-5full' && variant.model !== 'nai-diffusion-4-5-full') fail('Vibe 模型与编码类型不一致');
-        if (finite(variant.informationExtracted) !== slot.informationExtracted) fail('Vibe 选择与编码提取量不一致');
+        if (VIBE_MODELS[String(variant.modelKey)] && VIBE_MODELS[String(variant.modelKey)] !== variant.model) fail('Vibe 模型与编码类型不一致');
         const sourceHash = text(asset.sourceHash, 64); if (!/^[a-f0-9]{64}$/.test(sourceHash)) fail('Vibe 原始标识无效');
         const id = `v${encodings.length}`;
-        encodings.push({ id, sourceHash, name: text(asset.name, 100), model: text(variant.model, 200), modelKey: text(variant.modelKey, 200), information: finite(variant.informationExtracted), asset: await addAsset(new Blob([bytes.buffer], { type: 'application/octet-stream' })) });
-        encodingIds.set(key, id);
+        const encoding: Encoding = { id, sourceHash, name: text(asset.name, 100), model: text(variant.model, 200), modelKey: text(variant.modelKey, 200), information: finite(variant.informationExtracted), ...(variant.informationKnown === false ? { informationKnown: false } : {}), ...(variant.parameters !== undefined ? { parameters: variant.parameters as Record<string, unknown> | null } : {}), asset: await addAsset(new Blob([bytes.buffer], { type: 'application/octet-stream' })) };
+        encodings.push(encoding); encodingIds.set(key, encoding);
       }
-      slot.vibeId = encodingIds.get(key)!; slot.encodingId = slot.vibeId;
+      const encoding = encodingIds.get(key)!;
+      if (encoding.information !== slot.informationExtracted) fail('Vibe 选择与编码提取量不一致');
+      slot.vibeId = encoding.id; slot.encodingId = encoding.id; slot.informationKnown = encoding.informationKnown !== false;
     }
     entries.push(entry); options.onProgress?.({ phase: 'export', completed: index + 1, total: chains.length, name: chain.name });
   }
@@ -276,7 +281,9 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
     const asset = object(value); return { id: text(asset.id, 200), offset: finite(asset.offset), size: finite(asset.size), mime: text(asset.mime, 100), hash: text(asset.hash, 64) };
   });
   const encodings: Encoding[] = list(raw.encodings, STYLE_BUNDLE_LIMITS.encodings).map(value => {
-    const encoding = object(value); return { id: text(encoding.id, 200), asset: text(encoding.asset, 200), sourceHash: text(encoding.sourceHash, 64), name: text(encoding.name, 100), model: text(encoding.model, 200), modelKey: text(encoding.modelKey, 200), information: finite(encoding.information) };
+    const encoding = object(value);
+    if (encoding.informationKnown !== undefined) bool(encoding.informationKnown);
+    return { id: text(encoding.id, 200), asset: text(encoding.asset, 200), sourceHash: text(encoding.sourceHash, 64), name: text(encoding.name, 100), model: text(encoding.model, 200), modelKey: text(encoding.modelKey, 200), information: finite(encoding.information), ...(encoding.informationKnown === false ? { informationKnown: false } : {}), ...(encoding.parameters !== undefined ? { parameters: encoding.parameters === null ? null : object(encoding.parameters) } : {}) };
   });
   for (const collection of [entries, assets, encodings]) if (new Set(collection.map(item => item.id)).size !== collection.length) fail('分享包标识重复');
   const assetMap = new Map(assets.map(asset => [asset.id, asset])), encodingMap = new Map(encodings.map(encoding => [encoding.id, encoding]));
@@ -289,13 +296,23 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
   for (const encoding of encodings) {
     const asset = assetMap.get(encoding.asset);
     if (!asset || asset.mime !== 'application/octet-stream' || asset.size < 64 || asset.size > 12 * MiB || !/^[a-f0-9]{64}$/.test(encoding.sourceHash) || !encoding.model || !encoding.modelKey || encoding.information < 0 || encoding.information > 1) fail('分享包 Vibe 编码引用无效');
-    if (encoding.modelKey === 'v4-5full' && encoding.model !== 'nai-diffusion-4-5-full') fail('分享包 Vibe 模型与编码类型不一致');
+    if (VIBE_MODELS[encoding.modelKey] && VIBE_MODELS[encoding.modelKey] !== encoding.model) fail('分享包 Vibe 模型与编码类型不一致');
+    if (encoding.parameters !== undefined) {
+      const information = encoding.parameters?.information_extracted;
+      if (information != null && (typeof information !== 'number' || !Number.isFinite(information) || information < 0 || information > 1 || information !== encoding.information)) fail('分享包 Vibe 提取参数无效或不一致');
+      if ((encoding.informationKnown !== false) !== (information != null)) fail('分享包 Vibe 提取量状态与参数不一致');
+    }
   }
   const image = (id: string) => { if (!assetMap.get(id)?.mime.startsWith('image/')) fail('分享包图片引用无效'); };
   for (const entry of entries) {
     if (entry.cover) { image(entry.cover); if (assetMap.get(entry.cover)!.size > 12 * MiB) fail('分享封面超过可导入的 12 MiB 上限'); }
     for (const slot of entry.params.characterReferences?.slots || []) image(slot.assetId);
-    for (const slot of entry.params.vibes?.slots || []) if (!encodingMap.has(slot.encodingId) || slot.vibeId !== slot.encodingId || encodingMap.get(slot.encodingId)!.information !== slot.informationExtracted) fail('分享包 Vibe 选择无效');
+    for (const slot of entry.params.vibes?.slots || []) {
+      const encoding = encodingMap.get(slot.encodingId);
+      if (!encoding || slot.vibeId !== slot.encodingId || encoding.information !== slot.informationExtracted
+        || slot.informationKnown !== undefined && slot.informationKnown !== (encoding.informationKnown !== false)) fail('分享包 Vibe 选择无效');
+      slot.informationKnown = encoding.informationKnown !== false;
+    }
   }
   for (const [index, asset] of assets.entries()) {
     const blob = file.slice(HEADER + length + asset.offset, HEADER + length + asset.offset + asset.size, asset.mime);
@@ -311,8 +328,22 @@ export async function readStyleBundle(file: Blob, onProgress?: Progress): Promis
   }
   const allSources = [...new Map(entries.flatMap(entry => entry.params._styleBundleSources || []).map(item => [JSON.stringify(item), item])).values()];
   const preview: StyleBundlePreview = { coverage, entries: entries.map(entry => ({ id: entry.id, name: entry.name, description: entry.description, cover: Boolean(entry.cover), sources: entry.params._styleBundleSources || [] })), sources: allSources, warnings: ['来源是分享者填写的声明，未经签名验证。'] };
-  parsedBundles.set(preview, { manifest: { entries, assets, encodings }, file, offset: HEADER + length, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
+  parsedBundles.set(preview, { manifest: { entries, assets, encodings }, entriesById: new Map(entries.map(entry => [entry.id, entry])), assetsById: assetMap, file, offset: HEADER + length, imported: new Map(), covers: new Map(), operationIds: new Map(entries.map(entry => [entry.id, `naia-${hex(sha256(new TextEncoder().encode(createUuid())))}`])), references: new Map(), vibes: new Map(), busy: false });
   return preview;
+}
+
+/** 只读取已经完整校验的包；配方快照隔离修改，封面字节不上传也不改写。 */
+export function getStyleBundleEntryPreview(preview: StyleBundlePreview, entryId: string): StyleBundleEntryPreview {
+  const parsed = parsedBundles.get(preview); if (!parsed) fail('请先读取并校验分享包');
+  const original = parsed.entriesById.get(entryId);
+  if (!original) fail('分享包中不存在该风格串');
+  const { cover, ...entry } = original;
+  const result: StyleBundleEntryPreview = structuredClone(entry);
+  if (cover) {
+    const asset = parsed.assetsById.get(cover)!;
+    result.coverBlob = parsed.file.slice(parsed.offset + asset.offset, parsed.offset + asset.offset + asset.size, asset.mime);
+  }
+  return result;
 }
 
 export async function importStyleBundle(preview: StyleBundlePreview, selectedIds: string[], onProgress?: Progress): Promise<{ createdIds: string[]; importedEntryIds: string[]; failed: Array<{ id: string; name: string; error: string }> }> {
@@ -339,12 +370,16 @@ export async function importStyleBundle(preview: StyleBundlePreview, selectedIds
         for (const slot of params.vibes?.slots || []) {
           const id = slot.encodingId, encoding = encodings.get(id)!;
           if (!parsed.vibes.has(id)) {
-            const document = { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: encoding.sourceHash, name: encoding.name, encodings: { [encoding.modelKey]: { variant: { encoding: await encodeBase64(getBlob(encoding.asset)), params: { information_extracted: encoding.information } } } }, importInfo: { model: encoding.model, information_extracted: encoding.information, strength: slot.strength } };
+            const parameters = encoding.parameters !== undefined ? encoding.parameters : encoding.informationKnown === false ? null : { information_extracted: encoding.information };
+            const document = { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: encoding.sourceHash, name: encoding.name, encodings: { [encoding.modelKey]: { variant: { encoding: await encodeBase64(getBlob(encoding.asset)), ...(parameters !== null ? { params: parameters } : {}) } } }, importInfo: { model: encoding.model, information_extracted: encoding.information, strength: slot.strength } };
             const response = await api.post('/vibes/import', { document }) as { item: VibeAsset };
-            const variant = response.item.encodings.find(variant => variant.model === encoding.model && variant.informationExtracted === encoding.information);
-            if (!variant) fail('导入的 Vibe 缺少所需编码');
-            if (variant.encodingHash !== assets.get(encoding.asset)!.hash) fail('已有 Vibe 编码与分享包冲突，已保留原编码');
-            parsed.vibes.set(id, { vibeId: response.item.id, encodingId: variant.id });
+            const variants = response.item.encodings.filter(variant => variant.model === encoding.model && (encoding.informationKnown === false || variant.informationExtracted === encoding.information));
+            if (!variants.length) fail('导入的 Vibe 缺少所需编码');
+            const variant = variants.find(variant => variant.encodingHash === assets.get(encoding.asset)!.hash
+              && (variant.informationKnown !== false) === (encoding.informationKnown !== false)
+              && vibeParameterKey(variant.parameters !== undefined ? variant.parameters : variant.informationKnown === false ? null : { information_extracted: variant.informationExtracted }) === vibeParameterKey(parameters));
+            if (!variant) fail('已有 Vibe 编码与分享包冲突，已保留原编码');
+            parsed.vibes.set(id, { vibeId: response.item.id, encodingId: variant.id, informationExtracted: variant.informationExtracted, informationKnown: variant.informationKnown !== false });
           }
           Object.assign(slot, parsed.vibes.get(id));
         }

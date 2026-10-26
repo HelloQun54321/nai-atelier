@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FileInput, FileOutput, FolderOpen, Loader2, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FileInput, Folder, FolderOpen, Info, ListChecks, Loader2, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { exportStyleBundle, importStyleBundle, readStyleBundle, type StyleBundlePreview } from '../../services/styleBundle';
 import { beginExportTarget, openExportDirectory, type ExportReceipt } from '../../services/exportLocation';
@@ -10,10 +10,12 @@ import { createUuid } from '../../services/id';
 import { folderTree, readChainFolders, updateChainFolderMemberships } from '../../services/chainFolders';
 import { saveChainFolders, useChainFolders } from '../../services/useChainFolders';
 import { t, useLanguage } from '../../services/i18n';
-import { ToolbarButton } from '../DesignSystem';
+import { ToolbarButton, ToolbarSearch } from '../DesignSystem';
+import { AnchoredToolbarPopover } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
+import { StyleBundlePreview as BundlePreviewCards } from './StyleBundlePreview';
 
 type Scope = 'all' | 'filtered' | 'selected';
 interface Props {
@@ -41,6 +43,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const [note, setNote] = useState('');
   const [lastExport, setLastExport] = useState<ExportReceipt>();
   const [preview, setPreview] = useState<StyleBundlePreview | null>(null);
+  const [previewVersion, setPreviewVersion] = useState(0);
   const folders = useChainFolders(tab === 'import');
   const [folderMode, setFolderMode] = useState<'new' | 'existing'>('new');
   const [folderName, setFolderName] = useState('');
@@ -58,6 +61,11 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const [openingDirectory, setOpeningDirectory] = useState(false);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
+  const [popover, setPopover] = useState<'folders' | 'selection' | 'info' | null>(null);
+  const folderAnchor = useRef<HTMLDivElement>(null);
+  const selectionAnchor = useRef<HTMLDivElement>(null);
+  const infoAnchor = useRef<HTMLDivElement>(null);
+  const closePopover = useCallback(() => setPopover(null), []);
   const busyRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dialogRef = useModalA11y<HTMLElement>(true);
@@ -81,7 +89,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const selectedPending = pending(entries).filter(entry => selected.has(entry.id));
   const importBlocked = busy || !folders.ready || Boolean(folders.error) || (folderMode === 'new' ? !folderName.trim() : !targetFolders.length);
   const reportProgress = (value: { completed: number; total: number; name?: string }) => setProgress(t('{0}/{1}', [value.completed, value.total]) + (value.name ? ` · ${value.name}` : ''));
-  const begin = () => { busyRef.current = true; setBusy(true); setError(''); setProgress(''); };
+  const begin = () => { busyRef.current = true; setBusy(true); setError(''); setProgress(''); setPopover(null); };
   const finish = () => { busyRef.current = false; setBusy(false); setProgress(''); };
 
   const exportBundle = async () => {
@@ -115,7 +123,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     begin();
     try {
       const next = await readStyleBundle(file, reportProgress);
-      setPreview(next); setQuery(''); setVisibleCount(100); setSelected(new Set(next.entries.map(entry => entry.id)));
+      setPreview(next); setPreviewVersion(version => version + 1); setQuery(''); setVisibleCount(100); setSelected(new Set(next.entries.map(entry => entry.id)));
       setImported(new Set()); setFailures({});
       setFolderName(file.name.replace(/\.naia$/i, '').slice(0, 60));
       setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
@@ -199,14 +207,39 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     finally { finish(); }
   };
 
+  const targetCaption = folderMode === 'new' ? folderName || t('新建文件夹')
+    : targetFolders.map(id => folders.state.folders.find(folder => folder.id === id)?.name).filter(Boolean).join('、') || t('已有文件夹');
+  const infoTitle = [t('分享包信息'), ...(preview?.warnings || []).map(warning => t(warning))].join(' · ');
+
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget && !busyRef.current) requestClose(); }}>
-    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('风格串分享包')} aria-busy={busy} className="appearance-panel mobile-safe-bottom flex h-[min(44rem,90dvh)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
-      <header className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="min-w-0 flex-1 font-bold">{t('风格串分享包')}</h2><button type="button" disabled={busy} onClick={requestClose} aria-label={t('关闭')} className="mobile-touch rounded-lg p-2 disabled:opacity-40"><X className="h-5 w-5" /></button></header>
-      <div role="group" aria-label={t('分享包操作')} className="flex gap-2 px-4 pt-3">
-        <ToolbarButton active={tab === 'export'} disabled={busy} onClick={() => { setTab('export'); setError(''); }}><FileOutput /><span>{t('导出')}</span></ToolbarButton>
-        <ToolbarButton active={tab === 'import'} disabled={busy} onClick={() => { setTab('import'); setError(''); }}><FileInput /><span>{t('导入')}</span></ToolbarButton>
-      </div>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('风格串分享包')} aria-busy={busy} className={`appearance-panel mobile-safe-bottom flex w-full ${tab === 'import' ? 'h-[calc(100dvh-1.5rem)] max-h-[64rem] max-w-6xl' : 'h-[min(44rem,90dvh)] max-w-2xl'} flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100`}>
+      <header className="shrink-0 space-y-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="sr-only min-w-0 flex-1 truncate font-bold sm:not-sr-only">{t('风格串分享包')}</h2>
+          <div role="group" aria-label={t('分享包操作')} className="flex shrink-0 gap-1">
+            <ToolbarButton active={tab === 'export'} disabled={busy} className="!px-2" onClick={() => { setTab('export'); setPopover(null); setError(''); }}>{t('导出')}</ToolbarButton>
+            <ToolbarButton active={tab === 'import'} disabled={busy} className="!px-2" onClick={() => { setTab('import'); setPopover(null); setError(''); }}>{t('导入')}</ToolbarButton>
+          </div>
+          {tab === 'import' && <>
+            <ToolbarButton aria-label={t('选择 .naia 文件')} title={t('选择 .naia 文件')} className="mobile-touch !px-2" disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span className="hidden sm:inline">{t('选择 .naia 文件')}</span></ToolbarButton>
+            <div ref={infoAnchor} className="shrink-0"><ToolbarButton aria-label={t('分享包信息')} title={infoTitle} aria-expanded={popover === 'info'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview} active={popover === 'info'} onClick={() => setPopover(previous => previous === 'info' ? null : 'info')}><Info className={preview?.warnings.length ? 'text-amber-700 dark:text-amber-300' : undefined} /></ToolbarButton></div>
+          </>}
+          <ToolbarButton disabled={busy} onClick={requestClose} aria-label={t('关闭')} className="mobile-touch ml-auto !px-2"><X /></ToolbarButton>
+        </div>
+        {tab === 'import' ? <div className="flex min-w-0 items-center gap-1.5">
+          <ToolbarSearch aria-label={t('搜索分享包')} placeholder={t('搜索名称或描述')} value={query} disabled={busy || !preview} containerClassName="!max-w-none" onChange={event => { setQuery(event.target.value); setVisibleCount(100); }} />
+          <div ref={folderAnchor} className="shrink-0"><ToolbarButton aria-label={t('设置文件夹')} title={[t('导入到'), targetCaption].join(' · ')} aria-expanded={popover === 'folders'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview} active={popover === 'folders'} onClick={() => setPopover(previous => previous === 'folders' ? null : 'folders')}><Folder /></ToolbarButton></div>
+          <div ref={selectionAnchor} className="shrink-0"><ToolbarButton aria-label={t('选择与导入')} title={t('选择与导入')} aria-expanded={popover === 'selection'} aria-haspopup="dialog" className="mobile-touch !px-2" disabled={!preview || busy} active={popover === 'selection'} onClick={() => setPopover(previous => previous === 'selection' ? null : 'selection')}><ListChecks /></ToolbarButton></div>
+          <ToolbarButton aria-label={t('导入已选（{0}）', [selectedPending.length])} tone="primary" className="!px-2" disabled={importBlocked || !selectedPending.length} onClick={() => void importEntries(selectedPending)}><span className="hidden sm:inline">{t('导入已选（{0}）', [selectedPending.length])}</span><span className="sm:hidden">{t('导入')}({selectedPending.length})</span></ToolbarButton>
+        </div> : <div className="flex items-center justify-end gap-2">
+          <ToolbarButton disabled={busy} aria-busy={openingDirectory || undefined} onClick={() => void openDirectory()}>{openingDirectory ? <Loader2 className="animate-spin" /> : <FolderOpen />}<span>{t('打开文件夹')}</span></ToolbarButton>
+          <ToolbarButton tone="primary" disabled={busy || !exportChains.length} onClick={() => void exportBundle()}>{t('导出 {0} 条', [exportChains.length])}</ToolbarButton>
+        </div>}
+        {(error || tab === 'import' && unfiledIds.length > 0) && <div className="flex items-start gap-2"><p role={error ? 'alert' : 'status'} className={`min-w-0 flex-1 break-words text-xs ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}`}>{error ? t(error) : t('已保存到风格串')}</p>{tab === 'import' && !!unfiledIds.length && <ToolbarButton disabled={importBlocked} className="!px-2" onClick={() => void retryFiling()}>{t('重试归类（{0}）', [unfiledIds.length])}</ToolbarButton>}</div>}
+        {tab === 'import' && folders.error && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{t(folders.error)}<button type="button" disabled={busy} onClick={() => void folders.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></p>}
+        {busy && !openingDirectory && <p role="status" className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{progress || t('处理中…')}</p>}
+      </header>
+      <div className={`min-h-0 flex-1 overflow-y-auto ${tab === 'import' ? 'space-y-3 p-3 md:p-4' : 'space-y-4 p-4'}`}>
         {tab === 'export' ? <>
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导出范围')}</span><select aria-label={t('导出范围')} disabled={busy} value={scope} onChange={event => setScope(event.target.value as Scope)} className={fieldClass}>
             <option value="all">{t('全部（{0}）', [chains.length])}</option><option value="filtered">{t('筛选结果（{0}）', [filteredChains.length])}</option><option value="selected" disabled={!selectedChains.length}>{t('已选（{0}）', [selectedChains.length])}</option>
@@ -215,43 +248,38 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('作者')}</span><input aria-label={t('作者')} disabled={busy} value={author} onChange={event => setAuthor(event.target.value)} maxLength={200} className={fieldClass} /></label>
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('来源链接')}</span><input aria-label={t('来源链接')} disabled={busy} value={sourceUrl} onChange={event => setSourceUrl(event.target.value)} maxLength={2000} type="url" className={fieldClass} /></label>
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('分享说明')}</span><textarea aria-label={t('分享说明')} disabled={busy} value={note} onChange={event => setNote(event.target.value)} maxLength={4000} rows={3} className={fieldClass} /></label>
+
         </> : <>
           <input ref={fileRef} type="file" accept=".naia" aria-label={t('选择 .naia 文件')} disabled={busy} className="sr-only" onChange={event => { void readBundle(event.target.files?.[0]); event.target.value = ''; }} />
-          <ToolbarButton disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span>{t('选择 .naia 文件')}</span></ToolbarButton>
           {preview && <>
-            <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导入到')}</span><select aria-label={t('导入到')} value={folderMode} disabled={busy || targetLocked} onChange={event => { setFolderMode(event.target.value as 'new' | 'existing'); targetPlan.current = null; }} className={fieldClass}><option value="new">{t('新建文件夹')}</option><option value="existing">{t('已有文件夹')}</option></select></label>
-            {folderMode === 'new' ? <label className="block space-y-1.5 text-sm font-semibold"><span>{t('文件夹名称')}</span><input aria-label={t('文件夹名称')} maxLength={60} value={folderName} disabled={busy || targetLocked} onChange={event => { setFolderName(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
-              : <fieldset disabled={busy || targetLocked} className="space-y-1"><legend className="mb-1 text-sm font-semibold">{t('目标文件夹')}</legend>{folderTree(folders.state.folders).map(folder => <label key={folder.id} className="mobile-touch flex items-center gap-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={targetFolders.includes(folder.id)} onChange={event => { setTargetFolders(previous => event.target.checked ? [...previous, folder.id] : previous.filter(id => id !== folder.id)); targetPlan.current = null; }} />{folder.name}</label>)}</fieldset>}
-            {folders.error && <p role="alert" className="text-sm text-red-600">{t(folders.error)}<button type="button" disabled={busy} onClick={() => void folders.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></p>}
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <p>{t('打包范围')}：<strong>{t(preview.coverage === 'full' ? '整库打包' : preview.coverage === 'partial' ? '部分打包' : '未记录')}</strong></p>
-              <p className="text-gray-500">{t('包内风格串：{0} 条', [entries.length])}</p>
-            </div>
-            {!!sources.length && <h3 className="text-sm font-semibold">{t('分享声明')}</h3>}
-            {sources.map((source, index) => <div key={index} className="appearance-group space-y-1 rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-800"><p className="break-words font-semibold">{source.author}</p>{source.sourceUrl && (/^https?:\/\//i.test(source.sourceUrl) ? <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="break-all text-indigo-600 underline dark:text-indigo-300">{source.sourceUrl}</a> : <p className="break-all">{source.sourceUrl}</p>)}{source.note && <p className="whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{source.note}</p>}</div>)}
-            {preview.warnings.map((warning, index) => <p key={index} className="text-sm text-amber-700 dark:text-amber-300">{t(warning)}</p>)}
-            <input aria-label={t('搜索分享包')} placeholder={t('搜索名称或描述')} value={query} disabled={busy} onChange={event => { setQuery(event.target.value); setVisibleCount(100); }} className={fieldClass} />
-            <div className="flex flex-wrap items-center gap-2"><ToolbarButton disabled={busy} onClick={() => setSelected(new Set(pending(entries).map(entry => entry.id)))}>{t('全选')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setSelected(new Set(pending(filtered).map(entry => entry.id)))}>{t('全选筛选结果')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setSelected(new Set())}>{t('清空选择')}</ToolbarButton><span className="text-xs text-gray-500">{t('已选 {0} 条', [selectedPending.length])}</span></div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-800">{filtered.slice(0, visibleCount).map(entry => <div key={entry.id} className="py-2"><label className="mobile-touch flex items-start gap-3"><input type="checkbox" disabled={busy || imported.has(entry.id)} checked={selected.has(entry.id)} onChange={() => setSelected(previous => { const next = new Set(previous); next.has(entry.id) ? next.delete(entry.id) : next.add(entry.id); return next; })} aria-label={entry.name} className="mt-1" /><span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold">{entry.name}</span>{entry.description && <span className="block line-clamp-2 text-xs text-gray-500">{entry.description}</span>}</span><span className="shrink-0 text-xs text-gray-500">{imported.has(entry.id) ? t('已导入') : entry.cover ? t('含封面') : t('无封面')}</span></label>{failures[entry.id] && <p className="mt-1 break-words text-xs text-red-600 dark:text-red-400">{t(failures[entry.id])}</p>}</div>)}</div>
+            <BundlePreviewCards key={previewVersion} preview={preview} entries={filtered.slice(0, visibleCount)} selected={selected} imported={imported} disabled={busy} failures={failures} onSelect={id => setSelected(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; })} />
             {filtered.length > visibleCount && <ToolbarButton disabled={busy} onClick={() => setVisibleCount(count => count + 100)}>{t('加载更多（{0}）', [filtered.length - visibleCount])}</ToolbarButton>}
             {!filtered.length && <p className="py-4 text-center text-sm text-gray-500">{t('没有匹配的风格串')}</p>}
           </>}
         </>}
       </div>
-      <footer className="space-y-2 border-t border-gray-200 p-4 dark:border-gray-800">
-        {error && <p role="alert" className="break-words text-sm text-red-600 dark:text-red-400">{t(error)}</p>}
-        {busy && !openingDirectory && <p role="status" className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{progress || t('处理中…')}</p>}
-        <div className="flex flex-wrap justify-end gap-2">{tab === 'export' ? <>
-          <ToolbarButton disabled={busy} aria-busy={openingDirectory || undefined} onClick={() => void openDirectory()}>{openingDirectory ? <Loader2 className="animate-spin" /> : <FolderOpen />}<span>{t('打开文件夹')}</span></ToolbarButton>
-          <ToolbarButton tone="primary" disabled={busy || !exportChains.length} onClick={() => void exportBundle()}>{t('导出 {0} 条', [exportChains.length])}</ToolbarButton>
-        </> : <>
-          {!!unfiledIds.length && <ToolbarButton disabled={importBlocked} onClick={() => void retryFiling()}>{t('重试归类（{0}）', [unfiledIds.length])}</ToolbarButton>}
+      {tab === 'import' && preview && popover === 'folders' && <AnchoredToolbarPopover anchorRef={folderAnchor} title={t('导入到')} allowMobile width={360} onClose={closePopover}>
+        <div className="space-y-3">
+          <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导入到')}</span><select aria-label={t('导入到')} value={folderMode} disabled={busy || targetLocked} onChange={event => { setFolderMode(event.target.value as 'new' | 'existing'); targetPlan.current = null; }} className={fieldClass}><option value="new">{t('新建文件夹')}</option><option value="existing">{t('已有文件夹')}</option></select></label>
+          {folderMode === 'new' ? <label className="block space-y-1.5 text-sm font-semibold"><span>{t('文件夹名称')}</span><input aria-label={t('文件夹名称')} maxLength={60} value={folderName} disabled={busy || targetLocked} onChange={event => { setFolderName(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
+            : <fieldset disabled={busy || targetLocked}><legend className="mb-1 text-sm font-semibold">{t('目标文件夹')}</legend><div className="max-h-60 space-y-1 overflow-y-auto">{folderTree(folders.state.folders).map(folder => <label key={folder.id} className="mobile-touch flex items-center gap-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={targetFolders.includes(folder.id)} onChange={event => { setTargetFolders(previous => event.target.checked ? [...previous, folder.id] : previous.filter(id => id !== folder.id)); targetPlan.current = null; }} />{folder.name}</label>)}</div></fieldset>}
           {filedFolder && onViewFolder && <ToolbarButton disabled={busy} onClick={() => onViewFolder(filedFolder)}><FolderOpen />{t('查看文件夹')}</ToolbarButton>}
-          <ToolbarButton disabled={importBlocked || !pending(entries).length} onClick={() => void importEntries(pending(entries))}>{t('导入全部')}</ToolbarButton>
-          <ToolbarButton disabled={importBlocked || !pending(filtered).length} onClick={() => void importEntries(pending(filtered))}>{t('导入筛选结果')}</ToolbarButton>
-          <ToolbarButton tone="primary" disabled={importBlocked || !selectedPending.length} onClick={() => void importEntries(selectedPending)}>{t('导入已选（{0}）', [selectedPending.length])}</ToolbarButton>
-        </>}</div>
-      </footer>
+        </div>
+      </AnchoredToolbarPopover>}
+      {tab === 'import' && preview && popover === 'selection' && <AnchoredToolbarPopover anchorRef={selectionAnchor} title={t('选择与导入')} allowMobile width={320} onClose={closePopover}>
+        <div className="space-y-3"><p className="text-xs text-gray-500">{t('已选 {0} 条', [selectedPending.length])}</p>
+          <div className="flex flex-wrap gap-2"><ToolbarButton disabled={busy} onClick={() => setSelected(new Set(pending(entries).map(entry => entry.id)))}>{t('全选')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setSelected(new Set(pending(filtered).map(entry => entry.id)))}>{t('全选筛选结果')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setSelected(new Set())}>{t('清空选择')}</ToolbarButton></div>
+          <div className="flex flex-col gap-2 border-t border-gray-200 pt-3 dark:border-gray-700"><ToolbarButton disabled={importBlocked || !pending(entries).length} onClick={() => void importEntries(pending(entries))}>{t('导入全部')}</ToolbarButton><ToolbarButton disabled={importBlocked || !pending(filtered).length} onClick={() => void importEntries(pending(filtered))}>{t('导入筛选结果')}</ToolbarButton></div>
+        </div>
+      </AnchoredToolbarPopover>}
+      {tab === 'import' && preview && popover === 'info' && <AnchoredToolbarPopover anchorRef={infoAnchor} title={t('分享包信息')} allowMobile width={400} onClose={closePopover}>
+        <div className="space-y-3 text-xs">
+          <p>{t('打包范围')}：<strong>{t(preview.coverage === 'full' ? '整库打包' : preview.coverage === 'partial' ? '部分打包' : '未记录')}</strong></p><p className="text-gray-500">{t('包内风格串：{0} 条', [entries.length])}</p>
+          {preview.warnings.map((warning, index) => <p key={index} className="break-words text-amber-700 dark:text-amber-300">{t(warning)}</p>)}
+          {!!sources.length && <h3 className="font-semibold">{t('分享声明')}</h3>}
+          {sources.map((source, index) => <div key={index} className="appearance-group space-y-1 rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="break-words font-semibold">{source.author}</p>{source.sourceUrl && (/^https?:\/\//i.test(source.sourceUrl) ? <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="break-all text-indigo-600 underline dark:text-indigo-300">{source.sourceUrl}</a> : <p className="break-all">{source.sourceUrl}</p>)}{source.note && <p className="whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{source.note}</p>}</div>)}
+        </div>
+      </AnchoredToolbarPopover>}
     </section>
   </div>;
 };

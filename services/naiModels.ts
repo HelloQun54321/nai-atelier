@@ -18,7 +18,7 @@ export interface NaiModelInfo {
   opusUsageLimit: boolean;
   /**
    * 是否支持本项目的永久 Vibe Transfer 管线；能力由官方运行时表同步，编码资产
-   * 仍按项目的 V4.5 Full 永久编码管线生成。
+   * 按对应基础模型与提取参数独立保存和复用。
    */
   supportsVibes: boolean;
   /** 是否支持 Precise/Character Reference。 */

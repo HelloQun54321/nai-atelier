@@ -37,7 +37,7 @@ const insert = (id: string, userId: string, createdAt: number, prompt: string, o
 };
 
 beforeAll(async () => { sqlite.exec(INIT_SQL); await invoke('/api/local-history/stats?days=30&to=' + TO); });
-beforeEach(() => { sqlite.exec('DELETE FROM local_generation_history; DELETE FROM local_usage_events; DELETE FROM settings; DELETE FROM vibe_encodings; DELETE FROM vibe_assets; DELETE FROM vibe_groups'); readBytes = 0; });
+beforeEach(() => { sqlite.exec('DELETE FROM local_generation_history; DELETE FROM local_usage_events; DELETE FROM settings; DELETE FROM vibe_encodings; DELETE FROM vibe_encoding_variants; DELETE FROM vibe_assets; DELETE FROM vibe_groups'); readBytes = 0; });
 afterAll(() => sqlite.close());
 
 it('词库不可用不把已保存历史回执变为失败，之后可补索引', async () => {
@@ -294,14 +294,17 @@ it('资产摘要只返回统计字段，保留无编码资产并排除归档 Vib
   asset.run('one', '不应传输的素材名', 'hash-one', 0, TO, TO);
   asset.run('empty', '没有编码', 'hash-empty', 0, TO - DAY, TO - DAY);
   asset.run('archived', '归档素材', 'hash-archived', 1, TO, TO);
-  const encoding = sqlite.prepare('INSERT INTO vibe_encodings VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const encoding = sqlite.prepare('INSERT INTO vibe_encodings (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   encoding.run('encoding', 'one', 'nai-diffusion-4-5-full', 'v45', 1, 'private-encoding-key', 'hash', TO);
   encoding.run('archived-encoding', 'archived', 'nai-diffusion-5-full', 'v5', 1, 'private-encoding-key', 'hash-two', TO);
+  sqlite.prepare(`INSERT INTO vibe_encoding_variants
+    (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameter_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run('new-encoding', 'one', 'nai-diffusion-5-full', 'v5full', 0.7, 'private-new-key', 'new-hash', TO, 'information_extracted:0.7');
   sqlite.prepare('INSERT INTO vibe_groups VALUES (?, ?, ?, ?, ?, ?)').run('group', 'private group name', '[{"private":"slots"}]', 1, TO, TO);
   const payload = await (await invoke('/api/local-usage/assets')).json();
   expect(payload.roll).toEqual([{ id: experiment.id, name: experiment.name, updatedAt: TO,
     candidates: [{ createdAt: TO, savedChainId: 'saved-chain', archived: false }], rounds: [{ createdAt: TO }] }]);
-  expect(payload.vibes).toEqual([{ createdAt: TO, encodings: [{ model: 'nai-diffusion-4-5-full', createdAt: TO }] }, { createdAt: TO - DAY, encodings: [] }]);
+  expect(payload.vibes).toEqual([{ createdAt: TO, encodings: [{ model: 'nai-diffusion-4-5-full', createdAt: TO }, { model: 'nai-diffusion-5-full', createdAt: TO }] }, { createdAt: TO - DAY, encodings: [] }]);
   expect(payload.vibeGroups).toEqual([{ createdAt: TO }]);
   const text = JSON.stringify(payload);
   for (const privateValue of ['synthetic subject', 'private', '不应传输的素材名', '其他用户', 'sourceHash', 'template', 'tags']) expect(text).not.toContain(privateValue);

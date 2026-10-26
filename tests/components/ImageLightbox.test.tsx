@@ -10,11 +10,33 @@ import {buildMediaUrl} from '../../services/mobileImageCache';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 beforeEach(()=>{installPointerEvents();vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});
-afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
+afterEach(()=>{cleanup();window.history.replaceState(null,'');vi.unstubAllGlobals();vi.restoreAllMocks();});
 const setup=()=>{const onClose=vi.fn(),onSwipe=vi.fn();render(<ImageLightbox src="/synthetic.png" onClose={onClose} onSwipe={onSwipe}/>);return{stage:screen.getByLabelText('图片平移与缩放'),image:screen.getByRole('img'),onClose,onSwipe};};
 const down=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerDown(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
 const up=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerUp(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
 const move=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerMove(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
+
+it('只读预览隐藏分享与收藏，仍保留返回、翻图、缩放及Escape',()=>{
+  const onClose=vi.fn(),onChange=vi.fn();
+  render(<ImageLightbox src="blob:synthetic" hideShareActions onClose={onClose} pager={{index:0,count:2,onChange}}/>);
+  expect(screen.queryByRole('button',{name:'收藏'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'下载图片'})).toBeNull();
+  expect(screen.getByRole('button',{name:'返回图片详情'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'放大图片'}));
+  fireEvent.click(screen.getByRole('button',{name:'下一张图片'}));expect(onChange).toHaveBeenCalledWith(1);
+  fireEvent.keyDown(window,{key:'Escape'});expect(onClose).toHaveBeenCalledOnce();
+});
+
+it('只读大图沿用手机逐层返回，浏览器返回保留父层',async()=>{
+  vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener(){},removeEventListener(){}}));
+  window.history.replaceState({__naiMobileLayers:['parent'],__naiMobileLayer:'parent'},'');
+  const onClose=vi.fn();
+  render(<ImageLightbox src="blob:synthetic" hideShareActions onClose={onClose}/>);
+  await waitFor(()=>expect(window.history.state.__naiMobileLayers).toHaveLength(2));
+  await act(async()=>{window.history.back();await new Promise(resolve=>setTimeout(resolve,20));});
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(window.history.state.__naiMobileLayers).toEqual(['parent']);
+});
 
 it('详情可显式使用图包裁边预览，大图仍读取原地址；其他调用保持原图',()=>{
   const source='/api/inspirations/synthetic-artist/image';

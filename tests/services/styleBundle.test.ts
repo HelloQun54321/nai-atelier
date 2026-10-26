@@ -4,7 +4,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { api } from '../../services/api';
 import { characterReferenceService } from '../../services/characterReferenceService';
 import { prepareImageBlob } from '../../services/imageSharing';
-import { exportStyleBundle, readStyleBundle, importStyleBundle, STYLE_BUNDLE_LIMITS } from '../../services/styleBundle';
+import { exportStyleBundle, readStyleBundle, getStyleBundleEntryPreview, importStyleBundle, STYLE_BUNDLE_LIMITS } from '../../services/styleBundle';
 import type { PromptChain } from '../../types';
 
 vi.mock('../../services/api', () => ({ api: { get: vi.fn(), post: vi.fn(), uploadFile: vi.fn() } }));
@@ -38,6 +38,46 @@ async function replaceManifest(file: Blob, change: (value: Record<string, unknow
 }
 
 describe('.naia 风格串分享包', () => {
+  it('无封面预览可查看完整配方，快照修改不会污染后续预览或导入', async () => {
+    const original = chain();
+    const preview = await readStyleBundle(await exportStyleBundle([original], options));
+    const snapshot = getStyleBundleEntryPreview(preview, 's0');
+    const expected = structuredClone(snapshot);
+    expect(snapshot.coverBlob).toBeUndefined();
+    expect(snapshot).toMatchObject({ id: 's0', name: original.name, description: original.description, tags: original.tags, basePrompt: original.basePrompt, negativePrompt: original.negativePrompt, modules: original.modules, variableValues: original.variableValues });
+    snapshot.basePrompt = 'changed'; snapshot.tags.push('changed'); snapshot.modules[0].content = 'changed';
+    snapshot.params.characters![0].prompt = 'changed';
+    snapshot.params._promptSections!.sectionMeta!.scene.entryName = 'changed';
+    snapshot.params._styleBundleSources![0].author = 'changed';
+    snapshot.variableValues!.subject = 'changed';
+    const unchanged = getStyleBundleEntryPreview(preview, 's0');
+    expect(unchanged).toEqual(expected);
+    expect(api.post).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+    await importStyleBundle(preview, ['s0']);
+    expect(createChain.mock.calls[0][0]).toMatchObject({ basePrompt: original.basePrompt, tags: original.tags, modules: original.modules, variableValues: original.variableValues, params: { characters: original.params.characters, _promptSections: { sectionMeta: { scene: { entryName: '场景名' } } } } });
+    await importStyleBundle(preview, ['s0']);
+    expect(createChain).toHaveBeenCalledTimes(1);
+  });
+
+  it('真实包内封面按原字节只读提取，不调用上传、建串或联网读取', async () => {
+    const file = await exportStyleBundle([chain()], { ...options, coverMode: 'original' });
+    const preview = await readStyleBundle(file);
+    vi.mocked(fetch).mockClear();
+    const snapshot = getStyleBundleEntryPreview(preview, 's0');
+    expect(snapshot.coverBlob?.type).toBe('image/png');
+    expect(new Uint8Array(await snapshot.coverBlob!.arrayBuffer())).toEqual(png);
+    expect(snapshot).not.toHaveProperty('cover');
+    expect(api.post).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+    expect(characterReferenceService.create).not.toHaveBeenCalled();
+  });
+
+  it('未校验或复制的预览对象与未知条目均明确拒绝', async () => {
+    const preview = await readStyleBundle(await exportStyleBundle([chain()], options));
+    expect(() => getStyleBundleEntryPreview({ ...preview }, 's0')).toThrow('请先读取并校验分享包');
+    expect(() => getStyleBundleEntryPreview(preview, 'unknown')).toThrow('分享包中不存在该风格串');
+    expect(api.post).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled();
+  });
+
   it.each([
     { name: '完整库乱序且参考 ID 重复', exported: ['private-a', 'private-b'], all: ['private-b', 'private-a', 'private-a'], coverage: 'full' },
     { name: '实际子集', exported: ['private-a'], all: ['private-a', 'private-b'], coverage: 'partial' },
@@ -109,6 +149,54 @@ describe('.naia 风格串分享包', () => {
     expect(params.characterReferences!.slots[0].assetId).toBe('new-reference');
     expect(params.vibes!.slots[0]).toMatchObject({ vibeId: 'new-vibe', encodingId: 'new-encoding', strength: 0.6 });
     expect(preview.entries.every(entry => !entry.cover)).toBe(true);
+  });
+
+  it.each([true, false])('完整 Vibe 参数优先往返，提取量已知=%s；同提取量按参数与哈希选择编码', async informationKnown => {
+    const item = chain();
+    item.params.vibes = { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'old-vibe', encodingId: 'old-encoding', informationExtracted: 0.7, strength: -0.4 }] };
+    const parameters = { ...(informationKnown ? { information_extracted: 0.7 } : {}), mask: 'selected-mask' };
+    const encodingHash = Array.from(sha256(new TextEncoder().encode('x'.repeat(64))), byte => byte.toString(16).padStart(2, '0')).join('');
+    vi.mocked(api.get).mockImplementation(async path => String(path).endsWith('/data')
+      ? { encoding: btoa('x'.repeat(64)), variant: { model: item.params.model, modelKey: 'v4-5full', informationExtracted: 0.7, informationKnown, parameters } }
+      : { item: { sourceHash: 'a'.repeat(64), name: 'Vibe' } });
+    vi.mocked(api.post).mockImplementation(async (path, payload) => path === '/chains' ? createChain(payload) : { item: { id: 'new-vibe', encodings: [
+      { id: 'other-parameters', model: item.params.model, informationExtracted: informationKnown ? 0.7 : 0.4, informationKnown, parameters: { ...parameters, mask: 'other-mask' }, encodingHash },
+      { id: 'selected-encoding', model: item.params.model, informationExtracted: informationKnown ? 0.7 : 0.4, informationKnown, parameters, encodingHash },
+    ] } });
+    const preview = await readStyleBundle(await exportStyleBundle([item], options));
+    expect(await importStyleBundle(preview, ['s0'])).toMatchObject({ importedEntryIds: ['s0'], failed: [] });
+    const imported = vi.mocked(api.post).mock.calls.find(([path]) => path === '/vibes/import')![1] as { document: { encodings: Record<string, { variant: { params: unknown } }> } };
+    expect(imported.document.encodings['v4-5full'].variant.params).toEqual(parameters);
+    expect(createChain.mock.calls[0][0].params.vibes.slots[0]).toMatchObject({ encodingId: 'selected-encoding', informationExtracted: informationKnown ? 0.7 : 0.4, informationKnown, strength: -0.4 });
+  });
+
+  it.each([
+    { name: '文字提取量', fields: { parameters: { information_extracted: 'bad' } } },
+    { name: '负提取量', fields: { parameters: { information_extracted: -0.1 } } },
+    { name: '超过 1 的提取量', fields: { parameters: { information_extracted: 1.1 } } },
+    { name: '与外层不同的提取量', fields: { parameters: { information_extracted: 0.6 } } },
+    { name: '未知标记带已知提取量', fields: { parameters: { information_extracted: 0.7 }, informationKnown: false } },
+    { name: '已知标记没有提取量', fields: { parameters: { mask: 'mask' }, informationKnown: true } },
+    { name: '缺少参数却标记已知', fields: { parameters: null, informationKnown: true } },
+    { name: '非布尔状态', fields: { informationKnown: 'false' } },
+  ])('完整读包阶段拒绝矛盾 Vibe 参数：$name，尚未写入任何资料', async ({ fields }) => {
+    const item = chain(); item.params.vibes = { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'vibe', encodingId: 'encoding', informationExtracted: 0.7, strength: 1 }] };
+    vi.mocked(api.get).mockImplementation(async path => String(path).endsWith('/data') ? { encoding: btoa('x'.repeat(64)), variant: { model: item.params.model, modelKey: 'v4-5full', informationExtracted: 0.7 } } : { item: { sourceHash: 'a'.repeat(64), name: 'Vibe' } });
+    const file = await exportStyleBundle([chain('valid-first'), item], { ...options, allChainIds: ['valid-first', item.id] });
+    const invalid = await replaceManifest(file, raw => Object.assign((raw.encodings as Record<string, unknown>[])[0], fields));
+    await expect(readStyleBundle(invalid)).rejects.toThrow();
+    expect(api.post).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled(); expect(characterReferenceService.create).not.toHaveBeenCalled();
+  });
+
+  it('完整读包阶段拒绝选择与编码的提取量状态相反', async () => {
+    const item = chain(); item.params.vibes = { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'vibe', encodingId: 'encoding', informationExtracted: 0.7, strength: 1 }] };
+    vi.mocked(api.get).mockImplementation(async path => String(path).endsWith('/data') ? { encoding: btoa('x'.repeat(64)), variant: { model: item.params.model, modelKey: 'v4-5full', informationExtracted: 0.7 } } : { item: { sourceHash: 'a'.repeat(64), name: 'Vibe' } });
+    const invalid = await replaceManifest(await exportStyleBundle([item], options), raw => {
+      const entry = (raw.entries as Array<{ params: { vibes: { slots: Array<{ informationKnown: boolean }> } } }>)[0];
+      entry.params.vibes.slots[0].informationKnown = false;
+    });
+    await expect(readStyleBundle(invalid)).rejects.toThrow('分享包 Vibe 选择无效');
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('拒绝损坏、未来版本、非法资产引用和过量条目，校验失败之前没有落库', async () => {

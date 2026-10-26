@@ -59,7 +59,7 @@ function fixture() {
   return { sqlite, files, route };
 }
 
-it.each(['original', 'none', 'original-retry', 'vibe-conflict'] as const)('%s 封面的多条配方经过真实 API 往返到独立空工坊，共享参考和编码保持可用', async scenario => {
+it.each(['original', 'none', 'original-retry', 'vibe-conflict', 'vibe-unknown-parameters', 'vibe-unknown-parameters-existing'] as const)('%s 封面的多条配方经过真实 API 往返到独立工坊，共享参考和编码保持可用', async scenario => {
   const coverMode = scenario === 'none' ? 'none' : 'original';
   let clock = 1_700_000_000_000; const now = vi.spyOn(Date, 'now').mockImplementation(() => clock++);
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1, height: 1, close() {} })));
@@ -74,14 +74,16 @@ it.each(['original', 'none', 'original-retry', 'vibe-conflict'] as const)('%s �
   }); vi.stubGlobal('fetch', fetch);
   const reference = await characterReferenceService.create(new File([png], 'reference.png', { type: 'image/png' }), '共享参考');
   const encoding = btoa('synthetic-encoding'.repeat(5));
-  const vibe = await api.post('/vibes/import', { document: { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: 'a'.repeat(64), name: '共享编码', encodings: { 'v4-5full': { variant: { encoding, params: { information_extracted: 0.7 } } } } } });
+  const informationKnown = !scenario.startsWith('vibe-unknown-parameters');
+  const encodingParameters = informationKnown ? { information_extracted: 0.7 } : { mask: 'synthetic-mask' };
+  const vibe = await api.post('/vibes/import', { document: { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: 'a'.repeat(64), name: '共享编码', encodings: { 'v4-5full': { variant: { encoding, params: encodingParameters } } } } });
   const params: PromptChain['params'] = {
     model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, seed: 42, sampler: 'k_euler_ancestral',
     qualityPresetId: 'none', ucPresetId: 'none', qualityToggle: false, ucPreset: 4, useCoords: true, variety: true, cfgRescale: 0.2,
     transparent: false, transparentWeight: 1.2, alphaMode: 'straight',
     characters: [{ id: 'role', prompt: 'girl', negativePrompt: 'hat', x: 0.3, y: 0.7, enabled: true, sections: { appearance: 'blue eyes' }, sectionNegatives: { pose: 'sitting' } }],
     _promptSections: { scene: 'park', camera: 'wide shot', extra: 'watercolor', sectionNegatives: { scene: 'city' } },
-    vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: vibe.item.id, encodingId: vibe.item.encodings[0].id, informationExtracted: 0.7, strength: 0.6 }] },
+    vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: vibe.item.id, encodingId: vibe.item.encodings[0].id, informationExtracted: 0.7, informationKnown, strength: 0.6 }] },
     characterReferences: { enabled: true, slots: [{ assetId: reference.item.id, assetName: '共享参考', type: 'character_style', strength: 0.8, fidelity: 0.9 }] },
     _styleBundleSources: [{ author: '原作者', sourceUrl: 'https://example.org/original', note: '免费出处' }],
   };
@@ -98,12 +100,15 @@ it.each(['original', 'none', 'original-retry', 'vibe-conflict'] as const)('%s �
   if (scenario === 'vibe-conflict') {
     conflictingVibe = await api.post('/vibes/import', { document: { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: 'a'.repeat(64), name: '目标已有编码', encodings: { 'v4-5full': { variant: { encoding: otherEncoding, params: { information_extracted: 0.7 } } } } } });
   }
+  if (scenario === 'vibe-unknown-parameters-existing') {
+    await api.post('/vibes/import', { document: { identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: 'a'.repeat(64), name: '目标已有未知编码', encodings: { 'v4-5full': { variant: { encoding, params: encodingParameters } } }, importInfo: { model: params.model, information_extracted: 0.4 } } });
+  }
   let result = await importStyleBundle(preview, preview.entries.map(entry => entry.id));
   if (scenario === 'vibe-conflict') {
     expect(result.createdIds).toEqual([]); expect(result.failed).toHaveLength(2);
     expect(result.failed.every(item => /编码.*冲突|冲突.*编码/.test(item.error))).toBe(true);
     expect(target.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(0);
-    expect(target.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_encodings').get()?.count).toBe(1);
+    expect(target.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_encodings_all').get()?.count).toBe(1);
     expect((await api.get(`/vibes/${conflictingVibe.item.id}/encodings/${conflictingVibe.item.encodings[0].id}/data`)).encoding).toBe(otherEncoding);
     return;
   }
@@ -121,13 +126,13 @@ it.each(['original', 'none', 'original-retry', 'vibe-conflict'] as const)('%s �
     expect(entry.params._styleBundleSources?.map(item => item.author)).toEqual(['原作者', '分享者']);
     const slot = entry.params.characterReferences!.slots[0]; expect(slot).toMatchObject({ type: 'character_style', strength: 0.8, fidelity: 0.9 });
     expect(slot.assetId).not.toBe(reference.item.id); expect((await fetch(`/api/character-references/${slot.assetId}/image`)).status).toBe(200);
-    const vibeSlot = entry.params.vibes!.slots[0]; expect(vibeSlot).toMatchObject({ informationExtracted: 0.7, strength: 0.6 });
+    const vibeSlot = entry.params.vibes!.slots[0]; expect(vibeSlot).toMatchObject({ informationExtracted: scenario === 'vibe-unknown-parameters-existing' ? 0.4 : 0.7, informationKnown, strength: 0.6 });
     expect(vibeSlot.vibeId).not.toBe(vibe.item.id);
-    expect((await api.get(`/vibes/${vibeSlot.vibeId}/encodings/${vibeSlot.encodingId}/data`)).encoding).toBe(encoding);
+    expect(await api.get(`/vibes/${vibeSlot.vibeId}/encodings/${vibeSlot.encodingId}/data`)).toMatchObject({ encoding, variant: { informationKnown, parameters: encodingParameters } });
     if (coverMode === 'none') expect(entry.previewImage).toBeFalsy();
     else { expect(entry.previewImage).toMatch(/^\/api\/assets\/covers\//); expect(new Uint8Array(await (await fetch(entry.previewImage!)).arrayBuffer())).toEqual(index ? secondPng : png); }
   }
-  for (const table of ['character_reference_assets', 'vibe_assets', 'vibe_encodings']) expect(target.sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count).toBe(1);
+  for (const table of ['character_reference_assets', 'vibe_assets', 'vibe_encodings_all']) expect(target.sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count).toBe(1);
   await importStyleBundle(preview, preview.entries.map(entry => entry.id));
   expect(target.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(2);
   expect(source.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(2);

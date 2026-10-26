@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
@@ -90,7 +91,7 @@ test('电脑实际 HTTP 入口连接成员 Key、生图、余额与 Vibe；无�
     res.setHeader('content-type', 'application/json');
     if (req.url === '/api/vibes/http-vibe') return res.end('{"item":{"id":"http-vibe","encodings":[]}}');
     if (req.url.endsWith('/encoding-result')) return res.end(JSON.stringify({ item: { id: 'http-vibe', encodings: [
-      { id: 'http-encoding', model: 'nai-diffusion-4-5-full', informationExtracted: 1 },
+      { id: 'http-encoding', model: 'nai-diffusion-4-5-full', informationExtracted: 1, encodingHash: createHash('sha256').update(Buffer.alloc(128, 2)).digest('hex') },
     ] } }));
     if (req.url === '/api/nai-accounting') {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);

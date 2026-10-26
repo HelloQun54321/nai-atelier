@@ -205,6 +205,17 @@ export const parseNovelAIMetadata = (
             // 官方图片通常只记录模型展示名与哈希；精确映射由网关从官方前端同步。
             const importedModel = resolveNaiMetadataModel(json, metadataModelMappings);
             if (importedModel) newParams.model = importedModel;
+            if (Array.isArray(json.reference_image_multiple)) {
+                const encodings = json.reference_image_multiple;
+                if (encodings.length > 16 || encodings.some((value: unknown) => typeof value !== 'string')) throw new Error('图片中的 Vibe 编码列表无效');
+                const strengths = encodings.map((_: unknown, index: number) => json.reference_strength_multiple?.[index] ?? 0.6);
+                if (strengths.some((value: unknown) => typeof value !== 'number' || !Number.isFinite(value))) throw new Error('图片中的 Vibe 强度无效');
+                const total = strengths.reduce((sum: number, value: number) => sum + Math.abs(value), 0);
+                newParams.vibes = { enabled: encodings.length > 0, slots: [],
+                    normalizeStrengths: typeof json.normalize_reference_strength_multiple === 'boolean' ? json.normalize_reference_strength_multiple : total <= 1.01,
+                    ...(encodings.length ? { embedded: { model: importedModel || '', encodings, strengths,
+                        ...(Array.isArray(json.reference_information_extracted_multiple) ? { information: json.reference_information_extracted_multiple } : {}) } } : {}) };
+            }
             if (json.width != null) newParams.width = json.width;
             if (json.height != null) newParams.height = json.height;
             if (json.tag_hint_transparent_background === true || json.transparent === true) {
@@ -284,6 +295,7 @@ export const parseNovelAIMetadata = (
             // 使用最终 base_caption 恢复权重，不继承导入前草稿的旧值或 Text: 中的字面标签。
             newParams.transparentWeight = resolveTransparentWeight(json.transparentWeight, prompt);
         } catch (e) {
+            if (e instanceof Error && e.message.startsWith('图片中的 Vibe')) throw e;
             console.error('JSON 元数据解析失败，回退到原始字符串', e);
         }
     } else {

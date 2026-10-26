@@ -287,6 +287,17 @@ describe('编辑描述符', () => {
 });
 
 describe('能力校验', () => {
+  it('未导入的 PNG 编码阻止参考生成，但不阻止本来就不发送 Vibe 的重绘与扩图', async () => {
+    const params: NAIParams = { ...baseParams(), vibes: { enabled: true, normalizeStrengths: true, slots: [],
+      embedded: { model: MODEL, encodings: ['synthetic-encoding'], strengths: [0.6] } } };
+    await expect(textDescriptor({ params })).rejects.toThrow('Vibe 编码尚未完成导入');
+    await expect(editDescriptor('image-to-image', { params })).rejects.toThrow('Vibe 编码尚未完成导入');
+    for (const operation of ['inpaint', 'outpaint'] as const) {
+      const descriptor = await editDescriptor(operation, { params });
+      expect(descriptor.payload.parameters).not.toHaveProperty('_local_vibe_slots');
+    }
+  });
+
   it('模型不支持 Vibe 时拒绝提交', async () => {
     await expect(textDescriptor({
       params: { ...baseParams(), model: 'nai-diffusion-5-full',

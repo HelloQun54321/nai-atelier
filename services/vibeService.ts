@@ -1,4 +1,7 @@
-import { VibeAsset, VibeGroup, VibeSelection } from '../types';
+import { NAIParams, VibeAsset, VibeGroup, VibeSelection } from '../types';
+import { defaultVibeInformation, vibeBaseModel, vibeModelKey } from './vibeProtocol.mjs';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { extractMetadata, parseNovelAIMetadata } from './metadataService';
 import { api, parseErrorResponse, reportNaiAccountingError } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey } from './anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
@@ -25,6 +28,10 @@ const createThumbnailBlob = async (file: File) => {
 };
 
 const responseError = (response: Response) => parseErrorResponse(response);
+// 局域网 HTTP 页面也能计算官方文本哈希，不依赖安全上下文的 SubtleCrypto。
+const hashVibeText = (value: string) => Array.from(sha256(new TextEncoder().encode(value)), byte => byte.toString(16).padStart(2, '0')).join('');
+export interface VibeImportResult { item: VibeAsset; items: VibeAsset[]; slots: VibeSelection[]; imported: number; bundle: boolean; normalizeStrengths: boolean }
+const embeddedImports = new WeakMap<object, Promise<VibeImportResult>>();
 
 export const vibeService = {
   list: async (query = '', archived = false): Promise<VibeAsset[]> => {
@@ -43,16 +50,48 @@ export const vibeService = {
     return api.postForm('/vibes', formData);
   },
 
-  importFile: async (file: File): Promise<{item: VibeAsset; imported: number}> => {
+  importFile: async (file: File, model?: string): Promise<VibeImportResult> => {
     if (file.size > 40 * 1024 * 1024) throw new Error('Vibe 文件不能超过 40 MB');
+    if (file.type === 'image/png' || /\.png$/i.test(file.name)) {
+      const raw = await extractMetadata(file);
+      if (!raw) throw new Error('图片没有可复用的 Vibe 编码');
+      const params = parseNovelAIMetadata(raw, { model }).params;
+      if (!params.vibes?.embedded) throw new Error('图片没有可复用的 Vibe 编码');
+      return vibeService.importEmbedded(params.vibes.embedded, params.vibes.normalizeStrengths);
+    }
     return api.post('/vibes/import', { fileText: await fileToText(file) });
   },
 
-  encode: async (vibeId: string, informationExtracted: number, apiKey: string): Promise<{item: VibeAsset; duplicate?: boolean; anlasAccountingFailed?: boolean}> => {
+  importEmbedded: async (embedded: NonNullable<NonNullable<NAIParams['vibes']>['embedded']>, normalizeStrengths = true): Promise<VibeImportResult> => {
+    const pending = embeddedImports.get(embedded);
+    if (pending) return pending;
+    const task = (async () => {
+      if (!embedded.model) throw new Error('图片的 Vibe 编码缺少已知模型，无法安全复用');
+      const model = vibeBaseModel(embedded.model), modelKey = vibeModelKey(model);
+      if (!modelKey) throw new Error('图片的 Vibe 编码缺少已知模型，无法安全复用');
+      if (!embedded.encodings.length || embedded.encodings.length > 16) throw new Error('一次最多使用 16 个 Vibe');
+      const vibes = await Promise.all(embedded.encodings.map(async (encoding, index) => ({
+        identifier: 'novelai-vibe-transfer', version: 1, type: 'encoding', id: await hashVibeText(encoding),
+        encodings: { [modelKey]: { unknown: { encoding } } },
+        importInfo: { model, information_extracted: embedded.information?.[index] ?? defaultVibeInformation(model), strength: embedded.strengths[index] ?? 0.6 },
+      })));
+      return api.post('/vibes/import', { document: { identifier: 'novelai-vibe-transfer-bundle', version: 1, vibes, normalizeStrengths } });
+    })();
+    embeddedImports.set(embedded, task);
+    try { return await task; } catch (error) { embeddedImports.delete(embedded); throw error; }
+  },
+
+  resolveParams: async (params: NAIParams): Promise<NAIParams> => {
+    if (!params.vibes?.embedded) return params;
+    const result = await vibeService.importEmbedded(params.vibes.embedded, params.vibes.normalizeStrengths);
+    return { ...params, vibes: { enabled: params.vibes.enabled, normalizeStrengths: result.normalizeStrengths, slots: result.slots } };
+  },
+
+  encode: async (vibeId: string, informationExtracted: number, apiKey: string, model = 'nai-diffusion-4-5-full'): Promise<{item: VibeAsset; duplicate?: boolean; anlasAccountingFailed?: boolean}> => {
     const response = await fetch(`/api/vibes/${encodeURIComponent(vibeId)}/encodings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ informationExtracted }),
+      body: JSON.stringify({ informationExtracted, model: vibeBaseModel(model) }),
     });
     if (!response.ok) throw await responseError(response);
     const result = await response.json();
@@ -79,9 +118,17 @@ export const vibeService = {
   download: async (asset: VibeAsset) => {
     const exportTarget = beginExportTarget();
     const response = await fetch(`/api/vibes/${encodeURIComponent(asset.id)}/file`);
-    if (!response.ok) return await responseError(response);
+    if (!response.ok) throw await responseError(response);
     const { downloadFile } = await import('./fileDownload');
-    await downloadFile(await response.blob(), `${asset.name}.naiv4vibe`, exportTarget);
+    const extension = response.headers.get('content-disposition')?.includes('naiv4vibeBundle') ? 'naiv4vibeBundle' : 'naiv4vibe';
+    await downloadFile(await response.blob(), `${asset.name}.${extension}`, exportTarget);
+  },
+
+  downloadGroup: async (name: string, slots: VibeSelection[], normalizeStrengths: boolean) => {
+    const exportTarget = beginExportTarget();
+    const document = await api.post('/vibes/export', { slots, normalizeStrengths });
+    const { downloadFile } = await import('./fileDownload');
+    await downloadFile(new Blob([JSON.stringify(document)], { type: 'application/json' }), `${name || 'Vibe'}.naiv4vibeBundle`, exportTarget);
   },
 
   listGroups: async (): Promise<VibeGroup[]> => (await api.get('/vibe-groups')).items || [],

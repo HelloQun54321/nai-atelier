@@ -1,3 +1,4 @@
+import { vibeBaseModel, vibeModelKey } from '../services/vibeProtocol.mjs';
 import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
 import { readGenerationResponse } from './generation-output.mjs';
@@ -650,9 +651,9 @@ const requestTagDictionaryControl = method => new Promise((resolve, reject) => {
 });
 
 export const normalizeVibeStrengths = slots => {
-  const values = slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)));
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return total > 1 ? values.map(value => value / total) : values;
+  const values = slots.map(slot => Number.isFinite(slot.strength) ? slot.strength : 0);
+  const total = values.reduce((sum, value) => sum + Math.abs(value), 0);
+  return values.length > 1 && total > 1 ? values.map(value => value / total) : values;
 };
 
 const PRECISE_REFERENCE_TYPES = new Map([
@@ -1713,7 +1714,7 @@ const internalWorkerRequest = {
 
 const saveVibeRecovery = async recovery => {
   await mkdir(VIBE_RECOVERY_DIR, { recursive: true });
-  const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+  const key = `${recovery.vibeId}:${vibeBaseModel(recovery.model)}:${Number(recovery.informationExtracted)}`;
   const file = join(VIBE_RECOVERY_DIR, `${createHash('sha256').update(key).digest('hex')}.json`);
   const temporary = `${file}.tmp`;
   await writeFile(temporary, JSON.stringify(recovery), { encoding: 'utf8', mode: 0o600 });
@@ -1724,15 +1725,17 @@ const saveVibeRecovery = async recovery => {
 const commitVibeRecovery = async (recovery, req, workerPort) => {
   const stored = await requestWorkerJson(`/api/vibes/${encodeURIComponent(recovery.vibeId)}/encoding-result`, req, workerPort, {
     method: 'POST',
-    body: { informationExtracted: recovery.informationExtracted, encodingBase64: recovery.encodingBase64 },
+    body: { model: vibeBaseModel(recovery.model), informationExtracted: recovery.informationExtracted, encodingBase64: recovery.encodingBase64 },
   });
   // 确认对应编码确已入库，才能丢弃已付费产物的恢复记录。
   if (stored?.item?.id !== recovery.vibeId || !Array.isArray(stored.item.encodings) || !stored.item.encodings.some(item =>
-    item?.id && item.model === 'nai-diffusion-4-5-full' && Math.abs(Number(item.informationExtracted) - recovery.informationExtracted) < 0.001)) {
+    item?.id && item.model === vibeBaseModel(recovery.model) && item.informationKnown !== false
+      && Number(item.informationExtracted) === recovery.informationExtracted
+      && item.encodingHash === createHash('sha256').update(Buffer.from(recovery.encodingBase64, 'base64')).digest('hex'))) {
     throw Object.assign(new Error('Vibe 编码保存失败（未收到有效回执）'), { status: 502 });
   }
   if (recovery.file) await unlink(recovery.file).catch(() => {});
-  const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+  const key = `${recovery.vibeId}:${vibeBaseModel(recovery.model)}:${Number(recovery.informationExtracted)}`;
   pendingVibeRecoveries.delete(key);
   return stored;
 };
@@ -1744,7 +1747,7 @@ const recoverPendingVibeEncodings = async workerPort => {
     const file = join(VIBE_RECOVERY_DIR, name);
     try {
       const recovery = { ...JSON.parse(await readFile(file, 'utf8')), file };
-      const key = `${recovery.vibeId}:nai-diffusion-4-5-full:${Number(recovery.informationExtracted).toFixed(2)}`;
+      const key = `${recovery.vibeId}:${vibeBaseModel(recovery.model)}:${Number(recovery.informationExtracted)}`;
       pendingVibeRecoveries.set(key, recovery);
       await commitVibeRecovery(recovery, internalWorkerRequest, workerPort);
     } catch {
@@ -1794,6 +1797,111 @@ export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = g
     else return sendJson(res, 405, { error: 'Method not allowed' });
     return sendJson(res, 200, { success: true });
   } catch (error) { return sendJson(res, error.status || 500, { error: error.message, code: error.code, ...(error.outcome ? { outcome: error.outcome } : {}) }); }
+};
+
+// 普通和过程预览共用参考解析，模型校验、编码复用与费用输入保持一致。
+const prepareGenerationReferences = async (payload, req, workerPort, { generationProxyUrl, gatewayUrl } = {}) => {
+  const localVibes = payload?.parameters?._local_vibes;
+  const localCharacterReferences = payload?.parameters?._local_character_references;
+  const runtime = getNaiRuntime();
+  const capability = getNaiModelCapability(payload?.model, runtime) || {
+    supportsVibes: false,
+    supportsCharacterReferences: false,
+    supportsCharacterReferenceInpainting: false,
+    maxCharacters: 6,
+  };
+  const editOperation = String(payload?.parameters?._local_edit_operation || '');
+  const isImageEdit = payload?.action === 'infill' || payload?.action === 'img2img'
+    || editOperation === 'inpaint' || editOperation === 'outpaint' || editOperation === 'image-to-image';
+  const allowsVibes = !isImageEdit || editOperation === 'image-to-image';
+  const allowsCharacterReferences = isImageEdit && editOperation !== 'image-to-image'
+    ? capability.supportsCharacterReferenceInpainting === true
+    : capability.supportsCharacterReferences === true;
+  const characterPromptCount = Array.isArray(payload?.parameters?.v4_prompt?.caption?.char_captions)
+    ? payload.parameters.v4_prompt.caption.char_captions.length
+    : 0;
+  const maxCharacters = Math.max(1, Number(capability.maxCharacters) || 6);
+  if (characterPromptCount > maxCharacters) {
+    throw Object.assign(new Error(`当前模型最多支持 ${maxCharacters} 个角色提示词`), { status: 400 });
+  }
+  if (localVibes?.enabled && localVibes?.slots?.length && !capability.supportsVibes) {
+    throw Object.assign(new Error('当前模型不支持 Vibe Transfer'), { status: 400 });
+  }
+  if (localVibes?.enabled && localVibes?.slots?.length && !allowsVibes) {
+    throw Object.assign(new Error('局部重绘和扩图不发送 Vibe Transfer'), { status: 400 });
+  }
+  if (localCharacterReferences?.enabled && localCharacterReferences?.slots?.length && !allowsCharacterReferences) {
+    throw Object.assign(new Error('当前模型或编辑模式不支持角色参考'), { status: 400 });
+  }
+  if (localVibes?.enabled && localVibes?.slots?.length && localCharacterReferences?.enabled && localCharacterReferences?.slots?.length) {
+    throw Object.assign(new Error('Vibe Transfer 与角色参考不能同时使用'), { status: 400 });
+  }
+  let resolvedVibeEncodings = null;
+  let vibeCacheKeysSentWithData = new Set();
+  if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
+    const slots = localVibes.slots.slice(0, 16);
+    if (slots.some(slot => typeof slot.strength !== 'number' || !Number.isFinite(slot.strength))) throw Object.assign(new Error('Vibe 强度必须是有限数值'), { status: 400 });
+    if (localVibes.slots.length > 16) throw Object.assign(new Error('一次最多使用 16 个 Vibe'), { status: 400 });
+    const resolved = await Promise.all(slots.map(slot => vibeEncodingMemoryCache.get(
+      `${slot.vibeId}:${slot.encodingId}`,
+      () => requestWorkerJson(`/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort)
+    )));
+    for (const item of resolved) {
+      if (item.variant?.model !== vibeBaseModel(payload.model)) throw Object.assign(new Error('Vibe 编码与当前生成模型不匹配，请在管理中选择对应模型的编码；不会自动重新编码'), { status: 400 });
+      if (typeof item.encoding !== 'string' || Buffer.from(item.encoding, 'base64').length < 64) throw Object.assign(new Error('Vibe 永久编码缺失或已损坏'), { status: 400 });
+    }
+    resolvedVibeEncodings = resolved.map(item => item.encoding);
+    delete payload.parameters.reference_image_multiple;
+    delete payload.parameters.reference_information_extracted_multiple;
+    delete payload.parameters.reference_image_multiple_cached;
+    // 中转与官方不能共用远端缓存命中；完整发送已有编码，不因缓存拒绝重发生图。
+    payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings,
+      generationProxyUrl ? new Set(resolvedVibeEncodings.map(getVibeCacheSecretKey)) : null);
+    payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
+      ? slots.map(slot => slot.strength)
+      : normalizeVibeStrengths(slots);
+    payload.parameters.normalize_reference_strength_multiple = false;
+    if (payload.parameters.reference_image_multiple_cached.length !== payload.parameters.reference_strength_multiple.length) {
+      throw Object.assign(new Error('Vibe 编码与强度数量不一致'), { status: 400 });
+    }
+    vibeCacheKeysSentWithData = new Set(payload.parameters.reference_image_multiple_cached
+      .filter(item => item.data)
+      .map(item => item.cache_secret_key));
+  }
+  if (payload?.parameters) {
+    delete payload.parameters._local_vibes;
+    const characterSlots = localCharacterReferences?.enabled && Array.isArray(localCharacterReferences.slots)
+      ? localCharacterReferences.slots
+      : [];
+    clearPreciseReferenceParameters(payload.parameters);
+    if (characterSlots.length) {
+      if (!allowsCharacterReferences) throw Object.assign(new Error('当前模型或编辑模式不支持角色参考'), { status: 400 });
+      if (characterSlots.length > 4) throw Object.assign(new Error('一次最多使用 4 个角色参考'), { status: 400 });
+      if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
+        throw Object.assign(new Error('角色参考缺少有效的本地资产 ID'), { status: 400 });
+      }
+      const resolved = await Promise.all(characterSlots.map(async slot => {
+        const image = await requestWorkerBuffer(
+          `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
+        );
+        if (image.status >= 400 || !image.buffer.length) {
+          throw Object.assign(new Error(`角色参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
+        }
+        const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
+        return {
+          data: await preparePreciseReferenceImage(`${slot.assetId}:${etag}`, image.buffer),
+          mimeType: 'image/png',
+        };
+      }));
+      try {
+        Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
+        if (gatewayUrl) toCachedPreciseReferenceParameters(payload.parameters);
+      } catch (error) {
+        throw Object.assign(new Error(error?.message || '角色参考参数无效'), { status: 400 });
+      }
+    }
+  }
+  return { resolvedVibeEncodings, vibeCacheKeysSentWithData };
 };
 
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
@@ -1852,105 +1960,9 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
     if (gatewayUrl && payload?.parameters) delete payload.parameters.stream;
-    const localVibes = payload?.parameters?._local_vibes;
-    const localCharacterReferences = payload?.parameters?._local_character_references;
-    const runtime = getNaiRuntime();
-    const capability = getNaiModelCapability(payload?.model, runtime) || {
-      supportsVibes: false,
-      supportsCharacterReferences: false,
-      supportsCharacterReferenceInpainting: false,
-      maxCharacters: 6,
-    };
-    const editOperation = String(payload?.parameters?._local_edit_operation || '');
-    const isImageEdit = payload?.action === 'infill' || payload?.action === 'img2img'
-      || editOperation === 'inpaint' || editOperation === 'outpaint' || editOperation === 'image-to-image';
-    const allowsVibes = !isImageEdit || editOperation === 'image-to-image';
-    const allowsCharacterReferences = isImageEdit && editOperation !== 'image-to-image'
-      ? capability.supportsCharacterReferenceInpainting === true
-      : capability.supportsCharacterReferences === true;
-    const characterPromptCount = Array.isArray(payload?.parameters?.v4_prompt?.caption?.char_captions)
-      ? payload.parameters.v4_prompt.caption.char_captions.length
-      : 0;
-    const maxCharacters = Math.max(1, Number(capability.maxCharacters) || 6);
-    if (characterPromptCount > maxCharacters) {
-      return sendJson(res, 400, { error: `当前模型最多支持 ${maxCharacters} 个角色提示词` });
-    }
-    if (localVibes?.enabled && localVibes?.slots?.length && !capability.supportsVibes) {
-      return sendJson(res, 400, { error: '当前模型不支持 Vibe Transfer' });
-    }
-    if (localVibes?.enabled && localVibes?.slots?.length && !allowsVibes) {
-      return sendJson(res, 400, { error: '局部重绘和扩图不发送 Vibe Transfer' });
-    }
-    if (localCharacterReferences?.enabled && localCharacterReferences?.slots?.length && !allowsCharacterReferences) {
-      return sendJson(res, 400, { error: '当前模型或编辑模式不支持角色参考' });
-    }
-    if (localVibes?.enabled && localVibes?.slots?.length && localCharacterReferences?.enabled && localCharacterReferences?.slots?.length) {
-      return sendJson(res, 400, { error: 'Vibe Transfer 与角色参考不能同时使用' });
-    }
-    let resolvedVibeEncodings = null;
-    let vibeCacheKeysSentWithData = new Set();
-    if (localVibes?.enabled && Array.isArray(localVibes.slots) && localVibes.slots.length) {
-      const slots = localVibes.slots.slice(0, 16);
-      if (localVibes.slots.length > 16) return sendJson(res, 400, { error: '一次最多使用 16 个 Vibe' });
-      const resolved = await Promise.all(slots.map(slot => vibeEncodingMemoryCache.get(
-        `${slot.vibeId}:${slot.encodingId}`,
-        () => requestWorkerJson(`/api/vibes/${encodeURIComponent(slot.vibeId)}/encodings/${encodeURIComponent(slot.encodingId)}/data`, req, workerPort)
-      )));
-      for (const item of resolved) {
-        if (item.variant?.model !== 'nai-diffusion-4-5-full') return sendJson(res, 400, { error: 'Vibe 缺少 V4.5 Full 编码' });
-        if (typeof item.encoding !== 'string' || item.encoding.length < 100) return sendJson(res, 400, { error: 'Vibe 永久编码缺失或已损坏' });
-      }
-      resolvedVibeEncodings = resolved.map(item => item.encoding);
-      delete payload.parameters.reference_image_multiple;
-      delete payload.parameters.reference_information_extracted_multiple;
-      delete payload.parameters.reference_image_multiple_cached;
-      // 中转与官方不能共用远端缓存命中；完整发送已有编码，不因缓存拒绝重发生图。
-      payload.parameters.reference_image_multiple_cached = buildCachedVibeReferences(resolvedVibeEncodings,
-        generationProxyUrl ? new Set(resolvedVibeEncodings.map(getVibeCacheSecretKey)) : null);
-      payload.parameters.reference_strength_multiple = localVibes.normalizeStrengths === false
-        ? slots.map(slot => Math.max(0, Math.min(1, Number(slot.strength) || 0)))
-        : normalizeVibeStrengths(slots);
-      payload.parameters.normalize_reference_strength_multiple = false;
-      if (payload.parameters.reference_image_multiple_cached.length !== payload.parameters.reference_strength_multiple.length) {
-        return sendJson(res, 400, { error: 'Vibe 编码与强度数量不一致' });
-      }
-      vibeCacheKeysSentWithData = new Set(payload.parameters.reference_image_multiple_cached
-        .filter(item => item.data)
-        .map(item => item.cache_secret_key));
-    }
-    if (payload?.parameters) {
-      delete payload.parameters._local_vibes;
-      const characterSlots = localCharacterReferences?.enabled && Array.isArray(localCharacterReferences.slots)
-        ? localCharacterReferences.slots
-        : [];
-      clearPreciseReferenceParameters(payload.parameters);
-      if (characterSlots.length) {
-        if (!allowsCharacterReferences) return sendJson(res, 400, { error: '当前模型或编辑模式不支持角色参考' });
-        if (characterSlots.length > 4) return sendJson(res, 400, { error: '一次最多使用 4 个角色参考' });
-        if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
-          return sendJson(res, 400, { error: '角色参考缺少有效的本地资产 ID' });
-        }
-        const resolved = await Promise.all(characterSlots.map(async slot => {
-          const image = await requestWorkerBuffer(
-            `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
-          );
-          if (image.status >= 400 || !image.buffer.length) {
-            throw Object.assign(new Error(`角色参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
-          }
-          const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
-          return {
-            data: await preparePreciseReferenceImage(`${slot.assetId}:${etag}`, image.buffer),
-            mimeType: 'image/png',
-          };
-        }));
-        try {
-          Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
-          if (gatewayUrl) toCachedPreciseReferenceParameters(payload.parameters);
-        } catch (error) {
-          return sendJson(res, 400, { error: error?.message || '角色参考参数无效' });
-        }
-      }
-    }
+    const { resolvedVibeEncodings, vibeCacheKeysSentWithData } = await prepareGenerationReferences(
+      payload, req, workerPort, { generationProxyUrl, gatewayUrl },
+    );
     const settlementPayload = JSON.parse(JSON.stringify(payload));
     if (payload.parameters) {
       delete payload.parameters._local_edit_operation;
@@ -2165,13 +2177,9 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     if (!payload.parameters || typeof payload.parameters !== 'object') {
       return sendJson(res, 400, { error: '生图请求缺少 parameters' });
     }
-    const hasLocalVibes = payload?.parameters?._local_vibes?.enabled && payload.parameters._local_vibes.slots?.length;
-    const hasLocalReferences = payload?.parameters?._local_character_references?.enabled && payload.parameters._local_character_references.slots?.length;
-    if (hasLocalVibes || hasLocalReferences) {
-      return sendJson(res, 400, { error: '当前参考图功能不支持生成过程预览，请关闭过程预览后重试' });
-    }
-    delete payload.parameters._local_vibes;
-    delete payload.parameters._local_character_references;
+    const { resolvedVibeEncodings, vibeCacheKeysSentWithData } = await prepareGenerationReferences(
+      payload, req, workerPort, { generationProxyUrl, gatewayUrl },
+    );
     const settlementPayload = JSON.parse(JSON.stringify(payload));
     delete payload.parameters._local_edit_operation;
     delete payload.parameters._local_focused_inpainting;
@@ -2197,7 +2205,10 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
     generationSubmitted = true;
-    const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
+    const upstream = resolvedVibeEncodings && !generationProxyUrl
+      ? await generateWithVibeCacheRetry(payload, authorization, resolvedVibeEncodings, vibeCacheKeysSentWithData,
+        (nextPayload, nextAuthorization) => fetchNovelAiGenerationStream(nextPayload, nextAuthorization, generationSignal, requestRemote))
+      : await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     if (!upstream.ok) {
@@ -2309,15 +2320,17 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
   try {
     const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8'));
-    const informationExtracted = Math.round(Number(body.informationExtracted) * 100) / 100;
+    const informationExtracted = Number(body.informationExtracted);
+    const model = vibeBaseModel(body.model);
+    if (!vibeModelKey(model) || !getNaiRuntime().modelCapabilities?.[model]?.supportsVibes) return sendJson(res, 400, { error: '当前模型不支持 Vibe 编码' });
     if (!Number.isFinite(informationExtracted) || informationExtracted < 0 || informationExtracted > 1) {
       return sendJson(res, 400, { error: '信息提取量必须在 0 到 1 之间' });
     }
     const asset = await requestWorkerJson(`/api/vibes/${encodeURIComponent(vibeId)}`, req, workerPort);
-    const existing = asset.item?.encodings?.find(item => Math.abs(Number(item.informationExtracted) - informationExtracted) < 0.001 && item.model === 'nai-diffusion-4-5-full');
+    const existing = asset.item?.encodings?.find(item => item.informationKnown !== false && !item.parameters?.mask && Number(item.informationExtracted) === informationExtracted && item.model === model);
     if (existing) return sendJson(res, 200, { item: asset.item, duplicate: true });
 
-    const taskKey = `${vibeId}:nai-diffusion-4-5-full:${informationExtracted.toFixed(2)}`;
+    const taskKey = `${vibeId}:${model}:${informationExtracted}`;
     const pendingRecovery = pendingVibeRecoveries.get(taskKey);
     if (pendingRecovery) {
       const stored = await commitVibeRecovery(pendingRecovery, req, workerPort);
@@ -2337,7 +2350,7 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
         const response = await requestRemote(gatewayUrl ? `${gatewayUrl}/ai/encode-vibe` : NAI_ENCODE_VIBE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
-          body: JSON.stringify({ image: original.buffer.toString('base64'), information_extracted: informationExtracted, model: 'nai-diffusion-4-5-full' }),
+          body: JSON.stringify({ image: original.buffer.toString('base64'), information_extracted: informationExtracted, model }),
           signal: AbortSignal.timeout(300_000),
           ...(gatewayUrl ? { redirect: 'error' } : {}),
         });
@@ -2357,11 +2370,11 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
         let anlasBudget, anlasAccountingError;
         try {
           anlasBudget = await commitNaiAccounting(req, workerPort, { keyHash: encodeKeyHash, action: 'encoding',
-            model: 'nai-diffusion-4-5-full', images: 0, cost, opusImages: 0 });
+            model, images: 0, cost, opusImages: 0 });
         } catch (cause) { anlasAccountingError = describeAccountingFailure('本地用量结算', cause); }
         // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
         const anlasAccountingFailed = Boolean(anlasAccountingError);
-        const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
+        const recovery = { vibeId, model, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
           return { ...stored, anlasBudget, ...(anlasAccountingFailed ? { anlasAccountingFailed: true, anlasAccountingError } : {}) };

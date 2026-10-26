@@ -278,6 +278,7 @@ export async function readCodexImageMetadata(file: File): Promise<CodexImageMeta
     params.characters = parsed.params.characters;
     if (comment.v4_prompt.use_coords !== undefined) params.useCoords = parsed.params.useCoords;
   }
+  if (parsed.params.vibes) params.vibes = parsed.params.vibes;
   if (comment.cfg_rescale !== undefined) params.cfgRescale = parsed.params.cfgRescale;
   if (comment.skip_cfg_above_sigma !== undefined) params.variety = parsed.params.variety;
   if (comment.transparent !== undefined || comment.tag_hint_transparent_background !== undefined) {

@@ -37,6 +37,30 @@ const shownCount = (name: string) => {
   return document.getElementById(row.getAttribute('aria-describedby')!)?.textContent;
 };
 
+it('业务范围嵌入已有导航，收起保留筛选与分组，按钮提示范围且不改归属计数', () => {
+  function StatusBrowser() {
+    const [range, setRange] = useState('all');
+    const groups = useCatalogGroupBrowser('artist', [], vi.fn(), 'artist', completeKeys, {
+      navigationHeader: <select aria-label="画师范围" value={range} onChange={event => setRange(event.target.value)}><option value="all">全部画师</option><option value="preferred">偏好画师</option></select>,
+      activeFilterLabel: range === 'preferred' ? '偏好画师' : undefined,
+    });
+    return <>{groups.toolbar}{groups.navigation}</>;
+  }
+  render(<StatusBrowser />); openNavigation();
+  fireEvent.change(screen.getByRole('combobox', { name: '画师范围' }), { target: { value: 'preferred' } });
+  fireEvent.click(screen.getByRole('button', { name: '组二' }));
+  expect(shownCount('全部')).toBe('5'); expect(shownCount('组二')).toBe('1');
+  openNavigation();
+  const trigger = screen.getByRole('button', { name: '分组导航' });
+  expect(screen.queryByRole('combobox', { name: '画师范围' })).toBeNull();
+  expect(trigger).toHaveProperty('title', '展开分类 · 组二 · 偏好画师');
+  expect(trigger.dataset.active).toBe('true');
+  openNavigation();
+  expect(screen.getByRole('combobox', { name: '画师范围' })).toHaveProperty('value', 'preferred');
+  expect(screen.getByRole('button', { name: '组二' }).getAttribute('aria-current')).toBe('page');
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+
 it('完整目录单次计数，跨组各记一次，去重并排除幽灵和无效键，不随业务搜索或选择减少', () => {
   mocks.state.memberships['artist:a'] = ['one', 'two'];
   const view = render(<Harness catalogKeys={[...completeKeys, 'artist:a', 'artist: ', 'catalog:a', 'artist:bad\nkey']} selected={['artist:a']} />); openNavigation();

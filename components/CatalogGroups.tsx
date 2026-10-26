@@ -18,7 +18,7 @@ const preference = (scope: string) => {
   try { return JSON.parse(localStorage.getItem(`nai_catalog_groups_${scope}`) || '{}') as { expanded?: boolean; active?: string }; } catch { return {}; }
 };
 
-export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[]) {
+export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[], navigationOptions?: { navigationHeader?: React.ReactNode; activeFilterLabel?: string }) {
   useLanguage();
   const data = useCatalogGroups(kind), navigationId = useId();
   const confirmAction = useConfirmDialog(), active = useContext(ImageActivityContext);
@@ -101,10 +101,11 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   return {
     ...data, activeGroup, selectGroup, expanded,
     matches, cardDragProps,
-    toolbar: <><ToolbarButton aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label].join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*'} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
+    toolbar: <><ToolbarButton aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
       {selectedKeys.length > 0 && <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!data.ready || data.busy || Boolean(data.error)} onClick={() => setDialog({ scope, keys: [...new Set(selectedKeys)] })}><FolderPlus /></ToolbarButton>}
       {dialog?.scope === scope && <ImagePreviewPortal><GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} editing={dialog.editing} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} /></ImagePreviewPortal>}</>,
     navigation: expanded ? <aside id={navigationId} aria-label={t('分组导航')} onDragOver={event => hover(event, '*')} onDrop={event => void drop(event, '*')} className={`${scope === 'roll-artists' ? '' : 'workspace-fixed-pane'} catalog-group-navigation workspace-category-navigation appearance-panel min-h-0 flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r`}>
+      {navigationOptions?.navigationHeader}
       <div className="mb-2 flex items-center justify-between gap-1"><span className="text-xs font-semibold text-gray-500">{t('分组')}</span><div className="flex gap-1">
         <ToolbarButton aria-label={t('新建分组')} title={t('新建分组')} disabled={blocked} className="!px-2" onClick={() => setDialog({ scope, keys: [], editing: 'new' })}><Plus className="h-4 w-4" /></ToolbarButton>
         {currentGroup && <><ToolbarButton aria-label={t('重命名分组')} title={t('重命名分组')} disabled={blocked} className="!px-2" onClick={() => setDialog({ scope, keys: [], editing: currentGroup.id })}><Pencil className="h-4 w-4" /></ToolbarButton><ToolbarButton aria-label={t('删除分组')} disabled={blocked} className="!px-2" onClick={() => void remove()}><Trash2 className="h-4 w-4" /></ToolbarButton></>}

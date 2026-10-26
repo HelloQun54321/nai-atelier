@@ -29,8 +29,42 @@ const request = (key = 'handler-key', body = payload(), maximum) => {
 const reply = (res, body, remaining = 1666) => res.end(JSON.stringify({ receiptId: body.receiptId, budget: { remaining } }));
 const withoutReceipt = ({ receiptId, ...body }) => body;
 const encodingReceipt = (id, informationExtracted = 1) => ({ item: { id,
-  encodings: [{ id: 'synthetic-encoding', model: 'nai-diffusion-4-5-full', informationExtracted }] } });
+  encodings: [{ id: 'synthetic-encoding', model: 'nai-diffusion-4-5-full', informationExtracted, encodingHash: createHash('sha256').update(Buffer.alloc(128, 2)).digest('hex') }] } });
 const idleQueue = () => new CloudQueueCoordinator(() => assert.fail('不能调用公共队列'), 'https://queue.invalid');
+
+test('四个受支持模型分别编码并复用，精确提取量和真实模型贯穿请求、记账与保存', async () => {
+  const models = ['nai-diffusion-4-full', 'nai-diffusion-4-curated-preview', 'nai-diffusion-4-5-full', 'nai-diffusion-4-5-curated'];
+  const stored = new Map(), accounted = [], calls = [];
+  const worker = createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    res.setHeader('content-type', 'application/json');
+    if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
+    if (req.url === '/api/nai-accounting') { const body = JSON.parse(Buffer.concat(chunks)); accounted.push(body); return reply(res, body); }
+    const id = req.url.split('/')[3];
+    if (req.url.endsWith('/encoding-result')) {
+      const body = JSON.parse(Buffer.concat(chunks));
+      assert.equal(body.informationExtracted, 0.705); assert.equal(body.model, id);
+      const receipt = encodingReceipt(id, body.informationExtracted); receipt.item.encodings[0].model = body.model;
+      stored.set(id, receipt); return res.end(JSON.stringify(receipt));
+    }
+    res.end(JSON.stringify(stored.get(id) || { item: { id, encodings: [] } }));
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  const remote = async (_url, options) => { const body = JSON.parse(options.body); calls.push(body); return new Response(Buffer.alloc(128, 2)); };
+  try {
+    for (const model of models) {
+      const first = new Output(), duplicate = new Output();
+      for (const output of [first, duplicate]) await handleVibeEncodeRequest(request('model-key', { model, informationExtracted: 0.705 }), output, '', worker.address().port, model, remote);
+      assert.equal(first.statusCode, 200, first.body()); assert.equal(duplicate.statusCode, 200, duplicate.body());
+      assert.equal(JSON.parse(duplicate.body()).duplicate, true);
+    }
+    assert.deepEqual(calls.map(call => call.model), models); assert.ok(calls.every(call => call.information_extracted === 0.705));
+    assert.deepEqual(accounted.map(call => call.model), models);
+    const rejected = new Output();
+    await handleVibeEncodeRequest(request('model-key', { model: 'nai-diffusion-5-full', informationExtracted: 0.7 }), rejected, '', worker.address().port, 'v5', remote);
+    assert.equal(rejected.statusCode, 400); assert.equal(calls.length, 4);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
 test('Vibe 编码：成员 Key 走绑定网关，失败不重试，官方 Key 保持原接口；并发不同接入分别计费', async () => {
   const spends = [], saves = [], calls = [], usage = [];
   const worker = createServer(async (req, res) => {

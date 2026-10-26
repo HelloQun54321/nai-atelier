@@ -3,6 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
+import * as libraryRandom from '../../services/libraryRandom';
 import { useCatalogGroups } from '../../services/useCatalogGroups';
 const groupMocks = vi.hoisted(() => ({ state: { revision: 0, groups: [] as { id: string; name: string }[], memberships: {} as Record<string, string[]> }, ready: true, error: '', realHook: undefined as typeof import('../../services/useCatalogGroups').useCatalogGroups | undefined, get: vi.fn(), put: vi.fn() }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { ...((await original<typeof import('../../services/api')>()).api), get: groupMocks.get, put: groupMocks.put } }));
@@ -18,7 +19,7 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { installPointerEvents, longPress } from '../support/touchEvents';
-const mocks = vi.hoisted(() => ({ blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ ensureCollection: vi.fn(), blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', async original => {
   const module = await original<typeof import('../../services/localHistory')>();
@@ -35,7 +36,7 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, prepareArtistSampleImport: mocks.prepare }));
 vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, generateAfterSave, enforceFreeStepLimit, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置" data-free-step-limit={enforceFreeStepLimit}><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{generateAfterSave ? '保存并生成样张' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page }));
-vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
+vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: mocks.ensureCollection, toggleArtistPreference: vi.fn(), collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
 vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ blocked, preferred, onBlock, notify, tag, pack, packTag, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-blocked={blocked} data-preferred={preferred} data-pack={pack} data-pack-tag={packTag} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
   <button aria-label={'屏蔽 ' + tag} onClick={event => { event.stopPropagation(); void onBlock().catch((error: Error) => notify(error.message, 'error')); }}>屏蔽</button>
   <div data-card-action="true" onClick={event => event.stopPropagation()}>{['v45', 'v5'].map(value => <button key={value} aria-label={'卡片 ' + value} aria-pressed={pack === value} onClick={() => onPackChange(value)}>{value}</button>)}</div>
@@ -61,6 +62,7 @@ beforeEach(() => {
   groupMocks.put.mockImplementation(async (_path, next) => { groupMocks.state = { ...structuredClone(next), revision: next.revision + 1 }; return structuredClone(groupMocks.state); });
   mocks.key = 'synthetic-key'; mocks.begin.mockResolvedValue(undefined); mocks.confirm.mockResolvedValue(true); mocks.states.clear(); mocks.generationListeners.clear(); mocks.generationRevision = 0; mocks.generatedSamples = [];
   mocks.collection = []; mocks.collectionListeners.clear(); mocks.historyListeners.clear();
+  mocks.ensureCollection.mockResolvedValue(undefined);
   mocks.historySubscribe.mockImplementation((listener: (change: any) => void) => { mocks.historyListeners.add(listener); return () => { mocks.historyListeners.delete(listener); }; });
   mocks.blockLoad.mockResolvedValue([]); mocks.blockSave.mockImplementation(async tags => tags);
   mocks.status.mockResolvedValue(status());
@@ -190,10 +192,10 @@ it('分组与搜索、偏好、样张和使用统计取交集，原名身份不�
   setup(); await screen.findByTestId('cover-alpha artist');
   fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'g1' } });
   expect(sampleCards()).toHaveLength(2);
-  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  setArtistScope('preferred');
   expect(sampleCards()).toHaveLength(1);
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  setArtistScope('all');
+  openArtistFilters();
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'unused' } });
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
   expect(sampleCards()).toHaveLength(1);
@@ -205,6 +207,65 @@ it('分组与搜索、偏好、样张和使用统计取交集，原名身份不�
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'all' } });
   expect(sampleCards()).toHaveLength(1);
   expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+});
+it.each([390, 1280])('画师范围在%s宽度使用相同入口与选项', async width => {
+  vi.stubGlobal('innerWidth', width);
+  setup(); await screen.findByTestId('cover-alpha artist');
+  const scope = getArtistScope();
+  expect(Array.from(scope.options, option => [option.value, option.textContent])).toEqual([
+    ['all', '全部画师'], ['preferred', '偏好画师'], ['blocked', '已屏蔽'],
+  ]);
+});
+it('偏好和屏蔽范围按现有名单即时更新，并保留无样张的屏蔽画师', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
+  mocks.blockLoad.mockResolvedValue(['missing artist']);
+  setup(); await screen.findByTestId('cover-missing artist');
+  setArtistScope('preferred');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
+  setArtistScope('blocked');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist']);
+  act(() => {
+    mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
+    mocks.collectionListeners.forEach(listener => listener());
+  });
+  setArtistScope('preferred');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']);
+  act(() => window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: ['beta artist'] })));
+  setArtistScope('blocked');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']);
+});
+it('偏好范围读取失败显示状态并可重试，不闪空列表', async () => {
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
+  let reject!: (error: Error) => void;
+  mocks.ensureCollection.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  setup(); await screen.findByTestId('cover-alpha artist');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
+  setArtistScope('preferred');
+  expect(screen.getByText('正在读取画师状态…')).toBeTruthy();
+  await act(async () => reject(new Error('合成偏好读取失败')));
+  expect(screen.getByText('画师状态读取失败')).toBeTruthy();
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  expect(screen.queryByText('仅显示前 200 条结果，请缩小搜索范围')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+  await waitFor(() => expect(screen.getByTestId('cover-alpha artist')).toBeTruthy());
+});
+it('切换画师范围退出随机批次，且不改动独立的随机排除设置', async () => {
+  localStorage.setItem('nai_artist_gacha_exclude_favorites', 'true');
+  localStorage.setItem('nai_artist_gacha_exclude_blocked', 'true');
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
+  mocks.blockLoad.mockResolvedValue(['missing artist']);
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: ['alpha_artist', 'beta artist', 'missing artist'] }));
+  setup(); await screen.findByTestId('cover-alpha artist');
+  await waitFor(() => expect((screen.getByRole('button', { name: '随机选画师' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '返回完整目录' })).toBeTruthy());
+  setArtistScope('blocked');
+  expect(screen.queryByRole('button', { name: '返回完整目录' })).toBeNull();
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：missing artist']);
+  fireEvent.click(screen.getByRole('button', { name: '画师库设置' }));
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已偏好画师' }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已屏蔽画师' }) as HTMLInputElement).checked).toBe(true);
 });
 it('分组资料加载或失败不冒充全库，禁止使用未知分组池随机', async () => {
   prepareGroups({ 'artist:alpha artist': ['g1'] });
@@ -303,12 +364,16 @@ it.each([true, false])('补图模板沿用全局免费步数偏好：%s', async 
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
-it.each(['usage-chains', 'usage-images'])('统计排序%s加载400位后随机只显示本次12位，再选仍为12位', async sort => {
+it.each(['usage-chains', 'usage-images'].flatMap(sort => [false, true].map(exclude => ({ sort, exclude }))))('统计排序$sort加载400位后随机只显示本次12位，排除=$exclude，再选仍为12位', async ({ sort, exclude }) => {
   const pool = Array.from({ length: 410 }, (_, i) => ({ name: `fourhundred${String(i).padStart(3, '0')}`, chinese: '', postCount: 1000 - i }));
   mocks.dictionary.mockResolvedValue(pool);
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: pool.map(entry => entry.name) }));
   mocks.usage.mockResolvedValue({ byTag: new Map([[pool[0].name, { chains: 999, images: 999, lastAt: 1 }]]), indexed: 1, total: 1 });
   localStorage.setItem('nai_artist_sort', sort); localStorage.setItem('nai_artist_gacha_count', '12'); localStorage.setItem('nai_artist_gacha_mode', 'uniform');
+  if (exclude) {
+    localStorage.setItem('nai_artist_gacha_exclude_favorites', 'true');
+    mocks.collection = [{ sourceType: 'artist', sourceId: pool[0].name }];
+  }
   setup(); await screen.findByText('收录 999 串 · 生成 999 张');
   disableSampleFilter();
   expect(sampleCards()).toHaveLength(100);
@@ -316,14 +381,150 @@ it.each(['usage-chains', 'usage-images'])('统计排序%s加载400位后随机�
   expect(sampleCards()).toHaveLength(400);
   let random = 0; vi.spyOn(Math, 'random').mockImplementation(() => ((random++ % 410) + 0.1) / 410);
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  await waitFor(() => expect(screen.getByText('本次抽取 12 位')).toBeTruthy());
   expect(sampleCards()).toHaveLength(12);
   expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
   const first = sampleCards().map(card => card.getAttribute('aria-label'));
   fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: '再选一批' }) as HTMLButtonElement).disabled).toBe(false));
   expect(sampleCards()).toHaveLength(12);
   expect(screen.getByText('本次抽取 12 位')).toBeTruthy();
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).not.toEqual(first);
+  if (exclude) expect(screen.queryByTestId('cover-' + pool[0].name)).toBeNull();
   expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it.each(['mixed', 'uniform', 'popular'].flatMap(mode => [
+  { favorites: false, blocked: false, excluded: [] },
+  { favorites: true, blocked: false, excluded: [0] },
+  { favorites: false, blocked: true, excluded: [0, 1] },
+  { favorites: true, blocked: true, excluded: [0, 1] },
+].map(options => ({ mode, ...options }))))('随机$mode按独立选项排除：偏好=$favorites / 屏蔽=$blocked，不足数量不补回', async ({ mode, favorites, blocked, excluded }) => {
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: entries.map(entry => entry.name) }));
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha_artist' }, { sourceType: 'artist', sourceId: 'missing artist', archived: true }, { sourceType: 'danbooru', sourceId: 'beta artist' }];
+  mocks.blockLoad.mockResolvedValue(['alpha_artist', 'beta_artist']);
+  localStorage.setItem('nai_artist_gacha_mode', mode);
+  localStorage.setItem('nai_artist_gacha_exclude_favorites', String(favorites));
+  localStorage.setItem('nai_artist_gacha_exclude_blocked', String(blocked));
+  const draw = vi.spyOn(libraryRandom, 'drawLibraryIndices');
+  setup(); await screen.findByTestId('cover-missing artist');
+  const collectionReads = mocks.ensureCollection.mock.calls.length, blockReads = mocks.blockLoad.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  await waitFor(() => expect(screen.getByText(`本次抽取 ${3 - excluded.length} 位`)).toBeTruthy());
+  expect(draw).toHaveBeenLastCalledWith(3, 12, mode, [], favorites || blocked ? new Set(excluded) : undefined);
+  expect(sampleCards()).toHaveLength(3 - excluded.length);
+  for (const index of excluded) expect(screen.queryByTestId('cover-' + entries[index].name)).toBeNull();
+  expect(mocks.ensureCollection).toHaveBeenCalledTimes(collectionReads + Number(favorites));
+  expect(mocks.blockLoad).toHaveBeenCalledTimes(blockReads + Number(blocked));
+  expect(mocks.blockSave).not.toHaveBeenCalled(); expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it('排除选项默认关闭、独立保存并恢复，存储失败仍保留本次选择', async () => {
+  const view = setup(); await screen.findByTestId('cover-alpha artist');
+  const settings = () => fireEvent.click(screen.getByRole('button', { name: '画师库设置' }));
+  settings();
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已偏好画师' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已屏蔽画师' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: '抽取时排除已偏好画师' }));
+  expect(localStorage.getItem('nai_artist_gacha_exclude_favorites')).toBe('true');
+  expect(localStorage.getItem('nai_artist_gacha_exclude_blocked')).toBeNull();
+  view.unmount(); setup(); await screen.findByTestId('cover-alpha artist'); settings();
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已偏好画师' }) as HTMLInputElement).checked).toBe(true);
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('合成存储不可用'); });
+  fireEvent.click(screen.getByRole('checkbox', { name: '抽取时排除已屏蔽画师' }));
+  expect((screen.getByRole('checkbox', { name: '抽取时排除已屏蔽画师' }) as HTMLInputElement).checked).toBe(true);
+  set.mockRestore();
+});
+
+it.each(['favorites', 'blocked'])('排除%s等待最新名单，失败保留浏览条件并允许重试', async source => {
+  localStorage.setItem('nai_artist_gacha_exclude_' + source, 'true');
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: entries.map(entry => entry.name) }));
+  const { notify } = setup(); await screen.findByTestId('cover-beta artist');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
+  setArtistScope('preferred');
+  let reject!: (error: Error) => void;
+  const read = source === 'favorites' ? mocks.ensureCollection : mocks.blockLoad;
+  read.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  expect((screen.getByRole('button', { name: '随机选画师' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText('本次抽取 3 位')).toBeNull();
+  await act(async () => reject(new Error('合成名单读取失败')));
+  expect(notify).toHaveBeenCalledWith('合成名单读取失败', 'error');
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('alpha');
+  expect((screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement).value).toBe('preferred');
+  let resolve!: (value?: string[]) => void;
+  read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
+  await act(async () => resolve(source === 'blocked' ? ['beta_artist'] : undefined));
+  expect(screen.getByText('本次抽取 2 位')).toBeTruthy();
+  expect(screen.queryByTestId('cover-beta artist')).toBeNull();
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+});
+
+it.each(['favorites', 'blocked'])('排除%s等待期间的名单更新优先于迟到旧响应', async source => {
+  localStorage.setItem('nai_artist_gacha_exclude_' + source, 'true');
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: entries.map(entry => entry.name) }));
+  setup(); await screen.findByTestId('cover-missing artist');
+  let resolve!: (value?: string[]) => void;
+  const read = source === 'favorites' ? mocks.ensureCollection : mocks.blockLoad;
+  read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  await act(async () => {
+    if (source === 'favorites') {
+      mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha_artist' }];
+      mocks.collectionListeners.forEach(listener => listener());
+    } else window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: ['alpha_artist'] }));
+    resolve(source === 'blocked' ? [] : undefined);
+  });
+  expect(screen.getByText('本次抽取 2 位')).toBeTruthy();
+  expect(screen.queryByTestId('cover-alpha artist')).toBeNull();
+  expect(screen.getByTestId('cover-beta artist')).toBeTruthy();
+  expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
+});
+
+it('改排除选项及偏好屏蔽状态保持当前批，全排除和读取失败均保留当前批', async () => {
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: pack + '-one', tags: entries.map(entry => entry.name) }));
+  const { notify } = setup(); await screen.findByTestId('cover-beta artist');
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  const first = sampleCards().map(card => card.getAttribute('aria-label'));
+  fireEvent.click(screen.getByRole('button', { name: '画师库设置' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '抽取时排除已偏好画师' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '抽取时排除已屏蔽画师' })); fireEvent.keyDown(window, { key: 'Escape' });
+  act(() => {
+    mocks.collection = entries.map(entry => ({ sourceType: 'artist', sourceId: entry.name }));
+    mocks.collectionListeners.forEach(listener => listener());
+    window.dispatchEvent(new CustomEvent('nai-roll-blocklist-changed', { detail: ['alpha artist'] }));
+  });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(first);
+  mocks.blockLoad.mockResolvedValue(['alpha artist']);
+  fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('排除后没有可抽取的画师，请调整抽取设置', 'error'));
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(first);
+  mocks.blockLoad.mockRejectedValueOnce(new Error('合成屏蔽读取失败'));
+  fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成屏蔽读取失败', 'error'));
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(first);
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
+  fireEvent.click(screen.getByRole('button', { name: '再选一批' }));
+  await waitFor(() => expect(screen.getByText('本次抽取 1 位')).toBeTruthy());
+  expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
+});
+
+it('排除名单迟到时不覆盖切换版本后的目录', async () => {
+  localStorage.setItem('nai_artist_gacha_exclude_favorites', 'true');
+  setup(); await screen.findByTestId('cover-alpha artist');
+  let resolve!: () => void;
+  mocks.ensureCollection.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
+  fireEvent.click(screen.getByRole('button', { name: 'V5 Full' }));
+  await screen.findByTestId('cover-beta artist');
+  await act(async () => resolve());
+  expect(screen.queryByRole('button', { name: '返回完整目录' })).toBeNull();
+  expect(sampleCards()).toHaveLength(2);
+  for (const cover of screen.getAllByTestId(/^cover-/)) expect(cover.getAttribute('data-pack')).toBe('v5');
 });
 
 it.each(['popular', 'least', 'name-asc', 'name-desc', 'usage-chains', 'usage-chains-asc', 'usage-images', 'usage-images-asc'].flatMap(sort => [true, false].map(onlySamples => ({ sort, onlySamples }))))('随机浏览固定本次集合：$sort / 只看样张=$onlySamples', async ({ sort, onlySamples }) => {
@@ -438,6 +639,12 @@ it.each(['hidden', 'key-change'])('费用确认期间%s不迟到提交，已确�
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 const sampleCards = () => screen.queryAllByRole('button', { name: /^选择画师：/ });
+const getArtistScope = () => {
+  if (!screen.queryByRole('combobox', { name: '画师范围' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  return screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement;
+};
+const setArtistScope = (value: 'all' | 'preferred' | 'blocked') => fireEvent.change(getArtistScope(), { target: { value } });
+const openArtistFilters = () => { const button = screen.getByRole('button', { name: /^筛选/ }); if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button); };
 const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
 const switchCard = (tag: string, pack: 'v45' | 'v5') => fireEvent.click(within(screen.getByTestId('cover-' + tag)).getByRole('button', { name: '卡片 ' + pack }));
 
@@ -480,8 +687,8 @@ it('图包独有画师可在全部目录搜索、收藏和使用统计交集筛�
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'pack only' } });
   await screen.findByText('匹配 1 位');
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：pack_only']);
-  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  setArtistScope('preferred');
+  openArtistFilters();
   fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-chains' } });
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
   fireEvent.change(screen.getByRole('combobox', { name: '图片生成' }), { target: { value: 'unused' } });
@@ -661,8 +868,7 @@ it('收藏只筛选真实词库，未展示页的收藏仍可找到；旧收藏�
     { sourceType: 'danbooru', sourceId: 'missing artist' },
   ];
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
-  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' })); fireEvent.keyDown(window, { key: 'Escape' });
+  setArtistScope('preferred');
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：late artist']);
   expect(screen.getByText('后页画师')).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '后页' } });
@@ -818,6 +1024,17 @@ it('超过100个样张时复用轻量分页，搜索和收藏可命中未展示�
   expect(sampleCards().every(card => full.some(entry => card.getAttribute('aria-label') === '选择画师：' + entry.name))).toBe(true);
   expect(mocks.page).toHaveBeenCalledOnce();
 });
+it('偏好范围先筛完整画师目录，首批100项之后的偏好仍可直接找到', async () => {
+  const full = Array.from({ length: 120 }, (_, index) => ({ name: 'paged artist ' + index, chinese: '', postCount: 120 - index }));
+  mocks.dictionary.mockResolvedValue(full);
+  mocks.catalog.mockImplementation(async (pack: string) => ({ pack, model: pack === 'v5' ? 'nai-diffusion-5-full' : undefined, revision: 'paged', tags: full.map(entry => entry.name) }));
+  mocks.collection = [{ sourceType: 'artist', sourceId: full[109].name }];
+  setup(); await waitFor(() => expect(sampleCards()).toHaveLength(100));
+  expect(screen.queryByTestId('cover-' + full[109].name)).toBeNull();
+  setArtistScope('preferred');
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：' + full[109].name]);
+  expect(screen.getByTestId('cover-' + full[109].name)).toBeTruthy();
+});
 
 it('无法读取图包时明确反馈，但关闭样张筛选仍能浏览Tag词库', async () => {
   mocks.status.mockRejectedValue(new Error('本地图包仅支持电脑端及局域网访问'));
@@ -890,6 +1107,8 @@ it.each([390, 1280])('宽度%s顶栏仅一个画师库设置齿轮，两版模�
     const settings = await screen.findByRole('dialog', { name: '画师库设置' });
     expect(within(settings).getByRole('combobox', { name: '随机方式' })).toBeTruthy();
     expect(within(settings).getByRole('combobox', { name: '数量' })).toBeTruthy();
+    expect((within(settings).getByRole('checkbox', { name: '抽取时排除已偏好画师' }) as HTMLInputElement).checked).toBe(false);
+    expect((within(settings).getByRole('checkbox', { name: '抽取时排除已屏蔽画师' }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(within(settings).getByRole('button', { name: (version === 'V5' ? 'V5 Full' : version) + ' 补图生成设置' }));
     const dialog = await screen.findByRole('dialog', { name: '补图生成设置' });
     expect(screen.queryByRole('dialog', { name: '画师库设置' })).toBeNull();
@@ -938,8 +1157,8 @@ it('逗号OR搜索统一匹配当前版本有图池、图包独有名、收藏�
   render(<ArtistLibrary notify={vi.fn()} initialSearch={{ query: 'alpha_artist，画师乙, pack_or, alpha artist, ,unknown', token: 1 }} />);
   await screen.findByTestId('cover-pack_or');
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：beta artist', '选择画师：pack_or']);
-  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  setArtistScope('preferred');
+  openArtistFilters();
   expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：pack_or']);
   fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'usage-chains' } });
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'used' } });
@@ -1198,7 +1417,8 @@ it('使用统计筛选先筛完整目录，支持零值交集并保留搜索与�
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
   act(() => { mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }]; mocks.collectionListeners.forEach(listener => listener()); });
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏画师' }));
+  setArtistScope('preferred');
+  openArtistFilters();
   fireEvent.change(chains, { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']));
   fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
