@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.130.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.130.2-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -327,6 +327,8 @@ AITag 详情标题栏关闭钮左侧有两个仅图标按钮：叠层文件加�
 ### 🧩 提示词库：片段、组合与原文
 
 顶栏「AI 提取分类」可以粘贴提示词或选择一张本地图片，整理出外貌、服饰、动作、表情、场景和镜头候选；检查名称、正文与分类后，勾选保存到现有片段库。PNG 优先读取原文件内嵌的提示词，也可主动用支持图片的当前助手模型看图推断。英文 Tag 按来源片段保留，中文描述转英文及看图结果需要人工核对；画师、画风与质量词留在未归类区，负面与参数单独展示，提取片段不替代完整配方保存。分析和缺词补译由你主动触发，会发送对应文字或图片副本，可能产生模型费用，不会自动生图或切换模型。
+
+原文区默认只显示输入与清空／撤销，Tag 和权重可从「编辑工具」展开。「按文字分类」优先使用输入框文字，输入为空时使用图片内嵌提示词；「AI 看图提取」发送图片副本并推断内容，图片旁明确显示两者区别。产生候选后，主按钮变为「保存所选片段」，重新分析成为次要操作。
 
 关闭提取窗口保留本端草稿，刷新后保留文字、元数据和候选，但再次看图须重选原图；重新分析成功会替换未保存候选。批量保存继续处理其他条目，只保留失败项及原因；同一候选刷新、重试沿用创建身份，回执丢失时也不会重复创建，若身份已用于不同内容则明确报错且不覆盖原条目。普通「粘贴收录」继续直接原样保存，不调用模型。
 

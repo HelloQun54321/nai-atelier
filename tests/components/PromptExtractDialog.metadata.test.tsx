@@ -98,9 +98,9 @@ it('真实 PNG 的两名角色都进入分类请求，不与全局合并，角�
 
   // 组件真的从 PNG 里读出了角色分栏，而不是被 mock 喂了一条字符串。
   await waitFor(() => expect(document.querySelectorAll('[data-extract-character]').length).toBe(2));
-  expect(screen.getByText(/已读到图片内嵌的原始提示词（含 2 个角色分栏）/)).toBeTruthy();
+  expect(screen.getByText(/已读取内嵌提示词 · 2 个角色/)).toBeTruthy();
 
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
   const [payload] = mocks.extract.mock.calls[0];
   expect(payload.mode).toBe('text');

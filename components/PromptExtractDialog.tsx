@@ -8,11 +8,11 @@
  *     两者来源在界面明确区分；
  *   - 角色归属：元数据里每个角色的正向内容单独成组，不同角色不混成同一条候选。
  *
- * 费用与授权：只有用户点击「开始分类」或「AI 看图提取」才调用一次当前创作助手模型，
+ * 费用与授权：只有用户点击「按文字分类」或「AI 看图提取」才调用一次当前创作助手模型，
  * 不消耗生图额度，模型服务可能收费。图片只作本次分析的输入，不入库、不生成封面。
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardPaste, Eraser, ImagePlus, LoaderCircle, Sparkles, Upload, X } from 'lucide-react';
+import { ClipboardPaste, Eraser, ImagePlus, LoaderCircle, Sparkles, X } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { createUuid } from '../services/id';
@@ -189,6 +189,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
+  const [sourceToolsOpen, setSourceToolsOpen] = useState(false);
+  const sourceActionsRef = useRef<HTMLSpanElement>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const aliveRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -306,7 +308,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
     void promptAgentService.getConfig()
       .then(current => {
         if (!aliveRef.current || !currentOpen) return;
-        setConfig({ label: [current.provider, current.model].filter(Boolean).join(' · '), imageInput: Boolean(current.imageInput) });
+        setConfig({ label: current.model || '', imageInput: Boolean(current.imageInput) });
       })
       .catch(() => { /* 读不到配置时按未知处理：看图入口保持可试，失败由服务端如实报错。 */ });
     return () => { currentOpen = false; };
@@ -378,8 +380,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
         settle({
           state: 'empty',
           note: file.type === 'image/png'
-            ? t('这张 PNG 确实没有内嵌生成信息，可以改用看图提取')
-            : t('{0} 不含内嵌生成信息，只有 PNG 可能内嵌提示词；可以改用看图提取', [describeFormat(file.type)]),
+            ? t('未找到内嵌提示词')
+            : t('{0} 未找到内嵌提示词', [describeFormat(file.type)]),
         });
         return;
       }
@@ -514,7 +516,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
       setSourceLabel([
         mode === 'vision' ? t('AI 看图提取（视觉推断，不是原始提示词）') : (textSource.label || t('提示词文本')),
         mode === 'text' && characterLabels ? t('含角色分栏：{0}', [characterLabels]) : '',
-        [result.provider, result.model].filter(Boolean).join(' · '),
+        result.model,
         ignored > 0 ? t('有 {0} 条内容无法解析，已忽略', [String(ignored)]) : '',
       ].filter(Boolean).join(' · '));
       // 这一轮已经有新结果，恢复提示不再成立。
@@ -665,11 +667,15 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
 
   const visionBlocked = config ? !config.imageInput : false;
   const costNotice = config?.label
-    ? t('使用当前创作助手模型（{0}）调用一次，模型服务可能收费；不消耗生图额度。', [config.label])
-    : t('使用当前创作助手模型调用一次，模型服务可能收费；不消耗生图额度。');
+    ? t('AI 分析使用 {0}，模型服务可能收费；不消耗生图额度。', [config.label])
+    : t('AI 分析使用当前助手模型，模型服务可能收费；不消耗生图额度。');
   /** 保存期间锁住会改变本批次的输入与编辑操作。 */
   const inputLocked = saving || pending.current;
   const stored = image?.stored;
+  const hasCandidates = drafts.length > 0;
+  const canClassify = Boolean(textSource.value.trim() || textSource.characters.length);
+  const primaryMode = !canClassify && image ? 'vision' : 'text';
+  const visionDisabled = analyzing || inputLocked || !image?.file || image.state === 'reading' || visionBlocked;
 
   return (
     <div className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center sm:p-6">
@@ -697,21 +703,30 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                   : t('草稿暂存失败（可能是浏览器存储已满或被清理），这次的工作还在当前页面，请先保存要保留的条目。')}
               </p>
             )}
-            <label className="block">
-              <span className={DETAIL_LABEL_CLASS}>{t('提示词原文')}</span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`${DETAIL_LABEL_CLASS} mr-auto`}>{t('提示词原文')}</span>
+                <ToolbarButton onClick={() => setSourceToolsOpen(value => !value)} disabled={inputLocked}
+                  aria-expanded={sourceToolsOpen} active={sourceToolsOpen} className="mobile-touch">
+                  <span>{t('编辑工具')}</span>
+                </ToolbarButton>
+                <span ref={sourceActionsRef} />
+              </div>
               <TagAutocompleteTextarea
                 aria-label={t('提示词原文')}
                 containerClassName="mt-2"
                 className={`${TOOLBAR_FIELD_CLASS} min-h-32 resize-y font-mono!`}
                 value={text}
                 disabled={inputLocked}
-                tagAssistEnabled
-                showTranslations
-                allowAiTranslation
+                clearActionSlotRef={sourceActionsRef}
+                tagAssistEnabled={sourceToolsOpen}
+                showTranslations={sourceToolsOpen}
+                allowAiTranslation={sourceToolsOpen}
+                libraryEnabled={false}
                 onValueChange={next => { invalidateRun(); resetResult(); setText(next); setError(''); }}
-                placeholder={t('粘贴提示词，保留原词与权重；也可以只放一张图片走看图提取')}
+                placeholder={t('粘贴提示词原文')}
               />
-            </label>
+            </div>
 
             <div
               data-extract-image="true"
@@ -734,7 +749,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
               className={`rounded-2xl border border-dashed p-3 ${dragging ? 'border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/30' : 'border-gray-300 dark:border-gray-700'}`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`${DETAIL_LABEL_CLASS} flex-none`}>{t('图片（可选）')}</span>
+                <span className={`${DETAIL_LABEL_CLASS} flex-none`}>{t('图片')}</span>
                 <input
                   ref={fileRef}
                   type="file"
@@ -746,7 +761,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                 <ToolbarButton onClick={() => fileRef.current?.click()} disabled={analyzing || inputLocked} className="mobile-touch">
                   <ImagePlus /><span>{t('选择图片')}</span>
                 </ToolbarButton>
-                <span className="text-micro text-gray-400 dark:text-gray-500">{t('或拖入、粘贴图片；图片只用于本次分析')}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{t('或拖入、粘贴图片')}</span>
               </div>
               {image && (
                 <div className="mt-3 flex gap-3">
@@ -760,8 +775,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                     {image.state === 'ready' && (
                       <p className="mt-1 text-emerald-600 dark:text-emerald-400">
                         {stored?.characters.length
-                          ? t('已读到图片内嵌的原始提示词（含 {0} 个角色分栏），按原文分类不会丢掉角色内容', [String(stored.characters.length)])
-                          : t('已读到图片内嵌的原始提示词，可直接按其分类，不会丢掉原词')}
+                          ? t('已读取内嵌提示词 · {0} 个角色', [String(stored.characters.length)])
+                          : t('已读取内嵌提示词')}
                       </p>
                     )}
                     {(image.state === 'empty' || image.state === 'failed') && (
@@ -786,10 +801,20 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                   </div>
                 </div>
               )}
-              <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('开始分类会发送输入框或图片内嵌的提示词文本；AI 看图提取会发送图片压缩副本。选择图片与读取内嵌信息在本地完成，不调用模型。')}</p>
-              <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{costNotice}</p>
-              {visionBlocked && <p role="status" className="mt-1 text-micro text-amber-600 dark:text-amber-400">{t('当前助手模型未声明图片输入能力，不能看图提取，也不会自动换用其他模型；带原始生成信息的 PNG 仍可按原始提示词分类。')}</p>}
+              {image && <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="min-w-0 flex-1 text-xs text-gray-500 dark:text-gray-400">{t('看图提取会发送图片副本，结果为视觉推断。')}</p>
+                {(canClassify || hasCandidates) && <ToolbarButton onClick={() => void runAnalysis('vision')}
+                  disabled={visionDisabled} className="mobile-touch"
+                  title={hasCandidates ? t('重新分析成功后替换未保存候选') : undefined}>
+                  <Sparkles /><span>{t('AI 看图提取')}</span>
+                </ToolbarButton>}
+              </div>}
+              {image && visionBlocked && <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t('当前模型不支持看图，可按文字分类。')}</p>}
             </div>
+
+            {canClassify && <p className="text-xs text-gray-500 dark:text-gray-400">{text.trim()
+              ? t('文字分类仅发送输入框文字')
+              : t('文字分类仅发送图片内嵌提示词')}</p>}
 
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -797,7 +822,10 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
 
             {grouped.length > 0 && (
               <div className="space-y-3">
-                <p className="text-micro text-gray-400 dark:text-gray-500">{t('默认勾选有效候选；可以改名称、改提示词、换分类或取消勾选，未勾选的不会入库。')} {t('重新分析成功后会替换当前未保存的候选；分析失败会保留当前候选。')}</p>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className={DETAIL_LABEL_CLASS}>{t('待入库片段')}</h3>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{t('重新分析成功后替换未保存候选')}</span>
+                </div>
                 {grouped.map(group => (
                   <section key={group.kind} data-extract-kind={group.kind} className="space-y-2">
                     <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(PROMPT_LIBRARY_KIND_LABELS[group.kind])}</h3>
@@ -855,31 +883,29 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
             )}
           </div>
 
-          <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-            <ToolbarButton onClick={() => void clearDraft()} disabled={analyzing || inputLocked || (!text.trim() && !image && !drafts.length)}
-              className="mobile-touch mr-auto" title={t('只清空这次提取的草稿，不影响已入库条目')}>
-              <Eraser /><span>{t('清空草稿')}</span>
-            </ToolbarButton>
-            <ToolbarButton tone="primary" onClick={() => void runAnalysis('text')}
-              disabled={analyzing || inputLocked || (!textSource.value.trim() && !textSource.characters.length)} className="mobile-touch">
-              {analyzing ? <LoaderCircle className="animate-spin" /> : <ClipboardPaste />}
-              <span>{analyzing ? t('正在提取…') : drafts.length ? t('重新按文字分类') : t('开始分类')}</span>
-            </ToolbarButton>
-            <ToolbarButton onClick={() => void runAnalysis('vision')}
-              disabled={analyzing || inputLocked || !image || Boolean(visionBlocked)} className="mobile-touch">
-              <Upload /><span>{t('AI 看图提取')}</span>
-            </ToolbarButton>
-            <ToolbarButton onClick={() => void savePicked()}
-              disabled={analyzing || inputLocked || pickedDrafts.length === 0} className="mobile-touch">
-              {saving ? <LoaderCircle className="animate-spin" /> : null}
-              <span>{saving ? t('保存中…') : t('保存勾选项（{0}）', [String(pickedDrafts.length)])}</span>
-            </ToolbarButton>
-            {analyzing && (
-              <ToolbarButton onClick={cancelRun} className="mobile-touch">
+          <footer className="flex flex-none flex-col gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+            <p className="text-xs text-gray-500 dark:text-gray-400">{costNotice}</p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <IconButton label={t('清空草稿')} onClick={() => void clearDraft()}
+                disabled={analyzing || inputLocked || (!text.trim() && !image && !drafts.length)}
+                className="mobile-touch mr-auto" title={t('只清空这次提取的草稿，不影响已入库条目')}><Eraser /></IconButton>
+              {hasCandidates && canClassify && <ToolbarButton onClick={() => void runAnalysis('text')}
+                disabled={analyzing || inputLocked} className="mobile-touch" title={t('重新分析成功后替换未保存候选')}>
+                <span>{t('重新按文字分类')}</span>
+              </ToolbarButton>}
+              {analyzing && <ToolbarButton onClick={cancelRun} className="mobile-touch">
                 <X /><span>{t('中止分析')}</span>
+              </ToolbarButton>}
+              <ToolbarButton onClick={closeDialog} disabled={inputLocked} className="mobile-touch"
+                aria-label={t('关闭并保留草稿')} title={t('关闭并保留草稿')}><span>{t('关闭')}</span></ToolbarButton>
+              <ToolbarButton tone="primary" onClick={() => { if (hasCandidates) void savePicked(); else void runAnalysis(primaryMode); }}
+                disabled={analyzing || inputLocked || (hasCandidates ? pickedDrafts.length === 0 : primaryMode === 'vision' ? visionDisabled : !canClassify)} className="mobile-touch">
+                {analyzing || saving ? <LoaderCircle className="animate-spin" /> : !hasCandidates && (primaryMode === 'vision' ? <Sparkles /> : <ClipboardPaste />)}
+                <span>{analyzing ? t('正在提取…') : saving ? t('保存中…') : hasCandidates
+                  ? t('保存所选片段（{0}）', [String(pickedDrafts.length)])
+                  : primaryMode === 'vision' ? t('AI 看图提取') : t('按文字分类')}</span>
               </ToolbarButton>
-            )}
-            <ToolbarButton onClick={closeDialog} disabled={inputLocked} className="mobile-touch"><span>{t('关闭并保留草稿')}</span></ToolbarButton>
+            </div>
           </footer>
         </div>
       </div>

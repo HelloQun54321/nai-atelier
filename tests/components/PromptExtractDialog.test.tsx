@@ -93,15 +93,91 @@ const makeImageFile = (name = '合成.png', type = 'image/png') => {
   return file;
 };
 
+it('原文默认收起编辑工具，展开收起保留权重与空白，清空仍可撤销', async () => {
+  mocks.config.mockResolvedValue({ provider: 'custom-private-provider-id', model: 'test-model', imageInput: true });
+  renderDialog();
+  const source = '  1.3::white hair, red eyes::,\n white dress  ';
+  pasteText(source);
+  const toggle = screen.getByRole('button', { name: '编辑工具' });
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('group', { name: '权重类型' })).toBeNull();
+  expect(screen.queryByLabelText('添加提示词')).toBeNull();
+  expect(screen.queryByRole('button', { name: '收录到提示词库' })).toBeNull();
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('group', { name: '权重类型' })).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(fieldByLabel('提示词原文').value).toBe(source);
+  expect(screen.queryByLabelText('添加提示词')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+  expect(fieldByLabel('提示词原文').value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: '撤销清空' }));
+  expect(fieldByLabel('提示词原文').value).toBe(source);
+  await waitFor(() => expect(screen.getByText(/AI 分析使用 test-model/)).toBeTruthy());
+  expect(document.body.textContent).not.toContain('custom-private-provider-id');
+  expect(mocks.extract).not.toHaveBeenCalled();
+});
+
+it('主按钮随分析与保存阶段切换，重分析失败仍保留可保存的候选', async () => {
+  let finish!: (value: ReturnType<typeof textResult>) => void;
+  mocks.extract.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  renderDialog();
+  pasteText();
+  const primary = () => screen.getByRole('dialog').querySelectorAll('button[data-tone="primary"]');
+  expect(primary()).toHaveLength(1);
+  expect(primary()[0].textContent).toBe('按文字分类');
+  fireEvent.click(primary()[0]);
+  expect(primary()).toHaveLength(1);
+  expect(primary()[0].textContent).toBe('正在提取…');
+  expect(primary()[0].hasAttribute('disabled')).toBe(true);
+  expect(screen.getByRole('button', { name: '中止分析' }).hasAttribute('disabled')).toBe(false);
+  await act(async () => finish(textResult()));
+  expect(primary()).toHaveLength(1);
+  expect(primary()[0].textContent).toBe('保存所选片段（4）');
+  expect(screen.getByRole('button', { name: '重新按文字分类' }).getAttribute('data-tone')).toBe('neutral');
+  mocks.extract.mockRejectedValueOnce(new Error('合成分析失败'));
+  fireEvent.click(screen.getByRole('button', { name: '重新按文字分类' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('合成分析失败'));
+  expect(primary()[0].textContent).toBe('保存所选片段（4）');
+  expect(kindNames()).toHaveLength(4);
+  for (const checkbox of screen.getAllByRole('checkbox')) fireEvent.click(checkbox);
+  expect(primary()[0].textContent).toBe('保存所选片段（0）');
+  expect(primary()[0].hasAttribute('disabled')).toBe(true);
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it('同时有文字与图片时说明文字优先，看图按钮只发送图片副本', async () => {
+  mocks.metadata.mockResolvedValue(JSON.stringify({ prompt: 'embedded scene' }));
+  mocks.extract.mockResolvedValue(textResult());
+  renderDialog();
+  pasteText('typed scene');
+  fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile()] } });
+  await screen.findByText('已读取内嵌提示词');
+  expect(screen.getByText('文字分类仅发送输入框文字')).toBeTruthy();
+  expect(screen.getByText('看图提取会发送图片副本，结果为视觉推断。')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '按文字分类' }).getAttribute('data-tone')).toBe('primary');
+  expect(screen.getByRole('button', { name: 'AI 看图提取' }).getAttribute('data-tone')).toBe('neutral');
+  expect(mocks.extract).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
+  await waitFor(() => expect(kindNames()).toHaveLength(4));
+  expect(mocks.extract.mock.calls[0][0]).toEqual({ mode: 'text', text: 'typed scene' });
+  expect(mocks.attachment).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'AI 看图提取' }));
+  await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(2));
+  expect(mocks.extract.mock.calls[1][0]).toEqual({ mode: 'vision', images: [{ data: 'AAAA', mimeType: 'image/webp' }] });
+});
+
 it('打开时不自动调用模型；点击后才按文字分类，并按六类分组展示、默认全部勾选', async () => {
   mocks.extract.mockResolvedValue(textResult());
   renderDialog();
   expect(mocks.extract).not.toHaveBeenCalled();
   expect(screen.getByText(/模型服务可能收费/)).toBeTruthy();
-  expect(screen.getByText(/开始分类会发送输入框或图片内嵌的提示词文本/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /保存所选片段/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'AI 看图提取' })).toBeNull();
 
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  expect(screen.getByText('文字分类仅发送输入框文字')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance', 'wardrobe', 'pose', 'camera']));
   expect(mocks.extract).toHaveBeenCalledTimes(1);
   const [payload] = mocks.extract.mock.calls[0];
@@ -127,7 +203,7 @@ it('未确认不入库；改名称与分类、取消勾选后只保存勾选项'
   mocks.extract.mockResolvedValue(textResult());
   renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
   expect(mocks.save).not.toHaveBeenCalled();
 
@@ -136,7 +212,7 @@ it('未确认不入库；改名称与分类、取消勾选后只保存勾选项'
   fireEvent.click(screen.getByLabelText('选择服饰'));
   fireEvent.click(screen.getByLabelText('选择姿势'));
   fireEvent.click(screen.getByLabelText('选择镜头画面'));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
 
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
   expect(mocks.save).toHaveBeenCalledWith({ entryId: expect.any(String), kind: 'scene', name: '银发少女', prompt: 'long_white_hair, red_eyes', original: '' });
@@ -151,9 +227,9 @@ it('部分保存失败时保留失败项，重试不会重复创建已成功的�
   mocks.save.mockImplementation(async draft => { attempts.push(draft.name); throw new Error('合成写入失败'); });
   renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（4）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（4）' }));
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(expect.stringContaining('保存失败'), 'error'));
   expect(mocks.close).not.toHaveBeenCalled();
   // 四条都失败：全部保留在面板里等重试。
@@ -166,8 +242,8 @@ it('部分保存失败时保留失败项，重试不会重复创建已成功的�
     attempts.push(draft.name);
     if (draft.name === '白色连衣裙') throw new Error('单条失败');
   });
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（4）' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存勾选项（1）' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（4）' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存所选片段（1）' })).toBeTruthy());
   expect(attempts).toEqual(['白发红瞳少女', '白色连衣裙', '站姿', '俯视']);
   expect(kindNames()).toEqual(['wardrobe']);
   expect(mocks.close).not.toHaveBeenCalled();
@@ -176,7 +252,7 @@ it('部分保存失败时保留失败项，重试不会重复创建已成功的�
   attempts.length = 0;
   mocks.save.mockReset();
   mocks.save.mockImplementation(async draft => { attempts.push(draft.name); });
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
   expect(attempts).toEqual(['白色连衣裙']);
 });
@@ -191,6 +267,10 @@ it('看图提取：先发送压缩副本并在结果里标明视觉推断来源�
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile()] } });
   await waitFor(() => expect(mocks.metadata).toHaveBeenCalledTimes(1));
 
+  expect(screen.getByText('未找到内嵌提示词')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '按文字分类' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'AI 看图提取' }).getAttribute('data-tone')).toBe('primary');
+  expect(mocks.extract).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'AI 看图提取' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
   const [payload] = mocks.extract.mock.calls[0];
@@ -208,10 +288,13 @@ it('图片内嵌元数据优先按原始提示词分类，不需要额外调用�
   });
   renderDialog();
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile('归档.png')] } });
-  await waitFor(() => expect(screen.getByText(/已读到图片内嵌的原始提示词/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/已读取内嵌提示词/)).toBeTruthy());
   expect(mocks.extract).not.toHaveBeenCalled();
+  expect(screen.getByText('文字分类仅发送图片内嵌提示词')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '按文字分类' }).getAttribute('data-tone')).toBe('primary');
+  expect(screen.getByRole('button', { name: 'AI 看图提取' }).getAttribute('data-tone')).toBe('neutral');
 
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
   const [payload] = mocks.extract.mock.calls[0];
   expect(payload.mode).toBe('text');
@@ -226,11 +309,12 @@ it('模型声明不支持图片输入时禁用看图按钮；接口失败保留�
   mocks.config.mockResolvedValue({ provider: 'test-provider', model: 'text-only', imageInput: false });
   mocks.extract.mockRejectedValue(Object.assign(new Error('当前模型不支持图片输入'), { status: 400 }));
   renderDialog();
-  await waitFor(() => expect(screen.getByText(/未声明图片输入能力/)).toBeTruthy());
+  fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile()] } });
+  await waitFor(() => expect(screen.getByText('当前模型不支持看图，可按文字分类。')).toBeTruthy());
   expect((screen.getByRole('button', { name: 'AI 看图提取' }) as HTMLButtonElement).disabled).toBe(true);
 
   pasteText('red eyes');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/当前模型不支持图片输入/));
   // 失败后原文还在，可以直接改一改再试；也没有任何条目入库。
   expect((fieldByLabel('提示词原文') as HTMLTextAreaElement).value).toBe('red eyes');
@@ -288,9 +372,9 @@ it('保存过程中锁住输入与编辑，不能改动正在保存的这一批'
   mocks.save.mockImplementation(async () => { await gate; });
   renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（4）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（4）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
 
   expect((fieldByLabel('提示词原文') as HTMLTextAreaElement).disabled).toBe(true);
@@ -316,16 +400,16 @@ it('中文片段没有可用英文译文时默认不勾选，勾上也不许直�
   });
   renderDialog();
   pasteText('粉色长发女孩在海边');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance', 'scene']));
 
   // 没译法的那条默认不勾选，避免把中文当英文提示词入库。
   expect((screen.getByLabelText('选择人物形象') as HTMLInputElement).checked).toBe(false);
   expect((screen.getByLabelText('选择场景') as HTMLInputElement).checked).toBe(true);
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存勾选项（1）' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存所选片段（1）' })).toBeTruthy());
 
   fireEvent.click(screen.getByLabelText('选择人物形象'));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（2）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（2）' }));
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/还是中文/));
   expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -342,16 +426,16 @@ it('权重结构没能还原的候选默认不勾选，显示原因且不许直�
   });
   renderDialog();
   pasteText('(白色长发], 海边');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance', 'scene']));
 
   expect((screen.getByLabelText('选择人物形象') as HTMLInputElement).checked).toBe(false);
   expect((screen.getByLabelText('选择场景') as HTMLInputElement).checked).toBe(true);
   expect(screen.getByText(/括号没有成对闭合/)).toBeTruthy();
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存勾选项（1）' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存所选片段（1）' })).toBeTruthy());
 
   fireEvent.click(screen.getByLabelText('选择人物形象'));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（2）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（2）' }));
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/结构没能可靠还原/));
   expect(mocks.save).not.toHaveBeenCalled();
 });
@@ -361,7 +445,7 @@ it('取消与关闭不保存；重新分析后旧响应不覆盖新草稿', asyn
   mocks.extract.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   renderDialog();
   pasteText('red eyes');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
 
   // 分析期间改输入：这次响应已作废，迟到结果不能写进草稿。
@@ -381,7 +465,7 @@ it('分析中可以中止：断开本地请求并如实说明服务端可能仍�
   }));
   renderDialog();
   pasteText('red eyes');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
 
   fireEvent.click(screen.getByRole('button', { name: '中止分析' }));
@@ -407,7 +491,7 @@ it('本端存储写不进去时如实提示暂存失败，页面上的工作不�
   mocks.extract.mockResolvedValue(textResult());
   renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
   await waitPersist();
 
@@ -422,7 +506,7 @@ it('点遮罩不关闭面板；关闭重开后保留输入、候选与手工编�
   mocks.extract.mockResolvedValue(textResult());
   const view = renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
   fireEvent.change(screen.getByLabelText('人物形象名称'), { target: { value: '白发少女' } });
   fireEvent.click(screen.getByLabelText('选择姿势'));
@@ -447,7 +531,7 @@ it('刷新式恢复：重新挂载后从本端草稿恢复候选、编辑与勾�
   mocks.extract.mockResolvedValue(textResult());
   const view = renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
   fireEvent.change(screen.getByLabelText('服饰名称'), { target: { value: '白裙' } });
   await waitPersist();
@@ -469,9 +553,9 @@ it('部分保存后重开只恢复未保存项；全部保存完成后草稿结�
   mocks.save.mockRejectedValueOnce(new Error('broken')).mockResolvedValue(undefined);
   const view = renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（4）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（4）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(4));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
 
@@ -479,7 +563,7 @@ it('部分保存后重开只恢复未保存项；全部保存完成后草稿结�
   renderDialog();
   expect(kindNames()).toEqual(['appearance']);
 
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.close).toHaveBeenCalled());
   await waitFor(() => expect(window.localStorage.getItem(EXTRACT_DRAFT_STORAGE_KEY)).toBeNull());
 });
@@ -488,7 +572,7 @@ it('清空草稿需要确认：取消不丢内容，确认后清空且不留持�
   mocks.extract.mockResolvedValue(textResult());
   renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
 
   mocks.confirm.mockResolvedValueOnce(false);
@@ -511,7 +595,7 @@ it('本端草稿损坏时明确提示并按空草稿开始，之后仍可正常�
   expect(kindNames().length).toBe(0);
 
   pasteText('red eyes');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames().length).toBe(4));
 });
 
@@ -520,7 +604,7 @@ it('关闭时有在途请求：迟到响应不写入草稿，重开仍是原来�
   mocks.extract.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   const view = renderDialog();
   pasteText('red eyes');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(mocks.extract).toHaveBeenCalledTimes(1));
 
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
@@ -546,7 +630,7 @@ it('中文释义只做展示：不改英文提示词、不改勾选、不解除�
   });
   renderDialog();
   pasteText('白色长发, 海边');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance', 'scene']));
 
   // 中英对照面板出现，但英文原文与勾选状态都不受影响。
@@ -575,7 +659,7 @@ it('缺词只显示待翻译；只有点击「翻译缺失项」才发起 AI 补
   });
   renderDialog();
   pasteText('蜂翼');
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
 
   const translateCalls = () => fetchMock.mock.calls.filter(([, init]) => String((init as { body?: string })?.body || '').includes('"translate"'));
@@ -610,6 +694,21 @@ const storedDraft = () => {
   return raw ? JSON.parse(raw) as { text: string; image: { name: string } | null; candidates: Array<{ prompt: string }> } : null;
 };
 
+it('恢复图片草稿后仍可分类内嵌词，没有原文件时禁用看图而不发送请求', () => {
+  seedDraft({ image: {
+    name: 'restored-without-live-file.png', state: 'ready', note: '',
+    stored: { globalPrompt: 'seaside', characters: [], negative: '' },
+  } });
+  renderDialog();
+  expect(screen.getByText('原图未保留，请重新选择图片')).toBeTruthy();
+  const classify = screen.getByRole('button', { name: '按文字分类' });
+  expect(classify.getAttribute('data-tone')).toBe('primary');
+  expect(classify.hasAttribute('disabled')).toBe(false);
+  expect(screen.getByRole('button', { name: 'AI 看图提取' }).hasAttribute('disabled')).toBe(true);
+  expect(mocks.extract).not.toHaveBeenCalled();
+  expect(mocks.attachment).not.toHaveBeenCalled();
+});
+
 it('图片来源的候选全部保存后，关开、等待暂存与重新挂载都不会复活旧图片', async () => {
   mocks.metadata.mockResolvedValue(JSON.stringify({ prompt: 'classroom, sunset', uc: 'bad quality' }));
   mocks.extract.mockResolvedValue({
@@ -620,12 +719,12 @@ it('图片来源的候选全部保存后，关开、等待暂存与重新挂载�
   const view = renderDialog();
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile('synthetic.png')] } });
   await waitFor(() => expect(mocks.metadata).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['scene']));
   await waitPersist();
   expect(storedDraft()?.image?.name).toBe('synthetic.png');
 
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
   expect(mocks.close).toHaveBeenCalledTimes(1);
   // 保存成功那一刻旧副本就清掉了，不会留下「只剩一张用过的旧图片」的草稿。
@@ -663,11 +762,11 @@ it('图片来源的部分保存只留下失败项及其来源，成功项不再�
   renderDialog();
   fireEvent.change(screen.getByLabelText('选择图片'), { target: { files: [makeImageFile('synthetic.png')] } });
   await waitFor(() => expect(mocks.metadata).toHaveBeenCalledTimes(1));
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['scene']));
 
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（2）' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '保存勾选项（1）' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（2）' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '保存所选片段（1）' })).toBeTruthy());
   expect(mocks.close).not.toHaveBeenCalled();
   // 失败项与它依赖的图片来源都还在面板上。
   expect(screen.queryByAltText('待分析图片')).toBeTruthy();
@@ -735,9 +834,9 @@ it('失败候选编辑并刷新后仍用同一 entryId 重试，新分析才换�
   mocks.save.mockRejectedValue(new Error('合成回执丢失'));
   const view = renderDialog();
   pasteText();
-  fireEvent.click(screen.getByRole('button', { name: '开始分类' }));
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(expect.stringContaining('保存失败'), 'error'));
   expect(screen.getByRole('alert').textContent).toContain('合成回执丢失');
   const firstId = mocks.save.mock.calls[0][0].entryId;
@@ -747,13 +846,13 @@ it('失败候选编辑并刷新后仍用同一 entryId 重试，新分析才换�
   fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
   view.unmount();
   renderDialog();
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
   expect(mocks.save.mock.calls[1][0]).toMatchObject({ entryId: firstId, prompt: 'edited hair' });
   await waitFor(() => expect(screen.getByRole('button', { name: '重新按文字分类' }).hasAttribute('disabled')).toBe(false));
   fireEvent.click(screen.getByRole('button', { name: '重新按文字分类' }));
   await waitFor(() => expect(fieldByLabel('人物形象提示词').value).toBe('long_white_hair, red_eyes'));
-  fireEvent.click(screen.getByRole('button', { name: '保存勾选项（1）' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(3));
   expect(mocks.save.mock.calls[2][0].entryId).not.toBe(firstId);
 });
@@ -764,7 +863,7 @@ it.each(['助手没有返回可用的提取结果', 'Provider error: upstream ov
   mocks.extract.mockRejectedValue(new Error(reason));
   renderDialog();
   fireEvent.change(fieldByLabel(t('提示词原文')), { target: { value: 'white hair' } });
-  fireEvent.click(screen.getByRole('button', { name: t('开始分类') }));
+  fireEvent.click(screen.getByRole('button', { name: t('按文字分类') }));
   await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(t('提取失败：{0}', [t(reason)])));
   if (reason.startsWith('助手')) expect(screen.getByRole('alert').textContent).not.toContain('助手');
 });
@@ -778,9 +877,9 @@ it('英文界面元数据读取和逐项保存错误也翻译内层原因，重�
   fireEvent.change(screen.getByLabelText(t('选择图片')), { target: { files: [makeImageFile('translate-error.png')] } });
   await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(t('读取图片内嵌信息失败：{0}；可以改用看图提取', [t('助手没有返回可用的提取结果')])));
   fireEvent.change(fieldByLabel(t('提示词原文')), { target: { value: 'white hair' } });
-  fireEvent.click(screen.getByRole('button', { name: t('开始分类') }));
+  fireEvent.click(screen.getByRole('button', { name: t('按文字分类') }));
   await waitFor(() => expect(kindNames()).toEqual(['appearance']));
-  expect(document.body.textContent).toContain(t('重新分析成功后会替换当前未保存的候选；分析失败会保留当前候选。'));
-  fireEvent.click(screen.getByRole('button', { name: t('保存勾选项（{0}）', ['1']) }));
+  expect(document.body.textContent).toContain(t('重新分析成功后替换未保存候选'));
+  fireEvent.click(screen.getByRole('button', { name: t('保存所选片段（{0}）', ['1']) }));
   await waitFor(() => expect(screen.getAllByRole('alert').some(node => node.textContent === '白发红瞳少女：' + t('助手没有返回可用的提取结果'))).toBe(true));
 });

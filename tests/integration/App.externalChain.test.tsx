@@ -421,14 +421,14 @@ it('提取候选接入现有列表，保存回执丢失后重试沿用身份且�
     expect(extract).not.toHaveBeenCalled();
     expect(mocks.createChainWithData).not.toHaveBeenCalled();
     fireEvent.change(within(dialog).getByLabelText('提示词原文'), { target: { value: '1.2::red dress::, cafe, masterpiece' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: '开始分类' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '按文字分类' }));
     await within(dialog).findByDisplayValue('合成红裙');
     const listReadsBeforeSave = mocks.getAllChains.mock.calls.length;
-    fireEvent.click(within(dialog).getByRole('button', { name: '保存勾选项（2）' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存所选片段（2）' }));
     await within(dialog).findByText(/合成保存回执丢失/);
     expect(mocks.createChainWithData).toHaveBeenCalledTimes(2);
     expect(within(dialog).queryByDisplayValue('合成咖啡馆')).toBeNull();
-    fireEvent.click(within(dialog).getByRole('button', { name: '保存勾选项（1）' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存所选片段（1）' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'AI 提取分类' })).toBeNull());
     const wardrobeCalls = mocks.createChainWithData.mock.calls.filter(call => call[3] === 'wardrobe');
     expect(wardrobeCalls).toHaveLength(2);
