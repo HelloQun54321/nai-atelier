@@ -7,6 +7,23 @@ import { projectRoot } from '../support/workspace.mjs';
 import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths } from '../../scripts/media-gateway.mjs';
 import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 
+test('Android 打包源码覆盖助手启动签名全部文件，文件系统 shim 可以实际读取', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
+  const agent = await readFile(join(projectRoot, 'scripts/prompt-agent.mjs'), 'utf8');
+  const packaged = JSON.parse(build.match(/for \(const name of (\[[^\n]+\])\) sources\[name\]/)[1].replace(/'/g, '"'));
+  const required = JSON.parse(agent.match(/const runtimeSourceFiles = (\[[^\n]+\]);/)[1].replace(/'/g, '"'));
+  const sources = Object.fromEntries(await Promise.all(packaged.map(async name => [name, await readFile(join(projectRoot, name), 'utf8')])));
+  const source = extractAndroidShared(join(projectRoot, 'mobile/shims/fs.mjs'), ['readFileSync'], `const sources = ${JSON.stringify(sources)};`);
+  const shim = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  for (const file of required) {
+    const url = new URL(file, 'file:///scripts/prompt-agent.mjs');
+    const expected = await readFile(join(projectRoot, url.pathname.slice(1)), 'utf8');
+    assert.equal(shim.readFileSync(url), expected, `启动签名文件未打包：${file}`);
+  }
+  assert.ok(required.includes('../services/promptExtraction.mjs'));
+});
+
 test('手机Worker读取统计词库走已下载的本地路由，其他资源保持原读取方式', async () => {
   const { transform } = await import('esbuild');
   const source = extractAndroidShared(join(projectRoot, 'mobile/entry.ts'), ['env'], `

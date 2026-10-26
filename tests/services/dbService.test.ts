@@ -15,6 +15,25 @@ import { db } from '../../services/dbService';
 
 afterEach(() => vi.unstubAllGlobals());
 
+it('显式创建身份随未知结果重试发送，普通复制不继承源id', async () => {
+  apiMock.post.mockReset(); apiMock.get.mockReset();
+  const creationId = 'b2b742fb-2ff1-4eaf-a726-083d24b8af63';
+  const source = { id: 'source-id', basePrompt: 'night sky', modules: [], params: {}, tags: [] } as unknown as PromptChain;
+  const saved = { ...source, id: 'created-id', name: '提取候选' };
+  apiMock.post.mockRejectedValueOnce(new Error('回执丢失')).mockResolvedValue({ id: saved.id, chain: saved });
+  await expect(db.createChainWithData('提取候选', '', source, 'scene', creationId)).rejects.toThrow('回执丢失');
+  expect(await db.createChainWithData('提取候选', '', source, 'scene', creationId)).toMatchObject({ id: 'created-id' });
+  expect(apiMock.post.mock.calls[0][1]).toEqual(apiMock.post.mock.calls[1][1]);
+  expect(apiMock.post.mock.calls[1][1]).toMatchObject({ creationId });
+  expect(apiMock.post.mock.calls[1][1]).not.toHaveProperty('id');
+  await db.createChainWithData('普通复制', '', source);
+  expect(apiMock.post.mock.calls[2][1]).not.toHaveProperty('creationId'); expect(apiMock.post.mock.calls[2][1]).not.toHaveProperty('id');
+  apiMock.post.mockResolvedValue({ id: saved.id }); apiMock.get.mockRejectedValueOnce(new Error('兼容读取丢失')).mockResolvedValueOnce(saved);
+  await expect(db.createChainWithData('提取候选', '', source, 'scene', creationId)).rejects.toThrow('兼容读取丢失');
+  expect(await db.createChainWithData('提取候选', '', source, 'scene', creationId)).toMatchObject({ id: saved.id });
+  expect(apiMock.post.mock.lastCall?.[1]).toMatchObject({ creationId });
+});
+
 it('组合分类目录严格回读与保存，不吞掉损坏响应或请求失败', async () => {
   apiMock.get.mockResolvedValue({ tags: [' 空分类 ', '空分类', '夜景'] });
   expect(await db.getPromptLibraryTagNames()).toEqual(['空分类', '夜景']);

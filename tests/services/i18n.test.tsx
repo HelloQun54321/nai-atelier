@@ -312,6 +312,38 @@ describe('界面语言', () => {
     }
   });
 
+  it('提示词提取界面与服务错误具备四种译文并保留动态占位符', () => {
+    const catalog = messages as Record<string, string[]>;
+    const keys = new Set<string>();
+    for (const file of ['components/PromptExtractDialog.tsx', 'components/ContentLibraryPage.tsx']) {
+      const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const visit = (node: ts.Node) => {
+        if (ts.isCallExpression(node) && node.expression.getText(source) === 't' && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0])) keys.add(node.arguments[0].text);
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+    for (const key of [
+      '请先粘贴提示词，或改用 AI 看图提取', '助手返回的单条内容过长，请分段提取', '助手返回的分类结果不完整', '助手返回的译法过长，请重试', '助手没有返回可用的提取结果，请重试',
+      '助手返回的内容过长，请重试', '助手没有返回可用的提取结果', '助手未返回有效的分类结果',
+      '提取方式无效，请重新打开面板再试', '请先选择一张本地图片，图片只用于本次提取',
+      '创建身份无效', '创建身份已用于不同内容或条目已不可用', '创建回执无法确认，请保留候选后重试',
+    ]) keys.add(key);
+    const placeholders = (value: string) => [...value.matchAll(/\{\d+\}/g)].map(item => item[0]).sort();
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        const args = placeholders(key).map((_, index) => index === 0 ? 'sample value' : String(index + 1));
+        const translated = translate(language.code, key, args);
+        expect(placeholders(translated), `${language.code}: ${key}`).toEqual([]);
+        expect(translated, `${language.code}: ${key}`).not.toContain('{0}');
+      }
+    }
+    for (const key of ['AI 提取分类', '开始分类', '提取失败：{0}', '保存勾选项（{0}）']) {
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key, ['sample'])).not.toBe(key);
+    }
+  });
+
   it('词典包含所有界面显式翻译入口，四种译文都完整保留占位符', () => {
     const catalog = messages as Record<string, string[]>;
     const placeholders = (value: string) => [...value.matchAll(/\{(?:\d+|count|tag)\}/g)].map(item => item[0]).sort();

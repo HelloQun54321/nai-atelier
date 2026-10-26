@@ -33,8 +33,8 @@ class DBService {
     return chains.map(sanitizeChain);
   }
 
-  private async postChain(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style'): Promise<{ id: string; chain?: PromptChain }> {
-    const payload: any = { name, description, type };
+  private async postChain(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style', creationId?: string): Promise<{ id: string; chain?: PromptChain }> {
+    const payload: any = { name, description, type, ...(creationId === undefined ? {} : { creationId }) };
     if (copyFrom) {
       payload.basePrompt = copyFrom.basePrompt;
       payload.negativePrompt = copyFrom.negativePrompt;
@@ -77,8 +77,8 @@ class DBService {
     return (await this.postChain(name, description, copyFrom, type)).id;
   }
 
-  async createChainWithData(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style'): Promise<PromptChain> {
-    const result = await this.postChain(name, description, copyFrom, type);
+  async createChainWithData(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style', creationId?: string): Promise<PromptChain> {
+    const result = await this.postChain(name, description, copyFrom, type, creationId);
     // 兼容尚未重启的旧 Worker：只读新条目，仍不等待整份列表。
     const chain: PromptChain = result.chain || await api.get(`/chains/${encodeURIComponent(result.id)}`);
     return sanitizeChain(chain);

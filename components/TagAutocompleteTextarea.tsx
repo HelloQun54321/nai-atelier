@@ -510,6 +510,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     }
     if (event.key === 'Escape') {
       event.preventDefault();
+      // 只关补全浮层：不把 Esc 继续传给外层容器（例如提取面板会把 Esc 当成关闭整个面板）。
+      event.stopPropagation();
       closeSuggestions();
       return true;
     }
@@ -669,7 +671,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             const text = event.clipboardData.getData('text/plain');
             if (text.trim()) { event.preventDefault(); appendTags(text); }
           }}>
-          <div className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 resize-y flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1.5 pb-1.5`}>
+          {/* 触屏上不要 resize 手柄与 overscroll-contain：手柄会吃掉右下角的手指滑动（实测 16×16 死区），
+              contain 会在内层已经到底（或标签太少不滚动）时把手势留在原地、不让外层继续滚，手机上表现为「框滑不动」。
+              鼠标环境仍保留拖拽改高和滚动链隔离。 */}
+          <div className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 pointer-fine:resize-y pointer-fine:overscroll-contain`}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];

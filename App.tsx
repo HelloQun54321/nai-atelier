@@ -29,6 +29,7 @@ import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan, type ContentRollEntryTarget } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
 import { prepareCollectedPrompt } from './services/collectedPrompt';
+import { buildExtractedChainPayload } from './services/extractedPromptEntry';
 import { stableOperationId } from './services/operationId';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
@@ -855,8 +856,10 @@ const App = () => {
     }
   };
 
-  const createLibraryChain = async (name: string, description: string, type: ChainType, data?: Partial<PromptChain>) => {
-    const saved = await db.createChainWithData(name, description, data, type);
+  const createLibraryChain = async (name: string, description: string, type: ChainType, data?: Partial<PromptChain>, creationId?: string) => {
+    const saved = creationId
+      ? await db.createChainWithData(name, description, data, type, creationId)
+      : await db.createChainWithData(name, description, data, type);
     recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
     setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
     setLastChainFetch(0);
@@ -996,6 +999,12 @@ const App = () => {
             categoryNames={libraryCategoryNames || []} categoryChange={libraryCategoryChange} onManageCategories={() => setLibraryCategoriesOpen(true)}
             onDelete={handleDeleteLibraryEntry}
             onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags: replaceCustomChainTags((chains.find(item => item.id === chain.id) || chain).tags, tags) }); }} onManage={() => setLibraryManageOpen(true)} focusEntryId={libraryFocusId} />}
+          notify={notify}
+          onExtractSave={async draft => {
+            const payload = buildExtractedChainPayload(draft);
+            // 复用候选身份处理未知结果的重试；创建回执直接更新列表，不逐条整库刷新。
+            await createLibraryChain(payload.name, '', payload.type, payload.data, draft.entryId);
+          }}
           rollOpen={contentRollOpen}
           rollTitle={contentRollEntryTarget ? '随机搭配' : '搭配'}
           onRollOpenChange={open => {

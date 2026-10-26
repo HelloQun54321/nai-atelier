@@ -281,6 +281,43 @@ test('六库路由接在 prompt-agent 分支里，dryRun 可预览且只接受 P
   assert.equal((await invoke(endpoint, 'GET')).status, 405);
 });
 
+test('AI 提取分类路由只接受 POST、原样转发请求体，空输入与未配置助手都明确失败', async t => {
+  const root = createWorkspace('prompt-extraction-'); t.after(() => removeWorkspace(root));
+  const service = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  const source = await readFile(join(projectRoot, 'scripts/media-gateway.mjs'), 'utf8');
+  const tree = ts.createSourceFile('gateway.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let branch;
+  const visit = node => {
+    if (ts.isIfStatement(node) && node.expression.getText(tree) === "url.pathname.startsWith('/api/prompt-agent/')") branch = node.getText(tree);
+    ts.forEachChild(node, visit);
+  };
+  visit(tree); assert.ok(branch);
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const handler = new AsyncFunction('req', 'res', 'url', 'promptAgent', 'sendJson', 'hasValidLanCookie', 'readRequestBody', `const lanSecret=''; ${branch}`);
+  const invoke = (path, method, body) => handler({ method, headers: {} }, {}, { pathname: path }, service,
+    (_res, status, value) => ({ status, value }), () => true, async () => Buffer.from(JSON.stringify(body || {})));
+
+  const endpoint = '/api/prompt-agent/extract-candidates';
+  let forwarded;
+  service.extractCandidates = async input => {
+    forwarded = input;
+    return { mode: 'text', provider: 'synthetic', model: 'synthetic-model', items: [{ kind: 'appearance', name: '白发', prompt: 'white_hair' }], unclassified: null };
+  };
+  const result = await invoke(endpoint, 'POST', { mode: 'text', text: 'white hair' });
+  assert.equal(result.status, 200);
+  assert.deepEqual(forwarded, { mode: 'text', text: 'white hair' });
+  assert.equal(result.value.items[0].prompt, 'white_hair');
+  assert.equal((await invoke(endpoint, 'GET')).status, 405);
+
+  /* 服务层：空文本、缺图片与非法方式都在请求模型前失败，不会返回空结果冒充成功 */
+  const bare = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  await assert.rejects(bare.extractCandidates({ mode: 'text', text: '   ' }), error => error.status === 400 && /请先粘贴提示词/.test(error.message));
+  await assert.rejects(bare.extractCandidates({ mode: 'vision' }), error => error.status === 400 && /请先选择一张本地图片/.test(error.message));
+  await assert.rejects(bare.extractCandidates({ mode: 'batch' }), error => error.status === 400 && /提取方式无效/.test(error.message));
+  /* 配置齐全之前的最后一道：没有模型凭据时如实报错，不走模型调用 */
+  await assert.rejects(bare.extractCandidates({ mode: 'text', text: 'white hair' }), error => error.status === 400 && /请先在设置中配置创作助手的模型服务/.test(error.message));
+});
+
 test('界面上的六类字段都能到达模型（后端 facets 清单与前端一致，不按数量验收）', async t => {
   /* 逐库列出「界面有、后端也必须读」的代表性新字段，全部走 collectLibraryFacets */
   const cases = [
