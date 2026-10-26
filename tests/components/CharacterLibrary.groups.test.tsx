@@ -6,17 +6,17 @@ import { CharacterLibrary } from '../../components/CharacterLibrary';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 import { createDefaultRollTemplate } from '../../services/styleRoll';
 import type { PromptChain } from '../../types';
-const mocks = vi.hoisted(() => ({ page: vi.fn(), all: vi.fn(), at: vi.fn(), save: vi.fn(), state: { revision: 1, groups: [{ id: 'one', name: '甲组' }, { id: 'two', name: '乙组' }], memberships: { 'catalog:late': ['one', 'two'], 'custom:custom': ['two'] } } }));
+const mocks = vi.hoisted(() => ({ page: vi.fn(), all: vi.fn(), at: vi.fn(), save: vi.fn(), coverCallbacks: new Map<string, any>(), state: { revision: 1, groups: [{ id: 'one', name: '甲组' }, { id: 'two', name: '乙组' }], memberships: { 'catalog:late': ['one', 'two'], 'custom:custom': ['two'] } } }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: async () => structuredClone(mocks.state), put: async (_path: string, value: any) => { await mocks.save(value); mocks.state = { ...value, revision: value.revision + 1 }; return mocks.state; } } }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getCharacterDictionaryPage: mocks.page, getCharacterDictionaryEntries: mocks.all, getCharacterDictionaryEntriesAt: mocks.at, searchCharacterDictionary: async () => [] }));
 vi.mock('../../services/collectionFavorites', async original => ({ ...await original<typeof import('../../services/collectionFavorites')>(), collectionSnapshot: () => [], subscribeCollection: () => () => {}, collectionTargetActive: () => false }));
-vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tagName }: any) => <span>{tagName}</span> }));
+vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, onCandidateChange, onImageLoad }: any) => { mocks.coverCallbacks.set(tag, { onCandidateChange, onImageLoad }); return <span>{tag}</span>; } }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => true) }));
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 3, ShortestColumnMasonry: ({ items, renderItem }: any) => <div>{items.map(renderItem)}</div> }));
 const entries = [{ name: 'early', chinese: '首页', postCount: 100 }, { name: 'late', chinese: '同名', postCount: 1 }, { name: 'other', chinese: '其他', postCount: 2 }];
 const custom = { id: 'custom', name: '同名', type: 'character', basePrompt: 'custom content', negativePrompt: '', modules: [], tags: [], params: createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, variableValues: {}, createdAt: 1, updatedAt: 1, userId: 'owner', description: '' } as PromptChain;
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.save.mockReset(); localStorage.clear();
+  vi.clearAllMocks(); mocks.save.mockReset(); mocks.coverCallbacks.clear(); localStorage.clear();
   mocks.state = { revision: 1, groups: [{ id: 'one', name: '甲组' }, { id: 'two', name: '乙组' }], memberships: { 'catalog:late': ['one', 'two'], 'custom:custom': ['two'] } };
   mocks.page.mockImplementation(async (page: number) => ({ entries: page ? entries.slice(1) : entries.slice(0, 1), page, pageCount: 2, pageSize: 1, total: 3 }));
   mocks.all.mockResolvedValue(entries); mocks.at.mockImplementation(async (indices: number[]) => indices.map(index => entries[index]));
@@ -89,6 +89,19 @@ it('仅有自定义成员的组在混合随机下仍可抽取，不补入全词�
   expect(screen.getAllByRole('button', { name: /选择角色：/ })).toHaveLength(1);
   expect(screen.getByRole('button', { name: '选择角色：同名' })).toBeTruthy();
   expect(mocks.at).not.toHaveBeenCalled();
+});
+
+it('角色候选宽高先预估瀑布流比例，同一候选重渲染不覆盖图片自然尺寸', async () => {
+  setup();
+  const card = await screen.findByRole('button', { name: '选择角色：首页' });
+  const frame = card.querySelector<HTMLElement>('.mobile-gallery-frame')!;
+  expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('2 / 3');
+  await act(async () => mocks.coverCallbacks.get('early').onCandidateChange({ id: 12, sampleUrl: '/sample.jpg', width: 1200, height: 800 }));
+  await waitFor(() => expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('1500 / 1000'));
+  await act(async () => mocks.coverCallbacks.get('early').onImageLoad(800, 1000));
+  await waitFor(() => expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('800 / 1000'));
+  await act(async () => mocks.coverCallbacks.get('early').onCandidateChange({ id: 12, sampleUrl: '/sample.jpg', width: 1200, height: 800 }));
+  expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('800 / 1000');
 });
 
 it('分组只抽自定义不依赖完整Tag词库，词库读取失败仍只抽本组成员', async () => {

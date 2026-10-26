@@ -97,7 +97,7 @@ export async function handleExportLocationRequest(req, res, { workspace, canMana
       prefs = await updateStoragePreferences({ exportMode: body.mode }, workspace, { signal: controller.signal });
     } else if (body.action === 'clear') prefs = await updateStoragePreferences({ exportMode: 'system', exportDir: '' }, workspace, { signal: controller.signal });
     else if (body.action === 'save') {
-      if (typeof body.data !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body.data)) throw new Error('导出文件内容无效');
+      if (typeof body.data !== 'string' || body.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) throw new Error('导出文件内容无效');
       reply(200, await exportWithPreferences({ data: Buffer.from(body.data, 'base64'), filename: body.filename, workspace, pickDirectory, systemDirectory, signal: controller.signal })); return true;
     } else throw new Error('未知导出设置操作');
     reply(200, state(prefs, canPick, systemDirectory));

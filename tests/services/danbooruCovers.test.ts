@@ -37,6 +37,7 @@ describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind =>
     const { danbooruService } = await import('../../services/danbooruService');
     const covers = await settle(danbooruService.getCoverSet('synthetic', kind));
     expect(covers).toMatchObject({ representative: { id: 2 }, hasMore: true, nextPage: 4, latestFallbackTried: true });
+    expect(covers.representative).toMatchObject({ width: 800, height: 1200 });
     expect(covers.candidates.map(item => item.id)).toEqual([2]);
     expect(apiGet).toHaveBeenCalledTimes(5);
     const latest = new URL(apiGet.mock.calls[4][0], 'http://localhost');
@@ -45,6 +46,13 @@ describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind =>
     expect(latest.searchParams.get('limit')).toBe('200');
     await danbooruService.getCoverSet('synthetic', kind);
     expect(apiGet).toHaveBeenCalledTimes(5);
+  });
+  it('候选只携带有效的正宽高', async () => {
+    apiGet.mockResolvedValue(result([{ ...post(1, 'synthetic'), width: 0, height: -1 }]));
+    const { danbooruService } = await import('../../services/danbooruService');
+    const covers = await settle(danbooruService.getCoverSet('synthetic', kind));
+    expect(covers.representative).not.toHaveProperty('width');
+    expect(covers.representative).not.toHaveProperty('height');
   });
   it('最新兜底放宽展示偏好，仍要求精确 Tag 和公开图片地址，不限制评级', async () => {
     const relaxed = { ...post(2, 'synthetic'), rating: 'e', tags: { ...post(2, 'synthetic').tags, general: ['photo', 'chibi', 'multiple_girls', 'alternate_costume'] } };
@@ -55,13 +63,17 @@ describe.each(['artist', 'character'] as const)('%s 可用封面查找', kind =>
     expect(apiGet).toHaveBeenCalledTimes(2);
   });
   it('旧空缓存补查兜底，已有封面缓存继续复用', async () => {
+    const oldCandidate = { id: 9, score: 20, previewUrl: '/preview.jpg', sampleUrl: '/sample.jpg', postUrl: '' };
     localStorage.setItem('nai_danbooru_cover_cache_v13', JSON.stringify({
       [`${kind}:empty`]: { ...result(), representative: null, candidates: [], updatedAt: Date.now() },
-      [`${kind}:positive`]: { representative: post(9, 'positive'), candidates: [post(9, 'positive')], updatedAt: Date.now() },
+      [`${kind}:positive`]: { representative: oldCandidate, candidates: [oldCandidate], updatedAt: Date.now() },
     }));
     apiGet.mockResolvedValueOnce(result()).mockResolvedValueOnce(result([post(2, 'empty')]));
     const { danbooruService } = await import('../../services/danbooruService');
-    expect((await danbooruService.getCoverSet('positive', kind)).representative?.id).toBe(9);
+    const cached = await danbooruService.getCoverSet('positive', kind);
+    expect(cached.representative?.id).toBe(9);
+    expect(cached.representative?.width).toBeUndefined();
+    expect(cached.representative?.height).toBeUndefined();
     expect(apiGet).not.toHaveBeenCalled();
     expect((await settle(danbooruService.getCoverSet('empty', kind))).representative?.id).toBe(2);
     expect(apiGet).toHaveBeenCalledTimes(2);

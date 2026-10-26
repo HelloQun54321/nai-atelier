@@ -121,3 +121,34 @@ test('HTTP响应连接断开后中止流写，不保留迟到文件', async () =
     assert.deepEqual(await readdir(root), []);
   } finally { removeWorkspace(root); }
 });
+
+test('JSON 导出接受几 MiB 和几十 MiB 的合法 Base64，保存字节完整且拒绝错误补位', async () => {
+  const root = createWorkspace('export-json-large-');
+  const request = async (data, filename) => {
+    const req = Readable.from([Buffer.from(JSON.stringify({ action: 'save', data, filename }))]);
+    req.method = 'POST'; req.url = '/api/local-maintenance/export-location'; req.headers = { 'x-nai-local-control': 'true' };
+    let status, result;
+    const res = { writeHead(value) { status = value; }, end(value) { result = JSON.parse(value); } };
+    await handleExportLocationRequest(req, res, { workspace: root, canManage: true });
+    return { status, result };
+  };
+  try {
+    const directory = join(root, 'exports'); await mkdir(directory);
+    await updateStoragePreferences({ exportMode: 'directory', exportDir: directory }, root);
+    for (const size of [64, 4 * 1024 * 1024, 24 * 1024 * 1024]) {
+      const bytes = Buffer.alloc(size, 81), filename = `${size}.naiv4vibe`;
+      const response = await request(bytes.toString('base64'), filename);
+      assert.equal(response.status, 200, JSON.stringify(response.result));
+      assert.equal(response.result.saved, true);
+      assert.deepEqual(await readFile(join(directory, filename)), bytes);
+    }
+    for (const invalid of ['A', 'AAA', 'AAAA=', 'AA=A', 'AA===', 'AA\n=']) {
+      const response = await request(invalid, 'invalid.naiv4vibe');
+      assert.equal(response.status, 400);
+      assert.equal(response.result.error, '导出文件内容无效');
+    }
+    assert.equal((await readdir(directory)).length, 3);
+    await updateStoragePreferences({ exportDir: join(root, 'missing') }, root);
+    assert.equal((await request('eA==', 'unavailable.naiv4vibe')).status, 400);
+  } finally { removeWorkspace(root); }
+});

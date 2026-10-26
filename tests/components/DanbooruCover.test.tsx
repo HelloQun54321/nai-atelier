@@ -15,7 +15,7 @@ vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.crea
 const covers = vi.mocked(danbooruService.getCoverSet);
 const pages = vi.mocked(danbooruService.getCoverCandidatePage);
 const fallback = vi.mocked(danbooruService.getCoverFallback);
-const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, previewUrl: `https://cdn.donmai.us/preview/${id}.jpg`, sampleUrl: `https://cdn.donmai.us/sample/${id}.webp`, postUrl: '' });
+const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, width: 1200, height: 800, previewUrl: `https://cdn.donmai.us/preview/${id}.jpg`, sampleUrl: `https://cdn.donmai.us/sample/${id}.webp`, postUrl: '' });
 const set = (candidates = [candidate(1)], hasMore = false, nextPage = 1) => ({ candidates, representative: candidates[0] || null, hasMore, nextPage });
 const image = () => screen.getByRole('img') as HTMLImageElement;
 const failImage = () => fireEvent.error(image());
@@ -106,7 +106,7 @@ it('初次展示使用代表图而非评分第一项，回调与前后翻图对�
   const onCandidateChange = vi.fn();
   render(<DanbooruCover tag="synthetic" kind="character" alt="封面" onCandidateChange={onCandidateChange} />);
   await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
-  expect(onCandidateChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2, sampleUrl: candidate(2).sampleUrl }));
+  expect(onCandidateChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 2, sampleUrl: candidate(2).sampleUrl, width: 1200, height: 800 }));
   fireEvent.click(screen.getByRole('button', { name: '下一张' }));
   expect(image().src).toBe(candidate(3).sampleUrl);
   fireEvent.click(screen.getByRole('button', { name: '上一张' }));

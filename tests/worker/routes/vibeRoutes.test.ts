@@ -1,23 +1,184 @@
 // @vitest-environment node
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleVibeRoute } from '../../../worker/routes/vibeRoutes';
-import type { D1Database, Env, RouteContext } from '../../../worker/routes/types';
+import { INIT_SQL, type D1Database, type Env, type RouteContext } from '../../../worker/routes/types';
 
 const databases: DatabaseSync[] = [];
-afterEach(() => databases.splice(0).forEach(db => db.close()));
+afterEach(() => { databases.splice(0).forEach(db => db.close()); vi.restoreAllMocks(); });
 const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJ1sAAAAASUVORK5CYII=';
 const encoding = Buffer.from('synthetic-vibe-encoding'.repeat(8)).toString('base64');
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const variant = (information = 0.7, data = encoding) => ({ encoding: data, params: { information_extracted: information } });
-const document = (encodings = { 'v4-5full': { a: variant() } }, extra: Record<string, unknown> = {}) => ({
+const document = (encodings: Record<string, Record<string, unknown>> = { 'v4-5full': { a: variant() } }, extra: Record<string, unknown> = {}) => ({
   identifier: 'novelai-vibe-transfer', version: 1, type: 'image', id: hash(image), image, encodings,
   name: '合成 Vibe', importInfo: { model: 'nai-diffusion-4-5-full', information_extracted: 0.7, strength: 0.6 }, ...extra,
 });
 
-function fixture() {
+describe('Vibe 显式永久删除', () => {
+  const archive = async (f: ReturnType<typeof fixture>, id: string) => f.request(`/api/vibes/${id}/archive`, {});
+  const addLegacyEncoding = (f: ReturnType<typeof fixture>, vibeId: string) => {
+    f.sqlite.prepare(`INSERT INTO vibe_encodings (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run('legacy', vibeId, 'nai-diffusion-4-5-full', 'v4-5full', 1, 'legacy.bin', hash(Buffer.from(encoding, 'base64')), 1);
+    f.files.set('legacy.bin', Uint8Array.from(Buffer.from(encoding, 'base64')).buffer);
+  };
+
+  it('普通资产不能删除，归档后只删除明确指定的资产及其旧新编码和图片', async () => {
+    const f = fixture(true), result = await f.import(document(undefined, { thumbnail: `data:image/png;base64,${image}` }));
+    const id = result.body.item.id; addLegacyEncoding(f, id);
+    const original = new Map(f.files);
+    expect((await f.request(`/api/vibes/${id}`, undefined, 'DELETE')).status).toBe(409);
+    expect(f.files).toEqual(original);
+    await archive(f, id);
+    f.files.set('unrelated-private-image', new Uint8Array([1, 2, 3]).buffer);
+    const deleted = await f.request(`/api/vibes/${id}`, undefined, 'DELETE');
+    expect(deleted.status).toBe(200); expect(deleted.body).toEqual({ success: true, id });
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_assets').get()?.count).toBe(0);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_encodings_all').get()?.count).toBe(0);
+    expect([...f.files.keys()]).toEqual(['unrelated-private-image']);
+    expect((await f.request(`/api/vibes/${id}`, undefined, 'DELETE')).status).toBe(404);
+  });
+
+  it('逐份删除旧新表编码，保留原图、其他编码和空资产；未归档拒绝', async () => {
+    const f = fixture(true), result = await f.import(document());
+    const id = result.body.item.id, currentId = result.body.item.encodings[0].id; addLegacyEncoding(f, id);
+    expect((await f.request(`/api/vibes/${id}/encodings/legacy`, undefined, 'DELETE')).status).toBe(409);
+    await archive(f, id);
+    const originalKey = f.sqlite.prepare('SELECT original_key FROM vibe_assets WHERE id = ?').get(id)!.original_key as string;
+    const original = f.files.get(originalKey);
+    const deleted = await f.request(`/api/vibes/${id}/encodings/legacy`, undefined, 'DELETE');
+    expect(deleted.status).toBe(200); expect(deleted.body).toMatchObject({ success: true, encodingId: 'legacy', item: { id, archived: true } });
+    expect(deleted.body.item.encodings.map((item: any) => item.id)).toEqual([currentId]);
+    expect(f.files.has('legacy.bin')).toBe(false); expect(f.files.get(originalKey)).toEqual(original);
+    expect((await f.request(`/api/vibes/${id}/encodings/${currentId}`, undefined, 'DELETE')).body.item.encodings).toEqual([]);
+    expect((await f.request(`/api/vibes/${id}`)).body.item.hasOriginal).toBe(true);
+    expect(f.files.get(originalKey)).toEqual(original);
+    expect((await f.request(`/api/vibes/${id}/encodings/${currentId}`, undefined, 'DELETE')).status).toBe(404);
+  });
+
+  it.each(['风格串', '历史', '收藏', '收藏分析', '组合', 'Roll 模板', '画师模板', '仅编码标识'])('%s 中的持久引用阻止资产及对应编码删除，禁用参考也保留', async source => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id, encodingId = result.body.item.encodings[0].id;
+    await archive(f, id);
+    const params = { nested: { vibes: { enabled: false, slots: [{ vibeId: id, encodingId, strength: 0.6 }] } } };
+    if (source === '风格串') f.sqlite.prepare('INSERT INTO chains (id, name, params) VALUES (?, ?, ?)').run('ref', '已保存', JSON.stringify(params));
+    else if (source === '历史') f.sqlite.prepare('INSERT INTO local_generation_history (id, user_id, image_key, params, created_at) VALUES (?, ?, ?, ?, ?)').run('ref', 'owner', 'other.png', JSON.stringify(params), 1);
+    else if (source === '收藏' || source === '收藏分析') f.sqlite.prepare(`INSERT INTO inspirations (id, title, ${source === '收藏' ? 'params' : 'analysis'}, archived) VALUES (?, ?, ?, ?)`).run('ref', '收藏', JSON.stringify(params), 1);
+    else if (source === '组合') await f.request('/api/vibe-groups', { name: '组合', slots: result.body.slots });
+    else f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(source === 'Roll 模板' ? 'style_roll_v1:owner:test' : 'artist_sample_v1:owner:template:test', JSON.stringify(source === '仅编码标识' ? { nested: { encodingId } } : { template: { params } }));
+    const before = new Map(f.files);
+    for (const path of [`/api/vibes/${id}`, `/api/vibes/${id}/encodings/${encodingId}`]) {
+      const deleted = await f.request(path, undefined, 'DELETE');
+      expect(deleted.status).toBe(409); expect(deleted.body.error).toContain('引用');
+    }
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).body.item.encodings).toHaveLength(1);
+  });
+
+  it('同资产的另一编码被引用时，仍可删除未被引用的编码', async () => {
+    const f = fixture(true), result = await f.import(document({ 'v4-5full': { a: variant(), b: variant(1) } }));
+    const id = result.body.item.id, retained = result.body.item.encodings.find((item: any) => item.informationExtracted === 0.7);
+    const removable = result.body.item.encodings.find((item: any) => item.informationExtracted === 1);
+    await archive(f, id);
+    f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('template', JSON.stringify({ params: { vibes: { slots: [{ vibeId: id, encodingId: retained.id }] } } }));
+    const deleted = await f.request(`/api/vibes/${id}/encodings/${removable.id}`, undefined, 'DELETE');
+    expect(deleted.status).toBe(200); expect(deleted.body.item.encodings.map((item: any) => item.id)).toEqual([retained.id]);
+  });
+
+  it.each([undefined, '', 'missing-encoding'])('旧槽位只引用资产且编码为 %s 时，不能猜测另一变体而删除', async encodingId => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id, currentId = result.body.item.encodings[0].id;
+    await archive(f, id); const before = new Map(f.files);
+    f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('legacy-template', JSON.stringify({ vibes: { slots: [{ vibeId: id, encodingId }] } }));
+    expect((await f.request(`/api/vibes/${id}/encodings/${currentId}`, undefined, 'DELETE')).status).toBe(409);
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).body.item.encodings).toHaveLength(1);
+  });
+
+  it.each(['风格串', '历史', '收藏参数', '收藏分析', '组合', '模板', '画师样张', '错误结构'])('%s 资料损坏时无法核对引用，拒绝删除', async source => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id, encodingId = result.body.item.encodings[0].id;
+    await archive(f, id); const before = new Map(f.files);
+    if (source === '风格串' || source === '错误结构') f.sqlite.prepare('INSERT INTO chains (id, name, params) VALUES (?, ?, ?)').run('bad', '损坏', source === '错误结构' ? '42' : '{broken');
+    else if (source === '历史') f.sqlite.prepare('INSERT INTO local_generation_history (id, user_id, image_key, params, created_at) VALUES (?, ?, ?, ?, ?)').run('bad', 'owner', 'other.png', '{broken', 1);
+    else if (source === '收藏参数' || source === '收藏分析') f.sqlite.prepare(`INSERT INTO inspirations (id, title, ${source === '收藏参数' ? 'params' : 'analysis'}) VALUES (?, ?, ?)`).run('bad', '损坏', '{broken');
+    else if (source === '组合') f.sqlite.prepare('INSERT INTO vibe_groups (id, name, slots, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run('bad', '损坏', '[broken', 1, 1);
+    else if (source === '画师样张') f.sqlite.prepare('INSERT INTO artists (id, name, benchmarks) VALUES (?, ?, ?)').run('bad', '损坏', '[broken');
+    else f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('style_roll_v1:owner:bad', '{broken');
+    for (const path of [`/api/vibes/${id}`, `/api/vibes/${id}/encodings/${encodingId}`]) {
+      const response = await f.request(path, undefined, 'DELETE');
+      expect(response.status).toBe(409); expect(response.body.error).toContain('无法核对');
+    }
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).body.item.encodings).toHaveLength(1);
+  });
+
+  it('普通字符串设置与空的旧参数不锁死无引用资产的显式删除', async () => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id;
+    await archive(f, id);
+    f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('text-setting', '普通文字');
+    f.sqlite.prepare('INSERT INTO chains (id, name, params) VALUES (?, ?, ?)').run('empty', '旧条目', '');
+    expect((await f.request(`/api/vibes/${id}`, undefined, 'DELETE')).status).toBe(200);
+  });
+
+  it.each(['风格串封面', '收藏原图', '画师原图', '画师预览', '画师样张', '提示词参考', '设置图片', '编码地址'])('%s 的 Vibe API 地址仍在使用时拒绝删除，查询参数不绕过引用', async source => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id, encodingId = result.body.item.encodings[0].id;
+    await archive(f, id);
+    const url = source === '编码地址' ? `/api/vibes/${id}/encodings/${encodingId}/data?cache=1` : `/api/vibes/${id}/${source === '设置图片' ? 'thumbnail' : 'image'}?cache=1`;
+    if (source === '风格串封面') f.sqlite.prepare('INSERT INTO chains (id, name, preview_image) VALUES (?, ?, ?)').run('ref', '封面', url);
+    else if (source === '收藏原图') f.sqlite.prepare('INSERT INTO inspirations (id, title, image_url) VALUES (?, ?, ?)').run('ref', '收藏', url);
+    else if (source.startsWith('画师')) f.sqlite.prepare(`INSERT INTO artists (id, name, ${source === '画师原图' ? 'image_url' : source === '画师预览' ? 'preview_url' : 'benchmarks'}) VALUES (?, ?, ?)`).run('ref', '画师', source === '画师样张' ? JSON.stringify([url]) : url);
+    else f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('reference', JSON.stringify(source === '提示词参考' ? { _promptLibrary: { references: [{ url }] } } : { imageUrl: url }));
+    const before = new Map(f.files);
+    expect((await f.request(`/api/vibes/${id}`, undefined, 'DELETE')).status).toBe(409);
+    if (source === '编码地址') expect((await f.request(`/api/vibes/${id}/encodings/${encodingId}`, undefined, 'DELETE')).status).toBe(409);
+    expect(f.files).toEqual(before);
+  });
+
+  it.each(['其他 Vibe', '角色参考', '历史图片', '收藏图片', '风格串封面', '设置图片', '共享编码'])('删除元数据后保留%s 共用的同一 R2 字节', async source => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id;
+    await archive(f, id);
+    const asset = f.sqlite.prepare('SELECT * FROM vibe_assets WHERE id = ?').get(id)!;
+    const sharedKey = source === '共享编码' ? f.sqlite.prepare('SELECT encoding_key FROM vibe_encodings_all WHERE vibe_id = ?').get(id)!.encoding_key as string : asset.original_key as string;
+    const sharedBytes = f.files.get(sharedKey);
+    if (source === '其他 Vibe' || source === '共享编码') {
+      f.sqlite.prepare('INSERT INTO vibe_assets (id, name, source_hash, original_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run('shared', '保留', 'shared-hash', source === '其他 Vibe' ? sharedKey : null, 1, 1);
+      if (source === '共享编码') f.sqlite.prepare(`INSERT INTO vibe_encodings (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run('shared-code', 'shared', 'nai-diffusion-4-5-full', 'v4-5full', 1, sharedKey, hash(Buffer.from(encoding, 'base64')), 1);
+    } else if (source === '角色参考') f.sqlite.prepare('INSERT INTO character_reference_assets (id, name, source_hash, original_key, original_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run('ref', '参考', 'reference-hash', sharedKey, 'image/png', 1, 1);
+    else if (source === '历史图片') f.sqlite.prepare('INSERT INTO local_generation_history (id, user_id, image_key, created_at) VALUES (?, ?, ?, ?)').run('ref', 'owner', sharedKey, 1);
+    else if (source === '收藏图片') f.sqlite.prepare('INSERT INTO inspirations (id, title, image_key) VALUES (?, ?, ?)').run('ref', '收藏', sharedKey);
+    else if (source === '风格串封面') f.sqlite.prepare('INSERT INTO chains (id, name, preview_image) VALUES (?, ?, ?)').run('ref', '封面', `/api/assets/${encodeURIComponent(sharedKey)}`);
+    else f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('image', JSON.stringify({ imageUrl: `/api/assets/${sharedKey}?cache=1` }));
+    const deleted = await f.request(`/api/vibes/${id}`, undefined, 'DELETE');
+    expect(deleted.status).toBe(200); expect(f.files.get(sharedKey)).toEqual(sharedBytes);
+    expect((await f.request(`/api/vibes/${id}`)).status).toBe(404);
+  });
+
+  it('引用在删除前迟到写入时，事务内再次核对并拒绝删除', async () => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id;
+    await archive(f, id); const before = new Map(f.files);
+    f.beforeNextBatch(() => f.sqlite.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('late', JSON.stringify({ params: { vibes: { slots: result.body.slots } } })));
+    expect((await f.request(`/api/vibes/${id}`, undefined, 'DELETE')).status).toBe(409);
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).body.item.encodings).toHaveLength(1);
+  });
+
+  it('数据库事务失败回滚旧新编码和资产，不先清理任何文件', async () => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id;
+    addLegacyEncoding(f, id); await archive(f, id); const before = new Map(f.files);
+    f.sqlite.exec("CREATE TRIGGER block_vibe_delete BEFORE DELETE ON vibe_encoding_variants BEGIN SELECT RAISE(ABORT, 'synthetic deletion failure'); END");
+    await expect(f.request(`/api/vibes/${id}`, undefined, 'DELETE')).rejects.toThrow('synthetic deletion failure');
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).body.item.encodings).toHaveLength(2);
+  });
+
+  it('文件删除失败明确返回部分完成，不能伪报成功', async () => {
+    const f = fixture(true), result = await f.import(document()), id = result.body.item.id;
+    await archive(f, id); const before = new Map(f.files);
+    vi.spyOn(f.bucket, 'delete').mockRejectedValue(new Error('synthetic R2 failure'));
+    const response = await f.request(`/api/vibes/${id}`, undefined, 'DELETE');
+    expect(response.status).toBe(503); expect(response.body.error).toContain('文件清理失败'); expect(response.body.success).not.toBe(true);
+    expect(f.files).toEqual(before); expect((await f.request(`/api/vibes/${id}`)).status).toBe(404);
+  });
+});
+
+function fixture(fullSchema = false) {
   const sqlite = new DatabaseSync(':memory:'); databases.push(sqlite);
+  if (fullSchema) sqlite.exec(INIT_SQL);
+  let beforeBatch: (() => void) | undefined;
   const files = new Map<string, ArrayBuffer>();
   const db = { prepare(sql: string) {
     let args: any[] = [];
@@ -26,24 +187,43 @@ function fixture() {
       async all() { return { results: sqlite.prepare(sql).all(...args) }; },
       async run() { return { success: true, meta: { changes: sqlite.prepare(sql).run(...args).changes } }; } };
   }, async batch(statements: Array<{ run(): Promise<unknown> }>) {
+    const before = beforeBatch; beforeBatch = undefined; before?.();
     sqlite.exec('BEGIN');
     try { const results = []; for (const statement of statements) results.push(await statement.run()); sqlite.exec('COMMIT'); return results; }
     catch (error) { sqlite.exec('ROLLBACK'); throw error; }
   } } as unknown as D1Database;
-  const env = { BUCKET: {
+  const bucket = {
     async put(key: string, body: BodyInit) { files.set(key, await new Response(body).arrayBuffer()); },
     async get(key: string) { const bytes = files.get(key); return bytes ? { body: new Response(bytes.slice(0)).body! } : null; },
-  } } as unknown as Env;
+    async delete(key: string) { files.delete(key); },
+  };
+  const env = { BUCKET: bucket } as unknown as Env;
   const request = async (path: string, body?: unknown, method = body ? 'POST' : 'GET') => {
     const req = new Request(`http://synthetic.test${path}`, { method, ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
     const response = await handleVibeRoute({ request: req, path, url: new URL(req.url), method, db, env } as RouteContext);
     if (!response) throw new Error(`未处理合成请求 ${path}`);
     return { status: response.status, body: await response.json() as any, headers: response.headers };
   };
-  return { sqlite, files, request, import: (value: unknown) => request('/api/vibes/import', { document: value }) };
+  return { sqlite, files, bucket, db, request, beforeNextBatch: (callback: () => void) => { beforeBatch = callback; }, import: (value: unknown) => request('/api/vibes/import', { document: value }) };
 }
 
 describe('官方 Vibe 文件往返', () => {
+  it('同图四个提取量不选择变体也完整导出，并逐份恢复相同编码字节', async () => {
+    const f = fixture();
+    const variants = Object.fromEntries([0.6, 0.5, 0.4, 0.3].map(information => [String(information), variant(information,
+      Buffer.from(`synthetic-${information}-`.repeat(16)).toString('base64'))]));
+    const result = await f.import(document({ 'v4-5full': variants }));
+    const exported = await f.request(`/api/vibes/${result.body.item.id}/file`);
+    expect(exported.status).toBe(200); expect(Object.keys(exported.body.encodings['v4-5full'])).toHaveLength(4);
+    for (const value of Object.values(variants)) expect(exported.body.encodings['v4-5full'][hash(`information_extracted:${value.params.information_extracted}`)]).toEqual(value);
+    const target = fixture(), restored = await target.import(exported.body);
+    expect(restored.body.item.encodings).toHaveLength(4);
+    for (const item of restored.body.item.encodings) {
+      const data = await target.request(`/api/vibes/${restored.body.item.id}/encodings/${item.id}/data`);
+      expect(data.body.encoding).toBe(variants[String(item.informationExtracted)].encoding);
+    }
+  });
+
   it('多模型、多提取量独立保留，官方文本哈希与本地图片字节去重同时成立', async () => {
     const f = fixture();
     const result = await f.import(document({ 'v4-5full': { a: variant(), b: variant(1) }, v4full: { a: variant() }, 'v4-5curated': { a: variant() } } as any));

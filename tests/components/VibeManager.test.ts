@@ -3,8 +3,9 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VibeManager } from '../../components/VibeManager';
-import type { NAIParams } from '../../types';
-const fixtures = vi.hoisted(() => ({ encodingCost: 2, needsEncoding: false, multipleModels: false, unknownInformation: false, encode: vi.fn(), download: vi.fn(), downloadGroup: vi.fn(), importFile: vi.fn(), resolveParams: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
+import type { NAIParams, VibeAsset, VibeSelection } from '../../types';
+import type { ExportReceipt } from '../../services/exportLocation';
+const fixtures = vi.hoisted(() => ({ listOverride: undefined as ((archived: boolean) => Promise<VibeAsset[]>) | undefined, encodingCost: 2, needsEncoding: false, multipleModels: false, multipleVariants: false, secondAsset: false, archived: false, unknownInformation: false, encode: vi.fn(), download: vi.fn<(asset: VibeAsset) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), downloadGroup: vi.fn<(name: string, slots: VibeSelection[], normalize: boolean) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), delete: vi.fn(), deleteEncoding: vi.fn(), importFile: vi.fn(), resolveParams: vi.fn(), confirm: vi.fn(async (_options?: unknown) => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
 
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: fixtures.encodingCost, freeVibeCount: 4, extraVibeCost: 2 } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true }) }));
@@ -12,18 +13,25 @@ vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({ remainin
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfStale: fixtures.refresh }), isNovelaiSubscriptionInactive: (info: { active: boolean }) => info?.active === false }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => fixtures.confirm }));
 vi.mock('../../services/vibeService', () => ({ vibeService: {
-  list: async () => [{ id: 'new', name: '新 Vibe', hasOriginal: true, encodings: fixtures.needsEncoding ? [] : [{ id: 'new-encoded', model: 'nai-diffusion-4-5-full', informationExtracted: 1, informationKnown: !fixtures.unknownInformation }, ...(fixtures.multipleModels ? [{ id: 'curated-encoded', model: 'nai-diffusion-4-5-curated', informationExtracted: 1 }] : [])] }],
+  list: async (_query: string, archived: boolean) => { if (fixtures.listOverride) return fixtures.listOverride(archived); return archived !== fixtures.archived ? [] : [{ id: 'new', name: '新 Vibe', hasOriginal: true, defaultStrength: 0.6, archived: fixtures.archived, encodings: fixtures.needsEncoding ? [] : [{ id: 'new-encoded', model: 'nai-diffusion-4-5-full', informationExtracted: 1, informationKnown: !fixtures.unknownInformation }, ...(fixtures.multipleModels ? [{ id: 'curated-encoded', model: 'nai-diffusion-4-5-curated', informationExtracted: 1 }] : []), ...(fixtures.multipleVariants ? [0.6, 0.5, 0.4].map(informationExtracted => ({ id: `encoding-${informationExtracted}`, model: 'nai-diffusion-4-5-full', informationExtracted })) : [])] }, ...(fixtures.secondAsset ? [{ id: 'other', name: '另一 Vibe', hasOriginal: true, defaultStrength: 0.6, archived: fixtures.archived, encodings: [] }] : [])]; },
   listGroups: async () => [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
   encode: fixtures.encode,
   download: fixtures.download,
   downloadGroup: fixtures.downloadGroup,
   importFile: fixtures.importFile,
   resolveParams: fixtures.resolveParams,
+  delete: fixtures.delete,
+  deleteEncoding: fixtures.deleteEncoding,
 } }));
-afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.multipleModels = false; fixtures.unknownInformation = false; fixtures.encode.mockReset(); fixtures.download.mockReset(); fixtures.downloadGroup.mockReset(); fixtures.importFile.mockReset(); fixtures.resolveParams.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
+afterEach(() => { cleanup(); fixtures.listOverride = undefined; localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.multipleModels = false; fixtures.multipleVariants = false; fixtures.secondAsset = false; fixtures.archived = false; fixtures.unknownInformation = false; fixtures.encode.mockReset(); fixtures.download.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.downloadGroup.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.delete.mockReset(); fixtures.deleteEncoding.mockReset(); fixtures.importFile.mockReset(); fixtures.resolveParams.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
 const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
+const openDetail = async () => {
+  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  if (fixtures.archived) fireEvent.click(screen.getByRole('tab', { name: '已归档' }));
+  fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[0]);
+};
 describe('Vibe 复用与编码入口', () => {
   it('管理窗口未打开时免费导入已有编码，等待期间的新参数仍保留', async () => {
     const pending = Promise.withResolvers<NAIParams>();
@@ -148,7 +156,7 @@ describe('Vibe 复用与编码入口', () => {
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
     fireEvent.click(screen.getByRole('button', { name: '管理' }));
     fireEvent.click(await screen.findByRole('button', { name: '详情' }));
-    fireEvent.click(screen.getByRole('button', { name: '导出 .naiv4vibe' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出全部编码' }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith('导出目录权限已失效，请重新选择目录', 'error'));
     expect(notify).toHaveBeenCalledTimes(1);
   });
@@ -206,5 +214,196 @@ describe('Vibe 复用与编码入口', () => {
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: expect.arrayContaining([expect.objectContaining({ vibeId: 'v-4' })]) }) }));
     expect(fixtures.encode).not.toHaveBeenCalled();
     expect(params.vibes?.slots).toBe(slots);
+  });
+});
+
+describe('Vibe 导出回执与永久删除', () => {
+  it.each(['detail', 'current', 'saved'])('%s 导出显示执行状态，防重复，按真实回执提示', async entry => {
+    fixtures.multipleVariants = true;
+    const pending = Promise.withResolvers<{ saved: boolean; cancelled: boolean; browserDownload?: boolean }>();
+    const download = entry === 'detail' ? fixtures.download : fixtures.downloadGroup;
+    download.mockReturnValue(pending.promise);
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    let button: HTMLElement;
+    if (entry === 'detail') { await openDetail(); button = screen.getByRole('button', { name: '导出全部编码' }); }
+    else {
+      fireEvent.click(screen.getByRole('button', { name: '管理' }));
+      await screen.findByRole('button', { name: /新 Vibe/ });
+      fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
+      button = screen.getByRole('button', { name: entry === 'current' ? '导出当前组合' : '导出 五图组合' });
+    }
+    fireEvent.click(button); fireEvent.click(button);
+    expect(download).toHaveBeenCalledOnce();
+    expect(button).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '导出中…' })).toBe(button);
+    if (entry === 'detail') expect(fixtures.download.mock.calls[0][0].encodings).toHaveLength(4);
+    await act(async () => pending.resolve(entry === 'detail' ? { saved: true, cancelled: false } : { saved: false, cancelled: false, browserDownload: true }));
+    expect(button).toHaveProperty('disabled', false);
+    expect(notify).toHaveBeenCalledWith(entry === 'detail' ? 'Vibe 文件已保存' : '已开始下载 Vibe 文件', ...(entry === 'detail' ? ['success'] : []));
+  });
+
+  it.each(['detail', 'current', 'saved'])('%s 导出失败或取消都恢复操作，取消不报错', async entry => {
+    const download = entry === 'detail' ? fixtures.download : fixtures.downloadGroup;
+    download.mockRejectedValueOnce(new Error('合成导出失败')).mockRejectedValueOnce(new DOMException('cancelled', 'AbortError'));
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    if (entry === 'detail') await openDetail();
+    else {
+      fireEvent.click(screen.getByRole('button', { name: '管理' })); await screen.findByRole('button', { name: /新 Vibe/ });
+      fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
+    }
+    const name = entry === 'detail' ? '导出全部编码' : entry === 'current' ? '导出当前组合' : '导出 五图组合';
+    fireEvent.click(screen.getByRole('button', { name }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('合成导出失败', 'error'));
+    expect(screen.getByRole('button', { name })).toHaveProperty('disabled', false);
+    fireEvent.click(screen.getByRole('button', { name }));
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name })).toHaveProperty('disabled', false));
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('活动资产只有归档入口，归档详情删除取消不发请求', async () => {
+    const props = { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' };
+    const view = render(React.createElement(VibeManager, props));
+    await openDetail();
+    expect(screen.queryByRole('button', { name: '永久删除 Vibe' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /永久删除编码/ })).toBeNull();
+    view.unmount();
+    fixtures.archived = true; fixtures.confirm.mockResolvedValue(false);
+    render(React.createElement(VibeManager, props));
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
+    expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'vibe.delete', tone: 'danger' }));
+    expect(fixtures.confirm.mock.calls[0][0]).not.toHaveProperty('rememberScope');
+    await waitFor(() => expect(screen.getByRole('button', { name: '永久删除 Vibe' })).toHaveProperty('disabled', false));
+    expect(fixtures.delete).not.toHaveBeenCalled();
+  });
+
+  it.each(['asset', 'encoding', 'legacy', 'unknown-id'])('当前禁用草稿引用 %s 时拒绝删除，不自动解绑', async entry => {
+    fixtures.archived = true;
+    const slot = { vibeId: 'new', encodingId: entry === 'legacy' ? '' : entry === 'unknown-id' ? 'unresolved-encoding' : 'new-encoded', informationKnown: !['legacy', 'unknown-id'].includes(entry), informationExtracted: 1, strength: 0.6 };
+    const setParams = vi.fn(), notify = vi.fn();
+    render(React.createElement(VibeManager, { params: { ...params, vibes: { enabled: false, normalizeStrengths: true, slots: [slot] } }, setParams, notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: entry === 'asset' ? '永久删除 Vibe' : /永久删除编码/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('当前实验室草稿'), 'error'));
+    expect(fixtures.confirm).not.toHaveBeenCalled(); expect(fixtures.delete).not.toHaveBeenCalled(); expect(fixtures.deleteEncoding).not.toHaveBeenCalled(); expect(setParams).not.toHaveBeenCalled();
+  });
+
+  it.each(['session-workspace', 'local-workspace', 'pending-import', 'clipboard', 'update-backup', 'damaged', 'unreadable'])('本浏览器 %s 未核对通过时保留资产', async source => {
+    fixtures.archived = true;
+    const draft = { params: { vibes: { enabled: false, slots: [{ vibeId: 'new', encodingId: 'new-encoded' }] } } };
+    const workspace = { textToImage: {}, edits: { 'image-to-image': draft } };
+    if (source === 'session-workspace') sessionStorage.setItem('nai-lab-workspace-v1:synthetic', JSON.stringify(workspace));
+    else if (source === 'local-workspace') localStorage.setItem('nai-lab-workspace-v1:synthetic', JSON.stringify(workspace));
+    else if (source === 'pending-import') sessionStorage.setItem('nai_pending_import', JSON.stringify(draft));
+    else if (source === 'clipboard') sessionStorage.setItem('nai_last_copied_image', JSON.stringify({ data: draft }));
+    else if (source === 'update-backup') localStorage.setItem('nai-update-lab-drafts', JSON.stringify({ savedAt: Date.now(), entries: { 'nai-lab-workspace-v1:synthetic': JSON.stringify(workspace) } }));
+    else if (source === 'damaged') sessionStorage.setItem('nai_pending_import', '{broken');
+    else {
+      const read = Storage.prototype.getItem;
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) { if (key === 'nai_pending_import') throw new DOMException('denied', 'SecurityError'); return read.call(this, key); });
+    }
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringMatching(/引用|无法核对/), 'error'));
+    expect(fixtures.delete).not.toHaveBeenCalled(); expect(fixtures.confirm).not.toHaveBeenCalled();
+  });
+
+  it('单编码删除409保留内容并显示引用原因，成功只替换返回的资产', async () => {
+    fixtures.archived = true; fixtures.unknownInformation = true;
+    fixtures.deleteEncoding.mockRejectedValueOnce(Object.assign(new Error('这份编码仍被历史引用，不能永久删除'), { status: 409 })).mockResolvedValueOnce({ success: true, item: { id: 'new', name: '新 Vibe', archived: true, encodings: [] } });
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: /永久删除编码/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('这份编码仍被历史引用，不能永久删除', 'error'));
+    expect(screen.getByRole('button', { name: /永久删除编码/ })).toHaveProperty('disabled', false);
+    fireEvent.click(screen.getByRole('button', { name: /永久删除编码/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('已永久删除编码'));
+    expect(screen.queryByRole('button', { name: /永久删除编码/ })).toBeNull();
+    expect(fixtures.deleteEncoding).toHaveBeenCalledWith('new', 'new-encoded'); expect(fixtures.delete).not.toHaveBeenCalled();
+    expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'vibe-encoding.delete' }));
+  });
+
+  it('当前草稿明确使用同资产另一现存编码时，只允许删除未用编码', async () => {
+    fixtures.archived = true; fixtures.multipleVariants = true;
+    const kept = [{ id: 'encoding-0.6', model: params.model, informationExtracted: 0.6 }];
+    fixtures.deleteEncoding.mockResolvedValue({ success: true, item: { id: 'new', name: '新 Vibe', archived: true, encodings: kept } });
+    const setParams = vi.fn();
+    render(React.createElement(VibeManager, { params: { ...params, vibes: { enabled: true, normalizeStrengths: true, slots: [{ vibeId: 'new', encodingId: 'encoding-0.6', informationExtracted: 0.6, strength: 0.6 }] } }, setParams, notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: '永久删除编码 nai-diffusion-4-5-full · 1.00' }));
+    await waitFor(() => expect(fixtures.deleteEncoding).toHaveBeenCalledWith('new', 'new-encoded'));
+    expect(setParams).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '永久删除编码 nai-diffusion-4-5-full · 0.60' })).toBeTruthy();
+  });
+
+  it.each(['new-reference', 'close'])('删除确认期间 %s 后不继续删除', async action => {
+    fixtures.archived = true;
+    const confirm = Promise.withResolvers<boolean>(); fixtures.confirm.mockReturnValue(confirm.promise);
+    const notify = vi.fn();
+    const props = { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' };
+    const view = render(React.createElement(VibeManager, props));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
+    if (action === 'new-reference') view.rerender(React.createElement(VibeManager, { ...props, params: { ...params, vibes: { enabled: false, normalizeStrengths: true, slots: [{ vibeId: 'new', encodingId: 'new-encoded', informationExtracted: 1, strength: 0.6 }] } } }));
+    else fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await act(async () => confirm.resolve(true));
+    expect(fixtures.delete).not.toHaveBeenCalled();
+    if (action === 'new-reference') expect(notify).toHaveBeenCalledWith(expect.stringContaining('当前实验室草稿'), 'error');
+  });
+
+  it('删除请求在途关闭换详情，迟到成功不关闭新详情', async () => {
+    fixtures.archived = true; fixtures.secondAsset = true;
+    const pending = Promise.withResolvers<{ success: true; id: string }>(); fixtures.delete.mockReturnValue(pending.promise);
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await waitFor(() => expect(fixtures.delete).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: '新 Vibe' })).toBeNull());
+    fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[1]);
+    expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
+    await act(async () => pending.resolve({ success: true, id: 'new' }));
+    expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
+    expect(notify).toHaveBeenCalledWith('已永久删除 Vibe');
+  });
+
+  it.each([['asset', false], ['encoding', false], ['asset', true], ['encoding', true]] as const)('%s 删除503刷新实际资料，新详情=%s时不回写旧详情', async (target, changeDetail) => {
+    fixtures.archived = true; fixtures.secondAsset = true;
+    const refreshed = Promise.withResolvers<VibeAsset[]>();
+    const remove = target === 'asset' ? fixtures.delete : fixtures.deleteEncoding;
+    remove.mockImplementation(async () => {
+      fixtures.listOverride = async archived => archived ? refreshed.promise : [];
+      throw Object.assign(new Error('记录已删除，但文件清理失败'), { status: 503 });
+    });
+    const notify = vi.fn(), setParams = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams, notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: target === 'asset' ? '永久删除 Vibe' : /永久删除编码/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('记录已删除，但文件清理失败', 'error'));
+    if (changeDetail) {
+      fireEvent.click(screen.getByRole('button', { name: '返回' }));
+      await waitFor(() => expect(screen.queryByRole('heading', { name: '新 Vibe' })).toBeNull());
+      fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[1]);
+      expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
+    }
+    const other = { id: 'other', name: '另一 Vibe', archived: true, encodings: [] } as unknown as VibeAsset;
+    const asset = { id: 'new', name: '新 Vibe', archived: true, hasOriginal: true, defaultStrength: 0.6, encodings: [] } as unknown as VibeAsset;
+    await act(async () => refreshed.resolve(target === 'asset' ? [other] : [asset, other]));
+    if (changeDetail) expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
+    else if (target === 'asset') expect(screen.queryByRole('heading', { name: '新 Vibe' })).toBeNull();
+    else {
+      expect(screen.getByRole('heading', { name: '新 Vibe' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /永久删除编码/ })).toBeNull();
+    }
+    expect(remove).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(setParams).not.toHaveBeenCalled();
   });
 });

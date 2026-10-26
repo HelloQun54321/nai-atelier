@@ -4,10 +4,72 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey, useAnlasBudget } from '../../services/anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT, useNovelaiUsage } from '../../services/naiUsage';
 import { vibeService } from '../../services/vibeService';
-import { NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import { api, NAI_ACCOUNTING_ERROR_EVENT } from '../../services/api';
+import type { VibeAsset } from '../../types';
+import type { ExportReceipt } from '../../services/exportLocation';
+const exports = vi.hoisted(() => ({ begin: vi.fn(), save: vi.fn<() => Promise<ExportReceipt>>() }));
+vi.mock('../../services/exportLocation', async importOriginal => ({ ...await importOriginal<typeof import('../../services/exportLocation')>(), beginExportTarget: exports.begin }));
+vi.mock('../../services/fileDownload', () => ({ downloadFile: exports.save }));
 
 const responseFor = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status, headers: { 'Content-Type': 'application/json' },
+});
+
+describe('Vibe 导出回执和删除接口', () => {
+  afterEach(() => { exports.begin.mockReset(); exports.save.mockReset(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  const asset = { id: 'synthetic/id', name: '四份编码', encodings: Array.from({ length: 4 }, (_, index) => ({ id: `e${index}` })) } as VibeAsset;
+
+  it.each(['naiv4vibe', 'naiv4vibeBundle'])('详情导出只请求资产，采用响应后缀 %s 并返回实际保存回执', async extension => {
+    const receipt = { saved: false, cancelled: false, browserDownload: true };
+    exports.save.mockResolvedValue(receipt);
+    const target = Promise.resolve(undefined); exports.begin.mockReturnValue(target);
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { headers: { 'content-disposition': `attachment; filename=synthetic.${extension}` } }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await vibeService.download(asset)).toBe(receipt);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('/api/vibes/synthetic%2Fid/file');
+    expect(exports.save).toHaveBeenCalledWith(expect.anything(), `四份编码.${extension}`, target);
+    expect(exports.begin).toHaveBeenCalledOnce();
+  });
+
+  it('组合导出保留当前槽位与归一化，返回真实回执，保存取消继续向上传递', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ identifier: 'novelai-vibe-transfer-bundle', vibes: [] });
+    const slots = [{ vibeId: asset.id, encodingId: 'e0', informationExtracted: 0.6, strength: -0.3 }];
+    const receipt = { saved: true, cancelled: false, filename: '组合.naiv4vibeBundle' };
+    exports.save.mockResolvedValueOnce(receipt).mockRejectedValueOnce(new DOMException('cancelled', 'AbortError'));
+    expect(await vibeService.downloadGroup('组合', slots, false)).toBe(receipt);
+    expect(post).toHaveBeenCalledWith('/vibes/export', { slots, normalizeStrengths: false });
+    expect(exports.save).toHaveBeenCalledWith(expect.anything(), '组合.naiv4vibeBundle', undefined);
+    await expect(vibeService.downloadGroup('组合', slots, false)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('详情HTTP错误直接抛出，不调用保存、不伪造成功', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(responseFor({ error: 'Vibe 编码文件不存在' }, 400)));
+    await expect(vibeService.download(asset)).rejects.toMatchObject({ status: 400, message: 'Vibe 编码文件不存在' });
+    expect(exports.save).not.toHaveBeenCalled();
+  });
+
+  it('删除路径安全编码ID，保留后端409引用原因，不重试或自动解绑', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(responseFor({ success: true, id: asset.id }))
+      .mockResolvedValueOnce(responseFor({ error: '这份编码仍被历史引用，不能永久删除' }, 409));
+    vi.stubGlobal('fetch', fetch);
+    expect(await vibeService.delete(asset.id)).toEqual({ success: true, id: asset.id });
+    await expect(vibeService.deleteEncoding(asset.id, 'encoding/id')).rejects.toMatchObject({ status: 409, message: '这份编码仍被历史引用，不能永久删除' });
+    expect(fetch.mock.calls.map(call => [call[0], call[1].method])).toEqual([
+      ['/api/vibes/synthetic%2Fid', 'DELETE'], ['/api/vibes/synthetic%2Fid/encodings/encoding%2Fid', 'DELETE'],
+    ]);
+  });
+
+  it.each(['asset', 'encoding'])('%s 删除响应失败也失效已物化缓存，后续主动取用免费重新导入', async target => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ slots: [], normalizeStrengths: true });
+    vi.spyOn(api, 'delete').mockRejectedValue(Object.assign(new Error('文件删除失败'), { status: 503 }));
+    const embedded = { model: 'nai-diffusion-4-5-full', encodings: ['synthetic'], strengths: [0.6] };
+    await vibeService.importEmbedded(embedded); await vibeService.importEmbedded(embedded);
+    expect(post).toHaveBeenCalledOnce();
+    await expect(target === 'asset' ? vibeService.delete(asset.id) : vibeService.deleteEncoding(asset.id, 'e0')).rejects.toThrow('文件删除失败');
+    await vibeService.importEmbedded(embedded);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls.every(call => call[0] === '/vibes/import')).toBe(true);
+  });
 });
 const item = { id: 'test-vibe', name: '测试素材' };
 const apiKey = 'vibe-refresh-test-key';

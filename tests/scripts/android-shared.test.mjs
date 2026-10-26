@@ -7,6 +7,100 @@ import { projectRoot } from '../support/workspace.mjs';
 import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths } from '../../scripts/media-gateway.mjs';
 import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 
+test('手机 Vibe 删除核查和写入互斥至完成，保留读取且失败释放锁', async () => {
+  const { transform } = await import('esbuild');
+  const source = extractAndroidShared(join(projectRoot, 'mobile/entry.ts'), ['phoneFetch'], `
+    const location = { origin: 'https://localhost' }, calls = [];
+    const control = { checking: null, deleting: null, writing: null, busy: false };
+    const webFetch = async () => new Response('web');
+    const nativeFetch = webFetch;
+    const error = (message, status) => Response.json({ error: message }, { status });
+    const assertMobileVibeNotBusy = () => { if (control.busy) throw Object.assign(new Error('busy'), { status: 409 }); };
+    const assertMobileAgentVibeNotReferenced = () => control.checking || Promise.resolve();
+    const mobileGateway = async () => null, mobileDictionary = async () => null, mobileAgent = async () => null;
+    const worker = { fetch: async request => {
+      calls.push([request.method, new URL(request.url).pathname]);
+      if (request.method === 'DELETE' && control.deleting) await control.deleting;
+      if (request.method === 'POST' && control.writing) await control.writing;
+      return Response.json({ success: true });
+    } };
+  `, { env: 'const env = {};' });
+  const transformed = await transform(source + '\nexport { control, calls };', { loader: 'ts', format: 'esm' });
+  const phone = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  const request = (method, path = '/api/chains') => phone.phoneFetch(path, { method });
+  let checked, deleted, written;
+  phone.control.checking = new Promise(resolve => { checked = resolve; });
+  phone.control.deleting = new Promise(resolve => { deleted = resolve; });
+  const deleting = request('DELETE', '/api/vibes/synthetic/encodings/encoding');
+  assert.equal((await request('POST')).status, 409);
+  assert.equal((await request('GET')).status, 200);
+  checked(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(phone.calls.some(([method]) => method === 'DELETE'));
+  assert.equal((await request('POST')).status, 409);
+  deleted(); assert.equal((await deleting).status, 200);
+  phone.control.checking = null; phone.control.deleting = null;
+  assert.equal((await request('POST')).status, 200);
+  phone.control.busy = true;
+  assert.equal((await request('DELETE', '/api/vibes/synthetic')).status, 409);
+  phone.control.busy = false;
+  assert.equal((await request('POST')).status, 200);
+  phone.control.writing = new Promise(resolve => { written = resolve; });
+  const writing = request('POST');
+  assert.equal((await request('DELETE', '/api/vibes/synthetic')).status, 409);
+  written(); assert.equal((await writing).status, 200);
+  phone.control.writing = null;
+  phone.control.checking = Promise.reject(Object.assign(new Error('referenced'), { status: 409 }));
+  assert.equal((await request('DELETE', '/api/vibes/synthetic')).status, 409);
+  phone.control.checking = null;
+  assert.equal((await request('POST')).status, 200);
+});
+
+test('手机 Vibe 删除保护生成、暂停和排队任务，并复用编码恢复保护', async () => {
+  const { transform } = await import('esbuild');
+  const source = extractAndroidShared(join(projectRoot, 'mobile/gateway.ts'), ['assertMobileVibeNotBusy'], `
+    const checked = [];
+    const assertVibeEncodingIdle = id => { checked.push(id); if (id === 'recovering') throw Object.assign(new Error('recovering'), { status: 409 }); };
+  `, { tasks: 'const tasks = { size: 0 };', generationJobs: 'const generationJobs = { jobs: { jobs: new Map() } };' });
+  const transformed = await transform(source + '\nexport { tasks, generationJobs, checked };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  mobile.assertMobileVibeNotBusy('free');
+  assert.deepEqual(mobile.checked, ['free']);
+  mobile.tasks.size = 1;
+  assert.throws(() => mobile.assertMobileVibeNotBusy('free'), { status: 409 });
+  mobile.tasks.size = 0;
+  for (const state of ['running', 'paused', 'queued', 'awaiting_approval']) {
+    mobile.generationJobs.jobs.jobs.set('job', { state });
+    assert.throws(() => mobile.assertMobileVibeNotBusy('free'), { status: 409 });
+  }
+  for (const state of ['succeeded', 'failed', 'cancelled']) {
+    mobile.generationJobs.jobs.jobs.set('job', { state });
+    mobile.assertMobileVibeNotBusy('free');
+  }
+  assert.throws(() => mobile.assertMobileVibeNotBusy('recovering'), { status: 409 });
+});
+
+test('手机助手单编码删除核对现有兄弟编码，运行或读取失败时拒绝', async t => {
+  const { transform } = await import('esbuild');
+  const source = extractAndroidShared(join(projectRoot, 'mobile/agent.ts'), ['assertMobileAgentVibeNotReferenced'], '', {
+    agent: 'const agent = { activeAgents: new Map(), startingAgents: new Set(), checks: [], async assertVibeNotReferenced(...args) { this.checks.push(args); } };',
+  });
+  const transformed = await transform(source + '\nexport { agent };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async url => { requests.push(url); return Response.json({ item: { id: 'synthetic', encodings: [{ id: 'first' }, { id: 'second' }] } }); });
+  await mobile.assertMobileAgentVibeNotReferenced('synthetic', 'first');
+  assert.deepEqual(requests, ['/api/vibes/synthetic']);
+  assert.deepEqual(mobile.agent.checks, [['synthetic', 'first', ['first', 'second']]]);
+  await mobile.assertMobileAgentVibeNotReferenced('synthetic');
+  assert.equal(requests.length, 1);
+  mobile.agent.activeAgents.set('run', {});
+  await assert.rejects(mobile.assertMobileAgentVibeNotReferenced('synthetic'), { status: 409 });
+  mobile.agent.activeAgents.clear();
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ error: 'synthetic read error' }, { status: 503 }));
+  await assert.rejects(mobile.assertMobileAgentVibeNotReferenced('synthetic', 'first'), { status: 409 });
+  assert.equal(mobile.agent.checks.length, 2);
+});
+
 test('Android 打包源码覆盖助手启动签名全部文件，文件系统 shim 可以实际读取', async () => {
   const { readFile } = await import('node:fs/promises');
   const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');

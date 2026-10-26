@@ -5,7 +5,7 @@ import { extractMetadata, parseNovelAIMetadata } from './metadataService';
 import { api, parseErrorResponse, reportNaiAccountingError } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey } from './anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
-import { beginExportTarget } from './exportLocation';
+import { beginExportTarget, type ExportReceipt } from './exportLocation';
 
 const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -31,7 +31,7 @@ const responseError = (response: Response) => parseErrorResponse(response);
 // 局域网 HTTP 页面也能计算官方文本哈希，不依赖安全上下文的 SubtleCrypto。
 const hashVibeText = (value: string) => Array.from(sha256(new TextEncoder().encode(value)), byte => byte.toString(16).padStart(2, '0')).join('');
 export interface VibeImportResult { item: VibeAsset; items: VibeAsset[]; slots: VibeSelection[]; imported: number; bundle: boolean; normalizeStrengths: boolean }
-const embeddedImports = new WeakMap<object, Promise<VibeImportResult>>();
+let embeddedImports = new WeakMap<object, Promise<VibeImportResult>>();
 
 export const vibeService = {
   list: async (query = '', archived = false): Promise<VibeAsset[]> => {
@@ -112,23 +112,31 @@ export const vibeService = {
 
   archive: (id: string) => api.post(`/vibes/${encodeURIComponent(id)}/archive`, {}),
   restore: (id: string) => api.post(`/vibes/${encodeURIComponent(id)}/restore`, {}),
+  delete: async (id: string): Promise<{ success: true; id: string }> => {
+    try { return await api.delete(`/vibes/${encodeURIComponent(id)}`); }
+    finally { embeddedImports = new WeakMap(); }
+  },
+  deleteEncoding: async (id: string, encodingId: string): Promise<{ success: true; item: VibeAsset; encodingId: string }> => {
+    try { return await api.delete(`/vibes/${encodeURIComponent(id)}/encodings/${encodeURIComponent(encodingId)}`); }
+    finally { embeddedImports = new WeakMap(); }
+  },
   rename: (id: string, name: string, defaultStrength?: number) =>
     api.put(`/vibes/${encodeURIComponent(id)}`, { name, defaultStrength }),
 
-  download: async (asset: VibeAsset) => {
+  download: async (asset: VibeAsset): Promise<ExportReceipt> => {
     const exportTarget = beginExportTarget();
     const response = await fetch(`/api/vibes/${encodeURIComponent(asset.id)}/file`);
     if (!response.ok) throw await responseError(response);
     const { downloadFile } = await import('./fileDownload');
     const extension = response.headers.get('content-disposition')?.includes('naiv4vibeBundle') ? 'naiv4vibeBundle' : 'naiv4vibe';
-    await downloadFile(await response.blob(), `${asset.name}.${extension}`, exportTarget);
+    return downloadFile(await response.blob(), `${asset.name}.${extension}`, exportTarget);
   },
 
-  downloadGroup: async (name: string, slots: VibeSelection[], normalizeStrengths: boolean) => {
+  downloadGroup: async (name: string, slots: VibeSelection[], normalizeStrengths: boolean): Promise<ExportReceipt> => {
     const exportTarget = beginExportTarget();
     const document = await api.post('/vibes/export', { slots, normalizeStrengths });
     const { downloadFile } = await import('./fileDownload');
-    await downloadFile(new Blob([JSON.stringify(document)], { type: 'application/json' }), `${name || 'Vibe'}.naiv4vibeBundle`, exportTarget);
+    return downloadFile(new Blob([JSON.stringify(document)], { type: 'application/json' }), `${name || 'Vibe'}.naiv4vibeBundle`, exportTarget);
   },
 
   listGroups: async (): Promise<VibeGroup[]> => (await api.get('/vibe-groups')).items || [],

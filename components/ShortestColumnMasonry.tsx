@@ -79,7 +79,7 @@ export const computeShortestColumnAssignment = <T,>(
   columnCount: number,
   estimateHeight: (item: T, columnWidth: number) => number,
   columnWidth: number,
-  /** 已显示卡片保持原列，尺寸更新只影响新卡片的最短列选择。 */
+  /** 保留集合内的卡片保持原列，其余卡片按最短列分配。 */
   placement?: { previous: ReadonlyMap<string, number>; next: Map<string, number>; key: (item: T) => string; measuredHeights?: readonly number[] },
   gap = 0,
 ): T[][] => {
@@ -116,15 +116,49 @@ interface ShortestColumnMasonryProps<T> {
   className?: string;
   /** 列间距与卡片间距，默认 12px（与 .75rem 一致）。 */
   gap?: number;
-  /** 默认保留已显示卡片所属列，避免侧栏挤压或图片尺寸返回时重挂载。 */
+  /** 默认保留已浏览卡片所属列，尺寸返回只整理视口下方尚未浏览的尾部。 */
   stableColumns?: boolean;
   /** 主动改变查询条件时，即使结果恰好沿用旧前缀，也按新集合分列。 */
   resetKey?: unknown;
 }
 
+const masonryScrollRoot = (element: HTMLElement | null) => {
+  let root = element?.parentElement ?? null;
+  while (root && !/auto|scroll|overlay/.test(getComputedStyle(root).overflowY)) root = root.parentElement;
+  return root;
+};
+
+/** 只识别一项一个根节点的可见列表；隐藏或几何未知时保留旧分列。 */
+const readMasonryViewport = <T,>(element: HTMLElement | null, layout: readonly (readonly T[])[], key: (item: T) => string, indices: ReadonlyMap<string, number>, root = masonryScrollRoot(element)) => {
+  if (!element || element.getBoundingClientRect().width <= 0) return;
+  const bottom = root ? Math.min(root.getBoundingClientRect().bottom, window.innerHeight) : window.innerHeight;
+  if (!(bottom > 0)) return;
+  const columns = element.children;
+  if (columns.length !== layout.length) return;
+  let viewedThrough = -1;
+  const tops: number[] = [];
+  for (let column = 0; column < columns.length; column++) {
+    const cards = columns[column].children;
+    const length = layout[column].length;
+    if (cards.length !== length + 1 || !cards[length].hasAttribute('data-masonry-load-end')) return;
+    tops.push(columns[column].getBoundingClientRect().top);
+    // 每列自上而下单调排列，二分找视口下沿，长列表不随滚动全量测量。
+    let low = 0, high = length - 1, last = -1;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const rect = cards[middle].getBoundingClientRect();
+      if (!(rect.height > 0)) return;
+      if (rect.top <= bottom) { last = middle; low = middle + 1; }
+      else high = middle - 1;
+    }
+    if (last >= 0) viewedThrough = Math.max(viewedThrough, indices.get(key(layout[column][last])) ?? -1);
+  }
+  return { viewedThrough, bottom, tops };
+};
+
 /**
  * 显式列容器瀑布流：外层等宽 Grid 只负责生成列，每列是 flex column，
- * 卡片保持自然高度。尺寸变化更新高度估算，旧卡片默认保留所属列。
+ * 卡片保持自然高度。尺寸变化更新高度估算，已浏览卡片默认保留所属列。
  */
 export const ShortestColumnMasonry = <T,>({
   items,
@@ -140,7 +174,8 @@ export const ShortestColumnMasonry = <T,>({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const latestWidth = useRef(0);
-  const committed = useRef({ count: 0, keys: [] as string[], placement: new Map<string, number>(), resetKey });
+  const committed = useRef({ count: 0, keys: [] as string[], indices: new Map<string, number>(), layout: [] as T[][], placement: new Map<string, number>(), heights: new Map<string, number>(), columnWidth: 0, resetKey });
+  const viewedThrough = useRef(-1);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -172,21 +207,68 @@ export const ShortestColumnMasonry = <T,>({
 
   const computed = useMemo(() => {
     const keys = items.map(getItemKey);
+    const indices = new Map(keys.map((key, index) => [key, index]));
     // 仅同序列或尾部追加沿用列；筛选删项与中途插入必须按新集合重新平衡。
     const samePrefix = keys.length >= committed.current.keys.length && committed.current.keys.every((key, index) => key === keys[index]);
     const previous = stableColumns && committed.current.count === usedColumns && samePrefix && Object.is(committed.current.resetKey, resetKey)
       ? committed.current.placement : new Map<string, number>();
+    if (!previous.size) viewedThrough.current = -1;
+    const heights = new Map<string, number>();
+    const estimate = (item: T, width: number) => {
+      const key = getItemKey(item);
+      if (!heights.has(key)) heights.set(key, estimateItemHeight(item, width));
+      return heights.get(key)!;
+    };
+    let retained = previous;
+    // 尺寸返回只整理未浏览的纯尾部，避免插到另一列的可见卡片前面。
+    if (previous.size && keys.length === committed.current.keys.length && columnWidth === committed.current.columnWidth) {
+      const changed = items.map(item => estimate(item, columnWidth)).some((height, index) => height !== committed.current.heights.get(keys[index]));
+      const viewport = changed ? readMasonryViewport(containerRef.current, committed.current.layout, getItemKey, indices) : undefined;
+      if (viewport) {
+        viewedThrough.current = Math.max(viewedThrough.current, viewport.viewedThrough);
+        const prefixHeights = new Array<number>(usedColumns).fill(0);
+        let end = -1;
+        // 新比例可能缩短可见区承托，再多保留一段，保证移动后的尾部仍在屏幕下方。
+        for (; end + 1 < items.length && (end < viewedThrough.current || prefixHeights.some((height, column) => viewport.tops[column] + height < viewport.bottom));) {
+          end++;
+          const column = previous.get(keys[end])!;
+          prefixHeights[column] += estimate(items[end], columnWidth) + gap;
+        }
+        if (end < items.length - 1) retained = new Map(keys.slice(0, end + 1).map(key => [key, previous.get(key)!]));
+      }
+    }
     // 纯尾追加按屏幕上的真实列高接续；异步图片/文字的估高误差不能让实际短列一直断粮。
     const measured = previous.size && keys.length > committed.current.keys.length
       ? Array.from(containerRef.current?.children || [], column => column.getBoundingClientRect().height) : [];
     const measuredHeights = measured.length === usedColumns && measured.every(height => height > 0) ? measured : undefined;
     const placement = new Map<string, number>();
     const layout = usedColumns === 0 || columnWidth <= 0 ? [] as T[][]
-      : computeShortestColumnAssignment(items, usedColumns, estimateItemHeight, columnWidth,
-        stableColumns ? { previous, next: placement, key: getItemKey, measuredHeights } : undefined, gap);
-    return { layout, placement, keys, count: usedColumns, resetKey };
+      : computeShortestColumnAssignment(items, usedColumns, estimate, columnWidth,
+        stableColumns ? { previous: retained, next: placement, key: getItemKey, measuredHeights } : undefined, gap);
+    return { layout, placement, keys, indices, heights: new Map(keys.map(key => [key, heights.get(key) ?? committed.current.heights.get(key)!])), columnWidth, count: usedColumns, resetKey };
   }, [items, usedColumns, estimateItemHeight, columnWidth, stableColumns, getItemKey, gap, resetKey]);
   useEffect(() => { if (columnWidth > 0) committed.current = computed; }, [computed, columnWidth]);
+  useEffect(() => {
+    if (!stableColumns) return;
+    const root = masonryScrollRoot(containerRef.current);
+    let frame: number | null = null;
+    const markViewed = () => {
+      const current = committed.current;
+      const viewport = readMasonryViewport(containerRef.current, current.layout, getItemKey, current.indices, root);
+      if (viewport) viewedThrough.current = Math.max(viewedThrough.current, viewport.viewedThrough);
+    };
+    const onScroll = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => { frame = null; markViewed(); });
+    };
+    markViewed();
+    const target = root || window;
+    target.addEventListener('scroll', onScroll);
+    return () => {
+      target.removeEventListener('scroll', onScroll);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [stableColumns, getItemKey, computed]);
   const layout = computed.layout;
 
   return (

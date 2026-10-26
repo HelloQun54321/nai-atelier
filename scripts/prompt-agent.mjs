@@ -2493,6 +2493,45 @@ export class PromptAgentService {
     return join(this.taskDirPath(), `${hash}.json`);
   }
 
+  async assertVibeNotReferenced(vibeId, encodingId, existingEncodingIds) {
+    const blocked = () => Object.assign(new Error('创作助手草稿或待确认操作仍在引用此 Vibe，无法永久删除'), { status: 409 });
+    const unreadable = () => Object.assign(new Error('无法核对创作助手草稿引用，暂时不能永久删除'), { status: 409 });
+    if (existingEncodingIds !== undefined && (!Array.isArray(existingEncodingIds) || existingEncodingIds.some(id => typeof id !== 'string'))) throw unreadable();
+    const existing = existingEncodingIds === undefined ? undefined : new Set(existingEncodingIds);
+    const references = value => {
+      if (!value || typeof value !== 'object') return false;
+      if (encodingId && value.encodingId === encodingId) return true;
+      if (value.vibeId === vibeId && (!encodingId || !existing?.has(value.encodingId))) return true;
+      return Object.values(value).some(references);
+    };
+    const checkLive = () => {
+      for (const run of this.runs.values()) {
+        if (references(run.draft) || references(run.clientDraft) || references(run.state?.finalDraft)) throw blocked();
+        for (const saved of run.suspendedDrafts?.values() || []) if (references(saved)) throw blocked();
+      }
+      for (const pending of this.pendingConfirmations.values()) {
+        if (references(pending.operation?.payload) || pending.operation?.action === 'encode_vibe' && pending.operation.resourceId === vibeId) throw blocked();
+      }
+    };
+    checkLive();
+    let files;
+    try { files = await readdir(this.taskDirPath()); }
+    catch (error) { if (error.code !== 'ENOENT') throw unreadable(); files = []; }
+    // 任务快照包含可继续的 finalDraft；聊天、事件和审计不作为恢复草稿读取。
+    for (const file of files) {
+      if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
+      let task;
+      try {
+        task = JSON.parse(await readFile(join(this.taskDirPath(), file), 'utf8'));
+        if (!task || typeof task !== 'object' || Array.isArray(task)
+          || task.finalDraft != null && (typeof task.finalDraft !== 'object' || Array.isArray(task.finalDraft)
+            || !task.finalDraft.params || typeof task.finalDraft.params !== 'object' || Array.isArray(task.finalDraft.params))) throw unreadable();
+      } catch { throw unreadable(); }
+      if (references(task.finalDraft)) throw blocked();
+    }
+    checkLive();
+  }
+
   taskEventsFile(sessionId) {
     const hash = createHash('sha256').update(String(sessionId || 'playground')).digest('hex');
     return join(this.taskDirPath(), `${hash}.events.json`);

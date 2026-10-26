@@ -41,6 +41,8 @@ const COVER_CACHE_CANDIDATE_LIMIT = 24;
 export interface DanbooruCoverCandidate {
   id: number;
   score: number;
+  width?: number;
+  height?: number;
   previewUrl: string;
   sampleUrl: string;
   postUrl: string;
@@ -208,6 +210,8 @@ const CHARACTER_SIGNATURE_IGNORED_TAGS = new Set([
 const toCoverCandidate = (post: DanbooruPost): DanbooruCoverCandidate => ({
   id: post.id,
   score: post.score,
+  ...(Number.isFinite(post.width) && post.width > 0 && Number.isFinite(post.height) && post.height > 0
+    ? { width: post.width, height: post.height } : {}),
   previewUrl: post.previewUrl,
   sampleUrl: post.sampleUrl,
   postUrl: post.postUrl,

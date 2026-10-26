@@ -321,6 +321,95 @@ async function validatedVibeSlots(db: D1Database, slots: any[]) {
   return result;
 }
 
+// 包括禁用中的参考及嵌套模板；这里只返回引用来源，不读取或修改配置正文。
+const vibeReferenceDocuments = `
+  SELECT '风格串' AS source, params AS document, 1 AS requires_json FROM chains
+  UNION ALL SELECT '历史', params, 1 FROM local_generation_history
+  UNION ALL SELECT '收藏', params, 1 FROM inspirations
+  UNION ALL SELECT '收藏', analysis, 1 FROM inspirations
+  UNION ALL SELECT '组合', slots, 1 FROM vibe_groups
+  UNION ALL SELECT '设置或模板', value, substr(ltrim(value), 1, 1) IN ('{', '[') FROM settings
+  UNION ALL SELECT '风格串图片', json_quote(preview_image), 0 FROM chains
+  UNION ALL SELECT '收藏图片', json_quote(image_url), 0 FROM inspirations
+  UNION ALL SELECT '画师图片', json_quote(image_url), 0 FROM artists
+  UNION ALL SELECT '画师图片', json_quote(preview_url), 0 FROM artists
+  UNION ALL SELECT '画师图片', benchmarks, 1 FROM artists`;
+const malformedVibeReferenceDocument = `d.requires_json = 1 AND d.document IS NOT NULL AND trim(d.document) <> '' AND
+  (NOT json_valid(d.document) OR json_type(CASE WHEN json_valid(d.document) THEN d.document ELSE 'null' END) NOT IN ('object', 'array', 'null'))`;
+const vibeReferenceQuery = `
+  WITH target AS (SELECT ? AS vibe_id, ? AS encoding_id), documents AS (${vibeReferenceDocuments}),
+  target_encodings AS (SELECT e.id FROM vibe_encodings_all e, target t
+    WHERE e.vibe_id = t.vibe_id AND (t.encoding_id IS NULL OR e.id = t.encoding_id)),
+  reference_urls AS (
+    SELECT '/api/vibes/' || vibe_id || '/image' AS url FROM target WHERE encoding_id IS NULL
+    UNION ALL SELECT '/api/vibes/' || vibe_id || '/thumbnail' FROM target WHERE encoding_id IS NULL
+    UNION ALL SELECT '/api/vibes/' || t.vibe_id || '/encodings/' || e.id || '/data' FROM target t, target_encodings e
+  )
+  SELECT d.source, 1 AS unreadable FROM documents d WHERE ${malformedVibeReferenceDocument}
+  UNION ALL
+  SELECT d.source, 0 AS unreadable FROM documents d, json_tree(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END) n, target t
+  WHERE (n.key = 'vibeId' AND n.atom = t.vibe_id AND (t.encoding_id IS NULL OR NOT EXISTS(
+      SELECT 1 FROM vibe_encodings_all e WHERE e.vibe_id = t.vibe_id AND e.id <> t.encoding_id
+        AND e.id = json_extract(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END, n.path || '.encodingId'))))
+    OR (n.key = 'encodingId' AND n.atom IN (SELECT id FROM target_encodings))
+    OR (n.type = 'text' AND EXISTS(SELECT 1 FROM reference_urls r WHERE n.atom = r.url OR
+      (substr(n.atom, 1, length(r.url)) = r.url AND substr(n.atom, length(r.url) + 1, 1) IN ('?', '#'))))
+  LIMIT 1`;
+
+async function deleteUnreferencedVibeFiles(db: D1Database, env: Env, keys: string[]) {
+  for (const key of new Set(keys.filter(Boolean))) {
+    const urls = [...new Set([`/api/assets/${key}`, `/api/assets/${encodeURIComponent(key)}`, `/api/assets/${key.split('/').map(encodeURIComponent).join('/')}`])];
+    const reference = await db.prepare(`WITH target AS (SELECT ? AS object_key, ? AS urls),
+      documents AS (${vibeReferenceDocuments}), pointers AS (
+        SELECT original_key AS object_key FROM vibe_assets UNION ALL SELECT thumbnail_key FROM vibe_assets
+        UNION ALL SELECT encoding_key FROM vibe_encodings_all
+        UNION ALL SELECT original_key FROM character_reference_assets UNION ALL SELECT thumbnail_key FROM character_reference_assets
+        UNION ALL SELECT image_key FROM local_generation_history UNION ALL SELECT image_key FROM inspirations
+      ) SELECT EXISTS(SELECT 1 FROM pointers p, target t WHERE p.object_key = t.object_key) OR
+        EXISTS(SELECT 1 FROM documents d WHERE ${malformedVibeReferenceDocument}) OR
+        EXISTS(SELECT 1 FROM documents d, json_tree(CASE WHEN json_valid(d.document) THEN d.document ELSE '{}' END) n, target t
+          WHERE n.type = 'text' AND (n.atom = t.object_key OR EXISTS(SELECT 1 FROM json_each(t.urls) u WHERE n.atom = u.value OR
+            (substr(n.atom, 1, length(u.value)) = u.value AND substr(n.atom, length(u.value) + 1, 1) IN ('?', '#'))))) AS referenced`)
+      .bind(key, JSON.stringify(urls)).first<{ referenced: number }>();
+    if (!reference) throw new Error('无法核对 Vibe 文件引用');
+    if (!reference.referenced) await env.BUCKET!.delete(key);
+  }
+}
+
+async function permanentlyDeleteVibe(db: D1Database, env: Env, vibeId: string, encodingId?: string) {
+  const asset = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(vibeId).first<any>();
+  if (!asset) return error('Vibe 不存在', 404);
+  if (asset.archived !== 1) return error('请先归档 Vibe，再永久删除', 409);
+  const encodings = (await db.prepare('SELECT * FROM vibe_encodings_all WHERE vibe_id = ?').bind(vibeId).all<any>()).results;
+  const selected = encodingId ? encodings.filter(row => row.id === encodingId) : encodings;
+  if (encodingId && !selected.length) return error('Vibe 编码不存在', 404);
+  const referenceArgs = [vibeId, encodingId || null];
+  const where = encodingId ? 'vibe_id = ? AND id = ?' : 'vibe_id = ?';
+  const rowArgs = encodingId ? [vibeId, encodingId] : [vibeId];
+  // 引用校验与删除在同一事务中执行，迟到的持久引用不能穿过前置检查。
+  const guard = `EXISTS(SELECT 1 FROM vibe_assets WHERE id = ? AND archived = 1) AND NOT EXISTS(${vibeReferenceQuery})`;
+  const statements = ['vibe_encodings', 'vibe_encoding_variants'].map(table =>
+    db.prepare(`DELETE FROM ${table} WHERE ${where} AND ${guard}`).bind(...rowArgs, vibeId, ...referenceArgs));
+  statements.push(encodingId
+    ? db.prepare(`UPDATE vibe_assets SET updated_at = ? WHERE id = ? AND archived = 1
+        AND NOT EXISTS(SELECT 1 FROM vibe_encodings_all WHERE id = ? AND vibe_id = ?)`)
+      .bind(Date.now(), vibeId, encodingId, vibeId)
+    : db.prepare(`DELETE FROM vibe_assets WHERE id = ? AND archived = 1 AND NOT EXISTS(${vibeReferenceQuery})`).bind(vibeId, ...referenceArgs));
+  const results = await db.batch(statements);
+  const deleted = encodingId ? Number(results[0].meta.changes) + Number(results[1].meta.changes) : Number(results[2].meta.changes);
+  if (!deleted) {
+    const reference = await db.prepare(vibeReferenceQuery).bind(...referenceArgs).first<{ source: string; unreadable: number }>();
+    if (reference?.unreadable) return error(`${reference.source}资料损坏，无法核对 Vibe 引用，未执行删除`, 409);
+    return error(reference ? `这个 Vibe${encodingId ? ' 编码' : ''}仍被${reference.source}引用，不能永久删除` : 'Vibe 状态已变化，请刷新后重试', 409);
+  }
+  try {
+    await deleteUnreferencedVibeFiles(db, env, [...(encodingId ? [] : [asset.original_key, asset.thumbnail_key]), ...selected.map(row => row.encoding_key)]);
+  } catch { return error('Vibe 记录已删除，但部分文件清理失败', 503); }
+  if (!encodingId) return json({ success: true, id: vibeId });
+  const updated = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(vibeId).first<any>();
+  return json({ success: true, item: await mapVibeAsset(db, updated), encodingId });
+}
+
 // Precise/Character Reference image library + Permanent Vibe Transfer library.
 export async function handleVibeRoute(ctx: RouteContext): Promise<Response | null> {
   const { request, env, url, path, method, db } = ctx;
@@ -608,6 +697,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       if (!row) return error('Vibe 不存在', 404);
       return json({ item: await mapVibeAsset(db, row) });
     }
+    if (assetMatch && method === 'DELETE') return permanentlyDeleteVibe(db, env, decodeURIComponent(assetMatch[1]));
     if (assetMatch && method === 'PUT') {
       const vibeId = decodeURIComponent(assetMatch[1]);
       const body = await request.json() as any;
@@ -669,6 +759,8 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
       return json({ encoding: bytesToBase64(bytes), variant: mapVibeEncoding(row) });
     }
+    const encodingMatch = path.match(/^\/api\/vibes\/([^/]+)\/encodings\/([^/]+)$/);
+    if (encodingMatch && method === 'DELETE') return permanentlyDeleteVibe(db, env, decodeURIComponent(encodingMatch[1]), decodeURIComponent(encodingMatch[2]));
 
     const fileMatch = path.match(/^\/api\/vibes\/([^/]+)\/file$/);
     if (fileMatch && method === 'GET') {

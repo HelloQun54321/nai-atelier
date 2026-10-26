@@ -9,6 +9,18 @@ import { PixivWebLoginOrchestrator } from 'mobile:pixiv-login';
 import { native } from './native';
 
 const agent = new PromptAgentService({ lanSecret: 'android-local', configFile: '/agent' });
+export async function assertMobileAgentVibeNotReferenced(vibeId: string, encodingId?: string) {
+  if (agent.activeAgents.size || agent.startingAgents.size) throw Object.assign(new Error('请先停止助手任务，再删除 Vibe'), { status: 409 });
+  let existingEncodingIds: string[] | undefined;
+  if (encodingId) {
+    const response = await fetch(`/api/vibes/${encodeURIComponent(vibeId)}`);
+    const result = await response.json();
+    if (!response.ok || result.item?.id !== vibeId || !Array.isArray(result.item.encodings)
+      || result.item.encodings.some((item: { id?: unknown } | null) => typeof item?.id !== 'string')) throw Object.assign(new Error('无法核对 Vibe 编码，暂时不能永久删除'), { status: 409 });
+    existingEncodingIds = result.item.encodings.map((item: { id: string }) => item.id);
+  }
+  await agent.assertVibeNotReferenced(vibeId, encodingId, existingEncodingIds);
+}
 // 手机磁盘工具只开放用户创作文件；项目资料仍通过现有项目工具读取。
 agent.localImages.checkProtected = async (path: string) => {
   if (path !== '/documents' && !path.startsWith('/documents/')) throw new Error('手机文件工具仅访问 /documents；图库、历史和资料请使用项目工具');

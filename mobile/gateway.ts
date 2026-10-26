@@ -14,12 +14,19 @@ import {
   normalizeCloudQueuePreferences, keyHashFromAuthorization,
   handleGenerateRequest, handleGenerateStreamRequest, handleGenerationTaskRequest, handleVibeEncodeRequest,
   recoverPendingVibeEncodings,
+  assertVibeEncodingIdle,
 } from 'mobile:gateway';
 
 const tasks = new GenerationTasks();
 const queue = new CloudQueueCoordinator((...args: any[]) => fetch(args[0], args[1]));
 // 后台有限任务与手动／助手入口共用同一份单并发、暂停与间隔状态；这里只持有任务，不建持久表。
 const generationJobs = createMobileGenerationJobs({ tasks, queue, readGatewayUrl: authorization => mobileNaiGatewayUrl(authorization) });
+export function assertMobileVibeNotBusy(vibeId: string) {
+  if (tasks.size || [...generationJobs.jobs.jobs.values()].some(job => !['succeeded', 'failed', 'cancelled'].includes(job.state))) {
+    throw Object.assign(new Error('请先完成或取消生成任务，再删除 Vibe'), { status: 409 });
+  }
+  assertVibeEncodingIdle(vibeId);
+}
 export async function readSetting<T>(key: string, fallback: T): Promise<T> {
   const row = await db.prepare('SELECT value FROM settings WHERE key=?').bind(key).first<{ value: string }>();
   try { return row ? JSON.parse(row.value) : fallback; } catch { return fallback; }

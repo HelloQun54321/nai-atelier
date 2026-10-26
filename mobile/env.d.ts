@@ -24,6 +24,7 @@ declare module 'mobile:gateway' {
     normalizeCloudQueuePreferences: any, keyHashFromAuthorization: any, handleGenerateRequest: any,
     handleGenerateStreamRequest: any, handleGenerationTaskRequest: any, handleVibeEncodeRequest: any, selectPreciseReferenceCanvas: any, recoverPendingVibeEncodings: any,
     sendJson: any, hasValidLanCookie: any;
+  export const assertVibeEncodingIdle: (vibeId: string) => void;
   export const extractNaiRuntimeChunkPaths: (html: string) => string[];
   /** 订阅原始响应只在后台任务核实额度时使用；结果仍需 sanitize 后缓存。 */
   export const fetchNovelAiSubscription: (authorization: string, signal?: AbortSignal) => Promise<Response>;

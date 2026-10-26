@@ -114,6 +114,15 @@ export const selectThumbnailConcurrency = ({
 const THUMBNAIL_JOB_CONCURRENCY = selectThumbnailConcurrency();
 const vibeEncodingJobs = new Map();
 const pendingVibeRecoveries = new Map();
+export const assertVibeEncodingIdle = vibeId => {
+  if (vibeEncodingJobs.size || [...pendingVibeRecoveries.values()].some(recovery => !recovery.vibeId || recovery.vibeId === vibeId)) {
+    throw Object.assign(new Error('Vibe 编码或已付费编码恢复尚未完成，暂时不能永久删除'), { status: 409, code: 'vibe_delete_busy' });
+  }
+  // 删除前让旧草稿重新核实持久编码，不能凭缓存生成并保存悬空引用。
+  for (const [key, entry] of vibeEncodingMemoryCache.entries) if (key.startsWith(`${vibeId}:`)) {
+    vibeEncodingMemoryCache.entries.delete(key); vibeEncodingMemoryCache.total -= entry.size;
+  }
+};
 const vibeCacheHmacSecret = randomBytes(32);
 const confirmedNovelAiVibeCacheKeys = new Set();
 const preciseReferenceImageCache = new Map();
@@ -1742,15 +1751,28 @@ const commitVibeRecovery = async (recovery, req, workerPort) => {
 
 const recoverPendingVibeEncodings = async workerPort => {
   await mkdir(VIBE_RECOVERY_DIR, { recursive: true });
-  for (const name of await readdir(VIBE_RECOVERY_DIR).catch(() => [])) {
+  let names;
+  try { names = await readdir(VIBE_RECOVERY_DIR); pendingVibeRecoveries.delete(VIBE_RECOVERY_DIR); }
+  catch (error) {
+    if (error.code !== 'ENOENT') pendingVibeRecoveries.set(VIBE_RECOVERY_DIR, { file: VIBE_RECOVERY_DIR });
+    return;
+  }
+  for (const name of names) {
     if (!name.endsWith('.json')) continue;
     const file = join(VIBE_RECOVERY_DIR, name);
+    let recovery;
     try {
-      const recovery = { ...JSON.parse(await readFile(file, 'utf8')), file };
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      if (!parsed || typeof parsed.vibeId !== 'string' || !parsed.vibeId || !Number.isFinite(parsed.informationExtracted)
+        || parsed.informationExtracted < 0 || parsed.informationExtracted > 1 || typeof parsed.encodingBase64 !== 'string'
+        || Buffer.from(parsed.encodingBase64, 'base64').length < 64) throw new Error('Vibe 恢复记录损坏');
+      recovery = { ...parsed, file };
+      pendingVibeRecoveries.delete(file);
       const key = `${recovery.vibeId}:${vibeBaseModel(recovery.model)}:${Number(recovery.informationExtracted)}`;
       pendingVibeRecoveries.set(key, recovery);
       await commitVibeRecovery(recovery, internalWorkerRequest, workerPort);
     } catch {
+      if (!recovery) pendingVibeRecoveries.set(file, { file });
       // Keep the paid encoding for the next startup or retry. Never log its contents.
     }
   }
@@ -3038,7 +3060,7 @@ class ThumbnailCache {
   }
 }
 
-export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
+export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => new Promise(done => {
   const headers = { ...req.headers };
   headers.host = getForwardHost(req);
   // The Worker uses this address for the LAN PIN rate limit.  Never retain a
@@ -3052,7 +3074,13 @@ export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
     for (const [name, value] of Object.entries(extraHeaders)) responseHeaders[name.toLowerCase()] = value;
     res.writeHead(upstreamRes.statusCode || 502, responseHeaders);
     upstreamRes.pipe(res);
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      // 写请求断开后仍收完 Worker 回执，删除锁不能提前释放或被暂停的响应流挂住。
+      const drain = () => { upstreamRes.unpipe(res); upstreamRes.resume(); };
+      if (res.destroyed) drain(); else res.once('close', drain);
+    }
   });
+  upstream.once('close', done);
   upstream.on('error', error => {
     if (res.destroyed) return;
     if (!res.headersSent) sendJson(res, 502, { error: `Local service unavailable: ${error.message}` });
@@ -3063,7 +3091,7 @@ export const proxyRequest = (req, res, workerPort, extraHeaders = {}) => {
   if (req.url?.split('?')[0] === '/api/danbooru/covers') res.once('close', () => {
     if (!res.writableFinished) upstream.destroy();
   });
-};
+});
 
 export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTagger) {
   const statusRequest = url.pathname.endsWith('/status');
@@ -3339,10 +3367,20 @@ const serveDistFile = async (req, res, url) => {
   };
 
   let updating = false;
+  let deletingVibe = false;
   const activeWrites = new Set();
   const activeHandlers = new Set();
+  const assertVibeDeletionIdle = (req, vibeId) => {
+    assertVibeEncodingIdle(vibeId);
+    if (tasks.size || [...generationJobs.jobs.values()].some(job => !['succeeded', 'cancelled', 'failed'].includes(job.state))
+      || [...activeWrites, ...activeHandlers].some(other => other !== req && !['GET', 'HEAD', 'OPTIONS'].includes(other.method))
+      || promptAgent.activeAgents.size || promptAgent.startingAgents.size || styleCollector.run || stChatu8Bridge.historySyncPromise) {
+      throw Object.assign(new Error('生成、助手、收集或资料写入尚未完成，暂时不能永久删除 Vibe'), { status: 409, code: 'vibe_delete_busy' });
+    }
+  };
   const handleRequest = async (req, res) => {
     if (updating) return sendJson(res, 503, { error: '工坊正在安装更新，请稍后重新连接' });
+    if (deletingVibe && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return sendJson(res, 409, { error: '正在永久删除 Vibe，请稍后再保存或启动任务', code: 'vibe_delete_busy' });
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       activeWrites.add(req);
       const finished = () => activeWrites.delete(req);
@@ -3351,6 +3389,26 @@ const serveDistFile = async (req, res, url) => {
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    const vibeDeletion = req.method === 'DELETE' && url.pathname.match(/^\/api\/vibes\/([^/]+)(?:\/encodings\/([^/]+))?$/);
+    if (vibeDeletion) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      deletingVibe = true;
+      try {
+        const vibeId = decodeURIComponent(vibeDeletion[1]), encodingId = vibeDeletion[2] === undefined ? undefined : decodeURIComponent(vibeDeletion[2]);
+        assertVibeDeletionIdle(req, vibeId);
+        let existingEncodingIds;
+        if (encodingId !== undefined) {
+          try {
+            const { item } = await requestWorkerJson(`/api/vibes/${encodeURIComponent(vibeId)}`, req, workerPort);
+            if (item?.id !== vibeId || !Array.isArray(item.encodings) || item.encodings.some(entry => typeof entry?.id !== 'string')) throw new Error();
+            existingEncodingIds = item.encodings.map(entry => entry.id);
+          } catch { throw Object.assign(new Error('无法核对 Vibe 编码列表，暂时不能永久删除'), { status: 409 }); }
+        }
+        await promptAgent.assertVibeNotReferenced(vibeId, encodingId, existingEncodingIds);
+        assertVibeDeletionIdle(req, vibeId);
+        return await proxyRequest(req, res, workerPort);
+      } finally { deletingVibe = false; }
+    }
     if (url.pathname.startsWith('/api/artist-samples/')) {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       const canManage = process.platform === 'win32' && collectorLocalRequest(req);

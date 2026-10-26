@@ -1,7 +1,8 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ImageEditOperation, NAIParams, VibeAsset, VibeGroup, VibeSelection } from '../types';
+import { ImageEditOperation, LabWorkspaceSession, NAIParams, VibeAsset, VibeGroup, VibeSelection } from '../types';
+import type { ExportReceipt } from '../services/exportLocation';
 import { vibeService } from '../services/vibeService';
 import { VIBE_MAX_SLOTS, normalizeVibeSelections, resolveVibeSlots } from '../services/vibeUtils';
 import { defaultVibeInformation, vibeBaseModel, vibeStrength } from '../services/vibeProtocol.mjs';
@@ -32,6 +33,48 @@ const emptyVibes = (): NonNullable<NAIParams['vibes']> => ({
   slots: [],
 });
 
+const assertUnusedVibe = (params: NAIParams, asset: VibeAsset, encodingId?: string) => {
+  const knownEncodings = new Set(asset.encodings.map(item => item.id));
+  const check = (candidate: Partial<NAIParams> | undefined, source: string) => {
+    if (Array.isArray(candidate?.vibes?.slots) && candidate.vibes.slots.some(slot => slot.vibeId === asset.id && (!encodingId || !knownEncodings.has(slot.encodingId) || slot.encodingId === encodingId))) {
+      throw new Error(t('{0}仍被{1}引用，请先移除对应参考后再永久删除', [encodingId ? t('这份 Vibe 编码') : t('这个 Vibe'), source]));
+    }
+  };
+  check(params, t('当前实验室草稿'));
+  const references: Array<{ params?: Partial<NAIParams>; source: string }> = [];
+  const workspace = (value: Partial<LabWorkspaceSession> | null) => {
+    references.push({ params: value?.textToImage?.params, source: t('本浏览器的实验室草稿') });
+    for (const mode of ['image-to-image', 'inpaint', 'outpaint'] as const) references.push({ params: value?.edits?.[mode]?.params, source: t('本浏览器的实验室草稿') });
+  };
+  const parse = (raw: string | null) => {
+    if (raw === null) return null;
+    const value = JSON.parse(raw);
+    if (value !== null && (typeof value !== 'object' || Array.isArray(value))) throw new Error();
+    return value;
+  };
+  try {
+    for (const storage of [sessionStorage, localStorage]) {
+      for (let index = 0; index < storage.length; index++) {
+        const key = storage.key(index);
+        if (key?.startsWith('nai-lab-workspace-v1:')) workspace(parse(storage.getItem(key)));
+      }
+    }
+    references.push({ params: parse(sessionStorage.getItem('nai_pending_import'))?.params, source: t('待导入配置') });
+    references.push({ params: parse(sessionStorage.getItem('nai_last_copied_image'))?.data?.params, source: t('最后复制图片的配置') });
+    const backup = parse(localStorage.getItem('nai-update-lab-drafts'));
+    if (backup !== null) {
+      if (typeof backup.savedAt !== 'number' || !backup.entries || typeof backup.entries !== 'object' || Array.isArray(backup.entries)) throw new Error();
+      if (Date.now() - backup.savedAt <= 24 * 60 * 60 * 1000) {
+        for (const [key, value] of Object.entries(backup.entries)) if (key.startsWith('nai-lab-workspace-v1:')) {
+          if (typeof value !== 'string') throw new Error();
+          workspace(parse(value));
+        }
+      }
+    }
+  } catch { throw new Error(t('浏览器草稿无法读取，无法核对引用；已保留 Vibe，请先检查草稿后再删除')); }
+  references.forEach(reference => check(reference.params, reference.source));
+};
+
 export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, markChange, apiKey, notify, operation }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
@@ -52,6 +95,12 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const [exportingId, setExportingId] = useState('');
+  const exportLock = useRef(false);
+  const [deletingId, setDeletingId] = useState('');
+  const deleteLock = useRef(false);
+  const latestDetailId = useRef(detail?.id);
+  latestDetailId.current = detail?.id;
   const encodingLock = useRef(false);
   const [archived, setArchived] = useState(false);
   const [pane, setPane] = useState<'library' | 'selection'>('library');
@@ -312,9 +361,64 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     } catch (error: any) { notify(error.message || '组合保存失败', 'error'); }
   };
 
-  const exportGroup = async (name: string, slots: VibeSelection[], normalizeStrengths: boolean) => {
-    try { await vibeService.downloadGroup(name, slots, normalizeStrengths); }
-    catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? error.message : '导出失败', 'error'); }
+  const exportFile = async (id: string, download: () => Promise<ExportReceipt>) => {
+    if (exportLock.current || deleteLock.current) return;
+    exportLock.current = true; setExportingId(id);
+    try {
+      const receipt = await download();
+      if (receipt.cancelled) return;
+      if (receipt.saved) notify(t('Vibe 文件已保存'), 'success');
+      else if (receipt.browserDownload) notify(t('已开始下载 Vibe 文件'));
+      else throw new Error(t('导出文件未写入'));
+    } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? error.message : '导出失败', 'error'); }
+    finally { exportLock.current = false; setExportingId(''); }
+  };
+
+  const deleteArchived = async (asset: VibeAsset, encoding?: VibeAsset['encodings'][number]) => {
+    if (!asset.archived || deleteLock.current || exportLock.current || busyId) return;
+    const session = sessionRef.current;
+    deleteLock.current = true; setDeletingId(encoding?.id || asset.id);
+    try {
+      assertUnusedVibe(latestParams.current, asset, encoding?.id);
+      const accepted = await confirmAction({
+        rememberKey: encoding ? 'vibe-encoding.delete' : 'vibe.delete',
+        title: encoding ? t('永久删除这份编码？') : t('永久删除“{0}”？', [asset.name]),
+        message: encoding
+          ? t('将永久删除这份编码，原图和其他编码保留。此操作无法恢复，重新编码可能产生费用。其他标签页、浏览器或设备的未保存草稿无法检查。')
+          : t('将永久删除原图及全部 {0} 份编码，无法恢复。有引用时会阻止删除；其他标签页、浏览器或设备的未保存草稿无法检查。', [asset.encodings.length]),
+        confirmLabel: t('永久删除'), tone: 'danger',
+      });
+      if (!accepted || session !== sessionRef.current || latestDetailId.current !== asset.id) return;
+      assertUnusedVibe(latestParams.current, asset, encoding?.id);
+      if (encoding) {
+        const result = await vibeService.deleteEncoding(asset.id, encoding.id);
+        setAssets(items => items.map(item => item.id === asset.id ? result.item : item));
+        setDetail(current => current?.id === asset.id ? result.item : current);
+        notify(t('已永久删除编码'));
+      } else {
+        await vibeService.delete(asset.id);
+        setAssets(items => items.filter(item => item.id !== asset.id));
+        if (session === sessionRef.current && latestDetailId.current === asset.id) backToList();
+        notify(t('已永久删除 Vibe'));
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('删除失败'), 'error');
+      if (error instanceof Error && 'status' in error && error.status === 503) {
+        const seq = ++loadSeqRef.current;
+        try {
+          const lists = await Promise.all([vibeService.list('', false), vibeService.list('', true)]);
+          if (seq !== loadSeqRef.current) return;
+          const items = [...new Map(lists.flat().map(item => [item.id, item])).values()];
+          setAssets(items);
+          if (session === sessionRef.current && latestDetailId.current === asset.id) {
+            const updated = items.find(item => item.id === asset.id);
+            setDetail(current => current?.id === asset.id ? updated || null : current);
+            if (!updated) backToList();
+          }
+        } catch { /* 保留删除错误和当前草稿，不重试删除。 */ }
+      }
+    }
+    finally { deleteLock.current = false; setDeletingId(''); }
   };
 
   const loadGroup = (group: VibeGroup) => {
@@ -401,9 +505,13 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
                   setDetail(current => current?.id === result.item.id ? result.item : current);
                   await load();
                 }} />
-                <div><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-bold">{t("编码变体")}</h3><span className="text-xs text-gray-500">{t("{0} 个", [detail.encodings.length])}</span></div><div className="space-y-2">{detail.encodings.map(encoding => { const usable = encoding.model === model; return <div key={encoding.id} className="appearance-group flex items-center justify-between rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"><div><p className="text-sm font-semibold">{t("信息提取量 {0}", [encoding.informationKnown === false ? t('未知') : encoding.informationExtracted.toFixed(2)])}</p><p className="mt-0.5 text-meta text-gray-500">{encoding.model} · {new Date(encoding.createdAt).toLocaleString(getLanguage())}</p></div><span className={`rounded-full px-2 py-1 text-micro font-bold ${usable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>{usable ? t("可使用") : t("已保留")}</span></div>; })}</div></div>
-                <div className="appearance-group rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"><h3 className="text-sm font-bold">{t("追加提取量")}</h3><p className="mt-1 text-xs leading-5 text-gray-500">{t("新提取量：{0} Anlas；无原图不可追加。", [encodingCost])}</p><div className="mt-3 flex gap-2"><input type="number" min="0" max="1" step="0.01" value={information} onChange={event => setInformation(Math.max(0, Math.min(1, Number(event.target.value))))} className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 dark:border-gray-800" /><button type="button" disabled={!detail.hasOriginal || busyId === detail.id} onClick={() => void encode(detail, information)} className="mobile-touch rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50">{busyId === detail.id ? t("编码中…") : t("追加")}</button></div></div>
-                <div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => void vibeService.download(detail).catch(error => { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? error.message : '导出失败', 'error'); })} className="appearance-group mobile-touch rounded-xl border border-violet-300 bg-white text-sm font-bold text-violet-700 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300">{t("导出 .naiv4vibe")}</button><button type="button" onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch rounded-xl text-sm font-bold ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复") : t("归档")}</button></div>
+                <div><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-bold">{t("编码变体")}</h3><span className="text-xs text-gray-500">{t("{0} 个", [detail.encodings.length])}</span></div><div className="space-y-2">{detail.encodings.map(encoding => { const usable = encoding.model === model; return <div key={encoding.id} className="appearance-group flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"><div className="min-w-0 flex-1 basis-40"><p className="text-sm font-semibold">{t("信息提取量 {0}", [encoding.informationKnown === false ? t('未知') : encoding.informationExtracted.toFixed(2)])}</p><p className="mt-0.5 break-all text-meta text-gray-500">{encoding.model} · {new Date(encoding.createdAt).toLocaleString(getLanguage())}</p></div><span className={`rounded-full px-2 py-1 text-micro font-bold ${usable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>{usable ? t("可使用") : t("已保留")}</span>{detail.archived && <button type="button" disabled={Boolean(deletingId || exportingId || busyId)} onClick={() => void deleteArchived(detail, encoding)} aria-label={t("永久删除编码 {0} · {1}", [encoding.model, encoding.informationKnown === false ? t("未知") : encoding.informationExtracted.toFixed(2)])} className="mobile-touch flex-none whitespace-nowrap rounded-lg px-2 text-xs text-red-600 disabled:opacity-40">{deletingId === encoding.id ? t("删除中…") : t("删除编码")}</button>}</div>; })}</div></div>
+                <div className="appearance-group rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"><h3 className="text-sm font-bold">{t("追加提取量")}</h3><p className="mt-1 text-xs leading-5 text-gray-500">{t("新提取量：{0} Anlas；无原图不可追加。", [encodingCost])}</p><div className="mt-3 flex gap-2"><input type="number" min="0" max="1" step="0.01" value={information} onChange={event => setInformation(Math.max(0, Math.min(1, Number(event.target.value))))} className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 dark:border-gray-800" /><button type="button" disabled={!detail.hasOriginal || busyId === detail.id || Boolean(deletingId)} onClick={() => void encode(detail, information)} className="mobile-touch rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50">{busyId === detail.id ? t("编码中…") : t("追加")}</button></div></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" disabled={Boolean(exportingId || deletingId)} onClick={() => void exportFile('asset:' + detail.id, () => vibeService.download(detail))} className="appearance-group mobile-touch rounded-xl border border-violet-300 bg-white text-sm font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300">{exportingId === 'asset:' + detail.id ? t("导出中…") : t("导出全部编码")}</button>
+                  <button type="button" disabled={Boolean(deletingId)} onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch rounded-xl text-sm font-bold disabled:opacity-40 ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复") : t("归档")}</button>
+                </div>
+                {detail.archived && <button type="button" disabled={Boolean(deletingId || exportingId || busyId)} onClick={() => void deleteArchived(detail)} className="mobile-touch w-full rounded-xl border border-red-200 px-3 text-sm font-bold text-red-600 disabled:opacity-40 dark:border-red-900">{deletingId === detail.id ? t("删除中…") : t("永久删除 Vibe")}</button>}
               </div>
             </div>
           </main>}
@@ -434,7 +542,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
                   </div>
                   <div hidden={selectionTab !== 'groups'}>
                   <div className="mt-4 flex gap-2"><input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder={t("组合名称")} className="h-9 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /><button type="button" disabled={!groupName.trim() || !vibes.slots.length} onClick={() => void saveGroup()} className="appearance-contrast mobile-touch rounded-xl bg-gray-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-gray-100 dark:text-gray-900">{t("保存")}</button></div>
-                  <button type="button" disabled={!vibes.slots.length} onClick={() => void exportGroup(groupName, vibes.slots, vibes.normalizeStrengths)} className="mobile-touch mt-2 w-full rounded-xl border border-violet-300 px-3 text-xs font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300">{t("导出当前组合")}</button>{groups.length > 0 && <div className="mt-5"><h4 className="mb-2 text-xs font-bold text-gray-500">{t("已保存组合")}</h4><div className="space-y-2">{groups.map(group => <div key={group.id} className="rounded-xl border border-gray-200 p-2 dark:border-gray-800">{editingGroupId === group.id ? <div className="flex gap-2"><input autoFocus value={editingGroupName} onChange={event => setEditingGroupName(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-800" /><button type="button" disabled={!editingGroupName.trim()} onClick={() => void updateGroup(group, { name: editingGroupName.trim() })} className="mobile-touch rounded-lg bg-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t("保存")}</button><button type="button" onClick={() => setEditingGroupId('')} className="mobile-touch h-11 w-11 text-gray-500">×</button></div> : <div className="flex items-center gap-1"><button type="button" onClick={() => loadGroup(group)} className="mobile-touch min-w-0 flex-1 text-left"><b className="block truncate text-sm">{group.name}</b><span className="text-micro text-gray-500">{t("{0} 个 Vibe", [group.slots.length])}</span></button><button type="button" onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500" aria-label={t("重命名 {0}", [group.name])}>✎</button><button type="button" onClick={() => void exportGroup(group.name, group.slots, group.normalizeStrengths)} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500" aria-label={t("导出 {0}", [group.name])}>↓</button><button type="button" disabled={!vibes.slots.length} onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.overwrite', title: `覆盖“${group.name}”？`, message: `将用当前 ${vibes.slots.length} 个 Vibe 和强度设置替换这个组合。`, confirmLabel: '覆盖组合' })) return; await updateGroup(group, { slots: vibes.slots.map(slot => ({ ...slot })), normalizeStrengths: vibes.normalizeStrengths }); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-20" aria-label={t("覆盖 {0}", [group.name])}>↻</button><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.delete', title: '删除这个组合？', message: '只删除组合配置，不会删除任何 Vibe 资产或编码。', confirmLabel: '删除', tone: 'danger' })) return; await vibeService.deleteGroup(group.id); setGroups(items => items.filter(item => item.id !== group.id)); }} className="mobile-touch h-10 w-10 text-gray-400 hover:text-red-500" aria-label={t("删除 {0}", [group.name])}>×</button></div>}</div>)}</div></div>}
+                  <button type="button" disabled={!vibes.slots.length || Boolean(exportingId || deletingId)} onClick={() => void exportFile("current", () => vibeService.downloadGroup(groupName, vibes.slots, vibes.normalizeStrengths))} className="mobile-touch mt-2 w-full rounded-xl border border-violet-300 px-3 text-xs font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300">{exportingId === "current" ? t("导出中…") : t("导出当前组合")}</button>{groups.length > 0 && <div className="mt-5"><h4 className="mb-2 text-xs font-bold text-gray-500">{t("已保存组合")}</h4><div className="space-y-2">{groups.map(group => <div key={group.id} className="rounded-xl border border-gray-200 p-2 dark:border-gray-800">{editingGroupId === group.id ? <div className="flex gap-2"><input autoFocus value={editingGroupName} onChange={event => setEditingGroupName(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-800" /><button type="button" disabled={!editingGroupName.trim()} onClick={() => void updateGroup(group, { name: editingGroupName.trim() })} className="mobile-touch rounded-lg bg-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t("保存")}</button><button type="button" onClick={() => setEditingGroupId('')} className="mobile-touch h-11 w-11 text-gray-500">×</button></div> : <div className="flex items-center gap-1"><button type="button" onClick={() => loadGroup(group)} className="mobile-touch min-w-0 flex-1 text-left"><b className="block truncate text-sm">{group.name}</b><span className="text-micro text-gray-500">{t("{0} 个 Vibe", [group.slots.length])}</span></button><button type="button" onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500" aria-label={t("重命名 {0}", [group.name])}>✎</button><button type="button" disabled={Boolean(exportingId || deletingId)} onClick={() => void exportFile("group:" + group.id, () => vibeService.downloadGroup(group.name, group.slots, group.normalizeStrengths))} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-40" aria-label={exportingId === "group:" + group.id ? t("导出中…") : t("导出 {0}", [group.name])}>{exportingId === "group:" + group.id ? "…" : "↓"}</button><button type="button" disabled={!vibes.slots.length} onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.overwrite', title: `覆盖“${group.name}”？`, message: `将用当前 ${vibes.slots.length} 个 Vibe 和强度设置替换这个组合。`, confirmLabel: '覆盖组合' })) return; await updateGroup(group, { slots: vibes.slots.map(slot => ({ ...slot })), normalizeStrengths: vibes.normalizeStrengths }); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-20" aria-label={t("覆盖 {0}", [group.name])}>↻</button><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.delete', title: '删除这个组合？', message: '只删除组合配置，不会删除任何 Vibe 资产或编码。', confirmLabel: '删除', tone: 'danger' })) return; await vibeService.deleteGroup(group.id); setGroups(items => items.filter(item => item.id !== group.id)); }} className="mobile-touch h-10 w-10 text-gray-400 hover:text-red-500" aria-label={t("删除 {0}", [group.name])}>×</button></div>}</div>)}</div></div>}
                   </div>
                 </div>
 

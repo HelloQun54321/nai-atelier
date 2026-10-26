@@ -42,6 +42,28 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('Vibe 导出、删除确认和引用保护具有四语文案，保留名称与数量', () => {
+    const keys = ['导出全部编码', '导出中…', 'Vibe 文件已保存', '已开始下载 Vibe 文件', '永久删除 Vibe', '永久删除这份编码？',
+      '浏览器草稿无法读取，无法核对引用；已保留 Vibe，请先检查草稿后再删除', '创作助手草稿或待确认操作仍在引用此 Vibe，无法永久删除',
+      'Vibe 编码或已付费编码恢复尚未完成，暂时不能永久删除', '无法核对 Vibe 编码列表，暂时不能永久删除', 'Vibe 记录已删除，但部分文件清理失败'];
+    const warning = '将永久删除原图及全部 {0} 份编码，无法恢复。有引用时会阻止删除；其他标签页、浏览器或设备的未保存草稿无法检查。';
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of [...keys, warning]) {
+        expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+        expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
+      }
+      expect(translate(language.code, '永久删除“{0}”？', ['我的画风'])).toContain('我的画风');
+      expect(translate(language.code, warning, [4])).toContain('4');
+      expect(translate(language.code, warning, [4])).not.toContain('{0}');
+      for (const source of ['风格串', '历史', '收藏', '组合', '设置或模板', '风格串图片', '收藏图片', '画师图片']) {
+        for (const key of [`这个 Vibe仍被${source}引用，不能永久删除`, `这个 Vibe 编码仍被${source}引用，不能永久删除`, `${source}资料损坏，无法核对 Vibe 引用，未执行删除`]) {
+          expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+          expect(translate(language.code, key)).not.toBe(key);
+          if (language.code === 'en') expect(translate(language.code, key)).not.toMatch(/[\u3400-\u9fff]/);
+        }
+      }
+    }
+  });
   it('收藏画师抽取倍率滑条与说明具备四种译文', () => {
     for (const key of ['偏好抽中倍率滑条', '1× 不加成；倍率只影响收藏画师的抽取机会。']) {
       expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
