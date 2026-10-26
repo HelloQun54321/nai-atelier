@@ -114,9 +114,13 @@ vi.mock('../../services/imageEdit', async importOriginal => ({
 }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
 vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, useCloudQueueEnabled: () => false, CloudQueueButton: () => null }));
-vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
-vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => props.onForceEmptySeedChange
-  ? <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button> : null }));
+vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children, moduleId, className }: React.ComponentProps<typeof import('../../components/LabModuleSection').LabModuleSection>) => <div data-lab-module={moduleId} className={className}>{children}</div> }));
+vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => <>
+  {props.onForceEmptySeedChange && <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button>}
+  <select aria-label="合成模型选择" value={props.params.model} onChange={event => props.setParams({ ...props.params, model: event.target.value })}>
+    {['nai-diffusion-4-5-full', 'nai-diffusion-4-full', 'nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-5-full-medium'].map(model => <option key={model}>{model}</option>)}
+  </select>
+</> }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
   <output aria-label="文生图步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
@@ -128,8 +132,8 @@ vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (pro
   <button disabled={props.generationDisabled} onClick={() => { fireEvent.keyDown(window, { key: 'Escape' }); void props.handleGenerate(); }}>生成合成文生图</button>
   {props.generationCountControl && <GenerationCountControl {...props.generationCountControl} disabled={props.isGenerating} busy={props.isGenerating || props.generationDisabled} />}
 </section> }));
-vi.mock('../../components/VibeManager', () => ({ VibeManager: () => null }));
-vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => null }));
+vi.mock('../../components/VibeManager', () => ({ VibeManager: () => <input aria-label="合成 Vibe 草稿" defaultValue="已有编码" /> }));
+vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => <div data-testid="precise-reference-manager" /> }));
 vi.mock('../../components/chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => null }));
 vi.mock('../../components/chain/PresetSourceBadges', async importOriginal => ({
   ...await importOriginal<typeof import('../../components/chain/PresetSourceBadges')>(),
@@ -230,6 +234,51 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
+
+describe('实验室参考分区', () => {
+  it('V4.5 将两种参考移入独立分区，切换保留全局负面词和参考控件', () => {
+    const { container } = setup();
+    const vibe = screen.getByLabelText('合成 Vibe 草稿');
+    const reference = screen.getByTestId('precise-reference-manager');
+    const module = (id: string) => container.querySelector(`[data-lab-module="${id}"]`)!;
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
+    expect(module('negative').classList.contains('hidden')).toBe(false);
+    expect(module('vibe').classList.contains('hidden')).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+    expect(module('negative').classList.contains('hidden')).toBe(true);
+    for (const id of ['vibe', 'characterReference']) expect(module(id).classList.contains('hidden')).toBe(false);
+    fireEvent.change(vibe, { target: { value: '参考页草稿' } });
+    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
+    for (const id of ['vibe', 'characterReference']) expect(module(id).classList.contains('hidden')).toBe(true);
+    fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+    expect(screen.getByLabelText('合成 Vibe 草稿')).toBe(vibe);
+    expect(vibe).toHaveProperty('value', '参考页草稿');
+    expect(screen.getByTestId('precise-reference-manager')).toBe(reference);
+  });
+
+  it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-5-full-medium'])('参考页切到 %s 隐藏并回退全局，再切回保留配置', model => {
+    const references = { enabled: true, slots: [{ assetId: 'saved-reference', type: 'style' as const, strength: 0.6, fidelity: 1 }] };
+    const vibes = { enabled: false, normalizeStrengths: true, slots: [{ vibeId: 'saved-vibe', encodingId: 'saved-encoding', informationExtracted: 0.6, strength: 0.7 }] };
+    setup({ ...chain, params: { ...chain.params, characterReferences: references, vibes } });
+    fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+    fireEvent.change(screen.getByLabelText('合成模型选择'), { target: { value: model } });
+    expect(screen.queryByRole('tab', { name: '参考' })).toBeNull();
+    expect(screen.getByRole('tab', { name: '全局' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByTestId('precise-reference-manager')).toBeNull();
+    fireEvent.change(screen.getByLabelText('合成模型选择'), { target: { value: chain.params!.model } });
+    expect(screen.getByRole('tab', { name: '全局' }).getAttribute('aria-selected')).toBe('true');
+    expect(state.agent?.draft.params.characterReferences).toEqual(references);
+    expect(state.agent?.draft.params.vibes).toEqual(vibes);
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
+
+  it('V4 仅显示支持的 Vibe 模块', () => {
+    setup({ ...chain, params: { ...chain.params, model: 'nai-diffusion-4-full' } });
+    fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+    expect(screen.getByLabelText('合成 Vibe 草稿')).toBeTruthy();
+    expect(screen.queryByTestId('precise-reference-manager')).toBeNull();
+  });
+});
 
 describe('元数据导入后自动分类', () => {
   it('整段编辑的复制与一键翻译包含分类正负词和角色内容', async () => {

@@ -54,7 +54,7 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
       header.style.setProperty('--lab-navigation-outline', `path("${outline}")`);
       header.dataset.labNavigation = 'joined';
       const gap = collapsed ? 0 : Math.max(0, chrome.getBoundingClientRect().bottom - headerRect.bottom);
-      // 留白变量也供同一工作区的正文避让使用；顶栏收起时三分区直接贴顶。
+      // 留白变量也供同一工作区的正文避让使用；顶栏收起时编辑分区直接贴顶。
       host.style.setProperty('--lab-tabs-chrome-gap', `${gap}px`);
     };
     measure();
@@ -81,7 +81,7 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
     positions.current[value] = [body?.scrollTop || 0, main?.scrollTop || 0];
     onChange(next);
   };
-  return <nav ref={navRef} role="tablist" aria-label={t('编辑分区')} data-topbar-collapsed={collapsed ? 'true' : undefined} className="workspace-mode-tabs appearance-segmented relative z-30 grid h-11 flex-none grid-cols-3 border-b border-gray-200 bg-gray-100/90 dark:border-gray-800 dark:bg-gray-900/90">
+  return <nav ref={navRef} role="tablist" aria-label={t('编辑分区')} data-topbar-collapsed={collapsed ? 'true' : undefined} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} className="workspace-mode-tabs appearance-segmented relative z-30 grid h-11 flex-none border-b border-gray-200 bg-gray-100/90 dark:border-gray-800 dark:bg-gray-900/90">
     {options.map(([key, label], index) => <button key={key} type="button" role="tab" data-appearance="control" aria-selected={value === key} tabIndex={value === key ? 0 : -1}
       onClick={() => select(key)}
       onKeyDown={event => {

@@ -37,24 +37,24 @@ describe('提示词上下文工具隔离', () => {
     const view = render(content(first));
     try {
       fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
-      const dialog = await screen.findByRole('dialog', { name: '随机搭配' });
+      const dialog = await screen.findByRole('dialog', { name: '搭配' });
       const candidate = within(dialog).getByRole('textbox', { name: '场景内容' }) as HTMLTextAreaElement;
       fireEvent.change(candidate, { target: { value: '保留这次候选 night forest' } });
       const participate = within(dialog).getByRole('checkbox', { name: '参与「场景」的抽取' }) as HTMLInputElement;
       fireEvent.click(participate);
       expect(participate.checked).toBe(false);
       view.rerender(content(second));
-      expect(within(screen.getByRole('dialog', { name: '随机搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
+      expect(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
       expect(candidate.value).toBe('保留这次候选 night forest');
       expect(participate.checked).toBe(false);
       expect(second.contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(true);
       view.rerender(content(null));
-      expect(screen.getByRole('dialog', { name: '随机搭配' })).toBe(dialog);
+      expect(screen.getByRole('dialog', { name: '搭配' })).toBe(dialog);
       expect(candidate.value).toBe('保留这次候选 night forest');
       expect(participate.checked).toBe(false);
       expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
       view.rerender(content(first));
-      expect(within(screen.getByRole('dialog', { name: '随机搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
+      expect(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
       expect(candidate.value).toBe('保留这次候选 night forest');
       expect(changed).not.toHaveBeenCalled();
     } finally { view.unmount(); first.remove(); second.remove(); }

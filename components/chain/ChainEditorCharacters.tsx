@@ -58,7 +58,7 @@ export interface ChainEditorCharactersProps {
     updateCharacter: (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => void;
     removeCharacter: (idx: number) => void;
     activeLabLayout: LabPageLayout;
-    mobileEditorTab: 'global' | 'character' | 'params';
+    mobileEditorTab: 'global' | 'character' | 'reference' | 'params';
     coordinateHint?: string;
     scopeKey?: string;
     freeformPosition?: boolean;

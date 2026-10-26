@@ -262,8 +262,8 @@ const formatGenerationType = (rawValue: string) => {
     return '氛围参考 (Vibe Transfer)';
   }
 
-  if (/characterreference|charref|角色参考/.test(normalized)) {
-    return '角色参考 (Character Reference)';
+  if (/characterreference|precisereference|charref|角色参考|精准参考/.test(normalized)) {
+    return '精准参考 (Precise Reference)';
   }
 
   return raw;
@@ -350,7 +350,7 @@ export const getAitagGenerationLabels = (image: AitagImage) => {
   }
 
   if (hasMeaningfulKey(metadataSources, [/character_?reference/i, /char_?ref/i, /reference_?character/i, /director_?reference/i])) {
-    addLabel('角色参考 (Character Reference)');
+    addLabel('精准参考 (Precise Reference)');
   }
 
   if (

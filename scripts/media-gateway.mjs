@@ -698,7 +698,7 @@ const preparePreciseReferenceImage = async (key, buffer) => {
     const { default: sharp } = await import('sharp');
     const source = sharp(buffer, { failOn: 'warning', limitInputPixels: 100_000_000 }).rotate();
     const metadata = await source.metadata();
-    if (!metadata.width || !metadata.height) throw new Error('角色参考图片尺寸无效');
+    if (!metadata.width || !metadata.height) throw new Error('精准参考图片尺寸无效');
     const canvas = selectPreciseReferenceCanvas(metadata.width, metadata.height);
     const output = await source
       .resize({ width: canvas.width, height: canvas.height, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } })
@@ -736,18 +736,18 @@ const stripImageDataUrl = value => {
 /** Build official NovelAI V4.5 Precise Reference fields from trusted Worker data. */
 export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
   if (!Array.isArray(slots) || !slots.length) return {};
-  if (slots.length > 4) throw new Error('一次最多使用 4 个角色参考');
-  if (!Array.isArray(resolvedAssets) || resolvedAssets.length !== slots.length) throw new Error('角色参考图片数量不一致');
+  if (slots.length > 4) throw new Error('一次最多使用 4 个精准参考');
+  if (!Array.isArray(resolvedAssets) || resolvedAssets.length !== slots.length) throw new Error('精准参考图片数量不一致');
   const images = resolvedAssets.map((item, index) => {
     const parsed = stripImageDataUrl(item?.imageData ?? item?.data);
     const mimeType = String(item?.mimeType || parsed.mimeType || '').toLowerCase();
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) throw new Error(`角色参考 ${index + 1} 的图片格式不受支持`);
-    if (!parsed.data || parsed.data.length < 100) throw new Error(`角色参考 ${index + 1} 的图片缺失或已损坏`);
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) throw new Error(`精准参考 ${index + 1} 的图片格式不受支持`);
+    if (!parsed.data || parsed.data.length < 100) throw new Error(`精准参考 ${index + 1} 的图片缺失或已损坏`);
     return parsed.data;
   });
   const descriptions = slots.map((slot, index) => {
     const baseCaption = PRECISE_REFERENCE_TYPES.get(slot?.type);
-    if (!baseCaption) throw new Error(`角色参考 ${index + 1} 的参考类型无效`);
+    if (!baseCaption) throw new Error(`精准参考 ${index + 1} 的参考类型无效`);
     return { caption: { base_caption: baseCaption, char_captions: [] }, legacy_uc: false };
   });
   // NovelAI's numeric inputs accept values below zero when entered directly.
@@ -1853,10 +1853,10 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
     throw Object.assign(new Error('局部重绘和扩图不发送 Vibe Transfer'), { status: 400 });
   }
   if (localCharacterReferences?.enabled && localCharacterReferences?.slots?.length && !allowsCharacterReferences) {
-    throw Object.assign(new Error('当前模型或编辑模式不支持角色参考'), { status: 400 });
+    throw Object.assign(new Error('当前模型或编辑模式不支持精准参考'), { status: 400 });
   }
   if (localVibes?.enabled && localVibes?.slots?.length && localCharacterReferences?.enabled && localCharacterReferences?.slots?.length) {
-    throw Object.assign(new Error('Vibe Transfer 与角色参考不能同时使用'), { status: 400 });
+    throw Object.assign(new Error('Vibe Transfer 与精准参考不能同时使用'), { status: 400 });
   }
   let resolvedVibeEncodings = null;
   let vibeCacheKeysSentWithData = new Set();
@@ -1897,17 +1897,17 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
       : [];
     clearPreciseReferenceParameters(payload.parameters);
     if (characterSlots.length) {
-      if (!allowsCharacterReferences) throw Object.assign(new Error('当前模型或编辑模式不支持角色参考'), { status: 400 });
-      if (characterSlots.length > 4) throw Object.assign(new Error('一次最多使用 4 个角色参考'), { status: 400 });
+      if (!allowsCharacterReferences) throw Object.assign(new Error('当前模型或编辑模式不支持精准参考'), { status: 400 });
+      if (characterSlots.length > 4) throw Object.assign(new Error('一次最多使用 4 个精准参考'), { status: 400 });
       if (characterSlots.some(slot => typeof slot?.assetId !== 'string' || !slot.assetId.trim())) {
-        throw Object.assign(new Error('角色参考缺少有效的本地资产 ID'), { status: 400 });
+        throw Object.assign(new Error('精准参考缺少有效的本地资产 ID'), { status: 400 });
       }
       const resolved = await Promise.all(characterSlots.map(async slot => {
         const image = await requestWorkerBuffer(
           `/api/character-references/${encodeURIComponent(slot.assetId)}/image`, req, workerPort
         );
         if (image.status >= 400 || !image.buffer.length) {
-          throw Object.assign(new Error(`角色参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
+          throw Object.assign(new Error(`精准参考“${slot.assetName || slot.assetId}”的原图不存在`), { status: image.status || 404 });
         }
         const etag = String(image.headers.etag || image.headers['last-modified'] || 'immutable');
         return {
@@ -1919,7 +1919,7 @@ const prepareGenerationReferences = async (payload, req, workerPort, { generatio
         Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
         if (gatewayUrl) toCachedPreciseReferenceParameters(payload.parameters);
       } catch (error) {
-        throw Object.assign(new Error(error?.message || '角色参考参数无效'), { status: 400 });
+        throw Object.assign(new Error(error?.message || '精准参考参数无效'), { status: 400 });
       }
     }
   }

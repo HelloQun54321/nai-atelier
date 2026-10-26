@@ -109,7 +109,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
       updateReferences({ enabled: slots.length > 0, slots });
       return;
     }
-    if (current.slots.length >= 4) { notify('一次最多启用 4 个角色参考', 'error'); return; }
+    if (current.slots.length >= 4) { notify('一次最多启用 4 个精准参考', 'error'); return; }
     updateReferences({
       enabled: true,
       slots: [...current.slots, {
@@ -139,9 +139,9 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     const revision = selectionRevision.current;
     setBusyId('upload');
     try {
-      const result = await characterReferenceService.create(file, file.name.replace(/\.[^.]+$/, '') || '角色参考');
+      const result = await characterReferenceService.create(file, file.name.replace(/\.[^.]+$/, '') || '精准参考');
       if (session !== sessionRef.current) return;
-      notify(result.duplicate ? '已找到相同的角色参考图' : '角色参考图已保存');
+      notify(result.duplicate ? '已找到相同的精准参考图' : '精准参考图已保存');
       await load();
       if (session !== sessionRef.current || revision !== selectionRevision.current) return;
       if (!latestParams.current.characterReferences?.slots.some(slot => slot.assetId === result.item.id)) addAsset(result.item);
@@ -152,7 +152,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   const archiveDetail = async () => {
     if (!detail || !await confirmAction({
       rememberKey: 'character-reference.archive',
-      title: '归档这张角色参考图？',
+      title: '归档这张精准参考图？',
       message: '它会从默认资料库隐藏；已有风格串和历史仍保留引用，可随时恢复。',
       confirmLabel: '归档', tone: 'danger',
     })) return;
@@ -178,7 +178,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
       <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex w-full items-center justify-between gap-3 text-left">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{t("角色参考")}</span>
+            <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{t("精准参考")}</span>
             {enabledCount > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{enabledCount} / 4</span>}
           </div>
           {enabledCount ? <>
@@ -198,7 +198,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={detail ? detail.name : t("角色参考")}
+        aria-label={detail ? detail.name : t("精准参考")}
         className="operation-dialog ui-modal-enter flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
         onClick={event => event.stopPropagation()}
       >
@@ -206,7 +206,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           <div className="flex min-w-0 items-center gap-2">
             {detail && <BackButton onClick={backToList} className="mobile-touch" />}
             <div className="min-w-0">
-              <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("角色参考 (Character Reference)")}</h2>
+              <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("精准参考 (Precise Reference)")}</h2>
               <p className="text-meta text-gray-500">{t("与 Vibe 互斥 · {0} Anlas／张／次", [referenceCost])}</p>
             </div>
           </div>
@@ -243,8 +243,8 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
               size="sm"
               ariaLabel={t("资料库范围")}
             />
-            <input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索角色参考…")} className="h-9 min-w-40 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />
-            <input aria-label={t("上传角色参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleUpload(event.target.files?.[0])} />
+            <input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索精准参考…")} className="h-9 min-w-40 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />
+            <input aria-label={t("上传精准参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleUpload(event.target.files?.[0])} />
             <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
               {busyId ? t("保存中…") : t("上传并选用")}
             </button>
@@ -255,12 +255,12 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
               {loading && !allAssets.length ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : assets.length ? <div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = references.slots.some(slot => slot.assetId === asset.id); return <article key={asset.id} className={`appearance-group overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'}`}>
                 <button type="button" onClick={() => archived ? showDetail(asset) : addAsset(asset)} className="block w-full text-left"><div className="appearance-media relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"><SmartImage src={asset.thumbnailUrl || asset.originalImageUrl} alt={asset.name} className="h-full w-full object-contain" />{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-meta text-gray-500">{t("每次生图 {0} Anlas", [referenceCost])}</p></div></button>
                 <button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">{t("详情")}</button>
-              </article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? t("没有已归档的角色参考") : t("还没有角色参考图")}</p></div>}
+              </article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? t("没有已归档的精准参考") : t("还没有精准参考图")}</p></div>}
             </div>
             <aside className="appearance-content workspace-manager-selection overflow-y-auto border-t border-gray-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col">
               <div>
                 <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900 dark:text-white">{t("当前参考")}</h3><span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">{references.slots.length}/4</span></div>
-                <div className="mt-3 space-y-3">{references.slots.map((slot, index) => <div key={`${slot.assetId}-${index}`} data-agent-object={`角色参考 ${index + 1}：${slot.assetName || slot.assetId}`} className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+                <div className="mt-3 space-y-3">{references.slots.map((slot, index) => <div key={`${slot.assetId}-${index}`} data-agent-object={`精准参考 ${index + 1}：${slot.assetName || slot.assetId}`} className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
                   <div className="flex items-center gap-2"><span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{index + 1}</span>{allAssets.find(asset => asset.id === slot.assetId)?.thumbnailUrl && <div className="h-8 w-7 flex-none"><SmartImage src={allAssets.find(asset => asset.id === slot.assetId)!.thumbnailUrl} alt="" className="h-full w-full object-contain" /></div>}<p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.assetName || t("资产缺失")}</p><button type="button" onClick={() => removeSlot(index)} className="mobile-touch flex h-9 w-9 items-center justify-center p-0 text-lg leading-none text-gray-400 hover:text-red-500" aria-label={t("移除")}>×</button></div>
                   <details className="mt-2"><summary className="cursor-pointer text-xs text-gray-500">{t("参数 · {0} · 强度 {1}", [t(referenceTypes.find(item => item.value === slot.type)?.label), slot.strength.toFixed(2)])}</summary><label className="mt-2 block text-meta text-gray-500">{t("参考类型")}</label><select value={slot.type} onChange={event => updateSlot(index, { type: event.target.value as CharacterReferenceSelection['type'] })} className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{referenceTypes.map(item => <option key={item.value} value={item.value}>{t(item.label)} · {t(item.hint)}</option>)}</select>
                   {(['strength', 'fidelity'] as const).map(field => <div key={field} className="mt-2 grid grid-cols-[42px_minmax(0,1fr)_58px] items-center gap-2"><span className="text-meta text-gray-500">{field === 'strength' ? t("强度") : t("保真")}</span><input type="range" min="-1" max="2" step="0.05" value={slot[field]} onChange={event => updateSlot(index, { [field]: Number(event.target.value) })} className="min-w-0 accent-indigo-600" /><input type="number" min="-1" max="2" step="0.05" value={slot[field]} onChange={event => updateSlot(index, { [field]: Math.max(-1, Math.min(2, Number(event.target.value))) })} className="rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>)}</details>

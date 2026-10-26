@@ -121,7 +121,7 @@ const LAB_MODULE_META: Record<LabPageModuleId, { label: string }> = {
   characters: { label: '角色专属提示词' },
   params: { label: '参数设置' },
   negative: { label: '全局负面提示词' },
-  characterReference: { label: '角色参考' },
+  characterReference: { label: '精准参考' },
   vibe: { label: 'Vibe Transfer' },
   baseImage: { label: '底图' },
   editSettings: { label: '编辑参数' },

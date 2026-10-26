@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const open = async (kind: 'vibe' | 'reference') => {
-  fireEvent.click(screen.getByRole('button', { name: kind === 'vibe' ? '管理' : /角色参考/ }));
+  fireEvent.click(screen.getByRole('button', { name: kind === 'vibe' ? '管理' : /精准参考/ }));
   await screen.findByRole('button', { name: kind === 'vibe' ? /测试 Vibe/ : /测试参考/ });
 };
 
@@ -67,7 +67,7 @@ it.each(['vibe', 'reference'] as const)('%s 详情返回保留列表节点、滚
   const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
   const go = vi.spyOn(window.history, 'go').mockImplementation(() => {});
   render(<Harness kind={kind} />); await open(kind);
-  const search = screen.getByPlaceholderText(kind === 'vibe' ? '搜索我的 Vibe…' : '搜索角色参考…');
+  const search = screen.getByPlaceholderText(kind === 'vibe' ? '搜索我的 Vibe…' : '搜索精准参考…');
   fireEvent.change(search, { target: { value: '测试' } });
   const list = document.querySelector<HTMLElement>('.workspace-manager-list')!; list.scrollTop = 128;
   fireEvent.click(screen.getByRole('button', { name: '详情' }));
@@ -111,7 +111,7 @@ it('上传期间改变选择不会被旧快照覆盖；关闭后完成也不会�
   fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'synthetic.png', { type: 'image/png' })] } });
   fireEvent.click(screen.getByRole('button', { name: /测试参考/ }));
   resolve({ item: { ...reference, id: 'late' } });
-  await waitFor(() => expect(notify).toHaveBeenCalledWith('角色参考图已保存'));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('精准参考图已保存'));
   expect(changed).toHaveBeenCalledTimes(1);
   fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(['y'], 'late.png', { type: 'image/png' })] } });
   fireEvent.click(screen.getByRole('button', { name: '完成' })); resolve({ item: { ...reference, id: 'closed' } });
@@ -123,7 +123,7 @@ it('关闭后重新打开丢弃前一轮列表的迟到响应', async () => {
   fixtures.refList.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   vi.spyOn(window.history, 'go').mockImplementation(() => {});
   render(<Harness kind="reference" />);
-  fireEvent.click(screen.getByRole('button', { name: /角色参考/ })); fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ })); fireEvent.click(screen.getByRole('button', { name: '完成' }));
   await open('reference'); resolve([{ ...reference, name: '过期结果' }]);
   await waitFor(() => expect(screen.getByRole('button', { name: /测试参考/ })).toBeTruthy()); expect(screen.queryByText('过期结果')).toBeNull();
 });

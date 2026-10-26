@@ -10,6 +10,7 @@ import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation,
 import { LabPageLayout } from '../services/appearancePreferences';
 import { canvasToDataUrl, createOutpaintCanvas, dataUrlToBlob, getCenteredImageEditCrop, getContainedImageEditRect, getImageEditNormalizationTarget, getImageToImageOutputDimensions, ImageEditNormalizationMode, isSameOutpaintExpansion, limitFocusedImageEditRect, normalizeMinimumContextArea, transformCharacterCoordinatesForImageRect, transformCharacterCoordinatesForOutpaint, validateImageEditDimensions } from '../services/imageEdit';
 import { useNaiRuntime } from '../services/naiRuntime';
+import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { extractMetadata, parseNovelAIMetadata } from '../services/metadataService';
 import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
 import type { CollectionTarget } from '../services/collectionFavorites';
@@ -217,8 +218,16 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   const [isImportingImage, setIsImportingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBaseImageDragActive, setIsBaseImageDragActive] = useState(false);
-  const [mobileTab, setMobileTab] = useState<'canvas' | 'prompt' | 'params'>('canvas');
+  const [selectedMobileTab, setMobileTab] = useState<'canvas' | 'prompt' | 'reference' | 'params'>('canvas');
   const runtime = useNaiRuntime();
+  const modelInfo = getRuntimeNaiModelInfo(draft.params.model, runtime);
+  const supportsReferences = operation === 'image-to-image'
+    ? modelInfo.supportsVibes || modelInfo.supportsCharacterReferences
+    : modelInfo.supportsCharacterReferenceInpainting;
+  const mobileTab = selectedMobileTab === 'reference' && !supportsReferences ? 'canvas' : selectedMobileTab;
+  useEffect(() => {
+    if (!supportsReferences) setMobileTab(tab => tab === 'reference' ? 'canvas' : tab);
+  }, [supportsReferences]);
   const outputSize = operation === 'image-to-image'
     ? getImageToImageOutputDimensions(state.width, state.height, draft.imageToImageSizeMode, draft.params, runtime.freeMaxArea)
     : { width: state.width, height: state.height };
@@ -1135,11 +1144,12 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     return readCommittedCanvasState();
   } });
 
-  const mobileTabs = operation === 'image-to-image'
-    ? ([['canvas', '底图'], ['prompt', '提示'], ['params', '参数']] as const)
-    : operation === 'inpaint'
-    ? ([['canvas', '画板'], ['prompt', '提示'], ['params', '参数']] as const)
-    : ([['canvas', '画布'], ['prompt', '提示'], ['params', '参数']] as const);
+  const mobileTabs: readonly (readonly [typeof mobileTab, string])[] = [
+    ['canvas', operation === 'image-to-image' ? '底图' : operation === 'inpaint' ? '画板' : '画布'],
+    ['prompt', '提示'],
+    ...(supportsReferences ? [['reference', '参考']] as const : []),
+    ['params', '参数'],
+  ];
 
   return (
     <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, outputSize, imageToImageSizeMode: draft.imageToImageSizeMode || 'original', focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">

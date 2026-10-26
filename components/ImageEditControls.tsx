@@ -77,8 +77,8 @@ interface ImageEditControlsProps {
   onResetFocusedRect?: () => void;
   normalization?: { sourceWidth: number; sourceHeight: number; targetWidth: number; targetHeight: number } | null;
   onNormalize?: (mode: ImageEditNormalizationMode) => void;
-  /** 当前编辑分区（canvas: 底图/画板/画布, prompt: 提示词与约束, params: 技术参数），电脑与手机共用。 */
-  mobileTab?: 'canvas' | 'prompt' | 'params';
+  /** 当前编辑分区，参考独立于提示词；电脑与手机共用。 */
+  mobileTab?: 'canvas' | 'prompt' | 'reference' | 'params';
 }
 
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
@@ -491,11 +491,11 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>
 
-      {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label={t("角色参考")} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
+      {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label={t("精准参考")} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'reference' ? 'block' : 'hidden'}>
         <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />
       </LabModuleSection>}
 
-      {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
+      {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'reference' ? 'block' : 'hidden'}>
         <VibeManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} apiKey={apiKey} notify={notify} operation={operation} />
       </LabModuleSection>}
     </div>

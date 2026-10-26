@@ -79,7 +79,7 @@ export interface ChainEditorPromptInputsProps {
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
     activeLabLayout: LabPageLayout;
-    mobileEditorTab: 'global' | 'character' | 'params';
+    mobileEditorTab: 'global' | 'character' | 'reference' | 'params';
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({

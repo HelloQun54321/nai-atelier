@@ -44,10 +44,10 @@ const validateGenerationCapabilities = (params: NAIParams, runtime: NaiRuntimeCo
     ? modelInfo.supportsCharacterReferenceInpainting
     : modelInfo.supportsCharacterReferences;
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && !canSendCharacterReferences) {
-    throw new Error(`NovelAI ${modelInfo.label} 暂不支持角色参考，请先移除角色参考或切换模型`);
+    throw new Error(`NovelAI ${modelInfo.label} 暂不支持精准参考，请先移除精准参考或切换模型`);
   }
   if (params.characterReferences?.enabled && params.characterReferences.slots.length > 4) {
-    throw new Error('一次最多使用 4 个角色参考');
+    throw new Error('一次最多使用 4 个精准参考');
   }
   if (getActiveCharacters(params.characters).length > modelInfo.maxCharacters) {
     throw new Error(`NovelAI ${modelInfo.label} 最多支持 ${modelInfo.maxCharacters} 个角色提示词，请先停用或删除多余角色，或切换模型`);

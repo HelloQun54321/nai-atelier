@@ -199,7 +199,7 @@ export const NOVELAI_OFFICIAL_KNOWLEDGE = Object.freeze([
     facts: [
       '每张 Precise Reference 每次生成额外消耗 ImageAnlas，费用随参考图数量增加；单价与基础生成的免费资格以当前官方运行时同步为准。',
       'Strength 控制参考图视觉线索的影响强度，Fidelity 控制参考被执行的严格程度。',
-      '多张角色参考目前会互相混合，并不会自动对应为多个独立角色。',
+      '多张精准参考目前会互相混合，并不会自动对应为多个独立角色。',
       'Precise Reference 可用于 Inpainting。',
     ],
     caveats: ['官方文档限定为 V4.5；V5 发布时该功能尚未开放，并且与 Vibe Transfer 不兼容。'],

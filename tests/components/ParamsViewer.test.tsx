@@ -18,7 +18,7 @@ it('来源只记录部分参数时展示已知值，不把缺失分辨率或开�
 it('历史参考参数不把当前估算价格冒充当时的实际扣费', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
   render(<ParamsViewer params={params} />);
-  expect(screen.getByText('角色参考 (1)')).toBeTruthy();
+  expect(screen.getByText('精准参考 (1)')).toBeTruthy();
   expect(screen.queryByText(/Anlas/)).toBeNull();
 });
 it('手机可点按完整采样器和种子，内容在浮层中换行，原参数不变化', () => {
@@ -40,7 +40,7 @@ it('收藏详情可分别展示角色、参数及参考信息，历史默认仍�
     vibes: { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'vibe', encodingId: 'encoding', informationExtracted: 1, strength: 1 }] },
   };
   const original = JSON.stringify(params), view = render(<ParamsViewer params={params} />);
-  const labels = ['生成参数', '多角色定义 (1)', '角色参考 (1)', 'Vibe Transfer (1)'];
+  const labels = ['生成参数', '多角色定义 (1)', '精准参考 (1)', 'Vibe Transfer (1)'];
   labels.forEach(label => expect(screen.getByText(label)).toBeTruthy());
   const sections = ['params', 'characters', 'characterReference', 'vibe'] as const;
   sections.forEach((section, index) => {

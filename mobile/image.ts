@@ -9,7 +9,7 @@ export async function prepareMobileReference(_key: string, bytes: Uint8Array) {
     const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#000'; ctx.fillRect(0,0,width,height);
     const scale = Math.min(width / bitmap.width, height / bitmap.height), w = bitmap.width * scale, h = bitmap.height * scale;
     ctx.drawImage(bitmap, (width-w)/2, (height-h)/2, w, h);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('角色参考转换失败')), 'image/png'));
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('精准参考转换失败')), 'image/png'));
     return Buffer.from(await blob.arrayBuffer()).toString('base64');
   } finally { bitmap.close(); }
 }

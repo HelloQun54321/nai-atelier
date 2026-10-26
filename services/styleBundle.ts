@@ -27,7 +27,7 @@ const parsedBundles = new WeakMap<StyleBundlePreview, Parsed>();
 const MAGIC = new Uint8Array([78, 65, 73, 65, 13, 10, 26, 10]);
 const HEADER = 48;
 const MiB = 1024 * 1024;
-// 每串至多一个封面、16 个角色参考与 16 个 Vibe 编码；清单另受总字节上限约束。
+// 每串至多一个封面、16 个精准参考与 16 个 Vibe 编码；清单另受总字节上限约束。
 export const STYLE_BUNDLE_LIMITS = { entries: 10_000, assets: 330_000, encodings: 160_000, fileBytes: 2 * 1024 * MiB, assetBytes: 30 * MiB, manifestBytes: 64 * MiB, compressedManifestBytes: 16 * MiB } as const;
 function fail(message = '分享包格式无效'): never { throw new Error(message); }
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : fail();
@@ -121,7 +121,7 @@ const cleanParams = (value: unknown): NAIParams => {
   if (item.characterReferences !== undefined) {
     const references = object(item.characterReferences);
     result.characterReferences = { enabled: bool(references.enabled), slots: list(references.slots, 16).map(value => {
-      const slot = object(value); if (!['character', 'style', 'character_style'].includes(String(slot.type))) fail('角色参考类型无效');
+      const slot = object(value); if (!['character', 'style', 'character_style'].includes(String(slot.type))) fail('精准参考类型无效');
       return { assetId: text(slot.assetId, 200), ...(slot.assetName !== undefined ? { assetName: text(slot.assetName, 200) } : {}), type: slot.type, strength: finite(slot.strength), fidelity: finite(slot.fidelity), ...(slot.informationExtracted !== undefined ? { informationExtracted: finite(slot.informationExtracted) } : {}) };
     }) };
   }

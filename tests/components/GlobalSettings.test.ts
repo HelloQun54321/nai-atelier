@@ -597,7 +597,7 @@ describe('GlobalSettings', () => {
     const details = container.querySelectorAll('details');
     expect(details).toHaveLength(4);
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
-    expect(screen.getAllByText('角色参考')).toHaveLength(4);
+    expect(screen.getAllByText('精准参考')).toHaveLength(4);
 
     // 验证文生图与其他三项一致，默认均处于收起状态
     details.forEach(d => expect(d.open).toBe(false));

@@ -416,7 +416,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
 
   // --- Precise/Character Reference image library ---
   if (path.startsWith('/api/character-references')) {
-    if (!env.BUCKET) return error('角色参考图本地存储不可用', 503);
+    if (!env.BUCKET) return error('精准参考图本地存储不可用', 503);
     await ensureCharacterReferenceSchema(db);
 
     if (path === '/api/character-references' && method === 'GET') {
@@ -476,8 +476,8 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
         } catch { /* A failed optional thumbnail must not discard the original. */ }
       }
 
-      const name = String(body.name || `角色参考 ${sourceHash.slice(0, 8)}`).trim().slice(0, 100)
-        || `角色参考 ${sourceHash.slice(0, 8)}`;
+      const name = String(body.name || `精准参考 ${sourceHash.slice(0, 8)}`).trim().slice(0, 100)
+        || `精准参考 ${sourceHash.slice(0, 8)}`;
       await db.prepare(`INSERT INTO character_reference_assets
         (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type,
          default_strength, default_fidelity, archived, created_at, updated_at)
@@ -491,9 +491,9 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
     if (imageMatch && method === 'GET') {
       const row = await db.prepare('SELECT original_key, original_type FROM character_reference_assets WHERE id = ?')
         .bind(decodeURIComponent(imageMatch[1])).first<any>();
-      if (!row) return error('角色参考图不存在', 404);
+      if (!row) return error('精准参考图不存在', 404);
       const object = await env.BUCKET.get(row.original_key);
-      if (!object) return error('角色参考图文件不存在', 404);
+      if (!object) return error('精准参考图文件不存在', 404);
       return new Response(object.body, { headers: {
         'Content-Type': row.original_type || 'image/png',
         'Cache-Control': 'private, max-age=31536000, immutable',
@@ -506,10 +506,10 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       const row = await db.prepare(`SELECT thumbnail_key, thumbnail_type, original_key, original_type
         FROM character_reference_assets WHERE id = ?`)
         .bind(decodeURIComponent(thumbnailMatch[1])).first<any>();
-      if (!row) return error('角色参考图不存在', 404);
+      if (!row) return error('精准参考图不存在', 404);
       const key = row.thumbnail_key || row.original_key;
       const object = await env.BUCKET.get(key);
-      if (!object) return error('角色参考图缩略图文件不存在', 404);
+      if (!object) return error('精准参考图缩略图文件不存在', 404);
       return new Response(object.body, { headers: {
         'Content-Type': row.thumbnail_key ? (row.thumbnail_type || 'image/webp') : (row.original_type || 'image/png'),
         'Cache-Control': 'private, max-age=31536000, immutable',
@@ -521,7 +521,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
     if (archiveMatch && method === 'POST') {
       const id = decodeURIComponent(archiveMatch[1]);
       const existing = await db.prepare('SELECT id FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
-      if (!existing) return error('角色参考图不存在', 404);
+      if (!existing) return error('精准参考图不存在', 404);
       await db.prepare('UPDATE character_reference_assets SET archived = ?, updated_at = ? WHERE id = ?')
         .bind(archiveMatch[2] === 'archive' ? 1 : 0, Date.now(), id).run();
       return json({ success: true });
@@ -531,16 +531,16 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
     if (assetMatch && method === 'GET') {
       const row = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?')
         .bind(decodeURIComponent(assetMatch[1])).first<any>();
-      if (!row) return error('角色参考图不存在', 404);
+      if (!row) return error('精准参考图不存在', 404);
       return json({ item: mapCharacterReferenceAsset(row) });
     }
     if (assetMatch && method === 'PUT') {
       const id = decodeURIComponent(assetMatch[1]);
       const existing = await db.prepare('SELECT * FROM character_reference_assets WHERE id = ?').bind(id).first<any>();
-      if (!existing) return error('角色参考图不存在', 404);
+      if (!existing) return error('精准参考图不存在', 404);
       const body = await request.json() as any;
       const name = String(body.name || '').trim().slice(0, 100);
-      if (!name) return error('角色参考图名称不能为空', 400);
+      if (!name) return error('精准参考图名称不能为空', 400);
       const requestedStrength = body.defaultStrength === undefined
         ? Number(existing.default_strength ?? 0.6)
         : Number(body.defaultStrength);
@@ -560,7 +560,7 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
       return json({ item: mapCharacterReferenceAsset(updated) });
     }
 
-    return error('角色参考图接口不存在', 404);
+    return error('精准参考图接口不存在', 404);
   }
 
   // --- Permanent Vibe Transfer library ---

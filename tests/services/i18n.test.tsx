@@ -42,6 +42,22 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('参考分区与精准参考名称具备四语译文，并保留角色和画风类型的含义', () => {
+    const keys = ['参考', '精准参考', '精准参考 (Precise Reference)', '搜索精准参考…', '上传精准参考图片', '没有已归档的精准参考', '还没有精准参考图',
+      '精准参考 ({0})', '精准参考 {0}', '精准参考 {0} 张 · {1} 个槽', '一次最多启用 4 个精准参考', '已找到相同的精准参考图', '精准参考图已保存', '归档这张精准参考图？',
+      '搜索精准参考', '设置精准参考', '保存精准参考图', '更新精准参考', '精准参考图大小必须在 30 MB 以内', '一次最多使用 4 个精准参考'];
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of keys) {
+        expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+        expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
+      }
+      expect(translate(language.code, '精准参考 {0} 张 · {1} 个槽', [2, 3])).not.toMatch(/\{\d+\}/);
+    }
+    expect(translate('en', '精准参考 (Precise Reference)')).toBe('Precise Reference');
+    expect(translate('en', '角色')).toBe('Characters');
+    expect(translate('en', '画风')).toBe('Style');
+    expect(translate('en', '角色与画风')).toBe('Character and style');
+  });
   it('Vibe 导出、删除确认和引用保护具有四语文案，保留名称与数量', () => {
     const keys = ['导出全部编码', '导出中…', 'Vibe 文件已保存', '已开始下载 Vibe 文件', '永久删除 Vibe', '永久删除这份编码？',
       '浏览器草稿无法读取，无法核对引用；已保留 Vibe，请先检查草稿后再删除', '创作助手草稿或待确认操作仍在引用此 Vibe，无法永久删除',

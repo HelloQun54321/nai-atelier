@@ -289,7 +289,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const classificationStartedRef = useRef(0);
     const [classificationPending, setClassificationPending] = useState(false);
     const [classificationResult, setClassificationResult] = useState<{ before: PromptAgentDraft; after: PromptAgentDraft; applied: boolean } | null>(null);
-    const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
+    const [selectedEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'reference' | 'params'>('global');
+    const supportsReferences = activeModelInfo.supportsVibes || activeModelInfo.supportsCharacterReferences;
+    const mobileEditorTab = selectedEditorTab === 'reference' && !supportsReferences ? 'global' : selectedEditorTab;
+    useEffect(() => {
+        if (!supportsReferences) setMobileEditorTab(tab => tab === 'reference' ? 'global' : tab);
+    }, [supportsReferences]);
     const [promptToolbarSlot, setPromptToolbarSlot] = useState<PromptToolbarSlot | null>(null);
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
@@ -1705,7 +1710,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             })) return false;
         } else if (cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, params.model),
             title: '确认生成图片',
-            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
+            message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中精准参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
         try {
@@ -2185,7 +2190,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </>}
             </div>}
             {activeGenerationMode === 'text-to-image' ? <>
-            <LabEditorTabs key={chain.id} value={mobileEditorTab} options={[['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />
+            <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
+                ? [['global', '全局'], ['character', '角色'], ['reference', '参考'], ['params', '参数']]
+                : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />
 
             {/* Editor Content */}
             <div className="appearance-content chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
@@ -2245,9 +2252,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                         {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
-                            label={t("角色参考")}
+                            label={t("精准参考")}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
-                            className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
+                            className={mobileEditorTab === 'reference' ? 'block' : 'hidden'}
                         >
                             <CharacterReferenceManager
                                 params={params}
@@ -2291,7 +2298,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             moduleId="vibe"
                             label="Vibe Transfer"
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.vibe)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
+                            className={mobileEditorTab === 'reference' ? 'block' : 'hidden'}
                         >
                             <VibeManager
                                 params={params}

@@ -665,7 +665,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('带角色 {0} 张 · {1} 个槽', [formatNumber(stats.characterUsage.images), formatNumber(stats.characterUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('Vibe {0} 张 · {1} 个槽', [formatNumber(stats.vibeUsage.images), formatNumber(stats.vibeUsage.slots)])}</span>
-                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色参考 {0} 张 · {1} 个槽', [formatNumber(stats.referenceUsage.images), formatNumber(stats.referenceUsage.slots)])}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('精准参考 {0} 张 · {1} 个槽', [formatNumber(stats.referenceUsage.images), formatNumber(stats.referenceUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {formatNumber(chainStats.character)}</span>
                 </div>
               </SectionCard>

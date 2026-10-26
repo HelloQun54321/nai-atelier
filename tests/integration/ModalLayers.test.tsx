@@ -29,7 +29,7 @@ const actions = { setParams: vi.fn(), markChange: vi.fn(), notify: vi.fn() };
 const cases: Array<[string, () => React.ReactElement, string?]> = [
   ['Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" />, '管理'],
   ['图生图 Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" operation="image-to-image" />, '管理'],
-  ['角色参考', () => <CharacterReferenceManager params={params} {...actions} />, '角色参考'],
+  ['精准参考', () => <CharacterReferenceManager params={params} {...actions} />, '精准参考'],
   ['保存到库', () => <ChainEditorForkModal showForkModal setShowForkModal={vi.fn()} confirmFork={vi.fn()} isUploading={false} currentPreviewCover={{ source: null, needsUpload: false }} />],
   ['自由实验室反推', () => <ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],
   ['预设工作台反推', () => <ImageTaggerPanel contextual open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],

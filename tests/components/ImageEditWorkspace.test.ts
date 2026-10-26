@@ -77,7 +77,7 @@ const params = {
   ucPreset: 4,
 };
 
-const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'params' = 'canvas', positionSource?: { image: string; width: number; height: number }, focused = operation === 'inpaint') => {
+const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', manualMaskEditing = false, safeMode = false, tagAssistEnabled = false, paramsPatch: Partial<NAIParams> = {}, mobileTab: 'canvas' | 'prompt' | 'reference' | 'params' = 'canvas', positionSource?: { image: string; width: number; height: number }, focused = operation === 'inpaint') => {
   const draft = createLabImageEditDraft(operation, 'blue bottle', 'low quality', { ...params, ...paramsPatch },
     { focused, ...(operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {}) });
   const onManualMaskEditingChange = vi.fn();
@@ -722,8 +722,8 @@ describe('ImageEditPreview', () => {
     expect(buttonLoading.disabled).toBe(true);
   });
 
-  describe('移动端实验室三段式 Tab 适配', () => {
-    it('ImageEditPanel 针对图生图、局部重绘和扩图正确渲染对应的三段式 Tab 标签', () => {
+  describe('跨端实验室分区适配', () => {
+    it('ImageEditPanel 针对图生图、局部重绘和扩图渲染对应分区', () => {
       const draft = createLabImageEditDraft('image-to-image', 'test prompt', 'low quality', params);
       const { rerender } = render(React.createElement(ImageEditPanel, {
         baseImage: null,
@@ -800,6 +800,49 @@ describe('ImageEditPreview', () => {
       expect(screen.getByRole('tab', { name: '画布' })).toBeTruthy();
       expect(screen.getByRole('tab', { name: '提示' })).toBeTruthy();
       expect(screen.getByRole('tab', { name: '参数' })).toBeTruthy();
+    });
+
+    it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 按当前能力显示参考页，V5 隐藏并回到画布且保留草稿', operation => {
+      const draft = createLabImageEditDraft(operation, '保留提示词', '保留负面词', { ...params, model: 'nai-diffusion-4-5-full',
+        characterReferences: { enabled: true, slots: [{ assetId: 'reference', type: 'style', strength: 0.6, fidelity: 1 }] } });
+      const props: React.ComponentProps<typeof ImageEditPanel> = {
+        baseImage: null, previewImage: null, operation, draft, layout: { collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
+        onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
+        onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false,
+      };
+      const { container, rerender } = render(React.createElement(ImageEditPanel, props));
+      expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([operation === 'image-to-image' ? '底图' : operation === 'inpaint' ? '画板' : '画布', '提示', '参考', '参数']);
+      const reference = screen.getByTestId('character-reference-manager');
+      const module = reference.closest('[data-lab-module]')!;
+      expect(module.classList.contains('hidden')).toBe(true);
+      fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+      expect(module.classList.contains('hidden')).toBe(false);
+      expect(container.querySelector('[data-lab-module="prompt"]')!.classList.contains('hidden')).toBe(true);
+      expect(Boolean(screen.queryByTestId('vibe-manager'))).toBe(operation === 'image-to-image');
+      fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+      expect(module.classList.contains('hidden')).toBe(true);
+      fireEvent.click(screen.getByRole('tab', { name: '参考' }));
+      expect(screen.getByTestId('character-reference-manager')).toBe(reference);
+      for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'nai-diffusion-5-full-medium']) {
+        rerender(React.createElement(ImageEditPanel, { ...props, draft: { ...draft, params: { ...draft.params, model } } }));
+        expect(screen.queryByRole('tab', { name: '参考' })).toBeNull();
+        expect(screen.getAllByRole('tab')).toHaveLength(3);
+        expect(screen.getAllByRole('tab')[0].getAttribute('aria-selected')).toBe('true');
+      }
+      rerender(React.createElement(ImageEditPanel, props));
+      expect(screen.getAllByRole('tab')[0].getAttribute('aria-selected')).toBe('true');
+      expect(draft.params.characterReferences?.slots[0].type).toBe('style');
+      expect(props.onDraftChange).not.toHaveBeenCalled();
+      expect(props.onGenerate).not.toHaveBeenCalled();
+    });
+
+    it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('V4 的 %s 只为支持的 Vibe 显示参考页', operation => {
+      const draft = createLabImageEditDraft(operation, '', '', { ...params, model: 'nai-diffusion-4-full' });
+      render(React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft, layout: { collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
+        onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
+        onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false }));
+      expect(Boolean(screen.queryByRole('tab', { name: '参考' }))).toBe(operation === 'image-to-image');
+      expect(screen.queryByTestId('character-reference-manager')).toBeNull();
     });
 
     it('ImageEditControls 在电脑与手机按同一分区显隐，保持非活动内容挂载', () => {

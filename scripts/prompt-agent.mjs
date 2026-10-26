@@ -749,7 +749,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的创作助手。你的职责不�
 
 规则：
 1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考跟随本次交流语言，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
-2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、收藏、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
+2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、收藏、AITag、Vibe 或精准参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；默认 count=1，只有用户明确指定多张时才传对应 count，项目会逐张生成并保存。不得拆成多个工具调用绕过整轮确认，不得自行追加张数或失败重试。只有用户明确要求排队时传 placement=end，明确要求当前图片之后插队时传 placement=next；省略仍立即生成，遇到忙碌不擅自排队。end 等前序任务完成；next 在当前图片保存后执行插入任务，再继续原任务剩余图片。按 requestedCount、completedCount、historyIds 报告完整或部分结果；否则不要擅自消耗 Anlas。
 5. request_generation 按当前助手权限执行：完全访问已授权本次生图及费用，直接调用并等待实际结果，不再询问用户或要求点击确认；标准权限由前端确认。拿到生成与保存回执前，不能声称图片已经生成。
@@ -759,7 +759,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的创作助手。你的职责不�
 8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时直接使用本地文件工具。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
 9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。全部工具已注册，可直接调用；enable_tool_group 仅用于查询分类目录。
 10. 优先执行与当前要求相关的工具。完成后按本次交流语言简短总结实际读取、修改或待确认的事项，不复述整份实验室内容。
-10. Precise/角色参考每张每次生图增加 Anlas，费用以当前官方同步规则与生成前确认估算为准，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
+10. 精准参考每张每次生图增加 Anlas，费用以当前官方同步规则与生成前确认估算为准，当前与 Vibe Transfer 互斥；设置其中一项时必须关闭另一项。
 11. 必须严格区分三类正面提示词：basePrompt 只放画师名、媒介、渲染和可复用画风；subjectPrompt 只放整图主体、场景、动作、构图和其他全局动态内容；params.characters 通过 set_characters 存放角色专属外貌、服装、身份 Tag 与角色专属负面词。用户说“角色提示词”“人物提示词”“角色外貌”或要求填写某个角色时，即使只有一个角色，也必须优先调用 set_characters，除非用户明确指定放到主体／变量提示词框。不得把角色专属提示词写入 subjectPrompt。若当前界面是“单一全局提示词”，则只使用 basePrompt 存放完整正面提示词并保持 subjectPrompt 为空。`;
 
 const techBlock = `
@@ -3324,7 +3324,7 @@ export class PromptAgentService {
         execute: async (_id, args) => { if (!project?.enableToolGroup) throw new Error('当前运行不支持动态加载工具'); return { content: jsonText(project.enableToolGroup(args.groups)) }; },
       },
       {
-        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（收藏）、vibe、reference（角色参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
+        name: 'show_project_image', label: '在聊天中展示图片', description: '将已经存在的项目图片直接展示在聊天中，无需模型识图。支持 history（历史）、inspiration（收藏）、vibe、reference（精准参考）、chain（风格串封面）；ID 来自项目检索，不能编造或传外部网址。',
         parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String() }),
         execute: async (_id, args) => {
           const bases = { history: 'local-history', inspiration: 'inspirations', vibe: 'vibes', reference: 'character-references', chain: 'chains' };
@@ -3476,7 +3476,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_character_references', label: '搜索角色参考', description: '搜索电脑中已经保存的 Precise/角色参考图片资产。',
+        name: 'search_character_references', label: '搜索精准参考', description: '搜索电脑中已经保存的精准参考图片资产。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), includeArchived: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const query = encodeURIComponent(text(args.query).trim().slice(0, 100));
@@ -3489,7 +3489,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_project_overview', label: '读取项目概况', description: '读取风格串、角色、收藏、历史、画师资料、Vibe、角色参考及组合的数量与最近项目。',
+        name: 'get_project_overview', label: '读取项目概况', description: '读取风格串、角色、收藏、历史、画师资料、Vibe、精准参考及组合的数量与最近项目。',
         parameters: Type.Object({}),
         execute: async () => {
           const result = await readProject('/api/agent/project-overview');
@@ -3506,7 +3506,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_chain', label: '读取完整风格串或自定义角色', description: '按搜索结果中的id读取一条风格串或自定义角色的完整提示词、模块、参数、Vibe和角色参考快照。修改或复用预设前必须先读取。',
+        name: 'get_chain', label: '读取完整风格串或自定义角色', description: '按搜索结果中的id读取一条风格串或自定义角色的完整提示词、模块、参数、Vibe和精准参考快照。修改或复用预设前必须先读取。',
         parameters: Type.Object({ id: Type.String() }),
         execute: async (_id, args) => {
           const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
@@ -3567,7 +3567,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_character_reference_from_history', label: '保存角色参考图', description: '把一张项目生成历史原图保存到电脑角色参考资料库。historyId必须来自list_generation_history。',
+        name: 'create_character_reference_from_history', label: '保存精准参考图', description: '把一张项目生成历史原图保存到电脑精准参考资料库。historyId必须来自list_generation_history。',
         parameters: Type.Object({ historyId: Type.String(), name: Type.String() }),
         execute: async (_id, args) => {
           if (!project?.requestBuffer) throw new Error('电脑历史图片服务不可用');
@@ -3576,7 +3576,7 @@ export class PromptAgentService {
           const image = await project.requestBuffer(`/api/local-history/${encodeURIComponent(item.id)}/image`, MAX_AGENT_IMAGE_BYTES);
           const mimeType = ['image/png', 'image/jpeg', 'image/webp'].includes(image.mimeType) ? image.mimeType : 'image/png';
           const result = await readProject('/api/character-references', { method: 'POST', body: {
-            name: text(args.name).trim().slice(0, 100) || `角色参考 ${item.id}`,
+            name: text(args.name).trim().slice(0, 100) || `精准参考 ${item.id}`,
             imageData: `data:${mimeType};base64,${image.buffer.toString('base64')}`,
           } });
           changed('character_references');
@@ -3616,7 +3616,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入收藏、角色参考、Vibe，或设为指定风格串封面。不会访问任意网址。',
+        name: 'import_aitag_image', label: '导入 AITag 图片', description: '把电脑已经缓存的AITag图片导入收藏、精准参考、Vibe，或设为指定风格串封面。不会访问任意网址。',
         parameters: Type.Object({ workId: Type.Number(), imageIndex: Type.Optional(Type.Number()), target: Type.Union([Type.Literal('inspiration'), Type.Literal('character_reference'), Type.Literal('vibe'), Type.Literal('chain_cover')]), name: Type.Optional(Type.String()), chainId: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           const source = await getAitagImage(args.workId, args.imageIndex);
@@ -3769,7 +3769,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_character_reference', label: '更新角色参考', description: '重命名角色参考、修改默认Strength/Fidelity，或恢复已归档资产。归档请使用需要确认的删除工具。',
+        name: 'update_character_reference', label: '更新精准参考', description: '重命名精准参考、修改默认Strength/Fidelity，或恢复已归档资产。归档请使用需要确认的删除工具。',
         parameters: Type.Object({ id: Type.String(), name: Type.Optional(Type.String()), defaultStrength: Type.Optional(Type.Number()), defaultFidelity: Type.Optional(Type.Number()), restore: Type.Optional(Type.Boolean()) }),
         execute: async (_id, args) => {
           const id = encodeURIComponent(text(args.id).slice(0, 200));
@@ -3812,7 +3812,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、收藏、历史项，或归档Vibe/角色参考。只会打开项目确认框，不会直接删除。',
+        name: 'request_delete_project_item', label: '请求删除项目数据', description: '请求删除风格串、角色、收藏、历史项，或归档Vibe/精准参考。只会打开项目确认框，不会直接删除。',
         parameters: Type.Object({ resourceType: Type.Union([Type.Literal('chain'), Type.Literal('inspiration'), Type.Literal('history'), Type.Literal('vibe'), Type.Literal('vibe_group'), Type.Literal('artist'), Type.Literal('character_reference')]), id: Type.String(), name: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }),
         execute: async (_id, args) => pending(`delete_${args.resourceType}`, text(args.id).slice(0, 200), `删除${text(args.name || '这个项目').slice(0, 100)}？`, text(args.reason || '确认后将执行删除；历史原图删除后无法恢复。').slice(0, 500)),
       },
@@ -4015,7 +4015,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_character_references', label: '设置角色参考', description: '从角色参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
+        name: 'set_character_references', label: '设置精准参考', description: '从精准参考资料库选择最多4张图片并设置类型、Strength和Fidelity。会自动关闭Vibe Transfer；每张每次生成的附加费以当前官方同步规则估算。',
         parameters: Type.Object({ slots: Type.Array(Type.Object({
           assetId: Type.String(),
           type: Type.Optional(Type.Union([Type.Literal('character'), Type.Literal('style'), Type.Literal('character_style')])),
@@ -4268,10 +4268,10 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'create_character_reference_from_local', label: '从本机图片创建角色参考', description: '把电脑上的图片保存到角色参考资料库。读取本机图片不需要目录确认。',
+        name: 'create_character_reference_from_local', label: '从本机图片创建精准参考', description: '把电脑上的图片保存到精准参考资料库。读取本机图片不需要目录确认。',
         parameters: Type.Object({ path: Type.String(), name: Type.String() }),
         execute: async (_id, args) => {
-          const { result } = await assetFromLocal('/api/character-references', text(args.path).trim(), args.name, '角色参考');
+          const { result } = await assetFromLocal('/api/character-references', text(args.path).trim(), args.name, '精准参考');
           changed('character_references');
           return { content: jsonText({ ok: true, item: result.item, duplicate: result.duplicate === true }), details: result };
         },

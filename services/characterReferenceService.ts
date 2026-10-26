@@ -26,7 +26,7 @@ export const characterReferenceService = {
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       throw new Error('只支持 PNG、JPEG 或 WebP 图片');
     }
-    if (!file.size || file.size > 30 * 1024 * 1024) throw new Error('角色参考图大小必须在 30 MB 以内');
+    if (!file.size || file.size > 30 * 1024 * 1024) throw new Error('精准参考图大小必须在 30 MB 以内');
     const thumbnail = await createThumbnailBlob(file);
     const formData = new FormData();
     formData.append('name', name);

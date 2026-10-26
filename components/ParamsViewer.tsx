@@ -172,12 +172,12 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
 
             {(!section || section === 'characterReference') && params.characterReferences?.enabled && params.characterReferences.slots.length > 0 && (
                 <div>
-                    <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">{t("角色参考 ({0})", [params.characterReferences.slots.length])}</label>
+                    <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">{t("精准参考 ({0})", [params.characterReferences.slots.length])}</label>
                     <div className="space-y-2">
                         {params.characterReferences.slots.map((slot, index) => (
                             <div key={`${slot.assetId}-${index}`} className="rounded-lg border border-cyan-100 bg-cyan-50/60 p-2.5 dark:border-cyan-900/60 dark:bg-cyan-950/20">
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className="truncate text-xs font-bold text-cyan-700 dark:text-cyan-300">{slot.assetName || t("角色参考 {0}", [index + 1])}</span>
+                                    <span className="truncate text-xs font-bold text-cyan-700 dark:text-cyan-300">{slot.assetName || t("精准参考 {0}", [index + 1])}</span>
                                     <span className="flex-none text-micro text-gray-500">{slot.type === 'character' ? t("角色") : slot.type === 'style' ? t("画风") : t("角色与画风")}</span>
                                 </div>
                                 <p className="mt-1 text-micro text-gray-500">{t("强度 {0} · 保真 {1}", [slot.strength.toFixed(2), slot.fidelity.toFixed(2)])}</p>

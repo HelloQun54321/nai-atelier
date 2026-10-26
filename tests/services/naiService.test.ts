@@ -310,9 +310,9 @@ describe('能力校验', () => {
     await expect(textDescriptor({ params: { ...baseParams(), characters } })).rejects.toThrow('最多支持 6 个角色提示词');
   });
 
-  it('角色参考超过数量上限时拒绝提交', async () => {
+  it('精准参考超过数量上限时拒绝提交', async () => {
     const slots = Array.from({ length: 5 }, (_, index) => ({ assetId: `a${index}`, type: 'character' as const, strength: 0.6, fidelity: 1 }));
     await expect(textDescriptor({ params: { ...baseParams(), characterReferences: { enabled: true, slots } } }))
-      .rejects.toThrow('一次最多使用 4 个角色参考');
+      .rejects.toThrow('一次最多使用 4 个精准参考');
   });
 });
