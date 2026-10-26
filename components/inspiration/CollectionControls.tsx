@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Folder } from 'lucide-react';
 import { t } from '../../services/i18n';
-import { db } from '../../services/dbService';
 import { getRecentCollectionFolders } from '../../services/inspirationUtils';
 import type { InspirationBoard } from '../../types';
 import { ToolbarSearch } from '../DesignSystem';
@@ -38,32 +37,33 @@ export const CollectionTagInput: React.FC<Omit<React.InputHTMLAttributes<HTMLInp
   </>;
 };
 
-export const CollectionFolderSelect: React.FC<{
-  value: string; onChange: (id: string) => void; boards?: InspirationBoard[]; disabled?: boolean; className?: string;
-  notify: (message: string, type?: 'success' | 'error') => void;
-}> = ({ value, onChange, boards, disabled, className = 'mobile-touch h-10 min-w-0 rounded-xl border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-950', notify }) => {
-  const [loaded, setLoaded] = useState<InspirationBoard[]>([]);
-  const [loading, setLoading] = useState(!boards);
-  const [failed, setFailed] = useState(false);
-  const [loadToken, setLoadToken] = useState(0);
+export const CollectionFolderPicker: React.FC<{
+  boards: InspirationBoard[]; value: string[]; mixedIds?: string[];
+  onToggle: (id: string, checked: boolean) => void;
+  disabled?: boolean; iconOnly?: boolean; label?: string; className?: string;
+}> = ({ boards, value, mixedIds = [], onToggle, disabled, iconOnly, label = '管理收藏夹', className = 'mobile-touch h-10 max-w-44 rounded-xl border border-gray-200 px-3 text-xs font-semibold dark:border-gray-800' }) => {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  const close = React.useCallback(() => setOpen(false), []);
   useEffect(() => {
-    if (boards) return;
-    let active = true;
-    setLoading(true);
-    void db.getInspirationBoards().then(items => { if (active) { setLoaded(items); setFailed(false); } })
-      .catch(() => { if (active) { setFailed(true); notify('收藏夹加载失败', 'error'); } })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [boards, loadToken]);
-  const folders = boards || loaded;
-  const recentIds = getRecentCollectionFolders();
-  const recent = recentIds.flatMap(id => folders.filter(folder => folder.id === id));
-  const remaining = folders.filter(folder => !recentIds.includes(folder.id));
-  return <select aria-label={t('收藏夹')} aria-busy={loading} value={value} disabled={disabled || loading} className={className}
-    onFocus={() => { if (failed) setLoadToken(token => token + 1); }} onChange={event => onChange(event.target.value)}>
-    <option value="">{t('未整理')}</option>
-    {value && !folders.some(folder => folder.id === value) && <option value={value}>{t('当前收藏夹')}</option>}
-    {recent.length > 0 && <optgroup label={t('最近使用')}>{recent.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</optgroup>}
-    {remaining.length > 0 && <optgroup label={t('全部收藏夹')}>{remaining.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</optgroup>}
-  </select>;
+    const resize = () => { setMobile(window.innerWidth < 768); close(); };
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [close]);
+  const recent = getRecentCollectionFolders();
+  const folders = [...recent.flatMap(id => boards.filter(board => board.id === id)), ...boards.filter(board => !recent.includes(board.id))];
+  const content = <div className="space-y-3">
+    <div className="max-h-72 space-y-1 overflow-y-auto">
+      {folders.map(board => <label key={board.id} className="mobile-touch flex cursor-pointer items-center gap-3 rounded-lg px-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+        <input type="checkbox" checked={value.includes(board.id)} aria-checked={mixedIds.includes(board.id) ? 'mixed' : value.includes(board.id)} ref={input => { if (input) input.indeterminate = mixedIds.includes(board.id); }} disabled={disabled} onChange={event => onToggle(board.id, event.target.checked)} className="h-4 w-4 flex-none accent-indigo-600" />
+        <span className="min-w-0 flex-1 break-words">{board.name}</span>{mixedIds.includes(board.id) && <span className="text-xs text-gray-400">{t('部分选中')}</span>}
+      </label>)}
+      {!folders.length && <p className="py-3 text-sm text-gray-400">{t('暂无收藏夹')}</p>}
+    </div>
+    <button type="button" onClick={close} className="mobile-touch w-full rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t('完成')}</button>
+  </div>;
+  return <><button ref={anchorRef} type="button" aria-label={t(label)} title={t(label)} aria-expanded={open} aria-haspopup="dialog" disabled={disabled} onClick={() => setOpen(value => !value)} className={`inline-flex min-w-0 flex-none items-center justify-center gap-2 disabled:opacity-40 ${className}`}><Folder className="h-4 w-4 flex-none" />{!iconOnly && <><span className="min-w-0 truncate">{value.length ? boards.filter(board => value.includes(board.id)).map(board => board.name).join('、') : mixedIds.length ? t('部分选中') : t('未整理')}</span><ChevronDown className="h-3.5 w-3.5 flex-none" /></>}</button>
+    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t(label)} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t(label)} width={300} onClose={close}>{content}</AnchoredToolbarPopover>)}
+  </>;
 };

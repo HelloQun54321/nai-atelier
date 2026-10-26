@@ -5,7 +5,7 @@ import type { D1Database, D1PreparedStatement, RouteContext } from '../../../wor
 
 let sqlite: DatabaseSync;
 let db: D1Database;
-const initial = () => ({ revision: 0, folders: [{ id: 'f1', name: '画风实验', parentId: null }], assignments: { 'style-a': 'f1' } });
+const initial = () => ({ revision: 0, folders: [{ id: 'f1', name: '画风实验', parentId: null }], assignments: { 'style-a': ['f1'] } });
 const invoke = async (method: string, body?: unknown, owner = 'owner') => (await handleChainFolderRoute({
   db, currentUser: { id: owner }, path: '/api/chain-folders', method,
   request: new Request('http://localhost/api/chain-folders', { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }),
@@ -24,6 +24,17 @@ beforeEach(() => {
 });
 afterEach(() => sqlite.close());
 describe('风格串文件夹持久化', () => {
+  it('读取旧单归属不写回原资料，主动整理时支持多归属且仍保留原子版本保护', async () => {
+    const legacy = { ...initial(), assignments: { 'style-a': 'f1' } };
+    const value = JSON.stringify(legacy);
+    sqlite.prepare('INSERT INTO settings VALUES (?, ?)').run('chain_folders_v1:owner', value);
+    expect((await (await invoke('GET')).json()).assignments).toEqual({ 'style-a': ['f1'] });
+    expect(sqlite.prepare("SELECT value FROM settings WHERE key = 'chain_folders_v1:owner'").get()?.value).toBe(value);
+    const next = { ...initial(), folders: [...initial().folders, { id: 'f2', name: '朋友分享', parentId: null }], assignments: { 'style-a': ['f1', 'f2'] } };
+    expect((await invoke('PUT', next)).status).toBe(200);
+    expect((await (await invoke('GET')).json()).assignments).toEqual(next.assignments);
+    expect((await invoke('PUT', next)).status).toBe(409);
+  });
   it('首次读取不写私人库；保存后其他客户端可以读取，原配方不变', async () => {
     expect(await (await invoke('GET')).json()).toEqual({ revision: 0, folders: [], assignments: {} });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM settings').get()?.count).toBe(1);

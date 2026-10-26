@@ -6,7 +6,7 @@ import { ArrowDownUp, Folder, GripVertical, Heart, Library, ListChecks, Pencil, 
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User } from '../types';
 import { createUuid } from '../services/id';
-import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionPreviewTransform, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
+import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionBoardIds, getCollectionPreviewTransform, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
@@ -23,7 +23,7 @@ import { CollectionTagManager } from './inspiration/CollectionTagManager';
 import { CollectionImportDialog } from './inspiration/CollectionImportDialog';
 import { DetailSidePanel } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
-import { CollectionFolderSelect, CollectionTagInput } from './inspiration/CollectionControls';
+import { CollectionFolderPicker, CollectionTagInput } from './inspiration/CollectionControls';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
@@ -124,7 +124,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   const counts = useMemo(() => ({
     all: items.filter(item => !item.archived).length,
-    unorganized: items.filter(item => !item.archived && !item.boardId).length,
+    unorganized: items.filter(item => !item.archived && !getCollectionBoardIds(item).length).length,
   }), [items]);
 
   const allTags = useMemo(() => {
@@ -159,7 +159,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
   const boardCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    items.forEach(item => { if (!item.archived && item.boardId) counts.set(item.boardId, (counts.get(item.boardId) || 0) + 1); });
+    items.forEach(item => { if (!item.archived) getCollectionBoardIds(item).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)); });
     return counts;
   }, [items]);
 
@@ -167,9 +167,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     const query = debouncedSearch.trim().toLowerCase();
     return items.filter(item => {
       if (item.archived) return false;
-      if (collection === 'unorganized' && item.boardId) return false;
+      if (collection === 'unorganized' && getCollectionBoardIds(item).length) return false;
       if (sourceFilter && (item.sourceType || 'other') !== sourceFilter) return false;
-      if (boardId && item.boardId !== boardId) return false;
+      if (boardId && !getCollectionBoardIds(item).includes(boardId)) return false;
       if (!tagFilter.every(tag => (item.tags || []).includes(tag))) return false;
       if (query && ![item.title, item.prompt, item.negativePrompt, ...(item.tags || [])].join('\n').toLowerCase().includes(query)) return false;
       return true;
@@ -241,7 +241,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const deleteBoard = async (board: InspirationBoard) => {
-    if (!await confirmAction({ rememberKey: 'collection-board.delete', title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，它们会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
+    if (!await confirmAction({ rememberKey: 'collection-board.delete', title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，其他收藏夹归属会保留；没有其他归属的作品会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
     try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('收藏夹已删除'); }
     catch (error: any) { notify(error.message || '删除失败', 'error'); }
   };
@@ -284,30 +284,36 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       return next;
     });
   };
-  const moveToFolder = async (ids: string[], target: string) => {
-    if (movingRef.current || busy || (target && !boardNameById.has(target))) return;
-    const movable = items.filter(item => ids.includes(item.id) && canEditItem(item, currentUser) && (item.boardId || '') !== target).map(item => item.id);
+  const updateFolderMembership = async (ids: string[], target: string, checked: boolean) => {
+    if (movingRef.current || busy || !boardNameById.has(target)) return;
+    const movable = items.filter(item => ids.includes(item.id) && !item.archived && canEditItem(item, currentUser) && getCollectionBoardIds(item).includes(target) !== checked).map(item => item.id);
     if (!movable.length) return;
     movingRef.current = true; setBusy('bulk');
     try {
-      await db.bulkUpdateInspirations(movable, { boardId: target });
-      rememberCollectionFolder(target); setSelectedIds(new Set()); await onRefresh();
-      notify(target ? '已移动到收藏夹' : '已移至未整理');
-    } catch (error: any) { notify(error.message || '移动失败', 'error'); }
+      await db.bulkUpdateInspirations(movable, checked ? { addBoardIds: [target] } : { removeBoardIds: [target] });
+      if (checked) rememberCollectionFolder(target);
+      await onRefresh(); notify('收藏夹已更新');
+    } catch (error: any) { notify(error.message || '收藏夹更新失败', 'error'); }
     finally { movingRef.current = false; setBusy(''); }
+  };
+  const renderFolderPicker = (images: Inspiration[], label = '管理收藏夹', iconOnly = false) => {
+    const editable = images.filter(image => editableIds.has(image.id));
+    const counts = new Map<string, number>();
+    editable.forEach(image => getCollectionBoardIds(image).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)));
+    return <CollectionFolderPicker boards={boards} value={Array.from(counts).filter(([, count]) => count === editable.length).map(([id]) => id)} mixedIds={Array.from(counts).filter(([, count]) => count < editable.length).map(([id]) => id)} disabled={Boolean(busy) || !editable.length} label={label} iconOnly={iconOnly} onToggle={(id, checked) => { void updateFolderMembership(editable.map(image => image.id), id, checked); }} />;
   };
   const folderDropProps = (target: string): React.HTMLAttributes<HTMLElement> => ({
     onDragOver: event => {
       event.preventDefault();
       if (!draggedIdsRef.current.length || busy) { event.dataTransfer.dropEffect = 'none'; return; }
-      event.dataTransfer.dropEffect = 'move'; setDropTarget(target);
+      event.dataTransfer.dropEffect = 'copy'; setDropTarget(target);
     },
     onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); },
     onDrop: event => {
       event.preventDefault(); event.stopPropagation();
       if (!draggedIdsRef.current.length) return;
       const ids = draggedIdsRef.current; draggedIdsRef.current = []; setDropTarget(null);
-      void moveToFolder(ids, target);
+      void updateFolderMembership(ids, target, true);
     },
   });
   const addBulkTags = async () => {
@@ -370,7 +376,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>
     <div className="space-y-1">
       <CollectionButton active={collection === 'all' && !boardId && !sourceFilter} count={counts.all} icon={<Heart />} label={t('全部')} onClick={() => { setCollection('all'); setBoardId(''); setSourceFilter(''); }} />
-      <div {...folderDropProps('')} className={dropTarget === '' ? 'rounded-xl ring-2 ring-indigo-500' : ''}><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Library />} label={t('未整理')} onClick={() => { setCollection('unorganized'); setBoardId(''); setSourceFilter(''); }} /></div>
+      <div><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Library />} label={t('未整理')} onClick={() => { setCollection('unorganized'); setBoardId(''); setSourceFilter(''); }} /></div>
     </div>
     <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
     <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p>
@@ -419,7 +425,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       onDragStart={event => {
         if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
         draggedIdsRef.current = selected ? items.filter(candidate => selectedIds.has(candidate.id) && canEditItem(candidate, currentUser)).map(candidate => candidate.id) : ids;
-        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
       }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
       <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
@@ -445,7 +451,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
           <ToolbarButton aria-label={t("全选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered()} className="mobile-touch !px-2.5">{t("全选筛选结果")}</ToolbarButton>
           <ToolbarButton aria-label={t("反选筛选结果")} disabled={Boolean(busy)} onClick={() => selectFiltered(true)} className="mobile-touch !px-2.5">{t("反选筛选结果")}</ToolbarButton>
           <ToolbarButton disabled={Boolean(busy) || !selectedIds.size} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t("清空选择")}</ToolbarButton>
-          <select aria-label={t('移动到收藏夹')} disabled={Boolean(busy) || !selectedIds.size} defaultValue="" onChange={event => { if (event.target.value) void moveToFolder(Array.from(selectedIds), event.target.value === '__none' ? '' : event.target.value); event.target.value = ''; }} className="mobile-touch h-10 w-32 flex-none rounded-xl border border-gray-200 bg-white px-2 text-xs dark:border-gray-800 dark:bg-gray-900"><option value="" disabled>{t("移动到…")}</option><option value="__none">{t("未整理")}</option>{boards.map(board => <option key={board.id} value={board.id}>{board.name}</option>)}</select>
+          {renderFolderPicker(selectedItems)}
           <div className="appearance-group flex flex-none overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"><CollectionTagInput aria-label={t("添加标签")} onPick={setBulkTag} disabled={Boolean(busy) || !selectedIds.size} value={bulkTag} suggestions={allTags.map(([tag]) => tag)} onChange={event => setBulkTag(event.target.value)} placeholder={t("添加标签")} className="mobile-touch h-10 w-28 bg-transparent px-2 text-xs outline-none" /><button type="button" disabled={Boolean(busy) || !selectedIds.size || !bulkTag.trim()} onClick={() => void addBulkTags()} className="mobile-touch border-l border-gray-200 px-2 text-xs font-bold text-indigo-600 disabled:opacity-40 dark:border-gray-800 dark:text-indigo-300">{t("添加")}</button></div>
           <ToolbarButton tone="danger" aria-label={t("取消收藏")} disabled={Boolean(busy) || !selectedIds.size} onClick={() => void deleteCollected(Array.from(selectedIds))} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t("取消收藏")}</span></ToolbarButton>
         </div>
@@ -505,8 +511,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         )}
         </div>
       </main>
-      {openedGroup && <DetailSidePanel key={workGroup} open title={openedGroup.length > 1 || Number(openedGroup[0].analysis?.collectionGroupSize) > 1 ? openedGroup[0].title.replace(/ · \d+$/, '') : openedGroup[0].title} sensitiveTitle subInfo={t('{0}页', [openedGroup.length])} sourceUrl={openedGroup[0].sourceUrl} onBack={closeGroup} onClose={closeGroup}>
-        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} items={items} tagNames={tagNames || []} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
+      {openedGroup && <DetailSidePanel key={workGroup} open title={openedGroup.length > 1 || Number(openedGroup[0].analysis?.collectionGroupSize) > 1 ? openedGroup[0].title.replace(/ · \d+$/, '') : openedGroup[0].title} sensitiveTitle subInfo={t('{0}页', [openedGroup.length])} sourceUrl={openedGroup[0].sourceUrl} headerActions={openedGroup.length > 1 ? renderFolderPicker(openedGroup, '管理整组收藏夹', true) : undefined} onBack={closeGroup} onClose={closeGroup}>
+        <div className="space-y-4">{openedGroup.map(image => <InspirationDetail key={image.id} item={image} items={items} boards={boards} tagNames={tagNames || []} currentUser={currentUser} notify={notify} onClose={closeGroup} onRefresh={onRefresh} onNavigateToPlayground={onNavigateToPlayground} />)}</div>
       </DetailSidePanel>}
       </div>
     </div>

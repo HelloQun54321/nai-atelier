@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CreationFootprint } from '../../components/CreationFootprint';
 import type { UsageStats } from '../../services/usageStats';
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   getAssets: vi.fn(),
   getSessions: vi.fn(),
   ensureCollection: vi.fn(),
-  collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[],
+  collection: [] as { sourceType: string; sourceId: string; archived?: boolean; boardId?: string; boardIds?: string[] }[],
 }));
 
 vi.mock('../../services/usageStats', async original => ({ ...await original<typeof import('../../services/usageStats')>(), getUsageStats: mocks.getStats, getUsageAssets: mocks.getAssets }));
@@ -162,6 +162,20 @@ it('总数与收藏来自本地统计与收藏快照，不把收藏当成生成�
   expect(screen.getByText('收藏的风格串')).toBeTruthy();
   expect(screen.getAllByText('1').length).toBeGreaterThan(0);
   expect(screen.getByText('120')).toBeTruthy();
+});
+
+it('收藏夹统计覆盖每张作品的所有归属，重复归属不重复计数', async () => {
+  mocks.collection = [
+    { sourceType: 'chain', sourceId: 'one', boardId: 'a', boardIds: ['a', 'b'] },
+    { sourceType: 'chain', sourceId: 'two', boardId: 'b', boardIds: ['b', 'c'] },
+    { sourceType: 'chain', sourceId: 'old', boardId: 'legacy' },
+    { sourceType: 'chain', sourceId: 'empty', boardId: 'stale', boardIds: [] },
+    { sourceType: 'chain', sourceId: 'archived', boardIds: ['removed'], archived: true },
+  ];
+  setup();
+  const label = await screen.findByText('收藏夹');
+  expect(within(label.parentElement!).getByText('4')).toBeTruthy();
+  expect(within(label.parentElement!).getByText('收藏 4')).toBeTruthy();
 });
 
 it('没有记录时给出空态与去实验室入口', async () => {

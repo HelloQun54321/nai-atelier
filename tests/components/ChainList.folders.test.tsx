@@ -38,7 +38,7 @@ const setup = async () => {
 const choose = (id: string) => fireEvent.change(screen.getByLabelText('选择文件夹'), { target: { value: id } });
 beforeEach(() => {
   localStorage.clear(); get.mockReset(); put.mockReset();
-  stored = { revision: 1, folders: [{ id: 'root', name: '画风实验', parentId: null }, { id: 'child', name: '平涂', parentId: 'root' }], assignments: { a: 'child' } };
+  stored = { revision: 1, folders: [{ id: 'root', name: '画风实验', parentId: null }, { id: 'child', name: '平涂', parentId: 'root' }], assignments: { a: ['child'] } };
   get.mockImplementation(async () => structuredClone(stored));
   put.mockImplementation(async (_path, state) => { stored = { ...structuredClone(state), revision: stored.revision + 1 }; return structuredClone(stored); });
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -116,17 +116,18 @@ describe('风格串文件夹完整交互', () => {
     expect((within(dialog).getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(false);
     expect(props.notify).not.toHaveBeenCalledWith('文件夹已保存', 'success');
   });
-  it('单条与批量移动只写目录元数据，手机无需拖放', async () => {
+  it('单条与批量设置只写目录元数据，取消勾选才移除归属，手机无需拖放', async () => {
     const { props } = await setup();
-    fireEvent.click(screen.getByRole('button', { name: '移动到文件夹：风格 b' }));
-    fireEvent.change(screen.getByLabelText('目标文件夹'), { target: { value: 'child' } });
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '移动' }));
-    await waitFor(() => expect(stored.assignments.b).toBe('child'));
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 b' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '平涂' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(stored.assignments.b).toEqual(['child']));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
-    fireEvent.click(screen.getByRole('button', { name: '移动到文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '移动' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '平涂' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(stored.assignments).toEqual({}));
     expect(props.onUpdateChain).not.toHaveBeenCalled(); expect(props.onDelete).not.toHaveBeenCalled();
   });
@@ -135,21 +136,50 @@ describe('风格串文件夹完整交互', () => {
     const transfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['b']), dropEffect: '' };
     const root = within(screen.getByLabelText('风格串文件夹')).getByRole('button', { name: /画风实验/ });
     fireEvent.dragOver(root, { dataTransfer: transfer }); fireEvent.drop(root, { dataTransfer: transfer });
-    await waitFor(() => expect(stored.assignments.b).toBe('root'));
+    await waitFor(() => expect(stored.assignments.b).toEqual(['root']));
     choose('root'); fireEvent.click(screen.getByRole('button', { name: '删除文件夹' }));
     await waitFor(() => expect(stored.folders).toEqual([{ id: 'child', name: '平涂', parentId: null }]));
-    expect(stored.assignments).toEqual({ a: 'child' }); expect(props.onDelete).not.toHaveBeenCalled();
+    expect(stored.assignments).toEqual({ a: ['child'] }); expect(props.onDelete).not.toHaveBeenCalled();
+  });
+  it('批量部分选中只修改触及目录，未触及归属逐条保留', async () => {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+    fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: '平涂' }).getAttribute('aria-checked')).toBe('mixed');
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: '画风实验' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(stored.assignments).toEqual({ a: ['child', 'root'], b: ['root'] }));
+  });
+  it('多归属父夹去重计数，拖入只追加，全部与未整理不接受拖入', async () => {
+    stored.assignments = { a: ['child', 'root'], b: ['child'] };
+    await setup();
+    const navigation = within(screen.getByLabelText('风格串文件夹'));
+    const root = navigation.getByRole('button', { name: /画风实验/ });
+    expect(root.textContent).toBe('画风实验2');
+    const transfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['b']), dropEffect: '' };
+    fireEvent.drop(navigation.getByRole('button', { name: /未整理/ }), { dataTransfer: transfer });
+    fireEvent.drop(navigation.getByRole('button', { name: /^全部/ }), { dataTransfer: transfer });
+    expect(put).not.toHaveBeenCalled();
+    fireEvent.drop(root, { dataTransfer: transfer });
+    await waitFor(() => expect(stored.assignments.b).toEqual(['child', 'root']));
+    choose('child');
+    expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
+    choose('root'); fireEvent.click(screen.getByRole('button', { name: '删除文件夹' }));
+    await waitFor(() => expect(stored.assignments).toEqual({ a: ['child'], b: ['child'] }));
+    choose(''); expect(screen.queryByRole('button', { name: '打开风格串：风格 a' })).toBeNull();
   });
   it('保存冲突回读新目录，不假报成功，失败后可重试', async () => {
     const { props } = await setup();
     put.mockRejectedValueOnce(Error('文件夹已在其他窗口更新，请按最新目录重试'));
-    fireEvent.click(screen.getByRole('button', { name: '移动到文件夹：风格 b' }));
-    fireEvent.change(screen.getByLabelText('目标文件夹'), { target: { value: 'root' } });
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '移动' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 b' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '画风实验' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(props.notify).toHaveBeenCalledWith(expect.stringContaining('其他窗口'), 'error'));
     expect(stored.assignments.b).toBeUndefined(); expect(screen.getByRole('dialog')).toBeTruthy();
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '移动' }));
-    await waitFor(() => expect(stored.assignments.b).toBe('root'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(stored.assignments.b).toEqual(['root']));
   });
 });
 
@@ -181,7 +211,7 @@ describe('文件夹区域与弹窗生命周期', () => {
     next.unmount(); render(<ChainList {...props} />);
     expect(screen.getByRole('button', { name: '收起文件夹' })).toBeTruthy();
   });
-  it.each(['新建文件夹', '编辑文件夹', '移动到文件夹：风格 a'])('%s隐藏时释放焦点与键盘，恢复保留草稿', async label => {
+  it.each(['新建文件夹', '编辑文件夹', '设置文件夹：风格 a'])('%s隐藏时释放焦点与键盘，恢复保留草稿', async label => {
     const view = await setup(); choose('root');
     const page = (active: boolean) => <ImageActivityProvider active={active}><ChainList {...view.props} /></ImageActivityProvider>;
     // 从此处起在同一Provider树内切换active，不卸载页面状态。
@@ -203,7 +233,7 @@ describe('文件夹区域与弹窗生命周期', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(source);
   });
-  it.each(['新建文件夹', '编辑文件夹', '移动到文件夹：风格 a'])('%s手机返回只关闭本层并保留父历史', async label => {
+  it.each(['新建文件夹', '编辑文件夹', '设置文件夹：风格 a'])('%s手机返回只关闭本层并保留父历史', async label => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     window.history.replaceState({ __naiMobileLayers: ['parent'], __naiMobileLayer: 'parent' }, '');
     const view = await setup(); choose('root');
@@ -237,7 +267,7 @@ it('App独立保存归属后保活列表立即显示新串，保持当前目录�
   choose('root');
   const existing = screen.getByRole('button', { name: '打开风格串：风格 a' });
   expect(screen.queryByRole('button', { name: '打开风格串：风格 b' })).toBeNull();
-  await act(async () => { await saveChainFolders({ ...stored, assignments: { ...stored.assignments, c: 'root' } }); });
+  await act(async () => { await saveChainFolders({ ...stored, assignments: { ...stored.assignments, c: ['root'] } }); });
   view.rerender(<ChainList {...view.props} chains={[...view.props.chains, makeChain('c')]} />);
   expect(screen.getByRole('button', { name: '打开风格串：风格 c' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBe(existing);

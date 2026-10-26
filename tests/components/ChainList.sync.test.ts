@@ -62,7 +62,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
     '收藏', '下载图片', '复制图片',
     ...(type === 'style' ? ['发送到实验室：风格 A'] : []),
     `编辑${label}信息：风格 A`,
-    ...(type === 'style' ? ['移动到文件夹：风格 A'] : []),
+    ...(type === 'style' ? ['设置文件夹：风格 A'] : []),
   ]);
   for (const button of buttons) {
     for (const token of ['bg-black/45', 'border-white/60', 'rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'focus-visible:ring-white']) expect(button.classList.contains(token)).toBe(true);
@@ -458,7 +458,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(card.hasAttribute('data-press-revealed')).toBe(false); longPress(card);
     expect(card.getAttribute('data-press-revealed')).toBe('true');
     const controls = card.querySelector('[data-card-action].right-2')!;
-    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '发送到实验室：风格 A', '编辑风格串信息：风格 A', '移动到文件夹：风格 A']);
+    expect(within(controls as HTMLElement).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '发送到实验室：风格 A', '编辑风格串信息：风格 A', '设置文件夹：风格 A']);
     fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/synthetic/cover.png', false));
     fireEvent.click(within(card).getByRole('button', { name: '编辑风格串信息：风格 A' }));

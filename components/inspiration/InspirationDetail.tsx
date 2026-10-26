@@ -12,11 +12,11 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
-import { ImageEditOperation, Inspiration, User } from '../../types';
+import { ImageEditOperation, Inspiration, InspirationBoard, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
-import { getCollectionTags, getCollectionPreviewTransform, sourceLabel } from '../../services/inspirationUtils';
-import { CollectionTagInput } from './CollectionControls';
+import { getCollectionBoardIds, getCollectionTags, getCollectionPreviewTransform, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
+import { CollectionFolderPicker, CollectionTagInput } from './CollectionControls';
 import { ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
 import { ParamsViewer } from '../ParamsViewer';
@@ -30,6 +30,7 @@ import { canEditItem, DEFAULT_PARAMS, formatDate, sourceIcon, splitTags } from '
 interface Props {
   item: Inspiration;
   items: Inspiration[];
+  boards?: InspirationBoard[];
   tagNames?: string[];
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
@@ -41,6 +42,7 @@ interface Props {
 export const InspirationDetail: React.FC<Props> = ({
   item,
   items,
+  boards = [],
   tagNames = [],
   currentUser,
   notify,
@@ -71,7 +73,7 @@ export const InspirationDetail: React.FC<Props> = ({
       if (draft.id !== item.id) return item;
       const next = { ...item };
       // 同组其他图片保存时刷新侧栏，保留当前尚未保存的输入。
-      for (const key of ['title', 'prompt', 'negativePrompt', 'tags', 'boardId'] as const) {
+      for (const key of ['title', 'prompt', 'negativePrompt', 'tags'] as const) {
         if (draft[key] !== previous[key]) Object.assign(next, { [key]: draft[key] });
       }
       return next;
@@ -323,6 +325,14 @@ export const InspirationDetail: React.FC<Props> = ({
               className="h-8 min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-1 text-base font-bold text-gray-950 outline-none dark:bg-gray-900 dark:text-white sm:text-lg"
             /> : <h2 data-safe-mode-title="true" className="min-w-0 truncate text-base font-bold text-gray-950 dark:text-white sm:text-lg">{draft.title}</h2>}
             {editable && <button type="button" aria-label={t("修改收藏标题")} title={t("修改收藏标题")} onClick={() => { setEditingTitle(true); titleInputRef.current?.focus(); titleInputRef.current?.select(); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>}
+            {editable && <CollectionFolderPicker boards={boards} value={getCollectionBoardIds(draft)} iconOnly disabled={Boolean(busy)} onToggle={(id, checked) => {
+              setBusy('folder');
+              void db.updateInspiration(item.id, checked ? { addBoardIds: [id] } : { removeBoardIds: [id] }).then(async () => {
+                update('boardIds', checked ? [...getCollectionBoardIds(draft), id] : getCollectionBoardIds(draft).filter(value => value !== id));
+                if (checked) rememberCollectionFolder(id);
+                await onRefresh();
+              }).catch((error: Error) => notify(error.message || '收藏夹更新失败', 'error')).finally(() => setBusy(''));
+            }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400" />}
             {draft.imageUrl && <button type="button" disabled={Boolean(busy)} onClick={() => setTaggerOpen(true)} aria-label={t("识别图片 Tag")} title={t("识别当前图片，挑选后追加到收藏标签")} className="mobile-touch ml-auto flex flex-none items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"><ImagePlus className="h-3.5 w-3.5" />{t("识别图片 Tag")}</button>}
           </header>
 

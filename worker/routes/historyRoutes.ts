@@ -8,7 +8,8 @@ import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema,
 import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
-import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
+import { applyCollectionBoardUpdates, getCollectionBoardIds, normalizeCollectionTagNames } from '../../services/inspirationUtils';
+import type { Inspiration } from '../../types';
 import { readPromptLibraryTagNames } from '../../services/promptLibraryTags';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
 import {
@@ -63,12 +64,53 @@ async function initializeInspirationSchema(db: D1Database) {
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspiration_boards_sort ON inspiration_boards(user_id, sort_order, created_at)').run();
 }
 
+const storedInspirationAnalysis = "CASE WHEN json_valid(analysis) THEN CASE WHEN json_type(analysis) = 'object' THEN analysis ELSE '{}' END ELSE '{}' END";
+const storedCollectionBoardIds = `CASE WHEN json_type(${storedInspirationAnalysis}, '$.collectionBoardIds') = 'array'
+  THEN json_extract(${storedInspirationAnalysis}, '$.collectionBoardIds')
+  ELSE CASE WHEN board_id IS NULL OR board_id = '' THEN '[]' ELSE json_array(board_id) END END`;
+
+/** 直接基于当前行增删归属，批量操作和迟到的来源编辑不会覆盖其他收藏夹。 */
+function collectionBoardIdsStatement(updates: any) {
+  let sql = storedCollectionBoardIds;
+  const values: any[] = [];
+  if (updates.boardIds !== undefined) { sql = '?'; values.push(JSON.stringify(updates.boardIds)); }
+  else if (updates.boardId !== undefined) {
+    sql = `CASE WHEN board_id IS ? THEN ${sql} ELSE ? END`;
+    values.push(updates.boardId || null, JSON.stringify(updates.boardId ? [updates.boardId] : []));
+  }
+  sql = `(SELECT json_group_array(value) FROM (
+    SELECT DISTINCT value FROM (SELECT value, type FROM json_each(${sql}) UNION ALL SELECT value, type FROM json_each(?))
+    WHERE type = 'text' AND trim(value) <> '' AND value NOT IN (SELECT value FROM json_each(?))))`;
+  values.push(JSON.stringify(updates.addBoardIds || []), JSON.stringify(updates.removeBoardIds || []));
+  return { sql, values };
+}
+
+async function validateCollectionBoardUpdates(db: D1Database, userId: string, updates: any): Promise<string | null> {
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) return '收藏更新无效';
+  const ids: string[] = [];
+  for (const key of ['boardIds', 'addBoardIds', 'removeBoardIds']) {
+    if (updates[key] === undefined) continue;
+    if (!Array.isArray(updates[key]) || updates[key].length > 500 || updates[key].some((id: unknown) => typeof id !== 'string' || !id.trim() || id.length > 200)) return '收藏夹归属无效';
+    ids.push(...updates[key]);
+  }
+  if (updates.boardId !== undefined && updates.boardId !== null && updates.boardId !== '') {
+    if (typeof updates.boardId !== 'string' || !updates.boardId.trim() || updates.boardId.length > 200) return '收藏夹归属无效';
+    ids.push(updates.boardId);
+  }
+  if (ids.length) {
+    const boards = await db.prepare('SELECT id FROM inspiration_boards WHERE user_id = ?').bind(userId).all<{ id: string }>();
+    const allowed = new Set(boards.results.map(board => board.id));
+    if (ids.some(id => !allowed.has(id))) return '收藏夹不存在或无权访问';
+  }
+  return null;
+}
+
 /** 构建灵感字段更新的 SET 子句与绑定值；无任何可更新字段时返回 null。 */
 function buildInspirationSetStatements(updates: any): { assignments: string[]; values: any[] } | null {
   const assignments: string[] = [];
   const values: any[] = [];
   const stringFields: Record<string, string> = {
-    title: 'title', prompt: 'prompt', negativePrompt: 'negative_prompt', boardId: 'board_id', notes: 'notes',
+    title: 'title', prompt: 'prompt', negativePrompt: 'negative_prompt', notes: 'notes',
     sourceType: 'source_type', sourceId: 'source_id', sourceUrl: 'source_url', parentId: 'parent_id',
   };
   for (const [key, column] of Object.entries(stringFields)) {
@@ -76,7 +118,15 @@ function buildInspirationSetStatements(updates: any): { assignments: string[]; v
   }
   if (updates.tags !== undefined) { assignments.push('tags = ?'); values.push(JSON.stringify(Array.isArray(updates.tags) ? updates.tags.slice(0, 80) : [])); }
   if (updates.params !== undefined) { assignments.push('params = ?'); values.push(updates.params ? JSON.stringify(updates.params) : null); }
-  if (updates.analysis !== undefined) { assignments.push('analysis = ?'); values.push(JSON.stringify(updates.analysis || {})); }
+  const changesBoards = ['boardIds', 'boardId', 'addBoardIds', 'removeBoardIds'].some(key => updates[key] !== undefined);
+  if (changesBoards || updates.analysis !== undefined) {
+    const boards = collectionBoardIdsStatement(updates);
+    if (changesBoards) { assignments.push(`board_id = json_extract(${boards.sql}, '$[0]')`); values.push(...boards.values); }
+    const analysis = updates.analysis && typeof updates.analysis === 'object' && !Array.isArray(updates.analysis) ? updates.analysis : {};
+    assignments.push(`analysis = json_set(${updates.analysis !== undefined ? '?' : storedInspirationAnalysis}, '$.collectionBoardIds', json(${boards.sql}))`);
+    if (updates.analysis !== undefined) values.push(JSON.stringify(analysis));
+    values.push(...boards.values);
+  }
   if (updates.rating !== undefined) { assignments.push('rating = ?'); values.push(Math.max(0, Math.min(5, Math.floor(Number(updates.rating) || 0)))); }
   if (updates.isPinned !== undefined) { assignments.push('is_pinned = ?'); values.push(updates.isPinned ? 1 : 0); }
   if (updates.archived !== undefined) { assignments.push('archived = ?'); values.push(updates.archived ? 1 : 0); }
@@ -216,6 +266,7 @@ function inspirationImageUrl(row: any) {
 }
 
 function mapInspirationRow(row: any) {
+  const analysis = parseStoredJson(row.analysis, {});
   return {
     id: row.id,
     userId: row.user_id,
@@ -226,6 +277,7 @@ function mapInspirationRow(row: any) {
     negativePrompt: row.negative_prompt || '',
     params: parseStoredJson(row.params, undefined),
     boardId: row.board_id || undefined,
+    boardIds: getCollectionBoardIds({ boardId: row.board_id, analysis }),
     notes: row.notes || '',
     tags: parseStoredJson(row.tags, []),
     sourceType: row.source_type || undefined,
@@ -237,7 +289,7 @@ function mapInspirationRow(row: any) {
     lastUsedAt: row.last_used_at ? Number(row.last_used_at) : undefined,
     useCount: Number(row.use_count || 0),
     parentId: row.parent_id || undefined,
-    analysis: parseStoredJson(row.analysis, {}),
+    analysis,
     createdAt: Number(row.created_at || 0),
     updatedAt: Number(row.updated_at || row.created_at || 0),
   };
@@ -1171,8 +1223,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     const id = decodeURIComponent(boardMatch[1]);
     const board = await db.prepare('SELECT id FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).first<any>();
     if (!board) return error('Not Found', 404);
-    await db.prepare('UPDATE inspirations SET board_id = NULL, updated_at = ? WHERE board_id = ? AND user_id = ?').bind(Date.now(), id, currentUser.id).run();
-    await db.prepare('DELETE FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).run();
+    const built = buildInspirationSetStatements({ removeBoardIds: [id] })!;
+    await db.batch([
+      db.prepare(`UPDATE inspirations SET ${built.assignments.join(', ')}, updated_at = ? WHERE user_id = ? AND
+        (board_id = ? OR EXISTS (SELECT 1 FROM json_each(${storedCollectionBoardIds}) WHERE value = ?))`)
+        .bind(...built.values, Date.now(), currentUser.id, id, id),
+      db.prepare('DELETE FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id),
+    ]);
     return json({ success: true });
   }
 
@@ -1220,10 +1277,14 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const body = await request.json() as any;
     const id = String(body.id || crypto.randomUUID());
+    const existing = await db.prepare('SELECT id, user_id, board_id, analysis FROM inspirations WHERE id = ?').bind(id).first<any>();
     if (/^agent-[a-f0-9]{64}$/.test(id)) {
-      const existing = await db.prepare('SELECT id, user_id FROM inspirations WHERE id = ?').bind(id).first<any>();
       if (existing) return existing.user_id === currentUser.id ? json({ id, replayed: true }) : error('操作 ID 冲突', 409);
     }
+    if (existing && existing.user_id !== currentUser.id) return error('Permission Denied', 403);
+    const invalidBoards = await validateCollectionBoardUpdates(db, currentUser.id, body);
+    if (invalidBoards) return error(invalidBoards, 400);
+    const collection = applyCollectionBoardUpdates({ boardId: existing?.board_id || undefined, analysis: parseStoredJson(existing?.analysis, {}) } as Inspiration, body);
     const now = Number(body.createdAt || Date.now());
     let imageUrl = body.imageUrl || null;
     let imageKey: string | null = null;
@@ -1241,22 +1302,33 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       try { imageUrl = await processImageUpload(env, imageUrl, 'inspirations', id, currentUser); }
       catch (e: any) { return error(e.message, 413); }
     }
-    await db.prepare(`INSERT OR REPLACE INTO inspirations (
+    // 同 ID 保存可能等待上传；冲突更新按落库时的归属计算，不回写上传前的旧快照。
+    const memberships = buildInspirationSetStatements({
+      boardId: body.boardId, boardIds: body.boardIds, addBoardIds: body.addBoardIds || [], removeBoardIds: body.removeBoardIds,
+      analysis: body.analysis,
+    })!;
+    const replacedColumns = ['user_id', 'username', 'title', 'image_url', 'image_key', 'image_type', 'prompt', 'negative_prompt', 'params',
+      'notes', 'tags', 'source_type', 'source_id', 'source_url', 'rating', 'is_pinned', 'archived', 'last_used_at', 'use_count', 'parent_id', 'created_at', 'updated_at'];
+    const saved = await db.prepare(`INSERT INTO inspirations (
       id, user_id, username, title, image_url, image_key, image_type, prompt, negative_prompt, params,
       board_id, notes, tags, source_type, source_id, source_url, rating, is_pinned, archived,
       last_used_at, use_count, parent_id, analysis, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET ${replacedColumns.map(column => `${column} = excluded.${column}`).join(', ')}, ${memberships.assignments.join(', ')}
+    WHERE inspirations.user_id = excluded.user_id`)
       .bind(
         id, currentUser.id, currentUser.username, String(body.title || '未命名灵感').slice(0, 160), imageUrl, imageKey, imageType,
         String(body.prompt || ''), String(body.negativePrompt || ''), body.params ? JSON.stringify(body.params) : null,
-        body.boardId || null, String(body.notes || ''), JSON.stringify(Array.isArray(body.tags) ? body.tags.slice(0, 80) : []),
+        collection.boardId || null, String(body.notes || ''), JSON.stringify(Array.isArray(body.tags) ? body.tags.slice(0, 80) : []),
         body.sourceType || 'other', body.sourceId || null,
         // 外链只接受 https，防止 javascript: 等任意 scheme 入库后渲染为 <a href>
         typeof body.sourceUrl === 'string' && /^https:\/\//i.test(body.sourceUrl) ? body.sourceUrl : null,
         Math.max(0, Math.min(5, Math.floor(Number(body.rating) || 0))), body.isPinned ? 1 : 0, body.archived ? 1 : 0,
-        body.lastUsedAt || null, Number.isFinite(Number(body.useCount)) ? Number(body.useCount) : 0, body.parentId || null, JSON.stringify(body.analysis || {}), now,
+        body.lastUsedAt || null, Number.isFinite(Number(body.useCount)) ? Number(body.useCount) : 0, body.parentId || null, JSON.stringify(collection.analysis), now,
         Number.isFinite(Number(body.updatedAt)) ? Number(body.updatedAt) : now,
+        ...memberships.values,
       ).run();
+    if (Number(saved.meta?.changes) === 0) return error('Permission Denied', 403);
     const row = await db.prepare('SELECT * FROM inspirations WHERE id = ?').bind(id).first<any>();
     return json({ success: true, id, item: mapInspirationRow(row) });
   }
@@ -1266,6 +1338,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).slice(0, 500).map((id: any) => String(id)).filter(Boolean))) as string[];
     // 同一组字段更新 N 条：一次构建 SET 子句，db.batch 单往返执行，替代 N 次串行 UPDATE
     const updates = body.updates || {};
+    const invalidBoards = await validateCollectionBoardUpdates(db, currentUser.id, updates);
+    if (invalidBoards) return error(invalidBoards, 400);
     const built = buildInspirationSetStatements(updates);
     if (!built || !ids.length) return json({ success: true, updatedCount: 0 });
     const results = await db.batch(ids.map(id =>
@@ -1322,6 +1396,8 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       if (typeof updates.negativePrompt === 'string') { statements.push('negative_prompt = ?'); values.push(updates.negativePrompt); }
       if (statements.length) await db.prepare(`UPDATE inspirations SET ${statements.join(', ')}, updated_at = ? WHERE id = ? AND user_id = ?`).bind(...values, Date.now(), id, ownerId).run();
     } else {
+      const invalidBoards = await validateCollectionBoardUpdates(db, currentUser.id, updates);
+      if (invalidBoards) return error(invalidBoards, 400);
       await updateInspirationFields(id, updates);
     }
     return json({ success: true });

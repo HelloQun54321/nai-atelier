@@ -842,8 +842,8 @@ const App = () => {
       if (type === 'style' && folderId) {
         try {
           const folders = readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }));
-          await saveChainFolders({ ...folders, assignments: { ...folders.assignments, [newId]: folderId } });
-        } catch { notify('风格串已创建，但移入文件夹失败；请在列表中重新移动', 'error'); }
+          await saveChainFolders({ ...folders, assignments: { ...folders.assignments, [newId]: [folderId] } });
+        } catch { notify('风格串已创建，但设置文件夹失败；请在列表中重新设置', 'error'); }
       }
       await refreshData(true);
       handleNavigate('edit', newId);

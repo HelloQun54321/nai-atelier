@@ -353,6 +353,7 @@ export interface Inspiration {
   negativePrompt?: string;
   params?: Partial<NAIParams>; // 仅保存已记录的生成参数（含 characters），兼容缺少字段的来源与旧数据
   boardId?: string;
+  boardIds?: string[];
   notes?: string;
   tags?: string[];
   sourceType?: InspirationSourceType;
@@ -368,6 +369,8 @@ export interface Inspiration {
   createdAt: number;
   updatedAt?: number;
 }
+
+export type InspirationUpdates = Partial<Inspiration> & { addBoardIds?: string[]; removeBoardIds?: string[] };
 
 // Local Generation History Item
 export interface LocalGenItem {

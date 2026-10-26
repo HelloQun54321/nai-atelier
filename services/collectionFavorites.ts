@@ -1,11 +1,11 @@
-import type { Inspiration, InspirationSourceType, LocalGenItem, PromptChain, User } from '../types';
+import type { Inspiration, InspirationSourceType, InspirationUpdates, LocalGenItem, PromptChain, User } from '../types';
 import { api, ApiError } from './api';
 import { localHistory } from './localHistory';
 import { aitagService, buildAitagImageUrl, extractAitagPrompt, getAitagMetadataText, type AitagWorkDetail } from './aitagService';
 import { parseNovelAIMetadata } from './metadataService';
 import { importPixivImageAsFile } from './pixivService';
 import { importDanbooruCoverAsDataUrl } from './danbooruCoverImport';
-import { getCollectionTags } from './inspirationUtils';
+import { applyCollectionBoardUpdates, getCollectionTags } from './inspirationUtils';
 import { externalImageDrafts } from './externalImageTags';
 import { createUuid } from './id';
 import { readCodexImageFile, readCodexImageMetadata } from './codexService';
@@ -250,7 +250,7 @@ async function persistFavorites(ids: string[]): Promise<void> {
   }
 }
 
-export async function updateCollection(ids: string[], updates: Partial<Inspiration>): Promise<void> {
+export async function updateCollection(ids: string[], updates: InspirationUpdates): Promise<void> {
   if (!ids.length) return;
   await persistFavorites(ids);
   // 批量入口最多接收 500 项；每批成功后同步快照，失败不误报剩余项已保存。
@@ -259,7 +259,7 @@ export async function updateCollection(ids: string[], updates: Partial<Inspirati
     if (chunk.length === 1) await api.put(`/inspirations/${encodeURIComponent(chunk[0])}`, updates);
     else await api.post('/inspirations/bulk-update', { ids: chunk, updates });
     const updatedIds = new Set(chunk);
-    items = items.map(item => updatedIds.has(item.id) ? { ...item, ...updates } : item);
+    items = items.map(item => updatedIds.has(item.id) ? applyCollectionBoardUpdates(item, updates) : item);
     changed();
   }
 }

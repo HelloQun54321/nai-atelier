@@ -2,7 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Folder, FolderInput, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { t } from '../../services/i18n';
 import { createUuid } from '../../services/id';
-import { folderContains, folderTree, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
+import { folderContains, folderTree, getChainFolderIds, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
 import type { useChainFolders } from '../../services/useChainFolders';
 import { ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -42,7 +42,7 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   const [parentId, setParentId] = useState('');
   const [dragOver, setDragOver] = useState<string | null>(null);
   const confirm = useConfirmDialog();
-  const { folders, assignments } = store.state;
+  const { folders } = store.state;
   const tree = folderTree(folders);
   const busy = disabled || store.busy;
   const blocked = busy || !store.ready || Boolean(store.error);
@@ -52,12 +52,17 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
     const result = new Map<string, number>([['*', chainIds.length], ['', 0]]);
     const parents = new Map(folders.map(folder => [folder.id, folder.parentId]));
     for (const chainId of chainIds) {
-      let cursor = assignments[chainId];
-      if (!cursor) result.set('', (result.get('') || 0) + 1);
-      while (cursor) { result.set(cursor, (result.get(cursor) || 0) + 1); cursor = parents.get(cursor) || ''; }
+      const memberships = getChainFolderIds(store.state, chainId);
+      if (!memberships.length) result.set('', (result.get('') || 0) + 1);
+      const included = new Set<string>();
+      for (const folder of memberships) {
+        let cursor = folder;
+        while (cursor) { included.add(cursor); cursor = parents.get(cursor) || ''; }
+      }
+      for (const folder of included) result.set(folder, (result.get(folder) || 0) + 1);
     }
     return result;
-  }, [chainIds, assignments, folders]);
+  }, [chainIds, store.state, folders]);
   const count = (id: string) => counts.get(id) || 0;
   const open = (folder: ChainFolder | 'new') => {
     setEditing(folder); setName(folder === 'new' ? '' : folder.name);
@@ -77,13 +82,13 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   };
   const remove = async () => {
     if (!current || blocked) return;
-    if (!await confirm({ title: t('删除文件夹「{0}」？', [current.name]), message: t('其中的风格串移回未整理，子文件夹移到上一级，同名时加编号。所有配方与图片保留。'), confirmLabel: t('删除文件夹'), tone: 'danger' })) return;
+    if (!await confirm({ title: t('删除文件夹「{0}」？', [current.name]), message: t('仅移除本文件夹的归属，其他归属保留；无归属的风格串回到未整理。子文件夹移到上一级，同名时加编号。配方与图片保留。'), confirmLabel: t('删除文件夹'), tone: 'danger' })) return;
     try { await store.save(removeChainFolder(store.state, current.id)); onSelect(''); notify('文件夹已删除，风格串已保留', 'success'); }
     catch (cause) { notify(cause instanceof Error ? cause.message : '删除文件夹失败', 'error'); }
   };
   const drop = (event: React.DragEvent, id: string) => {
     event.preventDefault(); setDragOver(null);
-    if (blocked || id === '*') return;
+    if (blocked || !id || id === '*') return;
     try {
       const ids: unknown = JSON.parse(event.dataTransfer.getData(CHAIN_FOLDER_DRAG_TYPE));
       if (Array.isArray(ids)) void onMove(ids.filter((item): item is string => typeof item === 'string' && chainIds.includes(item)), id);
@@ -98,7 +103,7 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
     {store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}
     <select aria-label={t('选择文件夹')} value={selected} disabled={busy} onChange={event => onSelect(event.target.value)} className={`${field} md:hidden`}>{choices.map(item => <option key={item.id} value={item.id}>{'　'.repeat(item.depth)}{item.name} ({count(item.id)})</option>)}</select>
     <nav className="hidden space-y-1 md:block">{choices.map(item => <button key={item.id} type="button" aria-current={selected === item.id ? 'page' : undefined} disabled={busy} onClick={() => onSelect(item.id)}
-      onDragOver={event => { if (!blocked && item.id !== '*' && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDragOver(item.id); } }} onDragLeave={() => setDragOver(null)} onDrop={event => drop(event, item.id)}
+      onDragOver={event => { if (!blocked && item.id && item.id !== '*' && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(item.id); } }} onDragLeave={() => setDragOver(null)} onDrop={event => drop(event, item.id)}
       className={`mobile-touch flex w-full min-w-0 items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm disabled:opacity-50 ${dragOver === item.id ? 'ring-2 ring-indigo-500' : ''} ${selected === item.id ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`} style={{ paddingLeft: 8 + item.depth * 14 }}>
       <Folder className="h-4 w-4 flex-none" /><span className="min-w-0 flex-1 truncate" title={item.name}>{item.name}</span><span className="text-xs opacity-60">{count(item.id)}</span>
     </button>)}</nav>
@@ -110,11 +115,17 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   </aside>;
 }
 
-export function ChainFolderMoveDialog({ store, ids, onMove, onClose }: { store: Store; ids: string[]; onMove: (ids: string[], folderId: string) => Promise<void>; onClose: () => void }) {
-  const [target, setTarget] = useState('');
-  return <ImagePreviewPortal><FolderDialog title="移动到文件夹" busy={store.busy} onClose={onClose}>
+export function ChainFolderMembershipDialog({ store, ids, onSave, onClose }: { store: Store; ids: string[]; onSave: (ids: string[], changes: Record<string, boolean>) => Promise<void>; onClose: () => void }) {
+  const [changes, setChanges] = useState<Record<string, boolean>>({});
+  return <ImagePreviewPortal><FolderDialog title="设置文件夹" busy={store.busy} onClose={onClose}>
     <p className="mb-3 text-sm text-gray-500">{t('已选 {0} 条风格串', [ids.length])}</p>
-    <select aria-label={t('目标文件夹')} value={target} disabled={store.busy} onChange={event => setTarget(event.target.value)} className={field}><option value="">{t('未整理')}</option>{folderTree(store.state.folders).map(folder => <option key={folder.id} value={folder.id}>{'　'.repeat(folder.depth)}{folder.name}</option>)}</select>
-    <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={store.busy} onClick={onClose}>{t('取消')}</ToolbarButton><ToolbarButton disabled={store.busy || !store.ready || Boolean(store.error)} tone="primary" onClick={() => void onMove(ids, target)}><FolderInput />{t('移动')}</ToolbarButton></div>
+    <div className="space-y-1">{folderTree(store.state.folders).map(folder => {
+      const count = ids.filter(id => getChainFolderIds(store.state, id).includes(folder.id)).length;
+      const touched = Object.hasOwn(changes, folder.id);
+      const checked = touched ? changes[folder.id] : count === ids.length;
+      const mixed = !touched && count > 0 && count < ids.length;
+      return <label key={folder.id} className="mobile-touch flex items-center gap-2 rounded-lg py-2 pr-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={checked} aria-checked={mixed ? 'mixed' : checked} ref={element => { if (element) element.indeterminate = mixed; }} disabled={store.busy} onChange={event => setChanges(previous => ({ ...previous, [folder.id]: event.target.checked }))} /><Folder className="h-4 w-4" /><span>{folder.name}</span></label>;
+    })}</div>
+    <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={store.busy} onClick={onClose}>{t('取消')}</ToolbarButton><ToolbarButton disabled={store.busy || !store.ready || Boolean(store.error) || !Object.keys(changes).length} tone="primary" onClick={() => void onSave(ids, changes)}><FolderInput />{t('保存')}</ToolbarButton></div>
   </FolderDialog></ImagePreviewPortal>;
 }

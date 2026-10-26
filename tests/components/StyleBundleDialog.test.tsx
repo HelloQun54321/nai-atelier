@@ -6,7 +6,8 @@ import type { PromptChain } from '../../types';
 import { StyleBundleDialog } from '../../components/chain/StyleBundleDialog';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn(), getAllChains: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), export: vi.fn(), import: vi.fn(), download: vi.fn(), target: vi.fn(), openDirectory: vi.fn(), getAllChains: vi.fn(), get: vi.fn(), put: vi.fn() }));
+vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put } }));
 vi.mock('../../services/dbService', () => ({ db: { getAllChains: mocks.getAllChains } }));
 vi.mock('../../services/styleBundle', () => ({ readStyleBundle: mocks.read, exportStyleBundle: mocks.export, importStyleBundle: mocks.import }));
 vi.mock('../../services/exportLocation', () => ({ beginExportTarget: mocks.target, openExportDirectory: mocks.openDirectory }));
@@ -19,6 +20,7 @@ const preview = { entries: [
   { id: 'a', name: '水彩', description: '纸张', cover: true, sources: [{ author: '作者甲', sourceUrl: 'https://example.org/free', note: '免费分享' }] },
   { id: 'b', name: '素描', description: '铅笔', cover: false, sources: [] },
 ], coverage: 'full' as const, warnings: [] };
+let folderState = { revision: 0, folders: [] as Array<{ id: string; name: string; parentId: string | null }>, assignments: {} as Record<string, string[]> };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -28,8 +30,143 @@ beforeEach(() => {
   mocks.target.mockReturnValue(undefined);
   mocks.openDirectory.mockResolvedValue(undefined);
   mocks.getAllChains.mockResolvedValue(chains);
+  folderState = { revision: 0, folders: [], assignments: {} };
+  mocks.get.mockImplementation(async () => structuredClone(folderState));
+  mocks.put.mockImplementation(async (_path, next) => {
+    folderState = { ...structuredClone(next), revision: next.revision + 1 };
+    return structuredClone(folderState);
+  });
 });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); });
+
+it('以文件名预填新夹并允许改名，分批导入和失败重试复用同一夹，完成后可查看', async () => {
+  const onViewFolder = vi.fn();
+  mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [{ id: 'b', name: '素描', error: '合成保存失败' }] })
+    .mockResolvedValueOnce({ createdIds: ['new-b'], importedEntryIds: ['b'], failed: [] });
+  render(<StyleBundleDialog {...props()} onViewFolder={onViewFolder} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '朋友的配方.naia')] } });
+  const name = await screen.findByLabelText('文件夹名称');
+  expect((name as HTMLInputElement).value).toBe('朋友的配方');
+  fireEvent.change(name, { target: { value: '朋友A分享' } });
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await screen.findByText('合成保存失败');
+  expect(folderState.folders.map(folder => folder.name)).toEqual(['朋友A分享']);
+  const id = folderState.folders[0].id;
+  expect(folderState.assignments).toEqual({ 'new-a': [id] });
+  expect((name as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await waitFor(() => expect(folderState.assignments['new-b']).toEqual([id]));
+  expect(folderState.folders).toHaveLength(1);
+  expect(mocks.import.mock.calls[1][1]).toEqual(['b']);
+  await waitFor(() => expect((screen.getByRole('button', { name: '查看文件夹' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '查看文件夹' }));
+  expect(onViewFolder).toHaveBeenCalledWith(id);
+});
+
+it('已有文件夹可多选，归类先读取最新归属并追加，保留其他串与其他夹', async () => {
+  folderState = { revision: 0, folders: [{ id: 'f1', name: '分享区', parentId: null }, { id: 'f2', name: '收藏区', parentId: null }, { id: 'f3', name: '原有区', parentId: null }], assignments: { mine: ['f3'] } };
+  mocks.import.mockImplementationOnce(async () => {
+    folderState = { ...folderState, revision: 1, assignments: { ...folderState.assignments, 'new-a': ['f3'] } };
+    return { createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] };
+  });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  await screen.findByLabelText('文件夹名称');
+  fireEvent.change(screen.getByLabelText('导入到'), { target: { value: 'existing' } });
+  expect((screen.getByRole('button', { name: '导入全部' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('checkbox', { name: '分享区' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '收藏区' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await waitFor(() => expect(folderState.assignments['new-a']).toEqual(['f3', 'f1', 'f2']));
+  expect(folderState.assignments.mine).toEqual(['f3']);
+  expect(folderState.folders).toHaveLength(3);
+  expect(mocks.put).toHaveBeenCalledTimes(1);
+});
+
+it('归类失败明确保留已保存状态，只重试归类而不重建串或文件夹', async () => {
+  mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
+  mocks.put.mockImplementationOnce(async (_path, next) => {
+    folderState = { ...structuredClone(next), revision: next.revision + 1 }; return structuredClone(folderState);
+  }).mockRejectedValueOnce(new Error('合成目录冲突'));
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  await screen.findByLabelText('文件夹名称');
+  fireEvent.change(screen.getByLabelText('搜索分享包'), { target: { value: '水彩' } });
+  fireEvent.click(screen.getByRole('button', { name: '导入筛选结果' }));
+  expect(await screen.findByText('风格串已保存，归类失败：合成目录冲突')).toBeTruthy();
+  expect((screen.getByRole('checkbox', { name: '水彩' }) as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重试归类（1）' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '重试归类（1）' })).toBeNull());
+  expect(mocks.import).toHaveBeenCalledTimes(1);
+  expect(folderState.folders).toHaveLength(1);
+  expect(folderState.assignments['new-a']).toEqual([folderState.folders[0].id]);
+});
+
+it('新夹保存回执丢失后重读复用原ID，首次归类前不创建风格串', async () => {
+  mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] });
+  mocks.put.mockImplementationOnce(async (_path, next) => {
+    folderState = { ...structuredClone(next), revision: next.revision + 1 }; throw Error('合成回执丢失');
+  });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  await screen.findByLabelText('文件夹名称');
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await screen.findByText('合成回执丢失');
+  expect(mocks.import).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await waitFor(() => expect(folderState.assignments['new-a']).toEqual([folderState.folders[0].id]));
+  expect(folderState.folders).toHaveLength(1);
+});
+
+it('配方保存后目标夹被删除可改选其他夹，只重试归类且不重建配方', async () => {
+  folderState = { revision: 0, folders: [{ id: 'a', name: '旧目标', parentId: null }, { id: 'b', name: '新目标', parentId: null }], assignments: {} };
+  mocks.import.mockImplementationOnce(async () => {
+    folderState = { ...folderState, revision: 1, folders: folderState.folders.filter(folder => folder.id !== 'a') };
+    return { createdIds: ['saved'], importedEntryIds: ['a'], failed: [] };
+  });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  await screen.findByLabelText('文件夹名称');
+  fireEvent.change(screen.getByLabelText('导入到'), { target: { value: 'existing' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '旧目标' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await screen.findByText('风格串已保存，归类失败：目标文件夹已不存在，请重新选择');
+  expect((screen.getByLabelText('导入到') as HTMLSelectElement).disabled).toBe(false);
+  await waitFor(() => expect(screen.queryByRole('checkbox', { name: '旧目标' })).toBeNull());
+  fireEvent.click(screen.getByRole('checkbox', { name: '新目标' }));
+  fireEvent.click(screen.getByRole('button', { name: '重试归类（1）' }));
+  await waitFor(() => expect(folderState.assignments.saved).toEqual(['b']));
+  expect(mocks.import).toHaveBeenCalledTimes(1);
+  expect(mocks.put).toHaveBeenCalledTimes(1);
+});
+
+it('导入失败后的锁定目标消失可恢复选择，未保存项随后正常导入', async () => {
+  folderState = { revision: 0, folders: [{ id: 'a', name: '旧目标', parentId: null }, { id: 'b', name: '新目标', parentId: null }], assignments: {} };
+  mocks.import.mockResolvedValueOnce({ createdIds: [], importedEntryIds: [], failed: [{ id: 'a', name: '水彩', error: '合成保存失败' }] })
+    .mockResolvedValueOnce({ createdIds: ['saved'], importedEntryIds: ['a'], failed: [] });
+  render(<StyleBundleDialog {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: '导入' }));
+  fireEvent.change(screen.getByLabelText('选择 .naia 文件'), { target: { files: [new File(['synthetic'], '分享.naia')] } });
+  await screen.findByLabelText('文件夹名称');
+  fireEvent.change(screen.getByLabelText('导入到'), { target: { value: 'existing' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '旧目标' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await screen.findByText('合成保存失败');
+  folderState = { ...folderState, revision: 1, folders: folderState.folders.filter(folder => folder.id !== 'a') };
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await screen.findByText('目标文件夹已不存在，请重新选择');
+  expect(mocks.import).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.queryByRole('checkbox', { name: '旧目标' })).toBeNull());
+  fireEvent.click(screen.getByRole('checkbox', { name: '新目标' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入全部' }));
+  await waitFor(() => expect(folderState.assignments.saved).toEqual(['b']));
+  expect(mocks.import).toHaveBeenCalledTimes(2);
+});
 
 it('导出前读取最新库识别另端新增，保持原选中集合且先请求目录权限', async () => {
   const selected = chains.slice(0, 1), latest = chains.slice(0, 2);

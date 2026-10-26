@@ -1,4 +1,4 @@
-import { Inspiration, InspirationSourceType } from '../types';
+import { Inspiration, InspirationSourceType, InspirationUpdates } from '../types';
 import type { MediaPreviewTransform } from './mobileImageCache';
 
 /** 收藏已保存原件后仍按来源快照识别图包预览，不依赖图包继续安装。 */
@@ -20,6 +20,24 @@ export const getCollectionPreviewTransform = (item: Pick<Inspiration, 'sourceTyp
   if (url.hash || [...params.keys()].some(key => !keys.includes(key)) || keys.some(key => params.getAll(key).length !== 1)) return undefined;
   return isPackSample({ pack: params.get('pack'), tag: params.get('tag'), revision: params.get('revision'), index: /^\d+$/.test(params.get('index') || '') ? Number(params.get('index')) : undefined })
     ? 'artist-sample-padding-v2' : undefined;
+};
+
+// 显式空数组表示未整理；旧记录仅在没有多归属字段时回退原收藏夹。
+export const getCollectionBoardIds = (item: Pick<Inspiration, 'boardId' | 'boardIds' | 'analysis'>): string[] => {
+  const ids = Array.isArray(item.boardIds) ? item.boardIds : Array.isArray(item.analysis?.collectionBoardIds)
+    ? item.analysis.collectionBoardIds : item.boardId ? [item.boardId] : [];
+  return [...new Set(ids.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())))];
+};
+
+export const applyCollectionBoardUpdates = (item: Inspiration, updates: InspirationUpdates): Inspiration => {
+  const { addBoardIds, removeBoardIds, ...fields } = updates;
+  const existing = getCollectionBoardIds(item);
+  const replacement = fields.boardIds ?? (fields.boardId !== undefined && fields.boardId !== item.boardId
+    ? fields.boardId ? [fields.boardId] : [] : existing);
+  const boardIds = getCollectionBoardIds({ boardIds: [...replacement, ...(addBoardIds || [])] })
+    .filter(id => !removeBoardIds?.includes(id));
+  return { ...item, ...fields, boardId: boardIds[0], boardIds,
+    analysis: { ...(fields.analysis !== undefined ? fields.analysis : item.analysis), collectionBoardIds: boardIds } };
 };
 
 const KEYWORDS = [

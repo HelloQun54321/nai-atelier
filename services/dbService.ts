@@ -1,5 +1,5 @@
 
-import { PromptChain, Inspiration, InspirationBoard, User, ChainType } from '../types';
+import { PromptChain, Inspiration, InspirationBoard, InspirationUpdates, User, ChainType } from '../types';
 import { api } from './api';
 import { normalizeChainTags } from './chainTags';
 import { normalizeCollectionTagNames } from './inspirationUtils';
@@ -147,7 +147,7 @@ class DBService {
     await api.post('/inspirations', inspiration);
   }
 
-  async updateInspiration(id: string, updates: Partial<Inspiration>): Promise<void> {
+  async updateInspiration(id: string, updates: InspirationUpdates): Promise<void> {
     await updateCollection([id], updates);
   }
 
@@ -159,7 +159,7 @@ class DBService {
     await removeCollection(ids);
   }
 
-  async bulkUpdateInspirations(ids: string[], updates: Partial<Inspiration>): Promise<void> {
+  async bulkUpdateInspirations(ids: string[], updates: InspirationUpdates): Promise<void> {
     await updateCollection(ids, updates);
   }
 

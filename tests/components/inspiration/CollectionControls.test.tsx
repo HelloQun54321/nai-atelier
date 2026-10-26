@@ -2,15 +2,55 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { CollectionFolderSelect, CollectionTagInput } from '../../../components/inspiration/CollectionControls';
-import { db } from '../../../services/dbService';
+import { CollectionFolderPicker, CollectionTagInput } from '../../../components/inspiration/CollectionControls';
 import { ToolbarPopover } from '../../../components/ToolbarPopover';
 import { getRecentCollectionFolders, rememberCollectionFolder } from '../../../services/inspirationUtils';
+import { ImageActivityContext } from '../../../components/SmartImage';
 
 const folders = ['one', 'two', 'three'].map(id => ({ id, name: id, userId: 'test', sortOrder: 0, createdAt: 1, updatedAt: 1 }));
-vi.mock('../../../services/dbService', () => ({ db: { getInspirationBoards: vi.fn() } }));
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); vi.mocked(db.getInspirationBoards).mockResolvedValue(folders); });
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('多夹选择器默认未整理，最近收藏夹优先，不重复或展示已失效的目录', () => {
+  vi.stubGlobal('innerWidth', 1280);
+  rememberCollectionFolder('missing'); rememberCollectionFolder('two');
+  render(<CollectionFolderPicker boards={folders} value={[]} onToggle={vi.fn()} />);
+  const trigger = screen.getByRole('button', { name: '管理收藏夹' });
+  expect(trigger.textContent).toContain('未整理'); fireEvent.click(trigger);
+  expect(screen.getAllByRole('checkbox').map(input => input.closest('label')!.textContent)).toEqual(['two', 'one', 'three']);
+  expect(getRecentCollectionFolders()).toEqual(['two', 'missing']);
+});
+
+it('隐藏页面挂载及打开收藏夹控件不抢占返回历史，也不自行加载目录', () => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const push = vi.spyOn(window.history, 'pushState');
+  render(<ImageActivityContext.Provider value={false}><CollectionFolderPicker boards={folders} value={['one']} onToggle={vi.fn()} /></ImageActivityContext.Provider>);
+  expect(push).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '管理收藏夹' }));
+  expect(screen.getByRole('checkbox', { name: 'one' })).toBeTruthy(); expect(push).not.toHaveBeenCalled();
+  push.mockRestore();
+});
+
+it.each([390, 1280])('宽度 %s：收藏夹复选支持多选和部分选中，仅回报触及的归属，完成归还焦点', width => {
+  vi.stubGlobal('innerWidth', width);
+  const onToggle = vi.fn();
+  const props = { boards: folders, value: ['one'], mixedIds: ['two'], onToggle };
+  const view = render(<CollectionFolderPicker {...props} />);
+  const trigger = screen.getByRole('button', { name: '管理收藏夹' });
+  trigger.focus(); fireEvent.click(trigger);
+  const panel = screen.getByRole('dialog', { name: '管理收藏夹' });
+  expect((within(panel).getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(true);
+  const partial = within(panel).getByRole('checkbox', { name: /two/ }) as HTMLInputElement;
+  expect(partial.indeterminate).toBe(true); expect(partial.getAttribute('aria-checked')).toBe('mixed');
+  fireEvent.click(partial); expect(onToggle).toHaveBeenLastCalledWith('two', true);
+  view.rerender(<CollectionFolderPicker {...props} value={['one', 'two']} mixedIds={[]} />);
+  expect((within(panel).getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(panel).getByRole('checkbox', { name: 'two' })); expect(onToggle).toHaveBeenLastCalledWith('two', false);
+  expect(within(panel).queryByRole('checkbox', { name: '未整理' })).toBeNull();
+  fireEvent.click(within(panel).getByRole('button', { name: '完成' }));
+  expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
+});
 
 it.each([390, 1280])('宽度 %s：嵌套表单的标签候选就地展开，不新建弹窗或返回层', width => {
   vi.stubGlobal('innerWidth', width);
@@ -42,32 +82,6 @@ it('标签候选包含冷门标签，选择保留逗号前的标签，不重复�
   view.rerender(<CollectionTagInput aria-label="标签" value="" suggestions={suggestions} onPick={onPick} onChange={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
   expect(within(screen.getByRole('dialog', { name: '选择已有标签' })).getAllByRole('button')).toHaveLength(100);
-});
-
-it('默认未整理，最近使用的真实收藏夹优先，过期 ID 不出现，不重复选项', async () => {
-  rememberCollectionFolder('missing'); rememberCollectionFolder('two');
-  const onChange = vi.fn();
-  render(<CollectionFolderSelect value="" onChange={onChange} notify={vi.fn()} />);
-  const select = screen.getByRole('combobox', { name: '收藏夹' }) as HTMLSelectElement;
-  await waitFor(() => expect(select.disabled).toBe(false));
-  expect(select.value).toBe('');
-  expect(select.querySelector('optgroup[label="最近使用"] option')?.getAttribute('value')).toBe('two');
-  expect(Array.from(select.options).map(option => option.value)).toEqual(['', 'two', 'one', 'three']);
-  fireEvent.change(select, { target: { value: 'three' } }); expect(onChange).toHaveBeenCalledWith('three');
-  expect(getRecentCollectionFolders()).toEqual(['two', 'missing']);
-});
-
-it('已有列表不重复请求；读取失败保留当前归属，聚焦可重试', async () => {
-  const view = render(<CollectionFolderSelect value="one" boards={folders} onChange={vi.fn()} notify={vi.fn()} />);
-  expect(db.getInspirationBoards).not.toHaveBeenCalled();
-  view.unmount(); vi.mocked(db.getInspirationBoards).mockRejectedValueOnce(new Error('offline'));
-  const notify = vi.fn(); render(<CollectionFolderSelect value="one" onChange={vi.fn()} notify={notify} />);
-  await waitFor(() => expect(notify).toHaveBeenCalledWith('收藏夹加载失败', 'error'));
-  const select = screen.getByRole('combobox', { name: '收藏夹' }) as HTMLSelectElement;
-  expect(select.value).toBe('one'); expect(db.getInspirationBoards).toHaveBeenCalledOnce();
-  fireEvent.focus(select);
-  await waitFor(() => expect(select.querySelector('option[value="three"]')).toBeTruthy());
-  expect(db.getInspirationBoards).toHaveBeenCalledTimes(2); expect(select.value).toBe('one');
 });
 
 it('最近使用去重且有界，损坏的偏好不会影响收藏', () => {

@@ -7,7 +7,7 @@ import type { ChainFolderState } from '../../services/chainFolders';
 const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
 vi.mock('../../services/api', () => ({ api: { get, put } }));
 const initial: ChainFolderState = { revision: 1, folders: [{ id: 'folder', name: '合成目录', parentId: null }], assignments: {} };
-const saved: ChainFolderState = { ...initial, revision: 2, assignments: { created: 'folder' } };
+const saved: ChainFolderState = { ...initial, revision: 2, assignments: { created: ['folder'] } };
 beforeEach(() => {
   get.mockReset().mockResolvedValue(initial);
   put.mockReset().mockResolvedValue(saved);

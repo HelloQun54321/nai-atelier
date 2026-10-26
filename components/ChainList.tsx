@@ -36,8 +36,8 @@ import { useConfirmDialog } from './ConfirmDialog';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { useChainFolders } from '../services/useChainFolders';
-import { folderContains } from '../services/chainFolders';
-import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMoveDialog, ChainFolderNavigation } from './chain/ChainFolders';
+import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
+import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
 import { Folder, FolderInput } from 'lucide-react';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
@@ -99,14 +99,12 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   useEffect(() => {
     if (folderStore.ready && selectedFolder && selectedFolder !== '*' && !folderStore.state.folders.some(folder => folder.id === selectedFolder)) selectFolder('*');
   }, [folderStore.ready, folderStore.state.folders, selectedFolder]);
-  const moveToFolder = async (ids: string[], folderId: string) => {
+  const setFolderMemberships = async (ids: string[], changes: Record<string, boolean>) => {
     if (!ids.length) return;
-    const assignments = { ...folderStore.state.assignments };
-    for (const id of ids) { if (folderId) assignments[id] = folderId; else delete assignments[id]; }
     try {
-      await folderStore.save({ ...folderStore.state, assignments }); setMoveIds(null);
-      notify(t('已移动 {0} 条风格串', [ids.length]), 'success');
-    } catch (cause) { notify(cause instanceof Error ? cause.message : '移动失败，请重试', 'error'); }
+      await folderStore.save(updateChainFolderMemberships(folderStore.state, ids, changes)); setMoveIds(null);
+      notify(t('已更新 {0} 条风格串的文件夹', [ids.length]), 'success');
+    } catch (cause) { notify(cause instanceof Error ? cause.message : '设置文件夹失败，请重试', 'error'); }
   };
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
@@ -257,7 +255,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       .filter(c => !favOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
-      .filter(c => type !== 'style' || isGuest || activeFolder === '*' || (activeFolder === '' ? !folderStore.state.assignments[c.id] : matchingFolderIds.has(folderStore.state.assignments[c.id])))
+      .filter(c => type !== 'style' || isGuest || activeFolder === '*' || (activeFolder === '' ? !getChainFolderIds(folderStore.state, c.id).length : getChainFolderIds(folderStore.state, c.id).some(folder => matchingFolderIds.has(folder))))
       .filter(c => {
         if (selectedTags.size === 0) return true;
         const tags = new Set(getCustomChainTags(c.tags));
@@ -375,7 +373,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       aria-disabled={selecting ? bulkDeleteBusy : syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
       tabIndex={0}
       draggable={type === 'style' && !isGuest && !syncSelection.open && folderStore.ready && !folderStore.busy && !bulkDeleteBusy}
-      onDragStart={event => { event.dataTransfer.setData(CHAIN_FOLDER_DRAG_TYPE, JSON.stringify(selecting && selectedIds.has(chain.id) ? selectedChains.map(item => item.id) : [chain.id])); event.dataTransfer.effectAllowed = 'move'; }}
+      onDragStart={event => { event.dataTransfer.setData(CHAIN_FOLDER_DRAG_TYPE, JSON.stringify(selecting && selectedIds.has(chain.id) ? selectedChains.map(item => item.id) : [chain.id])); event.dataTransfer.effectAllowed = 'link'; }}
       onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (selecting) toggleSelected(chain.id); else if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => selecting ? toggleSelected(chain.id) : syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
       className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selecting && selectedIds.has(chain.id) || syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
@@ -396,7 +394,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
-            {!isGuest && type === 'style' && <button type="button" disabled={!folderStore.ready || folderStore.busy || Boolean(folderStore.error)} onClick={event => { event.stopPropagation(); setMoveIds([chain.id]); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:opacity-40`} title={t('移动到文件夹')} aria-label={t('移动到文件夹：{0}', [chain.name])}><FolderInput className="h-4 w-4" /></button>}
+            {!isGuest && type === 'style' && <button type="button" disabled={!folderStore.ready || folderStore.busy || Boolean(folderStore.error)} onClick={event => { event.stopPropagation(); setMoveIds([chain.id]); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:opacity-40`} title={t('设置文件夹')} aria-label={t('设置文件夹：{0}', [chain.name])}><FolderInput className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
@@ -497,7 +495,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <ToolbarButton disabled={bulkDeleteBusy} onClick={() => setSelectedIds(previous => new Set(filteredChains.filter(chain => !previous.has(chain.id)).map(chain => chain.id)))} className="mobile-touch !px-2.5">{t('反选筛选结果')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setSelectedIds(new Set())} className="mobile-touch !px-2.5">{t('清空选择')}</ToolbarButton>
               <ToolbarButton disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => setBundleScope('selected')} className="mobile-touch !px-2.5"><FileOutput /><span>{t('导出已选')}</span></ToolbarButton>
-              <ToolbarButton disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput />{t('移动到文件夹')}</ToolbarButton>
+              <ToolbarButton disabled={bulkDeleteBusy || folderStore.busy || !folderStore.ready || Boolean(folderStore.error) || !selectedChains.length} onClick={() => setMoveIds(selectedChains.map(chain => chain.id))} className="mobile-touch !px-2.5"><FolderInput />{t('设置文件夹')}</ToolbarButton>
               <ToolbarButton tone="danger" disabled={bulkDeleteBusy || !selectedChains.length} onClick={() => void deleteSelected()} className="mobile-touch ml-auto !px-2.5"><Trash2 /><span>{t('删除')}</span></ToolbarButton>
             </div>
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
@@ -545,7 +543,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         </WorkspaceChrome>
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} onMove={moveToFolder} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
+        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
             <div className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
@@ -577,7 +575,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       {/* Simple Create Modal */}
-      {bundleScope && type === 'style' && !isGuest && <React.Suspense fallback={null}><StyleBundleDialog chains={typeChains} filteredChains={filteredChains} selectedChains={selectedChains} initialScope={bundleScope} onClose={() => setBundleScope(null)} onImported={onBundleImported || onRefresh} notify={notify} /></React.Suspense>}
+      {bundleScope && type === 'style' && !isGuest && <React.Suspense fallback={null}><StyleBundleDialog chains={typeChains} filteredChains={filteredChains} selectedChains={selectedChains} initialScope={bundleScope} onViewFolder={id => { selectFolder(id); setBundleScope(null); }} onClose={() => setBundleScope(null)} onImported={onBundleImported || onRefresh} notify={notify} /></React.Suspense>}
       {similarityOpen && <React.Suspense fallback={null}><ChainSimilarityDialog chains={typeChains} filteredChains={filteredChains} onClose={() => setSimilarityOpen(false)} onOpenChain={onSelect} onDelete={handleDelete} sessionRef={similaritySession} /></React.Suspense>}
       {isModalOpen && (
         <ImagePreviewPortal><div role="dialog" aria-modal="true" aria-label={t(createLabel)} className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -614,7 +612,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </ImagePreviewPortal>)}
 
       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
-      {moveIds && type === 'style' && <ChainFolderMoveDialog store={folderStore} ids={moveIds} onMove={moveToFolder} onClose={() => setMoveIds(null)} />}
+      {moveIds && type === 'style' && <ChainFolderMembershipDialog store={folderStore} ids={moveIds} onSave={setFolderMemberships} onClose={() => setMoveIds(null)} />}
       {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={typeChains} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal

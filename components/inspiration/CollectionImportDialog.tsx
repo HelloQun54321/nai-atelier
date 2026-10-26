@@ -11,7 +11,7 @@ import { IconButton, ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
-import { CollectionFolderSelect, CollectionTagInput } from './CollectionControls';
+import { CollectionFolderPicker, CollectionTagInput } from './CollectionControls';
 import { splitTags } from './InspirationShared';
 
 interface CollectionImportDialogProps {
@@ -55,7 +55,7 @@ const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentU
   const previewsRef = useRef(new Map<string, string>());
   const [items, setItems] = useState<Candidate[]>([]);
   const [selectedId, setSelectedId] = useState('');
-  const [boardId, setBoardId] = useState(initialBoardId);
+  const [boardIds, setBoardIds] = useState<string[]>(initialBoardId ? [initialBoardId] : []);
   const [tags, setTags] = useState('');
   const [busy, setBusy] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -165,7 +165,7 @@ const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentU
           patch(item.id, current => ({ ...current, uploadedUrl: imageUrl }));
           await db.saveInspiration({ id: item.id, userId: currentUser.id, username: currentUser.username,
             title: item.title.trim(), imageUrl, prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params,
-            tags: splitTags(tags), boardId: boardId || undefined, sourceType: 'upload', createdAt: item.createdAt, updatedAt: Date.now(),
+            tags: splitTags(tags), boardIds, sourceType: 'upload', createdAt: item.createdAt, updatedAt: Date.now(),
           });
           patch(item.id, current => ({ ...current, status: 'saved' })); saved++;
         } catch (error) {
@@ -173,7 +173,7 @@ const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentU
           patch(item.id, current => ({ ...current, status: 'failed', error: lastError }));
         }
       }
-      if (saved) rememberCollectionFolder(boardId);
+      if (saved) boardIds.forEach(rememberCollectionFolder);
       const refreshed = saved ? await refresh() : true;
       const failures = itemsRef.current.filter(item => item.status !== 'saved').length;
       if (failures) notify(saved ? t('已导入 {0} 张，失败 {1} 张', [saved, failures]) : lastError || t('导入失败'), 'error');
@@ -194,7 +194,7 @@ const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentU
       <header className="appearance-content operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800"><h2 className="text-xl font-black">{t('加入收藏库')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={close}><X /></IconButton></header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
         <div className="flex flex-none items-end gap-3">
-          <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('收藏夹')}</span><CollectionFolderSelect value={boardId} onChange={setBoardId} boards={boards} notify={notify} disabled={busy} className={fieldClass} /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('公共标签')}</span><CollectionTagInput aria-label={t('公共标签')} onPick={setTags} suggestions={tagSuggestions} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('构图, 光影')} className={fieldClass} /></label></div>
+          <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('收藏夹')}</span><CollectionFolderPicker value={boardIds} onToggle={(id, checked) => setBoardIds(previous => checked ? [...previous, id] : previous.filter(value => value !== id))} boards={boards} disabled={busy} label="收藏夹" className={`${fieldClass} w-full`} /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('公共标签')}</span><CollectionTagInput aria-label={t('公共标签')} onPick={setTags} suggestions={tagSuggestions} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('构图, 光影')} className={fieldClass} /></label></div>
           {items.length > 0 && <IconButton label={t('追加图片')} disabled={busy || currentUser.role === 'guest'} onClick={() => inputRef.current?.click()} className="!h-11 !w-11"><Upload /></IconButton>}
         </div>
         <input aria-label={t('上传收藏图片')} disabled={busy || currentUser.role === 'guest'} ref={inputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => { enqueue(Array.from(event.target.files || [])); event.target.value = ''; }} />

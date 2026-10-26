@@ -5,6 +5,10 @@ import { exportStyleBundle, importStyleBundle, readStyleBundle, type StyleBundle
 import { beginExportTarget, openExportDirectory, type ExportReceipt } from '../../services/exportLocation';
 import { downloadFile } from '../../services/fileDownload';
 import { db } from '../../services/dbService';
+import { api } from '../../services/api';
+import { createUuid } from '../../services/id';
+import { folderTree, readChainFolders, updateChainFolderMemberships } from '../../services/chainFolders';
+import { saveChainFolders, useChainFolders } from '../../services/useChainFolders';
 import { t, useLanguage } from '../../services/i18n';
 import { ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -19,6 +23,7 @@ interface Props {
   initialScope: Scope;
   onClose: () => void;
   onImported: () => void | Promise<void>;
+  onViewFolder?: (folderId: string) => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 const fieldClass = 'mobile-touch w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950';
@@ -26,7 +31,7 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : S
 
 export const StyleBundleDialog: React.FC<Props> = props => <ImagePreviewPortal><StyleBundleDialogContent {...props} /></ImagePreviewPortal>;
 
-const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, selectedChains, initialScope, onClose, onImported, notify }) => {
+const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, selectedChains, initialScope, onClose, onImported, onViewFolder, notify }) => {
   useLanguage();
   const [tab, setTab] = useState<'export' | 'import'>('export');
   const [scope, setScope] = useState<Scope>(initialScope);
@@ -36,6 +41,14 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const [note, setNote] = useState('');
   const [lastExport, setLastExport] = useState<ExportReceipt>();
   const [preview, setPreview] = useState<StyleBundlePreview | null>(null);
+  const folders = useChainFolders(tab === 'import');
+  const [folderMode, setFolderMode] = useState<'new' | 'existing'>('new');
+  const [folderName, setFolderName] = useState('');
+  const [targetFolders, setTargetFolders] = useState<string[]>([]);
+  const [targetLocked, setTargetLocked] = useState(false);
+  const [unfiledIds, setUnfiledIds] = useState<string[]>([]);
+  const [filedFolder, setFiledFolder] = useState('');
+  const targetPlan = useRef<{ ids: string[]; name?: string } | null>(null);
   const [query, setQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(100);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -66,6 +79,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const sources = useMemo(() => [...new Map((preview?.entries || []).flatMap(entry => entry.sources).map(source => [JSON.stringify(source), source])).values()], [preview]);
   const pending = (items: typeof entries) => items.filter(entry => !imported.has(entry.id));
   const selectedPending = pending(entries).filter(entry => selected.has(entry.id));
+  const importBlocked = busy || !folders.ready || Boolean(folders.error) || (folderMode === 'new' ? !folderName.trim() : !targetFolders.length);
   const reportProgress = (value: { completed: number; total: number; name?: string }) => setProgress(t('{0}/{1}', [value.completed, value.total]) + (value.name ? ` · ${value.name}` : ''));
   const begin = () => { busyRef.current = true; setBusy(true); setError(''); setProgress(''); };
   const finish = () => { busyRef.current = false; setBusy(false); setProgress(''); };
@@ -103,10 +117,58 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
       const next = await readStyleBundle(file, reportProgress);
       setPreview(next); setQuery(''); setVisibleCount(100); setSelected(new Set(next.entries.map(entry => entry.id)));
       setImported(new Set()); setFailures({});
+      setFolderName(file.name.replace(/\.naia$/i, '').slice(0, 60));
+      setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
     } catch (failure) {
       setPreview(null); setSelected(new Set()); setImported(new Set()); setFailures({});
+      setTargetLocked(false); setUnfiledIds([]); setFiledFolder(''); targetPlan.current = null;
       setError(errorText(failure));
     }
+    finally { finish(); }
+  };
+
+  const targetMissing = () => {
+    targetPlan.current = null; setTargetLocked(false); setTargetFolders([]);
+    void folders.reload();
+    throw Error('目标文件夹已不存在，请重新选择');
+  };
+
+  const ensureTargetFolders = async () => {
+    const latest = readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }));
+    const plan = targetPlan.current || (folderMode === 'new'
+      ? { ids: [createUuid()], name: folderName.trim() }
+      : { ids: [...targetFolders] });
+    targetPlan.current = plan;
+    if (!plan.ids.length) throw Error('请选择目标文件夹');
+    if (targetLocked && plan.ids.some(id => !latest.folders.some(folder => folder.id === id))) targetMissing();
+    if (plan.name !== undefined && !latest.folders.some(folder => folder.id === plan.ids[0])) {
+      await saveChainFolders({ ...latest, folders: [...latest.folders, { id: plan.ids[0], name: plan.name, parentId: null }] });
+    } else if (plan.ids.some(id => !latest.folders.some(folder => folder.id === id))) targetMissing();
+    return plan.ids;
+  };
+
+  const fileImported = async (ids: string[], targets: string[]) => {
+    if (!ids.length) return;
+    try {
+      const latest = readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }));
+      if (targets.some(id => !latest.folders.some(folder => folder.id === id))) targetMissing();
+      await saveChainFolders(updateChainFolderMemberships(latest, ids, Object.fromEntries(targets.map(id => [id, true]))));
+      setUnfiledIds(previous => previous.filter(id => !ids.includes(id)));
+      setFiledFolder(targets[0]);
+    } catch (failure) {
+      setUnfiledIds(previous => [...new Set([...previous, ...ids])]);
+      setError(t('风格串已保存，归类失败：{0}', [errorText(failure)]));
+    }
+  };
+
+  const retryFiling = async () => {
+    if (busyRef.current || !unfiledIds.length) return;
+    begin();
+    try {
+      const targets = await ensureTargetFolders();
+      setTargetLocked(true);
+      await fileImported(unfiledIds, targets);
+    } catch (failure) { setError(t('风格串已保存，归类失败：{0}', [errorText(failure)])); }
     finally { finish(); }
   };
 
@@ -114,6 +176,8 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     if (!preview || busyRef.current || !items.length) return;
     begin();
     try {
+      const targets = await ensureTargetFolders();
+      setTargetLocked(true);
       const result = await importStyleBundle(preview, items.map(entry => entry.id), reportProgress);
       const completed = new Set(result.importedEntryIds);
       setImported(previous => new Set([...previous, ...completed]));
@@ -126,10 +190,11 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
       });
       if (result.createdIds.length) {
         notify(t('已导入 {0} 条风格串', [result.createdIds.length]), 'success');
+        await fileImported(result.createdIds, targets);
         try { await onImported(); }
         catch (failure) { notify(t('风格串已保存，列表刷新失败：{0}', [errorText(failure)]), 'error'); }
       }
-      if (result.failed.length) setError(t('{0} 条导入失败，可重试', [result.failed.length]));
+      if (result.failed.length) setError(previous => [previous, t('{0} 条导入失败，可重试', [result.failed.length])].filter(Boolean).join('；'));
     } catch (failure) { setError(errorText(failure)); }
     finally { finish(); }
   };
@@ -154,6 +219,10 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           <input ref={fileRef} type="file" accept=".naia" aria-label={t('选择 .naia 文件')} disabled={busy} className="sr-only" onChange={event => { void readBundle(event.target.files?.[0]); event.target.value = ''; }} />
           <ToolbarButton disabled={busy} onClick={() => fileRef.current?.click()}><FileInput /><span>{t('选择 .naia 文件')}</span></ToolbarButton>
           {preview && <>
+            <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导入到')}</span><select aria-label={t('导入到')} value={folderMode} disabled={busy || targetLocked} onChange={event => { setFolderMode(event.target.value as 'new' | 'existing'); targetPlan.current = null; }} className={fieldClass}><option value="new">{t('新建文件夹')}</option><option value="existing">{t('已有文件夹')}</option></select></label>
+            {folderMode === 'new' ? <label className="block space-y-1.5 text-sm font-semibold"><span>{t('文件夹名称')}</span><input aria-label={t('文件夹名称')} maxLength={60} value={folderName} disabled={busy || targetLocked} onChange={event => { setFolderName(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
+              : <fieldset disabled={busy || targetLocked} className="space-y-1"><legend className="mb-1 text-sm font-semibold">{t('目标文件夹')}</legend>{folderTree(folders.state.folders).map(folder => <label key={folder.id} className="mobile-touch flex items-center gap-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={targetFolders.includes(folder.id)} onChange={event => { setTargetFolders(previous => event.target.checked ? [...previous, folder.id] : previous.filter(id => id !== folder.id)); targetPlan.current = null; }} />{folder.name}</label>)}</fieldset>}
+            {folders.error && <p role="alert" className="text-sm text-red-600">{t(folders.error)}<button type="button" disabled={busy} onClick={() => void folders.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></p>}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <p>{t('打包范围')}：<strong>{t(preview.coverage === 'full' ? '整库打包' : preview.coverage === 'partial' ? '部分打包' : '未记录')}</strong></p>
               <p className="text-gray-500">{t('包内风格串：{0} 条', [entries.length])}</p>
@@ -176,9 +245,11 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
           <ToolbarButton disabled={busy} aria-busy={openingDirectory || undefined} onClick={() => void openDirectory()}>{openingDirectory ? <Loader2 className="animate-spin" /> : <FolderOpen />}<span>{t('打开文件夹')}</span></ToolbarButton>
           <ToolbarButton tone="primary" disabled={busy || !exportChains.length} onClick={() => void exportBundle()}>{t('导出 {0} 条', [exportChains.length])}</ToolbarButton>
         </> : <>
-          <ToolbarButton disabled={busy || !pending(entries).length} onClick={() => void importEntries(pending(entries))}>{t('导入全部')}</ToolbarButton>
-          <ToolbarButton disabled={busy || !pending(filtered).length} onClick={() => void importEntries(pending(filtered))}>{t('导入筛选结果')}</ToolbarButton>
-          <ToolbarButton tone="primary" disabled={busy || !selectedPending.length} onClick={() => void importEntries(selectedPending)}>{t('导入已选（{0}）', [selectedPending.length])}</ToolbarButton>
+          {!!unfiledIds.length && <ToolbarButton disabled={importBlocked} onClick={() => void retryFiling()}>{t('重试归类（{0}）', [unfiledIds.length])}</ToolbarButton>}
+          {filedFolder && onViewFolder && <ToolbarButton disabled={busy} onClick={() => onViewFolder(filedFolder)}><FolderOpen />{t('查看文件夹')}</ToolbarButton>}
+          <ToolbarButton disabled={importBlocked || !pending(entries).length} onClick={() => void importEntries(pending(entries))}>{t('导入全部')}</ToolbarButton>
+          <ToolbarButton disabled={importBlocked || !pending(filtered).length} onClick={() => void importEntries(pending(filtered))}>{t('导入筛选结果')}</ToolbarButton>
+          <ToolbarButton tone="primary" disabled={importBlocked || !selectedPending.length} onClick={() => void importEntries(selectedPending)}>{t('导入已选（{0}）', [selectedPending.length])}</ToolbarButton>
         </>}</div>
       </footer>
     </section>

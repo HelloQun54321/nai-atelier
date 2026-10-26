@@ -8,7 +8,23 @@ import {
   normalizeCollectionTagNames,
   sortCollectionGroups,
   getCollectionPreviewTransform,
+  getCollectionBoardIds,
+  applyCollectionBoardUpdates,
 } from '../../services/inspirationUtils';
+
+it('收藏夹归属兼容旧单夹、清空、去重；本地增删与来源编辑保留其它归属', () => {
+  expect(getCollectionBoardIds({ boardId: 'a' })).toEqual(['a']);
+  expect(getCollectionBoardIds({ boardId: 'a', boardIds: [] })).toEqual([]);
+  expect(getCollectionBoardIds({ boardId: 'a', analysis: { collectionBoardIds: ['b', 'b', null, '', 'c'] } })).toEqual(['b', 'c']);
+  const base = { id: 'saved', userId: 'owner', title: 'saved', imageUrl: '/image', prompt: '', createdAt: 1, boardId: 'a', boardIds: ['a', 'b'], analysis: { collectionBoardIds: ['a', 'b'], source: 1 } };
+  const changed = applyCollectionBoardUpdates(base, { addBoardIds: ['c'], removeBoardIds: ['a'] });
+  expect(changed).toMatchObject({ boardId: 'b', boardIds: ['b', 'c'], analysis: { source: 1, collectionBoardIds: ['b', 'c'] } });
+  expect(changed).not.toHaveProperty('addBoardIds');
+  expect(applyCollectionBoardUpdates(base, { boardId: 'a', analysis: { collectionBoardIds: [], fresh: true } })).toMatchObject({ boardIds: ['a', 'b'], analysis: { fresh: true, collectionBoardIds: ['a', 'b'] } });
+  expect(applyCollectionBoardUpdates(base, { boardId: 'c' }).boardIds).toEqual(['c']);
+  expect(applyCollectionBoardUpdates(base, { boardIds: [] }).boardId).toBeUndefined();
+  expect(base.boardIds).toEqual(['a', 'b']);
+});
 
 describe('收藏图包预览来源', () => {
   const artistSample = { pack: 'v45', tag: 'synthetic artist', revision: 'a'.repeat(24), index: 0 };

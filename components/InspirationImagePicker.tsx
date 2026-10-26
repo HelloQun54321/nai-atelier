@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Folder, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
+import { getCollectionBoardIds } from '../services/inspirationUtils';
 import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -72,9 +73,9 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
     const q = searchQuery.trim().toLowerCase();
     return items.filter(item => {
       if (selectedBoardId === 'unorganized') {
-        if (item.boardId) return false;
+        if (getCollectionBoardIds(item).length) return false;
       } else if (selectedBoardId !== 'all') {
-        if (item.boardId !== selectedBoardId) return false;
+        if (!getCollectionBoardIds(item).includes(selectedBoardId)) return false;
       }
       if (q) {
         const text = [item.title, item.prompt, item.negativePrompt, item.notes, ...(item.tags || [])]
@@ -215,7 +216,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
                   <div className="border-t border-gray-100 p-2 text-left dark:border-gray-700">
                     <div className="truncate text-xs font-bold text-gray-900 dark:text-white">{item.title}</div>
                     <div className="mt-0.5 flex items-center justify-between text-meta text-gray-400">
-                      <span className="truncate">{item.boardId ? (boardNameMap.get(item.boardId) || t("未分类")) : t("未整理")}</span>
+                      <span className="truncate">{getCollectionBoardIds(item).map(id => boardNameMap.get(id) || t("未分类")).join(' · ') || t("未整理")}</span>
                       {item.params?.width && item.params?.height && (
                         <span className="flex-none font-mono text-micro">{item.params.width}×{item.params.height}</span>
                       )}

@@ -39,6 +39,34 @@ const openInfo = () => {
   if (!(summary.closest('details') as HTMLDetailsElement).open) fireEvent.click(summary);
 };
 
+it('导入图片可同时选择多个收藏夹，并保留起始收藏夹', async () => {
+  const second = { ...boards[0], id: 'second', name: '第二收藏夹' };
+  const props = { currentUser: user, boards: [...boards, second], tagSuggestions: [], initialFiles: [file('multi-folder.png')], initialBoardId: 'folder', onClose: vi.fn(), onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  render(<CollectionImportDialog {...props} />); await ready();
+  fireEvent.click(screen.getByRole('button', { name: '收藏夹' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '第二收藏夹' }));
+  expect((screen.getByRole('checkbox', { name: '合成收藏夹' }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏夹' })).getByRole('button', { name: '完成' }));
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ boardIds: ['folder', 'second'] })));
+});
+
+it('手机导入内打开收藏夹后，返回只关闭最上层，保留候选与导入窗口', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 1279px)', media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  window.history.replaceState({}, '');
+  const { onClose } = setup([file('mobile-folder.png')]); await ready();
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(1));
+  const parentState = window.history.state;
+  fireEvent.click(screen.getByRole('button', { name: '收藏夹' }));
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
+  act(() => { window.history.replaceState(parentState, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: parentState })); });
+  expect(screen.queryByRole('dialog', { name: '收藏夹' })).toBeNull();
+  expect(screen.getByRole('dialog', { name: '加入收藏库' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '选择候选：mobile-folder.png' })).toBeTruthy(); expect(onClose).not.toHaveBeenCalled();
+  window.history.replaceState({}, '');
+});
+
 it.each([390, 1280])('宽度 %s 的空状态以一个可点击拖入区填满正文，保留固定外框、设置组和操作区', width => {
   vi.stubGlobal('innerWidth', width);
   const trigger = document.createElement('button'); document.body.appendChild(trigger); trigger.focus();
@@ -53,7 +81,7 @@ it.each([390, 1280])('宽度 %s 的空状态以一个可点击拖入区填满正
   expect(within(picker).getByText('PNG / JPEG / WebP，最多 12 MB')).toBeTruthy();
   expect(screen.getAllByText('PNG / JPEG / WebP，最多 12 MB')).toHaveLength(1);
   expect(screen.queryByRole('button', { name: '追加图片' })).toBeNull();
-  const settings = screen.getByRole('combobox', { name: '收藏夹' }).closest('label')!.parentElement!;
+  const settings = screen.getByRole('button', { name: '收藏夹' }).closest('label')!.parentElement!;
   expect(settings.contains(screen.getByRole('textbox', { name: '公共标签' }))).toBe(true);
   expect(settings.classList.contains('sm:grid-cols-2')).toBe(true);
   const input = screen.getByLabelText('上传收藏图片'); const click = vi.spyOn(input, 'click');
@@ -76,10 +104,10 @@ it.each([390, 1280])('宽度 %s 选入图片后才展示候选编辑布局，追
   expect(dialog.querySelector('fieldset')).toBeTruthy();
   const append = screen.getByRole('button', { name: '追加图片' });
   expect(append.parentElement!.classList.contains('items-end')).toBe(true);
-  expect(append.parentElement!.contains(screen.getByRole('combobox', { name: '收藏夹' }))).toBe(true);
+  expect(append.parentElement!.contains(screen.getByRole('button', { name: '收藏夹' }))).toBe(true);
   expect(append.parentElement!.contains(screen.getByRole('textbox', { name: '公共标签' }))).toBe(true);
   expect(append.className).toContain('!h-11'); expect(append.className).toContain('!w-11');
-  expect(screen.getByRole('combobox', { name: '收藏夹' }).classList.contains('h-11')).toBe(true);
+  expect(screen.getByRole('button', { name: '收藏夹' }).classList.contains('h-11')).toBe(true);
   expect(screen.getByRole('textbox', { name: '公共标签' }).closest('span')!.classList.contains('h-11')).toBe(true);
   const click = vi.spyOn(screen.getByLabelText('上传收藏图片'), 'click'); fireEvent.click(append); expect(click).toHaveBeenCalledOnce();
   add([file('appended.png')]); await ready();
@@ -134,7 +162,7 @@ it('多选图片逐图保留完整元数据与角色，公共收藏夹和标签�
   const images = [file('first.png'), file('second.png'), file('plain.jpg', 'image/jpeg')];
   mocks.extract.mockImplementation(async (image: File) => image.name === 'first.png' ? metadata(11, 'first prompt') : image.name === 'second.png' ? metadata(22, '') : null);
   const { onClose, onRefresh, notify } = setup(); add(images); await ready();
-  fireEvent.change(screen.getByRole('combobox', { name: '收藏夹' }), { target: { value: 'folder' } });
+  fireEvent.click(screen.getByRole('button', { name: '收藏夹' })); fireEvent.click(screen.getByRole('checkbox', { name: '合成收藏夹' })); fireEvent.click(within(screen.getByRole('dialog', { name: '收藏夹' })).getByRole('button', { name: '完成' }));
   fireEvent.change(screen.getByRole('textbox', { name: '公共标签' }), { target: { value: '构图, 光影, 构图' } });
   choose('first.png'); openInfo(); fireEvent.change(screen.getByLabelText('提示词'), { target: { value: 'edited first' } });
   fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
@@ -145,7 +173,7 @@ it('多选图片逐图保留完整元数据与角色，公共收藏夹和标签�
   expect(saved[0]).toEqual(expect.objectContaining({ title: 'first', prompt: 'edited first', negativePrompt: 'negative-11', params: expect.objectContaining({ seed: 11, width: 1152, height: 768, cfgRescale: 0.2, model: 'nai-diffusion-4-5-full', useCoords: true, characters: [expect.objectContaining({ prompt: 'character-11', negativePrompt: 'character-negative-11', x: 0.3, y: 0.7 })] }) }));
   expect(saved[1]).toEqual(expect.objectContaining({ title: 'second', prompt: '', params: expect.objectContaining({ seed: 22, characters: [expect.objectContaining({ prompt: 'character-22' })] }) }));
   expect(saved[2]).toEqual(expect.objectContaining({ title: 'plain', prompt: '', negativePrompt: '', params: undefined }));
-  saved.forEach(item => expect(item).toEqual(expect.objectContaining({ tags: ['构图', '光影'], boardId: 'folder', sourceType: 'upload', userId: user.id })));
+  saved.forEach(item => expect(item).toEqual(expect.objectContaining({ tags: ['构图', '光影'], boardIds: ['folder'], sourceType: 'upload', userId: user.id })));
   expect(new Set(saved.map(item => item.id)).size).toBe(3);
   expect(onRefresh).toHaveBeenCalledOnce(); expect(onClose).not.toHaveBeenCalled(); expect(screen.getByRole('status').textContent).toBe('已保存 3/3 张');
   expect(screen.getByRole('button', { name: '完成' })).toBeTruthy();
@@ -160,7 +188,7 @@ it('单图标题和正负词仍可编辑，无元数据不伪造参数；成功�
   fireEvent.change(screen.getByLabelText('负面提示词'), { target: { value: 'manual negative' } });
   fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
-  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ title: '手动标题', prompt: 'manual prompt', negativePrompt: 'manual negative', params: undefined, boardId: undefined }));
+  expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ title: '手动标题', prompt: 'manual prompt', negativePrompt: 'manual negative', params: undefined, boardIds: [] }));
   expect(onRefresh).toHaveBeenCalledOnce();
 });
 

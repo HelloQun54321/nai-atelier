@@ -235,11 +235,14 @@ describe('界面语言', () => {
     const keys = [
       '文件夹', '新建文件夹', '编辑文件夹', '重命名或移动文件夹', '删除文件夹', '正在加载文件夹…', '风格串文件夹',
       '移动到文件夹', '移动到文件夹：{0}', '已移动 {0} 条风格串', '移动失败，请重试', '已选 {0} 条风格串', '目标文件夹', '文件夹名称', '上级文件夹', '顶层',
+      '设置文件夹', '设置文件夹：{0}', '已更新 {0} 条风格串的文件夹', '设置文件夹失败，请重试',
       '删除文件夹「{0}」？', '其中的风格串移回未整理，子文件夹移到上一级，同名时加编号。所有配方与图片保留。',
+      '仅移除本文件夹的归属，其他归属保留；无归属的风格串回到未整理。子文件夹移到上一级，同名时加编号。配方与图片保留。',
       '文件夹已保存', '保存文件夹失败', '文件夹已删除，风格串已保留', '删除文件夹失败', '文件夹加载失败',
       '文件夹尚未就绪，请重新加载后再试', '文件夹回读失败，请重新加载后再整理', '不支持的文件夹操作',
       '文件夹资料无法读取，请保留现有数据并检查备份', '文件夹资料过大', '文件夹数据无效', '文件夹名称或位置无效',
       '同一位置已有同名文件夹', '文件夹层级无效', '风格串归属无效', '文件夹已在其他窗口更新，请按最新目录重试',
+      '导入到', '已有文件夹', '请选择目标文件夹', '目标文件夹已不存在，请重新选择', '风格串已保存，归类失败：{0}', '重试归类（{0}）', '查看文件夹',
       '展开文件夹', '收起文件夹',
     ];
     const catalog = messages as Record<string, string[]>;
@@ -253,11 +256,22 @@ describe('界面语言', () => {
     }
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       const name = '我的画风';
-      for (const key of ['移动到文件夹：{0}', '删除文件夹「{0}」？']) {
+      for (const key of ['移动到文件夹：{0}', '设置文件夹：{0}', '已更新 {0} 条风格串的文件夹', '风格串已保存，归类失败：{0}', '重试归类（{0}）', '删除文件夹「{0}」？']) {
         const expected = catalog[key][LANGUAGES.findIndex(item => item.code === language.code) - 1].replace('{0}', name);
         expect(translate(language.code, key, [name])).toBe(expected);
         expect(translate(language.code, key, [name])).toContain(name);
         expect(translate(language.code, key, [name])).not.toContain('{0}');
+      }
+    }
+  });
+
+  it('收藏夹多选管理入口与混合选择状态具备四种译文', () => {
+    const keys = ['收藏夹', '管理收藏夹', '管理整组收藏夹', '暂无收藏夹', '部分选中', '收藏夹已更新', '收藏夹内作品不会删除，其他收藏夹归属会保留；没有其他归属的作品会回到“未整理”。'];
+    const catalog = messages as Record<string, string[]>;
+    for (const key of keys) {
+      expect(catalog[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+        expect(translate(language.code, key), `${language.code}: ${key}`).not.toBe(key);
       }
     }
   });

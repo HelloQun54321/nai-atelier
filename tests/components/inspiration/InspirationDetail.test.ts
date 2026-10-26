@@ -431,3 +431,25 @@ it('他人收藏不显示改名铅笔', () => {
   expect(screen.queryByRole('button', { name: '修改收藏标题' })).toBeNull();
   expect(screen.queryByLabelText('收藏标题')).toBeNull();
 });
+
+it('单图收藏夹管理只增删本次勾选，失败保留原归属，取消一夹保留其它夹', async () => {
+  vi.stubGlobal('innerWidth', 1280);
+  const boards = ['one', 'two'].map(id => ({ id, name: id, userId: mockUser.id, sortOrder: 0, createdAt: 1, updatedAt: 1 }));
+  const item = { ...mockItem, boardIds: ['one', 'two'] };
+  const notify = vi.fn(), onRefresh = vi.fn(async () => {});
+  const props = { item, items: [item], boards, currentUser: mockUser, notify, onClose: vi.fn(), onRefresh };
+  const view = render(React.createElement(InspirationDetail, props));
+  fireEvent.click(screen.getByRole('button', { name: '管理收藏夹' }));
+  vi.mocked(db.updateInspiration).mockRejectedValueOnce(new Error('合成归属保存失败'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'one' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('合成归属保存失败', 'error'));
+  expect((screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(true); expect(onRefresh).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'one' }));
+  await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
+  expect(db.updateInspiration).toHaveBeenLastCalledWith(item.id, { removeBoardIds: ['one'] });
+  expect((screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('checkbox', { name: 'two' }) as HTMLInputElement).checked).toBe(true);
+  view.rerender(React.createElement(InspirationDetail, { ...props, item: { ...item, boardIds: ['one'] } }));
+  expect((screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: 'two' }) as HTMLInputElement).checked).toBe(false);
+});

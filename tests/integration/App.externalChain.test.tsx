@@ -145,7 +145,7 @@ const openCombinationCategories = async () => {
 
 it('文件夹内新建通过真实App回调广播保存回执，返回时保留新串', async () => {
   const folders = { revision: 1, folders: [{ id: 'synthetic-folder', name: '合成文件夹', parentId: null }], assignments: {} };
-  const persisted = { ...folders, revision: 2, assignments: { [saved.id]: 'synthetic-folder' } };
+  const persisted = { ...folders, revision: 2, assignments: { [saved.id]: ['synthetic-folder'] } };
   const get = vi.spyOn(api, 'get').mockResolvedValue(folders);
   const put = vi.spyOn(api, 'put').mockResolvedValue(persisted);
   const updated = vi.fn();

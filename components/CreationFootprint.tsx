@@ -12,7 +12,7 @@ import { getUsageAssets, getUsageStats, type UsageAssets, type UsageChainRow, ty
 import { getUsageEventStats, type UsageEventStats } from '../services/usageEvents';
 import { KeyUsageSection } from './KeyUsageSection';
 import { promptAgentService, type PromptAgentSession } from '../services/promptAgent';
-import { sourceLabel } from '../services/inspirationUtils';
+import { getCollectionBoardIds, sourceLabel } from '../services/inspirationUtils';
 import type { PromptChain } from '../types';
 import type { HistoryBrowseQuery } from '../services/historyBrowse';
 import type { InspirationSourceType } from '../types';
@@ -246,7 +246,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     for (const item of items) {
       const source = item.sourceType || 'other';
       bySource.set(source, (bySource.get(source) || 0) + 1);
-      if (item.boardId) boards.add(item.boardId);
+      getCollectionBoardIds(item).forEach(id => boards.add(id));
     }
     return {
       total: items.length,

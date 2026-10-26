@@ -1,6 +1,6 @@
 /** 风格串的目录与归属独立保存，不改写配方、标签或原图。 */
 export interface ChainFolder { id: string; name: string; parentId: string | null }
-export interface ChainFolderState { revision: number; folders: ChainFolder[]; assignments: Record<string, string> }
+export interface ChainFolderState { revision: number; folders: ChainFolder[]; assignments: Record<string, string[]> }
 export const emptyChainFolders = (): ChainFolderState => ({ revision: 0, folders: [], assignments: {} });
 
 export function readChainFolders(value: unknown): ChainFolderState {
@@ -25,9 +25,25 @@ export function readChainFolders(value: unknown): ChainFolderState {
       visited.add(parent); parent = parents.get(parent)!;
     }
   }
-  const entries = Object.entries(state.assignments);
-  if (entries.length > 100000 || entries.some(([id, folder]) => !validId(id) || !ids.has(folder))) throw Error('风格串归属无效');
-  return { revision: state.revision, folders, assignments: Object.fromEntries(entries) };
+  const entries = Object.entries(state.assignments).map(([id, value]) => [id, typeof value === 'string' ? [value] : value] as const);
+  if (entries.length > 100000 || entries.some(([id, folders]) => !validId(id) || !Array.isArray(folders)
+    || folders.length > 500 || folders.some(folder => typeof folder !== 'string' || !ids.has(folder)))) throw Error('风格串归属无效');
+  return { revision: state.revision, folders, assignments: Object.fromEntries(entries.filter(([, folders]) => folders.length).map(([id, folders]) => [id, [...new Set(folders)]])) };
+}
+
+export function getChainFolderIds(state: ChainFolderState, chainId: string): string[] {
+  return state.assignments[chainId] || [];
+}
+
+/** 批量整理只修改主动触及的目录，其余（包括部分选中）归属保持原样。 */
+export function updateChainFolderMemberships(state: ChainFolderState, chainIds: string[], changes: Record<string, boolean>): ChainFolderState {
+  const assignments = { ...state.assignments };
+  for (const id of chainIds) {
+    const folders = new Set(getChainFolderIds(state, id));
+    for (const [folder, selected] of Object.entries(changes)) { if (selected) folders.add(folder); else folders.delete(folder); }
+    if (folders.size) assignments[id] = [...folders]; else delete assignments[id];
+  }
+  return { ...state, assignments };
 }
 
 export function folderTree(folders: ChainFolder[], parentId: string | null = null, depth = 0): Array<ChainFolder & { depth: number }> {
@@ -55,6 +71,6 @@ export function removeChainFolder(state: ChainFolderState, id: string): ChainFol
       names.add(name.toLowerCase());
       return { ...folder, name, parentId: parent };
     }),
-    assignments: Object.fromEntries(Object.entries(state.assignments).filter(([, folder]) => folder !== id)),
+    assignments: Object.fromEntries(Object.entries(state.assignments).map(([chain, folders]) => [chain, folders.filter(folder => folder !== id)] as const).filter(([, folders]) => folders.length)),
   };
 }

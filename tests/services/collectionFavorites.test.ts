@@ -450,6 +450,20 @@ it('旧收藏首次拖入收藏夹只保存当前条目的引用和元数据，�
   expect(stored).toHaveLength(1); expect(mocks.uploadFile).not.toHaveBeenCalled();
 });
 
+it('收藏夹关系增删及时发布到各页面快照，并保留每张作品的其他归属', async () => {
+  stored = ['one', 'two'].map((id, index) => ({ id, userId: user.id, title: id, prompt: 'keep', imageUrl: `/${id}.png`, boardId: index ? 'b' : 'a', createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  await service.updateCollection(['one', 'two'], { addBoardIds: ['shared'] });
+  expect(service.collectionSnapshot().map(item => item.boardIds)).toEqual([['a', 'shared'], ['b', 'shared']]);
+  expect(service.collectionSnapshot().every(item => !('addBoardIds' in item))).toBe(true);
+  await service.updateCollection(['one'], { removeBoardIds: ['shared'] });
+  expect(service.collectionSnapshot().map(item => item.boardIds)).toEqual([['a'], ['b', 'shared']]);
+  await service.updateCollection(['two'], { boardId: 'b', analysis: { otherMetadata: 'keep' } });
+  expect(service.collectionSnapshot()[1]).toMatchObject({ boardId: 'b', boardIds: ['b', 'shared'], prompt: 'keep', analysis: { otherMetadata: 'keep', collectionBoardIds: ['b', 'shared'] } });
+  expect(mocks.uploadFile).not.toHaveBeenCalled();
+});
+
 it('AITag 整组收藏沿用作品级标记，移除一张不会取消其余图片或整组来源标记', async () => {
   const service = await import('../../services/collectionFavorites');
   const images = [1, 2].map(index => ({ imageUrl: `/api/assets/aitag-${index}.png`, sourceType: 'aitag' as const, sourceId: '5', imageId: String(index) }));
