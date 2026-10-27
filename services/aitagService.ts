@@ -82,6 +82,35 @@ export interface AitagSearchResponse {
   offline?: boolean;
 }
 
+/** 翻页可能重叠；同一作品就地更新，迟到的列表摘要不能抹掉已补齐的资料。 */
+export const mergeAitagWorks = (previous: readonly AitagWorkSummary[], incoming: readonly AitagWorkSummary[]): AitagWorkSummary[] => {
+  const works = new Map<number, AitagWorkSummary>();
+  for (const work of [...previous, ...incoming]) {
+    const id = Number(work.id);
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    const old = works.get(id);
+    if (!old) { works.set(id, work.id === id ? work : { ...work, id }); continue; }
+    const oldImage = old.firstImage || old.first_image;
+    const newImage = work.firstImage || work.first_image;
+    const firstImage = oldImage && newImage ? {
+      ...oldImage, ...newImage,
+      ai_json: newImage.ai_json ?? oldImage.ai_json,
+      prompt_text: newImage.prompt_text || oldImage.prompt_text,
+      local_image_url: newImage.local_image_url || oldImage.local_image_url,
+    } : newImage || oldImage;
+    const localFirstImageUrl = work.localFirstImageUrl || work.local_cover_url || old.localFirstImageUrl || old.local_cover_url;
+    works.set(id, {
+      ...old, ...work, id,
+      firstImage, first_image: firstImage,
+      localFirstImageUrl, local_cover_url: localFirstImageUrl,
+      firstImageStatus: localFirstImageUrl ? 'cached' : work.firstImageStatus || old.firstImageStatus,
+      hasCachedDetail: Boolean(old.hasCachedDetail || work.hasCachedDetail),
+      hasFullyCachedImages: Boolean(old.hasFullyCachedImages || work.hasFullyCachedImages),
+    });
+  }
+  return [...works.values()];
+};
+
 export interface AitagSearchParams {
   page: number;
   pageSize?: number;

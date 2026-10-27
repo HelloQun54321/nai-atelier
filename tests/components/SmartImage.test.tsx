@@ -31,6 +31,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); abortMobileThumbnailRequests(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('共用缩略图加载', () => {
+  it('AITag 同图切换本地源时保留旧画面，新图就绪后释放，失败仍显示重试', () => {
+    const view = render(<SmartImage eager retainWhileLoading src="/synthetic-remote.png" alt="同一首图" />);
+    const original = screen.getByRole('img');
+    fireEvent.load(original);
+    view.rerender(<SmartImage eager retainWhileLoading src="/synthetic-local.png" alt="同一首图" />);
+    expect(view.container.querySelector('img[aria-hidden="true"]')?.getAttribute('src')).toContain('/synthetic-remote.png');
+    expect(view.container.querySelector('img[aria-hidden="true"]')).toBe(original);
+    expect(screen.queryByText('加载中…')).toBeNull();
+    const current = screen.getByRole('img', { name: '同一首图' });
+    expect(current.getAttribute('src')).toBe('/synthetic-local.png');
+    fireEvent.load(current);
+    expect(current.className).toContain('opacity-100');
+    expect(view.container.querySelector('img[aria-hidden="true"]')).toBeNull();
+    view.rerender(<SmartImage eager retainWhileLoading src="/synthetic-missing.png" alt="同一首图" />);
+    fireEvent.error(screen.getByRole('img', { name: '同一首图' }));
+    expect(screen.getByRole('button', { name: /加载失败/ })).toBeTruthy();
+    expect(view.container.querySelector('img[aria-hidden="true"]')).toBeNull();
+  });
+
   it.each(['v45', 'v5'].flatMap(pack => ['default', 'glass'].map(theme => [pack, theme])))('%s 图包在 %s 主题显式预览透传裁后尺寸，取用地址保持原图，切回默认预览不复用旧地址', (pack, theme) => {
     const root = document.documentElement;
     const material = root.dataset.themeMaterial, customPalette = root.dataset.customPalette;

@@ -27,6 +27,8 @@ interface SmartImageProps {
   /** 渐进升级：低清 src 先显示，卡片接近/进入视口（或 eager 详情）后叠加更清晰源，加载完成淡入、失败静默保留低清。 */
   upgradeSrc?: string;
   upgradeVariant?: MediaVariant;
+  /** 同一图片切换到本地缓存时，保留已显示画面直到新地址加载完成。 */
+  retainWhileLoading?: boolean;
   /** 请求缩略图时附加 pin=1：网关将该图标记为固定保留，不参与 LRU 淘汰（封面图持久本地化）。 */
   pin?: boolean;
   className?: string;
@@ -53,6 +55,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   previewTransform,
   upgradeSrc,
   upgradeVariant,
+  retainWhileLoading = false,
   className = 'h-full w-full object-cover',
   containerClassName = 'relative h-full w-full overflow-hidden bg-gray-200 dark:bg-gray-900',
   onError,
@@ -69,6 +72,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const [variantWidth, setVariantWidth] = useState(() => ratchetVariantWidth(0, 160 * Math.max(1, window.devicePixelRatio || 1)));
   const variantFloorRef = useRef(variantWidth);
   const [loaded, setLoaded] = useState(false);
+  const [lastLoadedSrc, setLastLoadedSrc] = useState('');
   const [failed, setFailed] = useState(false);
   const [useOriginal, setUseOriginal] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
@@ -243,22 +247,32 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     onErrorRef.current?.();
   };
 
+  const imageSources = activated && displaySrc && !failed ? [displaySrc] : [];
+  const showRetained = retainWhileLoading && Boolean(lastLoadedSrc) && !loaded && !failed;
+  if (showRetained && lastLoadedSrc !== displaySrc) imageSources.unshift(lastLoadedSrc);
+
   return (
     <div ref={containerRef} className={containerClassName}>
-      {activated && displaySrc && !failed && (
+      {imageSources.map(imageSrc => (
         <img
-          key={`${displaySrc}:${retryToken}`}
-          src={displaySrc}
+          key={`${imageSrc}:${retryToken}`}
+          src={imageSrc}
           data-agent-original-src={getMobileOriginalUrl(src)}
-          alt={alt}
-          className={`${className} ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={event => { setLoaded(true); onLoad?.(event); }}
-          onError={handleImageError}
+          alt={imageSrc === displaySrc ? alt : ''}
+          aria-hidden={imageSrc !== displaySrc || undefined}
+          className={`${className} ${loaded || (showRetained && imageSrc === lastLoadedSrc) ? 'opacity-100' : 'opacity-0'} ${imageSrc !== displaySrc ? 'absolute inset-0 pointer-events-none' : ''}`}
+          onLoad={event => {
+            if (imageSrc !== displaySrc) return;
+            setLoaded(true);
+            if (retainWhileLoading) setLastLoadedSrc(displaySrc);
+            onLoad?.(event);
+          }}
+          onError={imageSrc === displaySrc ? handleImageError : undefined}
           decoding="async"
           loading="eager"
           fetchPriority={eager ? 'high' : 'auto'}
         />
-      )}
+      ))}
       {upgradeActivated && upgradeDisplaySrc && !upgradeFailed && (
         <img
           key={`${upgradeDisplaySrc}:${retryToken}`}
@@ -272,7 +286,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
           loading="eager"
         />
       )}
-      {activated && !loaded && !failed && !upgradeLoaded && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">{t("加载中…")}</span></div>}
+      {activated && !loaded && !failed && !upgradeLoaded && !(retainWhileLoading && lastLoadedSrc) && <div className="smart-image-shimmer absolute inset-0 flex items-center justify-center text-xs text-gray-400"><span className="animate-pulse">{t("加载中…")}</span></div>}
       {activated && failed && !upgradeLoaded && (
         <button
           type="button"

@@ -38,7 +38,7 @@ vi.mock('../../components/SmartImage', async () => {
   const { createContext } = await import('react');
   return {
     ImageActivityContext: createContext(true),
-    SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
+    SmartImage: ({ retainWhileLoading: _retain, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { retainWhileLoading?: boolean }) => <img {...props} />,
     OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} />,
   };
 });
@@ -116,6 +116,121 @@ const installAppendObserver = () => {
   });
   return () => { const current = observers.filter(item => item.targets.length).at(-1); current?.callback(current.targets.map(target => ({ target, isIntersecting: true } as IntersectionObserverEntry)), {} as IntersectionObserver); };
 };
+
+it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(glass => [layout, glass] as const)))('%s／磨砂 %s：左上常驻收录状态替代 NAI，按风格串来源实时切换且保留原图片', async (layout, glass) => {
+  document.documentElement.dataset.galleryFrostedCaption = String(glass);
+  const source = (id: number) => ({ id: `saved-${id}`, type: 'style', description: `Imported from aitag #${id}` } as PromptChain);
+  const view = await setup(layout, true, [source(1)]);
+  const firstImage = card(1).querySelector('img');
+  const saved = within(card(1)).getByRole('img', { name: '已收录到风格串' });
+  const unsaved = within(card(2)).getByRole('img', { name: '未收录到风格串' });
+  expect(saved.className).toContain('text-emerald-400');
+  expect(saved.querySelector('.lucide-layers')).toBeTruthy();
+  expect(saved.querySelector('.lucide-check')).toBeTruthy();
+  expect(unsaved.querySelector('.lucide-x')).toBeTruthy();
+  expect(saved.className).toContain('rounded-full');
+  expect(saved.className).not.toContain('hover-reveal');
+  expect(saved.parentElement).toBe(card(1).querySelector('.mobile-gallery-frame'));
+  expect(within(card(1)).queryByText('NAI')).toBeNull();
+  view.rerender(view.draw(true, [source(1), source(2)]));
+  expect(within(card(2)).getByRole('img', { name: '已收录到风格串' })).toBeTruthy();
+  view.rerender(view.draw(true, [source(2)]));
+  expect(within(card(1)).getByRole('img', { name: '未收录到风格串' })).toBeTruthy();
+  expect(card(1).querySelector('img')).toBe(firstImage);
+});
+
+it.each(['masonry', 'portrait', 'square'])('%s：同页与跨页重复编号只显示一张，旧首图资料不被迟到摘要抹掉', async layout => {
+  const reach = installAppendObserver();
+  const duplicate = { ...works[0], id: '1' as unknown as number, firstImage: undefined, localFirstImageUrl: undefined };
+  mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? [...works, duplicate] : [duplicate, { ...works[0], id: 3, title: '合成作品 3' }, duplicate], total: 120, page: options.page }));
+  await setup(layout);
+  const original = card(1);
+  expect(screen.getAllByRole('button', { name: '查看作品 合成作品 1' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByLabelText('模型版本（已加载条目）'), { target: { value: 'NovelAI Diffusion V4.5' } });
+  await act(async () => reach());
+  await screen.findByRole('button', { name: '查看作品 合成作品 3' });
+  expect(screen.getAllByRole('button', { name: '查看作品 合成作品 1' })).toHaveLength(1);
+  expect(card(1)).toBe(original);
+  expect(card(1).querySelector('img')?.getAttribute('src')).toBe('/synthetic/1.png');
+});
+
+it('真实瀑布流：月榜＋模型＋画师＋排除两种参考，迟到命中不插入旧卡片前方或重建旧图片', async () => {
+  mocks.realMasonry = true;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 1000 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    unobserve() {} disconnect() {}
+  });
+  const listed = Array.from({ length: 12 }, (_, index) => {
+    const id = index + 1;
+    return { ...works[0], id, title: `合成作品 ${id}`, localFirstImageUrl: undefined, hasFullyCachedImages: false,
+      firstImage: id % 2 ? { ...works[0].firstImage!, ai_json: { prompt: 'artist:synthetic', width: 832, height: 1216, seed: 1 } } : undefined };
+  });
+  mocks.search.mockImplementation(async options => ({ items: listed, total: 12, page: options.page }));
+  const waits: Array<{ options: any; resolve: (value: any) => void }> = [];
+  mocks.waitForFirstImageCache.mockImplementation(options => new Promise(resolve => waits.push({ options, resolve })));
+  const { main } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByLabelText('排序'), { target: { value: 'monthly' } });
+  await waitFor(() => expect(mocks.search.mock.calls.at(-1)?.[0].sort).toBe('monthly'));
+  fireEvent.change(screen.getByLabelText('模型版本（已加载条目）'), { target: { value: 'NovelAI Diffusion V4.5' } });
+  fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toEqual([2, 4, 6, 8, 10, 12]));
+  const original = [1, 3, 5, 7, 9, 11].map(id => card(id));
+  const parents = original.map(element => element.parentElement);
+  const images = original.map(element => element.querySelector('img'));
+  main.scrollTop = 450;
+  const ready = (id: number, extra = {}) => ({ ...listed[id - 1], firstImage: { ...works[0].firstImage!, ai_json: { prompt: 'artist:synthetic', width: 832, height: 1216, seed: 1, ...extra } }, firstImageStatus: 'metadata' });
+  await act(async () => waits.at(-1)!.resolve({ items: [ready(8), ready(2)] }));
+  await waitFor(() => expect(mocks.masonry.mock.calls.at(-1)?.[0].items.map((work: AitagWorkSummary) => work.id)).toEqual([1, 3, 5, 7, 9, 11, 2, 8]));
+  await act(async () => waits.at(-1)!.resolve({ items: [ready(4, { reference_image_multiple: ['synthetic'] }), ready(6), ready(10, { director_reference_images: ['synthetic'] }), ready(12)] }));
+  await waitFor(() => expect(card(12)).toBeTruthy());
+  expect(screen.queryByRole('button', { name: '查看作品 合成作品 4' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '查看作品 合成作品 10' })).toBeNull();
+  original.forEach((element, index) => {
+    expect(card([1, 3, 5, 7, 9, 11][index])).toBe(element);
+    expect(element.parentElement).toBe(parents[index]);
+    expect(element.querySelector('img')).toBe(images[index]);
+  });
+  expect(main.scrollTop).toBe(450);
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'all' } });
+  expect(mocks.masonry.mock.calls.at(-1)?.[0].items.map((work: AitagWorkSummary) => work.id)).toEqual([1, 2, 3, 5, 6, 7, 8, 9, 11, 12]);
+  expect(main.scrollTop).toBe(0);
+});
+
+it('资料只更新一个作品时仅重算该作品的提示词，缩略图取整和输入草稿不重算整批筛选', async () => {
+  const service = await import('../../services/aitagService');
+  const reads = vi.spyOn(service, 'getAitagWorkPromptTexts');
+  const listed = Array.from({ length: 60 }, (_, index) => ({ ...works[0], id: index + 1, title: `合成作品 ${index + 1}`,
+    localFirstImageUrl: undefined, hasFullyCachedImages: false,
+    firstImage: { ...works[0].firstImage!, local_image_url: undefined, ai_json: { prompt: 'artist:synthetic', width: 832, height: 1216, seed: 1 } } }));
+  mocks.search.mockResolvedValue({ items: listed, total: 60, page: 1 });
+  const waits: Array<(value: any) => void> = [];
+  mocks.waitForFirstImageCache.mockImplementation(() => new Promise(resolve => waits.push(resolve)));
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.change(screen.getByLabelText('画师串'), { target: { value: 'with' } });
+  await waitFor(() => expect(reads).toHaveBeenCalledWith(expect.objectContaining({ id: 60 }), undefined));
+  await act(async () => {});
+  reads.mockClear();
+  const image = card(1).querySelector('img')!;
+  Object.defineProperties(image, { naturalWidth: { value: 384 }, naturalHeight: { value: 561 } });
+  const estimates = mocks.masonry.mock.calls.at(-1)?.[0].estimateItemHeight;
+  fireEvent.load(image);
+  fireEvent.change(screen.getByPlaceholderText('作品、作者、标题或标签，回车检索'), { target: { value: '尚未搜索' } });
+  expect(reads).not.toHaveBeenCalled();
+  expect(mocks.masonry.mock.calls.at(-1)?.[0].estimateItemHeight).toBe(estimates);
+  await act(async () => waits.at(-1)!({ items: [{ ...listed[30], localFirstImageUrl: '/synthetic/cached-31.png' }] }));
+  await waitFor(() => expect(card(31).querySelector('img')?.getAttribute('src')).toBe('/synthetic/cached-31.png'));
+  expect(reads).toHaveBeenCalledOnce();
+  expect(reads.mock.calls[0][0].id).toBe(31);
+});
 
 it('超过800条仍由生产DOM哨兵自动继续，无强制手动更多', async () => {
   const reach = installAppendObserver();
@@ -292,6 +407,7 @@ it('在线大总数回退小缓存后按缓存实际总数停止，不连续扫�
   mocks.search.mockImplementation(async options => { if (options.page > 1) throw new Error('offline'); return { items: works, total: 6000, page: 1 }; });
   mocks.searchCache.mockResolvedValue({ items: [], total: 60, page: 2 });
   await setup('portrait'); await act(async () => reach());
+  await waitFor(() => expect(mocks.searchCache).toHaveBeenCalled());
   await waitFor(() => expect(screen.queryByText('正在加载更多…')).toBeNull());
   const reads = mocks.searchCache.mock.calls.length; await act(async () => { reach(); reach(); });
   expect(mocks.searchCache).toHaveBeenCalledTimes(reads); expect(mocks.searchCache.mock.calls.some(([options]) => options.page >= 3)).toBe(false);

@@ -26,6 +26,7 @@ import {
   getAitagWorkReferenceUsage,
   hasAitagLocalPromptTerms,
   matchesAitagPromptQuery,
+  mergeAitagWorks,
   parseAitagAiJson,
   parseAitagPromptQuery,
 } from '../services/aitagService';
@@ -39,7 +40,7 @@ import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './Mo
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
+import { Check, ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle, X } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -48,7 +49,7 @@ import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover, ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareOverlay } from './ImageShareActions';
 import { collectionSnapshot, subscribeCollection, aitagCollectionImages, type CollectionTarget } from '../services/collectionFavorites';
 import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCache';
 
@@ -102,6 +103,7 @@ const getAitagTimeRange = (sort: AitagSort, rankMonth: string) => (
 );
 
 const uniqueUrls = (urls: string[]) => Array.from(new Set(urls.filter(Boolean)));
+const getAitagWorkKey = (work: AitagWorkSummary) => String(work.id);
 
 const parseAitagArrayField = (value: unknown): unknown[] => {
   if (Array.isArray(value)) return value;
@@ -151,6 +153,14 @@ const getAitagImageRatio = (image?: AitagImage) => {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
     ? width / height
     : undefined;
+};
+
+const aitagModelLabels = new WeakMap<AitagImage, string>();
+const getWorkModelLabel = (work: AitagWorkSummary) => {
+  const image = work.firstImage || work.first_image;
+  if (!image) return '';
+  if (!aitagModelLabels.has(image)) aitagModelLabels.set(image, getAitagModelLabel(image));
+  return aitagModelLabels.get(image)!;
 };
 
 const isAitagFavorite = (work: AitagWorkSummary) => {
@@ -255,6 +265,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
     <SmartImage
       key={retryKey}
       src={src}
+      retainWhileLoading
       alt=""
       className={`w-full h-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'}`}
       onLoad={event => {
@@ -353,7 +364,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const hasLoadedRef = useRef(aitagPageCache.hasLoaded);
   const cancelPageInputRef = useRef(false);
   const cacheStatusRefreshTimerRef = useRef<number | null>(null);
-  const [items, setItems] = useState<AitagWorkSummary[]>(() => aitagPageCache.items);
+  const [items, setItems] = useState<AitagWorkSummary[]>(() => mergeAitagWorks([], aitagPageCache.items));
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
   const [selectedId, setSelectedId] = useState<number | null>(() => aitagPageCache.selectedId);
   const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
@@ -400,6 +411,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
   const filterAnchorRef = useRef<HTMLDivElement>(null);
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible');
+  const [resultRevision, setResultRevision] = useState(0);
 
   const selectedDetail = selectedId ? details[selectedId] : null;
   const selectedImages = useMemo(() => {
@@ -421,10 +433,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   // 模型、画师串、风格串与提示词细筛作用于已加载/已缓存的条目（按首图或已加载详情的元数据判断），
   // 选项改变即时生效；服务端检索条件（关键词、提示词主条件、缓存、排序、月份）仍按页拉取。
   const [modelFilter, setModelFilter] = useState(() => aitagPageCache.modelFilter);
-  const getWorkModelLabel = (work: AitagWorkSummary) => {
-    const image = work.firstImage || work.first_image;
-    return image ? getAitagModelLabel(image) : '';
-  };
   const modelOptions = useMemo(
     () => Array.from(new Set(items.map(getWorkModelLabel).filter(Boolean))).sort(),
     [items],
@@ -456,22 +464,49 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       .catch(() => { if (current) setKnownArtists(new Set()); });
     return () => { current = false; };
   }, [artistFilter, knownArtists]);
-  const matchesLocalFilters = (work: AitagWorkSummary, ignoreChainFilter = false) => {
-    const detail = details[work.id];
-    if (!ignoreChainFilter && !matchesChainFilter(work)) return false;
-    // 没有任何元数据时无法判断模型、画师串或提示词，先隐藏，补齐后再按条件显示。
-    if (metadataFilterActive && !(work.firstImage || work.first_image) && !(detail && !detail.isPreviewOnly && detail.images.length)) return false;
-    if (modelFilter && getWorkModelLabel(work) !== modelFilter) return false;
-    if (excludeVibe || excludePrecise) {
-      const usage = getAitagWorkReferenceUsage(work);
-      if (usage.unknown || (excludeVibe && usage.vibe) || (excludePrecise && usage.precise)) return false;
+  const matchesMetadataFilters = useMemo(() => {
+    const matches = new WeakMap<AitagWorkSummary, boolean>();
+    const check = (work: AitagWorkSummary) => {
+      const detail = details[work.id];
+      // 没有任何元数据时无法判断模型、画师串或提示词，先隐藏，补齐后再按条件显示。
+      if (metadataFilterActive && !(work.firstImage || work.first_image) && !(detail && !detail.isPreviewOnly && detail.images.length)) return false;
+      if (modelFilter && getWorkModelLabel(work) !== modelFilter) return false;
+      if (excludeVibe || excludePrecise) {
+        const usage = getAitagWorkReferenceUsage(work);
+        if (usage.unknown || (excludeVibe && usage.vibe) || (excludePrecise && usage.precise)) return false;
+      }
+      if (artistFilter === 'all' && !hasLocalPromptTerms) return true;
+      const texts = getAitagWorkPromptTexts(work, detail);
+      if (artistFilter !== 'all' && texts.some(text => aitagPromptHasArtistTags(text, knownArtists)) !== (artistFilter === 'with')) return false;
+      return matchesAitagPromptQuery(texts, promptQuery);
+    };
+    return (work: AitagWorkSummary) => {
+      if (!matches.has(work)) matches.set(work, check(work));
+      return matches.get(work)!;
+    };
+  }, [details, metadataFilterActive, modelFilter, excludeVibe, excludePrecise, artistFilter, hasLocalPromptTerms, knownArtists, promptQuery]);
+  const matchesLocalFilters = (work: AitagWorkSummary, ignoreChainFilter = false) => (
+    (ignoreChainFilter || matchesChainFilter(work)) && matchesMetadataFilters(work)
+  );
+  const matchingItems = useMemo(() => items.filter(work => (
+    (chainFilter === 'all' || savedChainWorkIds.has(Number(work.id)) === (chainFilter === 'saved')) && matchesMetadataFilters(work)
+  )), [items, chainFilter, savedChainWorkIds, matchesMetadataFilters]);
+  const resultKey = JSON.stringify([resultRevision, appliedQ, appliedPrompt, sort, rankMonth, cacheFilter, modelFilter, artistFilter, chainFilter, excludeVibe, excludePrecise]);
+  const visibleOrder = useRef<{ key: string; ids: number[] }>({ key: resultKey, ids: [] });
+  const visibleItems = useMemo(() => {
+    if (visibleOrder.current.key !== resultKey) return matchingItems;
+    const remaining = new Map(matchingItems.map(work => [work.id, work]));
+    const ordered: AitagWorkSummary[] = [];
+    // 后补资料的命中项接在已显示作品后面，不反复插入正在浏览的卡片前方。
+    for (const id of visibleOrder.current.ids) {
+      const work = remaining.get(id);
+      if (work) { ordered.push(work); remaining.delete(id); }
     }
-    if (artistFilter === 'all' && !hasLocalPromptTerms) return true;
-    const texts = getAitagWorkPromptTexts(work, detail);
-    if (artistFilter !== 'all' && texts.some(text => aitagPromptHasArtistTags(text, knownArtists)) !== (artistFilter === 'with')) return false;
-    return matchesAitagPromptQuery(texts, promptQuery);
-  };
-  const visibleItems = hasLocalFilter ? items.filter(work => matchesLocalFilters(work)) : items;
+    return [...ordered, ...remaining.values()];
+  }, [matchingItems, resultKey]);
+  useLayoutEffect(() => {
+    visibleOrder.current = { key: resultKey, ids: visibleItems.map(work => work.id) };
+  }, [resultKey, visibleItems]);
   // 筛选或取消收藏移走当前作品时，不留下找不到目标的暗态与详情。
   useEffect(() => {
     if (!isLoading && selectedId !== null && !visibleItems.some(work => work.id === selectedId)) {
@@ -496,7 +531,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     return imageHeight + (frostedCaption ? 2 : 70);
   }, [aitagRatios, details, frostedCaption]);
   const renderAitagCard = (work: AitagWorkSummary) => {
-    const type = getAitagType(work);
+    const isSaved = savedChainWorkIds.has(Number(work.id));
+    const savedLabel = t(isSaved ? '已收录到风格串' : '未收录到风格串');
     const isSelected = selectedId === work.id;
     const detail = details[work.id];
     const imageCount = getAitagWorkImageCount(work, detail);
@@ -555,15 +591,21 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             onResolveFirstImage={() => { void getDetail(work).catch(console.error); }}
             onImageLoad={(width, height) => {
               const ratio = width / Math.max(1, height);
+              // 缩略图整数像素取整不改变原图比例，避免每张图就绪都触发一次整列估高。
+              if (measuredRatio && Math.abs(ratio / measuredRatio - 1) < 0.005) return;
               if (Number.isFinite(ratio) && ratio > 0 && aitagRatios[work.id] !== ratio) {
                 aitagRatioCache[work.id] = ratio;
                 setAitagRatios(previous => (previous[work.id] === ratio ? previous : { ...previous, [work.id]: ratio }));
               }
             }}
           />
-          <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro font-bold">
-            {type || 'AI'}
-          </div>
+          <span role="img" aria-label={savedLabel} title={savedLabel} data-aitag-chain-status={isSaved ? 'saved' : 'unsaved'}
+            className={`absolute left-2 top-2 z-10 inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS} ${isSaved ? '!text-emerald-400' : ''}`}>
+            <Layers aria-hidden="true" className="h-4 w-4" />
+            <span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-black/85">
+              {isSaved ? <Check className="h-3 w-3" strokeWidth={3} /> : <X className="h-3 w-3" strokeWidth={3} />}
+            </span>
+          </span>
           {!frostedCaption && <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {t('{0}页', [imageCount])}
           </div>}
@@ -705,6 +747,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     if (!isAppend) {
       appendRun.current++; appendingRef.current = false;
       setIsAppending(false); setAppendError(null);
+      if (options.resetScroll) setResultRevision(value => value + 1);
     }
     if (isAppend) {
       const signature = getQuerySignature();
@@ -794,7 +837,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       hasLoadedRef.current = true;
       aitagPageCache = {
         ...aitagPageCache,
-        items: isAppend ? [...aitagPageCache.items, ...nextItems] : nextItems,
+        items: mergeAitagWorks(isAppend ? aitagPageCache.items : [], nextItems),
         total: nextTotal,
         page: nextPage,
         error: nextError,
@@ -810,7 +853,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         setAppliedQ(targetQ);
         setAppliedPrompt(targetPrompt);
       }
-      setItems(previous => (isAppend ? [...previous, ...nextItems] : nextItems));
+      setItems(previous => mergeAitagWorks(isAppend ? previous : [], nextItems));
       setTotal(nextTotal);
       setPage(nextPage);
       setCacheStatus(nextStatus);
@@ -886,7 +929,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         const cached = cachedById.get(Number(item.id));
         if (!cached) return item;
         changed = true;
-        return { ...item, ...cached };
+        return mergeAitagWorks([item], [cached])[0];
       });
       if (changed) {
         aitagPageCache = { ...aitagPageCache, items: mergedItems };
@@ -928,7 +971,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     if (!refreshedWork) return null;
 
     setItems(prev => {
-      const nextItems = prev.map(item => item.id === workId ? { ...item, ...refreshedWork } : item);
+      const nextItems = prev.map(item => item.id === workId ? mergeAitagWorks([item], [refreshedWork])[0] : item);
       aitagPageCache = { ...aitagPageCache, items: nextItems };
       return nextItems;
     });
@@ -1593,9 +1636,10 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           ) : (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
+                resetKey={resultKey}
                 items={visibleItems}
                 columns={masonryColumns}
-                getItemKey={work => String(work.id)}
+                getItemKey={getAitagWorkKey}
                 estimateItemHeight={estimateAitagCardHeight}
                 renderItem={renderAitagCard}
                 stableColumns

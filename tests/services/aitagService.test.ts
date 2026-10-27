@@ -16,9 +16,29 @@ import {
   getAitagWorkPromptTexts,
   getAitagWorkReferenceUsage,
   matchesAitagPromptQuery,
+  mergeAitagWorks,
   parseAitagPromptQuery,
   type AitagImage,
 } from '../../services/aitagService';
+
+describe('mergeAitagWorks', () => {
+  it('同页及跨页重复只留一项，保持首次位置并更新摘要，不丢已就绪首图', () => {
+    const image = { id: 11, work_id: 1, author_id: 1, image_type: 'nai', file_name: 'first', ai_json: { prompt: 'artist:synthetic' }, local_image_url: '/synthetic/1.png' };
+    const merged = mergeAitagWorks([
+      { id: 1, title: 'old', firstImage: image, localFirstImageUrl: '/synthetic/1.png', hasCachedDetail: true, hasFullyCachedImages: true, isFavorite: true },
+      { id: 2 }, { id: 1 },
+    ], [{ id: '1' as unknown as number, title: 'updated', firstImage: undefined, localFirstImageUrl: undefined, hasCachedDetail: false, hasFullyCachedImages: false, isFavorite: false }, { id: 3 }, { id: 3 }]);
+    expect(merged.map(work => work.id)).toEqual([1, 2, 3]);
+    expect(merged[0]).toMatchObject({ title: 'updated', firstImage: image, localFirstImageUrl: '/synthetic/1.png', hasCachedDetail: true, hasFullyCachedImages: true, isFavorite: false });
+    expect(mergeAitagWorks([], [{ id: 0 }, { id: NaN }, { id: 1.5 }])).toEqual([]);
+  });
+
+  it('首图的部分更新补上新字段，保留先到的提示词和本地地址', () => {
+    const firstImage = { id: 1, work_id: 1, author_id: 1, image_type: 'nai', file_name: 'first', ai_json: { prompt: 'artist:synthetic' }, local_image_url: '/synthetic/1.png' };
+    const [merged] = mergeAitagWorks([{ id: 1, firstImage }], [{ id: 1, first_image: { ...firstImage, ai_json: undefined, local_image_url: undefined, model: 'nai-diffusion-4-5-full' } }]);
+    expect(merged.firstImage).toMatchObject({ ai_json: firstImage.ai_json, local_image_url: firstImage.local_image_url, model: 'nai-diffusion-4-5-full' });
+  });
+});
 
 describe('parseMaybeJsonArray', () => {
   it('原生数组转字符串数组', () => {
