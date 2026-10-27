@@ -1,12 +1,12 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { flushSync } from 'react-dom';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, Layers, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
 import { createDefaultRollTemplate, DEFAULT_ROLL_RULES, formatRollStyle, getRollArtistRange, getRollPinnedArtists, removeRollCandidates, ROLL_MAX_ARTISTS, rollCandidateCapacity, rollCandidateToChain, rollSourceId, type RollChainArtistSource, type RollCandidate, type RollRules, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
-import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
+import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { ARTIST_SAMPLES_CHANGED, getArtistSampleLibrary, normalizeArtistSampleTag } from '../services/artistSamples';
 import { loadArtistSampleUrls } from '../services/artistSampleUrls';
 import { getSampledArtistTags } from '../services/artistSampleDrafts';
@@ -42,7 +42,7 @@ import { normalizeArtistUsageKey } from '../services/artistParticipation';
 import { StyleRollChainArtistDialog } from './roll/StyleRollChainArtistDialog';
 import { StyleRollArtistDialog } from './roll/StyleRollArtistDialog';
 import { StyleRollRuleFields } from './roll/StyleRollRuleFields';
-import { collectionSnapshot, ensureCollection } from '../services/collectionFavorites';
+import { collectionRevision, collectionSnapshot, collectionTargetActive, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { rollChipColor } from './roll/rollPalette';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
@@ -58,6 +58,9 @@ interface Props {
   onOpenArtistLibrary?: (name?: string) => void;
   initialPinned?: { tags: string[]; token: number } | null;
 }
+const ROLL_FILTER_LABELS = { all: '全部', unsaved: '已出图但未保存', saved: '已保存', pending: '待生成', favorited: '已收藏', unfavorited: '未收藏', archived: '回收站' } as const;
+/** 依赖已出图结果、候选会因保存或收藏离开当前结果的筛选：就绪前显示读取状态，离开时详情衔接下一项。 */
+const ROLL_TRIAGE_FILTERS: readonly string[] = ['unsaved', 'favorited', 'unfavorited'];
 /** 画师库带入的固定画师只消费一次；页面被保活淘汰后重建也不重复建记录。 */
 const artistCountLabel = (rules: RollRules) => rules.minArtists === rules.maxArtists ? String(rules.maxArtists) : `${rules.minArtists}–${rules.maxArtists}`;
 const consumedPinnedTokens = new Set<number>();
@@ -132,20 +135,34 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const remaining = experiment ? rollCandidateCapacity(experiment) : 240;
   const selected = experiment?.candidates.find(item => item.id === selectedId);
   const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
+  // 与卡片爱心共用收藏库判定，收藏或取消后筛选与多选即时跟随。
+  const collectionVersion = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
+  const [collectionSettled, setCollectionSettled] = useState(false);
+  const [collectionFailed, setCollectionFailed] = useState(false);
+  const loadFavorites = useCallback(async () => {
+    setCollectionSettled(false); setCollectionFailed(false);
+    try { await ensureCollection(); if (mounted.current) setCollectionSettled(true); }
+    catch { if (mounted.current) setCollectionFailed(true); }
+  }, []);
+  useEffect(() => { if (active) void loadFavorites(); }, [active, loadFavorites]);
+  const favoriteIds = useMemo(() => new Set([...images].filter(([, item]) => collectionTargetActive({ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id })).map(([id]) => id)), [images, collectionVersion]);
   const round = experiment && currentRollRound(experiment);
   const selectedImage = selected && images.get(selected.id);
   const historyReady = Boolean(experiment && historyReadyId === experiment.id);
+  const filterReady = filter === 'favorited' || filter === 'unfavorited' ? historyReady && collectionSettled : filter === 'pending' || filter === 'unsaved' ? historyReady : true;
   const cost = experiment ? estimateV45GenerationCost(experiment.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true) : 0;
   const costLabel = !subscription.info ? t(subscription.loading ? '费用确认中…' : '费用未知') : t(formatGenerationCostLabel(cost, experiment?.template.params.model));
   const roundCostLabel = !subscription.info ? t(subscription.loading ? '费用确认中…' : '费用未知') : experiment ? formatGenerationCostLabel(cost * Math.max(1, count), experiment.template.params.model) : '';
-  const visible = useMemo(() => experiment ? rollWorkspaceCandidates(experiment, images, { filter, roundId, query, sort }, chineseNames) : [], [experiment, images, filter, roundId, query, sort, chineseNames]);
+  const visible = useMemo(() => experiment ? rollWorkspaceCandidates(experiment, images, { filter, roundId, query, sort }, chineseNames, favoriteIds) : [], [experiment, images, filter, roundId, query, sort, chineseNames, favoriteIds]);
   const chosen = visible.filter(candidate => selectedIds.has(candidate.id));
+  const visibleFavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, true)) : [];
+  const visibleUnfavorited = historyReady && collectionSettled ? visible.filter(candidate => rollFavoriteMatches(candidate, images, favoriteIds, false)) : [];
   useEffect(() => { if (!busy) setSelectedIds(current => { const next = new Set([...current].filter(id => visible.some(candidate => candidate.id === id))); return next.size === current.size ? current : next; }); }, [visible, busy]);
   const previousVisible = useRef<string[]>([]);
   useEffect(() => {
     if (selectedId && !visible.some(candidate => candidate.id === selectedId)) {
       const previous = previousVisible.current, index = previous.indexOf(selectedId), available = new Set(visible.map(candidate => candidate.id));
-      setSelectedId(filter === 'unsaved' && index >= 0 ? [...previous.slice(index + 1), ...previous.slice(0, index).reverse()].find(id => available.has(id)) || '' : '');
+      setSelectedId(ROLL_TRIAGE_FILTERS.includes(filter) && index >= 0 ? [...previous.slice(index + 1), ...previous.slice(0, index).reverse()].find(id => available.has(id)) || '' : '');
       selectionAnchor.clearAnchor();
     }
     previousVisible.current = visible.map(candidate => candidate.id);
@@ -545,7 +562,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       round: round ? { id: round.id, candidateIds: round.candidateIds, closedAt: round.closedAt || null } : null,
       candidates: experiment ? experiment.candidates.map(candidate => ({
         id: candidate.id, tags: candidate.tags, archived: candidate.archived === true,
-        savedChainId: candidate.savedChainId || '', hasImage: images.has(candidate.id),
+        savedChainId: candidate.savedChainId || '', hasImage: images.has(candidate.id), favorite: collectionSettled ? favoriteIds.has(candidate.id) : null,
       })) : [],
       session: session ? { scope: session.scope, state: session.state, queued: session.queued, progress: session.progress, awaiting: session.awaiting || null } : null,
       library: { count: library.length, loading: libraryLoading, error: libraryError, sampledOnly, effectiveCount: effectiveLibrary.length, sampledReady: sampledTags !== null },
@@ -637,6 +654,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           {filter === 'archived' && <ToolbarButton tone="danger" disabled={frozen || !chosen.length} onClick={() => purgeCandidates(chosen.map(candidate => candidate.id))}><Trash2 />{t('永久清理所选')}</ToolbarButton>}
           <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.map(candidate => candidate.id)))}>{t('全选筛选结果')}</ToolbarButton>
           <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.filter(candidate => !selectedIds.has(candidate.id)).map(candidate => candidate.id)))}>{t('反选筛选结果')}</ToolbarButton>
+          <ToolbarButton disabled={frozen || !visibleFavorited.length} onClick={() => setSelectedIds(new Set(visibleFavorited.map(candidate => candidate.id)))}>{t('选择已收藏图片')}</ToolbarButton>
+          <ToolbarButton disabled={frozen || !visibleUnfavorited.length} onClick={() => setSelectedIds(new Set(visibleUnfavorited.map(candidate => candidate.id)))}>{t('选择未收藏图片')}</ToolbarButton>
           <ToolbarButton disabled={frozen || !chosen.length} onClick={() => setSelectedIds(new Set())}>{t('清空选择')}</ToolbarButton>
         </div>
         <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
@@ -673,7 +692,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
             {close => <div className="space-y-4">
               <div role="group" aria-label={t('候选筛选')} className="grid grid-cols-2 gap-2">
-                {(['all', 'unsaved', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'unsaved' ? '已出图但未保存' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'unsaved' ? '已出图但未保存' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
+                {(['all', 'unsaved', 'saved', 'pending', 'favorited', 'unfavorited', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(ROLL_FILTER_LABELS[value])} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(ROLL_FILTER_LABELS[value])}<span className="ml-auto text-xs opacity-60">{(value === 'favorited' || value === 'unfavorited') && (!collectionSettled || !historyReady) ? '—' : experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }, undefined, favoriteIds).length : 0}</span></ToolbarButton>)}
               </div>
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{`${t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])}${roundConditionLabel(item) ? ` · ${roundConditionLabel(item)}` : ` · ${item.candidateIds.length}`}`}</option>)}</select></label>
               {scopedRound?.snapshot && <ToolbarButton className="w-full" onClick={() => { const snapshot = scopedRound.snapshot!; setRoundRules({ ...snapshot.rules, maxArtists: Math.max(snapshot.rules.maxArtists, snapshot.pinnedArtists?.length ?? 0) }); setPinnedArtists(snapshot.pinnedArtists ?? []); setChainArtistSource(snapshot.chainArtistSource); setSampledOnly(Boolean(snapshot.sampledOnly)); close(); }}><RotateCcw />{t('沿用这轮条件')}</ToolbarButton>}
@@ -713,7 +732,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
         </div>
       </div>}
     </WorkspaceToolbar>
-    {experiment && ((filter !== 'pending' && filter !== 'unsaved') || historyReady) && <ToolbarCountCaption>{filter !== 'all' || roundId || query.trim()
+    {experiment && filterReady && <ToolbarCountCaption>{filter !== 'all' || roundId || query.trim()
       ? t('匹配 {0} 个候选', [visible.length])
       : t('共 {0} 个候选', [visible.length])}</ToolbarCountCaption>}
     {error && <div role="alert" className="flex flex-none items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><div className="min-w-0 flex-1 break-words"><span>{t(error)}</span>{saveFailures?.experimentId === experimentId && saveFailures.messages.length > 0 && <details open><summary>{t('失败详情')}</summary><ul className="max-h-32 overflow-y-auto">{saveFailures.messages.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}</div>{errorSource !== 'generation' && <button type="button" className="mobile-touch shrink-0 px-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}<IconButton label="关闭错误提示" className="!h-8 !w-8 !border-transparent !bg-transparent !text-current" onClick={() => setError('')}><X /></IconButton></div>}
@@ -724,7 +743,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </WorkspaceChrome>
     {loading && !experiment ? <PageSpinner className="workspace-scroll-viewport flex-1 overflow-y-auto" /> : !experiment ? <EmptyState className="workspace-scroll-viewport flex-1 overflow-y-auto p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint={libraryLoading ? t('正在读取画师词库…') : libraryError || t('从画师库抽取组合，一键出图，只保存喜欢的候选。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" disabled={!canStart} onClick={() => runRound()}><Dice5 />{t('开始第一轮')}</ToolbarButton></div>} />
       : <div className="relative flex min-h-0 flex-1">
-        {filter === 'unsaved' && !historyReady ? <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{t(historyLoading ? '加载中…' : '历史暂不可用')}</div> : <StyleRollGallery experiment={experiment} candidates={visible} images={images} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
+        {ROLL_TRIAGE_FILTERS.includes(filter) && !filterReady ? <div role="status" className="flex flex-1 items-center justify-center p-6 text-sm text-gray-500">{(filter === 'favorited' || filter === 'unfavorited') && collectionFailed ? <div role="alert" className="flex items-center gap-2"><span>{t('收藏状态读取失败')}</span><ToolbarButton onClick={() => void loadFavorites()}>{t('重新加载')}</ToolbarButton></div> : t(historyReady || historyLoading ? '加载中…' : '历史暂不可用')}</div> : <StyleRollGallery experiment={experiment} candidates={visible} images={images} favoriteIds={favoriteIds} preview={livePreview} roundNumbers={roundNumbers} generatingId={generatingCandidateId} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />}
         {!isMobile && selected && <aside className="workspace-fixed-pane appearance-surface flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="appearance-surface flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="appearance-surface text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="appearance-surface min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
