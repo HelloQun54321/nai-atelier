@@ -1289,6 +1289,22 @@ it('提示词多条件只把最长条件交给服务端，其余包含与排除�
   expect(mocks.search.mock.calls.filter(([options]) => options.page === 1).at(-1)?.[0]).toMatchObject({ prompt: '' });
 });
 
+it('远端检索未返回时移除条件也立即生效，叉号不会看起来没有反应', async () => {
+  const items = promptWorks(['artist:synthetic painter, 1girl', 'plain, scenery']);
+  mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 2, page: options.page, page_size: 60 }));
+  await setup('portrait');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const input = screen.getByPlaceholderText('逗号分隔多个条件，- 开头排除');
+  fireEvent.change(input, { target: { value: 'synthetic' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  const chip = await screen.findByRole('button', { name: '移除筛选：提示词：synthetic' });
+  // 下一次检索挂起（慢网络或失败前置阶段）：条件仍必须立即从界面移除。
+  mocks.search.mockImplementation(() => new Promise(() => {}));
+  fireEvent.click(chip);
+  expect(screen.queryByRole('button', { name: '移除筛选：提示词：synthetic' })).toBeNull();
+  expect((screen.getByRole('searchbox', { name: '搜索 AITag 作品' }) as HTMLInputElement).value).toBe('');
+});
+
 it('切换排序后滚动追加仍按新条件接上下一页，不因旧条件签名被丢弃', async () => {
   // 记录被观察的元素：追加只响应实际观察目标的相交事件。
   const observers: Array<{ callback: (entries: Array<{ isIntersecting: boolean; target: Element }>) => void; targets: Element[] }> = [];

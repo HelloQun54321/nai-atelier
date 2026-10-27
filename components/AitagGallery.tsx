@@ -1265,20 +1265,26 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
 
   /** 清除单个服务端检索条件并立即重新检索；另一项回到已生效的值，不顺带提交未应用的草稿。 */
   const clearSearchText = (field: 'q' | 'prompt') => {
-    aitagPageCache = { ...aitagPageCache, selectedId: null };
-    setSelectedId(null);
     const nextQ = field === 'q' ? '' : appliedQ;
     const nextPrompt = field === 'prompt' ? '' : appliedPrompt;
+    // 条件立即从已生效列表移除：远端检索可能要十几秒甚至失败，不能让叉号看起来没反应。
+    aitagPageCache = { ...aitagPageCache, selectedId: null, appliedQ: nextQ, appliedPrompt: nextPrompt };
+    setSelectedId(null);
     setQ(nextQ);
     setPrompt(nextPrompt);
+    setAppliedQ(nextQ);
+    setAppliedPrompt(nextPrompt);
     loadWorks(1, { resetScroll: true, qOverride: nextQ, promptOverride: nextPrompt });
   };
 
   const resetFilters = () => {
-    aitagPageCache = { ...aitagPageCache, selectedId: null };
+    // 与单个条件一致：已生效条件立即清空，不等远端重新检索返回。
+    aitagPageCache = { ...aitagPageCache, selectedId: null, appliedQ: '', appliedPrompt: '' };
     setSelectedId(null);
     setQ('');
     setPrompt('');
+    setAppliedQ('');
+    setAppliedPrompt('');
     setCacheFilter('all');
     setSort('new');
     setRankMonth('current');
