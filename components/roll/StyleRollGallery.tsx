@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Dice5, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { Check, Dice5, Heart, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
@@ -24,11 +24,13 @@ interface Props {
   roundNumbers?: Map<string, number>;
   /** 正在等待生成的候选；没有流式预览时也显示进行中。 */
   generatingId?: string;
+  /** 已收藏图片的候选；多选时卡片上的爱心被勾选框替换，靠它标出收藏状态。 */
+  favoriteIds?: ReadonlySet<string>;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, generatingId, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, generatingId, favoriteIds, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
@@ -74,7 +76,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             </div>}
 
         {selecting ? (
-          <span aria-hidden="true" className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur transition-all ${selected ? 'border-indigo-500 bg-indigo-600 text-white scale-105' : 'border-white/80 bg-black/35 text-transparent hover:scale-105'}`}><Check className="h-4 w-4" /></span>
+          <>
+            {favoriteIds?.has(candidate.id) && <span role="img" aria-label={t('已收藏')} title={t('已收藏')} className="pointer-events-none absolute right-10 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400 bg-rose-500 text-white shadow backdrop-blur"><Heart className="h-3.5 w-3.5 fill-current" /></span>}
+            <span aria-hidden="true" className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur transition-all ${selected ? 'border-indigo-500 bg-indigo-600 text-white scale-105' : 'border-white/80 bg-black/35 text-transparent hover:scale-105'}`}><Check className="h-4 w-4" /></span>
+          </>
         ) : (
           <>
             {/* 右上角操作岛（分享 / 存为风格串） */}

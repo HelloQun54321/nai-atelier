@@ -10,12 +10,12 @@ import { StyleRollPage } from '../../components/StyleRollPage';
 import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>() }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: async () => ({ available: true, canManage: true, packs: [] }), ARTIST_SAMPLES_CHANGED: 'nai-artist-samples-changed', getArtistSampleLibrary: mocks.dictionary, normalizeArtistSampleTag: (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase() }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 const sampleUrls = new Map<string, string>();
 vi.mock('../../services/artistSampleUrls', () => ({ loadArtistSampleUrls: async () => sampleUrls }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: vi.fn() }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => preferredItems, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; }, collectionRevision: () => mocks.collectionRevision, ensureCollection: async () => {}, toggleArtistPreference: vi.fn(), collectionTargetActive: (target: { sourceId?: string }) => mocks.favorites.has(target.sourceId || '') }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: async () => ({ templates: {}, samples: [] }), getSampledArtistTags: mocks.sampled }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history, loadRollBlocklist: async () => [], saveRollBlocklist: async (tags: string[]) => tags }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
@@ -37,7 +37,7 @@ let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
   sampleUrls.clear(); mocks.sampled.mockResolvedValue(new Set(['alpha']));
-  preferredItems.length = 0; vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  preferredItems.length = 0; vi.clearAllMocks(); mocks.favorites = new Set(); mocks.collectionRevision = 0; mocks.collectionListeners.clear(); mocks.cost = 0; mocks.mobile = false; mocks.setupHistory = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
@@ -534,6 +534,66 @@ it('批量保存逐项落盘，第二项关联失败保留选择，重试不重�
   fireEvent.click(screen.getByRole('button', { name: '保存所选' })); await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(3));
   expect(props.onSaveChain).toHaveBeenCalledTimes(2); expect(mocks.upload).toHaveBeenCalledTimes(2);
   await waitFor(() => expect(screen.getByText('已选 0 个候选')).toBeTruthy());
+});
+
+const setFavorites = (ids: string[]) => act(() => { mocks.favorites = new Set(ids); mocks.collectionRevision++; mocks.collectionListeners.forEach(listener => listener()); });
+
+it('收藏筛选里收藏或取消使当前候选离开结果时，详情依次衔接下一项、前一项，结果为空再收起', async () => {
+  experiment.candidates.push(candidateFixture('c', 'gamma')); mocks.history.mockResolvedValue(rows(experiment));
+  await setup(); filterBy('未收藏');
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 2' }));
+  setFavorites(['history-b']);
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
+  expect(screen.getByRole('button', { name: '查看候选 1' }).getAttribute('aria-pressed')).toBe('true');
+  setFavorites(['history-b', 'history-a']);
+  expect(screen.getByRole('button', { name: '查看候选 3' }).getAttribute('aria-pressed')).toBe('true');
+  setFavorites(['history-b', 'history-a', 'history-c']);
+  expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull();
+  filterBy('已收藏'); fireEvent.click(screen.getByRole('button', { name: '查看候选 3' }));
+  setFavorites(['history-b', 'history-a']);
+  expect(screen.getByRole('button', { name: '查看候选 2' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+it('收藏筛选等待历史真实就绪，不误报零匹配或空结果', async () => {
+  let finish!: (value: any) => void; mocks.history.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  mocks.favorites = new Set(['history-a']);
+  await setup(); filterBy('已收藏');
+  expect(screen.queryByText('暂无匹配候选')).toBeNull(); expect(screen.queryByText('匹配 0 个候选')).toBeNull();
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  await act(async () => finish(rows(experiment))); await screen.findByRole('button', { name: '查看候选 1' });
+  expect(screen.getByText('匹配 1 个候选')).toBeTruthy();
+});
+
+it('筛选可只看已收藏或未收藏的已出图候选，多选可直接选中当前结果中的已收藏或未收藏图片', async () => {
+  experiment.candidates.push(candidateFixture('c', 'gamma'));
+  mocks.history.mockResolvedValue(rows(experiment).slice(0, 2)); mocks.favorites = new Set(['history-a']);
+  const { container } = await setup();
+  await waitFor(() => expect(screen.getByAltText('候选 1')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect(screen.getByRole('button', { name: '已收藏' }).textContent).toContain('1');
+  expect(screen.getByRole('button', { name: '未收藏' }).textContent).toContain('1');
+  fireEvent.click(screen.getByRole('button', { name: '已收藏' }));
+  expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull(); expect(screen.queryByRole('button', { name: '查看候选 3' })).toBeNull();
+  filterBy('未收藏');
+  expect(screen.getByRole('button', { name: '查看候选 2' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull(); expect(screen.queryByRole('button', { name: '查看候选 3' })).toBeNull();
+  filterBy('全部');
+  expect(screen.queryByRole('img', { name: '已收藏' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '批量选择候选' }));
+  expect(within(screen.getByRole('checkbox', { name: '选择候选 1' })).getByRole('img', { name: '已收藏' })).toBeTruthy();
+  expect(within(screen.getByRole('checkbox', { name: '选择候选 2' })).queryByRole('img', { name: '已收藏' })).toBeNull();
+  expect(within(screen.getByRole('checkbox', { name: '选择候选 3' })).queryByRole('img', { name: '已收藏' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '选择已收藏图片' }));
+  expect(screen.getByRole('checkbox', { name: '选择候选 1' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('checkbox', { name: '选择候选 2' }).getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('checkbox', { name: '选择候选 3' }).getAttribute('aria-checked')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: '选择未收藏图片' }));
+  expect(screen.getByRole('checkbox', { name: '选择候选 1' }).getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('checkbox', { name: '选择候选 2' }).getAttribute('aria-checked')).toBe('true');
+  expect(screen.getByRole('checkbox', { name: '选择候选 3' }).getAttribute('aria-checked')).toBe('false');
+  const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as { candidates: { id: string; favorite: boolean }[] };
+  expect(state.candidates.map(candidate => [candidate.id, candidate.favorite])).toEqual([['a', true], ['b', false], ['c', false]]);
 });
 
 it('单项与批量丢弃共用可恢复状态，不删除原图及保存的风格串', async () => {

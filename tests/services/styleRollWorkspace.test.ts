@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
-import { rollPendingCandidates, rollWorkspaceCandidates } from '../../services/styleRollWorkspace';
+import { rollFavoriteMatches, rollPendingCandidates, rollWorkspaceCandidates } from '../../services/styleRollWorkspace';
 
 const fixture = () => {
   const e = rollFixture();
@@ -53,4 +53,17 @@ it('已出图但未保存仅显示有图片、未关联风格串且未归档的�
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved' }).map(item => item.id)).toEqual(['completed']);
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved', roundId: 'current', query: 'done_artist' }).map(item => item.id)).toEqual(['completed']);
   expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unsaved', roundId: 'old-round' })).toEqual([]);
+});
+
+it('收藏筛选只看已出图候选，未出图配方不算未收藏图片，回收站项不混入', () => {
+  const { e, images } = fixture();
+  images.set('old', rollImageFixture(e, e.candidates[0]));
+  images.set('trash', rollImageFixture(e, e.candidates[3]));
+  const favorites = new Set(['saved', 'trash']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited' }, undefined, favorites).map(item => item.id)).toEqual(['saved']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'unfavorited' }, undefined, favorites).map(item => item.id)).toEqual(['old']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited' })).toEqual([]);
+  expect(rollWorkspaceCandidates(e, images, { ...view, filter: 'favorited', roundId: 'old-round' }, undefined, favorites)).toEqual([]);
+  expect(e.candidates.filter(candidate => rollFavoriteMatches(candidate, images, favorites, false)).map(item => item.id)).toEqual(['old']);
+  expect(e.candidates.filter(candidate => rollFavoriteMatches(candidate, images, favorites, true)).map(item => item.id)).toEqual(['saved', 'trash']);
 });
