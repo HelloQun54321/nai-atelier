@@ -8,8 +8,8 @@ import fragment from '../../tools/nai-roll/patches/roll/core.mjs';
  * 产物侧与源码侧的**语义一致性**回归（跨模块）。
  *
  * `tools/nai-roll/patches/roll/core.mjs` 是注入到已发布产物的那份纯逻辑核；
- * `services/contentRoll*.ts` 是从它移植进源码的那一份。两边必须给出同样的结果，
- * 否则「产物上验收过的行为」与「源码里的行为」会悄悄分叉。
+ * `services/contentRoll*.ts` 已扩展为动态目录 v2；原型 v1 固定作为旧六类兼容基线。
+ * 旧内容、约束与抽取证据仍须一致，动态目录由源码侧单独验证。
  *
  * 这里只依赖纯函数，不需要已安装应用、不需要网络，因此在 CI 里可以常规运行。
  */
@@ -80,13 +80,57 @@ describe('产物片段与源码服务的语义一致性', () => {
   it('纯内容快照、白名单读取与四态约束派生一致', () => {
     const mine = draw({ chains, seed: 'r-parity' });
     const theirs = remote.draw({ chains, seed: 'r-parity' });
-    const mineSnapshot = contentSnapshotOf(mine, 'T');
+    const mineSnapshot = contentSnapshotOf(mine, 'T')!;
     const theirsSnapshot = remote.contentSnapshotOf(theirs, 'T');
-    expect(mineSnapshot).toEqual(theirsSnapshot);
-    expect(contentRead(mineSnapshot)).toEqual(remote.contentRead(theirsSnapshot));
+    expect(mineSnapshot.version).toBe(2);
+    expect(theirsSnapshot.version).toBe(1);
+    expect(mineSnapshot).toEqual({ ...theirsSnapshot, version: 2 });
+    const legacyRead = remote.contentRead(theirsSnapshot);
+    for (const snapshot of [theirsSnapshot, mineSnapshot]) {
+      const { items, ...read } = contentRead(snapshot);
+      expect(items).toEqual([]);
+      expect(read).toEqual({ ...legacyRead, version: snapshot.version });
+    }
     for (const entry of chains.slice(0, 6)) {
       expect(constraintsOf(entry)).toEqual(remote.constraintsOf(entry));
     }
     expect(evidenceOf({ ...mine, chains })).toEqual(remote.evidenceOf({ ...theirs, chains }));
+  });
+
+  it.each(['character', 'global'] as const)('v2 动态目录 %s 的内容与来源往返保留，独立于源条目和读取副本', scope => {
+    const row = {
+      kind: 'directory:custom-eyes', filled: true, scope,
+      directoryName: '眼睛', directoryPath: ['自定义人物', '眼睛'],
+      text: '1.2::blue eyes::, blue eyes', negative: 'closed eyes',
+      constraintNotes: '明确没有：配饰（条目声明的缺席约束）',
+      meta: { source: 'library', entryId: 'eyes-1', entryName: '蓝眼睛', entryBasePrompt: '1.2::blue eyes::, blue eyes' },
+      params: { steps: 99 }, basePrompt: '不应带入的画师串',
+    };
+    const input = { picks: { [row.kind]: row }, seed: 'dynamic-seed' };
+    const before = structuredClone(input);
+    const snapshot = contentSnapshotOf(input, 'T')!;
+    expect(input).toEqual(before);
+    expect(snapshot.version).toBe(2);
+    const expected = [{
+      unitId: 'directory:custom-eyes', directoryId: 'custom-eyes', directoryName: '眼睛',
+      directoryPath: ['自定义人物', '眼睛'], scope,
+      text: '1.2::blue eyes::, blue eyes', negative: 'closed eyes',
+      constraintNotes: '明确没有：配饰（条目声明的缺席约束）',
+      meta: { source: 'library', entryId: 'eyes-1', entryName: '蓝眼睛', entryBasePrompt: '1.2::blue eyes::, blue eyes', needsReview: false },
+    }];
+    expect(snapshot.items).toEqual(expected);
+    expect(snapshot).not.toHaveProperty('params');
+    expect(snapshot).not.toHaveProperty('basePrompt');
+    row.text = 'changed'; row.negative = 'changed'; row.directoryPath.push('changed'); row.meta.entryName = 'changed';
+    const read = contentRead(snapshot);
+    expect(read.ok).toBe(true);
+    expect(read.warnings).toEqual([]);
+    expect(read.items).toEqual(expected);
+    expect(read.anyRole).toBe(scope === 'character');
+    expect(read.anyGlobal).toBe(scope === 'global');
+    expect(read.roll?.seed).toBe('dynamic-seed');
+    read.items[0].directoryPath.push('reader change');
+    read.items[0].meta!.entryName = 'reader change';
+    expect(contentRead(snapshot).items).toEqual(expected);
   });
 });
