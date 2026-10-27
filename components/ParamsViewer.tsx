@@ -136,7 +136,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                         label={t("采样器")}
                         value={typeof params.sampler === 'string' && params.sampler ? params.sampler.replace(/_/g, ' ') : '-'}
                     />
-                    <ParamItem label={t("随机种子")} value={params.seed ?? '随机'} />
+                    <ParamItem label={t("种子")} value={params.seed ?? '随机'} />
                     <ParamItem
                         label={t("画质增强")}
                         value={params.qualityToggle === undefined ? '-' : params.qualityToggle ? t('开启') : t('关闭')}

@@ -627,7 +627,7 @@ describe('GlobalSettings', () => {
     // 切换至「生图偏好与实验室」
     fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
     expect(await screen.findByText('生成过程预览')).toBeTruthy();
-    expect(screen.getByText('强制清空随机种子（始终随机）')).toBeTruthy();
+    expect(screen.getByText('强制清空种子（始终随机）')).toBeTruthy();
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
     expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
 

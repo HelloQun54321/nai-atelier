@@ -304,7 +304,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
             {/* 采样器、步数与 Seed 在窄面板中自然换行。 */}
             <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
                 <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">{t("采样器")}</label>
+                    <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">{t("采样器")}</label>
                     <select
                         aria-label={t("采样器")}
                         disabled={!canEdit || Boolean(fixedSettings)}
@@ -325,8 +325,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
-                    <label className="text-xs text-gray-500 dark:text-gray-500 block font-medium">
-                        <span className="flex items-center justify-between">
+                    <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">
+                        <span className="flex w-full items-center justify-between">
                             {t("生成步数")}{!fixedSettings && !enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
                         </span>
                     </label>
@@ -343,8 +343,8 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <div className="text-xs text-gray-500 dark:text-gray-500 flex flex-wrap items-center justify-between gap-2 font-medium">
-                        <span>{t("随机种子")}</span>
+                    <div className="flex h-6 min-w-0 items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-500 font-medium">
+                        <span className="min-w-0 truncate">{t("种子")}</span>
                         <button
                             type="button"
                             role="switch"
@@ -363,7 +363,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     </div>
                     <input
                         type="number"
-                        aria-label={t("随机种子")}
+                        aria-label={t("种子")}
                         className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit || forceEmptySeed}
                         placeholder={forceEmptySeed ? t("已强制置空 (随机)") : t("随机")}

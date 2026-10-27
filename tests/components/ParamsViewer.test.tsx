@@ -27,8 +27,8 @@ it('手机可点按完整采样器和种子，内容在浮层中换行，原参�
   fireEvent.click(screen.getByRole('button', { name: '查看采样器完整值' }));
   expect(within(screen.getByRole('dialog', { name: '查看采样器完整值' })).getByText('custom very long sampler name')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
-  fireEvent.click(screen.getByRole('button', { name: '查看随机种子完整值' }));
-  expect(within(screen.getByRole('dialog', { name: '查看随机种子完整值' })).getByText('987654321')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '查看种子完整值' }));
+  expect(within(screen.getByRole('dialog', { name: '查看种子完整值' })).getByText('987654321')).toBeTruthy();
   expect(JSON.stringify(params)).toBe(snapshot);
 });
 

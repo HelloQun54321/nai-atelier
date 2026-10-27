@@ -389,7 +389,7 @@ describe('ChainEditorParams', () => {
     };
     render(React.createElement(Harness));
     const toggle = screen.getByRole('switch', { name: '强制置空' });
-    const input = screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement;
+    const input = screen.getByRole('spinbutton', { name: '种子' }) as HTMLInputElement;
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     expect(toggle.textContent).toContain('ON');
     expect(input.value).toBe(''); expect(input.disabled).toBe(true);
@@ -412,7 +412,7 @@ describe('ChainEditorParams', () => {
     renderParams({ canEdit: false, onForceEmptySeedChange });
     const toggle = screen.getByRole('switch', { name: '强制置空' }) as HTMLButtonElement;
     expect(toggle.disabled).toBe(true);
-    expect((screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('spinbutton', { name: '种子' }) as HTMLInputElement).disabled).toBe(true);
     fireEvent.click(toggle); expect(onForceEmptySeedChange).not.toHaveBeenCalled();
   });
 

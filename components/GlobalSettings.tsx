@@ -1056,7 +1056,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
               <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
-                  <b className="block text-xs text-gray-800 dark:text-gray-100">{t("强制清空随机种子（始终随机）")}</b>
+                  <b className="block text-xs text-gray-800 dark:text-gray-100">{t("强制清空种子（始终随机）")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
                     {t("不改写预设种子；关闭后恢复。")}</span>
                 </span>
