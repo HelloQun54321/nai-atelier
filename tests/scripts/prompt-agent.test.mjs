@@ -147,6 +147,130 @@ test('破限模式进入真实 Pi 请求，切换只影响下一次任务，客�
   } finally { globalThis.fetch = previous; }
 }));
 
+const jsonError = (status, message) => new Response(JSON.stringify({ error: { message } }), { status, headers: { 'content-type': 'application/json' } });
+
+test('模型服务瞬时错误在未出字前有限重试，鉴权错误直接失败不重试', () => isolated(async service => {
+  service.modelRetryBaseDelayMs = 1;
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch; let calls = 0;
+  globalThis.fetch = async () => ++calls === 1 ? jsonError(503, 'synthetic upstream overloaded') : syntheticAgentStream({ text: '重试后完成' });
+  try {
+    const result = await service.run({ sessionId: session.id, message: 'synthetic request', draft: { params: {} } }, () => {});
+    assert.equal(calls, 2); assert.equal(result.message, '重试后完成');
+    calls = 0;
+    globalThis.fetch = async () => { calls++; return jsonError(401, 'synthetic invalid api key'); };
+    await assert.rejects(service.run({ sessionId: session.id, message: 'synthetic request 2', draft: { params: {} } }, () => {}));
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('最终回复被输出上限截断时照常交付，任务如实标注截断，请求按新的输出上限发送', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch, events = []; let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response('data: ' + JSON.stringify({ id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a', choices: [{ index: 0, delta: { role: 'assistant', content: '半句回复' }, finish_reason: 'length' }], usage: { prompt_tokens: 10, completion_tokens: 8192, total_tokens: 8202 } }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    const result = await service.run({ sessionId: session.id, message: 'synthetic request', draft: { params: {} } }, event => events.push(event));
+    assert.equal(result.message, '半句回复');
+    assert.equal(body.max_tokens ?? body.max_completion_tokens, 8192);
+    const done = events.find(event => event.type === 'done');
+    assert.equal(done.status, 'completed'); assert.equal(done.stopReason, 'truncated'); assert.match(done.error, /截断/);
+    const task = await service.getTask(session.id);
+    assert.equal(task.status, 'completed'); assert.equal(task.stopReason, 'truncated');
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('模型连接后长时间没有输出按空闲超时停止，并说明真实原因', () => isolated(async service => {
+  service.modelIdleTimeoutMs = 50;
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch, events = [];
+  globalThis.fetch = async (_url, options) => new Response(new ReadableStream({ start(controller) { options.signal?.addEventListener('abort', () => controller.error(options.signal.reason), { once: true }); } }), { headers: { 'content-type': 'text/event-stream' } });
+  try {
+    await service.run({ sessionId: session.id, message: 'synthetic request', draft: { params: {} } }, event => events.push(event));
+    const done = events.find(event => event.type === 'done');
+    assert.equal(done.status, 'aborted'); assert.equal(done.stopReason, 'model_idle'); assert.match(done.error, /没有任何输出/);
+  } finally { globalThis.fetch = previous; }
+}));
+
+const toolCallsStream = calls => new Response('data: ' + JSON.stringify({
+  id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a',
+  choices: [{ index: 0, delta: { role: 'assistant', tool_calls: calls.map((call, index) => ({ index, id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args || {}) } })) }, finish_reason: 'tool_calls' }],
+  usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
+}) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+const scriptedRun = async (service, rounds, input = {}) => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch, events = []; let calls = 0;
+  globalThis.fetch = async () => { const round = rounds[calls++]; return typeof round === 'function' ? round(session) : Array.isArray(round) ? toolCallsStream(round) : syntheticAgentStream({ text: round || '合成任务完成' }); };
+  try { await service.run({ sessionId: session.id, message: 'synthetic request', draft: { params: {} }, ...input }, event => events.push(event)); }
+  finally { globalThis.fetch = previous; }
+  return { session, events, calls: () => calls, done: events.find(event => event.type === 'done'), task: await service.getTask(session.id) };
+};
+
+test('相同查询结果不变时第三次被拦下，同批只读查询正常执行后模型照常收尾', () => isolated(async service => {
+  const repeat = { name: 'get_local_time', args: {} };
+  const { events, done, calls } = await scriptedRun(service, [
+    [{ ...repeat, id: 'a' }, { id: 'b', name: 'read_prompt_guidelines', args: {} }],
+    [{ ...repeat, id: 'c' }],
+    [{ ...repeat, id: 'd' }],
+    '收尾',
+  ]);
+  assert.equal(calls(), 4); assert.equal(done.status, 'completed');
+  const ends = Object.fromEntries(events.filter(event => event.type === 'tool_end').map(event => [event.toolCallId, event]));
+  assert.equal(ends.a.isError, false); assert.equal(ends.c.isError, false); assert.ok(ends.b);
+  assert.equal(ends.d.isError, true); assert.match(ends.d.result.content[0].text, /结果没有变化/);
+}));
+
+test('连续三轮工具调用全部失败时停止任务并说明原因，不再请求模型', () => isolated(async service => {
+  const { done, task, calls } = await scriptedRun(service, [1, 2, 3, 4].map(index => [{ id: 'ghost-' + index, name: 'ghost_tool', args: { index } }]));
+  assert.equal(calls(), 3);
+  assert.equal(done.status, 'aborted'); assert.equal(done.stopReason, 'stalled'); assert.match(done.error, /全部失败/);
+  assert.equal(task.stopReason, 'stalled');
+}));
+
+test('达到轮数上限时先执行完当前这批工具再停止，草稿保留最后一次修改', () => isolated(async service => {
+  service.agentMaxTurns = 2;
+  const { events, done, task, calls } = await scriptedRun(service, [
+    [{ id: 'first', name: 'update_prompts', args: { basePrompt: 'first' } }],
+    [{ id: 'second', name: 'update_prompts', args: { basePrompt: 'second' } }],
+    '不应请求',
+  ], { draft: { basePrompt: '', params: {}, target: { chainId: 'p', mode: 'text-to-image', fingerprint: 'p' } } });
+  assert.equal(calls(), 2);
+  assert.equal(events.find(event => event.type === 'tool_end' && event.toolCallId === 'second').isError, false);
+  assert.equal(done.stopReason, 'turn_limit');
+  assert.equal(task.finalDraft.basePrompt, 'second');
+}));
+
+test('页面快照一次未响应后暂停逐轮读取，标签页重新通信后恢复读取', () => isolated(async service => {
+  service.pageSnapshotTimeoutMs = 30;
+  const rounds = touch => [[{ id: 'a', name: 'get_local_time', args: {} }], session => { if (touch) service.uiBridge.touch(session.id, 'tab-1'); return toolCallsStream([{ id: 'b', name: 'get_local_time', args: { timeZone: 'UTC' } }]); }, '收尾'];
+  const reads = events => events.filter(event => event.type === 'ui_request' && event.operation.action === 'read').length;
+  const silent = await scriptedRun(service, rounds(false), { context: { clientSettings: { pageClientId: 'tab-1' } } });
+  assert.equal(silent.done.status, 'completed'); assert.equal(reads(silent.events), 1);
+  const recovered = await scriptedRun(service, rounds(true), { context: { clientSettings: { pageClientId: 'tab-1' } } });
+  assert.equal(recovered.done.status, 'completed'); assert.equal(reads(recovered.events), 2);
+}));
+
+test('「继续」按钮以 resume 模式接续同目标草稿，不依赖消息里的关键词', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
+  const previous = globalThis.fetch; const draft = { basePrompt: '', params: {}, target: { chainId: 'p', mode: 'text-to-image', fingerprint: 'p' } }; let calls = 0;
+  globalThis.fetch = async () => syntheticAgentStream(++calls === 1 ? { id: calls, tool: 'update_prompts', args: { basePrompt: 'retained style' } } : { text: 'continued' });
+  try {
+    await service.run({ sessionId: session.id, message: 'edit prompt', draft }, event => { if (event.type === 'tool_end') service.controlSession(session.id, 'abort'); });
+    const stopped = await service.getTask(session.id);
+    const plain = await service.run({ sessionId: session.id, message: 'Continue', draft }, () => {});
+    assert.equal(plain.draft.basePrompt, '');
+    await writeFile(service.taskFile(session.id), JSON.stringify(stopped));
+    const resumed = await service.run({ sessionId: session.id, message: 'Continue', mode: 'resume', draft }, () => {});
+    assert.equal(resumed.draft.basePrompt, 'retained style');
+  } finally { globalThis.fetch = previous; }
+}));
+
 test('模型服务错误进入任务时转成可操作说明，原始错误保留在详情', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
   const session = await service.createSession();
@@ -509,6 +633,88 @@ test('历史读取只提供历史来源，复用遇到人工切换目标不覆�
   assert.equal(draft.basePrompt, 'manual'); assert.equal(draft.target.chainId, 'b');
 }));
 
+const classifiedDraft = (overrides = {}) => ({
+  basePrompt: 'artist style', subjectPrompt: 'blue eyes', negativePrompt: '', modules: [],
+  params: { _promptSections: { appearance: 'blue eyes', wardrobe: '', pose: '', scene: '', camera: '', extra: '', sectionMeta: { appearance: { entryName: '外貌条目', source: 'library' } }, sectionNegatives: { appearance: 'red eyes' } } },
+  target: { chainId: 'p', mode: 'text-to-image', fingerprint: 'p' }, ...overrides,
+});
+
+test('分类编辑下助手读取画师串与各栏位，按栏写入并保留未改栏位的来源与内容负面', () => isolated(async service => {
+  const draft = classifiedDraft();
+  const tools = service.createTools(draft, { clientSettings: { promptClassificationEnabled: true } }, () => {});
+  const call = async (name, args = {}) => JSON.parse((await tools.find(tool => tool.name === name).execute('t', args)).content[0].text);
+  const state = await call('get_lab_state');
+  assert.equal(state.interface.promptClassificationEnabled, true);
+  assert.deepEqual(state.promptSections, { artist: 'artist style', appearance: 'blue eyes', wardrobe: '', pose: '', scene: '', camera: '', extra: '' });
+  // 外貌栏本就承载外貌，不触发“主体含外貌 DNA”的提醒。
+  const written = await call('update_prompts', { sections: { wardrobe: 'white dress', pose: 'standing' } });
+  assert.equal(written.ok, true);
+  assert.equal(draft.basePrompt, 'artist style');
+  assert.equal(draft.subjectPrompt, 'blue eyes, white dress, standing');
+  assert.equal(draft.params._promptSections.appearance, 'blue eyes');
+  assert.equal(draft.params._promptSections.sectionMeta.appearance.entryName, '外貌条目');
+  assert.equal(draft.params._promptSections.sectionMeta.wardrobe.source, 'manual');
+  assert.deepEqual(draft.params._promptSections.sectionNegatives, { appearance: 'red eyes' });
+  await call('update_prompts', { basePrompt: 'new artist', sections: { appearance: '' } });
+  assert.equal(draft.basePrompt, 'new artist'); assert.equal(draft.subjectPrompt, 'white dress, standing');
+  assert.equal(draft.params._promptSections.sectionMeta.appearance, undefined);
+  await assert.rejects(tools.find(tool => tool.name === 'update_prompts').execute('t', { subjectPrompt: 'whole subject' }), /sections/);
+  assert.equal(draft.subjectPrompt, 'white dress, standing');
+  // 整段编辑没有栏位，明确拒绝而不是悄悄写进别处。
+  const plain = service.createTools(classifiedDraft(), { clientSettings: { promptClassificationEnabled: false } }, () => {});
+  await assert.rejects(plain.find(tool => tool.name === 'update_prompts').execute('t', { sections: { pose: 'sitting' } }), /整段编辑/);
+}));
+
+test('分类编辑在编辑模式按画师串与栏位重组提示词，旧数据原文保留在补充栏', () => isolated(async service => {
+  for (const mode of ['image-to-image', 'inpaint', 'outpaint']) {
+    const draft = classifiedDraft({ basePrompt: 'artist style, blue eyes', subjectPrompt: '', target: { chainId: 'p', mode, fingerprint: 'p' } });
+    const tools = service.createTools(draft, { clientSettings: { promptClassificationEnabled: true } }, () => {});
+    const update = tools.find(tool => tool.name === 'update_prompts');
+    await update.execute('t', { sections: { scene: 'forest' } });
+    assert.equal(draft.basePrompt, 'artist style, blue eyes, forest');
+    await update.execute('t', { basePrompt: 'new artist' });
+    assert.equal(draft.basePrompt, 'new artist, blue eyes, forest');
+    assert.equal(draft.params._promptSections.scene, 'forest');
+  }
+  // 主体正文与栏位对不上的旧数据：页面把原文显示在补充栏，写入其他栏后原文仍在。
+  const legacy = classifiedDraft({ subjectPrompt: 'old subject', params: {} });
+  await service.createTools(legacy, { clientSettings: { promptClassificationEnabled: true } }, () => {}).find(tool => tool.name === 'update_prompts').execute('t', { sections: { appearance: 'red eyes' } });
+  assert.equal(legacy.params._promptSections.extra, 'old subject');
+  assert.equal(legacy.subjectPrompt, 'red eyes, old subject');
+}));
+
+test('修改已有角色按 id 合并，未传的负面、坐标与分栏保持原样，可按栏写入角色分栏', () => isolated(async service => {
+  const draft = { params: { characters: [{ id: 'c', name: '角色', prompt: 'girl', negativePrompt: 'bad hands', x: .2, y: .3, sections: { appearance: 'blue hair' }, sectionMeta: { appearance: { entryName: '发色', source: 'library' } } }, { id: 'd', prompt: 'boy', x: .8, y: .5 }] } };
+  const tools = service.createTools(draft, { clientSettings: { promptClassificationEnabled: true } }, () => {});
+  const setCharacters = tools.find(tool => tool.name === 'set_characters');
+  await setCharacters.execute('t', { characters: [{ id: 'c', sections: { wardrobe: 'white dress' } }, { id: 'd', prompt: 'old man' }] });
+  const [first, second] = draft.params.characters;
+  assert.equal(first.prompt, 'girl'); assert.equal(first.negativePrompt, 'bad hands'); assert.equal(first.x, .2); assert.equal(first.y, .3);
+  assert.deepEqual(first.sections, { appearance: 'blue hair', wardrobe: 'white dress' });
+  assert.equal(first.sectionMeta.appearance.entryName, '发色');
+  assert.equal(second.prompt, 'old man'); assert.equal(second.x, .8);
+  // 传空字符串才清空；列表里没有的角色被移除，新角色按传入内容创建。
+  await setCharacters.execute('t', { characters: [{ id: 'c', negativePrompt: '' }, { prompt: 'cat' }] });
+  assert.equal(draft.params.characters.length, 2);
+  assert.equal(draft.params.characters[0].negativePrompt, ''); assert.deepEqual(draft.params.characters[0].sections, { appearance: 'blue hair', wardrobe: 'white dress' });
+  assert.equal(draft.params.characters[1].prompt, 'cat'); assert.notEqual(draft.params.characters[1].id, 'd');
+}));
+
+test('分类编辑的栏位说明与当前内容进入每轮实时快照', () => isolated(async service => {
+  const requests = [];
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ text: '已读取' }); };
+  try {
+    await service.run({ sessionId: session.id, message: '看看外貌栏', draft: classifiedDraft(), context: { clientSettings: { promptClassificationEnabled: true } } }, () => {});
+    await service.run({ sessionId: session.id, message: '再看看', draft: classifiedDraft(), context: { clientSettings: {} } }, () => {});
+  } finally { globalThis.fetch = previous; }
+  const snapshot = request => JSON.stringify(request.messages.at(-1));
+  assert.match(snapshot(requests[0]), /分类编辑/); assert.match(snapshot(requests[0]), /blue eyes/); assert.match(snapshot(requests[0]), /update_prompts\.sections/);
+  assert.doesNotMatch(snapshot(requests[1]), /分类编辑/);
+}));
+
 test('模型业务参数可直接切换现役模型，保留角色状态并拒绝退役模型', () => isolated(async service => {
   const draft = { params: { model: 'nai-diffusion-4-5-full', characters: [{ id: 'c', name: '角色', enabled: false, prompt: 'blue hair', negativePrompt: 'red hair', x: .2, y: .3 }], seed: 789 } };
   Object.assign(draft.params.characters[0], { sections: { wardrobe: 'dress' }, sectionNegatives: { wardrobe: 'coat' }, sectionMeta: { wardrobe: { entryId: 'entry', entryName: '服饰', source: 'roll' } } });
@@ -572,7 +778,8 @@ test('真实 Pi 链路完成历史复用、角色修改、生成确认与图片�
 test('自动循环上限给出原因并在任务回执持久化，不误报完成', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
   const previous = globalThis.fetch; const events = []; let calls = 0;
-  globalThis.fetch = async () => syntheticAgentStream({ id: ++calls, tool: 'get_lab_state' });
+  // 每轮换一个查询，避开重复调用守卫，专门验证轮数上限。
+  globalThis.fetch = async () => syntheticAgentStream({ id: ++calls, tool: 'search_novelai_docs', args: { query: 'synthetic ' + calls } });
   try {
     await service.run({ sessionId: session.id, message: '检查参数', draft: { params: {} } }, e => events.push(e));
     const done = events.find(e => e.type === 'done'), task = await service.getTask(session.id);
@@ -1101,7 +1308,7 @@ test('上下文取真实模型窗口，完整 schema 入账，超限不发送', 
   for (const contextWindow of [8192, 32768, 128000, 1000000]) {
     const assembled = assemblePromptContext({ model: { contextWindow, maxTokens: 32000 }, systemPolicy: 'rules', cleanMessages: [{ role: 'user', content: 'hello' }], toolDescriptors: [{ name: 'test', parameters: { description: 'schema '.repeat(100) } }] });
     assert.equal(assembled.budget.contextWindow, contextWindow);
-    assert.ok(assembled.budget.outputReserve <= 8192);
+    assert.ok(assembled.budget.outputReserve <= 16384 && assembled.budget.outputReserve <= contextWindow * 0.2);
     assert.ok(assembled.tokenEstimate.totalTokens > estimateContextTokens('rules'));
   }
   assert.throws(() => assemblePromptContext({ model: { contextWindow: 8192 }, systemPolicy: 'a'.repeat(50000) }), /超过/);
@@ -1131,6 +1338,55 @@ test('上下文预算按真实用户轮次裁剪，保留工具对并只追加�
   assert.equal(changed.canonicalMessages.filter(message => message._atelierRuntimeSnapshot === true).length, 2);
   assert.throws(() => assemblePromptContext({ ...input, model: { contextWindow: 1024, maxTokens: 256 }, runtimeContext: 'state', cleanMessages: [{ role: 'user', content: 'unshrinkable current turn '.repeat(20_000) }] }), /超过/);
 });
+const longToolRun = (count, { chars = 16000, oldTurns = 3 } = {}) => {
+  const messages = [];
+  for (let index = 0; index < oldTurns; index++) messages.push({ role: 'user', content: [{ type: 'text', text: '旧请求' + index }] }, { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(2000) }] });
+  messages.push({ role: 'user', content: [{ type: 'text', text: '当前请求' }] });
+  for (let index = 0; index < count; index++) messages.push(
+    { role: 'assistant', content: [{ type: 'toolCall', id: 't' + index, name: 'search_project_library', arguments: { page: index } }] },
+    { role: 'toolResult', toolCallId: 't' + index, toolName: 'search_project_library', content: [{ type: 'text', text: JSON.stringify({ items: [{ chainId: 'chain-' + index, note: 'y'.repeat(chars) }] }) }], details: { size: chars }, isError: false },
+  );
+  return messages;
+};
+const assembleRun = (messages, contextWindow) => assemblePromptContext({ systemPolicy: 'p'.repeat(20000), runtimeContext: 'r'.repeat(4000), cleanMessages: messages, model: { contextWindow, maxTokens: 8192 }, outputLimit: 4096, toolDescriptors: [{ d: 'z'.repeat(42000) }] });
+const isFolded = message => message.role === 'toolResult' && message.content[0].text.startsWith('{"_agentFolded"');
+
+test('本轮工具链超出模型预算时折叠早先结果而不是中途失败，会话原文与配对保持不变', () => {
+  for (const contextWindow of [32000, 64000]) {
+    const messages = longToolRun(12);
+    const original = JSON.stringify(messages);
+    const assembled = assembleRun(messages, contextWindow);
+    assert.equal(JSON.stringify(messages), original);
+    assert.ok(assembled.foldedToolResults > 0);
+    assert.ok(assembled.warnings.some(warning => /折叠/.test(warning)));
+    const results = assembled.canonicalMessages.filter(message => message.role === 'toolResult');
+    assert.equal(isFolded(results.at(-1)), false);
+    // 每条结果仍紧跟对应的工具调用；折叠只替换正文，保留工具名、状态与资料 ID。
+    assembled.canonicalMessages.forEach((message, index) => { if (message.role === 'toolResult') assert.equal(assembled.canonicalMessages[index - 1].content[0].id, message.toolCallId); });
+    const stub = JSON.parse(results.find(isFolded).content[0].text);
+    assert.equal(stub.tool, 'search_project_library'); assert.equal(stub.status, 'ok'); assert.ok(stub.ids.some(id => /^chainId=chain-\d+$/.test(id)));
+    assert.ok(assembled.tokenEstimate.totalTokens <= contextWindow);
+  }
+  // 预算充足时不折叠，请求与原历史一致。
+  const roomy = assembleRun(longToolRun(12), 1_000_000);
+  assert.equal(roomy.foldedToolResults, 0);
+  assert.deepEqual(roomy.canonicalMessages.slice(0, -1), longToolRun(12));
+  assert.equal(roomy.canonicalMessages.at(-1)._atelierRuntimeSnapshot, true);
+});
+
+test('折叠按整批推进，新增工具结果不改变已折叠前缀，保留最近几条完整结果', () => {
+  const contextWindow = 72000;
+  const first = assembleRun(longToolRun(14), contextWindow);
+  // 下一次请求沿用上一次的规范历史（含原位快照），只在末尾追加新的工具调用对。
+  const second = assembleRun([...first.canonicalMessages, ...longToolRun(15).slice(-2)], contextWindow);
+  assert.equal(first.foldedToolResults, 8); assert.equal(second.foldedToolResults, 8);
+  assert.deepEqual(second.canonicalMessages.slice(0, first.canonicalMessages.length), first.canonicalMessages);
+  assert.equal(second.canonicalMessages.filter(message => message.role === 'toolResult').slice(-4).some(isFolded), false);
+  // 小结果与写操作回执不折叠。
+  const small = longToolRun(30, { chars: 200, oldTurns: 0 });
+  assert.equal(assembleRun(small, 32000).foldedToolResults, 0);
+});
+
 test('工具注册表同时提供创作、知识与项目能力，实际权限在执行时检查', () => isolated(async service => {
   const tools = service.createTools({ params: {} }, {}, () => {});
   const names = tools.map(tool => tool.name);

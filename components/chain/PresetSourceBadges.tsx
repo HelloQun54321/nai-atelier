@@ -49,6 +49,7 @@ interface PromptAgentOverlayControllerProps {
     onUndo: () => void;
     tagAssistEnabled: boolean;
     splitPromptFields?: boolean;
+    promptClassificationEnabled?: boolean;
 }
 
 /** Keep the overlay's visibility local so opening it does not rerender the editor. */
@@ -65,6 +66,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     onUndo,
     tagAssistEnabled,
     splitPromptFields,
+    promptClassificationEnabled,
 }) => {
   useLanguage();
     const [open, setOpen] = useState(false);
@@ -98,6 +100,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             onUndo={onUndo}
             tagAssistEnabled={tagAssistEnabled}
             splitPromptFields={splitPromptFields}
+            promptClassificationEnabled={promptClassificationEnabled}
         /></React.Suspense>
     );
 };

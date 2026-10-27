@@ -2166,6 +2166,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
+                promptClassificationEnabled={promptClassificationEnabled}
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {(classificationPending || classificationResult && classificationResult.before.target?.chainId === chain.id && classificationResult.before.target?.mode === activeGenerationMode) && <div role="status" className="appearance-group flex items-center gap-3 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">

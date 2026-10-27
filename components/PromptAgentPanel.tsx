@@ -26,7 +26,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -41,10 +41,15 @@ interface PromptAgentPanelProps {
   canUndo: boolean;
   tagAssistEnabled: boolean;
   splitPromptFields?: boolean;
+  /** 实验室「分类编辑」：助手按外貌、服饰等栏位读取和写入。 */
+  promptClassificationEnabled?: boolean;
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number; resumable?: boolean };
+// 限额、截断、超时与服务中断后可直接接续；用户主动停止、鉴权或额度失败不提供。
+const RESUMABLE_STOPS = new Set(['turn_limit', 'output_limit', 'output_truncated', 'stalled', 'model_idle', 'model_timeout', 'timeout', 'truncated', 'aborted']);
+const resumableStop = (status?: string, stopReason?: string) => status === 'interrupted' || RESUMABLE_STOPS.has(String(stopReason));
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
@@ -152,6 +157,7 @@ const AgentMessageList = React.memo(({
   onCopy,
   onEdit,
   onRetry,
+  onResume,
   onMediaReady,
 }: {
   messages: PanelMessage[];
@@ -163,6 +169,7 @@ const AgentMessageList = React.memo(({
   onCopy: (message: PanelMessage) => void;
   onEdit: (message: PanelMessage) => void;
   onRetry: () => void;
+  onResume: () => void;
   onMediaReady: () => void;
 }) => {
   const visibleMessages = messages.slice(-visibleMessageCount);
@@ -180,6 +187,7 @@ const AgentMessageList = React.memo(({
       {message.role === 'error' && message.detail && <details className="mt-2 text-xs font-normal"><summary className="cursor-pointer select-none opacity-80">{t('原始错误')}</summary><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/60 p-2 text-micro leading-5 dark:bg-black/20">{message.detail}</pre></details>}
       </div>
       {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400">
+        {message.role === 'error' && message.resumable && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onResume} className="mr-1 inline-flex h-8 items-center gap-1 rounded-lg bg-indigo-50 px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60"><Play className="h-3.5 w-3.5" />{t('继续处理')}</button>}
         {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? t("已复制") : t("复制")} aria-label={copiedMessageId === message.id ? t("已复制") : t("复制")}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
         {message.role === 'user' && !running && <button type="button" onClick={() => onEdit(message)} aria-label={t("编辑重发")} title={t("编辑重发")} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" /></button>}
         {message.role === 'agent' && index === visibleMessages.length - 1 && !running && <button type="button" onClick={onRetry} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={t("重新回答；已完成的资料修改不会撤回")} aria-label={t("重新生成")}><RotateCcw className="h-3.5 w-3.5" /></button>}
@@ -248,6 +256,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     copy: (_message: PanelMessage) => {},
     edit: (_message: PanelMessage) => {},
     retry: () => {},
+    resume: () => {},
   });
   const confirmAction = useConfirmDialog();
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
@@ -427,7 +436,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         }).join('').trim();
         restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'interrupted' ? '服务中断' : '仍在执行'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n${task.status === 'interrupted' ? '你可以继续发送要求。' : '当前任务结束或停止后，可发送下一条要求。'}` });
       }
-      if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error, detail: task.errorDetail });
+      if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error, detail: task.errorDetail, resumable: resumableStop(task.status, task.stopReason) });
       loadedSessionIdRef.current = activeSessionId;
       setMessages(restored);
     }).catch(() => {});
@@ -462,7 +471,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           if (task.status !== 'completed') interruptGeneration();
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
-          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail }] : [])]);
+          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail, resumable: resumableStop(task.status, task.stopReason) }] : [])]);
           void refreshSessions();
         }
         wasRunning = isRunning;
@@ -655,10 +664,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           }
   };
 
-  const run = async (suggestion?: string, mode: 'prompt' | 'retry' = 'prompt') => {
+  const run = async (suggestion?: string, mode: 'prompt' | 'retry' | 'resume' = 'prompt') => {
     if (running) return;
-    const prompt = (suggestion ?? input).trim() || (attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
-    if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode === 'prompt' && !prompt)) return;
+    const prompt = (suggestion ?? input).trim() || (mode === 'prompt' && attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
+    if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode !== 'retry' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
       return;
@@ -676,7 +685,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       }
     }
     const assistantId = crypto.randomUUID();
-    setMessages(previous => [...(revisedMessages || previous), ...(effectiveMode === 'prompt' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt }] : []), { id: assistantId, role: 'agent', text: '' }]);
+    // 接续时旧的停止提示不再提供按钮；新的结果另起一条提示。
+    setMessages(previous => [...(revisedMessages || previous).map(item => item.resumable ? { ...item, resumable: false } : item), ...(effectiveMode !== 'retry' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt }] : []), { id: assistantId, role: 'agent', text: '' }]);
     currentAssistantIdRef.current = assistantId;
     responseStartedRef.current = false;
     if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); }
@@ -697,7 +707,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         autoShowGenerated: displayPreferences.autoShowGenerated,
-        tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
+        tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false, promptClassificationEnabled: props.promptClassificationEnabled ?? false,
       } } }, event => {
         if (event.type === 'error' || event.type === 'done' && event.status && event.status !== 'completed') interruptGeneration();
         if (!uiActiveRef.current) return;
@@ -755,8 +765,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           }
           if (!completed) {
             const reason = event.error || (event.status === 'aborted' ? '任务已停止。' : '任务没有完成，请查看工具回执。');
-            setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: reason, detail: event.errorDetail }]);
+            setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: reason, detail: event.errorDetail, resumable: resumableStop(event.status, event.stopReason) }]);
           } else if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: labChanged ? (displayPreferences.autoApplyDraft ? '修改已提交；请核对实验室内容。' : '工作草稿已准备好，等待你查看并应用。') : '本轮处理已结束，请核对工具回执。' } : item));
+          // 已完成但回复被截断等情况：结果照常交付，同时如实提示。
+          const notice = completed ? event.error : undefined;
+          if (notice) setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: notice, detail: event.errorDetail, resumable: resumableStop(event.status, event.stopReason) }]);
         }
       }, () => currentDraftRef.current);
     } catch (error) {
@@ -872,6 +885,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     copy: message => { void copyMessage(message.id, message.text).catch(reportControlError); },
     edit: message => { setEditingMessageId(message.id); setInput(message.text); },
     retry: () => { void run('', 'retry'); },
+    resume: () => { void run(t('继续处理'), 'resume'); },
   };
 
   return createPortal(<div aria-hidden={!props.open} className={`agent-overlay pointer-events-none fixed inset-0 z-[1100] ${props.open ? 'agent-overlay--open' : 'agent-overlay--closed'}`}>
@@ -1007,6 +1021,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             onCopy={message => messageActionsRef.current.copy(message)}
             onEdit={message => messageActionsRef.current.edit(message)}
             onRetry={() => messageActionsRef.current.retry()}
+            onResume={() => messageActionsRef.current.resume()}
             onMediaReady={() => { if (followBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' }); }}
           />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}

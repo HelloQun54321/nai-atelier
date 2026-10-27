@@ -2,6 +2,15 @@ import { randomUUID } from 'node:crypto';
 /** 页面请求由发起标签页认领；重连仅恢复尚在等待的请求，不重放历史操作。 */
 export class AgentUiBridge {
   pending = new Map();
+  // 标签页最近一次与服务通信的时间：认领、回执、页面推送或任务轮询都算仍在线。
+  seen = new Map();
+  touch(sessionId, clientId) {
+    if (!sessionId || !clientId) return;
+    const key = `${sessionId}\u0000${clientId}`;
+    this.seen.delete(key); this.seen.set(key, Date.now());
+    if (this.seen.size > 200) this.seen.delete(this.seen.keys().next().value);
+  }
+  seenSince(sessionId, clientId, time) { return (this.seen.get(`${sessionId}\u0000${clientId}`) || 0) > time; }
   request(sessionId, operation, emit, signal, timeout = 20_000, clientId = '') {
     if (signal?.aborted) return Promise.reject(new Error('页面操作已停止'));
     const requestId = randomUUID();
@@ -21,9 +30,12 @@ export class AgentUiBridge {
   }
   list(sessionId, clientId) {
     if (!clientId) return [];
+    this.touch(sessionId, clientId);
     return [...this.pending].filter(([, item]) => item.sessionId === sessionId && item.clientId === clientId && item.expiresAt > Date.now()).map(([requestId, item]) => ({ requestId, operation: item.operation, clientId, expiresAt: item.expiresAt, claimId: item.claimId }));
   }
   owned(sessionId, payload) {
+    // 迟到的认领虽然会被拒绝，但证明这个标签页仍在响应。
+    this.touch(sessionId, payload?.clientId);
     const pending = this.pending.get(payload?.requestId);
     if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.clientId && pending.clientId !== payload.clientId) throw Object.assign(new Error('页面请求已过期或不属于当前标签页'), { status: 409 });
     return pending;

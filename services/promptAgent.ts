@@ -632,7 +632,7 @@ export const promptAgentService = {
     return response.json();
   },
   run: async (
-    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> }; apiKey?: string },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry' | 'resume'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> }; apiKey?: string },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {
