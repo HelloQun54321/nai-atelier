@@ -322,6 +322,24 @@ it('追加中准确显示进度，失败原位重试且成功后继续自动滚�
   view.unmount();
 });
 
+it('重新搜索获得在线空列表时清除旧缓存警告，不回退缓存或预取后续页', async () => {
+  mocks.search.mockRejectedValue(new Error('offline'));
+  mocks.searchCache.mockImplementation(async options => ({ items: works, total: 2, page: options.page }));
+  const view = await setup('portrait');
+  await screen.findByText('aitag.win 暂时不可用，正在使用本地缓存');
+  mocks.search.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 60, source: 'remote' });
+  mocks.search.mockClear(); mocks.searchCache.mockClear();
+  const input = screen.getByPlaceholderText('作品、作者、标题或标签，回车检索');
+  fireEvent.change(input, { target: { value: 'Taitaile' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  await screen.findByText('没有匹配结果');
+  expect(screen.queryByText('aitag.win 暂时不可用，正在使用本地缓存')).toBeNull();
+  expect(screen.queryByRole('button', { name: '查看作品 合成作品 1' })).toBeNull();
+  expect(mocks.searchCache).not.toHaveBeenCalled();
+  expect(mocks.search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ page: 1, q: 'Taitaile' }));
+  expect(view.notify).not.toHaveBeenCalled();
+});
+
 it('离线缓存60项未知元数据不误匹配也不卡住后续缓存页，不逐页重试外站', async () => {
   const reach = installAppendObserver();
   const unknown = Array.from({ length: 60 }, (_, index) => ({ ...works[0], id: index + 1, title: `合成作品 ${index + 1}`, firstImage: undefined, first_image: undefined, localFirstImageUrl: undefined, local_cover_url: undefined }));

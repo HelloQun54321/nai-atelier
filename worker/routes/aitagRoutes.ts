@@ -65,15 +65,22 @@ async function fetchAitagJson(targetUrl: URL, env?: Env): Promise<any> {
   });
 
   const text = await response.text();
-  if (!response.ok) {
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    if (response.ok) throw new Error('aitag returned invalid JSON');
+  }
+  // 官网将无匹配的搜索列表返回为 404；仅接受完整空列表，其他错误仍正常上报。
+  const emptySearch = response.status === 404
+    && /^\/api\/(?:ai_works_search|rank\/monthly\/(?:real|fixed))$/.test(targetUrl.pathname)
+    && Number.isInteger(data?.page) && data.page > 0
+    && Number.isInteger(data?.page_size) && data.page_size > 0
+    && data.total === 0 && Array.isArray(data.items) && data.items.length === 0 && !data.error;
+  if (!response.ok && !emptySearch) {
     throw new Error(`aitag HTTP ${response.status}: ${text.slice(0, 240)}`);
   }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error('aitag returned invalid JSON');
-  }
+  return data;
 }
 
 function buildLocalAitagFetch(targetUrl: string, env?: Env) {

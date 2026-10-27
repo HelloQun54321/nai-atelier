@@ -29,6 +29,52 @@ function fixture() {
 const works = [1, 2].map(id => ({ id, title: `synthetic-${id}`, AI_type: 'NAI', image_count: 2 }));
 const detail = (id: number) => ({ work: works[id - 1], images: [{ work_id: id, file_name: `${id}_p3.png`, remote_image_url: `https://ai-img.10118899.xyz/${id}.png`, ai_json: { prompt: `recipe-${id}`, model: 'nai-diffusion-4-5-full' } }] });
 
+it.each([
+  ['q=Taitaile', '/api/ai_works_search'],
+  ['prompt=synthetic-no-match', '/api/ai_works_search'],
+  ['sort=monthly&time_range=current&q=Taitaile', '/api/rank/monthly/real'],
+  ['sort=monthly&time_range=m2026-09&q=Taitaile', '/api/rank/monthly/fixed'],
+])('搜索及月榜的 404 完整空列表按在线无结果处理：%s', async (query, remotePath) => {
+  const f = fixture();
+  const fetch = vi.fn(async (value: string | URL) => {
+    expect(new URL(value).pathname).toBe(remotePath);
+    return Response.json({ page: 1, page_size: 60, total: 0, items: [] }, { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetch);
+  const response = await f.invoke(`/api/aitag/search?${query}`);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ page: 1, page_size: 60, total: 0, items: [], source: 'remote' });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(f.files.size).toBe(0);
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM aitag_works').get()?.count).toBe(0);
+  await Promise.all(f.pending);
+});
+
+it.each([
+  [404, { error: 'not found' }],
+  [404, { page: 1, page_size: 60, total: 0, items: [], error: 'sensitive_content_blocked' }],
+  [404, { page: 1, page_size: 60, total: 0, items: [{ id: 1 }] }],
+  [404, { total: 0, items: [] }],
+  [503, { page: 1, page_size: 60, total: 0, items: [] }],
+])('非正常空结果仍上报上游错误：%s %j', async (status, payload) => {
+  const f = fixture();
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(payload, { status })));
+  await expect(f.invoke('/api/aitag/search?q=synthetic')).rejects.toThrow(`aitag HTTP ${status}`);
+  expect(f.pending).toHaveLength(0);
+  expect(f.files.size).toBe(0);
+});
+
+it('详情 404 不被搜索空结果规则吞掉，损坏 JSON 仍报错', async () => {
+  const f = fixture();
+  const fetch = vi.fn(async () => Response.json({ page: 1, page_size: 60, total: 0, items: [] }, { status: 404 }));
+  vi.stubGlobal('fetch', fetch);
+  await expect(f.invoke('/api/aitag/work/999')).rejects.toThrow('aitag HTTP 404');
+  fetch.mockImplementation(async () => new Response('<html>upstream error</html>', { status: 404 }));
+  await expect(f.invoke('/api/aitag/search?q=synthetic')).rejects.toThrow('aitag HTTP 404');
+  fetch.mockImplementation(async () => new Response('invalid JSON'));
+  await expect(f.invoke('/api/aitag/search?q=synthetic')).rejects.toThrow('aitag returned invalid JSON');
+});
+
 it('首图资料独立参与缓存关键词和提示词检索，兼容旧列表、详情及缓存组合', async () => {
   const f = fixture();
   await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');
