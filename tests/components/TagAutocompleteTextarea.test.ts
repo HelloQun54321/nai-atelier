@@ -170,12 +170,18 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
     expect(list().classList.contains('h-10')).toBe(true);
-    // 触屏上不要 resize 手柄和滚动隔离（否则右下角手势被吃掉、内层不滚动时也不把滚动交给外层），只在鼠标环境恢复。
+    // 触屏通过框外把手调高，内容区仍可自然滚动；鼠标继续使用原生角标。
     expect(list().classList.contains('resize-y')).toBe(false);
     expect(list().classList.contains('pointer-fine:resize-y')).toBe(true);
     expect(list().classList.contains('overscroll-contain')).toBe(false);
     expect(list().classList.contains('pointer-fine:overscroll-contain')).toBe(true);
     expect(list().classList.contains('overflow-y-auto')).toBe(true);
+    const handle = screen.getByRole('button', { name: '调整翻译区高度' });
+    expect(list().contains(handle)).toBe(false);
+    list().style.height = '40px';
+    fireEvent.keyDown(handle, { key: 'ArrowDown' });
+    expect(list().style.height).toBe('72px');
+    list().style.height = '';
     fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: 'masterpiece' } });
     await waitFor(() => expect(list().classList.contains('h-36')).toBe(true));
     list().style.height = '240px';
@@ -183,6 +189,19 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     await waitFor(() => expect(list().classList.contains('h-10')).toBe(true));
     expect(list().style.height).toBe('240px');
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy();
+  });
+  it('原文与翻译区的高度各自调整，内容编辑不会覆盖人工高度', () => {
+    render(React.createElement(Harness, { showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    const list = screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
+    expect(textarea.classList.contains('resize-y')).toBe(true);
+    textarea.style.height = '96px'; list.style.height = '144px';
+    fireEvent.keyDown(screen.getByRole('button', { name: '调整输入框高度' }), { key: 'ArrowDown' });
+    expect(textarea.style.height).toBe('128px'); expect(list.style.height).toBe('144px');
+    fireEvent.keyDown(screen.getByRole('button', { name: '调整翻译区高度' }), { key: 'ArrowUp' });
+    expect(textarea.style.height).toBe('128px'); expect(list.style.height).toBe('112px');
+    fireEvent.change(textarea, { target: { value: 'unknown tag' } });
+    expect(textarea.style.height).toBe('128px'); expect(list.style.height).toBe('112px');
   });
   it('手指在对照框内滑动不会选中 Tag，滚动层保留自己的滚动且不拦截手势', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece, masterpiece lighting', showTranslations: true }));

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Eraser, Info, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import type { PromptTagLibraryTarget } from './PromptTagLibraryInfo';
 import { InfoPopover } from './InfoPopover';
+import { PromptHeightHandle } from './PromptHeightHandle';
 import type { PromptChain } from '../types';
 import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } from './PromptLibraryAccess';
 import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
@@ -113,6 +114,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const completionEnabled = tagAssistEnabled || !!personalLibrary;
   const [librarySelection, setLibrarySelection] = useState<{ entry: PromptChain; edit: LibraryCompletionEdit } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tagListRef = useRef<HTMLDivElement>(null);
   const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => { setClearActionTarget(clearActionSlotRef?.current || null); }, [clearActionSlotRef]);
   const tagInputRef = useRef<HTMLInputElement>(null);
@@ -582,6 +584,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     className="mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200">
     {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
+  const promptActions = <>{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} /></>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -606,7 +609,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
-      {clearActionSlotRef && clearActionTarget ? createPortal(personalLibrary ? <span className="flex items-center gap-1">{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}</span> : clearAction, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}</div>}
+      {clearActionSlotRef && clearActionTarget ? createPortal(personalLibrary ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
       {librarySelection && <PromptLibraryChooser value={value} onText={commitValue} field={libraryField} initialEntry={librarySelection.entry} completion={librarySelection.edit} onClose={() => setLibrarySelection(null)} />}
       <textarea
         {...textareaProps}
@@ -614,7 +617,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         disabled={disabled}
         readOnly={readOnly}
         value={value}
-        className={className}
+        className={`${className || ''} resize-y`}
         role={completionEnabled ? 'combobox' : undefined}
         aria-autocomplete={completionEnabled ? 'list' : undefined}
         aria-expanded={completionEnabled ? isOpen && completionSource === 'prompt' : undefined}
@@ -671,10 +674,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             const text = event.clipboardData.getData('text/plain');
             if (text.trim()) { event.preventDefault(); appendTags(text); }
           }}>
-          {/* 触屏上不要 resize 手柄与 overscroll-contain：手柄会吃掉右下角的手指滑动（实测 16×16 死区），
-              contain 会在内层已经到底（或标签太少不滚动）时把手势留在原地、不让外层继续滚，手机上表现为「框滑不动」。
-              鼠标环境仍保留拖拽改高和滚动链隔离。 */}
-          <div className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 pointer-fine:resize-y pointer-fine:overscroll-contain`}>
+          {/* 触屏通过框外把手调高，内容区仍允许滚动传递，鼠标保留原生右下角拖拽。 */}
+          <div ref={tagListRef} className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 pointer-fine:resize-y pointer-fine:overscroll-contain`}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -782,6 +783,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               className="min-h-10 min-w-28 flex-1 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white/70 focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200 dark:focus:bg-gray-900/60" />}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+            <PromptHeightHandle targetRef={tagListRef} label={t('调整翻译区高度')} />
             <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
             {deleteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); clearSelection(); }} className="mobile-touch rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>

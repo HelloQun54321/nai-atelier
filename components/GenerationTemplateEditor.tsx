@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dice5 } from 'lucide-react';
 import { PromptLibraryWorkspace } from './PromptLibraryAccess';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
+import { PromptHeightHandle } from './PromptHeightHandle';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ToolbarButton, ToolbarSelect } from './DesignSystem';
 import { useConfirmDialog } from './ConfirmDialog';
@@ -23,6 +24,7 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
   useLanguage();
   const runtime = useNaiRuntime();
   const confirm = useConfirmDialog();
+  const negativeRef = useRef<HTMLTextAreaElement>(null);
   const [presets, setPresets] = useState<RollPreset[]>([]);
   const [presetId, setPresetId] = useState('');
   const [presetName, setPresetName] = useState('');
@@ -90,7 +92,7 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
           </div>
           <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 resize-y font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
           <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 resize-y font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t('自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
-          <label className="block text-xs font-semibold">{t('负面提示词')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onChange={event => onChange({ ...value, negativePrompt: event.target.value })} /></label>
+          <label className="block text-xs font-semibold"><span className="flex items-center justify-between">{t('负面提示词')}<PromptHeightHandle targetRef={negativeRef} label={t('调整输入框高度')} /></span><textarea ref={negativeRef} aria-label={t('负面提示词')} className={`${field} mt-1 min-h-20 resize-y font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onChange={event => onChange({ ...value, negativePrompt: event.target.value })} /></label>
           <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
           {!readOnly && <div className="flex flex-wrap gap-2">
             <ToolbarButton disabled={editingBusy} onClick={() => onChange({ ...value, params: { ...value.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>

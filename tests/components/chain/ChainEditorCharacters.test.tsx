@@ -29,6 +29,22 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it.each([false, true])('分类=%s 时所有角色原文框均可拉伸，包含动态目录正负词', classified => {
+    const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
+    render(<Harness classified={classified} initialParams={{ ...initial, characters: [role] }} />);
+    const fields = Array.from(document.querySelectorAll('textarea'));
+    expect(fields.length).toBeGreaterThanOrEqual(classified ? 4 : 2);
+    if (classified) {
+      expect(screen.getByLabelText('服装', { selector: 'textarea' })).toHaveProperty('value', 'dress');
+      expect(screen.getByRole('textbox', { name: '角色 1 · 服装 · 内容负面' })).toHaveProperty('value', 'coat');
+    }
+    for (const field of fields) {
+      expect(field.classList.contains('resize-y')).toBe(true);
+      expect(field.classList.contains('resize-none')).toBe(false);
+    }
+    expect(screen.getAllByRole('button', { name: '调整输入框高度' })).toHaveLength(fields.length);
+    expect(mark).not.toHaveBeenCalled();
+  });
   it('动态目录正负词可编辑，摘要及来源使用保存的目录路径', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': '1.2::white dress, ribbon::' }, sectionNegatives: { 'directory:dress': 'coat' },
       sectionMeta: { 'directory:dress': { directoryName: '服装', directoryPath: ['人物', '服装'], entryName: '白裙' } } };

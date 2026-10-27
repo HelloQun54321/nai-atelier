@@ -17,6 +17,21 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it('公共、角色及负面提示词均支持鼠标拉伸和框外触屏把手，调高不改模板', async () => {
+  const value = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), change = vi.fn();
+  render(<GenerationTemplateEditor value={value} onChange={change} />);
+  await waitFor(() => expect(screen.queryByText('正在读取生成预设…')).toBeNull());
+  const fields = Array.from(document.querySelectorAll('textarea'));
+  expect(fields).toHaveLength(3);
+  for (const field of fields) expect(field.classList.contains('resize-y')).toBe(true);
+  const handles = screen.getAllByRole('button', { name: '调整输入框高度' });
+  expect(handles).toHaveLength(3);
+  fields[2].style.height = '80px';
+  fireEvent.keyDown(handles[2], { key: 'ArrowDown' });
+  expect(fields[2].style.height).toBe('112px');
+  expect(change).not.toHaveBeenCalled();
+});
+
 it('指定推荐模板完整复制角色和参数，modelFilter只透传不改写所选预设模型', async () => {
   const original = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME);
   const recommended = { ...structuredClone(original), characterPrompt: 'custom recommended role' };

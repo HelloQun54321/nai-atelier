@@ -232,7 +232,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                             prompt: nextValue, negativePrompt: compileCharacterContent(char, legacyNegatives).negativePrompt,
                                             sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
                                         })}
-                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
+                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 focus:ring-1 focus:ring-indigo-500 outline-none"
                                         placeholder={t("角色提示词")}
                                     />
                                 </div>
@@ -248,7 +248,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                             prompt: compileCharacterContent(char, legacyNegatives).prompt, negativePrompt: nextValue,
                                             sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
                                         })}
-                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
+                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                         placeholder={t("选填")}
                                     />
                                 </div>
@@ -275,7 +275,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                                     onValueChange={nextValue => updateCharacter(idx, {
                                                         sections: { ...(char.sections || {}), [key]: nextValue },
                                                     })}
-                                                    className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                                                    className="h-10 w-full rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
                                                     placeholder={t("留空则不参与")}
                                                 />
                                                 {(key.startsWith('directory:') || char.sectionNegatives?.[key]) && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
@@ -283,7 +283,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                                     <TagAutocompleteTextarea id={`char-section-${idx}-${key}-negative`} aria-label={`${t('角色 {0}', [idx + 1])} · ${t(getCharacterSectionLabel(char, key))} · ${t('内容负面')}`}
                                                         tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={!canEdit || negativeLocked}
                                                         value={char.sectionNegatives?.[key] || ''} onValueChange={value => updateCharacter(idx, { sectionNegatives: { ...char.sectionNegatives, [key]: value } })}
-                                                        className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" />
+                                                        className="h-10 w-full rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" />
                                                 </div>}
                                             </div>
                                         ))}

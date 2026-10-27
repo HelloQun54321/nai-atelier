@@ -1,4 +1,6 @@
 {
+  "调整输入框高度": ["調整輸入框高度", "Resize text area", "入力欄の高さを調整", "입력란 높이 조절"],
+  "调整翻译区高度": ["調整翻譯區高度", "Resize translation area", "翻訳欄の高さを調整", "번역 영역 높이 조절"],
   "已有 Vibe 编码与返回结果冲突，已保留原编码": ["既有 Vibe 編碼與回傳結果衝突，已保留原編碼","The returned Vibe encoding conflicts with the existing one. The original encoding was kept.","返された Vibe エンコードが既存のものと競合しています。元のエンコードは保持されました。","반환된 Vibe 인코딩이 기존 인코딩과 충돌합니다. 원본 인코딩을 유지했습니다."],
   "分享包 Vibe 提取参数无效或不一致": ["分享包 Vibe 提取參數無效或不一致","The bundle's Vibe extraction parameters are invalid or inconsistent.","共有パッケージの Vibe 抽出パラメーターが無効、または一致していません。","공유 패키지의 Vibe 추출 매개변수가 잘못되었거나 일치하지 않습니다."],
   "分享包 Vibe 提取量状态与参数不一致": ["分享包 Vibe 提取量狀態與參數不一致","The bundle's Vibe extraction status does not match its parameters.","共有パッケージの Vibe 抽出量の状態がパラメーターと一致していません。","공유 패키지의 Vibe 추출량 상태가 매개변수와 일치하지 않습니다."],
