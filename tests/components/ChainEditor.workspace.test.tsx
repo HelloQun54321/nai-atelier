@@ -1618,6 +1618,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Ag
   await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
   const snapshot = state.agent!.draft;
   expect(state.agent!.splitPromptFields).toBe(false);
+  expect(state.agent!.promptClassificationEnabled).toBe(true);
   expect(snapshot.basePrompt).toBe(mode === 'text-to-image' ? 'saved style' : 'draft-' + mode);
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent changed' }));
   if (mode === 'text-to-image') expect(textPrompt().value).toBe('Agent changed');
@@ -1636,6 +1637,29 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');
+});
+
+it.each([false, true])('其他模式的助手草稿不会进入当前模式，审阅=%s', async reviewOnly => {
+  setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const snapshot = state.agent!.draft;
+  await switchTo('图生图');
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'old target edit' }, reviewOnly));
+  expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
+  expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).not.toBe('old target edit');
+  await switchTo('文生图'); expect(textPrompt().value).toBe('saved style');
+});
+
+it('助手审阅只在原目标展示，切模式保留提议与人工内容', async () => {
+  setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const snapshot = state.agent!.draft;
+  fireEvent.change(textPrompt(), { target: { value: 'manual edit' } });
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent edit' }, true));
+  expect(screen.getByRole('dialog', { name: '查看助手草稿差异' })).toBeTruthy();
+  await switchTo('图生图');
+  expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
+  await switchTo('文生图');
+  expect(textPrompt().value).toBe('manual edit');
+  expect(screen.getByRole('dialog', { name: '查看助手草稿差异' }).textContent).toContain('Agent edit');
 });
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('完全访问下 Agent %s 的免费、付费、预算不足和排队请求直接生成', async mode => {

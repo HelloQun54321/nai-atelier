@@ -2157,8 +2157,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 apiKey={apiKey}
                 onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
                 onFinalDraft={(draft, reviewOnly) => {
-                    if (reviewOnly) { setAgentProposal(draft); return; }
                     if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode)) { notify('草稿属于其他作品或模式，请回到原目标后恢复', 'error'); return; }
+                    if (reviewOnly) { setAgentProposal(draft); return; }
                     if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal(draft); return; }
                     setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft);
                 }}
@@ -2171,8 +2171,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
+                promptClassificationEnabled={promptClassificationEnabled}
             />
-            {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
+            {agentProposal && (!agentProposal.target || agentProposal.target.chainId === chain.id && agentProposal.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {(classificationPending || classificationResult && classificationResult.before.target?.chainId === chain.id && classificationResult.before.target?.mode === activeGenerationMode) && <div role="status" className="appearance-group flex items-center gap-3 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {classificationPending ? t('正在自动分类…') : <>
                     <span>{classificationResult!.applied ? t('已自动分类') : t('分类已完成，当前编辑已保留')}</span>

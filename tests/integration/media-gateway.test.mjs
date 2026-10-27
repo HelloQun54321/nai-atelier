@@ -318,7 +318,7 @@ test('prompt agent exposes official knowledge and current laboratory interface c
   assert.equal(readPayload.applicableToCurrentModel, true);
   assert.match(readPayload.sourceUrl, /^https:\/\/journal\.novelai\.net\//);
   const labPayload = JSON.parse((await labTool.execute('lab', {})).content[0].text);
-  assert.deepEqual(labPayload.interface, { splitPromptFields: false, tagAssistEnabled: false });
+  assert.deepEqual(labPayload.interface, { splitPromptFields: false, promptClassificationEnabled: false, tagAssistEnabled: false });
   assert.equal(labPayload.modelProfile.project.maxCharacterPrompts, 32);
 });
 

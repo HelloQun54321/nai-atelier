@@ -169,6 +169,8 @@ Prompt fields in all four lab modes can apply or save library content. Character
 
 Open the assistant from the sidebar or floating button. It can inspect the current page, edit lab drafts, work with assets and use canvas tools for masks and selections. On the desktop it can access authorized local image folders and export files; Android file tools stay within the app's creative documents directory.
 
+When lab classification is enabled, it reads the current prompt-library directories and updates matching fields by directory ID, while keeping legacy fields compatible. For long tasks, earlier large read-only results are folded only in the model request view, with the full conversation preserved; you can continue an eligible stopped task from the current draft by choosing **Continue**.
+
 Permissions are **Read only**, **Standard** and **Full access**. Generation, deletion and clearing still require creator confirmation. Existing assets and later manual edits are respected. The model provider and credentials are configured separately from NovelAI, and provider usage can incur its own charges.
 
 ## Costs, keys and privacy

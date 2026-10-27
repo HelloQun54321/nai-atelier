@@ -41,7 +41,8 @@ test('浏览器未回应、任务停止及发送失败都会释放页面等待�
   assert.equal(bridge.pending.size, 0);
 });
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, isProjectImagePath, localTimeInfo } from '../../scripts/agent-runtime.mjs';
-import { agentStopInfo, createAgentRunBudget } from '../../scripts/agent-runtime.mjs';
+import { agentStopInfo, createAgentLoopGuard, createAgentRunBudget, isAgentParallelTool, isAgentReadTool, streamModelWithGuards } from '../../scripts/agent-runtime.mjs';
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 
 test('复现日志：重复上下文超过 64k 仍允许继续，保护仅计算新输出', () => {
   for (const totals of [[16051, 19008, 20647, 21721], [24351, 24742, 26137]]) {
@@ -100,7 +101,213 @@ test('工具分组只提供能力目录，思考输出预算保留原有边界',
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
   assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
   assert.equal(AGENT_TOOL_GROUPS.library.includes('manage_artist_favorite'), false);
-  assert.equal(agentOutputLimit('off'), 2048); assert.equal(agentOutputLimit('medium'), 4096); assert.equal(agentOutputLimit('max'), 8192);
+  assert.equal(agentOutputLimit('off'), 8192); assert.equal(agentOutputLimit('medium'), 16384); assert.equal(agentOutputLimit('max'), 32768);
+});
+
+const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+
+test('循环守卫允许成功查询重读与后台轮询，只拦连续失败的相同调用', () => {
+  const guard = createAgentLoopGuard();
+  const args = { query: 'smile', page: 1 };
+  for (let index = 0; index < 2; index++) {
+    assert.equal(guard.beforeCall('search_tags', args), null);
+    // 快照编号、时间等易变字段不算结果变化。
+    guard.afterCall('search_tags', { page: 1, query: 'smile' }, textResult({ items: ['smile'], snapshotId: 'p' + index, capturedAt: index }), false);
+  }
+  assert.equal(guard.beforeCall('search_tags', args), null);
+  for (const name of ['get_generation_status', 'get_artist_sample_status', 'read_project_text']) {
+    for (let index = 0; index < 4; index++) {
+      assert.equal(guard.beforeCall(name, args), null);
+      guard.afterCall(name, args, textResult({ status: 'running' }), false);
+    }
+  }
+  assert.equal(guard.beforeCall('search_tags', { query: 'smile', page: 2 }), null);
+  guard.afterCall('update_prompts', { basePrompt: 'x' }, textResult({ ok: true }), false);
+  assert.equal(guard.beforeCall('search_tags', args), null);
+  // 结果变化时重新计数。
+  guard.afterCall('search_tags', args, textResult({ items: ['a'] }), false);
+  guard.afterCall('search_tags', args, textResult({ items: ['b'] }), false);
+  assert.equal(guard.beforeCall('search_tags', args), null);
+  // 写操作以相同参数连续失败两次后不再重复。
+  guard.afterCall('update_chain', { id: 'c' }, textResult('合成失败'), true);
+  guard.afterCall('update_chain', { id: 'c' }, textResult('合成失败'), true);
+  assert.match(guard.beforeCall('update_chain', { id: 'c' }), /连续失败 2 次/);
+  guard.afterCall('update_prompts', {}, textResult({ ok: true }), false);
+  assert.equal(guard.beforeCall('update_chain', { id: 'c' }), null);
+});
+
+test('连续三轮工具调用全部失败时停止，中间有成功即重新计数', () => {
+  const guard = createAgentLoopGuard();
+  const failed = [{ isError: true }, { isError: true }];
+  assert.equal(guard.observeTurn([]), null);
+  assert.equal(guard.observeTurn(failed), null);
+  assert.equal(guard.observeTurn(failed), null);
+  assert.equal(guard.observeTurn([{ isError: true }, { isError: false }]), null);
+  assert.equal(guard.observeTurn(failed), null);
+  assert.equal(guard.observeTurn(failed), null);
+  const reason = guard.observeTurn(failed);
+  assert.equal(reason.code, 'stalled'); assert.match(agentStopInfo(reason).message, /全部失败/);
+});
+
+test('只有不经页面、不导航工作区的查询可以并行，写操作与页面工具保持串行', () => {
+  for (const name of ['search_tags', 'get_lab_state', 'read_novelai_doc', 'web_search', 'list_generation_history']) assert.equal(isAgentParallelTool(name), true, name);
+  for (const name of ['read_current_page', 'inspect_current_page_image', 'get_generation_status', 'get_roll_state', 'get_artist_sample_status', 'inspect_image_tags', 'get_agent_capabilities', 'operate_current_page', 'update_prompts', 'request_generation', 'navigate_view', 'unknown_future_tool']) assert.equal(isAgentParallelTool(name), false, name);
+  assert.equal(isAgentReadTool('web_search'), true); assert.equal(isAgentReadTool('navigate_view'), false);
+});
+
+test('标签页认领、回执与轮询都记录为仍在线，迟到的认领同样计入', async () => {
+  const bridge = new AgentUiBridge(); let request;
+  const pending = bridge.request('s', { action: 'read' }, event => { request = event; }, undefined, 20, 'tab');
+  const before = Date.now() - 1;
+  assert.equal(bridge.seenSince('s', 'tab', before), false);
+  await assert.rejects(pending, /未响应/);
+  assert.throws(() => bridge.claim('s', { requestId: request.requestId, clientId: 'tab' }), /过期/);
+  assert.equal(bridge.seenSince('s', 'tab', before), true);
+  assert.equal(bridge.seenSince('other', 'tab', before), false);
+  const later = Date.now();
+  await new Promise(resolve => setTimeout(resolve, 2));
+  bridge.list('s', 'tab');
+  assert.equal(bridge.seenSince('s', 'tab', later), true);
+});
+
+test('工具调用连续被输出上限截断时停止，中间正常回复会重新计数', () => {
+  const budget = createAgentRunBudget();
+  const truncated = { stopReason: 'length', content: [{ type: 'toolCall' }] };
+  assert.equal(budget.observe(truncated), null);
+  assert.equal(budget.observe({ stopReason: 'toolUse', content: [{ type: 'toolCall' }] }), null);
+  assert.equal(budget.observe(truncated), null);
+  const reason = budget.observe(truncated);
+  assert.equal(reason.code, 'output_truncated'); assert.match(agentStopInfo(reason).message, /输出上限/);
+  // 最终文字回复被截断不在这里中止，由任务结束时如实标注。
+  assert.equal(createAgentRunBudget({ maxTruncatedToolTurns: 1 }).observe({ stopReason: 'length', content: [{ type: 'text', text: '半句' }] }), null);
+});
+
+const syntheticMessage = (overrides = {}) => ({ role: 'assistant', content: [], api: 'openai-completions', provider: 'synthetic', model: 'a', usage: {}, stopReason: 'stop', timestamp: 1, ...overrides });
+const syntheticSource = events => {
+  const stream = createAssistantMessageEventStream();
+  queueMicrotask(() => { for (const event of events) stream.push(event); stream.end(); });
+  return stream;
+};
+const replyEvents = text => {
+  const message = syntheticMessage({ content: [{ type: 'text', text }] });
+  return [{ type: 'start', partial: message }, { type: 'text_delta', contentIndex: 0, delta: text, partial: message }, { type: 'done', reason: 'stop', message }];
+};
+const errorEvent = (errorMessage, stopReason = 'error') => ({ type: 'error', reason: stopReason, error: syntheticMessage({ stopReason, errorMessage }) });
+const collect = async stream => { const events = []; for await (const event of stream) events.push(event); return { events, result: await stream.result() }; };
+
+test('模型调用在未收到任何输出时重试瞬时错误，连接建立后立即断开同样可重试', async () => {
+  const sources = [[errorEvent('503 Service Unavailable')], [{ type: 'start', partial: syntheticMessage() }, errorEvent('Connection error.')], replyEvents('合成回复')];
+  const retries = [];
+  const { events, result } = await collect(streamModelWithGuards(() => syntheticSource(sources.shift()), { baseDelayMs: 1, onRetry: retry => retries.push(retry) }));
+  assert.equal(sources.length, 0);
+  assert.deepEqual(retries.map(retry => retry.attempt), [1, 2]);
+  assert.deepEqual(events.map(event => event.type), ['start', 'text_delta', 'done']);
+  assert.equal(result.content[0].text, '合成回复');
+});
+
+test('模型已开始输出、鉴权或额度错误与重试次数用尽都不再重试', async () => {
+  for (const [source, attempts] of [
+    [() => [...replyEvents('半').slice(0, 2), errorEvent('502 Bad Gateway')], 1],
+    [() => [errorEvent('401 Unauthorized')], 1],
+    [() => [errorEvent('429 insufficient_quota')], 1],
+    [() => [errorEvent('500 Internal Server Error')], 3],
+  ]) {
+    let calls = 0;
+    const { events, result } = await collect(streamModelWithGuards(() => { calls++; return syntheticSource(source()); }, { baseDelayMs: 1 }));
+    assert.equal(calls, attempts);
+    assert.equal(events.at(-1).type, 'error');
+    assert.equal(result.stopReason, 'error');
+  }
+  const thrown = await collect(streamModelWithGuards(() => { throw new Error('合成 Key 缺失'); }, { model: { api: 'openai-completions', provider: 'synthetic', id: 'a' } }));
+  assert.equal(thrown.result.errorMessage, '合成 Key 缺失'); assert.equal(thrown.result.provider, 'synthetic');
+});
+
+test('模型长时间没有任何流事件才按空闲超时中断，持续输出不受总时限以外的限制', async () => {
+  let attemptSignal;
+  const silent = signal => {
+    const stream = createAssistantMessageEventStream();
+    signal.addEventListener('abort', () => { stream.push(errorEvent('Request was aborted.', 'aborted')); stream.end(); }, { once: true });
+    return stream;
+  };
+  const idle = await collect(streamModelWithGuards(silent, { idleMs: 20, baseDelayMs: 1, onAttempt: signal => { attemptSignal = signal; } }));
+  assert.equal(idle.result.stopReason, 'aborted');
+  assert.equal(agentStopInfo(attemptSignal.reason).code, 'model_idle');
+  const capped = await collect(streamModelWithGuards(silent, { idleMs: 1_000, totalMs: 20, onAttempt: signal => { attemptSignal = signal; } }));
+  assert.equal(capped.result.stopReason, 'aborted');
+  assert.equal(agentStopInfo(attemptSignal.reason).code, 'model_timeout');
+  // 每个流事件都会顺延空闲时限，慢但持续的回复不会被中断。
+  const slow = signal => {
+    const stream = createAssistantMessageEventStream();
+    const message = syntheticMessage({ content: [{ type: 'text', text: 'abc' }] });
+    void (async () => {
+      stream.push({ type: 'start', partial: message });
+      for (const delta of 'abc') { await new Promise(resolve => setTimeout(resolve, 15)); if (signal.aborted) return; stream.push({ type: 'text_delta', contentIndex: 0, delta, partial: message }); }
+      stream.push({ type: 'done', reason: 'stop', message }); stream.end();
+    })();
+    return stream;
+  };
+  assert.equal((await collect(streamModelWithGuards(slow, { idleMs: 40 }))).result.stopReason, 'stop');
+});
+
+test('模型服务不响应取消时，producer、流读取和最终回执等待仍受超时限制', async () => {
+  const never = () => new Promise(() => {});
+  const silent = () => createAssistantMessageEventStream();
+  const noResult = () => ({ async *[Symbol.asyncIterator]() {}, result: never });
+  for (const produce of [never, silent, noResult]) {
+    const { result } = await collect(streamModelWithGuards(produce, { idleMs: 10, totalMs: 100 }));
+    assert.equal(result.stopReason, 'aborted');
+    assert.match(result.errorMessage, /没有任何输出/);
+  }
+  const capped = await collect(streamModelWithGuards(silent, { idleMs: 100, totalMs: 10 }));
+  assert.match(capped.result.errorMessage, /单次模型回复超过/);
+});
+
+test('流抛错或不响应取消时保留已经收到的正文与 Token，不重复请求', async () => {
+  for (const throws of [false, true]) {
+    let calls = 0;
+    const message = syntheticMessage({ content: [{ type: 'text', text: '半句' }], usage: { input: 12, output: 3, totalTokens: 15 } });
+    const produce = () => {
+      calls++;
+      return { async *[Symbol.asyncIterator]() {
+        yield { type: 'start', partial: message };
+        yield { type: 'text_delta', delta: '半句', contentIndex: 0, partial: message };
+        if (throws) throw new Error('Connection error.');
+        await new Promise(() => {});
+      } };
+    };
+    const { result } = await collect(streamModelWithGuards(produce, { idleMs: 10 }));
+    assert.equal(calls, 1);
+    assert.equal(result.content[0].text, '半句');
+    assert.deepEqual(result.usage, message.usage);
+    assert.equal(result.stopReason, throws ? 'error' : 'aborted');
+  }
+});
+
+test('没有内容事件但错误已含正文或 Token 时保留回执，瞬时抛错可有限重试', async () => {
+  for (const fields of [{ usage: { input: 5 } }, { content: [{ type: 'text', text: '已生成' }] }]) {
+    let calls = 0;
+    const error = syntheticMessage({ ...fields, stopReason: 'error', errorMessage: '503 Service Unavailable' });
+    const { result } = await collect(streamModelWithGuards(() => { calls++; return syntheticSource([{ type: 'error', reason: 'error', error }]); }));
+    assert.equal(calls, 1); assert.deepEqual(result, error);
+  }
+  let calls = 0;
+  const retried = await collect(streamModelWithGuards(() => {
+    if (++calls === 1) throw new Error('fetch failed');
+    return syntheticSource(replyEvents('完成'));
+  }, { baseDelayMs: 1 }));
+  assert.equal(calls, 2); assert.equal(retried.result.content[0].text, '完成');
+});
+
+test('用户预先取消和退避期间取消都不会再次调用模型', async () => {
+  const before = new AbortController(); before.abort(new Error('用户停止了任务'));
+  let calls = 0;
+  const stopped = await collect(streamModelWithGuards(() => { calls++; return syntheticSource(replyEvents('不应请求')); }, { signal: before.signal }));
+  assert.equal(calls, 0); assert.equal(stopped.result.stopReason, 'aborted');
+  const controller = new AbortController();
+  const backedOff = await collect(streamModelWithGuards(() => { calls++; return syntheticSource([errorEvent('503')]); }, {
+    signal: controller.signal, baseDelayMs: 100, onRetry: () => controller.abort(new Error('用户停止了任务')),
+  }));
+  assert.equal(calls, 1); assert.equal(backedOff.result.stopReason, 'aborted');
 });
 test('真实时区与夏令时偏移按日期计算', () => {
   const now = new Date('2026-10-03T11:50:00.000Z');

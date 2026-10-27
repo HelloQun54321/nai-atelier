@@ -568,6 +568,53 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(interrupted).toHaveBeenCalledOnce();
   });
 
+  it('限额停止后提供「继续处理」，点击以 resume 模式接续；用户主动停止不提供', async () => {
+    stubServices(); const inputs: Array<{ message: string; mode?: string }> = [];
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      inputs.push(input);
+      const stopReason = inputs.length === 1 ? 'turn_limit' : 'user_stop';
+      onEvent({ type: 'done', runId: 'run-' + inputs.length, status: 'aborted', stopReason, error: stopReason === 'turn_limit' ? '达到连续执行上限。' : '任务已停止。', draft: input.draft, message: '', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(false);
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '整理提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    fireEvent.click(await screen.findByRole('button', { name: '继续处理' }));
+    await waitFor(() => expect(inputs.length).toBe(2));
+    expect(inputs[1].mode).toBe('resume'); expect(inputs[1].message).toBe('继续处理');
+    expect(await screen.findByText('任务已停止。')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '继续处理' })).toBeNull();
+  });
+
+  it('实验室分类编辑状态随请求交给助手，整段编辑明确为关闭', async () => {
+    stubServices();
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'done', draft: input.draft, message: '已读取', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    for (const promptClassificationEnabled of [true, false]) {
+      const view = renderPanel(false, { promptClassificationEnabled });
+      const box = screen.getByRole('textbox', { name: '任务要求' });
+      await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+      fireEvent.change(box, { target: { value: '填写外貌栏' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+      await waitFor(() => expect(run.mock.calls.length).toBe(promptClassificationEnabled ? 1 : 2));
+      expect(run.mock.calls.at(-1)![0].context.clientSettings?.promptClassificationEnabled).toBe(promptClassificationEnabled);
+      view.unmount();
+    }
+  });
+
+  it('回复被截断时仍应用草稿、不中断生成，并如实显示截断提示', async () => {
+    stubServices(); const apply = vi.fn(), interrupted = vi.fn();
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'update_prompts', patch: { basePrompt: '已改草稿' } } });
+      onEvent({ type: 'done', status: 'completed', stopReason: 'truncated', error: '这条回复达到模型输出上限被截断，内容可能不完整。', draftChanged: true, draft: { ...input.draft, basePrompt: '已改草稿' }, message: '半句回复', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel(false, { onFinalDraft: apply, onGenerationInterrupted: interrupted });
+    const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '修改提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    expect(await screen.findByText('这条回复达到模型输出上限被截断，内容可能不完整。')).toBeTruthy();
+    expect(apply).toHaveBeenCalledOnce(); expect(apply.mock.calls[0][0].basePrompt).toBe('已改草稿');
+    expect(interrupted).not.toHaveBeenCalled();
+  });
+
   it('重新打开会话仍显示停止原因，恢复草稿完成后进入正常应用', async () => {
     stubServices();
     vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
@@ -582,6 +629,48 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     fireEvent.change(box, { target: { value: '继续' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][0].basePrompt).toBe('恢复的草稿');
+  });
+
+  it('点击继续发送 resume 与当前编辑、分类设置，保留尚未发送的输入', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'interrupted', runId: 'interrupted', error: '服务中断，草稿已保留。' });
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, emit) => {
+      emit({ type: 'done', status: 'completed', draft: input.draft, message: '接续完成', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    const view = renderPanel(false, { promptClassificationEnabled: true });
+    const resume = await screen.findByRole('button', { name: '继续处理' });
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    fireEvent.change(box, { target: { value: '尚未发送的下一条' } });
+    const draft = { basePrompt: '新的人工内容', subjectPrompt: '', negativePrompt: '', modules: [], params: {} as NAIParams };
+    view.rerender(panelElement(false, { draft, promptClassificationEnabled: true }));
+    fireEvent.click(resume);
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(run.mock.calls[0][0]).toMatchObject({ mode: 'resume', draft, images: [], context: { clientSettings: { promptClassificationEnabled: true } } });
+    expect((box as HTMLTextAreaElement).value).toBe('尚未发送的下一条');
+    await waitFor(() => expect(screen.queryByRole('button', { name: '继续处理' })).toBeNull());
+  });
+
+  it.each([
+    { status: 'aborted' as const, stopReason: 'user_stop', error: '用户停止', resumable: false },
+    { status: 'failed' as const, stopReason: 'authentication', error: '鉴权失败', resumable: false },
+    { status: 'completed' as const, stopReason: 'stop', error: undefined, resumable: false },
+    { status: 'completed' as const, stopReason: 'output_truncated', error: '回复被截断', resumable: true },
+    { status: 'aborted' as const, stopReason: 'model_timeout', error: '模型超时', resumable: true },
+  ])('终态 $stopReason 按真实原因提供继续入口', async ({ status, stopReason, error, resumable }) => {
+    stubServices();
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, emit) => {
+      emit({ type: 'done', status, stopReason, error, draft: input.draft, message: '本轮回复', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel();
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '处理当前任务' } });
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    await waitFor(() => expect(Boolean(screen.queryByRole('button', { name: '继续处理' }))).toBe(resumable));
+    if (status === 'completed' && !error) expect(screen.queryByText('任务没有完成，请查看工具回执。')).toBeNull();
+    expect(run).toHaveBeenCalledOnce();
   });
 
   it('任务轮询结束后加载历史不会抹掉自动停止原因', async () => {
