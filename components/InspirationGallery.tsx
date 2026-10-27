@@ -26,6 +26,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { CollectionFolderPicker, CollectionTagInput } from './inspiration/CollectionControls';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { useImageRatios } from './useImageRatios';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, sourceIcon, splitTags } from './inspiration/InspirationShared';
@@ -44,6 +45,8 @@ interface InspirationGalleryProps {
 }
 
 const collectionCardKey = (group: Inspiration[]) => collectionGroupKey(group[0]);
+/** 首屏只渲染一批作品组：收藏库可能上百组，全量渲染会让进入页面卡住数秒。 */
+const COLLECTION_RENDER_BATCH = 60;
 
 const isLocalFileDrag = (data: DataTransfer) => Array.from(data.types || []).includes('Files') || Boolean(data.files?.length);
 
@@ -184,6 +187,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
   const groups = useMemo(() => sortCollectionGroups(groupCollectionItems(filtered), sort), [filtered, sort]);
   const allGroups = useMemo(() => new Map(groupCollectionItems(items.filter(item => !item.archived)).map(group => [collectionGroupKey(group[0]), group])), [items]);
+  const [visibleCount, setVisibleCount] = useState(COLLECTION_RENDER_BATCH);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { setVisibleCount(COLLECTION_RENDER_BATCH); }, [resultKey]);
+  useGalleryLoadMore(mainScrollRef, loadMoreSentinelRef, visibleCount < groups.length, () => setVisibleCount(count => count + COLLECTION_RENDER_BATCH), '600px 0px');
+  const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   const openedGroup = workGroup ? allGroups.get(workGroup) : undefined;
   useEffect(() => {
     if (workGroup && !openedGroup) setWorkGroup(null);
@@ -488,7 +496,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             <ShortestColumnMasonry
               resetKey={resultKey}
               stableColumns
-              items={groups}
+              items={visibleGroups}
               columns={masonryColumns}
               getItemKey={collectionCardKey}
               estimateItemHeight={estimateCollectionCardHeight}
@@ -496,9 +504,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             />
           ) : (
             <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
-              {groups.map(renderCollectionCard)}
+              {visibleGroups.map(renderCollectionCard)}
             </div>
           )}
+          {visibleCount < groups.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + COLLECTION_RENDER_BATCH)} className="appearance-group mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{t("加载更多（{0}）", [groups.length - visibleCount])}</button><div ref={loadMoreSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" /></div>}
         </> : (
           <EmptyState
             className="min-h-[45vh] px-6"

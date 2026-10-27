@@ -219,7 +219,12 @@ it('全部收藏仍在列表中，打开、切换和关闭详情只重渲染发�
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   await waitFor(() => expect(db.getInspirationBoards).toHaveBeenCalledOnce());
   const cards = Array.from(container.querySelectorAll<HTMLElement>('[data-gallery-work-id]'));
-  expect(cards).toHaveLength(120);
+  // 首屏只渲染一批，加载更多后全部收藏仍在列表中。
+  expect(cards).toHaveLength(60);
+  fireEvent.click(screen.getByRole('button', { name: '加载更多（60）' }));
+  const allCards = Array.from(container.querySelectorAll<HTMLElement>('[data-gallery-work-id]'));
+  expect(allCards).toHaveLength(120);
+  cards.splice(0, cards.length, ...allCards);
   imageRender.mockClear();
   fireEvent.click(cards[0].querySelector('button.gallery-card-caption')!);
   expect(imageRender.mock.calls.map(([title]) => title)).toEqual([cards[0].querySelector('h3')!.textContent]);
@@ -338,6 +343,9 @@ it.each([390, 1280])('宽度 %s：一次显示超过 100 条独立收藏，末�
     imageUrl: `/large-${index}.png`, prompt: '', createdAt: index,
   }));
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() }));
+  // 首屏只渲染一批；加载更多可继续展示，搜索仍能命中未渲染的末项。
+  expect(container.querySelectorAll('article')).toHaveLength(60);
+  fireEvent.click(screen.getByRole('button', { name: '加载更多（45）' }));
   expect(container.querySelectorAll('article')).toHaveLength(105);
   const search = screen.getByRole('searchbox', { name: '搜索标题、提示词或标签…' });
   fireEvent.change(search, { target: { value: '最后一条专属收藏' } });
