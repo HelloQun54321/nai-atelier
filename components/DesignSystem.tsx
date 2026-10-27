@@ -44,9 +44,33 @@ export const PageSpinner: React.FC<{ label?: string; className?: string }> = ({ 
   </div>
 );
 
+/** 空结果按整个页面正文居中；空间不足时仍留在滚动区内，避免压住目录。 */
+export const WorkspacePageState: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const host = ref.current, content = host?.firstElementChild;
+    const body = host?.closest('[data-workspace-body]');
+    if (!host || !content || !body) return;
+    const measure = () => {
+      const area = body.getBoundingClientRect(), box = host.getBoundingClientRect();
+      if (!area.width || !box.width) return;
+      const room = Math.max(0, (box.width - content.getBoundingClientRect().width) / 2);
+      const offset = (area.left + area.right - box.left - box.right) / 2;
+      host.style.setProperty('--workspace-state-offset', `${Math.max(-room, Math.min(room, offset))}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    [host, content, body].forEach(node => observer?.observe(node));
+    return () => observer?.disconnect();
+  }, []);
+  return <div {...props} ref={ref} data-workspace-page-state className={`flex justify-center ${className}`}>
+    <div className="max-w-full" style={{ transform: 'translateX(var(--workspace-state-offset, 0px))' }}>{children}</div>
+  </div>;
+};
+
 /** 列表/网格空态：可带图标、标题、提示与主操作。 */
 export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?: string; action?: React.ReactNode; className?: string }> = ({ icon, title, hint, action, className = '' }) => (
-  <div className={`flex flex-col items-center justify-center text-center ${className}`}>
+  <WorkspacePageState className={`items-center text-center ${className}`}>
     <div className="appearance-group flex max-w-xl flex-col items-center rounded-2xl p-6">
       <div className="appearance-group flex h-16 w-16 items-center justify-center rounded-3xl bg-gray-100 text-gray-400 dark:bg-gray-800/80 dark:text-gray-500">
         {icon ?? <Inbox className="h-8 w-8" aria-hidden="true" />}
@@ -55,7 +79,7 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?
       {hint && <p className="mt-2 max-w-sm text-sm text-gray-500 dark:text-gray-400">{t(hint)}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
-  </div>
+  </WorkspacePageState>
 );
 
 /** 把顶栏及状态行叠在滚动内容上，实际高度同时用于首屏留白和焦点避让。 */

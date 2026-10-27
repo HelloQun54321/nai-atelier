@@ -1981,6 +1981,29 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         } finally { setSavingArtistSample(false); }
     };
 
+    const savePreviewCover = async (previewImage: string) => {
+        const updatedModules = modules.map(m => ({ ...m, isActive: activeModules[m.id] ?? true }));
+        await onUpdateChain(chain.id, {
+            name: chainName,
+            description: chainDesc,
+            tags: chainTags,
+            basePrompt,
+            negativePrompt,
+            modules: updatedModules,
+            params,
+            variableValues: { 'subject': subjectPrompt },
+            previewImage,
+        });
+        // 保存成功后显示实际封面，不让旧历史选择或迟到读取继续遮住新图。
+        previewSelectionRevisionRef.current += 1;
+        setPreviewMode('cover');
+        setGeneratedImage(null);
+        setLightboxImg(current => current ? previewImage : null);
+        coverAutoSaveTriggeredRef.current = true;
+        setHasChanges(false);
+        notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
+    };
+
     const handleSavePreview = async () => {
         const coverImage = displayedPreviewImage;
         if (!coverImage || chain.id === 'playground') return;
@@ -1992,27 +2015,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         })) {
             setIsUploading(true);
             try {
-                const res = await fetch(coverImage);
-                const blob = await res.blob();
-                const file = new File([blob], getDownloadFilename(), { type: 'image/png' });
-                const uploadRes = await api.uploadFile(file, 'covers');
-                const updatedModules = modules.map(m => ({
-                    ...m,
-                    isActive: activeModules[m.id] ?? true
-                }));
-                await onUpdateChain(chain.id, {
-                    name: chainName,
-                    description: chainDesc,
-                    tags: chainTags,
-                    basePrompt,
-                    negativePrompt,
-                    modules: updatedModules,
-                    params,
-                    variableValues: { 'subject': subjectPrompt },
-                    previewImage: uploadRes.url,
-                });
-                setHasChanges(false);
-                notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
+                const cover = await prepareCurrentPreviewCover(true, coverImage);
+                if (cover.previewImage) await savePreviewCover(cover.previewImage);
             } catch (e: unknown) {
                 const errMessage = e instanceof Error ? e.message : String(e);
                 notify('设置封面失败: ' + errMessage, 'error');
@@ -2024,6 +2028,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.currentTarget.value = '';
         if (!file) return;
         if (await confirmAction({ rememberKey: 'editor.cover-upload',
             title: '上传更换封面并保存？',
@@ -2034,23 +2039,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setIsUploading(true);
             try {
                 const res = await api.uploadFile(file, 'covers');
-                const updatedModules = modules.map(m => ({
-                    ...m,
-                    isActive: activeModules[m.id] ?? true
-                }));
-                await onUpdateChain(chain.id, {
-                    name: chainName,
-                    description: chainDesc,
-                    tags: chainTags,
-                    basePrompt,
-                    negativePrompt,
-                    modules: updatedModules,
-                    params,
-                    variableValues: { 'subject': subjectPrompt },
-                    previewImage: res.url,
-                });
-                setHasChanges(false);
-                notify(`${isCharacterMode ? '自定义角色' : '风格串'}已保存，封面已更新`);
+                await savePreviewCover(res.url);
             } catch (err: unknown) {
                 const errMessage = err instanceof Error ? err.message : String(err);
                 notify('上传失败: ' + errMessage, 'error');

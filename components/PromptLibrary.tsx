@@ -1308,7 +1308,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
 
   const body = <>
-    <div className="flex min-h-0 flex-1 flex-col md:flex-row" style={directoryNavigation ? { '--workspace-chrome-height': '0px' } as React.CSSProperties : undefined}>{directoryNavigation}
+    <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row" style={directoryNavigation ? { '--workspace-chrome-height': '0px' } as React.CSSProperties : undefined}>{directoryNavigation}
     <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
       {detail ? detailBody : !initialEntry && <>{itemActions}{listBody}</>}
     </div></div>

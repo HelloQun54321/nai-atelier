@@ -39,12 +39,13 @@ export const DEFAULT_GENERATION_MEMORY_PREFERENCES: GenerationMemoryPreferences 
 
 export const LAB_PAGE_IDS: LabPageId[] = ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'];
 
+/** 默认全部展开：首次进入实验室不再隐藏 Vibe 与精准参考，创作者可在设置里逐项改回收起。 */
 export const DEFAULT_LAB_MODULE_COLLAPSED: LabModuleCollapsedPreferences = {
   prompt: false,
   negative: false,
-  vibe: true,
+  vibe: false,
   characters: false,
-  characterReference: true,
+  characterReference: false,
   params: false,
 };
 
@@ -52,8 +53,8 @@ const DEFAULT_LAB_EDIT_MODULE_COLLAPSED: LabPageLayout['collapsed'] = {
   baseImage: false,
   prompt: false,
   characters: false,
-  characterReference: true,
-  vibe: true,
+  characterReference: false,
+  vibe: false,
   editSettings: false,
   params: false,
 };

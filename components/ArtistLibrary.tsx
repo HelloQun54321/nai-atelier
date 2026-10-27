@@ -19,7 +19,7 @@ import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage } 
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { useArtistSampleActions, ArtistSampleGenerationStatus } from './useArtistSampleActions';
@@ -775,7 +775,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
             {/* --- Main Content Area --- */}
             </WorkspaceChrome>
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+            <div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
             {groups.navigation}
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-canvas workspace-scroll-viewport min-w-0 flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {(groupBrowse || statusBrowse) && !gachaArtists && <>
@@ -784,9 +784,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         : <p role="status" className="py-4 text-sm text-gray-400">{t('正在读取画师状态…')}</p>
                         : (groupBrowse && groups.error) || (onlySamples ? currentSampleError : sampleError) ? <div role="alert" className="py-4 text-sm text-red-500">{t(groupBrowse && groups.error || (onlySamples ? currentSampleError : sampleError))}<button type="button" className="mobile-touch ml-2 underline" onClick={() => { if (groupBrowse && groups.error) void groups.reload(); else setSampleRefresh(current => current + 1); }}>{t('重试')}</button></div>
                         : groupBrowse && !groups.ready || sampleLoading ? <p role="status" className="py-4 text-sm text-gray-400">{t('正在加载画师…')}</p>
-                        : !filteredArtists.length ? <div role="status" className="py-12 text-center text-sm text-gray-400">{t('没有匹配的画师')}{onlySamples && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}</div> : null}
+                        : !filteredArtists.length ? <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">{t('没有匹配的画师')}{onlySamples && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}</WorkspacePageState> : null}
                 </>}
-                {!groupBrowse && !statusBrowse && onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                {!groupBrowse && !statusBrowse && onlySamples && !filteredArtists.length && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {usageFiltersActive ? t('没有匹配的画师') : !currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
                     {hasSearch && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
@@ -794,8 +794,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={openSampleSettings}>{t('下载样张图包')}</button>
                         <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>
                     </div>}
-                </div>}
-                {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                </WorkspacePageState>}
+                {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {searchError || catalogError ? <>
                         {searchError || catalogError}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button>
@@ -803,7 +803,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         {t('没有匹配的画师')}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSearchTerm('')}>{t('清除搜索')}</button>
                     </> : usageFiltersActive ? t('没有匹配的画师') : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
-                </div>}
+                </WorkspacePageState>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>
                         resetKey={resultKey}

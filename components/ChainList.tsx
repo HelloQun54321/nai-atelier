@@ -14,7 +14,7 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, EyeOff, FileOutput, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Package, Pencil, Plus, ScanSearch, Tags, Trash2, User, X } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
+import { ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -394,7 +394,6 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
             {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
-            {!isGuest && type === 'style' && <button type="button" disabled={!folderStore.ready || folderStore.busy || Boolean(folderStore.error)} onClick={event => { event.stopPropagation(); setMoveIds([chain.id]); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition disabled:opacity-40`} title={t('设置文件夹')} aria-label={t('设置文件夹：{0}', [chain.name])}><FolderInput className="h-4 w-4" /></button>}
           </ImageCardActions>}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
@@ -542,14 +541,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         <ImagePreviewPortal><MobileBottomSheet open={showMobileFilters} title={t("筛选与排序")} onClose={() => setShowMobileFilters(false)}>{filterContent}</MobileBottomSheet></ImagePreviewPortal>
 
         </WorkspaceChrome>
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
         {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
           {filteredChains.length === 0 ? (
-            <div className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
+            <WorkspacePageState className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
               {!isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}
-            </div>
+            </WorkspacePageState>
           ) : (
             /* Grid Layout */
             <>

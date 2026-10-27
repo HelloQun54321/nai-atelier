@@ -475,7 +475,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     {inspirationsData !== null && <ToolbarCountCaption>{t(activeFilterCount || debouncedSearch.trim() ? '匹配 {0} 组' : '共 {0} 组', [groups.length])} · {t('当前 {0} 张', [filtered.length])}</ToolbarCountCaption>}
 
     </WorkspaceChrome>
-    <div className="flex min-h-0 flex-1">
+    <div data-workspace-body className="flex min-h-0 flex-1">
       <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-panel min-h-0 hidden w-52 flex-none overflow-y-auto border-r border-gray-200 p-3 dark:border-gray-800 md:block" : "hidden"}>
         {navigationExpanded && renderNavigation()}
       </aside>

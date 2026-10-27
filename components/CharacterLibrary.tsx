@@ -722,7 +722,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
       </WorkspaceChrome>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">{groups.navigation}
+      <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">{groups.navigation}
       <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-scroll-viewport relative min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>

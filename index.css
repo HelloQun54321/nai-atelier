@@ -65,6 +65,11 @@
 /* 内容库按实际剩余宽度换行，打开助手也不会挤掉搜索或主要操作。 */
 .content-library { container: content-library / inline-size; }
 .content-library-toolbar .content-library-tools { flex-basis: 20rem; }
+/* 文件夹按钮与范围切换共用侧栏的 52 格宽度，扣除顶栏左侧留白。 */
+.prompt-library-navigation-tools { width: calc(52 * var(--spacing) - 5 * var(--spacing)); }
+html[data-theme-material='glass'] .prompt-library-navigation-tools {
+  width: calc(52 * var(--spacing) - var(--nai-chrome-inset, 8px) - 1px - max(8px, calc(var(--nai-panel-radius, 16px) - var(--workspace-control-radius))));
+}
 .content-roll-dialog { --workspace-chrome-height: 0px; }
 /* 内容库主操作共用深色强调底及其配套前景，避免蓝底出现突兀的黑色文字和图标。 */
 html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='control'][data-tone='primary'] {

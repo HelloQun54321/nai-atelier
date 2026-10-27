@@ -590,7 +590,7 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('不上传 Key、提示词或图片。')).toBeTruthy();
   });
 
-  it('打开设置并切换实验室布局折叠块时不会因失效事件对象崩溃，且默认全部收起', async () => {
+  it('打开设置时实验室布局分组默认全部展开，收起切换不因失效事件对象崩溃', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'generation' }));
 
     expect(await screen.findByText('实验室模块默认展开')).toBeTruthy();
@@ -599,11 +599,11 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('生成步数锁定在免费额度内')).toBeTruthy();
     expect(screen.getAllByText('精准参考')).toHaveLength(4);
 
-    // 验证文生图与其他三项一致，默认均处于收起状态
-    details.forEach(d => expect(d.open).toBe(false));
+    // 四个实验室页面分组默认全部展开，模块的展开／收起状态一眼可见
+    details.forEach(d => expect(d.open).toBe(true));
 
     fireEvent.click(details[0].querySelector('summary')!);
-    await waitFor(() => expect(details[0].open).toBe(true));
+    await waitFor(() => expect(details[0].open).toBe(false));
     expect(screen.getByText('实验室模块默认展开')).toBeTruthy();
   });
 

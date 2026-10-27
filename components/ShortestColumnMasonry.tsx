@@ -40,8 +40,8 @@ export const resolveMasonryColumnCount = (
   return 6;
 };
 
-/** 自动列数同时受图库实际宽度约束；明确列数和手机偏好保持不变。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = 180): number => {
+/** 自动列数按图库宽度约束；详情分栏可临时限制明确列数，不改用户偏好或手机列数。 */
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = 180, fitExplicitColumns = false): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -52,10 +52,10 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     return () => window.removeEventListener('resize', update);
   }, []);
   const [containerColumns, setContainerColumns] = useState(Infinity);
-  const automaticDesktop = viewport.width >= 768 && preferences.desktopColumns === 'auto' && desktopOverride === undefined;
+  const fitDesktop = viewport.width >= 768 && (preferences.desktopColumns === 'auto' || fitExplicitColumns) && desktopOverride === undefined;
   useEffect(() => {
     const element = containerRef?.current;
-    if (!automaticDesktop || !element || typeof ResizeObserver === 'undefined') return;
+    if (!fitDesktop || !element || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
       // 隐藏的零宽度不改变列数；图片为主的工作区可沿用同一布局并要求更大的预览。
@@ -63,9 +63,9 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [containerRef, automaticDesktop, minimumCardWidth]);
+  }, [containerRef, fitDesktop, minimumCardWidth]);
   const requested = resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
-  return automaticDesktop ? Math.min(requested, containerColumns) : requested;
+  return fitDesktop ? Math.min(requested, containerColumns) : requested;
 };
 
 /**

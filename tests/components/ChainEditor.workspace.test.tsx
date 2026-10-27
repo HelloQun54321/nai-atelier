@@ -17,6 +17,7 @@ import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 import type { GenerationJobDescriptorInput } from '../../services/naiService';
 import { prepareImageEdit, type PreparedImageEdit } from '../../services/imageEdit';
+import { api } from '../../services/api';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
 
 // Node 22 的 Response.blob() 返回原生 Blob，jsdom FileReader 只接受同一环境的 Blob。
@@ -123,6 +124,9 @@ vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props
 </> }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
+  <output aria-label="文生图当前显示">{props.generatedImage || props.previewImage}</output>
+  <input aria-label="合成上传封面" type="file" onChange={props.handleUploadCover} />
+  <button onClick={props.handleSavePreview}>合成设为封面</button>
   <output aria-label="文生图步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
   <output aria-label="文生图费用">{props.generationCostLabel}</output>
   <output aria-label="预览历史编号">{props.historyLabel}</output>
@@ -545,6 +549,82 @@ afterEach(async () => {
   state.scopes.clear();
   state.drained = false;
   vi.unstubAllGlobals();
+});
+
+describe('自定义封面保存与回显', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each(['image/jpeg', 'image/webp'])('当前图片设为封面保留真实 %s 格式，不冒充 PNG', async type => {
+    const item = { id: 'cover-history', imageUrl: '/synthetic/current-image', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
+    state.history.mockResolvedValue([item]);
+    const response = new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': type } });
+    vi.spyOn(response, 'blob').mockResolvedValue(new Blob(['synthetic'], { type }));
+    vi.stubGlobal('fetch', vi.fn(async () => response));
+    const upload = vi.spyOn(api, 'uploadFile').mockResolvedValue({ url: '/synthetic/current-cover' });
+    const view = setup({ ...chain, type: 'character', previewImage: '/synthetic/previous-cover' });
+    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
+    fireEvent.click(screen.getByRole('button', { name: '合成设为封面' }));
+    await waitFor(() => expect(view.props.onUpdateChain).toHaveBeenCalled());
+    expect(upload.mock.calls[0][0].type).toBe(type);
+    expect(upload.mock.calls[0][0].name).toBe(type === 'image/jpeg' ? 'chain-cover.jpg' : 'chain-cover.webp');
+    expect(view.props.onUpdateChain).toHaveBeenCalledWith(chain.id, expect.objectContaining({ previewImage: '/synthetic/current-cover' }));
+  });
+
+  it('当前原图读取失败不上传错误响应或替换旧封面', async () => {
+    const item = { id: 'cover-history', imageUrl: '/synthetic/current-image', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
+    state.history.mockResolvedValue([item]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('unavailable', { status: 503 })));
+    const upload = vi.spyOn(api, 'uploadFile');
+    const view = setup({ ...chain, type: 'character', previewImage: '/synthetic/previous-cover' });
+    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
+    fireEvent.click(screen.getByRole('button', { name: '合成设为封面' }));
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('设置封面失败: 读取当前预览图片失败（503）', 'error'));
+    expect(upload).not.toHaveBeenCalled();
+    expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl);
+  });
+
+  it.each(['character', 'style'] as const)('%s 上传后显示新封面，保留正文参数及全部历史', async type => {
+    const item = { id: 'old-history', imageUrl: '/synthetic/old.png', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
+    const other = { ...item, id: 'other-history', imageUrl: '/synthetic/other.png' };
+    state.history.mockResolvedValue([item, other]);
+    const upload = vi.spyOn(api, 'uploadFile').mockResolvedValue({ url: '/synthetic/new-cover.png' });
+    const view = setup({ ...chain, type, previewImage: '/synthetic/previous-cover.png' });
+    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
+    const next = { ...view.props.chain, previewImage: '/synthetic/new-cover.png' };
+    view.props.onUpdateChain.mockImplementation(async () => { view.rerender(<ChainEditor {...view.props} chain={next} />); });
+    const file = new File(['synthetic'], 'new-cover.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('合成上传封面'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(next.previewImage));
+    expect(upload).toHaveBeenCalledExactlyOnceWith(file, 'covers');
+    expect(view.props.onUpdateChain).toHaveBeenCalledWith(chain.id, expect.objectContaining({
+      previewImage: next.previewImage, basePrompt: chain.basePrompt, negativePrompt: chain.negativePrompt,
+      params: expect.objectContaining(chain.params), variableValues: chain.variableValues,
+    }));
+    expect(state.unlinkHistory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '浏览下一张' }));
+    expect(screen.getByLabelText('文生图当前显示').textContent).toBe(other.imageUrl);
+  });
+
+  it('上传保存失败保留旧图与草稿，取消后仍可重新选择同一文件', async () => {
+    const item = { id: 'old-history', imageUrl: '/synthetic/old.png', createdAt: 1, params: {}, prompt: 'old' } as LocalGenItem;
+    state.history.mockResolvedValue([item]);
+    const upload = vi.spyOn(api, 'uploadFile').mockResolvedValue({ url: '/synthetic/new-cover.png' });
+    const view = setup({ ...chain, type: 'character' });
+    await waitFor(() => expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl));
+    const input = screen.getByLabelText('合成上传封面') as HTMLInputElement;
+    let inputValue = 'C:\\fakepath\\new-cover.png';
+    Object.defineProperty(input, 'value', { configurable: true, get: () => inputValue, set: value => { inputValue = value; } });
+    const file = new File(['synthetic'], 'new-cover.png', { type: 'image/png' });
+    state.confirm.mockResolvedValueOnce(false);
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(input.value).toBe('');
+    expect(upload).not.toHaveBeenCalled();
+    view.props.onUpdateChain.mockRejectedValueOnce(new Error('synthetic-save-failed'));
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('上传失败: synthetic-save-failed', 'error'));
+    expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl);
+    expect(state.unlinkHistory).not.toHaveBeenCalled();
+  });
 });
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('退出后 %s 按记忆恢复当前模式和内容，不自动写回预设', async mode => {

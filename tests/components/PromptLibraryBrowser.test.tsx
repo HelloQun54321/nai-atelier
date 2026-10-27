@@ -8,7 +8,7 @@ import { createCombinationData, createFragmentData } from '../../services/prompt
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { longPress } from '../support/touchEvents';
 
-vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} /> }));
+vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, containerClassName = 'relative h-full w-full overflow-hidden' }: { src: string; alt: string; className?: string; containerClassName?: string }) => <div className={containerClassName}><img src={src} alt={alt} className={className} /></div> }));
 vi.mock('../../components/ImageShareActions', async importOriginal => ({ ...await importOriginal<typeof import('../../components/ImageShareActions')>(), ImageShareActions: ({ favorite }: { favorite: { sourceType: string; sourceId: string } }) => <div data-card-action="true" data-testid="image-share" data-source-type={favorite.sourceType} data-source-id={favorite.sourceId} onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制图</button></div> }));
 const entries = [
   { id: 'dress', ...createFragmentData('night dress', '礼服', 'wardrobe'), tags: ['晚间', '正式'] },
@@ -36,6 +36,75 @@ it('默认片段，只保留片段组合两项，切范围保留查询并正确�
   const detail = screen.getByRole('complementary', { name: '夜间组合' });
   fireEvent.click(within(detail).getByRole('button', { name: '编辑' })); expect(edit).toHaveBeenLastCalledWith(combo);
   fireEvent.click(within(detail).getByRole('button', { name: '使用' })); expect(use).toHaveBeenLastCalledWith(combo);
+});
+
+it('带封面详情沿用图库侧栏，图片外层按内容收缩，关闭后保留列表与位置', () => {
+  const covered = { ...entries[0], previewImage: '/api/assets/synthetic-cover.png' };
+  render(<Harness chains={[covered]} />);
+  const scroll = document.querySelector('.workspace-scroll-viewport') as HTMLDivElement;
+  scroll.scrollTop = 130; fireEvent.scroll(scroll);
+  fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
+  const detail = screen.getByRole('complementary', { name: '礼服' });
+  const split = detail.parentElement!;
+  expect(split).toBe(scroll.parentElement);
+  expect(split.classList.contains('lg:grid-cols-[minmax(0,1fr)_460px]')).toBe(true);
+  expect(detail.classList.contains('fixed')).toBe(true);
+  expect(detail.classList.contains('lg:static')).toBe(true);
+  const image = within(detail).getByRole('img', { name: '礼服' });
+  expect(image.parentElement?.classList.contains('h-full')).toBe(false);
+  expect(image.classList.contains('h-auto')).toBe(true);
+  expect(image.classList.contains('max-h-[40vh]')).toBe(true);
+  expect(image.closest('.rounded-2xl')).toBeTruthy();
+  expect(within(detail).getByText('night dress')).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
+  expect(screen.queryByRole('complementary', { name: '礼服' })).toBeNull();
+  expect(document.querySelector('.workspace-scroll-viewport')).toBe(scroll);
+  expect(scroll.scrollTop).toBe(130);
+  expect(split.classList.contains('lg:grid-cols-[minmax(0,1fr)_460px]')).toBe(false);
+});
+
+it('新目录组合展示路径正文负面与约束，没有封面不预留图片区，旧组合继续展示', () => {
+  const combo = { id: 'dynamic', ...createCombinationData('目录组合', {
+    'directory:person-wardrobe': { kind: 'directory:person-wardrobe', directoryId: 'person-wardrobe', directoryName: '服饰与配件', directoryPath: ['人物整体', '服饰与配件'], scope: 'character', filled: true, text: 'winter coat', negative: 'summer dress', constraintNotes: '保留围巾' },
+    scene: { kind: 'scene', filled: true, text: 'snowy street', negative: 'beach' },
+  }) } as PromptChain;
+  render(<Harness chains={[combo]} focusEntryId="dynamic" />);
+  const detail = screen.getByRole('complementary', { name: '目录组合' });
+  expect(within(detail).queryByRole('img')).toBeNull();
+  for (const text of ['人物整体 / 服饰与配件', 'winter coat', '负面提示词：summer dress', '保留围巾', 'snowy street', '负面提示词：beach']) expect(within(detail).getByText(text)).toBeTruthy();
+});
+
+it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关闭恢复且不改偏好', desktopColumns => {
+  const preferences = JSON.stringify({ layout: 'masonry', columns: 2, desktopColumns });
+  localStorage.setItem('nai_mobile_image_display', preferences);
+  let resize: (width: number) => void = () => {};
+  const OriginalObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) { this.callback = callback; }
+    observe(target: Element) {
+      if (target.classList.contains('workspace-scroll-viewport')) resize = width => this.callback([{ target, contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+    }
+    disconnect() {}
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  const view = render(<Harness />);
+  try {
+    const grid = document.querySelector<HTMLElement>('.mobile-gallery')!;
+    const revealSelected = vi.fn();
+    grid.querySelector<HTMLElement>('[data-prompt-library-entry="dress"]')!.scrollIntoView = revealSelected;
+    act(() => resize(800));
+    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('4');
+    expect(localStorage.getItem('nai_mobile_image_display')).toBe(preferences);
+    fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
+    revealSelected.mockClear();
+    act(() => resize(280));
+    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('1');
+    expect(revealSelected).toHaveBeenCalledWith({ block: 'nearest' });
+    fireEvent.click(within(screen.getByRole('complementary', { name: '礼服' })).getByRole('button', { name: '关闭' }));
+    act(() => resize(800));
+    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('4');
+  } finally { view.unmount(); globalThis.ResizeObserver = OriginalObserver; }
 });
 
 it('定位刚收录的条目清除查询并打开详情，不调用编辑或修改条目', () => {
@@ -252,7 +321,7 @@ it('目录独立于筛选，收展保留搜索、标签、详情和同一列表�
   fireEvent.click(folder);
   const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
   const scroll = document.querySelector('.workspace-scroll-viewport') as HTMLDivElement;
-  expect(nav.nextElementSibling).toBe(scroll); expect(nav.parentElement?.style.getPropertyValue('--workspace-chrome-height')).toBe('0px');
+  expect(nav.nextElementSibling).toBe(scroll.parentElement); expect(nav.parentElement?.style.getPropertyValue('--workspace-chrome-height')).toBe('0px');
   expect(nav.classList.contains('md:w-52')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '人物整体 / 服饰与配件' }));
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');

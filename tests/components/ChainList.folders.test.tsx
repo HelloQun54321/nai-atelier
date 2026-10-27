@@ -36,6 +36,16 @@ const setup = async () => {
   return { ...view, props };
 };
 const choose = (id: string) => fireEvent.change(screen.getByLabelText('选择文件夹'), { target: { value: id } });
+// 单条归属改由多选工具栏入口设置，卡片悬浮层不再提供该按钮。
+const selectChainsForFolders = (ids: string[]) => {
+  fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+  for (const id of ids) fireEvent.click(screen.getByRole('checkbox', { name: `选择风格串：风格 ${id}` }));
+};
+const folderDialogEntry = (label: string) => {
+  if (label !== '设置文件夹') return screen.getByRole('button', { name: label });
+  selectChainsForFolders(['a']);
+  return screen.getByRole('button', { name: '设置文件夹' });
+};
 const dragDirectory = (source: HTMLElement, target: HTMLElement | (() => HTMLElement)) => {
   const payload: Record<string, string> = {};
   const transfer = { get types() { return Object.keys(payload); }, setData: (type: string, value: string) => { payload[type] = value; }, getData: (type: string) => payload[type] || '', effectAllowed: '', dropEffect: '' };
@@ -134,7 +144,8 @@ describe('风格串文件夹完整交互', () => {
     await waitFor(() => expect(stored.folders.find(folder => folder.id === 'deep-5')?.parentId).toBe('other'));
     expect(stored.assignments.a).toEqual(['deep-0', 'deep-11']);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 a' }));
+    selectChainsForFolders(['a']);
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
     const memberships = within(screen.getByRole('dialog', { name: '设置文件夹' }));
     expect((memberships.getByRole('checkbox', { name: '目录11 / 目录5 / 目录6 / 目录7 / 目录8 / 目录9 / 目录10 / 目录11' }) as HTMLInputElement).checked).toBe(true);
     expect((memberships.getByRole('checkbox', { name: '目录11' }) as HTMLInputElement).checked).toBe(false);
@@ -208,11 +219,13 @@ describe('风格串文件夹完整交互', () => {
   });
   it('单条与批量设置只写目录元数据，取消勾选才移除归属，手机无需拖放', async () => {
     const { props } = await setup();
-    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 b' }));
+    selectChainsForFolders(['b']);
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '画风实验 / 平涂' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(stored.assignments.b).toEqual(['child']));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
     fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
     fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
@@ -263,7 +276,8 @@ describe('风格串文件夹完整交互', () => {
   it('保存冲突回读新目录，不假报成功，失败后可重试', async () => {
     const { props } = await setup();
     put.mockRejectedValueOnce(Error('文件夹已在其他窗口更新，请按最新目录重试'));
-    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 b' }));
+    selectChainsForFolders(['b']);
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '画风实验' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(props.notify).toHaveBeenCalledWith(expect.stringContaining('其他窗口'), 'error'));
@@ -301,14 +315,14 @@ describe('文件夹区域与弹窗生命周期', () => {
     next.unmount(); render(<ChainList {...props} />);
     expect(screen.getByRole('button', { name: '收起文件夹' })).toBeTruthy();
   });
-  it.each(['新建文件夹', '编辑文件夹', '设置文件夹：风格 a'])('%s隐藏时释放焦点与键盘，恢复保留草稿', async label => {
+  it.each(['新建文件夹', '编辑文件夹', '设置文件夹'])('%s隐藏时释放焦点与键盘，恢复保留草稿', async label => {
     const view = await setup(); choose('root');
     const page = (active: boolean) => <ImageActivityProvider active={active}><ChainList {...view.props} /></ImageActivityProvider>;
     // 从此处起在同一Provider树内切换active，不卸载页面状态。
     view.unmount();
     const mounted = render(page(true));
     await waitFor(() => expect((screen.getByRole('button', { name: '新建文件夹' }) as HTMLButtonElement).disabled).toBe(false));
-    choose('root'); const source = screen.getByRole('button', { name: label }); source.focus(); fireEvent.click(source);
+    choose('root'); const source = folderDialogEntry(label); source.focus(); fireEvent.click(source);
     const current = screen.getByRole('dialog');
     const field = within(current).queryByLabelText('文件夹名称');
     if (field) fireEvent.change(field, { target: { value: '保留草稿' } });
@@ -323,11 +337,11 @@ describe('文件夹区域与弹窗生命周期', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(source);
   });
-  it.each(['新建文件夹', '编辑文件夹', '设置文件夹：风格 a'])('%s手机返回只关闭本层并保留父历史', async label => {
+  it.each(['新建文件夹', '编辑文件夹', '设置文件夹'])('%s手机返回只关闭本层并保留父历史', async label => {
     vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
     window.history.replaceState({ __naiMobileLayers: ['parent'], __naiMobileLayer: 'parent' }, '');
     const view = await setup(); choose('root');
-    fireEvent.click(screen.getByRole('button', { name: label }));
+    fireEvent.click(folderDialogEntry(label));
     await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
     await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 20)); });
     expect(screen.queryByRole('dialog')).toBeNull();

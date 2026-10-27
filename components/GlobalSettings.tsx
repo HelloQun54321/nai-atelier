@@ -187,7 +187,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
-  const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
+  // 四个实验室页面分组默认展开，便于一次看到全部模块的展开／收起状态。
+  const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, true])) as Record<LabPageId, boolean>);
   const changeImageDisplayScope = (scope: 'global' | ImageDisplayPage) => {
     setImageDisplayScope(scope);
     if (scope === 'global') {

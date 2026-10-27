@@ -10,7 +10,8 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { PressRevealSurface } from './PressRevealSurface';
 import { SmartImage } from './SmartImage';
-import { DetailSidePanel } from './DetailPanel';
+import { useMasonryColumnCount } from './ShortestColumnMasonry';
+import { DetailImageStage, DetailSidePanel } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { bilingualOf, contentRead } from '../services/contentRoll';
 import { PromptLibraryTagEditor } from './PromptLibraryTagEditor';
@@ -119,6 +120,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const appliedCategoryChange = useRef<number | undefined>(undefined);
   const focusedId = useRef('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const gridColumns = useMasonryColumnCount(imageDisplay, undefined, scrollRef, 180, !!selectedId);
   const scrollPositions = useRef(useMemo(readScroll, []));
   const entries = useMemo(() => promptBrowseEntries(chains), [chains]);
   const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
@@ -165,7 +167,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   useEffect(() => {
     if (!selectedId) return;
     Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-prompt-library-entry]') || []).find(element => element.dataset.promptLibraryEntry === selectedId)?.scrollIntoView?.({ block: 'nearest' });
-  }, [selectedId, shown]);
+  }, [selectedId, shown, gridColumns]);
   useEffect(() => {
     if (!toolbarSlot) return;
     const update = () => { setWide(toolbarSlot.getBoundingClientRect().width >= 650); setMobile(window.innerWidth < 768); };
@@ -216,20 +218,22 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     callback?.();
   };
   const toolbar = <>
+    <div className={!mobile && wide ? "prompt-library-navigation-tools flex shrink-0 items-center gap-1" : "contents"}>
     <ToolbarButton aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
-    {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 shrink-0 gap-0.5 rounded-xl p-0.5 md:h-10">
+    {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 min-w-0 flex-1 gap-0.5 rounded-xl p-0.5 md:h-10">
       {SCOPES.map(([scope, label], index) => <button key={scope} type="button" role="tab" aria-selected={memory.scope === scope} tabIndex={memory.scope === scope ? 0 : -1}
         onClick={() => setScope(scope)} onKeyDown={event => {
           const next = event.key === 'ArrowRight' ? (index + 1) % SCOPES.length : event.key === 'ArrowLeft' ? (index + SCOPES.length - 1) % SCOPES.length : event.key === 'Home' ? 0 : event.key === 'End' ? SCOPES.length - 1 : -1;
           if (next < 0) return;
           event.preventDefault(); setScope(SCOPES[next][0]);
           event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus();
-        }} className={`appearance-segmented min-w-20 whitespace-nowrap rounded-lg px-4 text-sm font-semibold ${memory.scope === scope ? 'bg-white text-indigo-600 dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}</button>)}
+        }} className={`appearance-segmented min-w-0 flex-1 whitespace-nowrap rounded-lg px-2 text-sm font-semibold ${memory.scope === scope ? 'bg-white text-indigo-600 dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}</button>)}
     </div>}
     {!mobile && !wide && <select aria-label={t('提示词库范围')} value={memory.scope} onChange={event => setScope(event.target.value as PromptBrowseScope)}
       className="appearance-input mobile-touch h-11 w-24 shrink-0 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 md:h-10">
       {SCOPES.map(([scope, label]) => <option key={scope} value={scope}>{t(label)}</option>)}
     </select>}
+    </div>
     <ToolbarSearch value={query} aria-label={t('搜索名称、正文或标签')} placeholder={t(wide ? '搜索名称、正文或标签' : '搜索')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} className="!h-11 md:!h-10 max-[360px]:!pl-2" containerClassName="min-w-0 flex-1 md:max-w-none! max-[360px]:[&>svg]:hidden" />
     <ToolbarPopover label="筛选" title={t(memory.scope === 'saved' ? '筛选组合' : '筛选提示词库')} width={320} count={tags.length} iconOnly={filterIconOnly} iconTone={tags.length ? 'primary' : 'neutral'} className={`[&>button]:!h-11 md:[&>button]:!h-10 ${filterIconOnly ? '[&>button]:!w-11' : ''}`}>
@@ -250,13 +254,14 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     </ToolbarPopover>
     <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [shown.length, scopeTotal])}</ToolbarCountCaption>
   </>;
-  return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
+  return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
     {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified })} />}
+    <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       scrollPositions.current[memory.scope] = event.currentTarget.scrollTop;
       try { localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPositions.current)); } catch { /* 滚动记忆受限时保留本次会话位置。 */ }
     }} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
-      {shown.length ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid items-start`} style={mobileGalleryStyle(imageDisplay)}>{shown.map(entry => {
+      {shown.length ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid items-start`} style={mobileGalleryStyle(imageDisplay, gridColumns)}>{shown.map(entry => {
         const { chain, section, kind } = entry;
         const label = section === 'items' && kind ? FRAGMENT_LABELS[kind] : section === 'saved' ? '组合' : '原文';
         const summary = promptBrowseSummary(entry, query);
@@ -293,18 +298,21 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         </PressRevealSurface>;
       })}</div> : <EmptyState title={t(entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
     </div>
-    {selected && <div className="contents lg:flex lg:min-h-0 lg:w-[40%] lg:min-w-80 lg:shrink-0 lg:flex-col"><DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
+    {selected && <DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
       subInfo={t(selected.kind ? FRAGMENT_LABELS[selected.kind] : selected.section === 'saved' ? '组合' : '原文')}
       onClose={closeDetail} onBack={closeDetail} headerActions={<><ToolbarButton onClick={() => onOpen(selected.chain)}>{t('编辑')}</ToolbarButton><ToolbarButton tone="primary" onClick={() => onUse(selected.chain)}>{t('使用')}</ToolbarButton></>}>
-      {selected.chain.previewImage && <SmartImage src={selected.chain.previewImage} alt={selected.chain.name} className="max-h-[40vh] w-full rounded-xl object-contain" />}
+      {selected.chain.previewImage && <DetailImageStage><SmartImage src={selected.chain.previewImage} alt={selected.chain.name}
+        containerClassName="relative w-full overflow-hidden" className="block h-auto max-h-[40vh] w-full object-contain" /></DetailImageStage>}
       {selected.section === 'saved' && onUpdateTags ? <PromptLibraryTagEditor key={selected.chain.id} tags={getCustomChainTags(selected.chain.tags)} suggestions={combinationTags} suggestionLabel={categoryLabel} onSave={tags => onUpdateTags(selected.chain, tags)} />
         : <div className="mt-3 flex flex-wrap gap-1">{(selected.chain.tags || []).map(tag => <span key={tag} className="appearance-group rounded px-2 py-1 text-xs">{tag}</span>)}</div>}
       {selectedRead ? <>
+        {selectedRead.items.map(item => <section key={item.unitId} className="mt-4"><h3 className="text-xs text-gray-500">{item.directoryPath.join(' / ') || item.directoryName}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.text}</p>{item.negative && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{item.negative}</p>}{item.constraintNotes && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{item.constraintNotes}</p>}</section>)}
         {selectedRead.roles.map(role => <section key={role.key} className="mt-4"><h3 className="text-sm font-semibold">{role.name}</h3>{Object.entries(role.sections).map(([kind, text]) => <div key={kind} className="mt-3"><h4 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm">{text}</p>{role.negatives[kind]?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{role.negatives[kind].text}</p>}</div>)}</section>)}
         {Object.entries(selectedRead.global).filter(([, field]) => field.provided).map(([kind, field]) => <section key={kind} className="mt-4"><h3 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{field.text}</p>{field.negative?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{field.negative.text}</p>}</section>)}
       </> : <><h3 className="mt-4 text-xs text-gray-500">{t('提示词原文')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.basePrompt}</p>{bilingualOf(selected.chain) && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-500">{bilingualOf(selected.chain)}</p>}{selected.chain.negativePrompt && <><h3 className="mt-4 text-xs text-gray-500">{t('负面提示词')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.negativePrompt}</p></>}</>}
       {selected.chain.description && <p className="mt-4 whitespace-pre-wrap break-words text-sm text-gray-500">{selected.chain.description}</p>}
-    </DetailSidePanel></div>}
+    </DetailSidePanel>}
+    </div>
     </div>
   </>;
 };
