@@ -32,6 +32,7 @@ it('增删框内标签不重建搜索输入，保留文字、选区和焦点', (
   fireEvent.click(screen.getByRole('button', { name: '切换标签' }));
   expect(screen.getByRole('textbox')).toBe(input); expect(input.parentElement).toBe(field);
   expect(screen.getByRole('button', { name: '取消标签' }).parentElement).toBe(field);
+  expect(input.previousElementSibling).toBe(screen.getByRole('button', { name: '取消标签' }));
   fireEvent.click(screen.getByRole('button', { name: '取消标签' }));
   expect(screen.getByRole('textbox')).toBe(input); expect(input.parentElement).toBe(field);
   expect(document.activeElement).toBe(input); expect(input.value).toBe('关键词');

@@ -127,6 +127,65 @@ it('超过800条仍由生产DOM哨兵自动继续，无强制手动更多', asyn
   expect(screen.queryByText(/继续加载更多/)).toBeNull();
 });
 
+it('首屏资料积压时不预取下一页，资料补齐后自动恢复一次预取', async () => {
+  const listed = Array.from({length:60},(_,index) => ({...works[0],id:index+1,title:`合成作品 ${index+1}`,firstImage:undefined,first_image:undefined,localFirstImageUrl:undefined,local_cover_url:undefined}));
+  let finish!: (value: any) => void;
+  mocks.search.mockImplementation(options => options.page === 1 ? new Promise(resolve => {finish=resolve;}) : Promise.resolve({items:[],total:120,page:options.page}));
+  const waits: Array<{options:any;resolve:(value:any)=>void}> = [];
+  mocks.waitForFirstImageCache.mockImplementation(options => new Promise(resolve => waits.push({options,resolve})));
+  const opening = setup('portrait');
+  fireEvent.click(await screen.findByRole('button',{name:'筛选'}));
+  fireEvent.change(screen.getByLabelText('画师串'),{target:{value:'with'}});
+  await act(async () => finish({items:listed,total:120,page:1}));
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toHaveLength(60));
+  expect(mocks.search.mock.calls.map(([options]) => options.page)).toEqual([1]);
+  await act(async () => waits.at(-1)!.resolve({items:[{...listed[0],firstImage:{...works[0].firstImage!,ai_json:{prompt:'artist:synthetic',seed:1}},firstImageStatus:'metadata'}]}));
+  await opening;
+  await waitFor(() => expect(mocks.search.mock.calls.map(([options]) => options.page)).toEqual([1,2]));
+  expect(mocks.getWork).not.toHaveBeenCalled();
+});
+
+it.each(['saved','unsaved'])('风格串 %s 与画师组合只等待仍可能命中的首图资料', async chainFilter => {
+  const listed = Array.from({length:60},(_,index) => ({...works[0],id:index+1,title:`合成作品 ${index+1}`,firstImage:undefined,first_image:undefined,localFirstImageUrl:undefined,local_cover_url:undefined}));
+  mocks.search.mockResolvedValue({items:listed,total:60,page:1});
+  mocks.waitForFirstImageCache.mockImplementation(() => new Promise(() => {}));
+  const savedIds = chainFilter === 'saved' ? [60] : Array.from({length:59},(_,index) => index+1);
+  await setup('portrait',true,savedIds.map(id => ({id:`saved-${id}`,type:'style',description:`Imported from aitag #${id}`} as PromptChain)));
+  fireEvent.click(screen.getByRole('button',{name:'筛选'}));
+  fireEvent.change(screen.getByLabelText('风格串'),{target:{value:chainFilter}});
+  fireEvent.change(screen.getByLabelText('画师串'),{target:{value:'with'}});
+  await waitFor(() => expect(mocks.waitForFirstImageCache.mock.calls.at(-1)?.[0].metadataIds).toEqual([60]));
+  expect(screen.getAllByText('正在读取 1 个作品的元数据').length).toBeGreaterThan(0);
+});
+
+it('前60条原图未保存仍立即轮询后60条资料，资料全部显示后继续取得两批原图状态', async () => {
+  const reach = installAppendObserver();
+  const full = Array.from({length:120},(_,index) => ({...works[0],id:index+1,title:`合成作品 ${index+1}`,localFirstImageUrl:undefined,local_cover_url:undefined,hasFullyCachedImages:false,
+    firstImage:{...works[0].firstImage!,id:index+1,work_id:index+1,local_image_url:undefined,ai_json:{prompt:'artist:synthetic',seed:1}},firstImageStatus:'metadata'}));
+  const listed = full.map(work => ({...work,firstImage:undefined,first_image:undefined}));
+  mocks.search.mockImplementation(async options => ({items:listed.slice((options.page-1)*60,options.page*60),total:180,page:options.page}));
+  const waits: Array<{options:any;resolve:(value:any)=>void}> = [];
+  mocks.waitForFirstImageCache.mockImplementation(options => new Promise(resolve => waits.push({options,resolve})));
+  await setup('portrait'); await act(async () => reach());
+  await waitFor(() => expect(visibleIds()).toHaveLength(120));
+  fireEvent.click(screen.getByRole('button',{name:'筛选'})); fireEvent.change(screen.getByLabelText('画师串'),{target:{value:'with'}});
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toEqual(full.slice(0,60).map(work => work.id)));
+  await act(async () => waits.at(-1)!.resolve({items:full.slice(0,60)}));
+  await waitFor(() => expect(waits.at(-1)?.options.metadataIds).toEqual(full.slice(60).map(work => work.id)));
+  expect(visibleIds()).toHaveLength(60);
+  await act(async () => waits.at(-1)!.resolve({items:full.slice(60)}));
+  await waitFor(() => expect(visibleIds()).toHaveLength(120));
+  expect(waits.at(-1)?.options.metadataIds).toEqual([]);
+  expect(waits.at(-1)?.options.ids).toEqual(full.slice(0,60).map(work => work.id));
+  const cached = (start:number,end:number) => full.slice(start,end).map(work => ({...work,localFirstImageUrl:`/synthetic/cached-${work.id}.png`,firstImageStatus:'cached'}));
+  await act(async () => waits.at(-1)!.resolve({items:cached(0,60)}));
+  await waitFor(() => expect(waits.at(-1)?.options.ids).toEqual(full.slice(60).map(work => work.id)));
+  await act(async () => waits.at(-1)!.resolve({items:cached(60,120)}));
+  await waitFor(() => expect(card(120).querySelector('img')?.getAttribute('src')).toBe('/synthetic/cached-120.png'));
+  expect(card(1).querySelector('img')?.getAttribute('src')).toBe('/synthetic/cached-1.png');
+  expect(mocks.getWork).not.toHaveBeenCalled();
+});
+
 it('追加中准确显示进度，失败原位重试且成功后继续自动滚动', async () => {
   const reach = installAppendObserver(); let finish!: (value: any) => void;
   mocks.search.mockImplementation(options => options.page === 1 ? Promise.resolve({ items: works, total: 180, page: 1 }) : new Promise(resolve => { finish = resolve; }));
@@ -939,6 +998,114 @@ const promptWorks = (prompts: string[]): AitagWorkSummary[] => prompts.map((prom
 }));
 const visibleIds = () => screen.queryAllByRole('button', { name: /^查看作品 合成作品 / }).map(item => Number(item.getAttribute('aria-label')!.replace(/\D+/g, '')));
 
+it.each([1280, 390])('%spx 条件在搜索框内从左侧开始、输入在后，+N 打开完整筛选且移除条件不提交输入草稿', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-search-filter-chip') ? 200 : 44; });
+  await setup('portrait');
+  const input = screen.getByRole('searchbox', { name: '搜索 AITag 作品' }) as HTMLInputElement;
+  expect(screen.getAllByRole('searchbox')).toHaveLength(1);
+  fireEvent.change(input, { target: { value: '未提交关键词' } });
+  fireEvent.click(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选' : '筛选' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  const dialog = screen.getByRole('dialog', { name: 'AITag 筛选' });
+  fireEvent.click(within(dialog).getByRole('button', { name: width === 390 ? '关闭' : '×' }));
+  const group = screen.getByRole('group', { name: '已生效的筛选条件' });
+  expect(group.parentElement).toBe(input.parentElement);
+  expect(group.nextElementSibling).toBe(input);
+  expect(input.closest('header')?.contains(group)).toBe(true);
+  expect(screen.queryByRole('button', { name: '清空全部' })).toBeNull();
+  const calls = mocks.search.mock.calls.length;
+  fireEvent.click(screen.getByRole('button', { name: '查看其余 2 个筛选条件' }));
+  expect(within(screen.getByRole('dialog', { name: 'AITag 筛选' })).getAllByRole('button', { name: /移除筛选/ })).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: '移除筛选：排除氛围参考' }));
+  expect((screen.getByRole('checkbox', { name: '排除氛围参考' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('checkbox', { name: '排除精准参考' }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole('searchbox', { name: '搜索 AITag 作品' })).toBe(input);
+  expect(input.value).toBe('未提交关键词');
+  expect(mocks.search).toHaveBeenCalledTimes(calls);
+});
+
+it.each([1280, 390])('%spx 两项参考排除独立勾选，兼容空参考、未知信息、条件标签和重置', async width => {
+  vi.stubGlobal('innerWidth', width);
+  document.documentElement.classList.toggle('dark', width === 390);
+  const items = promptWorks(Array.from({ length: 6 }, () => 'artist:synthetic, soft light'));
+  const setMetadata = (index: number, extra: Record<string, unknown>) => { items[index].firstImage = { ...items[index].firstImage!, ai_json: { ...items[index].firstImage!.ai_json as object, ...extra } }; };
+  setMetadata(1, { reference_strength_multiple: [0.6] });
+  setMetadata(2, { director_reference_descriptions: ['character'] });
+  setMetadata(3, { reference_image_multiple: ['synthetic'], director_reference_images: ['synthetic'] });
+  items[4].firstImage = { ...items[4].firstImage!, ai_json: undefined };
+  setMetadata(5, { reference_image_multiple: [], director_reference_images: [], vibe_transfer: false });
+  mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 6, page: options.page, page_size: 60 }));
+  const view = await setup('portrait');
+  fireEvent.click(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选' : '筛选' }));
+  expect((screen.getByRole('checkbox', { name: '排除氛围参考' }) as HTMLInputElement).checked).toBe(false);
+  expect((screen.getByRole('checkbox', { name: '排除精准参考' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  expect(visibleIds()).toEqual([1, 3, 6]);
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  expect(visibleIds()).toEqual([1, 6]);
+  expect(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选 2' : '筛选 2' })).toBeTruthy();
+  expect(document.querySelector('[data-toolbar-count-caption]')?.textContent).toBe('已加载中匹配 2 条 · 共 6 条');
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  view.unmount();
+  await setup('portrait');
+  expect(visibleIds()).toEqual([1, 6]);
+  fireEvent.click(screen.getByRole('button', { name: '移除筛选：排除氛围参考' }));
+  expect(visibleIds()).toEqual([1, 2, 6]);
+  fireEvent.click(screen.getByRole('button', { name: width === 390 ? 'AITag 筛选 1' : '筛选 1' }));
+  fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+  await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3, 4, 5, 6]));
+  expect(screen.queryByRole('group', { name: '已生效的筛选条件' })).toBeNull();
+});
+
+it('整组只按首图筛选，打开含参考的后续图片不改变结果或触发筛选详情请求', async () => {
+  mocks.getWork.mockResolvedValue({ work: works[0], images: [works[0].firstImage, {
+    ...works[0].firstImage!, id: 12, file_name: 'second.png', ai_json: { prompt: 'second recipe', reference_image_multiple: ['synthetic'], director_reference_images: ['synthetic'] },
+  }] });
+  await setup('portrait');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  expect(mocks.getWork).not.toHaveBeenCalled();
+  fireEvent.click(card(1));
+  await waitFor(() => expect(screen.getAllByRole('button', { name: '保存到风格串' })).toHaveLength(2));
+  expect(visibleIds()).toEqual([1, 2]);
+  selected(1);
+});
+
+it('参考筛选等待首图信息，补齐后排除参考作品；沿用元数据轮询且不读取整组', async () => {
+  const full = promptWorks(['artist:synthetic, soft light', 'artist:other, soft light']);
+  full[1].firstImage = { ...full[1].firstImage!, ai_json: { ...full[1].firstImage!.ai_json as object, reference_strength_multiple: [0.6] } };
+  const listed = full.map(item => ({ ...item, firstImage: undefined, localFirstImageUrl: undefined, hasFullyCachedImages: false }));
+  mocks.search.mockImplementation(async options => ({ items: listed, total: 2, page: options.page, page_size: 60 }));
+  const waits: Array<(value: { items: AitagWorkSummary[] }) => void> = [];
+  mocks.waitForFirstImageCache.mockImplementation(() => new Promise(resolve => { waits.push(resolve); }));
+  await setup('portrait');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除氛围参考' }));
+  await waitFor(() => expect(mocks.waitForFirstImageCache.mock.calls.at(-1)?.[0].metadataIds).toEqual([1, 2]));
+  expect(visibleIds()).toEqual([]);
+  expect(screen.getAllByText('正在读取 2 个作品的元数据').length).toBeGreaterThan(0);
+  await act(async () => waits.at(-1)?.({ items: full }));
+  await waitFor(() => expect(visibleIds()).toEqual([1]));
+  expect(mocks.getWork).not.toHaveBeenCalled();
+});
+
+it('离线参考筛选隐藏未知首图，不为此联网补齐或卡住缓存结果', async () => {
+  const unknown = { ...works[1], firstImage: undefined, localFirstImageUrl: undefined, hasFullyCachedImages: false };
+  mocks.search.mockRejectedValue(new Error('offline'));
+  mocks.searchCache.mockImplementation(async options => ({ items: [works[0], unknown], total: 2, page: options.page }));
+  await setup('portrait');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '排除精准参考' }));
+  expect(visibleIds()).toEqual([1]);
+  expect(screen.queryByText(/正在读取.*作品的元数据/)).toBeNull();
+  expect(mocks.waitForFirstImageCache).not.toHaveBeenCalled();
+  expect(mocks.getWork).not.toHaveBeenCalled();
+});
+
 it('画师串与风格串筛选即时生效，条件标签可单独移除，清空全部恢复默认检索', async () => {
   const items = promptWorks(['artist:synthetic painter, 1girl', 'synthetic_bare, scenery', 'plain, scenery']);
   mocks.search.mockImplementation(async options => ({ items: options.page === 1 ? items : [], total: 3, page: options.page, page_size: 60 }));
@@ -962,7 +1129,7 @@ it('画师串与风格串筛选即时生效，条件标签可单独移除，清�
   expect(screen.queryByRole('button', { name: '移除筛选：含画师串' })).toBeNull();
 
   const calls = mocks.search.mock.calls.length;
-  fireEvent.click(screen.getByRole('button', { name: '清空全部' }));
+  fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
   await waitFor(() => expect(visibleIds()).toEqual([1, 2, 3]));
   expect(mocks.search.mock.calls.slice(calls)[0][0]).toMatchObject({ page: 1, q: '', prompt: '', sort: 'new', timeRange: 'all' });
   expect(screen.queryByRole('group', { name: '已生效的筛选条件' })).toBeNull();

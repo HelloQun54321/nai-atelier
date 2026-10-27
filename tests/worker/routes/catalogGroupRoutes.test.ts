@@ -57,3 +57,18 @@ it('未知类型、方法拒绝，其他路径留给其他路由', async () => {
   expect((await invoke('POST', initial())).status).toBe(405);
   expect(await handleCatalogGroupRoute({ path: '/api/another' } as RouteContext)).toBeNull();
 });
+
+it('旧根组GET不写回；树元数据沿用原设置、用户隔离与CAS保护', async () => {
+  const key = 'catalog_groups_v1:artist:owner', raw = JSON.stringify({ ...initial(), revision: 3 });
+  sqlite.prepare('INSERT INTO settings VALUES (?,?)').run(key, raw);
+  expect(await (await invoke('GET')).json()).toEqual({ ...initial(), revision: 3 });
+  expect(sqlite.prepare('SELECT value FROM settings WHERE key=?').get(key)!.value).toBe(raw);
+  const tree = { ...initial(), revision: 3, groups: [...initial().groups, { id: 'child', name: '同名', parentId: 'g1' }, { id: 'deep', name: '同名', parentId: 'child' }], memberships: { 'artist:画师': ['deep'] } };
+  expect((await invoke('PUT', tree)).status).toBe(200);
+  expect(await (await invoke('GET')).json()).toEqual({ ...tree, revision: 4 });
+  expect((await invoke('PUT', tree)).status).toBe(409);
+  expect(await (await invoke('GET', undefined, 'artist', 'other')).json()).toEqual({ revision: 0, groups: [], memberships: {} });
+  expect(await (await invoke('GET', undefined, 'character')).json()).toEqual({ revision: 0, groups: [], memberships: {} });
+  expect((await invoke('PUT', { ...tree, revision: 4, groups: [{ id: 'cycle', name: '循环', parentId: 'cycle' }] })).status).toBe(400);
+  expect(await (await invoke('GET')).json()).toEqual({ ...tree, revision: 4 });
+});

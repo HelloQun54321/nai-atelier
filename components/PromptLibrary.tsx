@@ -64,6 +64,9 @@ import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
 import { fragmentKindOf, FRAGMENT_LABELS, parsePromptLibraryTags } from '../services/promptLibraryEntries';
 import { usePromptLibrary } from './PromptLibraryAccess';
+import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
+import { PromptLibraryDirectoryNavigation } from './PromptLibraryDirectoryNavigation';
+import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryLegacyKind, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
@@ -131,6 +134,7 @@ const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6];
 
 /** 详情态的表单草稿：与库里的 chain 分开保存，未点「保存」不落库。 */
 interface LibraryDraft {
+  directoryIds: string[];
   id: string;
   name: string;
   /** 逗号分隔的原始输入，保存时才拆成数组。 */
@@ -169,6 +173,10 @@ export interface PromptLibraryProps {
 }
 
 interface PromptLibraryInternalProps extends PromptLibraryProps {
+  dynamicDirectories?: boolean;
+  initialDirectoryIds?: string[];
+  directoryNavigation?: React.ReactNode;
+  directorySelectionKey?: string;
   config: PromptLibraryKindConfig;
   initialEntry?: PromptChain;
   onEditorClose?: () => void;
@@ -210,13 +218,17 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   toolbarSlot = null,
   browsing,
   rememberBrowsing,
+  dynamicDirectories = false,
+  initialDirectoryIds = [],
+  directoryNavigation,
+  directorySelectionKey,
 }) => {
   useLanguage();
   const library = usePromptLibrary();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
   const Icon = config.general ? Library : KIND_ICONS[config.kind];
-  const generatorTitle = config.generateLabel.replace('✦ ', '');
+  const generatorTitle = library?.directories ? 'AI 生成片段' : config.generateLabel.replace('✦ ', '');
 
   const [query, setQuery] = useState(browsing?.query || '');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set(browsing?.tags));
@@ -257,6 +269,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return onCreate(name, t('来自一键六库内容'), 'style', { params, variableValues });
   }, [onCreate, onUpdateChain]);
   const [brief, setBrief] = useState('');
+  const [generationDirectoryIds, setGenerationDirectoryIds] = useState<string[]>(initialDirectoryIds.slice(0, 1));
+  const previousDirectorySelection = useRef(directorySelectionKey);
+  useLayoutEffect(() => {
+    if (previousDirectorySelection.current === directorySelectionKey) return;
+    previousDirectorySelection.current = directorySelectionKey;
+    resetScroll(); setGenerationDirectoryIds(initialDirectoryIds.slice(0, 1));
+  }, [directorySelectionKey]);
   const [facets, setFacets] = useState<Record<string, string | string[]>>({});
   const [count, setCount] = useState(1);
   /* 详细补全：三档（默认详细）+ 需求未提到的限定项保持留空 */
@@ -309,8 +328,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   }, [refreshUsage]);
 
   const items = useMemo(
-    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && fragmentKindOf(chain) && (config.hideActions || (config.general ? fragmentKindOf(chain) === 'general' : chain.type === config.type))),
-    [chains, config.type, config.general, config.hideActions],
+    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && fragmentKindOf(chain) && (dynamicDirectories || config.hideActions || (config.general ? fragmentKindOf(chain) === 'general' : chain.type === config.type))),
+    [chains, config.type, config.general, config.hideActions, dynamicDirectories],
   );
 
   const tagOptions = useMemo(() => {
@@ -363,6 +382,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   function draftFromChain(chain: PromptChain): LibraryDraft { return {
     id: chain.id,
+    directoryIds: library?.directories ? getPromptLibraryEntryDirectoryIds(chain, library.directories) : [],
     name: String(chain.name || ''),
     tags: chainTags(chain).join(', '),
     prompt: chainPrompt(chain),
@@ -382,7 +402,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     const base = items.find(chain => chain.id === detail.id);
     if (!base) return false;
     if (detail.coverChanged) return true;
-    return detail.name !== String(base.name || '')
+    return !!library?.directories && !sameIds(detail.directoryIds, getPromptLibraryEntryDirectoryIds(base, library.directories)) || detail.name !== String(base.name || '')
       || detail.tags !== chainTags(base).join(', ')
       || detail.prompt !== chainPrompt(base)
       || detail.bilingual !== chainBilingual(base)
@@ -422,7 +442,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   }), [registerLeaveGuard, closeDetail, generating, savingDrafts, creating]);
 
   const saveDetail = async () => {
-    if (!detail || savingDetail) return;
+    if (!detail || savingDetail || library?.directoriesError) return;
     setSavingDetail(true);
     try {
       const base = chainsRef.current.find(chain => chain.id === detail.id);
@@ -434,6 +454,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       // params 是整字段覆盖：必须带上原有生图参数，只合并 _promptLibrary。
       const params: PromptLibraryParams = {
         ...(base.params || ({} as NAIParams)),
+        ...(library?.directories ? { _promptLibraryDirectoryIds: detail.directoryIds } : {}),
         _promptLibrary: {
           ...libraryMeta(base),
           bilingual: detail.bilingual,
@@ -487,7 +508,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (creating) return;
     setCreating(true);
     try {
-      const newId = await onCreate(t(config.defaultName), '', config.general ? 'preset' : config.kind, config.general ? { params: { _collectedPrompt: 1, _collectedCategory: 'general' } as unknown as NAIParams } : undefined);
+      const newId = await onCreate(t(config.defaultName), '', library?.directories ? 'preset' : config.general ? 'preset' : config.kind, library?.directories ? { params: { _collectedCategory: 'general', _promptLibraryDirectoryIds: initialDirectoryIds } as unknown as NAIParams } : config.general ? { params: { _collectedPrompt: 1, _collectedCategory: 'general' } as unknown as NAIParams } : undefined);
       if (!newId) {
         notify(t('创建失败，请稍后重试'), 'error');
         return;
@@ -495,6 +516,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       void refreshUsage();
       setDetail({
         id: newId,
+        directoryIds: initialDirectoryIds,
         name: t(config.defaultName),
         tags: '',
         prompt: '',
@@ -562,13 +584,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const generate = async () => {
     const text = brief.trim();
     if (!text) { notify(t('请先描述想要的{0}', [t(config.itemNoun)]), 'error'); return; }
+    if (library?.directories && !generationDirectoryIds.length) { notify(t('请选择目录'), 'error'); return; }
     setGenerating(true);
     try {
       // 限定项按顶层字段提交：空串代表「不限」，由后端决定是否写进系统提示。
       const facetInput: Record<string, string> = {};
       for (const facet of config.facets) facetInput[facet.key] = Array.isArray(facets[facet.key]) ? (facets[facet.key] as string[]).join(', ') : String(facets[facet.key] || '');
       const result = await promptAgentService.generateLibraryPrompt({
-        kind: config.kind,
+        ...(library?.directories ? {} : { kind: config.kind }),
+        ...(library?.directories ? { directories: library.directories, directoryId: generationDirectoryIds[0] } : {}),
         brief: text,
         count,
         detail: detailMode,
@@ -632,8 +656,10 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         const params: PromptLibraryParams = {
           ...LAB_DEFAULT_PARAMS,
           _promptLibrary: { bilingual: String(item.bilingual || ''), references: [] },
+          ...(library?.directories ? { _promptLibraryDirectoryIds: item.directoryId ? [item.directoryId] : generationDirectoryIds } : {}),
         };
-        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [t(config.itemNoun)]), String(item.note || ''), config.kind, {
+        const generatedKind = library?.directories ? getPromptLibraryDirectoryLegacyKind(library.directories, item.directoryId || generationDirectoryIds[0]) : config.kind;
+        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [t(config.itemNoun)]), String(item.note || ''), generatedKind && generatedKind !== 'general' ? generatedKind : 'preset', {
           tags: Array.isArray(item.tags) ? item.tags.map(value => String(value || '').trim()).filter(Boolean).slice(0, 12) : [],
           basePrompt: String(item.prompt || ''),
           params, variableValues: { subject: '' }, modules: [],
@@ -784,7 +810,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         <ToolbarButton onClick={() => setBundleOpen(true)} aria-label={t('AI 生成搭配')} title={t('AI 生成搭配')} className="mobile-touch !px-2.5 md:!px-3">
           <Wand2 /><span className="content-library-action-label hidden sm:inline">{t('AI 生成搭配')}</span>
         </ToolbarButton>
-        {!config.general && <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
+        {(library?.directories || !config.general) && <ToolbarButton onClick={openGenerator} aria-label={t(library?.directories ? generatorTitle : config.generateLabel)} title={t(library?.directories ? generatorTitle : config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
           <Sparkles /><span className="content-library-action-label hidden sm:inline">{t(generatorTitle)}</span>
         </ToolbarButton>}
         <ToolbarButton tone="primary" onClick={() => void createBlank()} disabled={creating} aria-label={t(config.createLabel)} title={t(config.createLabel)} className="mobile-touch !px-2.5 md:!px-3">
@@ -795,7 +821,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbarContent = (
     <>
       {categoryToggle}
-      <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320}>
+      <ToolbarPopover title={t('筛选{0}', [t(config.title)])} count={selectedTags.size} width={320} zIndex={dynamicDirectories ? 1960 : undefined}>
         <div className="space-y-3">
           <label className="block text-xs font-semibold text-gray-500">{t('排序')}
             <select aria-label={t('排序')} className={TOOLBAR_FIELD_CLASS} value={sort} onChange={event => { setSort(event.target.value as LibraryBrowsing['sort']); resetScroll(); }}>
@@ -906,6 +932,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const detailBody = detail ? (
     <div className="mx-auto grid w-full max-w-[1400px] gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className={`${DETAIL_CARD_CLASS} space-y-4`}>
+        {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={detail.directoryIds} onChange={directoryIds => patchDetail({ directoryIds })} disabled={savingDetail} />}
         <label className="block">
           <span className={DETAIL_LABEL_CLASS}>{t('名称')}</span>
           <input
@@ -1031,7 +1058,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const generator = genOpen ? (
     <ImagePreviewPortal>
       <div
-        className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+        style={{ zIndex: library?.directories ? 1950 : undefined }} className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
         onMouseDown={event => { if (event.target === event.currentTarget) closeGenerator(); }}
       >
         <div
@@ -1062,7 +1089,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
             {facetSummary && <p className="text-xs text-gray-600 dark:text-gray-300">{t(`限定：${facetSummary}`)}</p>}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {config.facets.map(facet => facet.multiple ? (
+              {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} mode="single" includeAll={false} selectedIds={generationDirectoryIds} onChange={setGenerationDirectoryIds} disabled={generating} />}
+              {(library?.directories ? [] : config.facets).map(facet => facet.multiple ? (
                 <fieldset key={facet.key} className="min-w-0">
                   <legend className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(facet.label)}</legend>
                   <div className="mt-1 flex flex-wrap gap-1">
@@ -1234,7 +1262,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={t('查看原图')}
-        className="ui-backdrop-enter fixed inset-0 z-[1400] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+        style={{ zIndex: library?.directories ? 1950 : undefined }} className="ui-backdrop-enter fixed inset-0 z-[1400] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
         onMouseDown={event => { if (event.target === event.currentTarget) setViewer(null); }}
       >
         <button
@@ -1280,9 +1308,10 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
 
   const body = <>
+    <div className="flex min-h-0 flex-1 flex-col md:flex-row" style={directoryNavigation ? { '--workspace-chrome-height': '0px' } as React.CSSProperties : undefined}>{directoryNavigation}
     <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
       {detail ? detailBody : !initialEntry && <>{itemActions}{listBody}</>}
-    </div>
+    </div></div>
     {generator}
     <PromptLibraryBundleDialog
       open={bundleOpen}
@@ -1293,7 +1322,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       styleChains={styleChains}
       onWriteToChain={writeBundleToChain}
     />
-    <HistoryImagePicker open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
+    <HistoryImagePicker zIndex={library?.directories ? 1950 : undefined} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
       scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
   </>;
@@ -1334,7 +1363,7 @@ export const PromptLibraryEntryEditor: React.FC<PromptLibraryEntryEditorProps> =
 
 const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera','general'] as const;
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
-export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
+const LegacyPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();
   const navigationId = useId();
   const [categoriesExpanded, setCategoriesExpanded] = useState(() => { try { return localStorage.getItem('nai-prompt-library-categories-expanded') === 'true'; } catch { return false; } });
@@ -1393,3 +1422,35 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     </div>
   </div>;
 };
+
+const DIRECTORY_CONFIG: PromptLibraryKindConfig = { ...GENERAL_CONFIG, title: '片段', emptyTitle: '还没有片段', emptyHint: '新建片段或使用 AI 生成片段。', generateLabel: 'AI 生成片段', briefLabel: '描述你想要的内容', briefPlaceholder: '描述要生成的提示词内容', generateHint: '', facets: [] };
+
+const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
+  const library = usePromptLibrary()!;
+  const directories = library.directories!;
+  const navigationId = useId();
+  const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('nai-prompt-library-directories-expanded') === 'true'; } catch { return false; } });
+  const toggleDirectories = () => { const next = !expanded; setExpanded(next); try { localStorage.setItem('nai-prompt-library-directories-expanded', String(next)); } catch { /* 本端存储受限时仍可切换。 */ } };
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [allSelected, setAllSelected] = useState(true);
+  const [unclassified, setUnclassified] = useState(false);
+  const leaveGuard = useRef<(() => Promise<boolean>) | null>(null);
+  const select = async (ids: string[], all: boolean, unclassifiedOnly: boolean) => {
+    if (leaveGuard.current && !await leaveGuard.current()) return;
+    setSelectedIds(ids); setAllSelected(all); setUnclassified(unclassifiedOnly);
+  };
+  useEffect(() => {
+    if (!props.requestCloseRef) return;
+    props.requestCloseRef.current = () => { void (async () => { if (!leaveGuard.current || await leaveGuard.current()) props.onClose?.(); })(); };
+    return () => { props.requestCloseRef!.current = null; };
+  }, [props.requestCloseRef, props.onClose]);
+  const fragments = props.chains.filter(chain => !!fragmentKindOf(chain));
+  const chains = allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
+  const selectionKey = allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
+  const currentPath = allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
+  const categoryToggle = <ToolbarButton aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories}><Folder className="h-4 w-4" /></ToolbarButton>;
+  const navigation = <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} />;
+  return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
+};
+
+export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => usePromptLibrary()?.directories ? <DirectoryPromptLibraryHub {...props} /> : <LegacyPromptLibraryHub {...props} />;

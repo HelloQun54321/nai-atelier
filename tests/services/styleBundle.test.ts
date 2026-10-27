@@ -38,6 +38,23 @@ async function replaceManifest(file: Blob, change: (value: Record<string, unknow
 }
 
 describe('.naia 风格串分享包', () => {
+  it('动态目录正负词和逻辑目录路径在分享导出、预览与再次导入间保留', async () => {
+    const original = chain();
+    original.params._promptSections = { 'directory:scene': '1.2::forest, mist::', sectionNegatives: { 'directory:scene': 'city' },
+      sectionMeta: { 'directory:scene': { directoryId: 'scene', directoryName: '场景', directoryPath: ['环境', '场景'] } } };
+    original.params.characters![0].sections = { 'directory:role': 'white dress' };
+    original.params.characters![0].sectionNegatives = { 'directory:role': 'coat' };
+    original.params.characters![0].sectionMeta = { 'directory:role': { directoryName: '服装', directoryPath: ['人物', '服装'] } };
+    const contentSnapshot = { format: 'nai-roll-content', version: 2, items: [{ unitId: 'directory:scene', directoryId: 'scene', directoryName: '场景', directoryPath: ['环境', '场景'], scope: 'global', text: 'forest', negative: 'city', constraintNotes: '只含场景', meta: { directoryName: '场景' } }], roll: { checks: { 'directory:scene': true }, locks: { 'directory:scene': 'forest' } } };
+    (original.params as unknown as Record<string, unknown>)._rollContentSnapshot = contentSnapshot;
+    const preview = await readStyleBundle(await exportStyleBundle([original], options));
+    const snapshot = getStyleBundleEntryPreview(preview, 's0');
+    expect(snapshot.params._promptSections).toEqual(original.params._promptSections);
+    expect(snapshot.params.characters).toEqual(original.params.characters);
+    expect((snapshot.params as unknown as Record<string, unknown>)._rollContentSnapshot).toEqual(contentSnapshot);
+    await importStyleBundle(preview, ['s0']);
+    expect(createChain.mock.calls[0][0].params).toMatchObject({ _promptSections: original.params._promptSections, characters: original.params.characters });
+  });
   it('无封面预览可查看完整配方，快照修改不会污染后续预览或导入', async () => {
     const original = chain();
     const preview = await readStyleBundle(await exportStyleBundle([original], options));

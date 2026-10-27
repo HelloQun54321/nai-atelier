@@ -9,8 +9,8 @@ import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
-import { CHARACTER_SECTION_KEYS, compileCharacterContent, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
-import { CharacterSectionSummary } from './CharacterSectionSummary';
+import { compileCharacterContent, getCharacterSectionKeys, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CharacterSectionSummary, getCharacterSectionLabel } from './CharacterSectionSummary';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -33,13 +33,6 @@ const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: bo
         }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
         className="w-full rounded border bg-gray-50 p-1 text-xs disabled:opacity-40 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />;
-};
-
-const CHARACTER_SECTION_LABELS: Record<(typeof CHARACTER_SECTION_KEYS)[number], string> = {
-    appearance: '外貌',
-    wardrobe: '服饰',
-    pose: '动作',
-    expression: '表情',
 };
 
 export interface ChainEditorCharactersProps {
@@ -237,7 +230,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         value={promptClassificationEnabled ? char.prompt : compileCharacterContent(char, legacyNegatives).prompt}
                                         onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { prompt: nextValue } : {
                                             prompt: nextValue, negativePrompt: compileCharacterContent(char, legacyNegatives).negativePrompt,
-                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(CHARACTER_SECTION_KEYS.map(key => [key, { source: 'manual' }])) : char.sectionMeta,
+                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
                                         })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 resize-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                         placeholder={t("角色提示词")}
@@ -253,7 +246,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         value={(promptClassificationEnabled ? char : compileCharacterContent(char, legacyNegatives)).negativePrompt || ''}
                                         onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { negativePrompt: nextValue } : {
                                             prompt: compileCharacterContent(char, legacyNegatives).prompt, negativePrompt: nextValue,
-                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(CHARACTER_SECTION_KEYS.map(key => [key, { source: 'manual' }])) : char.sectionMeta,
+                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
                                         })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                         placeholder={t("选填")}
@@ -268,14 +261,14 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         </span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {CHARACTER_SECTION_KEYS.map(key => (
+                                        {getCharacterSectionKeys(char).map(key => (
                                             <div key={key} className="min-w-0">
                                                 <label className="mb-0.5 block text-micro font-semibold text-gray-500" htmlFor={`char-section-${idx}-${key}`}>
-                                                    {t(CHARACTER_SECTION_LABELS[key])}
+                                                    {t(getCharacterSectionLabel(char, key))}
                                                 </label>
                                                 <TagAutocompleteTextarea
                                                     id={`char-section-${idx}-${key}`}
-                                                    libraryField={{ roleId: char.id, kind: key }}
+                                                    libraryField={key.startsWith('directory:') ? { roleId: char.id, directoryId: key.slice(10) } : { roleId: char.id, kind: key as 'appearance' | 'wardrobe' | 'pose' | 'expression' }}
                                                     tagAssistEnabled={tagAssistEnabled}
                                                     disabled={!canEdit}
                                                     value={char.sections?.[key] || ''}
@@ -285,6 +278,13 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                                     className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
                                                     placeholder={t("留空则不参与")}
                                                 />
+                                                {(key.startsWith('directory:') || char.sectionNegatives?.[key]) && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
+                                                    <label className="mb-0.5 mt-1 block text-micro text-gray-500" htmlFor={`char-section-${idx}-${key}-negative`}>{t('内容负面')}</label>
+                                                    <TagAutocompleteTextarea id={`char-section-${idx}-${key}-negative`} aria-label={`${t('角色 {0}', [idx + 1])} · ${t(getCharacterSectionLabel(char, key))} · ${t('内容负面')}`}
+                                                        tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={!canEdit || negativeLocked}
+                                                        value={char.sectionNegatives?.[key] || ''} onValueChange={value => updateCharacter(idx, { sectionNegatives: { ...char.sectionNegatives, [key]: value } })}
+                                                        className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" />
+                                                </div>}
                                             </div>
                                         ))}
                                     </div>

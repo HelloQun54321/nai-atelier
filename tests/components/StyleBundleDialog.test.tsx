@@ -113,7 +113,7 @@ it.each([320, 390, 1280])('%s宽度常态仅两排顶部控件且无底栏，设
   expect((await screen.findByLabelText('文件夹名称') as HTMLInputElement).value).toBe('styles');
   expect(screen.getByRole('button', { name: '设置文件夹' }).title).toContain('styles');
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
-  const list = screen.getByRole('checkbox', { name: '夹0' }).parentElement!.parentElement!;
+  const list = screen.getByRole('group', { name: '目标文件夹' }).parentElement!;
   expect(list.className).toContain('max-h-60');
   expect(list.className).toContain('overflow-y-auto');
   fireEvent.click(screen.getByRole('checkbox', { name: '夹0' }));
@@ -308,6 +308,7 @@ it('换包清除旧预览状态引用，再读取同一preview对象也不复活
 });
 
 it('以文件名预填新夹并允许改名，分批导入和失败重试复用同一夹，完成后可查看', async () => {
+  folderState.folders = [{ id: 'parent', name: '朋友分享', parentId: null }];
   const onViewFolder = vi.fn();
   mocks.import.mockResolvedValueOnce({ createdIds: ['new-a'], importedEntryIds: ['a'], failed: [{ id: 'b', name: '素描', error: '合成保存失败' }] })
     .mockResolvedValueOnce({ createdIds: ['new-b'], importedEntryIds: ['b'], failed: [] });
@@ -317,15 +318,18 @@ it('以文件名预填新夹并允许改名，分批导入和失败重试复用�
   const name = await openFolderName();
   expect((name as HTMLInputElement).value).toBe('朋友的配方');
   fireEvent.change(name, { target: { value: '朋友A分享' } });
+  fireEvent.change(screen.getByLabelText('上级文件夹'), { target: { value: 'parent' } });
   fireEvent.click(actionButton('导入全部'));
   await screen.findByText('合成保存失败');
-  expect(folderState.folders.map(folder => folder.name)).toEqual(['朋友A分享']);
-  const id = folderState.folders[0].id;
+  expect(folderState.folders.map(folder => folder.name)).toEqual(['朋友分享', '朋友A分享']);
+  const id = folderState.folders[1].id;
+  expect(folderState.folders[1].parentId).toBe('parent');
   expect(folderState.assignments).toEqual({ 'new-a': [id] });
   expect((await openFolderName() as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByLabelText('上级文件夹') as HTMLSelectElement).disabled).toBe(true);
   fireEvent.click(actionButton('导入全部'));
   await waitFor(() => expect(folderState.assignments['new-b']).toEqual([id]));
-  expect(folderState.folders).toHaveLength(1);
+  expect(folderState.folders).toHaveLength(2);
   expect(mocks.import.mock.calls[1][1]).toEqual(['b']);
   await waitFor(() => expect((actionButton('查看文件夹') as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(actionButton('查看文件夹'));
@@ -333,7 +337,7 @@ it('以文件名预填新夹并允许改名，分批导入和失败重试复用�
 });
 
 it('已有文件夹可多选，归类先读取最新归属并追加，保留其他串与其他夹', async () => {
-  folderState = { revision: 0, folders: [{ id: 'f1', name: '分享区', parentId: null }, { id: 'f2', name: '收藏区', parentId: null }, { id: 'f3', name: '原有区', parentId: null }], assignments: { mine: ['f3'] } };
+  folderState = { revision: 0, folders: [{ id: 'f1', name: '分享区', parentId: 'f3' }, { id: 'f2', name: '分享区', parentId: null }, { id: 'f3', name: '原有区', parentId: null }], assignments: { mine: ['f3'] } };
   mocks.import.mockImplementationOnce(async () => {
     folderState = { ...folderState, revision: 1, assignments: { ...folderState.assignments, 'new-a': ['f3'] } };
     return { createdIds: ['new-a'], importedEntryIds: ['a'], failed: [] };
@@ -344,8 +348,9 @@ it('已有文件夹可多选，归类先读取最新归属并追加，保留其�
   await openFolderName();
   fireEvent.change(folderModeField(), { target: { value: 'existing' } });
   expect((screen.getByRole('button', { name: '导入已选（2）' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('checkbox', { name: '原有区 / 分享区' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '分享区' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '收藏区' }));
+  expect(screen.getByRole('button', { name: '设置文件夹' }).title).toContain('原有区 / 分享区、分享区');
   fireEvent.click(actionButton('导入全部'));
   await waitFor(() => expect(folderState.assignments['new-a']).toEqual(['f3', 'f1', 'f2']));
   expect(folderState.assignments.mine).toEqual(['f3']);

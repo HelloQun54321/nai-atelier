@@ -212,3 +212,19 @@ describe('从完整搭配人工提取', () => {
     expect(contentFromPresetSnapshot(null, 'T')).toBeNull();
   });
 });
+
+
+describe('动态组合快照', () => {
+  it('任意目录内容、负面及来源独立保存，旧版本仍读取且不带生图配置', () => {
+    const row = { kind: 'directory:eye', directoryId: 'eye', directoryName: '眼睛', directoryPath: ['人物', '眼睛'], scope: 'character', filled: true, text: 'blue eyes', negative: 'closed eyes', constraintNotes: '保留说明', meta: { entryId: 'eye-1', directoryName: '眼睛' } };
+    const input = { picks: { 'directory:eye': row } };
+    const snapshot = contentSnapshotOf(input, 'now')!;
+    row.text = 'changed';
+    const read = contentRead(snapshot);
+    expect(read.items).toEqual([expect.objectContaining({ unitId: 'directory:eye', directoryId: 'eye', directoryName: '眼睛', directoryPath: ['人物', '眼睛'], scope: 'character', text: 'blue eyes', negative: 'closed eyes', constraintNotes: '保留说明' })]);
+    expect(read.anyRole).toBe(true);
+    expect(snapshot).not.toHaveProperty('params');
+    expect(contentRead({ ...contentSnapshotOf(record(), 'old'), version: 1 }).ok).toBe(true);
+    expect(contentRead({ format: CONTENT_FORMAT, version: 2, items: [{ unitId: 'bad', text: 'ignored' }] }).ok).toBe(false);
+  });
+});

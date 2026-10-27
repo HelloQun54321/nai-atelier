@@ -31,9 +31,9 @@ export function promptBrowseEntries(chains: PromptChain[]): PromptBrowseEntry[] 
       ...(read?.roles.flatMap(role => [...Object.values(role.sections),
         ...Object.values(role.negatives).flatMap(negative => [negative.text, negative.note])]) || []),
       ...Object.values(read?.global || {}).flatMap(field => [field.text || '', field.negative?.text || '', field.negative?.note || ''])].filter(Boolean);
-    const texts = [...body, ...(read?.roles.map(role => role.name) || []), chain.description || '', ...(chain.tags || [])];
+    const texts = [...body, ...(read?.items.flatMap(item => [item.text, item.negative, item.constraintNotes, item.directoryName, ...item.directoryPath]) || []), ...(read?.roles.map(role => role.name) || []), chain.description || '', ...(chain.tags || [])];
     const summary = section === 'saved' ? [...Object.values(read?.roles[0]?.sections || {}),
-      ...Object.values(read?.global || {}).map(field => field.text)].filter(Boolean).join(', ') : body[0];
+      ...Object.values(read?.global || {}).map(field => field.text), ...(read?.items.map(item => item.text) || [])].filter(Boolean).join(', ') : body[0];
     return [{ chain, section, kind: fragmentKindOf(chain), texts, summary: summary || chain.description || '' }];
   });
 }

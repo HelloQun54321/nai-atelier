@@ -37,7 +37,7 @@ it('完整库并发读取共用一次结构检查且不尝试已存在列的 ALT
   try {
     const [items, boards] = await Promise.all([invoke(), invoke('/api/inspiration-boards')]);
     expect(await items.json()).toEqual([expect.objectContaining({ id: 'saved', title: '保留作品', prompt: 'original prompt' })]);
-    expect(await boards.json()).toEqual({ items: [] });
+    expect(await boards.json()).toEqual({ items: [], treeRevision: 0 });
     expect(queries.filter(query => query.startsWith('PRAGMA'))).toHaveLength(1);
     expect(queries.filter(query => query.startsWith('ALTER'))).toHaveLength(0);
     expect(queries.filter(query => query.startsWith('CREATE'))).toHaveLength(4);

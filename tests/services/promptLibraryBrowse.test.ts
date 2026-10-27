@@ -49,3 +49,11 @@ describe('统一提示词库检索', () => {
     expect(rows[0].summary).not.toContain('角色 1');
   });
 });
+
+it('动态目录组合正文与目录名参与检索，摘要保留真实内容', () => {
+  const entry = chain('dynamic', createCombinationData('自定义组合', { 'directory:prop': { kind: 'directory:prop', directoryId: 'prop', directoryName: '道具', directoryPath: ['人物', '道具'], scope: 'character', text: 'silver sword', negative: 'axe', filled: true } }));
+  const rows = promptBrowseEntries([entry]);
+  expect(filterPromptBrowseEntries(rows, { ...defaults, query: '道具' })).toHaveLength(1);
+  expect(filterPromptBrowseEntries(rows, { ...defaults, query: 'axe' })).toHaveLength(1);
+  expect(rows[0].summary).toBe('silver sword');
+});

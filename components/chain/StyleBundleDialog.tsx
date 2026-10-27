@@ -7,7 +7,8 @@ import { downloadFile } from '../../services/fileDownload';
 import { db } from '../../services/dbService';
 import { api } from '../../services/api';
 import { createUuid } from '../../services/id';
-import { folderTree, readChainFolders, updateChainFolderMemberships } from '../../services/chainFolders';
+import { readChainFolders, updateChainFolderMemberships } from '../../services/chainFolders';
+import { getDirectoryPath } from '../../services/directoryTree.mjs';
 import { saveChainFolders, useChainFolders } from '../../services/useChainFolders';
 import { t, useLanguage } from '../../services/i18n';
 import { ToolbarButton, ToolbarSearch } from '../DesignSystem';
@@ -16,6 +17,8 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { StyleBundlePreview as BundlePreviewCards } from './StyleBundlePreview';
+import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
+import { DirectoryTreeSelect } from '../DirectoryTreeSelect';
 
 type Scope = 'all' | 'filtered' | 'selected';
 interface Props {
@@ -47,11 +50,12 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const folders = useChainFolders(tab === 'import');
   const [folderMode, setFolderMode] = useState<'new' | 'existing'>('new');
   const [folderName, setFolderName] = useState('');
+  const [folderParentId, setFolderParentId] = useState('');
   const [targetFolders, setTargetFolders] = useState<string[]>([]);
   const [targetLocked, setTargetLocked] = useState(false);
   const [unfiledIds, setUnfiledIds] = useState<string[]>([]);
   const [filedFolder, setFiledFolder] = useState('');
-  const targetPlan = useRef<{ ids: string[]; name?: string } | null>(null);
+  const targetPlan = useRef<{ ids: string[]; name?: string; parentId?: string | null } | null>(null);
   const [query, setQuery] = useState('');
   const [visibleCount, setVisibleCount] = useState(100);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -136,7 +140,7 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   };
 
   const targetMissing = () => {
-    targetPlan.current = null; setTargetLocked(false); setTargetFolders([]);
+    targetPlan.current = null; setTargetLocked(false); setTargetFolders([]); setFolderParentId('');
     void folders.reload();
     throw Error('目标文件夹已不存在，请重新选择');
   };
@@ -144,13 +148,14 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
   const ensureTargetFolders = async () => {
     const latest = readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }));
     const plan = targetPlan.current || (folderMode === 'new'
-      ? { ids: [createUuid()], name: folderName.trim() }
+      ? { ids: [createUuid()], name: folderName.trim(), parentId: folderParentId || null }
       : { ids: [...targetFolders] });
     targetPlan.current = plan;
     if (!plan.ids.length) throw Error('请选择目标文件夹');
     if (targetLocked && plan.ids.some(id => !latest.folders.some(folder => folder.id === id))) targetMissing();
     if (plan.name !== undefined && !latest.folders.some(folder => folder.id === plan.ids[0])) {
-      await saveChainFolders({ ...latest, folders: [...latest.folders, { id: plan.ids[0], name: plan.name, parentId: null }] });
+      if (plan.parentId && !latest.folders.some(folder => folder.id === plan.parentId)) targetMissing();
+      await saveChainFolders({ ...latest, folders: [...latest.folders, { id: plan.ids[0], name: plan.name, parentId: plan.parentId || null }] });
     } else if (plan.ids.some(id => !latest.folders.some(folder => folder.id === id))) targetMissing();
     return plan.ids;
   };
@@ -207,8 +212,8 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
     finally { finish(); }
   };
 
-  const targetCaption = folderMode === 'new' ? folderName || t('新建文件夹')
-    : targetFolders.map(id => folders.state.folders.find(folder => folder.id === id)?.name).filter(Boolean).join('、') || t('已有文件夹');
+  const targetCaption = folderMode === 'new' ? [...getDirectoryPath(folders.state.folders, folderParentId).map(folder => folder.name), folderName || t('新建文件夹')].join(' / ')
+    : targetFolders.map(id => getDirectoryPath(folders.state.folders, id).map(folder => folder.name).join(' / ')).filter(Boolean).join('、') || t('已有文件夹');
   const infoTitle = [t('分享包信息'), ...(preview?.warnings || []).map(warning => t(warning))].join(' · ');
 
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget && !busyRef.current) requestClose(); }}>
@@ -261,8 +266,10 @@ const StyleBundleDialogContent: React.FC<Props> = ({ chains, filteredChains, sel
       {tab === 'import' && preview && popover === 'folders' && <AnchoredToolbarPopover anchorRef={folderAnchor} title={t('导入到')} allowMobile width={360} onClose={closePopover}>
         <div className="space-y-3">
           <label className="block space-y-1.5 text-sm font-semibold"><span>{t('导入到')}</span><select aria-label={t('导入到')} value={folderMode} disabled={busy || targetLocked} onChange={event => { setFolderMode(event.target.value as 'new' | 'existing'); targetPlan.current = null; }} className={fieldClass}><option value="new">{t('新建文件夹')}</option><option value="existing">{t('已有文件夹')}</option></select></label>
-          {folderMode === 'new' ? <label className="block space-y-1.5 text-sm font-semibold"><span>{t('文件夹名称')}</span><input aria-label={t('文件夹名称')} maxLength={60} value={folderName} disabled={busy || targetLocked} onChange={event => { setFolderName(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
-            : <fieldset disabled={busy || targetLocked}><legend className="mb-1 text-sm font-semibold">{t('目标文件夹')}</legend><div className="max-h-60 space-y-1 overflow-y-auto">{folderTree(folders.state.folders).map(folder => <label key={folder.id} className="mobile-touch flex items-center gap-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={targetFolders.includes(folder.id)} onChange={event => { setTargetFolders(previous => event.target.checked ? [...previous, folder.id] : previous.filter(id => id !== folder.id)); targetPlan.current = null; }} />{folder.name}</label>)}</div></fieldset>}
+          {folderMode === 'new' ? <>
+            <label className="block space-y-1.5 text-sm font-semibold"><span>{t('文件夹名称')}</span><input aria-label={t('文件夹名称')} maxLength={60} value={folderName} disabled={busy || targetLocked} onChange={event => { setFolderName(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
+            <label className="block space-y-1.5 text-sm font-semibold"><span>{t('上级文件夹')}</span><DirectoryTreeSelect nodes={folders.state.folders} rootLabel={t('顶层')} aria-label={t('上级文件夹')} value={folderParentId} disabled={busy || targetLocked} onChange={event => { setFolderParentId(event.target.value); targetPlan.current = null; }} className={fieldClass} /></label>
+          </> : <div><p className="mb-1 text-sm font-semibold">{t('目标文件夹')}</p><div className="max-h-60 overflow-y-auto"><DirectoryTreeChecklist nodes={folders.state.folders} selectedIds={targetFolders} disabled={busy || targetLocked} label={t('目标文件夹')} onToggle={(id, checked) => { setTargetFolders(previous => checked ? [...previous, id] : previous.filter(value => value !== id)); targetPlan.current = null; }} /></div></div>}
           {filedFolder && onViewFolder && <ToolbarButton disabled={busy} onClick={() => onViewFolder(filedFolder)}><FolderOpen />{t('查看文件夹')}</ToolbarButton>}
         </div>
       </AnchoredToolbarPopover>}

@@ -6,21 +6,28 @@ import { IconButton, ToolbarButton } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
+import { getPromptLibraryDirectoryLegacyKind, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
+import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 
-export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialText = '', initialName = '', initialCategory = '', initialTags = '', editing = false, categoryDisabled = false }: {
-  open: boolean; onClose: () => void; onSave: (text: string, name: string, category: string, tags: string[]) => Promise<string | void>;
+export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialText = '', initialName = '', initialCategory = '', initialTags = '', editing = false, categoryDisabled = false, directories, initialDirectoryIds, directoriesError, reloadDirectories }: {
+  open: boolean; onClose: () => void; onSave: (text: string, name: string, category: string, tags: string[], directoryIds?: string[]) => Promise<string | void>;
   onSaved?: (id?: string) => void;
   initialText?: string; initialName?: string; initialCategory?: string; initialTags?: string;
   editing?: boolean;
   categoryDisabled?: boolean;
+  directories?: PromptLibraryTreeState;
+  initialDirectoryIds?: string[];
+  directoriesError?: string;
+  reloadDirectories?: () => Promise<void>;
 }) {
   const [text, setText] = useState(initialText);
   const [name, setName] = useState(initialName);
   const [category, setCategory] = useState(initialCategory);
+  const [directoryIds, setDirectoryIds] = useState<string[]>(initialDirectoryIds || (initialCategory && initialCategory in LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[initialCategory as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS]] : []));
   const [tags, setTags] = useState(initialTags);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const saveCategory = categoryDisabled ? '' : category;
+  const saveCategory = categoryDisabled ? '' : directories ? category ? getPromptLibraryDirectoryLegacyKind(directories, directoryIds[0]) || 'general' : '' : category;
   const pending = useRef(false);
   const wasOpen = useRef(open);
   const lastInitial = useRef({ text: initialText, name: initialName, category: initialCategory, tags: initialTags });
@@ -46,12 +53,13 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     return () => window.removeEventListener('keydown', close);
   }, [open, onClose, dialog]);
   const save = async (keepOpen = false) => {
-    if (pending.current) return;
+    if (pending.current || directoriesError) return;
     try { prepareCollectedPrompt(text, name, saveCategory); } catch (e) { setError(t((e as Error).message)); return; }
     pending.current = true; setBusy(true); setError('');
     let id: string | void;
     try {
-      id = await onSave(text, name, saveCategory, [...new Set(tags.split(/[,，]/).map(value => value.trim()).filter(Boolean))]);
+      const parsedTags = [...new Set(tags.split(/[,，]/).map(value => value.trim()).filter(Boolean))];
+      id = directories && saveCategory ? await onSave(text, name, saveCategory, parsedTags, directoryIds) : await onSave(text, name, saveCategory, parsedTags);
     }
     catch (e) { setError(t(editing ? '保存失败：{0}' : '收录失败：{0}', [(e as Error).message])); return; }
     finally { pending.current = false; setBusy(false); }
@@ -76,14 +84,16 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
         }} placeholder={t('在这里粘贴提示词，按原文保存')} /></label>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">{t('名称（可选）')}<input aria-label={t('名称（可选）')} className={`${TOOLBAR_FIELD_CLASS} mt-2`} value={name} maxLength={200} disabled={busy} onChange={event => setName(event.target.value)} /></label>
-        <label className="block text-sm">{t('分类')}<select aria-label={t('分类')} className={`${TOOLBAR_FIELD_CLASS} mt-2`} value={saveCategory} disabled={busy || categoryDisabled} onChange={event => setCategory(event.target.value)}>
+        <label className="block text-sm">{t('分类')}<select aria-label={t('分类')} className={`${TOOLBAR_FIELD_CLASS} mt-2`} value={directories ? category ? 'fragment' : '' : saveCategory} disabled={busy || categoryDisabled || !!directoriesError} onChange={event => setCategory(event.target.value)}>
           <option value="">{t('原文（不分类）')}</option>
-          {COLLECTED_PROMPT_CATEGORIES.map(item => <option key={item.kind} value={item.kind}>{t(item.label)}</option>)}
+          {directories ? <option value="fragment">{t('片段')}</option> : COLLECTED_PROMPT_CATEGORIES.map(item => <option key={item.kind} value={item.kind}>{t(item.label)}</option>)}
         </select></label>
       </div>
+      {directories && !!category && !categoryDisabled && <PromptLibraryDirectoryPicker state={directories} selectedIds={directoryIds} onChange={setDirectoryIds} disabled={busy} />}
+      {directoriesError && <p role="alert" className="text-sm text-red-600">{directoriesError}{reloadDirectories && <ToolbarButton onClick={() => void reloadDirectories().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>}
       <label className="block text-sm">{t('标签（可选）')}<input aria-label={t('标签（可选）')} className={TOOLBAR_FIELD_CLASS} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} /></label>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <footer className="flex flex-wrap justify-end gap-2"><ToolbarButton disabled={busy} onClick={onClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton disabled={busy || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="primary" disabled={busy || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>
+      <footer className="flex flex-wrap justify-end gap-2"><ToolbarButton disabled={busy} onClick={onClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="primary" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>
     </div>
   </div>;
 }

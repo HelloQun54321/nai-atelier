@@ -5,6 +5,23 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { PromptLibraryTagEditor } from '../../components/PromptLibraryTagEditor';
 
 afterEach(cleanup);
+it('分类候选按完整路径显示和搜索，选择与保存仍使用原分类名', async () => {
+  const save = vi.fn(async (_tags: string[]) => {});
+  const labels: Record<string, string> = { 夜景: '场景 / 夜景', 礼服: '人物 / 服装 / 礼服' };
+  render(<PromptLibraryTagEditor tags={['夜景']} suggestions={['夜景', '礼服']} suggestionLabel={tag => labels[tag] || tag} onSave={save} />);
+  expect(screen.getByText('场景 / 夜景')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
+  const input = screen.getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement;
+  expect(input.value).toBe('夜景');
+  fireEvent.change(input, { target: { value: '夜景, ' } });
+  fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索标签' }), { target: { value: '服装' } });
+  fireEvent.click(screen.getByRole('button', { name: '#人物 / 服装 / 礼服' }));
+  expect(input.value).toBe('夜景, 礼服');
+  fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(['夜景', '礼服']));
+});
+
 it('标签可为空或多个，输入只在保存时trim和去重，不在失焦时提交', async () => {
   const save = vi.fn(async (_tags: string[]) => {});
   render(<PromptLibraryTagEditor tags={[]} suggestions={[]} onSave={save} />);

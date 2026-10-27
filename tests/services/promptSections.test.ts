@@ -3,9 +3,60 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createLabWorkspaceSession, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession, mergePromptSections,
   normalizeParams, resolvePromptSections, saveLabWorkspaceSession, serializeLabWorkspaceMemory, normalizePromptSections } from '../../services/labWorkspace';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES } from '../../services/appearancePreferences';
+import { getEditableGlobalNegative } from '../../services/promptUtils';
 
 afterEach(() => { localStorage.clear(); sessionStorage.clear(); });
 const sections = { appearance: 'silver_hair', wardrobe: 'blue_dress', pose: 'sitting', scene: 'rainy_street', camera: 'close_up', extra: 'none' };
+
+it('动态目录正文、负面与来源可规范化往返，元数据不能被拼成正文', () => {
+  const dynamic = { ...sections, 'directory:eyes': '1.2::blue eyes, blue eyes::', 'directory:empty': '',
+    sectionNegatives: { 'directory:eyes': 'red eyes', 'directory:empty': 'stale' },
+    sectionMeta: { 'directory:eyes': { directoryId: 'eyes', directoryName: '眼睛', directoryPath: ['人物', '眼睛'] }, 'directory:empty': { directoryName: '清空' } } };
+  const normalized = normalizePromptSections(dynamic)!;
+  expect(normalized['directory:eyes']).toBe(dynamic['directory:eyes']);
+  expect(normalized.sectionNegatives).toEqual({ 'directory:eyes': 'red eyes' });
+  expect(normalized.sectionMeta).toEqual({ 'directory:eyes': dynamic.sectionMeta['directory:eyes'] });
+  const subject = mergePromptSections(normalized);
+  expect(subject).toBe(`${mergePromptSections(sections)}, 1.2::blue eyes, blue eyes::`);
+  expect(resolvePromptSections(normalized, subject)).toEqual(normalized);
+  expect(getEditableGlobalNegative('bad hands', normalized)).toBe('bad hands, red eyes');
+  expect(normalizePromptSections({ 'directory:invalid': { secret: 'not text' } } as never)).toBeUndefined();
+});
+
+it.each([false, true])('动态目录四模式记忆保留正负词和来源，参数开关=%s', parameters => {
+  const dynamic = { 'directory:one': 'weighted content', sectionNegatives: { 'directory:one': 'section negative' },
+    sectionMeta: { 'directory:one': { directoryName: '自定义', directoryPath: ['自定义'] } } };
+  const session = createLabWorkspaceSession('artist', mergePromptSections(dynamic), 'bad', { ...LAB_DEFAULT_PARAMS, _promptSections: dynamic,
+    characters: [{ id: 'role', prompt: 'manual', x: 0.5, y: 0.5, sections: { 'directory:role': 'role content' }, sectionNegatives: { 'directory:role': 'role negative' } }] }, {});
+  const memory = { ...DEFAULT_GENERATION_MEMORY_PREFERENCES, parameters };
+  saveLabWorkspaceSession('playground', session, true, memory);
+  sessionStorage.clear();
+  const restored = loadLabWorkspaceSession('playground', createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}), true, memory);
+  for (const draft of [restored.textToImage, ...Object.values(restored.edits)]) {
+    expect(draft.params._promptSections).toMatchObject(dynamic);
+    expect(draft.params.characters?.[0]).toMatchObject(session.textToImage.params.characters![0]);
+  }
+});
+
+it.each([false, true])('只记负词会合入动态分类负面，不保存正词或来源；读取旧副本=%s', legacy => {
+  const dynamic = { 'directory:one': 'private positive', sectionNegatives: { 'directory:one': 'section negative' },
+    sectionMeta: { 'directory:one': { directoryName: 'private source' } } };
+  const session = createLabWorkspaceSession('artist', 'private positive', 'bad', { ...LAB_DEFAULT_PARAMS, _promptSections: dynamic,
+    characters: [{ id: 'role', prompt: 'private manual', negativePrompt: 'role bad', x: 0.5, y: 0.5,
+      sections: { 'directory:role': 'private role' }, sectionNegatives: { 'directory:role': 'role negative' } }] }, {});
+  const memory = { parameters: true, globalPrompt: false, negativePrompt: true, characterPrompt: false, characterNegativePrompt: true };
+  const serialized = serializeLabWorkspaceMemory(session, memory);
+  expect(serialized).not.toContain('private');
+  localStorage.setItem('nai-lab-workspace-v1:playground', legacy ? JSON.stringify(session) : serialized);
+  const restored = loadLabWorkspaceSession('playground', createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}), true, memory);
+  for (const draft of [restored.textToImage, ...Object.values(restored.edits)]) {
+    expect(draft.negativePrompt).toBe('bad, section negative');
+    expect(draft.params._promptSections).toBeUndefined();
+    expect(draft.params.characters?.[0]).toMatchObject({ prompt: '', negativePrompt: 'role negative, role bad' });
+    expect(draft.params.characters?.[0].sections).toBeUndefined();
+    expect(draft.params.characters?.[0].sectionNegatives).toBeUndefined();
+  }
+});
 
 it('分栏往返保留原文和合并顺序，旧数据与过期分栏不猜词', () => {
   const normalized = normalizeParams({ _promptSections: sections });

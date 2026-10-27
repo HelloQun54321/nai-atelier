@@ -117,7 +117,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
             {children}
             {options && (
                 <div
-                    className="ui-backdrop-enter fixed inset-0 z-[1800] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
+                    className="ui-backdrop-enter fixed inset-0 z-[2400] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm md:items-center md:p-4"
                     onClick={() => closeDialog(false)}
                 >
                     <div

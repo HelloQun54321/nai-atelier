@@ -125,7 +125,7 @@ export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement>
 }> = ({ containerClassName = '', className = '', type = 'search', children, ...props }) => {
   const hasLeadingContent = children !== undefined;
   const Container = hasLeadingContent ? 'div' : 'label';
-  return <Container className={`relative min-w-0 flex-1 md:max-w-md ${hasLeadingContent ? 'appearance-group flex items-center rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900' : 'block'} ${containerClassName}`}>
+  return <Container className={`relative min-w-0 flex-1 md:max-w-md ${hasLeadingContent ? 'appearance-group flex items-center rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 max-[360px]:pl-1 max-[360px]:[&>svg]:hidden transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900' : 'block'} ${containerClassName}`}>
     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
     {children}
     <input

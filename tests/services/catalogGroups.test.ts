@@ -40,3 +40,43 @@ it('增删归属拒绝无效对象和未知组', () => {
   expect(() => updateCatalogGroupMemberships(initial(), ['__proto__'], { g1: true })).toThrow();
   expect(() => updateCatalogGroupMemberships(initial(), ['artist:画师'], { missing: true })).toThrow();
 });
+
+it('旧根组保持原格式，深层同名只限制同一父级，筛选覆盖任意后代', () => {
+  const groups = [{ id: 'root', name: '根' }, { id: 'other', name: '其它', parentId: null },
+    { id: 'child', name: '同名', parentId: 'root' }, { id: 'grand', name: '同名', parentId: 'child' }, { id: 'peer', name: '同名', parentId: 'other' }];
+  const state = { revision: 4, groups, memberships: { 'artist:A': ['grand', 'peer'], 'catalog:A': ['child'], 'custom:A': ['other'] } };
+  expect(readCatalogGroups(state)).toEqual(state);
+  expect(readCatalogGroups(state).groups[0]).not.toHaveProperty('parentId');
+  expect(matchesCatalogGroup(state, 'root', 'artist:A')).toBe(true);
+  expect(matchesCatalogGroup(state, 'child', 'artist:A')).toBe(true);
+  expect(matchesCatalogGroup(state, 'grand', 'catalog:A')).toBe(false);
+  expect(matchesCatalogGroup(state, 'root', 'custom:A')).toBe(false);
+  expect(() => readCatalogGroups({ ...state, groups: [...groups, { id: 'duplicate', name: ' 同名 ', parentId: 'root' }] })).toThrow('已有同名分组');
+});
+it.each([
+  [{ id: 'a', name: 'A', parentId: 'missing' }],
+  [{ id: 'a', name: 'A', parentId: 'a' }],
+  [{ id: 'a', name: 'A', parentId: 'b' }, { id: 'b', name: 'B', parentId: 'a' }],
+  [{ id: 'a', name: 'A', parentId: 12 }],
+])('拒绝缺父、自父、循环与无效父级 %j', (...groups) => {
+  expect(() => readCatalogGroups({ revision: 0, groups, memberships: {} })).toThrow();
+});
+it('删除单节点提升直接孩子并避同父重名，孙级及多归属均保留', () => {
+  const state = { revision: 8, groups: [{ id: 'top', name: '根' }, { id: 'removed', name: '待删', parentId: 'top' },
+    { id: 'same', name: '同名', parentId: 'top' }, { id: 'same2', name: '同名 (2)', parentId: 'top' },
+    { id: 'child', name: '同名', parentId: 'removed' }, { id: 'grand', name: '孙级', parentId: 'child' }],
+    memberships: { 'artist:A': ['removed', 'child', 'grand'], 'custom:A': ['removed'], 'catalog:A': ['same'] } };
+  const next = removeCatalogGroup(state, 'removed');
+  expect(next.groups.find(group => group.id === 'child')).toEqual({ id: 'child', name: '同名 (3)', parentId: 'top' });
+  expect(next.groups.find(group => group.id === 'grand')).toEqual(state.groups[5]);
+  expect(next.memberships).toEqual({ 'artist:A': ['child', 'grand'], 'catalog:A': ['same'] });
+  expect(readCatalogGroups(next)).toEqual(next);
+  expect(state.groups[4].parentId).toBe('removed');
+});
+it('节点数量上限内可连续细分到500层，旧根组与深层归属不受固定深度限制', () => {
+  const state = { revision: 0, groups: Array.from({ length: 500 }, (_, index) => ({ id: `g${index}`, name: '细分', ...(index ? { parentId: `g${index - 1}` } : {}) })), memberships: { 'artist:深层': ['g499'] } };
+  expect(readCatalogGroups(state)).toEqual(state);
+  expect(matchesCatalogGroup(state, 'g0', 'artist:深层')).toBe(true);
+  expect(matchesCatalogGroup(state, 'g498', 'artist:深层')).toBe(true);
+  expect(removeCatalogGroup(state, 'g0').groups[0]).toEqual({ id: 'g1', name: '细分', parentId: null });
+});

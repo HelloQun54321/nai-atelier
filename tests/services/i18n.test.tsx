@@ -45,6 +45,13 @@ it('助手提示词、文本与代码框标签具备四语译文', () => {
   }
 });
 
+it('AITag 的两项参考排除与首图判定说明具备四语译文', () => {
+  for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+    for (const key of ['排除氛围参考', '排除精准参考', '按首图判断整组；缺少首图生成信息的作品暂不显示。', '查看其余 {0} 个筛选条件']) expect(translate(language.code, key)).not.toBe(key);
+    expect(translate(language.code, '查看其余 {0} 个筛选条件', [3])).toContain('3');
+  }
+});
+
 beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreLanguage(); });
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 

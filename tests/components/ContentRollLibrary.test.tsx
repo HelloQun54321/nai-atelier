@@ -21,6 +21,47 @@ it('在顶栏下沿显示当前组合分区条目数', async () => {
   expect(caption.getAttribute('data-toolbar-count-caption')).toBe('true');
 });
 
+it('组合分类候选显示完整路径，筛选仍使用原分类标签', () => {
+  const p = props();
+  p.chains = [{ ...record, tags: ['子类'] }];
+  const categoryTree = { revision: 1, nodes: [
+    { id: '父类', name: '父类', parentId: null },
+    { id: '子类', name: '子类', parentId: '父类' },
+    { id: '空类', name: '空类', parentId: '父类' },
+  ] };
+  render(<PromptLibraryContext.Provider value={{ chains: p.chains, categoryTree, save: vi.fn() }}><ContentRollLibrary {...p} /></PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const select = screen.getByRole('combobox', { name: '自定义标签' });
+  expect((screen.getByRole('option', { name: '父类 / 子类' }) as HTMLOptionElement).value).toBe('子类');
+  expect((screen.getByRole('option', { name: '父类 / 空类' }) as HTMLOptionElement).value).toBe('空类');
+  fireEvent.change(select, { target: { value: '子类' } });
+  expect(screen.getByRole('button', { name: /夜游/ })).toBeTruthy();
+  fireEvent.change(select, { target: { value: '空类' } });
+  expect(screen.queryByRole('button', { name: /夜游/ })).toBeNull();
+});
+
+it('动态组合展示完整目录路径、正负词与备注，搜索和复制保留所有动态项', async () => {
+  const dynamic = contentSnapshotOf({ picks: {
+    'directory:cloth': { kind: 'directory:cloth', directoryId: 'cloth', directoryName: '服装', directoryPath: ['人物', '服装'], scope: 'character', filled: true, text: 'white blouse', negative: 'red shirt', constraintNotes: '保留袖口' },
+    'directory:light': { kind: 'directory:light', directoryId: 'light', directoryName: '光线', directoryPath: ['环境', '光线'], scope: 'global', filled: true, text: 'moonlight' },
+  } }, '2026-10-27');
+  const p = props(); const chain = { ...record, params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: dynamic } } as PromptChain;
+  p.chains = [chain];
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  render(<ContentRollLibrary {...p} />);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '保留袖口' } });
+  fireEvent.click(screen.getByRole('button', { name: /夜游/ }));
+  expect(screen.getByText('人物 / 服装')).toBeTruthy();
+  expect(screen.getByText('环境 / 光线')).toBeTruthy();
+  expect(screen.getByText('white blouse')).toBeTruthy();
+  expect(screen.getByText(/red shirt/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '编辑组合' }));
+  expect(p.onLoad).toHaveBeenCalledWith(chain);
+  fireEvent.click(screen.getByRole('button', { name: '复制组合数据' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify(dynamic, null, 2)));
+});
+
 it('原文与组合分区独立，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
   const text = '  {{winter}}, 1.2::hair::\r\n[smile]  ';
   const collected = { ...record, ...prepareCollectedPrompt(text, '冬日'), type: 'preset', id: 'collected' } as PromptChain;

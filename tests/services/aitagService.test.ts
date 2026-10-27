@@ -14,6 +14,7 @@ import {
   getAitagPositivePromptText,
   getAitagSavedChainWorkIds,
   getAitagWorkPromptTexts,
+  getAitagWorkReferenceUsage,
   matchesAitagPromptQuery,
   parseAitagPromptQuery,
   type AitagImage,
@@ -207,6 +208,24 @@ describe('aitagService', () => {
 
 describe('AITag 本地筛选辅助', () => {
   const image = (aiJson: Record<string, unknown>): AitagImage => ({ id: 1, work_id: 7, author_id: 1, image_type: 'nai', file_name: '7_p0.png', ai_json: aiJson });
+
+  it('参考使用按首图真实生成信息识别，兼容嵌套及字符串 Comment、旧首图字段', () => {
+    const base = { prompt: 'artist:synthetic, soft lighting', seed: 123 };
+    const usage = (metadata: Record<string, unknown>) => getAitagWorkReferenceUsage({ id: 7, firstImage: image(metadata) });
+    expect(usage({ ...base, reference_strength_multiple: [0.6], reference_information_extracted_multiple: [1] })).toEqual({ vibe: true, precise: false, unknown: false });
+    expect(usage({ Comment: JSON.stringify({ ...base, director_reference_descriptions: ['character'] }) })).toEqual({ vibe: false, precise: true, unknown: false });
+    expect(usage({ Comment: { ...base, reference_image_multiple: ['synthetic'], director_reference_strength_values: [0.8] } })).toEqual({ vibe: true, precise: true, unknown: false });
+    expect(getAitagWorkReferenceUsage({ id: 7, first_image: image({ ...base, vibe_transfer: true }) }).vibe).toBe(true);
+  });
+
+  it('空参考数组、关闭标记和提示词中谈及参考不算实际使用；缺失或损坏信息为未知', () => {
+    expect(getAitagWorkReferenceUsage({ id: 7, firstImage: image({ prompt: 'vibe transfer, character reference, soft light', reference_image_multiple: [], reference_strength_multiple: [], director_reference_images: [], vibe_transfer: false }) }))
+      .toEqual({ vibe: false, precise: false, unknown: false });
+    for (const ai_json of [undefined, {}, 'not-json'.repeat(20)]) {
+      expect(getAitagWorkReferenceUsage({ id: 7, firstImage: { ...image({}), ai_json } }).unknown).toBe(true);
+    }
+    expect(getAitagWorkReferenceUsage({ id: 7 }).unknown).toBe(true);
+  });
 
   it('提示词检索：逗号分隔多条件，最长包含条件交给服务端，其余与排除条件本地判定', () => {
     expect(parseAitagPromptQuery('long_hair， blue eyes, -Smile, -smile,')).toEqual({ remote: 'long_hair', localInclude: ['blue eyes'], exclude: ['smile'] });

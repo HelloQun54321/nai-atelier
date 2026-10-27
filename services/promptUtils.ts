@@ -1,6 +1,13 @@
 
 import { PromptChain, PromptSections } from '../types';
 
+const GLOBAL_SECTION_KEYS = ['appearance', 'wardrobe', 'pose', 'scene', 'camera', 'extra'] as const;
+/** 旧栏顺序保留，目录片段按保存时的顺序编译；来源等对象不属于正文。 */
+export const getGlobalPromptSectionKeys = (sections?: PromptSections | null): Array<typeof GLOBAL_SECTION_KEYS[number] | `directory:${string}`> => [
+  ...GLOBAL_SECTION_KEYS,
+  ...Object.keys(sections || {}).filter((key): key is `directory:${string}` => key.startsWith('directory:') && key.length > 10),
+];
+
 /**
  * NAI V4 Specific String Constants
  */
@@ -32,8 +39,8 @@ export const getEditableGlobalPrompt = (basePrompt: string, subjectPrompt: strin
 
 /** 整段编辑也显示参与生成的分类负面，编辑后即可完整保留。 */
 export const getEditableGlobalNegative = (negative: string, sections?: PromptSections): string =>
-  ['scene', 'camera', 'extra'].reduce((value, key) =>
-    sections?.[key as 'scene' | 'camera' | 'extra']?.trim() && sections.sectionNegatives?.[key]?.trim()
+  getGlobalPromptSectionKeys(sections).reduce((value, key) =>
+    sections?.[key]?.trim() && sections.sectionNegatives?.[key]?.trim()
       ? mergePromptFields(value, sections.sectionNegatives[key]) : value, negative);
 
 /**

@@ -1,5 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
+import { usePromptLibrary } from './PromptLibraryAccess';
+import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind } from '../services/promptAgent';
 
 /** 预览可切换的四个库类型，顺序与标签由服务层常量决定。 */
@@ -15,6 +17,8 @@ const librarySecondaryButtonClass = 'appearance-group mobile-touch rounded-lg bo
  */
 export const PromptLibrarySettings: React.FC = () => {
   useLanguage();
+  const library = usePromptLibrary();
+  const [directoryId, setDirectoryId] = useState('');
   const [spec, setSpec] = useState('');
   const [extra, setExtra] = useState('');
   const [saved, setSaved] = useState({ spec: '', extra: '' });
@@ -44,7 +48,9 @@ export const PromptLibrarySettings: React.FC = () => {
 
   const dirty = spec !== saved.spec || extra !== saved.extra;
 
-  const loadPreview = async (nextKind: PromptLibraryKind) => {
+  const loadPreview = async (nextKind: PromptLibraryKind, nextDirectoryId = directoryId || library?.directories?.nodes[0]?.id) => {
+    if (library?.reloadDirectories && !library.directories || library?.directoriesError || library?.directories && !nextDirectoryId) return;
+    if (nextDirectoryId) setDirectoryId(nextDirectoryId);
     const request = previewRequest.current + 1;
     previewRequest.current = request;
     setKind(nextKind);
@@ -53,7 +59,7 @@ export const PromptLibrarySettings: React.FC = () => {
     setPreviewing(true);
     setNotice('');
     try {
-      const result = await promptAgentService.previewLibrarySystemPrompt({ kind: nextKind, spec, extra });
+      const result = await promptAgentService.previewLibrarySystemPrompt({ ...(library?.directories ? { directories: library.directories, directoryId: nextDirectoryId } : { kind: nextKind }), spec, extra });
       if (request !== previewRequest.current) return;
       setPreview({ length: result.length, systemPrompt: result.systemPrompt });
     } catch (error) {
@@ -72,7 +78,7 @@ export const PromptLibrarySettings: React.FC = () => {
       setSpec(next.spec);
       setExtra(next.extra);
       setSaved({ spec: next.spec, extra: next.extra });
-      setNotice(t('已保存，四个提示词库立即使用最新内容'));
+      setNotice(t('已保存，提示词库生成立即使用最新内容'));
       if (previewOpen) void loadPreview(kind);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : t('保存库生成提示词失败'));
@@ -100,7 +106,7 @@ export const PromptLibrarySettings: React.FC = () => {
   return (
     <section aria-label={t("库生成提示词")} className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("库生成提示词")}</h3>
-      <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('仅用于四类提示词库的生成，不改变创作助手的对话规则。')}</p>
+      <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('用于当前目录的提示词生成。')}</p>
       <div className="space-y-3">
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("规范提示词")}</span>
@@ -132,7 +138,7 @@ export const PromptLibrarySettings: React.FC = () => {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" disabled={!loaded || saving || previewing || !dirty} onClick={() => void save()} className={libraryPrimaryButtonClass}>{t("保存")}</button>
         <button type="button" disabled={saving || (!spec && !extra)} onClick={clear} className={librarySecondaryButtonClass}>{t("清空")}</button>
-        <button type="button" disabled={!loaded || saving || previewing} onClick={() => void loadPreview(kind)} className={librarySecondaryButtonClass}>{t("预览最终系统提示词")}</button>
+        <button type="button" disabled={!loaded || saving || previewing || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !!library?.directories && !library.directories.nodes.length} onClick={() => void loadPreview(kind)} className={librarySecondaryButtonClass}>{t("预览最终系统提示词")}</button>
         {dirty && <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{t("有未保存的修改")}</span>}
       </div>
       {notice && <p role="status" className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{notice}</p>}
@@ -140,7 +146,7 @@ export const PromptLibrarySettings: React.FC = () => {
         <div className="appearance-group mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div role="tablist" aria-label={t("提示词库类型")} className="flex flex-wrap items-center gap-2">
-              {libraryKinds.map(item => (
+              {library?.directories ? <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryId ? [directoryId] : []} onChange={ids => { if (ids[0]) void loadPreview(kind, ids[0]); }} mode="single" includeAll={false} disabled={previewing} /> : libraryKinds.map(item => (
                 <button
                   key={item}
                   type="button"

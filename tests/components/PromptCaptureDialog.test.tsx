@@ -108,3 +108,12 @@ it('分类禁用时保持原文分类并隐藏另存片段操作', async () => {
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
   await waitFor(() => expect(onSave).toHaveBeenCalledWith('negative prompt', '', '', []));
 });
+
+it('真实目录支持片段不归类并通过第五参数保留明确空归属', async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  render(<PromptCaptureDialog open directories={{ revision: 0, nodes: [] }} onSave={onSave} onClose={vi.fn()} />);
+  paste();
+  fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'fragment' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '', 'general', [], []));
+});

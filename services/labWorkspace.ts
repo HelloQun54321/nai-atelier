@@ -1,7 +1,8 @@
 import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
-import { clampCharacterCoordinate } from './characterPrompts';
+import { clampCharacterCoordinate, compileCharacterContent } from './characterPrompts';
+import { getEditableGlobalNegative, getGlobalPromptSectionKeys } from './promptUtils';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from './appearancePreferences';
 
@@ -31,7 +32,7 @@ export const getLabModeLabel = (mode: GenerationMode): string => (
     mode === 'text-to-image' ? '文生图' : mode === 'image-to-image' ? '图生图' : mode === 'inpaint' ? '局部重绘' : '扩图'
 );
 
-/** 只保留四栏的字符串原文；缺省或四栏全为空时返回 undefined（视为尚未使用分栏的旧数据）。 */
+/** 保留旧栏与动态目录的字符串原文；全为空时视为尚未使用分栏。 */
 export const normalizePromptSections = (sections?: Partial<PromptSections> | null): PromptSections | undefined => {
     if (!sections || typeof sections !== 'object') return undefined;
     const next: PromptSections = {
@@ -42,12 +43,15 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
+    for (const key of getGlobalPromptSectionKeys(sections)) {
+        if (key.startsWith('directory:') && typeof sections[key] === 'string') next[key] = sections[key];
+    }
     /* 分类负面同样只跟随有内容的栏 */
     const negatives = (sections as { sectionNegatives?: Record<string, unknown> }).sectionNegatives;
     if (negatives && typeof negatives === 'object') {
         const keptNegatives: Record<string, string> = {};
-        for (const key of Object.keys(next)) {
-            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+        for (const key of getGlobalPromptSectionKeys(next)) {
+            if (!next[key]?.trim()) continue;
             const value = String(negatives[key] || '').trim();
             if (value) keptNegatives[key] = value;
         }
@@ -57,8 +61,8 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
     const meta = (sections as { sectionMeta?: Record<string, unknown> }).sectionMeta;
     if (meta && typeof meta === 'object') {
         const kept: Record<string, unknown> = {};
-        for (const key of Object.keys(next)) {
-            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+        for (const key of getGlobalPromptSectionKeys(next)) {
+            if (!next[key]?.trim()) continue;
             const entry = meta[key];
             if (entry && typeof entry === 'object') kept[key] = { ...(entry as Record<string, unknown>) };
         }
@@ -67,15 +71,9 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
     return Object.values(next).some(value => String(value).trim()) ? next : undefined;
 };
 
-/** 四栏合并顺序固定为 人物 → 服饰 → 姿势 → 补充，非空栏用「, 」连接；合并值写入 variableValues.subject。 */
-export const mergePromptSections = (sections?: Partial<PromptSections> | null): string => [
-    sections?.appearance,
-    sections?.wardrobe,
-    sections?.pose,
-    sections?.scene,
-    sections?.camera,
-    sections?.extra,
-].map(value => String(value || '').trim()).filter(Boolean).join(', ');
+/** 旧栏保持固定顺序，再合入动态目录正文；合并值写入 variableValues.subject。 */
+export const mergePromptSections = (sections?: Partial<PromptSections> | null): string =>
+    getGlobalPromptSectionKeys(sections).map(key => sections?.[key]?.trim()).filter(Boolean).join(', ');
 
 /** 助手或完整配置可能只改合并文本；无法对应时保留原文，不用旧分栏覆盖新内容。 */
 export const resolvePromptSections = (sections: PromptSections | null | undefined, subject: string): PromptSections => {
@@ -236,17 +234,21 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
     const { characters, _promptSections, ...settings } = params;
     return {
       ...(memory.parameters ? settings : {}),
-      ...((memory.globalPrompt || memory.negativePrompt && _promptSections?.sectionNegatives) ? { _promptSections: {
-        ...(memory.globalPrompt ? normalizePromptSections(_promptSections) : {}),
+      ...(memory.globalPrompt ? { _promptSections: {
+        ...normalizePromptSections(_promptSections),
         sectionNegatives: memory.negativePrompt ? _promptSections?.sectionNegatives : undefined,
       } } : {}),
       ...((memory.parameters || memory.characterPrompt || memory.characterNegativePrompt) && Array.isArray(characters) ? {
-        characters: characters.map(({ id, prompt, negativePrompt, sections, sectionMeta, sectionNegatives, ...position }) => ({
-          id,
-          ...(memory.parameters ? position : {}),
-          ...(memory.characterPrompt ? { prompt, sections, sectionMeta } : {}),
-          ...(memory.characterNegativePrompt ? { negativePrompt, sectionNegatives } : {}),
-        })),
+        characters: characters.map(character => {
+          const { id, prompt, negativePrompt, sections, sectionMeta, sectionNegatives, ...position } = character;
+          return {
+            id,
+            ...(memory.parameters ? position : {}),
+            ...(memory.characterPrompt ? { prompt, sections, sectionMeta } : {}),
+            ...(memory.characterNegativePrompt ? memory.characterPrompt ? { negativePrompt, sectionNegatives }
+              : { negativePrompt: compileCharacterContent(character).negativePrompt } : {}),
+          };
+        }),
       } : {}),
     };
   };
@@ -257,7 +259,8 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
     ...(memory.parameters ? { activeMode: clean.activeMode } : {}),
     textToImage: {
       ...(memory.globalPrompt ? { basePrompt: clean.textToImage.basePrompt, subjectPrompt: clean.textToImage.subjectPrompt, activeModules: clean.textToImage.activeModules } : {}),
-      ...(memory.negativePrompt ? { negativePrompt: clean.textToImage.negativePrompt } : {}),
+      ...(memory.negativePrompt ? { negativePrompt: memory.globalPrompt ? clean.textToImage.negativePrompt
+        : getEditableGlobalNegative(clean.textToImage.negativePrompt, clean.textToImage.params._promptSections) } : {}),
       params: selectParams(clean.textToImage.params),
     },
     edits: Object.fromEntries(Object.entries(clean.edits).map(([operation, draft]) => {
@@ -265,7 +268,8 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
       return [operation, {
         ...(memory.parameters ? settings : {}),
         ...(memory.globalPrompt ? { prompt, promptSource } : {}),
-        ...(memory.negativePrompt ? { negativePrompt } : {}),
+        ...(memory.negativePrompt ? { negativePrompt: memory.globalPrompt ? negativePrompt
+          : getEditableGlobalNegative(negativePrompt, params._promptSections) } : {}),
         params: selectParams(params),
       }];
     })),
@@ -289,10 +293,11 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
           y: memory.parameters ? character.y ?? original?.y ?? 0.5 : original?.y ?? 0.5,
           enabled: memory.parameters && (character.x !== undefined || character.y !== undefined) ? character.enabled : original?.enabled,
           prompt: memory.characterPrompt ? character.prompt ?? original?.prompt ?? '' : original?.prompt ?? '',
-          negativePrompt: memory.characterNegativePrompt ? character.negativePrompt ?? original?.negativePrompt : original?.negativePrompt,
+          negativePrompt: memory.characterNegativePrompt ? (memory.characterPrompt ? character.negativePrompt
+            : compileCharacterContent(character).negativePrompt) ?? original?.negativePrompt : original?.negativePrompt,
           sections: memory.characterPrompt ? character.sections ?? original?.sections : original?.sections,
           sectionMeta: memory.characterPrompt ? character.sectionMeta ?? original?.sectionMeta : original?.sectionMeta,
-          sectionNegatives: memory.characterNegativePrompt ? character.sectionNegatives ?? original?.sectionNegatives : original?.sectionNegatives,
+          sectionNegatives: memory.characterNegativePrompt && memory.characterPrompt ? character.sectionNegatives ?? original?.sectionNegatives : original?.sectionNegatives,
         };
       });
     }
@@ -307,7 +312,8 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
       ...(memory.globalPrompt ? { basePrompt: source.textToImage?.basePrompt ?? fallback.textToImage.basePrompt,
         subjectPrompt: source.textToImage?.subjectPrompt ?? fallback.textToImage.subjectPrompt,
         activeModules: source.textToImage?.activeModules ?? fallback.textToImage.activeModules } : {}),
-      negativePrompt: memory.negativePrompt ? source.textToImage?.negativePrompt ?? fallback.textToImage.negativePrompt : fallback.textToImage.negativePrompt,
+      negativePrompt: memory.negativePrompt ? (memory.globalPrompt ? source.textToImage?.negativePrompt
+        : getEditableGlobalNegative(source.textToImage?.negativePrompt ?? fallback.textToImage.negativePrompt, source.textToImage?.params?._promptSections)) ?? fallback.textToImage.negativePrompt : fallback.textToImage.negativePrompt,
       params: restoreParams(source.textToImage?.params, fallback.textToImage.params),
     },
     edits: Object.fromEntries(Object.entries(fallback.edits).map(([operation, original]) => {
@@ -317,7 +323,8 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
         ...(memory.parameters ? draft : {}),
         prompt: memory.globalPrompt ? draft?.prompt ?? original.prompt : original.prompt,
         promptSource: memory.globalPrompt ? draft?.promptSource ?? original.promptSource : original.promptSource,
-        negativePrompt: memory.negativePrompt ? draft?.negativePrompt ?? original.negativePrompt : original.negativePrompt,
+        negativePrompt: memory.negativePrompt ? (memory.globalPrompt ? draft?.negativePrompt
+          : getEditableGlobalNegative(draft?.negativePrompt ?? original.negativePrompt, draft?.params?._promptSections)) ?? original.negativePrompt : original.negativePrompt,
         params: restoreParams(draft?.params, original.params),
       }];
     })),

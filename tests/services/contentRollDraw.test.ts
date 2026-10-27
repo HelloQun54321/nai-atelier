@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ALGO, KINDS, LEGACY_ALGO } from '../../services/contentRoll';
 import {
   draw,
+  describe as describeRoll,
   drawOne,
   evidenceOf,
   normalizeSeed,
@@ -160,5 +161,39 @@ describe('落点分工与证据', () => {
     }
     expect(samePicks(result.picks, draw({ chains, seed: 'r-seed' }).picks)).toBe(true);
     expect(samePicks(result.picks, draw({ chains, seed: 'r-seed-2' }).picks)).toBe(false);
+  });
+});
+
+
+describe('动态目录抽取', () => {
+  const directories = { revision: 1, nodes: [{ id: 'custom', parentId: null, name: '自定义' }, { id: 'child', parentId: 'custom', name: '子项' }] };
+  const unit = { id: 'directory:custom', directoryId: 'custom', name: '自定义', path: ['自定义'], scope: 'global' as const };
+  const entries = [1, 2].map(index => ({ id: 'entry-' + index, type: 'preset', basePrompt: 'custom text ' + index, params: { _promptLibraryDirectoryIds: ['child', 'custom'] } }));
+  it('任意目录包含后代、池内去重且不按旧六type过滤；空选择不回落六类', () => {
+    const result = draw({ chains: entries, units: [unit], directories, seed: 'custom' });
+    expect(Object.keys(result.picks)).toEqual([unit.id]);
+    expect(result.picks[unit.id].poolSize).toBe(2);
+    expect(result.picks[unit.id].directoryName).toBe('自定义');
+    expect(draw({ chains: [...entries].reverse(), units: [unit], directories, seed: 'custom' }).picks).toEqual(result.picks);
+    expect(describeRoll(result)).toContain('自定义');
+    expect(evidenceOf({ ...result, chains: entries, units: [unit], directories }).pools[unit.id].size).toBe(2);
+    expect(draw({ chains, units: [], directories }).picks).toEqual({});
+  });
+  it('删除目录和源片段后锁定的手写／已编辑文字保持，不用源条目重写', () => {
+    const held = { kind: unit.id, directoryId: 'custom', filled: true, id: 'entry-1', text: 'my edited text', negative: 'my negative', scope: 'global' as const };
+    const result = draw({ chains: [], units: [unit], directories: { revision: 2, nodes: [] }, picks: { [unit.id]: held }, locked: { [unit.id]: 'entry-1' } });
+    expect(result.picks[unit.id]).toMatchObject({ text: 'my edited text', negative: 'my negative', locked: true });
+    const restored = replay({ chains: entries, units: [unit], directories }, { picks: { [unit.id]: held } });
+    expect(restored.picks[unit.id].text).toBe('my edited text');
+  });
+  it('单项重抽不改其它结果；未选项和空池保留旧草稿', () => {
+    const old = { kind: 'directory:other', filled: true, text: 'keep other' };
+    const first = draw({ chains: entries, units: [unit], directories, picks: { 'directory:other': old } });
+    expect(first.picks['directory:other']).toBe(old);
+    const next = rerollOne({ chains: entries, units: [unit], directories, picks: first.picks }, unit.id, 'next');
+    expect(next.ok).toBe(true);
+    expect(next.row?.id).not.toBe(first.picks[unit.id].id);
+    const skipped = draw({ chains: [], units: [unit], directories, picks: first.picks, checks: { [unit.id]: false } });
+    expect(skipped.picks[unit.id]).toBe(first.picks[unit.id]);
   });
 });

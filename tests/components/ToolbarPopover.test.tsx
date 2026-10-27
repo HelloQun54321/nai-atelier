@@ -25,6 +25,40 @@ const FilterExample = () => {
 };
 
 describe('工具栏弹层位置与连续操作', () => {
+  it.each([1280, 390])('%ipx 框内收纳入口可打开同一个筛选面板，关闭与跨端同步外部状态', width => {
+    vi.stubGlobal('innerWidth', width);
+    const Harness = () => {
+      const [open, setOpen] = useState(false);
+      return <><button type="button" onClick={() => setOpen(true)}>其余条件</button><ToolbarPopover title="共用筛选" open={open} onOpenChange={setOpen}><button>条件内容</button></ToolbarPopover></>;
+    };
+    render(<Harness />);
+    const trigger = screen.getByRole('button', { name: '筛选' });
+    const more = screen.getByRole('button', { name: '其余条件' });
+    more.focus(); fireEvent.click(more);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    if (width < 768) fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '关闭' }));
+    else fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(more);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(trigger); expect(screen.getByRole('dialog')).toBeTruthy();
+    vi.stubGlobal('innerWidth', width < 768 ? 1280 : 390); fireEvent(window, new Event('resize'));
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each([1280, 390])('嵌入管理窗口时 %ipx 筛选使用指定层级并保留返回焦点', width => {
+    vi.stubGlobal('innerWidth', width);
+    render(<ToolbarPopover title="管理窗口筛选" zIndex={1960}><button>合成条件</button></ToolbarPopover>);
+    const trigger = screen.getByRole('button', { name: '筛选' });
+    trigger.focus(); fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: '管理窗口筛选' });
+    expect(width < 768 ? dialog.closest<HTMLElement>('.mobile-layer')!.style.zIndex : dialog.style.zIndex).toBe(width < 768 ? '1960' : '1961');
+    if (width < 768) fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    else fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('图标触发器沿用紫色动作和禁用状态，启用后才可打开', () => {
     const draw = (disabled: boolean) => <ToolbarPopover label="用作底图" title="用作底图" iconOnly iconTone="edit" disabled={disabled}><button>图生图</button></ToolbarPopover>;
     const view = render(draw(true));

@@ -40,6 +40,17 @@ describe('角色请求与定位规则', () => {
 });
 
 describe('角色分栏编译（本机角色分类模型）', () => {
+  it('任意动态目录角色参与请求，保留权重、重复词、手写补充与对应负面', () => {
+    const character = { id: 'dynamic', prompt: 'manual, blue eyes', x: 0.5, y: 0.5,
+      sections: { 'directory:custom': '1.2::blue eyes, smile::, blue eyes', 'directory:empty': '' },
+      sectionNegatives: { 'directory:custom': 'red eyes', 'directory:empty': 'stale' },
+      sectionMeta: { 'directory:custom': { directoryName: '自定义' } } };
+    expect(getActiveCharacters([character])).toEqual([character]);
+    const compiled = compileCharacterContent(character);
+    expect(compiled.prompt).toBe('1.2::blue eyes, smile::, blue eyes, manual, blue eyes');
+    expect(compiled.negativePrompt).toBe('red eyes');
+    expect(character.prompt).toBe('manual, blue eyes');
+  });
   const sectioned = {
     id: 'sectioned', prompt: 'manual_extra', x: 0.5, y: 0.5,
     sections: { appearance: 'blonde_hair, blue_eyes', wardrobe: 'white_dress', pose: '', expression: 'smile' },

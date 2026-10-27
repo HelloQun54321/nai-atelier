@@ -267,3 +267,19 @@ it('一键六库相关文案在四语言字典中齐全且占位符一致', () =
     }
   }
 });
+
+it('当前自定义目录参与AI生成并按目录保存组合快照，标签仍独立', async () => {
+  const directories = { revision: 3, nodes: [{ id: 'props', parentId: null, name: '道具', target: 'global' as const }] };
+  mocks.generate.mockResolvedValue({ items: [{ directoryId: 'props', directoryName: '道具', directoryPath: ['道具'], name: '银剑', prompt: 'silver sword', negativePrompt: 'axe', tags: [] }], missing: [] });
+  render(<PromptLibraryContext.Provider value={{ chains: [], directories, save: mocks.saveCombination }}><PromptLibraryBundleDialog open onClose={mocks.close} notify={mocks.notify} onCreate={mocks.create} /></PromptLibraryContext.Provider>);
+  fireEvent.change(screen.getByRole('textbox', { name: '描述你想要的画面' }), { target: { value: '银剑' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成' }));
+  await screen.findByDisplayValue('silver sword');
+  expect(mocks.generate).toHaveBeenCalledWith({ brief: '银剑', directories, directoryIds: null });
+  fireEvent.change(screen.getByRole('textbox', { name: '组合标签' }), { target: { value: '私人, 道具' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存为组合' }));
+  await waitFor(() => expect(mocks.saveCombination).toHaveBeenCalledOnce());
+  const saved = mocks.saveCombination.mock.calls[0][0];
+  expect(saved.tags).toEqual(['私人', '道具']);
+  expect(saved.params._rollContentSnapshot.items[0]).toMatchObject({ directoryId: 'props', text: 'silver sword', scope: 'global' });
+});

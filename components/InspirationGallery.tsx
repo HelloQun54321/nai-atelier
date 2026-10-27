@@ -2,18 +2,19 @@ import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ArrowDownUp, Folder, GripVertical, Heart, Library, ListChecks, Pencil, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
+import { ArrowDownUp, Folder, GripVertical, ListChecks, Plus, Sparkles, Tags, Trash2, X } from 'lucide-react';
 import { db } from '../services/dbService';
+import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
+import { DirectoryNodeDialog } from './DirectoryNodeDialog';
+import { getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
 import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User } from '../types';
 import { createUuid } from '../services/id';
 import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionBoardIds, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
-import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { SearchFilterChips } from './SearchFilterChips';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
-import { PressRevealSurface } from './PressRevealSurface';
-import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImageActivityContext } from './SmartImage';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { InspirationDetail } from './inspiration/InspirationDetail';
@@ -67,6 +68,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<InspirationSourceType | ''>('');
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [tagQuery, setTagQuery] = useState('');
   const [tagNames, setTagNames] = useState<string[] | null>(null);
   const [sort, setSort] = useState<CollectionSort>(() => {
@@ -93,15 +95,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const openGroup = useCallback((key: string) => { prepareSelection(key); setWorkGroup(key); }, [prepareSelection]);
   const [importRequest, setImportRequest] = useState<{ files: File[]; boardId: string } | null>(null);
   const [busy, setBusy] = useState('');
-  const [boardEditor, setBoardEditor] = useState<{ id?: string; name: string; color: string } | null>(null);
-  const boardDialogRef = useModalA11y<HTMLDivElement>(Boolean(boardEditor));
+  const [boardEditor, setBoardEditor] = useState<{ id?: string; name: string; color: string; parentId: string | null } | null>(null);
   const [bulkTag, setBulkTag] = useState('');
-  useEffect(() => {
-    if (!boardEditor) return;
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && busy !== 'board' && isTopmostModal(boardDialogRef.current)) { event.preventDefault(); setBoardEditor(null); } };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
-  }, [boardEditor, busy, boardDialogRef]);
   const items = useMemo(() => (inspirationsData || []).map(item => ({ ...item, tags: getCollectionTags(item) })), [inspirationsData]);
   const editableIds = useMemo(() => new Set(items.filter(item => !item.archived && currentUser.role !== 'guest' && canEditItem(item, currentUser)).map(item => item.id)), [items, currentUser.id, currentUser.role]);
   const selectedItems = useMemo(() => items.filter(item => editableIds.has(item.id) && selectedIds.has(item.id)), [items, editableIds, selectedIds]);
@@ -160,11 +155,17 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       .filter(source => (sourceCounts[source] || 0) > 0 || source === sourceFilter);
   }, [sourceCounts, sourceFilter]);
   const boardNameById = useMemo(() => new Map(boards.map(board => [board.id, board.name])), [boards]);
+  const boardAncestors = useMemo(() => new Map(boards.map(board => [board.id, getDirectoryPath(boards, board.id).map(parent => parent.id)])), [boards]);
+  const filteredBoardIds = useMemo(() => boardId ? getDirectoryDescendantIds(boards, boardId) : null, [boards, boardId]);
   const boardCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    items.forEach(item => { if (!item.archived) getCollectionBoardIds(item).forEach(id => counts.set(id, (counts.get(id) || 0) + 1)); });
+    items.forEach(item => {
+      if (item.archived) return;
+      const ancestors = new Set(getCollectionBoardIds(item).flatMap(id => boardAncestors.get(id) || []));
+      ancestors.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
+    });
     return counts;
-  }, [items]);
+  }, [items, boardAncestors]);
 
   const filtered = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
@@ -172,14 +173,14 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (item.archived) return false;
       if (collection === 'unorganized' && getCollectionBoardIds(item).length) return false;
       if (sourceFilter && (item.sourceType || 'other') !== sourceFilter) return false;
-      if (boardId && !getCollectionBoardIds(item).includes(boardId)) return false;
+      if (filteredBoardIds && !getCollectionBoardIds(item).some(id => filteredBoardIds.has(id))) return false;
       if (!tagFilter.every(tag => (item.tags || []).includes(tag))) return false;
       if (query && ![item.title, item.prompt, item.negativePrompt, ...(item.tags || [])].join('\n').toLowerCase().includes(query)) return false;
       return true;
     }).sort((a, b) => {
       return b.createdAt - a.createdAt;
     });
-  }, [items, collection, boardId, sourceFilter, tagFilter, debouncedSearch]);
+  }, [items, collection, filteredBoardIds, sourceFilter, tagFilter, debouncedSearch]);
 
   const groups = useMemo(() => sortCollectionGroups(groupCollectionItems(filtered), sort), [filtered, sort]);
   const allGroups = useMemo(() => new Map(groupCollectionItems(items.filter(item => !item.archived)).map(group => [collectionGroupKey(group[0]), group])), [items]);
@@ -193,11 +194,22 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     if (!boardEditor?.name.trim()) return;
     setBusy('board');
     try {
-      if (boardEditor.id) await db.updateInspirationBoard(boardEditor.id, { name: boardEditor.name.trim(), color: boardEditor.color });
-      else await db.createInspirationBoard({ id: createUuid(), userId: currentUser.id, name: boardEditor.name.trim(), color: boardEditor.color, sortOrder: boards.length, createdAt: Date.now(), updatedAt: Date.now() });
+      if (boardEditor.id) await db.updateInspirationBoard(boardEditor.id, { name: boardEditor.name.trim(), color: boardEditor.color, parentId: boardEditor.parentId });
+      else await db.createInspirationBoard({ id: createUuid(), userId: currentUser.id, name: boardEditor.name.trim(), color: boardEditor.color, parentId: boardEditor.parentId, sortOrder: boards.filter(board => (board.parentId || null) === boardEditor.parentId).length, createdAt: Date.now(), updatedAt: Date.now() });
       const wasEdit = Boolean(boardEditor.id); setBoardEditor(null); await loadBoards(); notify(wasEdit ? '收藏夹已更新' : '收藏夹已创建');
-    } catch (error: any) { notify(error.message || '收藏夹保存失败', 'error'); }
+    } catch (error: any) { await loadBoards(); notify(error.message || '收藏夹保存失败', 'error'); }
     finally { setBusy(''); }
+  };
+
+  const moveBoard = async (id: string, parentId: string | null) => {
+    const board = boards.find(board => board.id === id);
+    if (!board || (board.parentId || null) === parentId || boardOrderSavingRef.current || busy || currentUser.role === 'guest') return;
+    boardOrderSavingRef.current = true; setBusy('board-move');
+    try {
+      await db.updateInspirationBoard(id, { parentId });
+      await loadBoards(); notify('收藏夹已更新');
+    } catch (error: any) { await loadBoards(); notify(error.message || '收藏夹保存失败', 'error'); }
+    finally { boardOrderSavingRef.current = false; setBusy(''); }
   };
 
   const reorderBoard = async (id: string, targetId: string) => {
@@ -205,10 +217,15 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     const from = boards.findIndex(board => board.id === id);
     const to = boards.findIndex(board => board.id === targetId);
     if (from < 0 || to < 0 || from === to) return;
+    if ((boards[from].parentId || null) !== (boards[to].parentId || null)) return;
     const previous = boards;
-    const reordered = [...boards];
-    reordered.splice(to, 0, ...reordered.splice(from, 1));
-    const next = reordered.map((board, sortOrder) => ({ ...board, sortOrder }));
+    const reordered = boards.filter(board => (board.parentId || null) === (boards[from].parentId || null));
+    const siblingFrom = reordered.findIndex(board => board.id === id);
+    const siblingTo = reordered.findIndex(board => board.id === targetId);
+    reordered.splice(siblingTo, 0, ...reordered.splice(siblingFrom, 1));
+    const siblingPositions = new Map(reordered.map((board, sortOrder) => [board.id, sortOrder]));
+    let siblingIndex = 0;
+    const next = boards.map(board => siblingPositions.has(board.id) ? { ...reordered[siblingIndex], sortOrder: siblingIndex++ } : board);
     const positions = new Map(next.map(board => [board.id, board.sortOrder]));
     boardOrderSavingRef.current = true; setBusy('board-order'); setBoards(next);
     try {
@@ -234,9 +251,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       if (event.clientY < bounds.top + 24) scroller.scrollTop -= 12;
       else if (event.clientY > bounds.bottom - 24) scroller.scrollTop += 12;
     }
-    const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-collection-folder]'));
+    const parentId = boards.find(board => board.id === drag.id)?.parentId || null;
+    const siblings = new Set(boards.filter(board => (board.parentId || null) === parentId).map(board => board.id));
+    const rows = Array.from(list.querySelectorAll<HTMLElement>('[data-collection-folder]')).filter(row => siblings.has(row.dataset.collectionFolder || ''));
     const target = rows.find(row => {
-      const rect = row.getBoundingClientRect();
+      const rect = row.closest('.directory-tree-row')!.getBoundingClientRect();
       return event.clientY >= rect.top && event.clientY <= rect.bottom && event.clientX >= rect.left && event.clientX <= rect.right;
     });
     const targetId = target?.dataset.collectionFolder || '';
@@ -244,9 +263,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const deleteBoard = async (board: InspirationBoard) => {
-    if (!await confirmAction({ rememberKey: 'collection-board.delete', title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，其他收藏夹归属会保留；没有其他归属的作品会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
+    if (!await confirmAction({ rememberKey: 'collection-board.delete', title: `删除“${board.name}”？`, message: '仅移除本收藏夹归属，作品与其他归属保留；没有其他归属的作品会回到“未整理”。子收藏夹将提升到本夹的上级。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
     try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('收藏夹已删除'); }
-    catch (error: any) { notify(error.message || '删除失败', 'error'); }
+    catch (error: any) { await loadBoards(); notify(error.message || '删除失败', 'error'); }
   };
 
   const openImport = (files: File[] = [], target = boardId) => {
@@ -340,14 +359,9 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   }, [busy, items, currentUser, confirmAction, onRefresh, notify]);
 
   const activeFilterCount = Number(collection !== 'all') + Number(Boolean(boardId)) + Number(Boolean(sourceFilter)) + tagFilter.length;
-  const filterChip = (label: string, remove: () => void) => <button key={label} type="button" aria-label={t('取消筛选：{0}', [label])} onClick={remove} className="mobile-touch inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-indigo-50 px-2 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{label}<X className="h-3 w-3" /></button>;
-  const renderBoardActions = (board: InspirationBoard) => <div data-card-action="true" className="appearance-panel appearance-overlay hover-reveal-md absolute right-1 flex items-center gap-1 rounded-lg bg-white dark:bg-gray-900">
-    <button type="button" disabled={busy === 'board-order'} aria-label={t("编辑收藏夹：{0}", [board.name])} title={t("编辑名称 / 颜色")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800" onClick={() => setBoardEditor({ id: board.id, name: board.name, color: board.color || '#6366f1' })}><Pencil className="h-4 w-4" /></button>
-    <button type="button" disabled={busy === 'board-order'} aria-label={t("删除收藏夹：{0}", [board.name])} title={t("删除收藏夹")} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/50" onClick={() => { void deleteBoard(board); }}><Trash2 className="h-4 w-4" /></button>
-  </div>;
-  const renderBoardRow = (board: InspirationBoard) => <PressRevealSurface key={board.id} data-collection-folder={board.id} {...folderDropProps(board.id)} className={`group relative flex items-center rounded-lg border ${boardDrag?.id === board.id ? 'opacity-50' : ''} ${boardDrag?.targetId === board.id && boardDrag.id !== board.id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === board.id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : boardId === board.id ? 'border-transparent bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-    <button type="button" data-card-action="true" data-agent-interaction="drag" aria-label={t("排序收藏夹：{0}", [board.name])} title={t("拖动排序；上下方向键调整")}
-      disabled={boards.length < 2 || currentUser.role === 'guest'} aria-disabled={Boolean(busy) || boards.length < 2 || currentUser.role === 'guest'}
+  const tagChips = tagFilter.map(tag => ({ key: tag, label: `#${tag}`, onRemove: () => setTagFilter(previous => previous.filter(value => value !== tag)) }));
+  const renderBoardHandle = (board: InspirationBoard) => <button type="button" data-card-action="true" data-agent-interaction="drag" aria-label={t("排序收藏夹：{0}", [board.name])} title={t("拖动排序；上下方向键调整")}
+      disabled={boards.filter(candidate => (candidate.parentId || null) === (board.parentId || null)).length < 2 || currentUser.role === 'guest'} aria-disabled={Boolean(busy)}
       className="mobile-touch flex h-10 w-6 shrink-0 touch-none items-center justify-center rounded-lg text-gray-400 hover:text-indigo-600 active:cursor-grabbing disabled:opacity-20 aria-disabled:opacity-20 cursor-grab dark:hover:text-indigo-300"
       onClick={event => event.stopPropagation()}
       onPointerDown={event => {
@@ -370,23 +384,22 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         if (event.key === 'Escape') { cancelBoardDrag(); return; }
         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
         event.preventDefault();
-        const target = boards[boards.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
+        const siblings = boards.filter(candidate => (candidate.parentId || null) === (board.parentId || null));
+        const target = siblings[siblings.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (target) void reorderBoard(board.id, target.id);
-      }}><GripVertical className="h-3.5 w-3.5" /></button>
-    <button type="button" aria-label={t("选择收藏夹：{0}", [board.name])} aria-pressed={boardId === board.id} onClick={() => { setBoardId(board.id); setCollection('all'); setSourceFilter(''); }} className="mobile-touch flex h-10 min-w-0 flex-1 items-center gap-2 pl-1 pr-3 text-left text-sm"><Folder className="h-4 w-4 flex-none" style={{ color: board.color }} /><span className="min-w-0 flex-1 truncate">{board.name}</span><span className="text-xs opacity-60">{boardCounts.get(board.id) || 0}</span></button>{renderBoardActions(board)}
-  </PressRevealSurface>;
-  const renderNavigation = () => <div>
-    <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('全局')}</p>
-    <div className="space-y-1">
-      <CollectionButton active={collection === 'all' && !boardId && !sourceFilter} count={counts.all} icon={<Heart />} label={t('全部')} onClick={() => { setCollection('all'); setBoardId(''); setSourceFilter(''); }} />
-      <div><CollectionButton active={collection === 'unorganized'} count={counts.unorganized} icon={<Library />} label={t('未整理')} onClick={() => { setCollection('unorganized'); setBoardId(''); setSourceFilter(''); }} /></div>
-    </div>
-    <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
-    <p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p>
-    <div className="space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div>
-    <div className="my-4 border-t border-gray-200 dark:border-gray-800" />
-    <div className="mb-2 flex items-center justify-between gap-1 px-2"><span className="text-xs font-semibold text-gray-500">{t('自定义收藏夹')}</span><ToolbarButton disabled={busy === 'board-order'} aria-label={t('新建收藏夹')} title={t('新建收藏夹')} onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length] })} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton></div>
-    <div data-collection-folders="true" className="space-y-1">{boards.map(renderBoardRow)}{!boards.length && <button type="button" onClick={() => setBoardEditor({ name: '', color: BOARD_COLORS[0] })} className="mobile-touch w-full rounded-xl border border-dashed border-gray-300 px-3 py-3 text-xs text-gray-400 dark:border-gray-700">{t('创建第一个收藏夹')}</button>}</div>
+      }}><GripVertical className="h-3.5 w-3.5" /></button>;
+  const renderNavigation = () => <div data-collection-folders="true">
+    <DirectoryTreeNavigation label={t('收藏夹目录')} title={t('自定义收藏夹')} nodes={boards} expanded embedded preferenceKey="nai-collection-tree-branches" selectedId={boardId || (collection === 'unorganized' ? '' : '*')}
+      selectedIds={sourceFilter ? [] : undefined} createLabel={t('新建收藏夹')} renameLabel={t('编辑收藏夹')} deleteLabel={t('删除收藏夹')}
+      counts={boardCounts} totalCount={counts.all} unclassifiedCount={counts.unorganized} allLabel={t('全部')} unclassifiedLabel={t('未整理')} disabled={Boolean(busy)}
+      onSelect={id => { setBoardId(id === '*' || !id ? '' : id); setCollection(id === '' ? 'unorganized' : 'all'); setSourceFilter(''); }}
+      onMove={currentUser.role === 'guest' ? undefined : (id, parentId) => { void moveBoard(id, parentId); }}
+      onCreate={currentUser.role === 'guest' ? undefined : parentId => setBoardEditor({ name: '', color: BOARD_COLORS[boards.length % BOARD_COLORS.length], parentId })}
+      onRename={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) setBoardEditor({ id, name: board.name, color: board.color || '#6366f1', parentId: board.parentId || null }); }}
+      onDelete={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) void deleteBoard(board); }}
+      nodeLeading={id => { const board = boards.find(board => board.id === id); return board ? renderBoardHandle(board) : undefined; }}
+      nodeProps={id => { const board = boards.find(board => board.id === id); return board ? { ...folderDropProps(id), 'data-collection-folder': id, 'aria-label': t('选择收藏夹：{0}', [board.name]), 'aria-pressed': boardId === id, style: { '--collection-folder-color': board.color || '#6366f1' } as React.CSSProperties, className: `[&>svg]:[color:var(--collection-folder-color)] ${boardDrag?.id === id ? 'opacity-50' : ''} ${boardDrag?.targetId === id && boardDrag.id !== id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : ''}` } : { 'aria-label': id === '*' ? `${t('全部')} ${counts.all}` : `${t('未整理')} ${counts.unorganized}`, 'aria-pressed': id === '*' ? collection === 'all' && !boardId && !sourceFilter : collection === 'unorganized' }; }}
+      header={<><p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div></>} />
   </div>;
   const renderFilterControls = (mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
     {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}
@@ -445,12 +458,10 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
         <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="min-w-0 flex-1 md:max-w-none!">
-        {tagFilter.length > 0 && <div role="group" aria-label={t('标签（同时满足）')} className="flex min-w-0 max-w-[50%] flex-none items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {tagFilter.map(tag => filterChip(`#${tag}`, () => setTagFilter(previous => previous.filter(value => value !== tag))))}
-        </div>}
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 md:h-10 md:max-w-none!" className="h-full! min-h-0!">
+        <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
-      <ToolbarPopover title={t("筛选收藏")} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
+      <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
         {(close, mobile) => <div className="space-y-4">{renderFilterControls(mobile, () => {
           // 先卸载筛选层并归还焦点，再打开标签管理，避免两层抢焦点和返回操作。
           flushSync(close); setTagManagerOpen(true);
@@ -512,7 +523,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       setTagQuery(previous => previous === from ? to || '' : previous);
     }} />}
 
-    {boardEditor && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-4" onClick={() => setBoardEditor(null)}><div ref={boardDialogRef} role="dialog" aria-modal="true" aria-label={boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")} className="appearance-panel ui-sheet-enter mobile-safe-bottom w-full max-w-sm rounded-t-3xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}><h2 className="text-lg font-black">{boardEditor.id ? t("编辑收藏夹") : t("新建收藏夹")}</h2><input autoFocus value={boardEditor.name} onChange={event => setBoardEditor({ ...boardEditor, name: event.target.value })} placeholder={t("例如：电影感光影")} className="mt-4 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-800 dark:bg-gray-950" /><div className="mt-4 flex gap-2">{BOARD_COLORS.map(color => <button key={color} type="button" aria-pressed={boardEditor.color === color} onClick={() => setBoardEditor({ ...boardEditor, color })} className={`mobile-size-locked h-8 w-8 rounded-full transition ${boardEditor.color === color ? 'ring-2 ring-offset-2 dark:ring-offset-gray-900' : ''}`} style={{ backgroundColor: color }} aria-label={t("颜色 {0}", [color])} />)}</div><div className="mt-6 grid grid-cols-2 gap-3 md:flex md:justify-end"><button type="button" onClick={() => setBoardEditor(null)} className="mobile-touch rounded-xl border border-gray-200 px-4 text-sm font-bold text-gray-600 dark:border-gray-800 dark:text-gray-300">{t("取消")}</button><button type="button" disabled={!boardEditor.name.trim() || busy === 'board'} onClick={() => void saveBoard()} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 disabled:opacity-40">{busy === 'board' ? t("正在保存…") : t("保存")}</button></div></div></div></ImagePreviewPortal>}
+    {boardEditor && <DirectoryNodeDialog title={boardEditor.id ? t('编辑收藏夹') : t('新建收藏夹')} nodes={boards} name={boardEditor.name} parentId={boardEditor.parentId || ''} editingId={boardEditor.id} busy={busy === 'board'} nameLabel={t('名称')} namePlaceholder={t('例如：电影感光影')} parentLabel={t('上级收藏夹')} rootLabel={t('根目录')} onNameChange={name => setBoardEditor({ ...boardEditor, name })} onParentChange={parentId => setBoardEditor({ ...boardEditor, parentId: parentId || null })} onSubmit={saveBoard} onClose={() => setBoardEditor(null)}><div className="mt-4 flex gap-2">{BOARD_COLORS.map(color => <button key={color} type="button" disabled={busy === 'board'} aria-pressed={boardEditor.color === color} onClick={() => setBoardEditor({ ...boardEditor, color })} className={`mobile-size-locked h-8 w-8 rounded-full transition ${boardEditor.color === color ? 'ring-2 ring-offset-2 dark:ring-offset-gray-900' : ''}`} style={{ backgroundColor: color }} aria-label={t("颜色 {0}", [color])} />)}</div></DirectoryNodeDialog>}
 
     {importRequest && <CollectionImportDialog currentUser={currentUser} boards={boards} tagSuggestions={allTags.map(([tag]) => tag)} initialFiles={importRequest.files} initialBoardId={importRequest.boardId} onClose={() => setImportRequest(null)} onRefresh={onImportRefresh || onRefresh} notify={notify} />}
 

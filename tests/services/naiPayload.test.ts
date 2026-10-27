@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildNaiGenerationPayload, buildNaiImageEditPayload, withTransparentPromptTags } from '../../services/naiPayload';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
+import { mergePromptSections } from '../../services/labWorkspace';
+import { compilePrompt } from '../../services/promptUtils';
 
 const baseParams = {
   model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28,
@@ -8,6 +10,22 @@ const baseParams = {
 };
 
 describe('NovelAI generation payload', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 编译动态全局与角色内容且只传输正文', operation => {
+    const params = { ...baseParams,
+      _promptSections: { appearance: 'old hair', 'directory:setting': '1.2::forest, mist::', 'directory:empty': '',
+        sectionNegatives: { appearance: 'old negative', 'directory:setting': 'city', 'directory:empty': 'stale' },
+        sectionMeta: { 'directory:setting': { directoryId: 'setting', directoryName: '私有目录名', directoryPath: ['父目录'] } } },
+      characters: [{ id: 'role', prompt: '', x: 0.5, y: 0.5, sections: { 'directory:role': 'white dress' },
+        sectionNegatives: { 'directory:role': 'coat' }, sectionMeta: { 'directory:role': { entryName: '私有条目名' } } }] };
+    const prompt = compilePrompt({ basePrompt: 'artist:sample', modules: [] }, mergePromptSections(params._promptSections));
+    const payload = operation === 'text-to-image' ? buildNaiGenerationPayload(prompt, 'global negative', params)
+      : buildNaiImageEditPayload(prompt, 'global negative', params, { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0, runtimeModels: DEFAULT_NAI_RUNTIME.models });
+    expect(payload.input).toBe('artist:sample, old hair, 1.2::forest, mist::');
+    expect((payload.parameters as Record<string, unknown>).negative_prompt).toBe('global negative, old negative, city');
+    expect(((payload.parameters as Record<string, unknown>).v4_prompt as any).caption.char_captions[0].char_caption).toBe('white dress');
+    expect(((payload.parameters as Record<string, unknown>).v4_negative_prompt as any).caption.char_captions[0].char_caption).toBe('coat');
+    expect(JSON.stringify(payload)).not.toMatch(/sectionMeta|directory:|私有目录名|父目录|私有条目名/);
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('分享来源不会进入 %s 生图请求', operation => {
     const params = { ...baseParams, _styleBundleSources: [{ author: '合成作者', sourceUrl: 'https://example.org/free', note: '合成分享声明' }] };
     const payload = operation === 'text-to-image'

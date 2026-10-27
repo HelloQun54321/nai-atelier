@@ -8,7 +8,7 @@ import { PromptLibraryRandomButton, type PromptToolbarSlot } from '../PromptLibr
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptFragmentKind } from '../../services/promptLibraryEntries';
 import type { PromptSectionSource, PromptSections } from '../../types';
-import { getEditableGlobalPrompt } from '../../services/promptUtils';
+import { getEditableGlobalPrompt, getGlobalPromptSectionKeys } from '../../services/promptUtils';
 
 /** 文本型栏位（排除只用于追溯的 sectionMeta） */
 type SectionKey = Exclude<keyof PromptSections, 'sectionMeta' | 'sectionNegatives'>;
@@ -27,15 +27,19 @@ interface PromptFieldProps {
     value: string;
     placeholder: string;
     library?: PromptFragmentKind;
+    directoryId?: string;
     disabled: boolean;
     tagAssistEnabled: boolean;
     onChange: (value: string, source?: PromptSectionSource) => void;
     onCopy: (value: string, label: string) => void;
     /** 该栏现有来源（条目名），显示在标签旁做追溯 */
     sourceName?: string;
+    negative?: string;
+    negativeLocked?: boolean;
+    onNegativeChange?: (value: string) => void;
 }
 
-const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, disabled, tagAssistEnabled, onChange, onCopy, sourceName }) => {
+const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
@@ -50,12 +54,18 @@ const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, li
             </div>
         </div>
         <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
-            libraryField={{ kind: library }}
+            libraryField={{ kind: library, directoryId }}
             tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
             className={`min-h-[100px] w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
                 ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
                 : 'border-gray-200 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200'}`} />
+        {onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
+            <label htmlFor={`${id}-negative`} className="mb-1 block text-micro font-semibold text-gray-500">{t('内容负面')}</label>
+            <TagAutocompleteTextarea id={`${id}-negative`} aria-label={`${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, negative: true }}
+                tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
+                className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+        </div>}
     </div>;
 };
 
@@ -73,6 +83,7 @@ export interface ChainEditorPromptInputsProps {
     tagAssistEnabled: boolean;
     canEdit: boolean;
     promptClassificationEnabled?: boolean;
+    negativeLocked?: boolean;
     onPlainPromptChange?: (value: string) => void;
     embedded?: boolean;
     copyPromptToClipboard: (value: string, label: string) => void;
@@ -85,14 +96,20 @@ export interface ChainEditorPromptInputsProps {
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal, toolbarSlot,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
-    promptClassificationEnabled = false, onPlainPromptChange, embedded = false,
+    promptClassificationEnabled = false, negativeLocked = false, onPlainPromptChange, embedded = false,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
 }) => {
     useLanguage();
     const current = resolvePromptSections(sections, supplementPrompt);
-        const writeSection = (key: SectionKey, value: string, source?: PromptSectionSource) => {
+    const dynamicKeys = getGlobalPromptSectionKeys(current).filter((key): key is `directory:${string}` => key.startsWith('directory:'));
+    for (const key of dynamicKeys) {
+        const meta = sections?.sectionMeta?.[key];
+        if (meta && !current.sectionMeta?.[key]) current.sectionMeta = { ...current.sectionMeta, [key]: meta };
+    }
+    const writeSection = (key: SectionKey, value: string, source?: PromptSectionSource) => {
         const meta = { ...(current.sectionMeta || {}) } as Record<string, PromptSectionSource>;
         if (source) meta[key] = source;
+        else if (key.startsWith('directory:')) meta[key] = { ...meta[key], entryId: undefined, entryName: undefined, source: 'manual' };
         else if (String(value || '').trim()) meta[key] = { source: 'manual' };
         else delete meta[key];
         const next = { ...current, [key]: value, sectionMeta: meta } as PromptSections;
@@ -100,6 +117,10 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
         setSupplementPrompt?.(mergePromptSections(next));
         markPresetSectionModified('subject');
         markChange();
+    };
+    const writeNegative = (key: SectionKey, value: string) => {
+        setSections?.({ ...current, sectionNegatives: { ...current.sectionNegatives, [key]: value } });
+        markPresetSectionModified('negative'); markChange();
     };
     const content = <section className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
@@ -121,8 +142,18 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                 {SECTION_FIELDS.map(field => <PromptField key={field.key} label={field.label} library={field.library}
                     value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
                     sourceName={current.sectionMeta?.[field.key]?.entryName}
+                    negative={current.sectionNegatives?.[field.key]} negativeLocked={negativeLocked}
+                    onNegativeChange={current.sectionNegatives?.[field.key] ? value => writeNegative(field.key, value) : undefined}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
                     onChange={(value, source) => writeSection(field.key, value, source)} />)}
+                {dynamicKeys.map(key => {
+                    const meta = current.sectionMeta?.[key];
+                    const label = meta?.directoryPath?.length ? meta.directoryPath.join(' / ') : meta?.directoryName || key.slice(10);
+                    return <PromptField key={key} label={label} directoryId={key.slice(10)} value={current[key] || ''} placeholder={label} disabled={!canEdit}
+                        sourceName={meta?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
+                        onNegativeChange={value => writeNegative(key, value)} tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
+                        onChange={(value, source) => writeSection(key, value, source)} />;
+                })}
                 </>}
             </div>
         </section>;

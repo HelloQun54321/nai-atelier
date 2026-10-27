@@ -18,7 +18,7 @@ export function getToolbarPopoverPosition(anchor: { left: number; width: number;
   return { left, top, width, maxHeight: Math.max(0, above ? top - 12 : viewportHeight - top - 12), transformOrigin: `${originX}px ${above ? 'bottom' : 'top'}` };
 }
 
-const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; above?: boolean; compact?: boolean; onClose: () => void; children: React.ReactNode }> = ({ title, position, above, compact, onClose, children }) => {
+const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; above?: boolean; compact?: boolean; zIndex?: number; onClose: () => void; children: React.ReactNode }> = ({ title, position, above, compact, zIndex, onClose, children }) => {
   useLanguage();
   const panelRef = useModalA11y<HTMLDivElement>(true);
   useGlassRefraction(panelRef);
@@ -29,7 +29,7 @@ const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getT
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose, panelRef]);
-  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} data-compact={compact || undefined} style={position} className={`appearance-panel appearance-popover fixed z-[1801] -translate-x-1/2 ${above ? '-translate-y-full' : ''} overflow-y-auto rounded-xl border border-gray-200 bg-white ${compact ? 'p-1.5' : 'p-4'} shadow-xl dark:border-gray-800 dark:bg-gray-900`}><div className="appearance-popover-content">{children}</div></div>;
+  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} data-compact={compact || undefined} style={{ ...position, ...(zIndex !== undefined ? { zIndex: zIndex + 1 } : {}) }} className={`appearance-panel appearance-popover fixed z-[1801] -translate-x-1/2 ${above ? '-translate-y-full' : ''} overflow-y-auto rounded-xl border border-gray-200 bg-white ${compact ? 'p-1.5' : 'p-4'} shadow-xl dark:border-gray-800 dark:bg-gray-900`}><div className="appearance-popover-content">{children}</div></div>;
 };
 
 /** 桌面弹层以按钮为中心，并脱离工作区裁切和隔离层。 */
@@ -40,9 +40,10 @@ export const AnchoredToolbarPopover: React.FC<{
   above?: boolean;
   compact?: boolean;
   allowMobile?: boolean;
+  zIndex?: number;
   onClose: () => void;
   children: React.ReactNode;
-}> = ({ anchorRef, title, width = 384, above = false, compact = false, allowMobile = false, onClose, children }) => {
+}> = ({ anchorRef, title, width = 384, above = false, compact = false, allowMobile = false, zIndex, onClose, children }) => {
   useLanguage();
   const requestClose = useMobileHistoryLayer(allowMobile, onClose, 'anchored-popover');
   const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 0, transformOrigin: 'center top' });
@@ -69,8 +70,8 @@ export const AnchoredToolbarPopover: React.FC<{
     };
   }, [anchorRef, width, above, allowMobile, onClose]);
   return <ImagePreviewPortal>
-    <div className="fixed inset-0 z-[1800]" onClick={requestClose} />
-    <PopoverSurface title={title} position={position} above={above} compact={compact} onClose={requestClose}>{children}</PopoverSurface>
+    <div className="fixed inset-0 z-[1800]" style={{ zIndex }} onClick={requestClose} />
+    <PopoverSurface title={title} position={position} above={above} compact={compact} zIndex={zIndex} onClose={requestClose}>{children}</PopoverSurface>
   </ImagePreviewPortal>;
 };
 
@@ -85,15 +86,20 @@ export const ToolbarPopover: React.FC<{
   above?: boolean;
   iconOnly?: boolean;
   iconTone?: React.ComponentProps<typeof IconButton>['tone'];
+  zIndex?: number;
   disabled?: boolean;
   className?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
-}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, disabled, className = '', children }) => {
+}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, zIndex, disabled, className = '', open: controlledOpen, onOpenChange, children }) => {
   useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = React.useCallback((value: boolean) => { setInternalOpen(value); onOpenChange?.(value); }, [onOpenChange]);
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  const close = React.useCallback(() => setOpen(false), []);
+  const close = React.useCallback(() => setOpen(false), [setOpen]);
   useLayoutEffect(() => {
     const update = () => {
       const next = window.innerWidth < 768;
@@ -102,13 +108,13 @@ export const ToolbarPopover: React.FC<{
     };
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
-  }, [mobile]);
+  }, [mobile, setOpen]);
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    {iconOnly ? <IconButton label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(value => !value)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(value => !value)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
+    {iconOnly ? <IconButton label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
       {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
     </ToolbarButton>}
-    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} onClose={close}>{content}</AnchoredToolbarPopover>)}
+    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;
 };

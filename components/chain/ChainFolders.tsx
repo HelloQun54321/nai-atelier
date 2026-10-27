@@ -1,8 +1,8 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { Folder, FolderInput, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { FolderInput, X } from 'lucide-react';
 import { t } from '../../services/i18n';
 import { createUuid } from '../../services/id';
-import { folderContains, folderTree, getChainFolderIds, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
+import { getChainFolderIds, removeChainFolder, type ChainFolder } from '../../services/chainFolders';
 import type { useChainFolders } from '../../services/useChainFolders';
 import { ToolbarButton } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -10,11 +10,13 @@ import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { ImageActivityContext } from '../SmartImage';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { useConfirmDialog } from '../ConfirmDialog';
+import { DirectoryTreeNavigation } from '../DirectoryTreeNavigation';
+import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
+import { DirectoryNodeDialog } from '../DirectoryNodeDialog';
 
 export const CHAIN_FOLDER_DRAG_TYPE = 'application/x-novelai-style-chain-ids';
 type Store = ReturnType<typeof useChainFolders>;
 type Notify = (message: string, type?: 'success' | 'error') => void;
-const field = 'mobile-touch w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900';
 
 function FolderDialog({ title, busy, onClose, children }: { title: string; busy: boolean; onClose: () => void; children: React.ReactNode }) {
   const active = useContext(ImageActivityContext);
@@ -43,15 +45,14 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   const [dragOver, setDragOver] = useState<string | null>(null);
   const confirm = useConfirmDialog();
   const { folders } = store.state;
-  const tree = folderTree(folders);
   const busy = disabled || store.busy;
   const blocked = busy || !store.ready || Boolean(store.error);
   const current = folders.find(folder => folder.id === selected);
-  const choices = [ { id: '*', name: t('全部'), depth: 0 }, { id: '', name: t('未整理'), depth: 0 }, ...tree ];
   const counts = useMemo(() => {
-    const result = new Map<string, number>([['*', chainIds.length], ['', 0]]);
+    const result = new Map<string, number>(folders.map(folder => [folder.id, 0]));
+    result.set('*', new Set(chainIds).size); result.set('', 0);
     const parents = new Map(folders.map(folder => [folder.id, folder.parentId]));
-    for (const chainId of chainIds) {
+    for (const chainId of new Set(chainIds)) {
       const memberships = getChainFolderIds(store.state, chainId);
       if (!memberships.length) result.set('', (result.get('') || 0) + 1);
       const included = new Set<string>();
@@ -63,13 +64,11 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
     }
     return result;
   }, [chainIds, store.state, folders]);
-  const count = (id: string) => counts.get(id) || 0;
   const open = (folder: ChainFolder | 'new') => {
     setEditing(folder); setName(folder === 'new' ? '' : folder.name);
     setParentId(folder === 'new' ? current?.id || '' : folder.parentId || '');
   };
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const save = async () => {
     if (!editing || blocked || !name.trim()) return;
     try {
       // 手机经局域网 HTTP 打开时属于非安全上下文，部分浏览器不提供 crypto.randomUUID；
@@ -86,7 +85,15 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
     try { await store.save(removeChainFolder(store.state, current.id)); onSelect(''); notify('文件夹已删除，风格串已保留', 'success'); }
     catch (cause) { notify(cause instanceof Error ? cause.message : '删除文件夹失败', 'error'); }
   };
+  const moveFolder = async (id: string, targetParentId: string | null) => {
+    if (blocked) return;
+    try {
+      await store.save({ ...store.state, folders: folders.map(folder => folder.id === id ? { ...folder, parentId: targetParentId } : folder) });
+      notify('文件夹已保存', 'success');
+    } catch (cause) { notify(cause instanceof Error ? cause.message : '保存文件夹失败', 'error'); }
+  };
   const drop = (event: React.DragEvent, id: string) => {
+    if (!event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) return;
     event.preventDefault(); setDragOver(null);
     if (blocked || !id || id === '*') return;
     try {
@@ -94,38 +101,34 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
       if (Array.isArray(ids)) void onMove(ids.filter((item): item is string => typeof item === 'string' && chainIds.includes(item)), id);
     } catch { /* 外部文件和文字不作为风格串移动。 */ }
   };
-  return <aside hidden={!expanded} aria-label={t('风格串文件夹')} className={expanded ? "workspace-fixed-pane chain-folder-navigation appearance-panel min-h-0 workspace-category-navigation flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r" : "hidden"}>
-    <div className="mb-2 flex items-center justify-between gap-1"><span className="text-xs font-semibold text-gray-500">{t('文件夹')}</span><div className="flex gap-1">
-      <ToolbarButton aria-label={t('新建文件夹')} title={t('新建文件夹')} disabled={blocked} onClick={() => open('new')} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>
-      {current && <><ToolbarButton aria-label={t('编辑文件夹')} title={t('重命名或移动文件夹')} disabled={blocked} onClick={() => open(current)} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton><ToolbarButton aria-label={t('删除文件夹')} disabled={blocked} onClick={() => void remove()} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton></>}
-    </div></div>
-    {!store.ready && !store.error && <p role="status" className="text-xs text-gray-500">{t('正在加载文件夹…')}</p>}
-    {store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}
-    <select aria-label={t('选择文件夹')} value={selected} disabled={busy} onChange={event => onSelect(event.target.value)} className={`${field} md:hidden`}>{choices.map(item => <option key={item.id} value={item.id}>{'　'.repeat(item.depth)}{item.name} ({count(item.id)})</option>)}</select>
-    <nav className="hidden space-y-1 md:block">{choices.map(item => <button key={item.id} type="button" aria-current={selected === item.id ? 'page' : undefined} disabled={busy} onClick={() => onSelect(item.id)}
-      onDragOver={event => { if (!blocked && item.id && item.id !== '*' && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(item.id); } }} onDragLeave={() => setDragOver(null)} onDrop={event => drop(event, item.id)}
-      className={`mobile-touch flex w-full min-w-0 items-center gap-2 rounded-lg py-2 pr-2 text-left text-sm disabled:opacity-50 ${dragOver === item.id ? 'ring-2 ring-indigo-500' : ''} ${selected === item.id ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`} style={{ paddingLeft: 8 + item.depth * 14 }}>
-      <Folder className="h-4 w-4 flex-none" /><span className="min-w-0 flex-1 truncate" title={item.name}>{item.name}</span><span className="text-xs opacity-60">{count(item.id)}</span>
-    </button>)}</nav>
-    {editing && <ImagePreviewPortal><FolderDialog title={editing === 'new' ? '新建文件夹' : '编辑文件夹'} busy={busy} onClose={() => setEditing(null)}><form onSubmit={event => void save(event)}>
-      <label className="mb-3 block text-xs text-gray-500">{t('文件夹名称')}<input aria-label={t('文件夹名称')} maxLength={60} value={name} disabled={busy} onChange={event => setName(event.target.value)} className={`${field} mt-2`} /></label>
-      <label className="block text-xs text-gray-500">{t('上级文件夹')}<select aria-label={t('上级文件夹')} value={parentId} disabled={busy} onChange={event => setParentId(event.target.value)} className={`${field} mt-2`}><option value="">{t('顶层')}</option>{tree.filter(folder => editing === 'new' || !folderContains(folders, editing.id, folder.id)).map(folder => <option key={folder.id} value={folder.id}>{'　'.repeat(folder.depth)}{folder.name}</option>)}</select></label>
-      <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={() => setEditing(null)}>{t('取消')}</ToolbarButton><ToolbarButton type="submit" disabled={blocked || !name.trim()} tone="primary">{t('保存')}</ToolbarButton></div>
-    </form></FolderDialog></ImagePreviewPortal>}
-  </aside>;
+  return <>
+    <DirectoryTreeNavigation label={t('风格串文件夹')} title={t('文件夹')} nodes={folders} selectedId={selected} onSelect={onSelect} expanded={expanded} preferenceKey="nai-style-folder-branches" counts={counts} disabled={busy} actionDisabled={blocked}
+      className="chain-folder-navigation" selectLabel={t('选择文件夹')} createLabel={t('新建文件夹')} renameLabel={t('编辑文件夹')} deleteLabel={t('删除文件夹')} unclassifiedLabel={t('未整理')}
+      onCreate={() => open('new')} onRename={id => { const folder = folders.find(item => item.id === id); if (folder) open(folder); }} onDelete={() => void remove()}
+      onMove={(id, targetParentId) => void moveFolder(id, targetParentId)}
+      header={<>{!store.ready && !store.error && <p role="status" className="text-xs text-gray-500">{t('正在加载文件夹…')}</p>}{store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}</>}
+      nodeProps={id => ({
+        onDragOver: event => { if (!blocked && id && id !== '*' && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(id); } },
+        onDragLeave: () => setDragOver(null), onDrop: event => drop(event, id),
+        className: dragOver === id ? 'ring-2 ring-indigo-500' : '',
+      })}
+    />
+    {editing && <DirectoryNodeDialog title={editing === 'new' ? '新建文件夹' : '编辑文件夹'} nodes={folders} name={name} parentId={parentId} editingId={editing === 'new' ? undefined : editing.id} nameLabel={t('文件夹名称')} parentLabel={t('上级文件夹')} maxLength={60} busy={busy} disabled={blocked} onNameChange={setName} onParentChange={setParentId} onSubmit={save} onClose={() => setEditing(null)} />}
+  </>;
 }
 
 export function ChainFolderMembershipDialog({ store, ids, onSave, onClose }: { store: Store; ids: string[]; onSave: (ids: string[], changes: Record<string, boolean>) => Promise<void>; onClose: () => void }) {
   const [changes, setChanges] = useState<Record<string, boolean>>({});
+  const selectedIds: string[] = [], mixedIds: string[] = [];
+  for (const folder of store.state.folders) {
+    const count = ids.filter(id => getChainFolderIds(store.state, id).includes(folder.id)).length;
+    const touched = Object.hasOwn(changes, folder.id);
+    if (touched ? changes[folder.id] : count === ids.length) selectedIds.push(folder.id);
+    if (!touched && count > 0 && count < ids.length) mixedIds.push(folder.id);
+  }
   return <ImagePreviewPortal><FolderDialog title="设置文件夹" busy={store.busy} onClose={onClose}>
     <p className="mb-3 text-sm text-gray-500">{t('已选 {0} 条风格串', [ids.length])}</p>
-    <div className="space-y-1">{folderTree(store.state.folders).map(folder => {
-      const count = ids.filter(id => getChainFolderIds(store.state, id).includes(folder.id)).length;
-      const touched = Object.hasOwn(changes, folder.id);
-      const checked = touched ? changes[folder.id] : count === ids.length;
-      const mixed = !touched && count > 0 && count < ids.length;
-      return <label key={folder.id} className="mobile-touch flex items-center gap-2 rounded-lg py-2 pr-2 text-sm" style={{ paddingLeft: folder.depth * 14 }}><input type="checkbox" checked={checked} aria-checked={mixed ? 'mixed' : checked} ref={element => { if (element) element.indeterminate = mixed; }} disabled={store.busy} onChange={event => setChanges(previous => ({ ...previous, [folder.id]: event.target.checked }))} /><Folder className="h-4 w-4" /><span>{folder.name}</span></label>;
-    })}</div>
+    <DirectoryTreeChecklist nodes={store.state.folders} selectedIds={selectedIds} mixedIds={mixedIds} disabled={store.busy} onToggle={(id, checked) => setChanges(previous => ({ ...previous, [id]: checked }))} />
     <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={store.busy} onClick={onClose}>{t('取消')}</ToolbarButton><ToolbarButton disabled={store.busy || !store.ready || Boolean(store.error) || !Object.keys(changes).length} tone="primary" onClick={() => void onSave(ids, changes)}><FolderInput />{t('保存')}</ToolbarButton></div>
   </FolderDialog></ImagePreviewPortal>;
 }

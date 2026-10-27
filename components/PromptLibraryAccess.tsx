@@ -1,3 +1,4 @@
+import { promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -24,12 +25,23 @@ import { resolvePromptSections } from '../services/labWorkspace';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from '../services/characterPrompts';
 import { getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
 import { createUuid } from '../services/id';
+import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
+import { getPromptLibraryDirectoryLegacyKind, getPromptLibraryEntryDirectoryIds, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 
 interface LibraryAccess {
   chains: PromptChain[];
   categoryNames?: string[];
+  categoryTree?: PromptLibraryCategoryTreeState;
+  directories?: PromptLibraryTreeState;
+  directoriesError?: string;
+  reloadDirectories?: () => Promise<void>;
+  onCreateDirectory?: (parentId: string | null) => void;
+  onRenameDirectory?: (id: string) => void;
+  onDeleteDirectory?: (id: string) => void;
+  onMoveDirectory?: (id: string, parentId: string | null) => void;
+  directoriesBusy?: boolean;
   save: (data: Partial<PromptChain>) => Promise<void>;
   useEntry?: (entry: PromptChain) => void;
   requestedEntry?: PromptChain | null;
@@ -39,6 +51,11 @@ interface LibraryAccess {
 export const PromptLibraryContext = createContext<LibraryAccess | null>(null);
 export const PromptLibraryRequestEnabledContext = createContext(false);
 export const usePromptLibrary = () => useContext(PromptLibraryContext);
+function DirectoryStatus() {
+  const library = usePromptLibrary();
+  if (!library?.reloadDirectories || library.directories && !library.directoriesError) return null;
+  return <p role={library.directoriesError ? 'alert' : 'status'} className="text-sm text-gray-500">{library.directoriesError || t('正在读取目录…')}{library.directoriesError && <ToolbarButton onClick={() => void library.reloadDirectories?.().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>;
+}
 export interface WorkspaceAccess { state: PromptLibraryWorkspaceState; change: (next: PromptLibraryWorkspaceState) => void | Promise<void>; canUndo: boolean; undo: () => void; }
 const WorkspaceContext = createContext<WorkspaceAccess | null>(null);
 
@@ -131,6 +148,9 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   const workspace = useContext(WorkspaceContext);
   const [section, setSection] = useState<PromptLibrarySection>(initialEntry ? librarySectionOf(initialEntry) || 'items' : 'items');
   const [kind, setKind] = useState(field.kind || '');
+  const [directoryIds, setDirectoryIds] = useState<string[]>(field.directoryId ? [field.directoryId] : field.kind && library?.directories?.nodes.some(node => node.id === LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[field.kind!]) ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[field.kind]] : []);
+  const [allDirectories, setAllDirectories] = useState(!field.directoryId);
+  const [unclassified, setUnclassified] = useState(false);
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
   const [mode, setMode] = useState<PromptApplyMode>('append');
@@ -143,19 +163,20 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   const snapshot = entry && contentRead((entry.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   const target: ContentRollTarget = targetId === 'global' ? { mode: 'global' } : targetId === 'new' ? { mode: 'new' } : { mode: 'existing', id: targetId };
   const [completionDone, setCompletionDone] = useState(false);
-  const structured = !!(workspace && entry && !field.textOnly && !field.negative && (isContentRecord(entry) || fragmentKindOf(entry) && fragmentKindOf(entry) !== 'general'));
+  const structured = !!(workspace && entry && !field.textOnly && !field.negative && (isContentRecord(entry) || fragmentKindOf(entry) && (fragmentKindOf(entry) !== 'general' || library?.directories && getPromptLibraryEntryDirectoryIds(entry, library.directories).length)));
   let selection: ReturnType<typeof planLibrarySelection> | null = null;
   let planningError = '';
   if (structured) {
-    try { if (snapshot && snapshot.roles.length > 1 && roleIndex < 0) throw new Error('请先选择组合中的角色'); selection = planLibrarySelection(workspace!.state, entry!, target, mode, whole ? {} : field, Math.max(0, roleIndex), completionDone ? undefined : completion); }
+    try { if (snapshot && snapshot.roles.length > 1 && roleIndex < 0) throw new Error('请先选择组合中的角色'); selection = planLibrarySelection(workspace!.state, entry!, target, mode, whole ? {} : field, Math.max(0, roleIndex), completionDone ? undefined : completion, library?.directories); }
     catch (cause) { planningError = (cause as Error).message; }
   }
   const entries = (library?.chains || []).filter(item => librarySectionOf(item) === section);
-  const tags = section === 'saved' ? promptLibraryCategoryNames(entries, library?.categoryNames) : [...new Set(entries.flatMap(item => item.tags || []))].sort();
-  const shown = entries.filter(item => (libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)) && (!kind || section !== 'items' || fragmentKindOf(item) === kind) && (!tag || item.tags?.includes(tag))
+  const tags = section === 'saved' ? promptLibraryCategoryNames(entries, [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set(entries.flatMap(item => item.tags || []))].sort();
+  const directoryEntries = library?.directories && section === 'items' && !allDirectories ? unclassified ? entries.filter(item => !getPromptLibraryEntryDirectoryIds(item, library.directories!).length) : selectPromptLibraryDirectoryEntries(entries, library.directories, directoryIds) : entries;
+  const shown = directoryEntries.filter(item => (libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)) && (library?.directories || !kind || section !== 'items' || fragmentKindOf(item) === kind) && (!tag || item.tags?.includes(tag))
     && [item.name, item.basePrompt, ...(item.tags || []), libraryEntryText(item)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const captionTotal = entries.filter(item => libraryEntryText(item, field).trim() || !field.negative && isContentRecord(item)).length;
-  const captionFiltered = !!(query || section === 'items' && kind || tag);
+  const captionFiltered = !!(query || section === 'items' && (library?.directories ? !allDirectories : kind) || tag);
   let currentText = value;
   if (whole && workspace) {
     const current = workspace.state;
@@ -205,10 +226,11 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     finally { pending.current = false; setApplying(false); }
   };
   return <LibraryDialog busy={applying} title="使用提示词" onClose={onClose} caption={onApplied ? undefined : countCaption}>
+    <DirectoryStatus />
     {!onApplied && <><div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
-    <div className="flex gap-2">{section === 'items' && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
-      <select aria-label={t('自定义标签')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{tags.map(value => <option key={value}>{value}</option>)}</select></div>
+    <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={setAllDirectories} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
+      <select aria-label={t('自定义标签')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{tags.map(value => <option key={value} value={value}>{section === 'saved' ? promptLibraryCategoryLabel(library?.categoryTree, value) : value}</option>)}</select></div>
     <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && <p className="text-sm text-gray-500">{t('没有匹配的条目')}</p>}</div></>}
     {onApplied && entry && <p className="text-sm font-semibold">{entry.name}</p>}
     {entry && <>
@@ -220,7 +242,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
         return <div key={row.kind} className="border-t border-gray-200 pt-2 text-xs dark:border-gray-700"><b>{t(FRAGMENT_LABELS[row.kind as PromptFragmentKind] || row.title)}</b><p className="whitespace-pre-wrap break-words text-gray-500">{row.current || t('空白')} → {row.action === 'keep' ? row.current : row.next}</p>{negative && <p className="whitespace-pre-wrap break-words text-amber-600 dark:text-amber-400">{t('内容负面：')}{negative}</p>}</div>;
       })}
       {!structured && <><p className="text-xs text-gray-500">{t(whole ? '使用前 → 使用后' : '填入当前输入框')}</p><p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs">{currentText || t('空白')} → {applyLibraryText(currentText, libraryEntryText(entry, field), mode, section === 'originals')}</p></>}
-      <ToolbarButton tone="primary" disabled={applying || !!planningError || structured && !selection?.plan.written.length} onClick={() => void apply()}>{t(applying ? '写入中…' : '使用')}</ToolbarButton>
+      <ToolbarButton tone="primary" disabled={applying || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !!planningError || structured && !selection?.plan.written.length} onClick={() => void apply()}>{t(applying ? '写入中…' : '使用')}</ToolbarButton>
     </>}
     {workspace?.canUndo && <ToolbarButton onClick={workspace.undo}>{t('撤销上次填入')}</ToolbarButton>}
     {(error || planningError) && <p role="alert" className="text-sm text-red-600">{t(error || planningError)}</p>}
@@ -232,37 +254,41 @@ export function PromptLibrarySaveDialog({ text, field = {}, onClose, initialPara
   const workspace = useContext(WorkspaceContext);
   const [name, setName] = useState('');
   const [tags, setTags] = useState('');
-  const [category, setCategory] = useState<string>(field.negative ? '' : field.kind || '');
+  const [category, setCategory] = useState<string>(field.negative ? '' : field.kind || field.directoryId ? library?.directories ? 'general' : field.kind || 'general' : '');
   const [roleId, setRoleId] = useState(field.roleId || '');
+  const [directoryIds, setDirectoryIds] = useState<string[]>(field.directoryId ? [field.directoryId] : []);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState('');
   const params = initialParams || workspace?.state.params;
   const save = async () => {
-    if (!library || pending.current) return;
+    if (!library || pending.current || library.directoriesError || library.reloadDirectories && !library.directories) return;
     pending.current = true; setBusy(true); setError('');
     try {
       if (category === 'combination' && params?.characters?.length && !roleId) throw new Error('请选择要保存的角色');
-      const data = category === 'combination' && params ? createCombinationData(name, workspacePicks(params, roleId))
-        : category ? createFragmentData(text, name, category as PromptFragmentKind) : prepareCollectedPrompt(text, name);
+      const data = category === 'combination' && params ? createCombinationData(name, workspacePicks(params, roleId, library.directories))
+        : category ? createFragmentData(text, name, library.directories ? getPromptLibraryDirectoryLegacyKind(library.directories, directoryIds[0]) || 'general' : category as PromptFragmentKind, '', library.directories ? directoryIds : undefined) : prepareCollectedPrompt(text, name);
       if (field.negative) data.params = { ...data.params, _promptLibraryPolarity: 'negative' } as NAIParams;
       await library.save({ ...data, tags: parsePromptLibraryTags(tags) }); onClose();
     } catch (cause) { setError((cause as Error).message); }
     finally { pending.current = false; setBusy(false); }
   };
-  if (!params && !field.negative) return <ImagePreviewPortal><div className="fixed inset-0 z-[2000]"><PromptCaptureDialog open initialText={text} initialCategory={field.kind || ''} onClose={onClose}
-    onSave={async (text, name, category, tags) => {
+  if (!params && !field.negative && library?.reloadDirectories && !library.directories && !library.directoriesError) return <LibraryDialog title="收录到提示词库" onClose={onClose}><DirectoryStatus /></LibraryDialog>;
+  if (!params && !field.negative) return <ImagePreviewPortal><div className="fixed inset-0 z-[2000]"><PromptCaptureDialog open initialText={text} initialCategory={field.kind || (field.directoryId ? 'general' : '')} directories={library?.directories} directoriesError={library?.directoriesError} reloadDirectories={library?.reloadDirectories} initialDirectoryIds={field.directoryId ? [field.directoryId] : undefined} onClose={onClose}
+    onSave={async (text, name, category, tags, ids) => {
       if (!library) throw new Error('提示词库尚未就绪');
-      await library.save({ ...prepareCollectedPrompt(text, name, category), tags });
+      await library.save({ ...prepareCollectedPrompt(text, name, category), tags, ...(ids ? { params: { ...prepareCollectedPrompt(text, name, category).params, _promptLibraryDirectoryIds: ids } as NAIParams } : {}) });
     }} /></div></ImagePreviewPortal>;
   return <LibraryDialog title="收录到提示词库" onClose={onClose} busy={busy}>
+    <DirectoryStatus />
     <label className="block text-sm">{t('名称（可选）')}<input aria-label={t('名称（可选）')} value={name} onChange={event => setName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
-    <select aria-label={t('保存为')} value={category} disabled={busy} onChange={event => setCategory(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('原文')}</option>{!field.negative && Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t('片段')} · {t(label)}</option>)}{params && !field.negative && <option value="combination">{t('组合（保存已分栏内容）')}</option>}</select>
+    <select aria-label={t('保存为')} value={category} disabled={busy} onChange={event => setCategory(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('原文')}</option>{!field.negative && library?.directories && <option value="general">{t('片段')}</option>}{!field.negative && !library?.directories && Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t('片段')} · {t(label)}</option>)}{params && !field.negative && <option value="combination">{t('组合（保存已分栏内容）')}</option>}</select>
+    {category && category !== 'combination' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={setDirectoryIds} disabled={busy} />}
     {category === 'combination' && !!params?.characters?.length && <select aria-label={t('保存哪个角色')} value={roleId} onChange={event => setRoleId(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('请选择角色')}</option>{params.characters.map((role, index) => <option key={role.id} value={role.id}>{t('角色 {0}', [index + 1])}</option>)}</select>}
-    <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('自定义标签')} value={tags} suggestions={category === 'combination' ? promptLibraryCategoryNames(library?.chains || [], library?.categoryNames) : [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort()} onPick={setTags} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} disabled={busy} className={TOOLBAR_FIELD_CLASS} /></label>
+    <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('自定义标签')} value={tags} suggestionLabel={category === 'combination' ? value => promptLibraryCategoryLabel(library?.categoryTree, value) : undefined} suggestions={category === 'combination' ? promptLibraryCategoryNames(library?.chains || [], [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort()} onPick={setTags} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} disabled={busy} className={TOOLBAR_FIELD_CLASS} /></label>
     <p className="max-h-44 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-500">{text}</p>
     {error && <p role="alert" className="text-sm text-red-600">{t(error)}</p>}
-    <ToolbarButton tone="primary" disabled={busy || !text.trim() && category !== 'combination'} onClick={() => void save()}>{t(busy ? '保存中…' : '保存')}</ToolbarButton>
+    <ToolbarButton tone="primary" disabled={busy || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !text.trim() && category !== 'combination'} onClick={() => void save()}>{t(busy ? '保存中…' : '保存')}</ToolbarButton>
   </LibraryDialog>;
 }
 
@@ -306,11 +332,11 @@ export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant 
   return <>{placeTrigger(<>{!roleId && workspace.canUndo && (variant === 'menu'
     ? <ToolbarActionRow icon={<RotateCcw className="h-4 w-4" />} label="撤销上次填入" onClick={workspace.undo} />
     : <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>)}{trigger}</>)}
-    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><div ref={setToolbarSlot} className="flex items-center gap-2" /><ContentRollWorkspace active={active} chains={library.chains} categoryNames={library.categoryNames} embedded toolbarSlot={toolbarSlot} notify={setNotice}
+    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><DirectoryStatus /><div ref={setToolbarSlot} className="flex items-center gap-2" />{!library.directoriesError && (!library.reloadDirectories || library.directories) && <ContentRollWorkspace active={active} chains={library.chains} categoryNames={library.categoryNames} categoryTree={library.categoryTree} directories={library.directories} embedded toolbarSlot={toolbarSlot} notify={setNotice}
       playgroundParams={params} entryTarget={entryTarget}
       onApplyRoll={async plan => { workspace.change(applyLibrarySelection({ before: workspace.state, params, plan })); return true; }}
       canUndo={workspace.canUndo} onUndoApply={async () => { workspace.undo(); return true; }}
-      onSaveRoll={async (name, picks, _seed, _seeds, _copy, tags) => { await library.save(createCombinationData(name, picks, tags)); return name; }} />
+      onSaveRoll={async (name, picks, _seed, _seeds, _copy, tags) => { await library.save(createCombinationData(name, picks, tags)); return name; }} />}
       {notice && <p role="status" className="text-xs text-gray-500">{notice}</p>}</LibraryDialog>}
   </>;
 }

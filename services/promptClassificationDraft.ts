@@ -1,9 +1,9 @@
-import type { PromptAgentDraft } from '../types';
+import type { PromptAgentDraft, PromptSectionSource } from '../types';
 import { hasCharacterSections } from './characterPrompts';
 import { mergePromptSections } from './labWorkspace';
 import { compilePrompt } from './promptUtils';
 
-export type ClassifiedPrompt = { id: string; kind: 'global' | 'character'; sections: Record<string, string> };
+export type ClassifiedPrompt = { id: string; kind: 'global' | 'character'; sections: Record<string, string>; sectionMeta?: Record<string, PromptSectionSource> };
 
 export const getClassificationDocuments = (draft: PromptAgentDraft) => {
   const documents: Array<{ id: string; kind: 'global' | 'character'; prompt: string }> = [];
@@ -19,7 +19,11 @@ export const getClassificationDocuments = (draft: PromptAgentDraft) => {
 
 export const applyPromptClassification = (draft: PromptAgentDraft, items: ClassifiedPrompt[]): PromptAgentDraft => {
   const global = items.find(item => item.kind === 'global');
-  const sections = global ? Object.fromEntries(Object.entries(global.sections).filter(([key]) => key !== 'style')) : draft.params._promptSections;
+  const sections = global ? {
+    ...Object.fromEntries(Object.entries(global.sections).filter(([key]) => key !== 'style')),
+    ...(draft.params._promptSections?.sectionNegatives ? { sectionNegatives: draft.params._promptSections.sectionNegatives } : {}),
+    ...(global.sectionMeta && Object.keys(global.sectionMeta).length ? { sectionMeta: global.sectionMeta } : {}),
+  } : draft.params._promptSections;
   return {
     ...draft,
     ...(global ? { basePrompt: global.sections.style || '', subjectPrompt: mergePromptSections(sections), modules: [] } : {}),
@@ -30,7 +34,7 @@ export const applyPromptClassification = (draft: PromptAgentDraft, items: Classi
         if (!item) return character;
         const { extra, ...sections } = item.sections;
         return { ...character, prompt: extra || '', sections,
-          sectionMeta: Object.fromEntries(Object.keys(sections).map(key => [key, { source: 'ai' }])),
+          sectionMeta: Object.fromEntries(Object.keys(sections).map(key => [key, { ...item.sectionMeta?.[key], source: 'ai' }])),
         };
       }),
     },

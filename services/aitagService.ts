@@ -429,6 +429,17 @@ export const getAitagWorkPromptTexts = (work: AitagWorkSummary, detail?: AitagWo
   return images.map(getAitagPositivePromptText).filter(Boolean);
 };
 
+/** 按首图判断整组，沿用详情的生成类型识别规则，不为筛选读取组内其他图片。 */
+export const getAitagWorkReferenceUsage = (work: AitagWorkSummary) => {
+  const image = work.firstImage || work.first_image;
+  const labels = image ? getAitagGenerationLabels(image) : [];
+  return {
+    vibe: labels.includes('氛围参考 (Vibe Transfer)'),
+    precise: labels.includes('精准参考 (Precise Reference)'),
+    unknown: !image || !parseAitagAiJson(image.ai_json) || !getAitagMetadataText(image),
+  };
+};
+
 const artistDetectionCache = new WeakMap<ReadonlySet<string>, Map<string, boolean>>();
 const prefixedArtistDetectionCache = new Map<string, boolean>();
 /** 画师识别按提示词与词库缓存结果，滚动重渲染时不重复解析整段提示词。 */

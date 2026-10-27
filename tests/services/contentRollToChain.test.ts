@@ -161,3 +161,13 @@ describe('planRollToChain', () => {
       sectionNegatives: { extra: 'old negative, black dress', scene: 'day' } });
   });
 });
+
+
+it('动态目录依scope写入风格串，未知目录不丢失且不覆盖画风正文', () => {
+  const result = planRollToChain(chain(), [{ kind: 'directory:eye', scope: 'character', text: 'blue eyes', negative: 'closed eyes', directoryName: '眼睛' }, { kind: 'directory:light', scope: 'global', text: 'backlight' }], { characterId: 'dynamic' });
+  expect(result.params.characters?.[0].sections?.['directory:eye']).toBe('blue eyes');
+  expect(result.params.characters?.[0].sectionNegatives?.['directory:eye']).toBe('closed eyes');
+  expect(result.params._promptSections?.['directory:light']).toBe('backlight');
+  expect(result.variableValues.subject).toContain('backlight');
+  expect(result.skipped).toEqual([]);
+});

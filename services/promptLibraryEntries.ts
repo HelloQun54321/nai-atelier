@@ -3,6 +3,7 @@ import { contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type Roll
 import { collectedPromptText, prepareCollectedPrompt } from './collectedPrompt';
 import type { PromptLibraryKind } from './promptAgent';
 import { applyPromptText, type PromptApplyMode } from './promptApply';
+import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, type PromptLibraryTreeState } from './promptLibraryDirectories';
 
 export type PromptFragmentKind = PromptLibraryKind | 'general';
 export type PromptLibrarySection = 'items' | 'saved' | 'originals';
@@ -13,6 +14,7 @@ export const FRAGMENT_LABELS: Record<PromptFragmentKind, string> = {
 export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {
   kind?: PromptFragmentKind;
+  directoryId?: string;
   roleId?: string;
   negative?: boolean;
   textOnly?: boolean;
@@ -21,7 +23,7 @@ export interface PromptLibraryField {
 export function fragmentKindOf(chain: PromptChain): PromptFragmentKind | null {
   if (KINDS.includes(chain.type)) return chain.type as PromptLibraryKind;
   const params = chain.params as unknown as Record<string, unknown> | undefined;
-  return chain.type === 'preset' && params?._collectedCategory === 'general' ? 'general' : null;
+  return chain.type === 'preset' && (params?._collectedCategory === 'general' || isPromptLibraryFragmentEntry(chain)) ? 'general' : null;
 }
 
 export function librarySectionOf(chain: PromptChain): PromptLibrarySection | null {
@@ -34,8 +36,13 @@ export function librarySectionOf(chain: PromptChain): PromptLibrarySection | nul
 export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<string, RollRow> {
   const read = contentRead((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   if (!read.ok) return {};
+  const directoryPicks: Record<string, RollRow> = Object.fromEntries(read.items.map(item => [item.unitId, {
+    kind: item.unitId, directoryId: item.directoryId, directoryName: item.directoryName, directoryPath: item.directoryPath,
+    scope: item.scope, filled: true, text: item.text, negative: item.negative, constraintNotes: item.constraintNotes,
+    id: String(item.meta?.entryId || ''), name: String(item.meta?.entryName || item.directoryName || chain.name), meta: item.meta,
+  }]));
   const role = read.roles[roleIndex];
-  return Object.fromEntries(KINDS.flatMap(kind => {
+  return { ...Object.fromEntries(KINDS.flatMap(kind => {
     const global = read.global[kind];
     const text = META[kind].scope === 'character' ? role?.sections[kind] : global?.text;
     if (!text) return [];
@@ -43,15 +50,15 @@ export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<stri
     const meta = (META[kind].scope === 'character' ? role?.meta[kind] : global?.meta) as { entryId?: string; entryName?: string; notes?: string } | undefined;
     return [[kind, { kind, filled: true, text, negative: negative?.text || '', id: meta?.entryId || '', name: meta?.entryName || chain.name,
       meta, constraintNotes: [negative?.note, meta?.notes].filter(Boolean).join('；') }]];
-  }));
+  })), ...directoryPicks };
 }
 
 export function libraryEntryText(chain: PromptChain, field: PromptLibraryField = {}): string {
   if ((chain.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') return field.negative ? chain.basePrompt || '' : '';
   if (!isContentRecord(chain)) return field.negative ? chain.negativePrompt || '' : chain.basePrompt || '';
   const picks = combinationPicks(chain);
-  return KINDS.filter(kind => field.kind ? kind === field.kind : true)
-    .map(kind => field.negative ? picks[kind]?.negative : picks[kind]?.text).filter(Boolean).join(', ');
+  return Object.entries(picks).filter(([kind, row]) => field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
+    .map(([, row]) => field.negative ? row.negative : row.text).filter(Boolean).join(', ');
 }
 
 /** 原文追加保持空白、换行及权重；片段沿用已有的加权组去重规则。 */
@@ -84,17 +91,31 @@ export function createCombinationData(name: string, picks: Record<string, RollRo
   return { name: name.trim() || '新组合', type: 'preset', tags: parsePromptLibraryTags(tags.join(',')), params: { _rollContentSnapshot: snapshot } as unknown as NAIParams };
 }
 
-export function workspacePicks(params: Partial<NAIParams>, roleId?: string): Record<string, RollRow> {
+export function workspacePicks(params: Partial<NAIParams>, roleId?: string, directories?: PromptLibraryTreeState): Record<string, RollRow> {
   const role = params.characters?.find(item => item.id === roleId);
-  return Object.fromEntries(KINDS.flatMap(kind => {
+  const picks: Record<string, RollRow> = Object.fromEntries(KINDS.flatMap(kind => {
     const text = META[kind].scope === 'character' && role ? role.sections?.[kind as keyof typeof role.sections]
       : (params._promptSections as Record<string, unknown> | undefined)?.[kind];
     const negative = META[kind].scope === 'character' && role ? role.sectionNegatives?.[kind as keyof typeof role.sectionNegatives]
       : params._promptSections?.sectionNegatives?.[kind];
     return typeof text === 'string' && text.trim() ? [[kind, { kind, filled: true, text, negative: String(negative || '') }]] : [];
   }));
+  for (const [scope, sections, negatives] of [
+    ['global', params._promptSections, params._promptSections?.sectionNegatives],
+    ['character', role?.sections, role?.sectionNegatives],
+  ] as const) for (const [kind, text] of Object.entries(sections || {})) {
+    if (!kind.startsWith('directory:') || typeof text !== 'string' || !text.trim()) continue;
+    const directoryId = kind.slice('directory:'.length);
+    if (picks[kind]) throw new Error('同一目录同时包含全局和角色内容，请先调整归属后保存组合');
+    const path = directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
+    picks[kind] = { kind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
+      scope,
+      filled: true, text, negative: String((negatives as Record<string, unknown> | undefined)?.[kind] || '') };
+  }
+  return picks;
 }
 
-export function createFragmentData(text: string, name: string, kind: PromptFragmentKind, negative = ''): Partial<PromptChain> {
-  return { ...prepareCollectedPrompt(text, name, kind), negativePrompt: negative };
+export function createFragmentData(text: string, name: string, kind: PromptFragmentKind, negative = '', directoryIds?: string[]): Partial<PromptChain> {
+  const data = prepareCollectedPrompt(text, name, kind);
+  return { ...data, negativePrompt: negative, ...(directoryIds ? { params: { ...data.params, _promptLibraryDirectoryIds: directoryIds } as NAIParams } : {}) };
 }

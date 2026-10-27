@@ -200,3 +200,20 @@ it('角色入口取用组合仅写指定角色，包含负面与可撤销快照'
   fireEvent.click(await screen.findByRole('button', { name: '撤销上次填入' }));
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith(before));
 });
+
+it('真实目录读取失败保留重试并禁用写入，不按旧分类保存', async () => {
+  const save = vi.fn(), reloadDirectories = vi.fn().mockResolvedValue(undefined);
+  render(<PromptLibraryContext.Provider value={{ chains: [], save, directoriesError: '目录读取失败', reloadDirectories }}><PromptLibrarySaveDialog text="silver sword" initialParams={LAB_DEFAULT_PARAMS} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.getByRole('alert').textContent).toContain('目录读取失败');
+  expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(reloadDirectories).toHaveBeenCalledOnce(); expect(save).not.toHaveBeenCalled();
+});
+
+it('组合收录分类候选显示完整路径而保存真实标签名', async () => {
+  const save = vi.fn().mockResolvedValue(undefined), categoryTree = { revision: 1, nodes: [{ id: '父类', name: '父类', parentId: null }, { id: '子类', name: '子类', parentId: '父类' }] };
+  render(<PromptLibraryContext.Provider value={{ chains: [], categoryTree, save }}><PromptLibrarySaveDialog text="night" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'night' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } }); fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(screen.getByRole('button', { name: '#父类 / 子类' })); expect((screen.getByRole('textbox', { name: '自定义标签' }) as HTMLInputElement).value).toBe('子类');
+  fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(save).toHaveBeenCalledOnce()); expect(save.mock.calls[0][0].tags).toEqual(['子类']);
+});

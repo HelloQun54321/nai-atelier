@@ -9,6 +9,7 @@
  * 本模块只做纯计算：给出新的 params / variableValues 与逐栏差异，写库交给调用方（App）。
  */
 import { mergePromptSections, normalizeParams, resolvePromptSections } from './labWorkspace';
+import { isDirectorySectionKey } from './contentRoll';
 import { createUuid } from './id';
 import type { NAIParams, PromptChain } from '../types';
 
@@ -21,6 +22,8 @@ export interface RollToChainSourceRow {
   name?: string;
   text: string;
   negative?: string;
+  scope?: 'global' | 'character';
+  directoryName?: string; directoryPath?: string[];
 }
 
 /** split = 按栏写入（角色四栏 + 全局场景/镜头）；extra = 六类合并成一段写进补充。 */
@@ -113,7 +116,7 @@ export const planRollToChain = (
   } else {
     for (const row of usable) {
       const value = trimmed(row.text);
-      if (isRoleKind(row.kind)) {
+      if (isRoleKind(row.kind) || isDirectorySectionKey(row.kind) && row.scope === 'character') {
         const character = characters[roleIndex] || (characters[roleIndex] = {
           id: options.characterId || createUuid(), x: 0.5, y: 0.5, prompt: '', sections: {}, sectionNegatives: {}, sectionMeta: {},
         });
@@ -122,18 +125,20 @@ export const planRollToChain = (
         character.sections = { ...characterSections, [row.kind]: value };
         if (trimmed(row.negative)) character.sectionNegatives[row.kind] = trimmed(row.negative);
         else delete character.sectionNegatives[row.kind];
-        character.sectionMeta = { ...(plainObject(character.sectionMeta) || {}), [row.kind]: mergeMeta(plainObject(character.sectionMeta)?.[row.kind], row.name || '') };
+        character.sectionMeta = { ...(plainObject(character.sectionMeta) || {}), [row.kind]: { ...mergeMeta(plainObject(character.sectionMeta)?.[row.kind], row.name || ''), ...(isDirectorySectionKey(row.kind) ? { directoryName: row.directoryName, directoryPath: row.directoryPath } : {}) } };
         // 这几栏在风格串里只属于角色：全局栏里的同名遗留值一并移走，避免正文出现两份。
-        delete sections[row.kind];
-        delete sectionMeta[row.kind];
-        delete sectionNegatives[row.kind];
+        if (isRoleKind(row.kind)) {
+          delete sections[row.kind];
+          delete sectionMeta[row.kind];
+          delete sectionNegatives[row.kind];
+        }
         writes.push({ kind: row.kind, target: 'character', text: value, previous });
-      } else if (isGlobalKind(row.kind)) {
+      } else if (isGlobalKind(row.kind) || isDirectorySectionKey(row.kind)) {
         const previous = trimmed(sections[row.kind]);
         sections[row.kind] = value;
         if (trimmed(row.negative)) sectionNegatives[row.kind] = trimmed(row.negative);
         else delete sectionNegatives[row.kind];
-        sectionMeta[row.kind] = mergeMeta(sectionMeta[row.kind], row.name || '');
+        sectionMeta[row.kind] = { ...mergeMeta(sectionMeta[row.kind], row.name || ''), ...(isDirectorySectionKey(row.kind) ? { directoryName: row.directoryName, directoryPath: row.directoryPath } : {}) };
         writes.push({ kind: row.kind, target: 'global', text: value, previous });
       } else {
         skipped.push(row.kind);

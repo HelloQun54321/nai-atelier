@@ -1,5 +1,5 @@
 /**
- * 提示词／图片 → AI 提取六类候选 → 用户审阅 → 分别落库。
+ * 提示词／图片 → AI 按当前目录提取候选 → 用户审阅 → 分别落库。
  *
  * 与「AI 一键六库」的区别：这里不做创作补全，只做忠实提取。
  *   - 英文 Tag 按源片段重组；中文译法及自然语言拆分依赖模型理解，交用户审阅；
@@ -31,6 +31,8 @@ import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { useConfirmDialog } from './ConfirmDialog';
 import { extractPngMetadata } from '../services/pngMetadata.mjs';
 import { parseStoredGenerationMetadata } from '../services/promptExtraction.mjs';
+import { getPromptLibraryDirectoryPath, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
+import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import {
   PROMPT_LIBRARY_KIND_LABELS,
   promptAgentService,
@@ -60,6 +62,8 @@ interface ExtractedDraft extends ExtractedEntryDraft {
   /** 权重／括号结构无法可靠套回译文：默认不勾选，需人工改写后才能入库。 */
   needsReview: boolean;
   reviewNote: string;
+  needsDirectoryReview?: boolean;
+  directoryReviewNote?: string;
 }
 
 /** 元数据里的一个角色分栏：正向内容单独成组，角色负面只展示不混入正向。 */
@@ -101,6 +105,9 @@ const toPersistedCandidate = (draft: ExtractedDraft): ExtractDraftCandidate => (
   id: draft.id,
   entryId: draft.entryId,
   kind: draft.kind as ExtractDraftCandidate['kind'],
+  ...(draft.directoryIds === undefined ? {} : { directoryIds: draft.directoryIds }),
+  needsDirectoryReview: draft.needsDirectoryReview,
+  directoryReviewNote: draft.directoryReviewNote,
   name: draft.name,
   prompt: draft.prompt,
   original: draft.original || '',
@@ -115,6 +122,9 @@ const fromPersistedCandidate = (item: ExtractDraftCandidate): ExtractedDraft => 
   entryId: item.entryId,
   picked: item.picked,
   kind: item.kind as ExtractedEntryDraft['kind'],
+  directoryIds: item.directoryIds,
+  needsDirectoryReview: item.needsDirectoryReview,
+  directoryReviewNote: item.directoryReviewNote,
   name: item.name,
   prompt: item.prompt,
   original: item.original,
@@ -166,9 +176,10 @@ export interface PromptExtractDialogProps {
   notify: (message: string, type?: 'success' | 'error') => void;
   /** 保存一条已确认的候选：父级负责建条目、刷新列表，并分别反馈创建与刷新结果。 */
   onSave: (draft: ExtractedEntryDraft) => Promise<void>;
+  directories?: PromptLibraryTreeState;
 }
 
-export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, onClose, notify, onSave }) => {
+export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, onClose, notify, onSave, directories }) => {
   useLanguage();
   const dialog = useModalA11y<HTMLDivElement>(open);
   const confirmAction = useConfirmDialog();
@@ -472,6 +483,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
     const stillCurrent = () => aliveRef.current && run === runRef.current && !controller.signal.aborted;
     try {
       const payload: Parameters<typeof promptAgentService.extractCandidates>[0] = { mode };
+      if (directories) payload.directories = directories;
       if (mode === 'text') {
         payload.text = textSource.value;
         if (textSource.characters.length) payload.characters = textSource.characters;
@@ -492,13 +504,18 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
         const prompt = String(item.prompt || '').trim();
         const needsTranslation = Boolean(item.needsTranslation) || hasChinese(prompt);
         const needsReview = Boolean(item.needsReview);
+        const needsDirectoryReview = Boolean(item.needsDirectoryReview) || Boolean(directories && (!Array.isArray(item.directoryIds)
+          || item.directoryIds.some(id => !directories.nodes.some(node => node.id === id))));
         return {
           id: ++draftIdRef.current,
           entryId: createUuid(),
           // 中文还没换到英文、或权重结构没能可靠还原时默认不勾选：不允许直接入库。
-          picked: !needsTranslation && !needsReview,
+          picked: !needsTranslation && !needsReview && !needsDirectoryReview,
           kind: item.kind as ExtractedEntryDraft['kind'],
-          name: String(item.name || '').trim() || PROMPT_LIBRARY_KIND_LABELS[item.kind as PromptLibraryKind],
+          name: String(item.name || '').trim() || PROMPT_LIBRARY_KIND_LABELS[item.kind as PromptLibraryKind] || t('未归类'),
+          directoryIds: item.directoryIds,
+          needsDirectoryReview,
+          directoryReviewNote: item.directoryReviewNote,
           prompt,
           original: String(item.original || ''),
           needsTranslation,
@@ -539,6 +556,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
       ? {
         ...draft,
         ...patch,
+        ...(patch.directoryIds === undefined ? {} : { needsDirectoryReview: false, directoryReviewNote: '' }),
         ...(patch.prompt === undefined ? {} : {
           needsTranslation: hasChinese(patch.prompt),
           // 用户手工改过提示词，说明结构已由人工确认，解除「待处理」。
@@ -555,9 +573,15 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
   };
 
   const pickedDrafts = drafts.filter(draft => draft.picked && String(draft.prompt || '').trim());
-  const grouped = KIND_ORDER
-    .map(kind => ({ kind, list: drafts.filter(draft => draft.kind === kind) }))
-    .filter(group => group.list.length > 0);
+  const draftDirectoryIds = (draft: ExtractedDraft): string[] => draft.directoryIds ?? (directories
+    ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[draft.kind as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS]].filter(id => directories.nodes.some(node => node.id === id)) : []);
+  const directoryProblem = (draft: ExtractedDraft) => Boolean(draft.needsDirectoryReview || directories
+    && draftDirectoryIds(draft).some(id => !directories.nodes.some(node => node.id === id)));
+  const directoryLabel = (draft: ExtractedDraft) => draftDirectoryIds(draft).map(id => getPromptLibraryDirectoryPath(directories!, id).map(node => node.name).join(' / ') || id).join('、') || t('未归类');
+  const grouped = directories ? [...new Set(drafts.map(draft => JSON.stringify(draftDirectoryIds(draft))))].map(kind => {
+    const list = drafts.filter(draft => JSON.stringify(draftDirectoryIds(draft)) === kind);
+    return { kind, label: directoryLabel(list[0]), list };
+  }) : [...KIND_ORDER, 'preset' as const].map(kind => ({ kind, label: kind === 'preset' ? t('通用片段') : PROMPT_LIBRARY_KIND_LABELS[kind], list: drafts.filter(draft => draft.kind === kind) })).filter(group => group.list.length > 0);
   /** 落库前只做结构校验：名称与提示词不能为空，避免建出空条目。 */
   const invalidDraft = pickedDrafts.find(draft => !String(draft.name || '').trim() || !String(draft.prompt || '').trim());
   /** 中文还没换成英文的候选不能被当作英文提示词入库。 */
@@ -572,6 +596,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
     if (invalidDraft) { setError(t('勾选的条目需要名称和提示词')); return; }
     if (untranslatedDraft) { setError(t('「{0}」还是中文，请先补上英文提示词，或取消勾选', [untranslatedDraft.name])); return; }
     if (reviewDraft) { setError(t('「{0}」的权重或括号结构没能可靠还原，请手动改写提示词后再保存，或取消勾选', [reviewDraft.name])); return; }
+    if (pickedDrafts.some(directoryProblem)) { setError(t('请为目录无效的候选选择实际目录，或明确设为未归类')); return; }
     pending.current = true;
     setSaving(true);
     setError('');
@@ -583,7 +608,8 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
     try {
       for (const draft of batch) {
         try {
-          await onSave({ entryId: draft.entryId, kind: draft.kind, name: draft.name, prompt: draft.prompt, original: draft.original });
+          await onSave({ entryId: draft.entryId, kind: draft.kind, name: draft.name, prompt: draft.prompt, original: draft.original,
+            ...(directories ? { directoryIds: draftDirectoryIds(draft) } : draft.directoryIds === undefined ? {} : { directoryIds: draft.directoryIds }) });
           savedIds.add(draft.id);
         } catch (e) {
           console.warn('Prompt extraction save failed:', e);
@@ -636,7 +662,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
     if (hasContent) {
       const confirmed = await confirmAction({
         title: t('清空提取草稿'),
-        message: t('会清空这次粘贴的提示词、已选图片、六类候选与编辑内容；已入库条目不受影响。'),
+        message: t('会清空这次粘贴的提示词、已选图片、候选与编辑内容；已入库条目不受影响。'),
         confirmLabel: t('清空草稿'),
         tone: 'danger',
       });
@@ -813,8 +839,9 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
             </div>
 
             {canClassify && <p className="text-xs text-gray-500 dark:text-gray-400">{text.trim()
-              ? t('文字分类仅发送输入框文字')
-              : t('文字分类仅发送图片内嵌提示词')}</p>}
+              ? t(directories ? '文字分类发送输入框文字与当前提示词目录' : '文字分类仅发送输入框文字')
+              : t(directories ? '文字分类发送图片内嵌提示词与当前提示词目录' : '文字分类仅发送图片内嵌提示词')}</p>}
+            {directories && image && <p className="text-xs text-gray-500 dark:text-gray-400">{t('看图分类同时发送当前提示词目录的名称与路径。')}</p>}
 
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -828,9 +855,9 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                 </div>
                 {grouped.map(group => (
                   <section key={group.kind} data-extract-kind={group.kind} className="space-y-2">
-                    <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(PROMPT_LIBRARY_KIND_LABELS[group.kind])}</h3>
+                    <h3 className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(group.label)}</h3>
                     {group.list.map(draft => {
-                      const label = t(PROMPT_LIBRARY_KIND_LABELS[draft.kind as PromptLibraryKind] || '提示词');
+                      const label = directories ? draft.name : t(PROMPT_LIBRARY_KIND_LABELS[draft.kind as PromptLibraryKind] || '提示词');
                       return (
                         <div key={draft.id}
                           className={`rounded-2xl border p-3 ${draft.picked ? 'border-indigo-300 bg-indigo-50/40 dark:border-indigo-700 dark:bg-indigo-950/20' : 'border-gray-200 dark:border-gray-800'}`}>
@@ -840,11 +867,19 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                             <input value={draft.name} onChange={event => patchDraft(draft.id, { name: event.target.value })} disabled={inputLocked}
                               aria-label={t('{0}名称', [label])} placeholder={t('条目名称')}
                               className={`${DETAIL_FIELD_CLASS} mt-0 min-w-0 flex-1`} maxLength={200} />
-                            <select value={draft.kind} onChange={event => patchDraft(draft.id, { kind: event.target.value as ExtractedEntryDraft['kind'] })} disabled={inputLocked}
+                            {!directories && <select value={draft.kind} onChange={event => patchDraft(draft.id, { kind: event.target.value as ExtractedEntryDraft['kind'] })} disabled={inputLocked}
                               aria-label={t('{0}分类', [label])} className={`${DETAIL_FIELD_CLASS} mt-0 w-auto flex-none`}>
+                              {draft.kind === 'preset' && <option value="preset">{t('通用片段')}</option>}
                               {KIND_ORDER.map(kind => <option key={kind} value={kind}>{t(PROMPT_LIBRARY_KIND_LABELS[kind])}</option>)}
-                            </select>
+                            </select>}
                           </div>
+                          {directories && <div className="mt-2" aria-label={t('{0}目录', [label])}>
+                            <PromptLibraryDirectoryPicker state={directories} selectedIds={draftDirectoryIds(draft)}
+                              onChange={directoryIds => patchDraft(draft.id, { directoryIds })} mode="multiple" includeAll={false}
+                              includeUnclassified unclassifiedSelected={!draftDirectoryIds(draft).length}
+                              onUnclassifiedChange={() => patchDraft(draft.id, { directoryIds: [] })} disabled={inputLocked} />
+                          </div>}
+                          {directoryProblem(draft) && <p className="mt-1 text-micro text-amber-600 dark:text-amber-400">{draft.directoryReviewNote || t('目录已变更，请选择实际目录或明确设为未归类')}</p>}
                           <TagAutocompleteTextarea value={draft.prompt} onValueChange={next => patchDraft(draft.id, { prompt: next })} disabled={inputLocked}
                             aria-label={t('{0}提示词', [label])} className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono!`}
                             tagAssistEnabled showTranslations allowAiTranslation />

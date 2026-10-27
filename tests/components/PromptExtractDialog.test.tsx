@@ -85,6 +85,56 @@ const pasteText = (value = '1.3::white hair::, white dress, standing, from above
 
 const kindNames = () => Array.from(document.querySelectorAll('[data-extract-kind]')).map(node => node.getAttribute('data-extract-kind'));
 
+it('提取发送当前目录树并显示完整路径，可修改目录后保存自定义片段', async () => {
+  const directories = { revision: 3, nodes: [
+    { id: 'style-root', parentId: null, name: '绘画方式' },
+    { id: 'watercolor', parentId: 'style-root', name: '水彩' },
+    { id: 'paper', parentId: 'watercolor', name: '纸纹' },
+  ] };
+  mocks.extract.mockResolvedValue({ ...textResult(), items: [{ kind: 'preset', name: '水彩纸张', prompt: 'watercolor, paper', directoryIds: ['paper'] }], unclassified: null });
+  renderDialog({ directories });
+  pasteText('watercolor, paper');
+  expect(screen.getByText('文字分类发送输入框文字与当前提示词目录')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
+  await screen.findByText('绘画方式 / 水彩 / 纸纹');
+  expect(mocks.extract.mock.calls[0][0]).toEqual({ mode: 'text', text: 'watercolor, paper', directories });
+  expect(screen.queryByRole('combobox', { name: '水彩纸张分类' })).toBeNull();
+  fireEvent.click(screen.getByRole('checkbox', { name: '未归类' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '绘画方式 / 水彩' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+  expect(mocks.save.mock.calls[0][0]).toMatchObject({ kind: 'preset', directoryIds: ['watercolor'], name: '水彩纸张' });
+});
+
+it('未知目录候选持久保留且阻止直接保存，人工指定未归类后失败重试沿用身份', async () => {
+  const directories = { revision: 4, nodes: [] };
+  mocks.extract.mockResolvedValue({ ...textResult(), items: [{ kind: 'preset', name: '未知归属', prompt: 'paper', directoryIds: ['removed'], needsDirectoryReview: true, directoryReviewNote: '未知目录 removed' }], unclassified: null });
+  mocks.save.mockRejectedValueOnce(new Error('合成保存失败')).mockResolvedValueOnce(undefined);
+  const view = renderDialog({ directories });
+  pasteText('paper');
+  fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
+  await screen.findByText('未知目录 removed');
+  expect(screen.getByRole('button', { name: '保存所选片段（0）' }).hasAttribute('disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '关闭并保留草稿' }));
+  view.unmount();
+  renderDialog({ directories });
+  expect(fieldByLabel('提示词原文').value).toBe('paper');
+  expect(screen.getByText('未知目录 removed')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox', { name: '选择未知归属' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(screen.getByRole('alert').textContent).toContain('选择实际目录');
+  fireEvent.click(screen.getByRole('checkbox', { name: '未归类' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('合成保存失败'));
+  fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+  expect(mocks.save.mock.calls[0][0].entryId).toBe(mocks.save.mock.calls[1][0].entryId);
+  expect(mocks.save.mock.calls[1][0].directoryIds).toEqual([]);
+  expect(mocks.extract).toHaveBeenCalledTimes(1);
+});
+
 /** jsdom 的 File 没有 arrayBuffer：补一个，模拟「从原始文件读取字节」。 */
 const makeImageFile = (name = '合成.png', type = 'image/png') => {
   const bytes = new Uint8Array([1, 2, 3]);

@@ -10,6 +10,7 @@ import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
 import { applyCollectionBoardUpdates, getCollectionBoardIds, normalizeCollectionTagNames } from '../../services/inspirationUtils';
 import type { Inspiration } from '../../types';
+import { collectionBoardTreeKey, projectCollectionBoardTree, readCollectionBoardTree, removeCollectionBoardTreeNode, type CollectionBoardTree } from '../../services/collectionBoardTree';
 import { readPromptLibraryTagNames } from '../../services/promptLibraryTags';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
 import {
@@ -305,6 +306,38 @@ function mapInspirationBoardRow(row: any) {
     createdAt: Number(row.created_at || 0),
     updatedAt: Number(row.updated_at || 0),
   };
+}
+
+async function loadCollectionBoardTree(db: D1Database, userId: string) {
+  const key = collectionBoardTreeKey(userId);
+  // 单条查询同时读取目录和收藏夹，空库也保留 settings 哨兵，避免并发读取混合两个版本。
+  const rows = await db.prepare(`SELECT b.*, tree.key AS tree_key, tree.value AS tree_value
+    FROM (SELECT ? AS requested_key) request LEFT JOIN settings tree ON tree.key = request.requested_key
+    LEFT JOIN inspiration_boards b ON b.user_id = ? ORDER BY b.sort_order ASC, b.created_at ASC`).bind(key, userId).all<any>();
+  const boards = rows.results.filter(row => row.id !== null).map(mapInspirationBoardRow);
+  const raw = rows.results[0]?.tree_key === null ? null : rows.results[0]?.tree_value;
+  if (raw !== null && typeof raw !== 'string') throw Error('收藏夹目录数据无效');
+  const tree = readCollectionBoardTree(raw, boards);
+  return { key, raw, tree, boards: projectCollectionBoardTree(boards, tree) };
+}
+
+async function commitCollectionBoardTree(db: D1Database, snapshot: Awaited<ReturnType<typeof loadCollectionBoardTree>>, next: CollectionBoardTree, statements: Parameters<D1Database['batch']>[0]) {
+  try {
+    await db.batch([
+      // CAS 不匹配必须使整个事务失败；仅 UPDATE 0 行会继续执行后面的作品和收藏夹更新。
+      db.prepare(`SELECT CASE WHEN (SELECT COUNT(*) FROM settings WHERE key = ?) = ? AND
+        (SELECT value FROM settings WHERE key = ?) IS ? THEN 1 ELSE json('collection-board-tree-conflict') END`)
+        .bind(snapshot.key, snapshot.raw === null ? 0 : 1, snapshot.key, snapshot.raw),
+      ...statements,
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE settings.value IS ?')
+        .bind(snapshot.key, JSON.stringify(next), snapshot.raw),
+    ]);
+  } catch (cause) {
+    const current = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(snapshot.key).first<{ value: string }>();
+    if ((current ? current.value : null) !== snapshot.raw) return error('收藏夹已在其他窗口更新，请按最新目录重试', 409);
+    throw cause;
+  }
+  return null;
 }
 
 // Lightweight project summary for the local Agent. Keep image/base64
@@ -1184,10 +1217,14 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     await ensureInspirationSchema(db);
   }
 
+  let boardSnapshot: Awaited<ReturnType<typeof loadCollectionBoardTree>> | undefined;
+  if (path.startsWith('/api/inspiration-boards')) {
+    try { boardSnapshot = await loadCollectionBoardTree(db, currentUser.id); }
+    catch { return error('收藏夹目录无法读取，请保留现有数据并检查备份', 503); }
+  }
+
   if (path === '/api/inspiration-boards' && method === 'GET') {
-    const result = await db.prepare('SELECT * FROM inspiration_boards WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC')
-      .bind(currentUser.id).all<any>();
-    return json({ items: result.results.map(mapInspirationBoardRow) });
+    return json({ items: boardSnapshot!.boards, treeRevision: boardSnapshot!.tree.revision });
   }
   if (path === '/api/inspiration-boards' && method === 'POST') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
@@ -1196,41 +1233,56 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     const id = String(body.id || crypto.randomUUID());
     const name = String(body.name || '').trim().slice(0, 80);
     if (!name) return error('Board name is required', 400);
-    await db.prepare(`INSERT INTO inspiration_boards (id, user_id, name, color, sort_order, created_at, updated_at)
+    if (!id.trim() || id.length > 200) return error('收藏夹 ID 无效', 400);
+    const snapshot = boardSnapshot!;
+    if (snapshot.boards.some(board => board.id === id)) return error('收藏夹 ID 已存在', 409);
+    const board = { id, userId: currentUser.id, name, color: String(body.color || '#6366f1'), sortOrder: Number(body.sortOrder || 0), createdAt: now, updatedAt: now };
+    const next = { revision: snapshot.tree.revision + 1, parents: { ...snapshot.tree.parents, [id]: body.parentId ?? null } };
+    try { readCollectionBoardTree(JSON.stringify(next), [...snapshot.boards, board]); }
+    catch { return error('收藏夹上级无效，不能指向自身、后代或其他用户的收藏夹', 400); }
+    const conflict = await commitCollectionBoardTree(db, snapshot, next, [db.prepare(`INSERT INTO inspiration_boards (id, user_id, name, color, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, currentUser.id, name, String(body.color || '#6366f1'), Number(body.sortOrder || 0), now, now).run();
-    const row = await db.prepare('SELECT * FROM inspiration_boards WHERE id = ?').bind(id).first<any>();
-    return json({ item: mapInspirationBoardRow(row) });
+      .bind(id, currentUser.id, name, board.color, board.sortOrder, now, now)]);
+    if (conflict) return conflict;
+    return json({ item: { ...board, parentId: next.parents[id] }, treeRevision: next.revision });
   }
   const boardMatch = path.match(/^\/api\/inspiration-boards\/([^/]+)$/);
   if (boardMatch && method === 'PUT') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = decodeURIComponent(boardMatch[1]);
     const body = await request.json() as any;
-    const current = await db.prepare('SELECT * FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).first<any>();
+    const snapshot = boardSnapshot!;
+    const current = snapshot.boards.find(board => board.id === id);
     if (!current) return error('Not Found', 404);
-    await db.prepare('UPDATE inspiration_boards SET name = ?, color = ?, sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+    const next = { revision: snapshot.tree.revision + 1, parents: { ...snapshot.tree.parents, ...(body.parentId !== undefined ? { [id]: body.parentId } : {}) } };
+    try { readCollectionBoardTree(JSON.stringify(next), snapshot.boards); }
+    catch { return error('收藏夹上级无效，不能指向自身、后代或其他用户的收藏夹', 400); }
+    const conflict = await commitCollectionBoardTree(db, snapshot, next, [db.prepare('UPDATE inspiration_boards SET name = ?, color = ?, sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?')
       .bind(
         typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : current.name,
         typeof body.color === 'string' ? body.color : current.color,
-        Number.isFinite(body.sortOrder) ? Number(body.sortOrder) : current.sort_order,
+        Number.isFinite(body.sortOrder) ? Number(body.sortOrder) : current.sortOrder,
         Date.now(), id, currentUser.id,
-      ).run();
-    return json({ success: true });
+      )]);
+    if (conflict) return conflict;
+    return json({ success: true, treeRevision: next.revision });
   }
   if (boardMatch && method === 'DELETE') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = decodeURIComponent(boardMatch[1]);
-    const board = await db.prepare('SELECT id FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id).first<any>();
+    const snapshot = boardSnapshot!;
+    const board = snapshot.boards.find(item => item.id === id);
     if (!board) return error('Not Found', 404);
     const built = buildInspirationSetStatements({ removeBoardIds: [id] })!;
-    await db.batch([
+    const next = removeCollectionBoardTreeNode(snapshot.tree, id);
+    const conflict = await commitCollectionBoardTree(db, snapshot, next, [
       db.prepare(`UPDATE inspirations SET ${built.assignments.join(', ')}, updated_at = ? WHERE user_id = ? AND
         (board_id = ? OR EXISTS (SELECT 1 FROM json_each(${storedCollectionBoardIds}) WHERE value = ?))`)
         .bind(...built.values, Date.now(), currentUser.id, id, id),
       db.prepare('DELETE FROM inspiration_boards WHERE id = ? AND user_id = ?').bind(id, currentUser.id),
     ]);
-    return json({ success: true });
+    if (conflict) return conflict;
+    return json({ success: true, treeRevision: next.revision });
   }
 
   const updateInspirationFields = async (id: string, updates: any) => {

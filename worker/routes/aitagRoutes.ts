@@ -620,10 +620,10 @@ async function waitForAitagFirstImageUpdates(
   };
 }
 
-const firstImageJobs = new WeakMap<D1Database, { metadata: Map<string, Promise<boolean | null>>; images: Map<string, Promise<void>>; imageTail: Promise<void> }>();
+const firstImageJobs = new WeakMap<D1Database, { metadata: Map<string, Promise<boolean | null>>; images: Map<string, Promise<void>>; imageTail: Promise<void>; batches: Set<{ works: any[]; sort: string }> }>();
 function imageJobs(db: D1Database) {
   let jobs = firstImageJobs.get(db);
-  if (!jobs) { jobs = { metadata: new Map(), images: new Map(), imageTail: Promise.resolve() }; firstImageJobs.set(db, jobs); }
+  if (!jobs) { jobs = { metadata: new Map(), images: new Map(), imageTail: Promise.resolve(), batches: new Set() }; firstImageJobs.set(db, jobs); }
   return jobs;
 }
 async function cacheAitagFirstImage(env: Env, db: D1Database, work: any, imageBatch: { failures: number }): Promise<boolean | null> {
@@ -721,26 +721,33 @@ async function cacheAitagFirstImagesForWorks(env: Env, db: D1Database, works: an
   let consecutiveFailures = 0;
   const jobs = imageJobs(db);
   const imageBatch = { failures: 0 };
-  for (const work of works) {
-    const key = `${sort}:${work.id}`;
-    if (jobs.metadata.has(key)) { await jobs.metadata.get(key); continue; }
-    if (jobs.images.has(key)) continue;
-    const task = cacheAitagFirstImage(env, db, { ...work, source_sort: sort }, imageBatch);
-    jobs.metadata.set(key, task);
-    const success = await task.finally(() => jobs.metadata.delete(key));
-    if (success === null) continue;
-    if (!success) {
-      consecutiveFailures++;
-      // 连续失败说明 aitag.win 正在挑战/限流，本轮熔断避免轰炸并刷屏错误日志；
-      // 未处理的作品保持原状态，下次加载会继续重试。
-      if (consecutiveFailures >= 2) {
-        console.warn(`[aitag] 首图缓存连续失败 ${consecutiveFailures} 次，本轮暂停（${works.length} 个待处理）`);
-        break;
+  const batch = { works: [...works], sort };
+  jobs.batches.add(batch);
+  try {
+    while (batch.works.length) {
+      const work = batch.works.shift();
+      const key = `${sort}:${work.id}`;
+      if (jobs.metadata.has(key)) { await jobs.metadata.get(key); continue; }
+      if (jobs.images.has(key)) continue;
+      const task = cacheAitagFirstImage(env, db, { ...work, source_sort: sort }, imageBatch);
+      jobs.metadata.set(key, task);
+      const success = await task.finally(() => jobs.metadata.delete(key));
+      if (success === null) continue;
+      if (!success) {
+        consecutiveFailures++;
+        // 连续失败说明 aitag.win 正在挑战/限流，本轮熔断避免轰炸并刷屏错误日志；
+        // 未处理的作品保持原状态，下次加载会继续重试。
+        if (consecutiveFailures >= 2) {
+          console.warn(`[aitag] 首图缓存连续失败 ${consecutiveFailures} 次，本轮暂停（${works.length} 个待处理）`);
+          break;
+        }
+      } else {
+        consecutiveFailures = 0;
       }
-    } else {
-      consecutiveFailures = 0;
+      await sleep(550);
     }
-    await sleep(550);
+  } finally {
+    jobs.batches.delete(batch);
   }
   await Promise.allSettled([...jobs.images.values()]);
 }
@@ -986,6 +993,23 @@ function mapAitagWorkRow(row: any) {
   };
 }
 
+/** 首图只匹配提示词字段，避免模型、负面词和图片地址误命中。 */
+function firstImagePromptMatchSql() {
+  const image = "CASE WHEN json_valid(w.first_image_json) THEN w.first_image_json ELSE '{}' END";
+  const rawAi = `json_extract((${image}), '$.ai_json')`;
+  const ai = `CASE WHEN json_valid(${rawAi}) THEN ${rawAi} ELSE '{}' END`;
+  const rawComment = `COALESCE(json_extract((${ai}), '$.Comment'), json_extract((${ai}), '$.comment'))`;
+  const comment = `CASE WHEN json_valid(${rawComment}) THEN ${rawComment} ELSE '{}' END`;
+  const matchTree = (source: string) => `EXISTS (
+    SELECT 1 FROM json_tree((${source})) prompt_part
+    WHERE prompt_part.type = 'text' AND (
+      REPLACE(prompt_part.fullkey, '"', '') IN ('$.prompt', '$.Description', '$.v4_prompt.caption.base_caption') OR
+      REPLACE(prompt_part.fullkey, '"', '') LIKE '$.v4_prompt.caption.char_captions[%].char_caption'
+    ) AND LOWER(prompt_part.value) LIKE ?
+  )`;
+  return `(LOWER(COALESCE(json_extract((${image}), '$.prompt_text'), '')) LIKE ? OR ${matchTree(ai)} OR ${matchTree(comment)})`;
+}
+
 async function searchAitagCache(
   db: D1Database,
   options: { page: number; pageSize: number; sort: string; aiType: AitagAiTypeFilter; cacheFilter?: AitagCacheFilter; q?: string; prompt?: string }
@@ -1039,12 +1063,13 @@ async function searchAitagCache(
       LOWER(COALESCE(w.create_date, '')) LIKE ? OR
       LOWER(COALESCE(w.ai_type, '')) LIKE ? OR
       LOWER(COALESCE(w.raw_json, '')) LIKE ? OR
+      LOWER(COALESCE(w.first_image_json, '')) LIKE ? OR
       EXISTS (
         SELECT 1 FROM aitag_work_details d
         WHERE d.work_id = w.id AND LOWER(COALESCE(d.detail_json, '')) LIKE ?
       )
     )`);
-    values.push(like, like, like, like, like, like, like, like, like);
+    values.push(like, like, like, like, like, like, like, like, like, like);
   }
 
   const prompt = (options.prompt || '').trim().toLowerCase();
@@ -1052,12 +1077,13 @@ async function searchAitagCache(
     const like = `%${prompt}%`;
     where.push(`(
       LOWER(COALESCE(w.raw_json, '')) LIKE ? OR
+      ${firstImagePromptMatchSql()} OR
       EXISTS (
         SELECT 1 FROM aitag_work_details d
         WHERE d.work_id = w.id AND LOWER(COALESCE(d.detail_json, '')) LIKE ?
       )
     )`);
-    values.push(like, like);
+    values.push(like, like, like, like, like);
   }
 
   const whereSql = where.join(' AND ');
@@ -1333,9 +1359,15 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
       .slice(0, AITAG_MAX_PAGE_SIZE);
     const timeoutMs = clampInt(url.searchParams.get('timeout_ms'), 4500, 0, 15000);
     const intervalMs = clampInt(url.searchParams.get('interval_ms'), 700, 250, 2500);
+    const metadataIds = (url.searchParams.get('metadata_ids') || '').split(',').filter(Boolean).map(Number).filter(id => ids.includes(id));
+    const priorityIds = new Set(metadataIds);
+    // 只调整现有批次的待处理顺序，不另开请求或影响原图保存。
+    for (const batch of imageJobs(db).batches) {
+      if (batch.sort === sourceSort && priorityIds.size) batch.works.sort((a, b) => Number(priorityIds.has(Number(b.id))) - Number(priorityIds.has(Number(a.id))));
+    }
     const result = await waitForAitagFirstImageUpdates(db, {
       ids,
-      metadataIds: (url.searchParams.get('metadata_ids') || '').split(',').filter(Boolean).map(Number).filter(id => ids.includes(id)),
+      metadataIds,
       sort: sourceSort,
       timeoutMs,
       intervalMs,

@@ -6,7 +6,7 @@ import { useCatalogGroupBrowser } from '../../components/CatalogGroups';
 import { ImageActivityContext } from '../../components/SmartImage';
 import type { CatalogGroupKind, CatalogGroupState } from '../../services/catalogGroups';
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), reload: vi.fn(), confirm: vi.fn(), state: {} as CatalogGroupState, ready: true, error: '' }));
+const mocks = vi.hoisted(() => ({ save: vi.fn(), reload: vi.fn(), notify: vi.fn(), confirm: vi.fn(), state: {} as CatalogGroupState, ready: true, error: '' }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../services/useCatalogGroups', () => ({ useCatalogGroups: () => ({ state: mocks.state, ready: mocks.ready, busy: false, error: mocks.error, save: mocks.save, reload: mocks.reload }) }));
 vi.mock('../../components/ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { children: React.ReactNode }) => children }));
@@ -15,12 +15,12 @@ function Harness({ selected = ['artist:a', 'artist:b'], active = true, scope = '
   return <ImageActivityContext.Provider value={active}><Browser selected={selected} scope={scope} kind={kind} catalogKeys={catalogKeys ?? undefined} /></ImageActivityContext.Provider>;
 }
 function Browser({ selected, scope, kind, catalogKeys }: { selected: string[]; scope: string; kind: CatalogGroupKind; catalogKeys?: readonly string[] }) {
-  const groups = useCatalogGroupBrowser(kind, selected, vi.fn(), scope, catalogKeys);
+  const groups = useCatalogGroupBrowser(kind, selected, mocks.notify, scope, catalogKeys);
   const [draft, setDraft] = useState('草稿');
   return <><header>{groups.toolbar}</header>{groups.navigation}{['artist:a', 'artist:b', 'artist:c', 'catalog:same', 'custom:same'].map(key => <article key={key} data-testid={key} {...groups.cardDragProps(key)}>{key}</article>)}<input aria-label="业务草稿" value={draft} onChange={event => setDraft(event.target.value)} /><output>{groups.activeGroup}</output><span data-testid="matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</span></>;
 }
 beforeEach(() => {
-  localStorage.clear(); mocks.save.mockReset(); mocks.reload.mockReset(); mocks.ready = true; mocks.error = '';
+  localStorage.clear(); mocks.save.mockReset(); mocks.reload.mockReset(); mocks.notify.mockReset(); mocks.ready = true; mocks.error = '';
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.state = { revision: 2, groups: [{ id: 'one', name: '组一' }, { id: 'two', name: '组二' }], memberships: { 'artist:a': ['one'], 'artist:b': ['two'], 'artist:outside': ['one', 'two'] } };
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -232,6 +232,7 @@ it('侧栏标题行直接Plus新建，当前组显示Pencil和Trash，导航行�
   expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
   expect(screen.getByRole('button', { name: '组一' }).querySelector('svg.lucide-folder')).toBeTruthy();
   fireEvent.click(create); expect(screen.getByRole('dialog', { name: '新建分组' })).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: '分组名称' }).getAttribute('maxlength')).toBe('60');
   fireEvent.change(screen.getByRole('textbox', { name: '分组名称' }), { target: { value: '直接新建' } });
   mocks.save.mockImplementation(async next => { mocks.state = { ...next, revision: next.revision + 1 }; });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
@@ -320,4 +321,120 @@ it('手机返回只关闭分组子层，保留父历史与焦点，Tab圈禁在�
   fireEvent.click(cancel); expect(back).toHaveBeenCalledOnce();
   act(() => { window.history.replaceState({ __naiMobileLayer: 'parent', __naiMobileLayers: ['parent'] }, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state })); });
   expect(screen.queryByRole('dialog')).toBeNull(); expect(window.history.state.__naiMobileLayer).toBe('parent'); expect(document.activeElement).toBe(trigger);
+});
+
+it('父目录筛选含深层后代，完整名单按身份对每个祖先去重', () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' }, { id: 'deep', name: '深组', parentId: 'child' });
+  mocks.state.memberships = { 'artist:a': ['one', 'child', 'deep'], 'artist:b': ['deep'], 'artist:outside': ['deep'] };
+  render(<Harness catalogKeys={[...completeKeys, 'artist:a']} />); openNavigation();
+  expect(shownCount('组一')).toBe('2'); expect(shownCount('组一 / 子组')).toBe('2');
+  fireEvent.click(screen.getByRole('button', { name: '组一' }));
+  expect(screen.getByTestId('matches').textContent).toBe('true/true');
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'deep' } });
+  expect(shownCount('组一 / 子组 / 深组')).toBe('2'); expect(shownCount('未分组')).toBe('3');
+  expect(screen.getByRole('option', { name: '组一 / 子组 / 深组 (2)' })).toBeTruthy();
+});
+it('任意层级新建与编辑父级使用路径，编辑排除自己和后代', async () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' }, { id: 'deep', name: '深组', parentId: 'child' });
+  mocks.save.mockImplementation(async next => { mocks.state = { ...next, revision: next.revision + 1 }; });
+  const view = render(<Harness selected={[]} />); openNavigation();
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'deep' } });
+  fireEvent.click(screen.getByRole('button', { name: '新建分组' }));
+  expect(screen.getByRole('combobox', { name: '上级目录' })).toHaveProperty('value', 'deep');
+  fireEvent.change(screen.getByRole('textbox', { name: '分组名称' }), { target: { value: '再细分' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  view.rerender(<Harness selected={[]} />);
+  const created = mocks.state.groups.find(group => group.name === '再细分')!;
+  expect(created.parentId).toBe('deep');
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'child' } });
+  fireEvent.click(screen.getByRole('button', { name: '重命名分组' }));
+  const parent = screen.getByRole('combobox', { name: '上级目录' });
+  expect(Array.from((parent as HTMLSelectElement).options).map(option => option.value)).toEqual(['', 'one', 'two']);
+  fireEvent.change(parent, { target: { value: 'two' } }); fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(mocks.state.groups.find(group => group.id === 'child')!.parentId).toBe('two');
+  expect(mocks.state.groups.find(group => group.id === 'deep')!.parentId).toBe('child');
+});
+it('深层归属部分勾选与拖放仅修改直接目标，不补写祖先', async () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' });
+  mocks.state.memberships['artist:a'] = ['child'];
+  const view = render(<Harness />); fireEvent.click(screen.getByRole('button', { name: '设置分组' }));
+  const child = screen.getByRole('checkbox', { name: '组一 / 子组' }); expect(child).toHaveProperty('indeterminate', true);
+  expect(screen.getByRole('checkbox', { name: '组一' })).toHaveProperty('checked', false);
+  fireEvent.click(child); fireEvent.click(screen.getByRole('button', { name: '保存分组' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(mocks.save.mock.calls[0][0].memberships['artist:b']).toEqual(['two', 'child']);
+  view.rerender(<Harness selected={[]} />); openNavigation();
+  const dataTransfer = transfer(); fireEvent.dragStart(screen.getByTestId('artist:c'), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '组一 / 子组' }), { dataTransfer });
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+  expect(mocks.save.mock.calls[1][0].memberships['artist:c']).toEqual(['child']);
+});
+it('Roll复用画师分组资料，选择与目录展开偏好按入口独立且无元数据写入', () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' });
+  const view = render(<Harness selected={[]} />); openNavigation();
+  fireEvent.click(screen.getByRole('button', { name: '组一' }));
+  fireEvent.click(screen.getByRole('button', { name: '收起目录「组一」' }));
+  expect(screen.queryByRole('button', { name: '组一 / 子组' })).toBeNull();
+  view.rerender(<Harness selected={[]} scope="roll-artists" />);
+  expect(screen.queryByRole('complementary')).toBeNull(); openNavigation();
+  expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-current')).toBe('page');
+  expect(screen.getByRole('button', { name: '组一 / 子组' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '组二' }));
+  view.rerender(<Harness selected={[]} />);
+  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', 'one');
+  expect(screen.queryByRole('button', { name: '组一 / 子组' })).toBeNull();
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it('目录拖入另一目录仅移动父级，整棵子树及成员归属随原CAS快照保存', async () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' });
+  mocks.state.memberships['artist:a'] = ['one', 'child'];
+  const before = structuredClone(mocks.state);
+  mocks.save.mockImplementation(async next => { mocks.state = { ...next, revision: next.revision + 1 }; });
+  const view = render(<Harness selected={[]} />); openNavigation();
+  const dataTransfer = transfer(); fireEvent.dragStart(screen.getByRole('button', { name: '组一' }), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '组二' }), { dataTransfer });
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls[0][0]).toEqual({ ...before, groups: before.groups.map(group => group.id === 'one' ? { ...group, parentId: 'two' } : group) });
+  expect(mocks.notify).toHaveBeenCalledWith('分组已保存', 'success');
+  view.rerender(<Harness selected={[]} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'child' } });
+  expect(shownCount('组二')).toBe('2'); expect(shownCount('组二 / 组一')).toBe('1');
+  expect(screen.getByTestId('matches').textContent).toBe('true/false');
+  const cardTransfer = transfer(); fireEvent.dragStart(screen.getByTestId('artist:c'), { dataTransfer: cardTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '组二 / 组一 / 子组' }), { dataTransfer: cardTransfer });
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(2));
+  expect(mocks.save.mock.calls[1][0].memberships['artist:c']).toEqual(['child']);
+});
+it('目录移动保存失败保留原父级并显示失败，不发送成功通知', async () => {
+  mocks.save.mockRejectedValueOnce(new Error('移动合成失败'));
+  const before = structuredClone(mocks.state);
+  render(<Harness selected={[]} />); openNavigation();
+  const dataTransfer = transfer(); fireEvent.dragStart(screen.getByRole('button', { name: '组一' }), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '组二' }), { dataTransfer });
+  await screen.findByText('移动合成失败');
+  expect(mocks.state).toEqual(before);
+  expect(mocks.notify).toHaveBeenCalledWith('移动合成失败', 'error');
+  expect(mocks.notify).not.toHaveBeenCalledWith('分组已保存', 'success');
+  expect(screen.getByRole('button', { name: '组一' })).toBeTruthy();
+});
+
+it('目录拖回根层保留所有归属与子级关系', async () => {
+  mocks.state.groups.push({ id: 'child', name: '子组', parentId: 'one' }, { id: 'deep', name: '深组', parentId: 'child' });
+  const before = structuredClone(mocks.state);
+  render(<Harness selected={[]} />); openNavigation();
+  const dataTransfer = transfer(); fireEvent.dragStart(screen.getByRole('button', { name: '组一 / 子组' }), { dataTransfer });
+  fireEvent.drop(screen.getByRole('group', { name: '移到根目录' }), { dataTransfer });
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls[0][0]).toEqual({ ...before, groups: before.groups.map(group => group.id === 'child' ? { ...group, parentId: null } : group) });
+});
+it('拖动至同名兄弟位置由原分组校验拒绝，不保存或伪成功', async () => {
+  mocks.state.groups.push({ id: 'child', name: '组一', parentId: 'two' });
+  render(<Harness selected={[]} />); openNavigation();
+  const dataTransfer = transfer(); fireEvent.dragStart(screen.getByRole('button', { name: '组一' }), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '组二' }), { dataTransfer });
+  await screen.findByText('已有同名分组');
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalledWith('分组已保存', 'success');
 });

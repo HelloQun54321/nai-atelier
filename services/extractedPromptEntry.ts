@@ -13,6 +13,8 @@ export interface ExtractedEntryDraft {
   /** 同一候选的保存身份，重试与编辑时保持，不作为内容中的原串 ID。 */
   entryId: string;
   kind: ChainType;
+  /** 显式空数组为未归类；旧候选未提供时保留原类型兼容。 */
+  directoryIds?: string[];
   name: string;
   prompt: string;
   original?: string;
@@ -20,6 +22,8 @@ export interface ExtractedEntryDraft {
 
 /** NAIParams 上的扩展键，与 components/PromptLibrary.tsx 的 PromptLibraryParams 同形。 */
 type ExtractedParams = NAIParams & {
+  _promptLibraryDirectoryIds?: string[];
+  _collectedCategory?: 'general';
   _promptLibrary?: { bilingual?: string; references?: Array<{ id: string; url: string; prompt: string }> };
 };
 
@@ -35,6 +39,8 @@ export const buildExtractedChainPayload = (draft: ExtractedEntryDraft): {
   const params: ExtractedParams = {
     ...LAB_DEFAULT_PARAMS,
     _promptLibrary: { bilingual: String(draft.original || '').trim(), references: [] },
+    ...(draft.directoryIds === undefined ? {} : { _promptLibraryDirectoryIds: [...new Set(draft.directoryIds)] }),
+    ...(draft.kind === 'preset' ? { _collectedCategory: 'general' as const } : {}),
   };
   return {
     name: String(draft.name || '').trim() || '未命名提取条目',

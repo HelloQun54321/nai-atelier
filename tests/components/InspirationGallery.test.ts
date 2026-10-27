@@ -32,6 +32,7 @@ vi.mock('../../services/dbService', () => ({
     saveCollectionTagNames: vi.fn(async (tags: string[]) => tags),
     updateInspiration: vi.fn(),
     updateInspirationBoard: vi.fn(),
+    createInspirationBoard: vi.fn(async () => {}),
     deleteInspirationBoard: vi.fn(),
     saveInspiration: vi.fn(async () => {}),
     bulkUpdateInspirations: vi.fn(async () => {}),
@@ -75,7 +76,7 @@ beforeEach(() => {
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
 
 const mockUser: User = {
   id: 'user-1',
@@ -83,6 +84,135 @@ const mockUser: User = {
   role: 'user',
   createdAt: 1,
 };
+
+const nestedBoards = () => [
+  { id: 'root', name: '根夹', parentId: null },
+  { id: 'child', name: '子夹', parentId: 'root' },
+  { id: 'grand', name: '孙夹', parentId: 'child' },
+  { id: 'sibling', name: '同级夹', parentId: 'root' },
+  { id: 'other', name: '另一根夹', parentId: null },
+].map((board, sortOrder) => ({ ...board, userId: mockUser.id, color: '#6366f1', sortOrder, createdAt: 1, updatedAt: 1 }));
+
+const directoryDragData = () => {
+  const values = new Map<string, string>();
+  return { setData: vi.fn((type: string, value: string) => values.set(type, value)), getData: (type: string) => values.get(type) || '', get types() { return [...values.keys()]; }, effectAllowed: 'all', dropEffect: 'none' } as unknown as DataTransfer;
+};
+
+it('拖动收藏夹移动整棵子树，保留选中、颜色与图片归属，图片拖入仍只追加直接目标', async () => {
+  let stored = nestedBoards();
+  vi.mocked(db.getInspirationBoards).mockImplementation(async () => stored);
+  vi.mocked(db.updateInspirationBoard).mockImplementation(async (id, updates) => { stored = stored.map(board => board.id === id ? { ...board, ...updates } : board); });
+  const images = [{ ...mockInspirations[0], boardIds: ['grand', 'sibling'], title: '子树作品' }];
+  const onRefresh = vi.fn(async () => {});
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: images, onRefresh, notify: vi.fn() }));
+  const source = await screen.findByRole('button', { name: '选择收藏夹：子夹' });
+  fireEvent.click(source);
+  const transfer = directoryDragData();
+  fireEvent.dragStart(source, { dataTransfer: transfer });
+  const destination = screen.getByRole('button', { name: '选择收藏夹：另一根夹' });
+  fireEvent.dragOver(destination, { dataTransfer: transfer }); fireEvent.drop(destination, { dataTransfer: transfer });
+  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledExactlyOnceWith('child', { parentId: 'other' }));
+  await waitFor(() => expect(screen.getByRole('option', { name: '另一根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy());
+  expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
+  expect(stored.find(board => board.id === 'grand')?.parentId).toBe('child');
+  expect(stored.find(board => board.id === 'child')?.color).toBe('#6366f1');
+  expect(images[0].boardIds).toEqual(['grand', 'sibling']); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(onRefresh).not.toHaveBeenCalled();
+  const rootTransfer = directoryDragData();
+  fireEvent.dragStart(screen.getByRole('button', { name: '选择收藏夹：子夹' }), { dataTransfer: rootTransfer });
+  const rootTarget = screen.getByRole('group', { name: '移到根目录' });
+  fireEvent.dragOver(rootTarget, { dataTransfer: rootTransfer }); fireEvent.drop(rootTarget, { dataTransfer: rootTransfer });
+  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenLastCalledWith('child', { parentId: null }));
+  await waitFor(() => expect(screen.getByRole('option', { name: '子夹 / 孙夹 (1)' })).toBeTruthy());
+  expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
+  const imageTransfer = directoryDragData();
+  fireEvent.dragStart(screen.getByText('子树作品').closest('article')!, { dataTransfer: imageTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '选择收藏夹：子夹' }), { dataTransfer: imageTransfer });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith([images[0].id], { addBoardIds: ['child'] }));
+  expect(db.updateInspirationBoard).toHaveBeenCalledTimes(2);
+});
+
+it('收藏夹移动冲突后回读真实目录并保留原选中，可再次拖动重试', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(nestedBoards());
+  vi.mocked(db.updateInspirationBoard).mockRejectedValueOnce(new Error('目录已更改，请重新读取'));
+  const notify = vi.fn();
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(), notify }));
+  const source = await screen.findByRole('button', { name: '选择收藏夹：子夹' });
+  fireEvent.click(source);
+  const move = () => {
+    const transfer = directoryDragData(); fireEvent.dragStart(screen.getByRole('button', { name: '选择收藏夹：子夹' }), { dataTransfer: transfer });
+    const target = screen.getByRole('button', { name: '选择收藏夹：另一根夹' });
+    fireEvent.dragOver(target, { dataTransfer: transfer }); fireEvent.drop(target, { dataTransfer: transfer });
+  };
+  move();
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('目录已更改，请重新读取', 'error'));
+  expect(db.getInspirationBoards).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('option', { name: '根夹 / 子夹 / 孙夹' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '选择收藏夹：子夹' }).getAttribute('aria-pressed')).toBe('true');
+  move(); await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledTimes(2));
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+});
+
+it.each([390, 1280])('宽度 %s：共用目录树父夹含任意深度后代，交叉归属只计一次，拖入只添加直接目标', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(nestedBoards());
+  const data = [
+    { ...mockInspirations[0], id: 'nested-shared', title: '跨层作品', boardIds: ['root', 'grand', 'sibling'] },
+    { ...mockInspirations[1], id: 'nested-child', title: '子夹作品', boardIds: ['child'] },
+    { ...mockInspirations[2], id: 'nested-other', title: '其他作品', boardIds: ['other'] },
+  ];
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：根夹' });
+  if (width < 768) {
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+    const select = within(filter).getByRole('combobox', { name: '选择目录' });
+    expect(within(select).getByRole('option', { name: '根夹 / 子夹 / 孙夹 (1)' })).toBeTruthy();
+    fireEvent.change(select, { target: { value: 'root' } }); fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
+  } else fireEvent.click(screen.getByRole('button', { name: '选择收藏夹：根夹' }));
+  expect(screen.getByText('跨层作品')).toBeTruthy(); expect(screen.getByText('子夹作品')).toBeTruthy(); expect(screen.queryByText('其他作品')).toBeNull();
+  expect(screen.getByRole('button', { name: '选择收藏夹：根夹' }).textContent).toContain('2');
+  const card = screen.getByText('子夹作品').closest('article')!;
+  const transfer = dragData(); fireEvent.dragStart(card, { dataTransfer: transfer });
+  fireEvent.drop(screen.getByRole('button', { name: '选择收藏夹：根夹' }), { dataTransfer: transfer });
+  await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(['nested-child'], { addBoardIds: ['root'] }));
+});
+
+it('新建默认当前夹并可选择任意上级；编辑排除自身后代，冲突回读目录且保留输入', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(nestedBoards());
+  const notify = vi.fn();
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify }));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：子夹' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建收藏夹' }));
+  const create = screen.getByRole('dialog', { name: '新建收藏夹' });
+  const parent = within(create).getByRole('combobox', { name: '上级收藏夹' }) as HTMLSelectElement;
+  expect(parent.value).toBe('child'); expect(within(parent).getByRole('option', { name: '根夹 / 子夹 / 孙夹' })).toBeTruthy();
+  fireEvent.change(within(create).getByRole('textbox'), { target: { value: '新子夹' } });
+  fireEvent.change(parent, { target: { value: 'grand' } }); fireEvent.click(within(create).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(db.createInspirationBoard).toHaveBeenCalledWith(expect.objectContaining({ name: '新子夹', parentId: 'grand' })));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建收藏夹' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '选择收藏夹：根夹' })); fireEvent.click(screen.getByRole('button', { name: '编辑收藏夹' }));
+  const editor = screen.getByRole('dialog', { name: '编辑收藏夹' });
+  const options = within(editor).getByRole('combobox', { name: '上级收藏夹' }) as HTMLSelectElement;
+  expect(Array.from(options.options, option => option.value)).toEqual(['', 'other']);
+  fireEvent.change(options, { target: { value: 'other' } });
+  vi.mocked(db.updateInspirationBoard).mockRejectedValueOnce(new Error('目录已更改，请重新读取'));
+  const loads = vi.mocked(db.getInspirationBoards).mock.calls.length;
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('目录已更改，请重新读取', 'error'));
+  expect(db.getInspirationBoards).toHaveBeenCalledTimes(loads + 1); expect(options.value).toBe('other');
+  expect(db.updateInspirationBoard).toHaveBeenLastCalledWith('root', expect.objectContaining({ parentId: 'other' }));
+});
+
+it('目录排序只调整同父级，不改父归属或其它层级顺序', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(nestedBoards());
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(), notify: vi.fn() }));
+  const handle = await screen.findByRole('button', { name: '排序收藏夹：子夹' });
+  fireEvent.keyDown(handle, { key: 'ArrowDown' });
+  await waitFor(() => expect(handle.getAttribute('aria-disabled')).toBe('false'));
+  expect(db.updateInspirationBoard).toHaveBeenCalled();
+  expect(vi.mocked(db.updateInspirationBoard).mock.calls.every(([id]) => ['child', 'sibling'].includes(id))).toBe(true);
+  expect(vi.mocked(db.updateInspirationBoard).mock.calls.every(([, updates]) => Object.keys(updates).join() === 'sortOrder')).toBe(true);
+});
 
 it('全部收藏仍在列表中，打开、切换和关闭详情只重渲染发生选择变化的封面', async () => {
   const data = Array.from({ length: 120 }, (_, index) => ({ id: `perf-${index}`, userId: mockUser.id, title: `性能作品 ${index}`, imageUrl: `/synthetic-${index}.png`, prompt: '', createdAt: 200 - index } as Inspiration));
@@ -455,7 +585,7 @@ it('收展分类保留多选，重新展开仍可拖入收藏夹', async () => {
   fireEvent.click(screen.getByRole('button', { name: '收起收藏分类' }));
   expect(screen.getByText('已选 1 个作品，共 1 页')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '展开收藏分类' }));
-  const folder = screen.getByRole('button', { name: '选择收藏夹：角色设计' }).closest('.press-reveal-surface')!;
+  const folder = screen.getByRole('button', { name: '选择收藏夹：角色设计' }).closest('[data-collection-folder]')!;
   const dataTransfer = dragData();
   fireEvent.dragStart(card, { dataTransfer }); fireEvent.drop(folder, { dataTransfer });
   await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(['insp-2'], { addBoardIds: ['board-1'] }));
@@ -701,9 +831,9 @@ it.each([390, 1280])('宽度 %s 的收藏夹使用标题加号和同色文件夹
   expect(create.querySelector('svg.lucide-folder-plus')).toBeNull();
   expect(create.getAttribute('data-appearance')).toBe('control');
   const folder = within(root).getByRole('button', { name: '选择收藏夹：角色设计' });
-  expect((folder.querySelector('svg.lucide-folder') as SVGElement).style.color).toBe('rgb(99, 102, 241)');
+  expect((folder as HTMLElement).style.getPropertyValue('--collection-folder-color')).toBe('#6366f1');
   fireEvent.click(folder);
-  const row = folder.closest('.press-reveal-surface')!;
+  const row = folder.closest('.directory-tree-row')!;
   expect(row.classList.contains('bg-indigo-100')).toBe(true);
   expect(row.classList.contains('dark:bg-indigo-950/50')).toBe(true);
   expect(folder.getAttribute('aria-pressed')).toBe('true');
@@ -715,6 +845,9 @@ it.each([390, 1280])('宽度 %s 的收藏夹使用标题加号和同色文件夹
 it('实际新建收藏夹窗口和颜色选择可被 Agent 读取', async () => {
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   fireEvent.click(await screen.findByRole('button', { name: /新建收藏夹/ }));
+  const name = screen.getByRole('textbox', { name: '名称' });
+  expect(name.getAttribute('placeholder')).toBe('例如：电影感光影'); expect(name.hasAttribute('maxlength')).toBe(false);
+  expect(document.activeElement).toBe(name);
   const page = readAgentPage({ limit: 20 }); expect(page.title).toBe('新建收藏夹');
   expect(page.controls.some(item => item.label.includes('名称') || item.role === 'input')).toBe(true);
   expect(page.controls.filter(item => item.pressed !== undefined)).not.toHaveLength(0);
@@ -723,32 +856,67 @@ it('实际新建收藏夹窗口和颜色选择可被 Agent 读取', async () => 
 it('手机管理当前收藏夹可修改名称与颜色，编辑焦点正确，关闭后回到原筛选面板', async () => {
   vi.stubGlobal('innerWidth', 390);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
-  await screen.findByRole('button', { name: '编辑收藏夹：角色设计' });
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   fireEvent.click(screen.getByRole('button', { name: '筛选' })); const filter = screen.getByRole('dialog', { name: '筛选收藏' });
   fireEvent.click(within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }));
-  const surface = within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('.press-reveal-surface')!;
-  longPress(surface); expect(surface.getAttribute('data-press-revealed')).toBe('true');
-  fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹：角色设计' }));
+  fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹' }));
   const editor = screen.getByRole('dialog', { name: '编辑收藏夹' }); const input = within(editor).getByRole('textbox');
   expect(document.activeElement).toBe(input);
   fireEvent.change(input, { target: { value: '新名称' } }); fireEvent.click(within(editor).getByRole('button', { name: '颜色 #ec4899' }));
   fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-1', { name: '新名称', color: '#ec4899' }));
+  await waitFor(() => expect(db.updateInspirationBoard).toHaveBeenCalledWith('board-1', { name: '新名称', color: '#ec4899', parentId: null }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull());
   expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+});
+
+it('共用收藏夹编辑窗口保存中锁定字段和颜色，Esc、关闭与遮罩不能退出或重复提交', async () => {
+  let finish!: () => void;
+  vi.mocked(db.updateInspirationBoard).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  fireEvent.click(screen.getByRole('button', { name: '编辑收藏夹' }));
+  const editor = screen.getByRole('dialog', { name: '编辑收藏夹' });
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  expect((within(editor).getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
+  expect((within(editor).getByRole('combobox', { name: '上级收藏夹' }) as HTMLSelectElement).disabled).toBe(true);
+  expect((within(editor).getByRole('button', { name: '颜色 #ec4899' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' })); fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(within(editor).getByRole('button', { name: '关闭' })); fireEvent.mouseDown(editor.parentElement!);
+  expect(screen.getByRole('dialog', { name: '编辑收藏夹' })).toBe(editor); expect(db.updateInspirationBoard).toHaveBeenCalledOnce();
+  await act(async () => finish());
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull());
+});
+
+it('手机筛选内的共用收藏夹编辑返回只关闭最上层，不关闭筛选或写入资料', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 1279px)', media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  window.history.replaceState({}, '');
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  fireEvent.change(within(filter).getByRole('combobox', { name: '选择目录' }), { target: { value: 'board-1' } });
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(1));
+  const parentState = window.history.state;
+  fireEvent.click(within(filter).getByRole('button', { name: '编辑收藏夹' }));
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
+  act(() => { window.history.replaceState(parentState, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: parentState })); });
+  expect(screen.queryByRole('dialog', { name: '编辑收藏夹' })).toBeNull(); expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+  expect(db.updateInspirationBoard).not.toHaveBeenCalled(); window.history.replaceState({}, '');
 });
 it.each([390, 1280])('宽度 %s 的收藏夹删除可发现且必须确认，取消不删除，确认后回到未整理语义', async width => {
   vi.stubGlobal('innerWidth', width); const refresh = vi.fn();
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: refresh, notify: vi.fn() }));
-  await screen.findByRole('button', { name: '编辑收藏夹：角色设计' });
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   let root: HTMLElement = document.body;
   if (width < 768) {
     fireEvent.click(screen.getByRole('button', { name: '筛选' })); root = screen.getByRole('dialog', { name: '筛选收藏' });
     fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
   }
-  const remove = () => { const button = within(root).getByRole('button', { name: '删除收藏夹：角色设计' }); longPress(button.closest('.press-reveal-surface')!); fireEvent.click(button); };
+  if (width >= 768) fireEvent.click(within(root).getByRole('button', { name: '选择收藏夹：角色设计' }));
+  const remove = () => fireEvent.click(within(root).getByRole('button', { name: '删除收藏夹' }));
   confirmAction.mockResolvedValue(false); remove(); await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
-  expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: '收藏夹内作品不会删除，其他收藏夹归属会保留；没有其他归属的作品会回到“未整理”。' }));
+  expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ message: '仅移除本收藏夹归属，作品与其他归属保留；没有其他归属的作品会回到“未整理”。子收藏夹将提升到本夹的上级。' }));
   expect(db.deleteInspirationBoard).not.toHaveBeenCalled();
   confirmAction.mockResolvedValue(true); remove(); await waitFor(() => expect(db.deleteInspirationBoard).toHaveBeenCalledExactlyOnceWith('board-1'));
   expect(refresh).toHaveBeenCalledOnce();
@@ -852,9 +1020,8 @@ it.each([390, 1280])('宽度 %s 只有全局、来源和自定义收藏夹导航
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   if (width < 768) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const root = width < 768 ? screen.getByRole('dialog', { name: '筛选收藏' }) : document.body;
-  const sections = ['全局', '来源', '自定义收藏夹'].map(text => within(root).getByText(text));
+  const sections = ['来源', '自定义收藏夹'].map(text => within(root).getByText(text));
   expect(sections[0].compareDocumentPosition(sections[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(sections[1].compareDocumentPosition(sections[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(within(root).queryByRole('button', { name: /已归档|已置顶|最近使用/ })).toBeNull();
   if (width < 768) fireEvent.click(within(root).getByRole('button', { name: '确认' }));
   selectCollectionCard(screen.getByText(mockInspirations[0].title).closest('article')!);
@@ -937,10 +1104,12 @@ it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组�
   for (const tag of ['逆光', '雨天']) fireEvent.click(within(filter).getByRole('button', { name: '#' + tag }));
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
   expect(search.parentElement).toBe(field);
-  const tags = within(field).getByRole('group', { name: '标签（同时满足）' });
+  const tags = within(field).getByRole('group', { name: '已生效的筛选条件' });
   expect(within(tags).getAllByRole('button')).toHaveLength(2);
-  expect(tags.classList.contains('max-w-[50%]')).toBe(true);
-  expect(tags.classList.contains('overflow-x-auto')).toBe(true);
+  expect(tags.nextElementSibling).toBe(search);
+  expect(within(tags).getAllByRole('button').map(chip => chip.getAttribute('data-search-filter-chip'))).toEqual(['逆光', '雨天']);
+  expect(tags.classList.contains('whitespace-nowrap')).toBe(true);
+  expect(tags.classList.contains('overflow-hidden')).toBe(true);
   expect(tags.classList.contains('flex-wrap')).toBe(false);
   expect(screen.queryByRole('group', { name: '当前筛选' })).toBeNull();
   expect(screen.getByRole('button', { name: '筛选 2' })).toBeTruthy();
@@ -948,11 +1117,11 @@ it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组�
   search.focus(); fireEvent.change(search, { target: { value: '晚霞' } });
   await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(1));
   expect(screen.getByText('匹配晚霞')).toBeTruthy();
-  fireEvent.click(within(tags).getByRole('button', { name: '取消筛选：#雨天' }));
+  fireEvent.click(within(tags).getByRole('button', { name: '移除筛选：#雨天' }));
   expect(container.querySelectorAll('article')).toHaveLength(2);
   expect(search.value).toBe('晚霞');
   expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
-  fireEvent.click(within(tags).getByRole('button', { name: '取消筛选：#逆光' }));
+  fireEvent.click(within(tags).getByRole('button', { name: '移除筛选：#逆光' }));
   expect(screen.getByRole('searchbox')).toBe(search);
   expect(search.parentElement).toBe(field); expect(document.activeElement).toBe(search);
   expect(search.value).toBe('晚霞');
@@ -960,6 +1129,39 @@ it.each([390, 1280])('宽度 %s：标签在搜索框内，交集与关键词组�
   expect(container.querySelectorAll('article')).toHaveLength(2);
   fireEvent.change(search, { target: { value: '' } });
   await waitFor(() => expect(container.querySelectorAll('article')).toHaveLength(3));
+});
+
+it.each([390, 1280])('宽度 %s：搜索内条件过多时与 AITag 共用 +N，连续取消保持关键词、输入节点和真实交集', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-search-filter-chip') ? 200 : 44; });
+  const items = [
+    { ...mockInspirations[0], id: 'both', title: '合成晚霞', tags: ['逆光', '雨天'] },
+    { ...mockInspirations[0], id: 'one', title: '合成晚霞二', tags: ['逆光'] },
+  ];
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: items, onRefresh: vi.fn(), notify: vi.fn() }));
+  const input = screen.getByRole('searchbox', { name: '搜索标题、提示词或标签…' }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: '晚霞' } });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const panel = screen.getByRole('dialog', { name: '筛选收藏' });
+  for (const tag of ['逆光', '雨天']) fireEvent.click(within(panel).getByRole('button', { name: '#' + tag }));
+  fireEvent.click(within(panel).getByRole('button', { name: '确认' }));
+  await waitFor(() => expect(view.container.querySelectorAll('article')).toHaveLength(1));
+  const group = screen.getByRole('group', { name: '已生效的筛选条件' });
+  expect(group.nextElementSibling).toBe(input); expect(group.classList.contains('flex-wrap')).toBe(false);
+  expect(within(group).queryByRole('button', { name: /移除筛选/ })).toBeNull();
+  const more = within(group).getByRole('button', { name: '查看其余 2 个筛选条件' });
+  more.focus(); fireEvent.click(more);
+  const reopened = screen.getByRole('dialog', { name: '筛选收藏' });
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  expect(within(reopened).getByRole('button', { name: '#雨天' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(within(reopened).getByRole('button', { name: '#雨天' }));
+  expect(view.container.querySelectorAll('article')).toHaveLength(2);
+  fireEvent.click(within(reopened).getByRole('button', { name: '确认' }));
+  expect(document.activeElement).toBe(more);
+  expect(within(group).getByRole('button', { name: '查看其余 1 个筛选条件' })).toBe(more);
+  expect(screen.getByRole('searchbox')).toBe(input); expect(input.value).toBe('晚霞');
+  expect(db.updateInspiration).not.toHaveBeenCalled(); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
 });
 
 it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入一行；退出保留搜索、标签、收藏夹与滚动位置', async width => {
@@ -990,7 +1192,7 @@ it.each([390, 1280])('宽度 %s：多选只替换原顶栏，不向列表插入�
   expect(screen.getByText('已整理角色图').closest('article')).toBe(card);
   fireEvent.click(within(header).getByRole('button', { name: '退出多选' }));
   expect((within(header).getByRole('searchbox') as HTMLInputElement).value).toBe('图');
-  expect(within(header).getByRole('button', { name: '取消筛选：#原创' })).toBeTruthy();
+  expect(within(header).getByRole('button', { name: '移除筛选：#原创' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');
   expect(main.firstElementChild).toBe(content); expect(main.scrollTop).toBe(420);
   expect(db.updateInspiration).not.toHaveBeenCalled(); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
@@ -1022,7 +1224,8 @@ const prepareFolderPointers = (root: HTMLElement) => {
   const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-collection-folder]'));
   rows.forEach((row, index) => {
     row.getBoundingClientRect = () => ({ top: 100 + index * 44, bottom: 140 + index * 44, left: 0, right: 176, width: 176, height: 40 }) as DOMRect;
-    const handle = within(row).getByRole('button', { name: /排序收藏夹/ });
+    row.parentElement!.getBoundingClientRect = row.getBoundingClientRect;
+    const handle = within(row.parentElement!).getByRole('button', { name: /排序收藏夹/ });
     handle.setPointerCapture = vi.fn(); handle.releasePointerCapture = vi.fn();
   });
 };
@@ -1151,7 +1354,7 @@ it('画廊拒绝文件拖入且无覆盖层，按钮选择多图仍保留配置�
 
 it('收藏夹拒绝外部文件与网页链接，内部图片携带Files类型仍只移动作品', async () => {
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
-  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('[data-collection-folder]')!;
   fireEvent.drop(folder, { dataTransfer: { ...dragData(), types: ['text/uri-list'], files: [], getData: () => 'https://example.com/image.png' } });
   expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
   const file = new File(['synthetic'], 'local.png', { type: 'image/png' });
@@ -1189,7 +1392,7 @@ it('筛选窗口内拖入文件不叠加导入窗口，保留原筛选且阻止�
   await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const filter = screen.getByRole('dialog', { name: '筛选收藏' });
-  const folder = within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('.press-reveal-surface')!;
+  const folder = within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('[data-collection-folder]')!;
   const dataTransfer = { ...dragData(), types: ['Files'], files: [new File(['A'], 'local.png', { type: 'image/png' })] };
   expect(fireEvent.dragOver(folder, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('none');
   expect(fireEvent.drop(folder, { dataTransfer })).toBe(false);
@@ -1200,7 +1403,7 @@ it('筛选窗口内拖入文件不叠加导入窗口，保留原筛选且阻止�
 it('拖拽多张作品追加收藏夹；全部和未整理不接受清空归属，同夹与外部拖入不发请求', async () => {
   const onRefresh = vi.fn(async () => {});
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh, notify: vi.fn() }));
-  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('[data-collection-folder]')!;
   const card = (index: number) => screen.getByText(mockInspirations[index].title).closest('article')!;
   const dataTransfer = dragData();
   fireEvent.drop(folder, { dataTransfer }); expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
@@ -1223,7 +1426,7 @@ it('取消拖拽、只读作品不能移动；保存失败保留作品与选择�
   const notify = vi.fn(), onRefresh = vi.fn(async () => {});
   const readOnly = { ...mockInspirations[2], id: 'read-only', title: '只读作品', userId: 'other' };
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...mockInspirations, readOnly], onRefresh, notify }));
-  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('[data-collection-folder]')!;
   const card = screen.getByText(mockInspirations[1].title).closest('article')!;
   const locked = screen.getByText('只读作品').closest('article')!;
   const dataTransfer = dragData();
@@ -1322,7 +1525,7 @@ it('关闭选中作品聚焦后仍可打开收藏详情，但不压暗其他组�
 it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不带走其他夹的组员，展开仍能看全组', async () => {
   const onRefresh = vi.fn(async () => {});
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: groupedImages, onRefresh, notify: vi.fn() }));
-  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('[data-collection-folder]')!;
   const card = screen.getByText('我的作品组').closest('article')!;
   selectCollectionCard(card); expect(screen.getByText('已选 1 个作品，共 3 页')).toBeTruthy();
   selectCollectionCard(card); expect(screen.queryByText('已选 1 个作品，共 3 页')).toBeNull();
@@ -1334,7 +1537,7 @@ it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不�
   fireEvent.click(screen.getByRole('button', { name: /未整理\s+2/ }));
   const filteredCard = screen.getByText('我的作品组').closest('article')!;
   expect(within(filteredCard).getByText('2页')).toBeTruthy();
-  const target = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  const target = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('[data-collection-folder]')!;
   fireEvent.dragStart(filteredCard, { dataTransfer: dragData() }); fireEvent.drop(target, { dataTransfer: dragData() });
   await waitFor(() => expect(db.bulkUpdateInspirations).toHaveBeenCalledWith(expect.arrayContaining(['group-1', 'group-2']), { addBoardIds: ['board-1'] }));
   expect(vi.mocked(db.bulkUpdateInspirations).mock.lastCall![0]).toHaveLength(2);
@@ -1592,7 +1795,7 @@ it('全库标签重命名同步已选标签筛选，管理期间保留原关键�
   fireEvent.change(within(manager).getByRole('textbox', { name: '标签名称' }), { target: { value: '我的标签' } });
   fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
-  await waitFor(() => expect(within(view.container.querySelector('header')!).getByRole('button', { name: '取消筛选：#我的标签' })).toBeTruthy());
+  await waitFor(() => expect(within(view.container.querySelector('header')!).getByRole('button', { name: '移除筛选：#我的标签' })).toBeTruthy());
   fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
   expect(screen.getByText('已整理角色图')).toBeTruthy();
   expect(screen.getByRole('button', { name: '选择收藏夹：角色设计' }).getAttribute('aria-pressed')).toBe('true');

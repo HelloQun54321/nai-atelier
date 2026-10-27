@@ -2202,6 +2202,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             promptClassificationEnabled={promptClassificationEnabled}
+                            negativeLocked={isNaiMediumModel(params.model)}
                             onPlainPromptChange={value => {
                                 setNegativePrompt(getEditableGlobalNegative(negativePrompt, params._promptSections));
                                 setBasePrompt(value); setSubjectPrompt('');

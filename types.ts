@@ -21,6 +21,7 @@ export interface PromptModule {
 
 /** 角色分栏内容：与全局四类内容同名；prompt 保留为手动补充正文。 */
 export interface CharacterSectionContent {
+  [key: `directory:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;
@@ -39,7 +40,7 @@ export interface CharacterParams {
   /** 每栏的内容负面，编译成角色负面；与风格全局负面无关。 */
   sectionNegatives?: Partial<Record<keyof CharacterSectionContent, string>>;
   /** 每栏来源快照（条目 id / 名称 / 约束备注 / 来源），只用于展示与还原，不进入请求。 */
-  sectionMeta?: Partial<Record<keyof CharacterSectionContent, { entryId?: string; entryName?: string; notes?: string; source?: string }>>;
+  sectionMeta?: Partial<Record<keyof CharacterSectionContent, PromptSectionSource>>;
 }
 
 export interface VibeEncodingVariant {
@@ -164,6 +165,8 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  /** 提示词片段的目录归属；只供本地资料整理。 */
+  _promptLibraryDirectoryIds?: string[];
   /** 风格串分享来源快照，不进入 NovelAI 生成请求；再次分享时保留。 */
   _styleBundleSources?: StyleBundleSource[];
 }
@@ -175,12 +178,16 @@ export interface PromptSectionSource {
   entryName?: string;
   notes?: string;
   /** library = 从词库选入；roll = 一键 Roll 填入；manual = 手动填写 */
-  source?: 'library' | 'roll' | 'manual';
+  source?: string;
+  directoryId?: string;
+  directoryName?: string;
+  directoryPath?: string[];
   /** 选入时用的应用模式 */
   mode?: 'replace' | 'append' | 'fill-missing';
 }
 
 export interface PromptSections {
+  [key: `directory:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;
@@ -344,6 +351,7 @@ export interface InspirationBoard {
   id: string;
   userId: string;
   name: string;
+  parentId?: string | null;
   color?: string;
   sortOrder: number;
   createdAt: number;

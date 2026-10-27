@@ -70,21 +70,24 @@ const sources = (value: unknown) => {
   return normalized;
 };
 const stringMap = (value: unknown, max = 100): Record<string, string> => Object.fromEntries(Object.entries(object(value)).map(([key, value]) => [text(key, max), text(value)]));
-const creativeSnapshotKeys = new Set(['format', 'version', 'savedAt', 'algo', 'roles', 'global', 'key', 'name', 'provided', 'sections', 'negatives', 'meta', 'text', 'note', 'source', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryTags', 'needsReview', 'negative', 'roll', 'seed', 'seeds', 'checks', 'locks', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra']);
+const creativeSnapshotKeys = new Set(['format', 'version', 'savedAt', 'algo', 'roles', 'global', 'key', 'name', 'provided', 'sections', 'negatives', 'meta', 'text', 'note', 'source', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryTags', 'needsReview', 'negative', 'roll', 'seed', 'seeds', 'checks', 'locks', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra', 'items', 'unitId', 'directoryId', 'directoryName', 'directoryPath', 'scope', 'constraintNotes']);
 const creativeSnapshot = (value: unknown, depth = 0): unknown => {
   if (depth > 12) return fail('内容快照层级过深');
   if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') return finite(value);
   if (typeof value === 'string') return text(value);
   if (Array.isArray(value)) return list(value, 200).map(value => creativeSnapshot(value, depth + 1));
-  return Object.fromEntries(Object.entries(object(value)).filter(([key]) => creativeSnapshotKeys.has(key)).map(([key, value]) => [key, creativeSnapshot(value, depth + 1)]));
+  return Object.fromEntries(Object.entries(object(value)).filter(([key]) => creativeSnapshotKeys.has(key) || key.startsWith('directory:') && key.length > 10).map(([key, value]) => [key, creativeSnapshot(value, depth + 1)]));
 };
 const sections = (value: unknown) => {
   const item = object(value), result: Record<string, unknown> = {};
-  for (const key of ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra']) if (item[key] !== undefined) result[key] = text(item[key]);
+  for (const key of Object.keys(item).filter(key => ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra'].includes(key) || key.startsWith('directory:') && key.length > 10)) result[key] = text(item[key]);
   if (item.sectionNegatives !== undefined) result.sectionNegatives = stringMap(item.sectionNegatives);
   if (item.sectionMeta !== undefined) result.sectionMeta = Object.fromEntries(Object.entries(object(item.sectionMeta)).map(([key, value]) => {
-    const meta = object(value); return [text(key, 100), Object.fromEntries(['entryName', 'notes', 'source', 'mode'].filter(key => meta[key] !== undefined).map(key => [key, text(meta[key])]))];
+    const meta = object(value); return [text(key, 100), {
+      ...Object.fromEntries(['entryName', 'notes', 'source', 'mode', 'directoryId', 'directoryName'].filter(key => meta[key] !== undefined).map(key => [key, text(meta[key])])),
+      ...(meta.directoryPath !== undefined ? { directoryPath: list(meta.directoryPath, 200).map(part => text(part)) } : {}),
+    }];
   }));
   return result;
 };

@@ -28,6 +28,19 @@ describe('风格串目录规则', () => {
     expect(folderContains(state().folders, 'child', 'root')).toBe(false);
     expect(folderTree(state().folders).map(folder => [folder.id, folder.depth])).toEqual([['root', 0], ['child', 1]]);
   });
+  it('深目录完整保留层级和归属，子树展开仍按相对深度返回', () => {
+    const folders = Array.from({ length: 500 }, (_, index) => ({ id: `folder-${index}`, name: `目录${index}`, parentId: index ? `folder-${index - 1}` : null }));
+    const original = { revision: 1, folders, assignments: { a: ['folder-0', 'folder-499'] } };
+    expect(readChainFolders(original)).toEqual(original);
+    expect(folderTree(folders).at(-1)).toMatchObject({ id: 'folder-499', depth: 499 });
+    expect(folderTree(folders, 'folder-497', 2).map(folder => [folder.id, folder.depth])).toEqual([['folder-498', 2], ['folder-499', 3]]);
+    expect(folderContains(folders, 'folder-0', 'folder-499')).toBe(true);
+    expect(folderContains(folders, 'folder-499', 'folder-0')).toBe(false);
+    const removed = removeChainFolder(original, 'folder-250');
+    expect(removed.folders.find(folder => folder.id === 'folder-251')?.parentId).toBe('folder-249');
+    expect(removed.assignments).toEqual(original.assignments);
+    expect(readChainFolders(removed)).toEqual(removed);
+  });
   it('删除目录只清除直接归属并提升子目录，不删除其他归属', () => {
     const original = state();
     const next = removeChainFolder(original, 'root');

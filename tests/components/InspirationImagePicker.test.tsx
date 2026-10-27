@@ -8,7 +8,24 @@ const mocks = vi.hoisted(() => ({ items: vi.fn(), boards: vi.fn() }));
 vi.mock('../../services/dbService', () => ({ db: { getAllInspirations: mocks.items, getInspirationBoards: mocks.boards } }));
 vi.mock('../../components/SmartImage', () => ({ SmartImage: ({ alt }: { alt: string }) => <img alt={alt} /> }));
 vi.mock('../../components/ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { children: React.ReactNode }) => children }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it.each([390, 1280])('宽度 %s：收藏图片选择共用路径目录，父级包含后代且重叠归属不重复展示', async width => {
+  vi.stubGlobal('innerWidth', width);
+  mocks.boards.mockResolvedValue([{ id: 'root', name: '根夹' }, { id: 'child', name: '子夹', parentId: 'root' }, { id: 'deep', name: '深层', parentId: 'child' }]);
+  mocks.items.mockResolvedValue([
+    { id: 'deep-image', title: '深层作品', boardIds: ['root', 'deep'], imageUrl: '/deep.png', createdAt: 1 },
+    { id: 'child-image', title: '子夹作品', boardIds: ['child'], imageUrl: '/child.png', createdAt: 1 },
+    { id: 'unfiled', title: '无夹作品', boardIds: [], imageUrl: '/unfiled.png', createdAt: 1 },
+  ]);
+  render(<InspirationImagePicker open onClose={vi.fn()} onSelect={vi.fn()} />);
+  await screen.findByRole('button', { name: '选择收藏图片：深层作品' });
+  if (width < 768) fireEvent.change(screen.getByRole('combobox', { name: '选择目录' }), { target: { value: 'root' } });
+  else fireEvent.click(screen.getByRole('button', { name: '根夹' }));
+  expect(screen.getAllByRole('button', { name: '选择收藏图片：深层作品' })).toHaveLength(1);
+  expect(screen.getByRole('button', { name: '选择收藏图片：子夹作品' })).toBeTruthy(); expect(screen.queryByRole('button', { name: '选择收藏图片：无夹作品' })).toBeNull();
+  expect(screen.getByText('根夹 · 根夹 / 子夹 / 深层')).toBeTruthy();
+});
 
 it('同一收藏可从各归属夹选到，旧单夹兼容，空多归属不会误回原夹', async () => {
   const image = { id: 'shared', userId: 'synthetic', title: '共享作品', prompt: 'keep', imageUrl: '/shared.png', boardId: 'a', boardIds: ['a', 'b'], createdAt: 1 };

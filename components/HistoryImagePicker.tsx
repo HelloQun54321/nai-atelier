@@ -10,6 +10,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 
 interface HistoryImagePickerProps {
+  zIndex?: number;
   open: boolean;
   onClose: () => void;
   /** 选中历史图后回调；importParams 表示是否同时载入该图的提示词与参数（默认仅替换底图）。 */
@@ -38,7 +39,7 @@ const getHistoryTypeLabel = (item: LocalGenItem) => {
   return '扩图';
 };
 
-export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect, scopeChainId = null }) => {
+export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect, scopeChainId = null, zIndex }) => {
   useLanguage();
   const [items, setItems] = useState<LocalGenItem[]>([]);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
@@ -128,7 +129,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
     <ImagePreviewPortal>
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      style={{ zIndex }} className="fixed inset-0 z-[1250] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label={t("选择历史图片")}

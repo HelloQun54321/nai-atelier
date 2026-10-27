@@ -33,4 +33,13 @@ describe('AI 提取候选的入库结构', () => {
     const types = kinds.map(kind => buildExtractedChainPayload({ entryId: 'stable-candidate', kind, name: kind, prompt: 'x' }).type);
     expect(types).toEqual(kinds);
   });
+
+  it('自定义目录片段沿用 preset 通用标记，显式未归类保留空数组', () => {
+    const draft = { entryId: 'stable-custom', kind: 'preset' as const, name: '水彩', prompt: 'watercolor' };
+    const payload = buildExtractedChainPayload({ ...draft, directoryIds: ['custom-style', 'custom-style', 'shared'] });
+    expect(payload.type).toBe('preset');
+    expect(payload.data.params).toMatchObject({ _collectedCategory: 'general', _promptLibraryDirectoryIds: ['custom-style', 'shared'] });
+    expect(buildExtractedChainPayload({ ...draft, directoryIds: [] }).data.params).toHaveProperty('_promptLibraryDirectoryIds', []);
+    expect(buildExtractedChainPayload({ ...draft, kind: 'scene' }).data.params).not.toHaveProperty('_promptLibraryDirectoryIds');
+  });
 });

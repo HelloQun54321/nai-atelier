@@ -22,6 +22,51 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
 };
 
 describe('提示词上下文工具隔离', () => {
+  it('动态目录使用来源路径显示，正负词可就地修改并保留其他内容与目录标签', () => {
+    const Harness = () => {
+      const [sections, setSections] = useState<import('../../../types').PromptSections>({ extra: 'manual', 'directory:scene': '1.2::forest, mist::',
+        sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景', directoryPath: ['环境', '场景'], entryName: '森林' } } });
+      const [subject, setSubject] = useState('manual, 1.2::forest, mist::');
+      return <><ChainEditorPromptInputs promptClassificationEnabled prompt="artist:test" setPrompt={vi.fn()} sections={sections} setSections={setSections}
+        supplementPrompt={subject} setSupplementPrompt={setSubject} presetSources={{}} tagAssistEnabled={false} canEdit
+        copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()} activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
+        <output data-testid="dynamic">{JSON.stringify({ subject, sections })}</output></>;
+    };
+    render(<Harness />);
+    const positive = screen.getByRole('textbox', { name: '环境 / 场景' }) as HTMLTextAreaElement;
+    const negative = screen.getByRole('textbox', { name: '环境 / 场景 · 内容负面' }) as HTMLTextAreaElement;
+    expect(positive.value).toBe('1.2::forest, mist::'); expect(negative.value).toBe('city');
+    fireEvent.change(positive, { target: { value: '1.2::forest, rain::' } });
+    fireEvent.change(negative, { target: { value: 'desert' } });
+    const result = JSON.parse(screen.getByTestId('dynamic').textContent!);
+    expect(result.subject).toBe('manual, 1.2::forest, rain::');
+    expect(result.sections.sectionNegatives).toEqual({ 'directory:scene': 'desert' });
+    expect(result.sections.sectionMeta['directory:scene']).toMatchObject({ directoryName: '场景', directoryPath: ['环境', '场景'], source: 'manual' });
+    fireEvent.click(within(screen.getByRole('group', { name: '环境 / 场景' })).getAllByRole('button', { name: '清空当前提示词' })[0]);
+    expect(screen.getByRole('textbox', { name: '环境 / 场景' })).toBe(positive);
+    expect(positive.value).toBe('');
+  });
+  it.each([false, true])('动态目录的分类负面继承Medium锁定=%s，正词仍可编辑', negativeLocked => {
+    setup({ negativeLocked, sections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } }, supplementPrompt: 'forest' });
+    expect((screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement).disabled).toBe(negativeLocked);
+    expect((screen.getByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement).disabled).toBe(false);
+  });
+  it('动态全局内容整段显示一次，编辑整段后分类清空且不丢手写内容', () => {
+    const Harness = () => {
+      const [prompt, setPrompt] = useState('artist:test');
+      const [subject, setSubject] = useState('manual, 1.2::forest, mist::');
+      const [sections, setSections] = useState<import('../../../types').PromptSections>({ extra: 'manual', 'directory:scene': '1.2::forest, mist::' });
+      return <><ChainEditorPromptInputs prompt={prompt} setPrompt={setPrompt} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject}
+        presetSources={{}} tagAssistEnabled={false} canEdit copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()} activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
+        <output data-testid="dynamic">{JSON.stringify({ subject, sections })}</output></>;
+    };
+    render(<Harness />);
+    const positive = screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement;
+    expect(positive.value).toBe('artist:test, manual, 1.2::forest, mist::');
+    fireEvent.change(positive, { target: { value: `${positive.value}, rain, ` } });
+    expect(positive.value).toBe('artist:test, manual, 1.2::forest, mist::, rain, ');
+    expect(JSON.parse(screen.getByTestId('dynamic').textContent!)).toEqual({ subject: '', sections: {} });
+  });
   it('顶栏槽位替换或临时移除不丢失随机搭配的真实候选编辑', async () => {
     const first = document.createElement('div'), second = document.createElement('div');
     document.body.append(first, second);

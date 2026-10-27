@@ -2,7 +2,7 @@
  * 一键 Roll · 纯内容快照与四态约束派生（纯逻辑核）
  * ---------------------------------------------------------------------------
  * 从「一键 Roll」补丁片段原样移植的两块最需要契约保证的逻辑，不碰 DOM / React / 请求 / 存储：
- *   1) **纯内容快照**：只保存六类内容与它们自身的负面 / 缺席约束 / 备注 / 来源快照，
+ *   1) **纯内容快照**：保存参与的目录内容与自身的负面 / 缺席约束 / 备注 / 来源快照，
  *      明确排除画师串、风格配套负面、用户全局负面、模型与生图参数（白名单构造 + 白名单读取）；
  *   2) **四态约束派生**：把词库条目的 facets（自动搭配 / 明确没有 / 明确值 / 未知键）
  *      派生成「缺席约束、自动、明确定值、待确认」四类，并给出备注与 needsReview，
@@ -58,7 +58,15 @@ export interface ConstraintSummary {
   needsReview: boolean;
 }
 /** 纯内容快照读取结果（白名单读取之后）。 */
+export interface RollUnit {
+  id: string; directoryId: string; name: string; path: string[]; scope: 'global' | 'character';
+}
+export interface ContentItem {
+  unitId: string; directoryId: string; directoryName: string; directoryPath: string[]; scope: 'global' | 'character';
+  text: string; negative: string; constraintNotes: string; meta: Record<string, unknown> | null;
+}
 export interface ContentRead {
+  items: ContentItem[];
   ok: boolean; reason?: string; warnings: string[];
   format?: string; version?: number; savedAt?: string; algo?: string;
   roll?: { seed: string; seeds: Record<string, string>; checks: Record<string, boolean>; locks: Record<string, string> } | null;
@@ -75,6 +83,8 @@ export interface ContentRead {
 export const KINDS: string[] = ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'];
 /** 抽取输入：参与状态（checks）与固定项（locks），avoid 用于「排除当前条目」。 */
 export interface RollDrawInput {
+  units?: RollUnit[];
+  directories?: import('./promptLibraryTree.mjs').PromptLibraryTreeState;
   chains?: ChainLike[] | null;
   seed?: string | number;
   checks?: Record<string, boolean>;
@@ -89,7 +99,7 @@ export interface RollDrawInput {
 /** 一栏的抽取结果行（派生出的纯数据副本，不含条目对象本身，避免被顺手改到词库）。 */
 export interface RollRow {
   kind: string;
-  scope?: string; label?: string; title?: string; key?: string;
+  scope?: 'global' | 'character'; label?: string; title?: string; key?: string;
   id?: string; name?: string; text?: string; negative?: string; bilingual?: string;
   description?: string; preview?: string; tags?: string[]; updatedAt?: number | null;
   summary?: string; summaryEnglishOnly?: boolean; constraints?: ConstraintSummary;
@@ -100,7 +110,7 @@ export interface RollRow {
 export type RollPicks = Record<string, RollRow>;
 export type RollRng = () => number;
 
-export const META: Record<string, { short: string; title: string; scope: string }> = {
+export const META: Record<string, { short: string; title: string; scope: 'global' | 'character' }> = {
   appearance: { short: '形象', title: '人物形象', scope: 'character' },
   wardrobe: { short: '服饰', title: '服饰穿搭', scope: 'character' },
   pose: { short: '动作', title: '动作互动', scope: 'character' },
@@ -287,7 +297,8 @@ export const constraintsOf = (chain: ChainLike | null | undefined) => {
 
 /* ---- 纯内容快照（白名单构造 / 读取 / 摘要 / 从完整搭配提取） ---- */
 export const CONTENT_FORMAT = 'nai-roll-content';
-export const CONTENT_VERSION = 1;
+export const CONTENT_VERSION = 2;
+export const isDirectorySectionKey = (key: string): boolean => key.startsWith('directory:') && key.length > 10;
 export const ROLE_KEYS = ['appearance', 'wardrobe', 'pose', 'expression'];
 export const GLOBAL_KEYS = ['scene', 'camera'];
 /* 每个分类的「内容负面」白名单：只留文本/备注/来源/模式，不留任何参数 */
@@ -302,10 +313,11 @@ export const contentNegOf = (neg: Record<string, unknown> | null | undefined) =>
 export const contentMetaOf = (meta: Record<string, unknown> | null | undefined) => {
   if (!meta || typeof meta !== 'object') return null;
   const out: Record<string, Json> = {};
-  const textKeys = ['source', 'entryId', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryPreviewImage'];
+  const textKeys = ['directoryId', 'directoryName', 'source', 'entryId', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryPreviewImage'];
   for (const k of textKeys) if (meta[k] != null) out[k] = String(meta[k]);
   const updatedAt = Number(meta['entryUpdatedAt']);
     if (Number.isFinite(updatedAt) && updatedAt > 0) out['entryUpdatedAt'] = updatedAt;
+  if (Array.isArray(meta['directoryPath'])) out['directoryPath'] = meta['directoryPath'].filter((part: unknown) => typeof part === 'string');
   const entryTags = meta['entryTags'];
     if (Array.isArray(entryTags)) out['entryTags'] = entryTags.map((t: Json) => String(t || '').trim()).filter(Boolean).slice(0, 24);
   if (isObj(meta['entryFacets'])) out['entryFacets'] = JSON.parse(JSON.stringify(meta['entryFacets']));
@@ -313,10 +325,17 @@ export const contentMetaOf = (meta: Record<string, unknown> | null | undefined) 
   out['needsReview'] = !!meta['needsReview'];
   return Object.keys(out).length ? out : null;
 };
-/* 从「一键 Roll 的一次结果」构造纯内容快照（白名单；不含风格与参数） */
+/* 构造内容快照：目录结果走 items，旧六类仍保留 roles/global，不复制生成配置。 */
 export const contentSnapshotOf = (record: RollRecordLike | null | undefined, savedAt: string | undefined) => {
   const picks = (record && record.picks) || {};
   const checks = (record && record.checks) || {};
+  const items: ContentItem[] = Object.entries(picks).flatMap(([key, row]) => {
+    if (!isDirectorySectionKey(key) || checks[key] === false || !row?.filled || !String(row.text || '').trim()) return [];
+    return [{ unitId: key, directoryId: key.slice(10), directoryName: String(row.directoryName || row.title || row.label || key.slice(10)),
+      directoryPath: Array.isArray(row.directoryPath) ? row.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
+      scope: row.scope === 'character' ? 'character' as const : 'global' as const, text: String(row.text).trim(), negative: String(row.negative || '').trim(),
+      constraintNotes: String(row.constraintNotes || row.constraints?.notes || ''), meta: contentMetaOf(row.meta || { entryId: row.id, entryName: row.name }) }];
+  });
   const roles: Json[] = [];
   const global: Record<string, Json> = {};
   const provided: Record<string, Json> = {};
@@ -357,12 +376,12 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
     global[kind] = { provided: true, text, negative: neg || null, meta: contentMetaOf(row.meta || null) || null };
     any = true;
   }
-  if (!any) return null;
+  if (!any && !items.length) return null;
   const evidence = record && record.roll ? record.roll : {
     seed: String((record && record.seed) || ''),
     seeds: Object.assign({}, (record && record.seeds) || {}),
     checks: Object.assign({}, checks),
-    locks: Object.assign({}, (record && record.locks) || {})
+    locks: Object.assign({}, (record && (record.locked || record.locks)) || {})
   };
   return {
     format: CONTENT_FORMAT,
@@ -376,19 +395,28 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
       locks: Object.assign({}, evidence.locks || {})
     },
     roles,
-    global
+    global,
+    ...(items.length ? { items } : {})
   };
 };
 /* 白名单读取：只接受 format/version 正确的记录；字段缺失按「未提供」处理，不猜、不清空 */
 export const contentRead = (raw: Json): ContentRead => {
   const warnings: Json[] = [];
-  if (!raw || typeof raw !== 'object') return { ok: false, reason: 'empty', warnings: ['记录里没有内容快照'], roles: [], global: {}, anyRole: false, anyGlobal: false };
+  if (!raw || typeof raw !== 'object') return { ok: false, reason: 'empty', warnings: ['记录里没有内容快照'], items: [], roles: [], global: {}, anyRole: false, anyGlobal: false };
   const format = String(raw.format || '');
   if (format !== CONTENT_FORMAT) {
-    return { ok: false, reason: 'not_content', warnings: ['这条记录不是纯内容格式（' + (format || '无标识') + '），不走纯内容载入'], roles: [], global: {}, anyRole: false, anyGlobal: false };
+    return { ok: false, reason: 'not_content', warnings: ['这条记录不是纯内容格式（' + (format || '无标识') + '），不走纯内容载入'], items: [], roles: [], global: {}, anyRole: false, anyGlobal: false };
   }
   const version = Number(raw.version) || 0;
-  if (version !== CONTENT_VERSION) warnings.push('结构版本 ' + String(version) + ' 与当前载入器（' + String(CONTENT_VERSION) + '）不同：只按已知字段读取，未知字段不应用');
+  if (version !== 1 && version !== CONTENT_VERSION) warnings.push('结构版本 ' + String(version) + ' 与当前载入器（' + String(CONTENT_VERSION) + '）不同：只按已知字段读取，未知字段不应用');
+  const items: ContentItem[] = (Array.isArray(raw.items) ? raw.items : []).flatMap((item: Json) => {
+    const key = String(item?.unitId || '');
+    if (!isDirectorySectionKey(key) || !String(item?.text || '').trim()) return [];
+    return [{ unitId: key, directoryId: key.slice(10), directoryName: String(item.directoryName || key.slice(10)),
+      directoryPath: Array.isArray(item.directoryPath) ? item.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
+      scope: item.scope === 'character' ? 'character' as const : 'global' as const, text: String(item.text).trim(), negative: String(item.negative || '').trim(),
+      constraintNotes: String(item.constraintNotes || ''), meta: contentMetaOf(item.meta) }];
+  });
   const rolesIn = Array.isArray(raw.roles) ? raw.roles : [];
   const roles = (rolesIn as Json[]).map((r: Json, i: number) => {
     const sections: Record<string, Json> = {};
@@ -414,9 +442,9 @@ export const contentRead = (raw: Json): ContentRead => {
     const ok = !!(g && g.provided === true && text);
     global[kind] = ok ? { provided: true, text, negative: contentNegOf(g && g.negative), meta: contentMetaOf(g && g.meta) } : { provided: false };
   }
-  const anyRole = roles.length > 0;
-  const anyGlobal = GLOBAL_KEYS.some((k: string) => global[k]['provided'] as boolean);
-  if (!anyRole && !anyGlobal) return { ok: false, reason: 'no_content', warnings: warnings.concat(['这条记录里没有可载入的六类内容']), roles: [], global, anyRole, anyGlobal };
+  const anyRole = roles.length > 0 || items.some(item => item.scope === 'character');
+  const anyGlobal = items.some(item => item.scope === 'global') || GLOBAL_KEYS.some((k: string) => global[k]['provided'] as boolean);
+  if (!anyRole && !anyGlobal) return { ok: false, reason: 'no_content', warnings: warnings.concat(['这条记录里没有可载入的内容']), items: [], roles: [], global, anyRole, anyGlobal };
   return {
     ok: true,
     format,
@@ -429,6 +457,7 @@ export const contentRead = (raw: Json): ContentRead => {
       checks: Object.assign({}, raw.roll.checks || {}),
       locks: Object.assign({}, raw.roll.locks || {})
     } : null,
+    items,
     roles,
     global,
     anyRole,
@@ -449,10 +478,12 @@ export const contentOfChain = (chain: ChainLike | null | undefined) => {
 export const contentScopeOf = (readData: ContentRead | null | undefined) => {
   const out: { roleKinds: string[]; globalKinds: string[]; roleCount: number; label: string } = { roleKinds: [], globalKinds: [], roleCount: 0, label: '' };
   if (!readData || !readData.ok) return out;
-  out.roleCount = readData.roles.length;
+  out.roleCount = readData.roles.length || (readData.items?.some(item => item.scope === 'character') ? 1 : 0);
   if (readData.roles[0]) out.roleKinds = ROLE_KEYS.filter((k: string) => readData.roles[0].provided[k]);
   out.globalKinds = GLOBAL_KEYS.filter((k: string) => readData.global[k] && readData.global[k].provided);
-  const labelOf = (k: string) => (META[k] ? META[k].short : k);
+  out.roleKinds.push(...(readData.items || []).filter(item => item.scope === 'character').map(item => item.unitId));
+  out.globalKinds.push(...(readData.items || []).filter(item => item.scope === 'global').map(item => item.unitId));
+  const labelOf = (k: string) => (META[k] ? META[k].short : readData.items?.find(item => item.unitId === k)?.directoryName || k);
   const parts: Json[] = [];
   if (out.roleKinds.length) parts.push('角色：' + out.roleKinds.map(labelOf).join(' / '));
   if (out.globalKinds.length) parts.push('全局：' + out.globalKinds.map(labelOf).join(' / '));

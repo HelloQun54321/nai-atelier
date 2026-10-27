@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageActivityProvider } from '../../components/SmartImage';
 import { ChainList } from '../../components/ChainList';
-import { CHAIN_FOLDER_DRAG_TYPE } from '../../components/chain/ChainFolders';
+import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderNavigation } from '../../components/chain/ChainFolders';
 import { saveChainFolders } from '../../services/useChainFolders';
 import type { ChainFolderState } from '../../services/chainFolders';
 import type { PromptChain } from '../../types';
@@ -36,6 +36,15 @@ const setup = async () => {
   return { ...view, props };
 };
 const choose = (id: string) => fireEvent.change(screen.getByLabelText('选择文件夹'), { target: { value: id } });
+const dragDirectory = (source: HTMLElement, target: HTMLElement | (() => HTMLElement)) => {
+  const payload: Record<string, string> = {};
+  const transfer = { get types() { return Object.keys(payload); }, setData: (type: string, value: string) => { payload[type] = value; }, getData: (type: string) => payload[type] || '', effectAllowed: '', dropEffect: '' };
+  fireEvent.dragStart(source, { dataTransfer: transfer });
+  const destination = typeof target === 'function' ? target() : target;
+  fireEvent.dragOver(destination, { dataTransfer: transfer });
+  fireEvent.drop(destination, { dataTransfer: transfer });
+  fireEvent.dragEnd(source, { dataTransfer: transfer });
+};
 beforeEach(() => {
   localStorage.clear(); get.mockReset(); put.mockReset();
   stored = { revision: 1, folders: [{ id: 'root', name: '画风实验', parentId: null }, { id: 'child', name: '平涂', parentId: 'root' }], assignments: { a: ['child'] } };
@@ -48,7 +57,88 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it('目录计数按完整风格串ID去重，不受渲染数量和父子重复归属影响', () => {
+  stored.assignments = { a: ['root', 'child'], b: ['child'] };
+  const store = { state: stored, ready: true, busy: false, error: '', save: vi.fn(), reload: vi.fn() };
+  render(<ChainFolderNavigation store={store} selected="*" onSelect={vi.fn()} chainIds={['a', 'a', 'b', 'unfiled', 'unfiled']} onMove={vi.fn()} notify={vi.fn()} />);
+  const navigation = within(screen.getByLabelText('风格串文件夹'));
+  expect(navigation.getByRole('button', { name: '全部' }).textContent).toBe('全部3');
+  expect(navigation.getByRole('button', { name: '未整理' }).textContent).toBe('未整理1');
+  expect(navigation.getByRole('button', { name: '画风实验' }).textContent).toBe('画风实验2');
+  expect(navigation.getByRole('button', { name: '画风实验 / 平涂' }).textContent).toBe('平涂2');
+});
+
 describe('风格串文件夹完整交互', () => {
+  it('拖动文件夹只移动父级，保留完整子树和风格串多重归属', async () => {
+    stored.folders.push({ id: 'grandchild', name: '细分', parentId: 'child' }, { id: 'target', name: '目标', parentId: null });
+    stored.assignments = { a: ['root', 'grandchild'], b: ['child'] };
+    const assignments = structuredClone(stored.assignments);
+    const { props } = await setup();
+    const navigation = within(screen.getByLabelText('风格串文件夹'));
+    dragDirectory(navigation.getByRole('button', { name: '画风实验 / 平涂' }), navigation.getByRole('button', { name: '目标' }));
+    await waitFor(() => expect(stored.folders.find(folder => folder.id === 'child')?.parentId).toBe('target'));
+    expect(stored.folders.find(folder => folder.id === 'grandchild')?.parentId).toBe('child');
+    expect(stored.assignments).toEqual(assignments);
+    expect(props.notify).toHaveBeenCalledWith('文件夹已保存', 'success');
+    expect(props.onUpdateChain).not.toHaveBeenCalled();
+    choose('target');
+    expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: '目标 / 平涂 / 细分 (1)' })).toBeTruthy();
+    dragDirectory(navigation.getByRole('button', { name: '目标 / 平涂' }), () => navigation.getByRole('group', { name: '移到根目录' }));
+    await waitFor(() => expect(stored.folders.find(folder => folder.id === 'child')?.parentId).toBeNull());
+    expect(stored.folders.find(folder => folder.id === 'grandchild')?.parentId).toBe('child');
+    expect(stored.assignments).toEqual(assignments);
+  });
+  it('拖动文件夹保存失败保留原树和归属，提示错误后可主动重试', async () => {
+    stored.folders.push({ id: 'target', name: '目标', parentId: null });
+    const original = structuredClone(stored);
+    const { props } = await setup();
+    put.mockRejectedValueOnce(Error('合成目录移动冲突'));
+    const navigation = within(screen.getByLabelText('风格串文件夹'));
+    const move = () => dragDirectory(navigation.getByRole('button', { name: '画风实验 / 平涂' }), navigation.getByRole('button', { name: '目标' }));
+    move();
+    await waitFor(() => expect(props.notify).toHaveBeenCalledWith('合成目录移动冲突', 'error'));
+    expect(stored).toEqual(original);
+    expect(props.notify).not.toHaveBeenCalledWith('文件夹已保存', 'success');
+    await waitFor(() => expect((screen.getByRole('button', { name: '新建文件夹' }) as HTMLButtonElement).disabled).toBe(false));
+    move();
+    await waitFor(() => expect(stored.folders.find(folder => folder.id === 'child')?.parentId).toBe('target'));
+    expect(stored.assignments).toEqual(original.assignments);
+    expect(put).toHaveBeenCalledTimes(2);
+  });
+  it('深目录共用树导航与完整路径选择，折叠只影响导航展示，改父级不丢归属', async () => {
+    stored.folders = Array.from({ length: 12 }, (_, index) => ({ id: `deep-${index}`, name: `目录${index}`, parentId: index ? `deep-${index - 1}` : null }));
+    stored.folders.push({ id: 'other', name: '目录11', parentId: null });
+    stored.assignments = { a: ['deep-0', 'deep-11'] };
+    await setup();
+    const path = stored.folders.slice(0, 12).map(folder => folder.name).join(' / ');
+    const select = screen.getByLabelText('选择文件夹');
+    expect(within(select).getByRole('option', { name: `${path} (1)` })).toBeTruthy();
+    choose('deep-11');
+    expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+    const navigation = within(screen.getByLabelText('风格串文件夹'));
+    expect(navigation.getByRole('button', { name: path }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(navigation.getByRole('button', { name: '收起目录「目录0」' }));
+    expect(navigation.queryByRole('button', { name: path })).toBeNull();
+    expect((select as HTMLSelectElement).value).toBe('deep-11');
+    expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+    choose('deep-5');
+    fireEvent.click(screen.getByRole('button', { name: '编辑文件夹' }));
+    const dialog = within(screen.getByRole('dialog', { name: '编辑文件夹' }));
+    const parent = dialog.getByLabelText('上级文件夹');
+    expect(within(parent).queryByRole('option', { name: path })).toBeNull();
+    expect(within(parent).queryByRole('option', { name: stored.folders.slice(0, 6).map(folder => folder.name).join(' / ') })).toBeNull();
+    fireEvent.change(parent, { target: { value: 'other' } });
+    fireEvent.click(dialog.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(stored.folders.find(folder => folder.id === 'deep-5')?.parentId).toBe('other'));
+    expect(stored.assignments.a).toEqual(['deep-0', 'deep-11']);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 a' }));
+    const memberships = within(screen.getByRole('dialog', { name: '设置文件夹' }));
+    expect((memberships.getByRole('checkbox', { name: '目录11 / 目录5 / 目录6 / 目录7 / 目录8 / 目录9 / 目录10 / 目录11' }) as HTMLInputElement).checked).toBe(true);
+    expect((memberships.getByRole('checkbox', { name: '目录11' }) as HTMLInputElement).checked).toBe(false);
+  });
   it('父目录包含子目录、未整理独立，重新进入记住目录且不改标签', async () => {
     const view = await setup();
     choose('root');
@@ -119,14 +209,14 @@ describe('风格串文件夹完整交互', () => {
   it('单条与批量设置只写目录元数据，取消勾选才移除归属，手机无需拖放', async () => {
     const { props } = await setup();
     fireEvent.click(screen.getByRole('button', { name: '设置文件夹：风格 b' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '平涂' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '画风实验 / 平涂' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(stored.assignments.b).toEqual(['child']));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
     fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '平涂' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('checkbox', { name: '画风实验 / 平涂' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(stored.assignments).toEqual({}));
     expect(props.onUpdateChain).not.toHaveBeenCalled(); expect(props.onDelete).not.toHaveBeenCalled();
@@ -134,7 +224,7 @@ describe('风格串文件夹完整交互', () => {
   it('拖放识别内部风格串，删除父目录保留配方并提升子目录', async () => {
     const { props } = await setup();
     const transfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['b']), dropEffect: '' };
-    const root = within(screen.getByLabelText('风格串文件夹')).getByRole('button', { name: /画风实验/ });
+    const root = within(screen.getByLabelText('风格串文件夹')).getByRole('button', { name: '画风实验' });
     fireEvent.dragOver(root, { dataTransfer: transfer }); fireEvent.drop(root, { dataTransfer: transfer });
     await waitFor(() => expect(stored.assignments.b).toEqual(['root']));
     choose('root'); fireEvent.click(screen.getByRole('button', { name: '删除文件夹' }));
@@ -147,7 +237,7 @@ describe('风格串文件夹完整交互', () => {
     fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
     fireEvent.click(screen.getByRole('button', { name: '设置文件夹' }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('checkbox', { name: '平涂' }).getAttribute('aria-checked')).toBe('mixed');
+    expect(within(dialog).getByRole('checkbox', { name: '画风实验 / 平涂' }).getAttribute('aria-checked')).toBe('mixed');
     fireEvent.click(within(dialog).getByRole('checkbox', { name: '画风实验' }));
     fireEvent.click(within(dialog).getByRole('button', { name: '保存' }));
     await waitFor(() => expect(stored.assignments).toEqual({ a: ['child', 'root'], b: ['root'] }));
@@ -156,7 +246,7 @@ describe('风格串文件夹完整交互', () => {
     stored.assignments = { a: ['child', 'root'], b: ['child'] };
     await setup();
     const navigation = within(screen.getByLabelText('风格串文件夹'));
-    const root = navigation.getByRole('button', { name: /画风实验/ });
+    const root = navigation.getByRole('button', { name: '画风实验' });
     expect(root.textContent).toBe('画风实验2');
     const transfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['b']), dropEffect: '' };
     fireEvent.drop(navigation.getByRole('button', { name: /未整理/ }), { dataTransfer: transfer });

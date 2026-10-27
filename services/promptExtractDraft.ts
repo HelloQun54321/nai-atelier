@@ -39,7 +39,10 @@ export interface ExtractDraftImage {
 export interface ExtractDraftCandidate {
   id: number;
   entryId: string;
-  kind: PromptLibraryKind;
+  kind: PromptLibraryKind | 'preset';
+  directoryIds?: string[];
+  needsDirectoryReview?: boolean;
+  directoryReviewNote?: string;
   name: string;
   prompt: string;
   original: string;
@@ -72,7 +75,7 @@ export interface ExtractDraftLoad {
   issue: ExtractDraftIssue;
 }
 
-const KIND_SET = new Set<string>(Object.keys(PROMPT_LIBRARY_KIND_LABELS));
+const KIND_SET = new Set<string>([...Object.keys(PROMPT_LIBRARY_KIND_LABELS), 'preset']);
 const IMAGE_STATES = new Set(['ready', 'empty', 'failed']);
 
 export const createEmptyExtractDraft = (): ExtractDraftSnapshot => ({
@@ -126,13 +129,15 @@ const normalizeCandidate = (value: unknown, fallbackId: number): ExtractDraftCan
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<ExtractDraftCandidate>;
   const prompt = text(source.prompt);
-  const kind = KIND_SET.has(String(source.kind)) ? source.kind as PromptLibraryKind : null;
+  const kind = KIND_SET.has(String(source.kind)) ? source.kind as ExtractDraftCandidate['kind'] : null;
   if (!prompt || !kind) return null;
   const id = typeof source.id === 'number' && Number.isFinite(source.id) && source.id > 0 ? Math.floor(source.id) : fallbackId;
   return {
     id,
     entryId: text(source.entryId).trim() || createUuid(),
     kind,
+    ...(Array.isArray(source.directoryIds) ? { directoryIds: [...new Set(source.directoryIds.filter((id): id is string => typeof id === 'string'))] } : {}),
+    ...(source.needsDirectoryReview ? { needsDirectoryReview: true, directoryReviewNote: text(source.directoryReviewNote) } : {}),
     name: text(source.name).slice(0, 200),
     prompt,
     original: text(source.original),

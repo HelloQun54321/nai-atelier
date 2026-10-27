@@ -74,7 +74,8 @@ export const MobileBottomSheet: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
-}> = ({ open, title, onClose, children, footer }) => {
+  zIndex?: number;
+}> = ({ open, title, onClose, children, footer, zIndex }) => {
   useLanguage();
   const requestClose = useMobileHistoryLayer(open, onClose, 'sheet');
   const dragStart = useRef<number | null>(null);
@@ -83,7 +84,7 @@ export const MobileBottomSheet: React.FC<{
   if (!open) return null;
 
   return (
-    <div className="mobile-layer md:hidden" onPointerDown={event => {
+    <div className="mobile-layer md:hidden" style={{ zIndex }} onPointerDown={event => {
       if (event.target === event.currentTarget) requestClose();
     }}>
       <section

@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ConfirmDialogProvider, useConfirmDialog, type ConfirmDialogOptions } from '../../components/ConfirmDialog';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
+import { DirectoryNodeDialog } from '../../components/DirectoryNodeDialog';
+import { isTopmostModal } from '../../components/useModalA11y';
 
 beforeEach(() => {
   localStorage.clear(); setLanguage('zh-CN');
@@ -11,7 +13,7 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
   vi.spyOn(window.history, 'back').mockImplementation(() => {});
 });
-afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState({}, ''); });
+afterEach(() => { cleanup(); document.querySelector('[data-test-confirm-layers]')?.remove(); setLanguage('zh-CN'); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState({}, ''); });
 const setup = (onSave?: () => Promise<boolean>) => {
   const result = vi.fn();
   const options: ConfirmDialogOptions = { rememberKey: 'editor.leave-test', title: '有未保存的修改', message: '是否保存当前修改后离开？', cancelLabel: '继续编辑', confirmLabel: '放弃并离开', tone: 'danger', onSave };
@@ -173,4 +175,70 @@ it('首次勾选保存失败不写授权，再次离开仍需决定', async () =
   await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(false));
   fireEvent.click(opener);
   expect(screen.getByRole('alertdialog')).toBeTruthy();
+});
+
+const setupDirectoryConfirmation = () => {
+  const style = document.createElement('style');
+  style.dataset.testConfirmLayers = 'true';
+  style.textContent = [1800, 2050, 2100, 2400].map(layer => `.z-\\[${layer}\\] { position: fixed; z-index: ${layer}; }`).join('\n');
+  document.head.append(style);
+  const result = vi.fn(), close = vi.fn();
+  function Harness() {
+    const confirm = useConfirmDialog();
+    const [open, setOpen] = React.useState(false);
+    const [name, setName] = React.useState('原目录');
+    const [parentId, setParentId] = React.useState('');
+    return <><button onClick={() => setOpen(true)}>打开目录编辑</button>{open && <DirectoryNodeDialog title="编辑目录" nodes={[{ id: 'other', name: '另一根' }]} name={name} parentId={parentId} onNameChange={setName} onParentChange={setParentId} onClose={() => { close(); setOpen(false); }} onSubmit={async () => { result(await confirm({ title: '确认改名', message: '确认更新目录名称？', confirmLabel: '确认更新' })); }} />}</>;
+  }
+  render(<ConfirmDialogProvider><Harness /></ConfirmDialogProvider>);
+  fireEvent.click(screen.getByRole('button', { name: '打开目录编辑' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '尚未保存的改名' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '上级目录' }), { target: { value: 'other' } });
+  return { result, close, editor: screen.getByRole('dialog', { name: '编辑目录' }) };
+};
+
+it('目录编辑内的确认层高于来源窗口，Tab和Escape只作用于确认，取消保留原草稿', async () => {
+  const { result, close, editor } = setupDirectoryConfirmation();
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  const confirmation = screen.getByRole('alertdialog');
+  expect(Number(getComputedStyle(confirmation.parentElement!).zIndex)).toBeGreaterThan(Number(getComputedStyle(editor.parentElement!).zIndex));
+  expect(isTopmostModal(confirmation)).toBe(true);
+  expect(isTopmostModal(editor)).toBe(false);
+  within(confirmation).getByRole('button', { name: '确认更新' }).focus();
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(within(confirmation).getByRole('button', { name: '取消' }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(false));
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(screen.getByRole('dialog', { name: '编辑目录' })).toBe(editor);
+  expect(screen.getByRole('textbox', { name: '名称' })).toHaveProperty('value', '尚未保存的改名');
+  expect(screen.getByRole('combobox', { name: '上级目录' })).toHaveProperty('value', 'other');
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认更新' }));
+  await waitFor(() => expect(result).toHaveBeenLastCalledWith(true));
+  expect(isTopmostModal(editor)).toBe(true);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it('手机返回先取消目录确认并保留编辑，再次返回才关闭目录窗口', async () => {
+  vi.mocked(window.matchMedia).mockReturnValue({ matches: true } as MediaQueryList);
+  const { result, close, editor } = setupDirectoryConfirmation();
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(1));
+  const editorState = structuredClone(window.history.state);
+  fireEvent.click(within(editor).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(window.history.state.__naiMobileLayers).toHaveLength(2));
+  expect(window.history.state.__naiMobileLayer).toContain('confirm');
+  window.history.replaceState(editorState, '');
+  fireEvent(window, new PopStateEvent('popstate', { state: editorState }));
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(false));
+  expect(screen.getByRole('dialog', { name: '编辑目录' })).toBe(editor);
+  expect(screen.getByRole('textbox', { name: '名称' })).toHaveProperty('value', '尚未保存的改名');
+  expect(close).not.toHaveBeenCalled();
+  const previousState = { source: 'synthetic' };
+  window.history.replaceState(previousState, '');
+  fireEvent(window, new PopStateEvent('popstate', { state: previousState }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

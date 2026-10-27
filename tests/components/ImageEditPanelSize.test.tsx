@@ -74,6 +74,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('图生图输出尺寸与提交副本', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 动态目录正负词可编辑，整段转换只保留一份内容', async operation => {
+    const patch = { prompt: 'artist:test, manual, 1.2::forest, mist::', negativePrompt: 'lowres', params: { ...params,
+      _promptSections: { extra: 'manual', 'directory:scene': '1.2::forest, mist::', sectionNegatives: { 'directory:scene': 'city' },
+        sectionMeta: { 'directory:scene': { directoryName: '场景', directoryPath: ['环境', '场景'] } } } } };
+    const view = render(<Harness classified operation={operation} patch={patch} />);
+    const positive = screen.getByRole('textbox', { name: '环境 / 场景' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(positive.disabled).toBe(false));
+    fireEvent.change(positive, { target: { value: '1.2::forest, rain::' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '环境 / 场景 · 内容负面' }), { target: { value: 'desert' } });
+    view.rerender(<Harness operation={operation} />);
+    const full = screen.getByDisplayValue('artist:test, manual, 1.2::forest, rain::') as HTMLTextAreaElement;
+    expect((screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement).value).toBe('lowres, desert');
+    fireEvent.change(full, { target: { value: `${full.value}, birds` } });
+    const draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe('artist:test, manual, 1.2::forest, rain::, birds');
+    expect(draft.negativePrompt).toBe('lowres, desert'); expect(draft.params._promptSections).toBeUndefined();
+  });
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 动态全局分类负面继承Medium锁定', async operation => {
+    render(<Harness classified operation={operation} patch={{ prompt: 'artist:test, forest', params: { ...params, model: 'nai-diffusion-5-full-medium',
+      _promptSections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } } } }} />);
+    const positive = screen.getByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(positive.disabled).toBe(false));
+    const negative = screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true); expect(negative.value).toBe('city');
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 分类编辑与整段编辑共享正文，编辑某栏保留其他词、分类负面和参数', async operation => {
     const view = render(<Harness classified operation={operation} patch={{ prompt: 'artist:test, red dress, forest', negativePrompt: 'lowres', params: { ...params, _promptSections: { wardrobe: 'red dress', scene: 'forest', sectionNegatives: { scene: 'city' } } } }} />);
     await waitFor(() => expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).disabled).toBe(false));

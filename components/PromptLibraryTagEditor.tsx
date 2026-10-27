@@ -9,8 +9,9 @@ import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 export const PromptLibraryTagEditor: React.FC<{
   tags: string[];
   suggestions: string[];
+  suggestionLabel?: (tag: string) => string;
   onSave: (tags: string[]) => Promise<void>;
-}> = ({ tags, suggestions, onSave }) => {
+}> = ({ tags, suggestions, suggestionLabel, onSave }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
@@ -34,10 +35,10 @@ export const PromptLibraryTagEditor: React.FC<{
     </div>
     {editing ? <div className="mt-2 space-y-2">
       <CollectionTagInput aria-label={t('编辑自定义标签')} value={draft} disabled={busy} className={TOOLBAR_FIELD_CLASS}
-        suggestions={suggestions} inlineSuggestions onChange={event => setDraft(event.target.value)} onPick={setDraft} />
+        suggestions={suggestions} suggestionLabel={suggestionLabel} inlineSuggestions onChange={event => setDraft(event.target.value)} onPick={setDraft} />
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t('标签保存失败：{0}', [error])}</p>}
       <div className="flex flex-wrap justify-end gap-2"><ToolbarButton disabled={busy} onClick={() => { setEditing(false); setError(''); }}>{t('取消')}</ToolbarButton>
         <ToolbarButton tone="primary" disabled={busy} onClick={() => void save()}>{t(busy ? '保存中…' : '保存标签')}</ToolbarButton></div>
-    </div> : <div className="mt-2 flex flex-wrap gap-1">{confirmed.length ? confirmed.map(tag => <span key={tag} className="appearance-group max-w-full break-words rounded px-2 py-1 text-xs">{tag}</span>) : <span className="text-xs text-gray-400">{t('暂无标签')}</span>}</div>}
+    </div> : <div className="mt-2 flex flex-wrap gap-1">{confirmed.length ? confirmed.map(tag => <span key={tag} className="appearance-group max-w-full break-words rounded px-2 py-1 text-xs">{suggestionLabel?.(tag) || tag}</span>) : <span className="text-xs text-gray-400">{t('暂无标签')}</span>}</div>}
   </section>;
 };

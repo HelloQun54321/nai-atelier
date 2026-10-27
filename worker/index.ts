@@ -17,6 +17,8 @@ import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import { handleChainFolderRoute } from './routes/chainFolderRoutes';
 import { handleCatalogGroupRoute } from './routes/catalogGroupRoutes';
+import { handlePromptLibraryDirectoryRoute } from './routes/promptLibraryDirectoryRoutes';
+import { handlePromptLibraryCategoryTreeRoute } from './routes/promptLibraryCategoryTreeRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -194,6 +196,10 @@ export default {
       if (chainFolderResult) return chainFolderResult;
       const catalogGroupResult = await handleCatalogGroupRoute(routeContext);
       if (catalogGroupResult) return catalogGroupResult;
+      const promptLibraryDirectoryResult = await handlePromptLibraryDirectoryRoute(routeContext);
+      if (promptLibraryDirectoryResult) return promptLibraryDirectoryResult;
+      const promptLibraryCategoryTreeResult = await handlePromptLibraryCategoryTreeRoute(routeContext);
+      if (promptLibraryCategoryTreeResult) return promptLibraryCategoryTreeResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 

@@ -8,6 +8,7 @@ async function fixture() {
   sqlite.exec(INIT_SQL);
   const queries: string[] = [];
   let afterSaveRead: (() => Promise<void>) | undefined;
+  let beforeBatch: (() => Promise<void>) | undefined;
   const db = {
     prepare(query: string) {
       queries.push(query);
@@ -26,6 +27,7 @@ async function fixture() {
       };
     },
     async batch(statements: { run(): Promise<unknown> }[]) {
+      if (beforeBatch) { const callback = beforeBatch; beforeBatch = undefined; await callback(); }
       sqlite.exec('BEGIN');
       try { const results = []; for (const statement of statements) results.push(await statement.run()); sqlite.exec('COMMIT'); return results; }
       catch (cause) { sqlite.exec('ROLLBACK'); throw cause; }
@@ -40,7 +42,8 @@ async function fixture() {
   for (const id of ['a', 'b', 'c', 'private']) sqlite.prepare('INSERT INTO inspiration_boards (id,user_id,name,created_at,updated_at) VALUES (?,?,?,1,1)').run(id, id === 'private' ? 'other' : 'owner', id);
   const seed = (id: string, boardId: string | null, analysis: unknown = {}, user = 'owner') => sqlite.prepare('INSERT INTO inspirations (id,user_id,title,prompt,board_id,analysis,created_at) VALUES (?,?,?,?,?,?,1)').run(id, user, id, 'original prompt', boardId, typeof analysis === 'string' ? analysis : JSON.stringify(analysis));
   const item = async (id: string) => (await (await invoke('/api/inspirations/' + id)).json() as any).item;
-  return { sqlite, queries, invoke, seed, item, afterSaveRead(callback: () => Promise<void>) { afterSaveRead = callback; } };
+  return { sqlite, queries, invoke, seed, item, afterSaveRead(callback: () => Promise<void>) { afterSaveRead = callback; },
+    beforeBatch(callback: () => Promise<void>) { beforeBatch = callback; } };
 }
 
 it('收藏多归属保存、回读，旧primary与普通来源编辑均保留成员，显式清空进入未整理', async () => {
@@ -135,5 +138,99 @@ it('拒绝不存在、跨用户及非法收藏夹输入，并防止POST覆盖他
     expect((await invoke('/api/inspirations/saved', 'PUT', { boardIds: ['b'] }, 'owner', 'guest')).status).toBe(403);
     expect((await item('saved')).boardIds).toEqual(['a']);
     expect(sqlite.prepare("SELECT board_id FROM inspirations WHERE id='foreign'").get()?.board_id).toBe('private');
+  } finally { sqlite.close(); }
+});
+
+it('旧收藏夹只读投影为根，颜色排序与同名保留，不创建settings或结构', async () => {
+  const { sqlite, queries, invoke } = await fixture();
+  try {
+    sqlite.exec("UPDATE inspiration_boards SET name='同名',color='#ec4899',sort_order=9 WHERE user_id='owner'");
+    const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    queries.length = 0;
+    const result = await (await invoke('/api/inspiration-boards')).json() as any;
+    expect(result.items).toHaveLength(3);
+    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'a', parentId: null, name: '同名', color: '#ec4899', sortOrder: 9 })]));
+    expect(queries).toHaveLength(1);
+    expect(sqlite.prepare("SELECT value FROM settings WHERE key LIKE 'collection_board_tree_v1:%'").all()).toEqual([]);
+    expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual(tables);
+  } finally { sqlite.close(); }
+});
+
+it('收藏夹任意层级创建与移动，省略父级仅改名称颜色排序，删除提升直接子夹并保留后代作品多归属', async () => {
+  const { sqlite, invoke, seed, item } = await fixture();
+  const boards = async () => (await (await invoke('/api/inspiration-boards')).json() as any).items;
+  try {
+    expect((await invoke('/api/inspiration-boards/b', 'PUT', { parentId: 'a' })).status).toBe(200);
+    expect((await invoke('/api/inspiration-boards/c', 'PUT', { parentId: 'b' })).status).toBe(200);
+    expect((await invoke('/api/inspiration-boards', 'POST', { id: 'deep', name: '同名', parentId: 'c', color: '#ec4899', sortOrder: 8 })).status).toBe(200);
+    expect((await invoke('/api/inspiration-boards', 'POST', { id: 'deeper', name: '同名', parentId: 'deep' })).status).toBe(200);
+    await invoke('/api/inspiration-boards/deep', 'PUT', { name: '修改', color: '#10b981', sortOrder: 12 });
+    expect(await boards()).toContainEqual(expect.objectContaining({ id: 'deep', parentId: 'c', name: '修改', color: '#10b981', sortOrder: 12 }));
+    seed('multi', 'b', { collectionBoardIds: ['b', 'deep'], original: true });
+    seed('child-only', 'c', { collectionBoardIds: ['c'] });
+    expect((await invoke('/api/inspiration-boards/b', 'DELETE')).status).toBe(200);
+    expect(await boards()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'c', parentId: 'a' }),
+      expect.objectContaining({ id: 'deep', parentId: 'c', color: '#10b981', sortOrder: 12 }),
+      expect.objectContaining({ id: 'deeper', parentId: 'deep' }),
+    ]));
+    expect(await item('multi')).toMatchObject({ boardId: 'deep', boardIds: ['deep'], analysis: { original: true } });
+    expect((await item('child-only')).boardIds).toEqual(['c']);
+    await invoke('/api/inspiration-boards/c', 'PUT', { parentId: null });
+    expect(await boards()).toContainEqual(expect.objectContaining({ id: 'c', parentId: null }));
+  } finally { sqlite.close(); }
+});
+
+it('拒绝自父、环、悬空或跨用户父级，非法操作不写收藏夹及目录', async () => {
+  const { sqlite, invoke } = await fixture();
+  try {
+    await invoke('/api/inspiration-boards/b', 'PUT', { parentId: 'a' });
+    const original = sqlite.prepare("SELECT value FROM settings WHERE key='collection_board_tree_v1:owner'").get()?.value;
+    for (const parentId of ['a', 'b', 'private', 'missing', '', 1, {}, []]) {
+      expect((await invoke('/api/inspiration-boards/a', 'PUT', { parentId })).status).toBe(400);
+    }
+    for (const parentId of ['created', 'private', 'missing', 1]) {
+      expect((await invoke('/api/inspiration-boards', 'POST', { id: 'created', name: '不会保存', parentId })).status).toBe(400);
+    }
+    expect((await invoke('/api/inspiration-boards', 'POST', { id: ' ', name: '无效ID' })).status).toBe(400);
+    expect((await invoke('/api/inspiration-boards/private', 'PUT', { parentId: 'a' })).status).toBe(404);
+    expect((await invoke('/api/inspiration-boards/a', 'PUT', { parentId: null }, 'owner', 'guest')).status).toBe(403);
+    expect(sqlite.prepare("SELECT value FROM settings WHERE key='collection_board_tree_v1:owner'").get()?.value).toBe(original);
+    expect(sqlite.prepare("SELECT id FROM inspiration_boards WHERE id='created'").get()).toBeUndefined();
+  } finally { sqlite.close(); }
+});
+
+it('损坏已存父图明确报错且不覆盖，按用户隔离父图和收藏夹', async () => {
+  const { sqlite, invoke } = await fixture();
+  try {
+    const stored = sqlite.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)');
+    stored.run('collection_board_tree_v1:other', JSON.stringify({ revision: 4, parents: { private: null } }));
+    for (const value of ['broken', 'null', JSON.stringify({ revision: 0, parents: [] }), JSON.stringify({ revision: 0, parents: { a: 'private' } }), JSON.stringify({ revision: 0, parents: { a: 'b', b: 'a' } })]) {
+      stored.run('collection_board_tree_v1:owner', value);
+      expect((await invoke('/api/inspiration-boards')).status).toBe(503);
+      expect((await invoke('/api/inspiration-boards/a', 'PUT', { name: '不可覆盖' })).status).toBe(503);
+      expect(sqlite.prepare("SELECT value FROM settings WHERE key='collection_board_tree_v1:owner'").get()?.value).toBe(value);
+    }
+    expect(await (await invoke('/api/inspiration-boards', 'GET', undefined, 'other')).json()).toMatchObject({ treeRevision: 4, items: [{ id: 'private', parentId: null }] });
+  } finally { sqlite.close(); }
+});
+
+it('真实SQLite CAS冲突回滚创建、父级移动及删除，首次无父图也不会覆盖并发目录', async () => {
+  const { sqlite, invoke, seed, item, beforeBatch } = await fixture();
+  try {
+    beforeBatch(async () => { expect((await invoke('/api/inspiration-boards', 'POST', { id: 'winner', name: '先保存', parentId: 'a' })).status).toBe(200); });
+    expect((await invoke('/api/inspiration-boards', 'POST', { id: 'loser', name: '冲突创建', parentId: 'b' })).status).toBe(409);
+    expect(sqlite.prepare("SELECT id FROM inspiration_boards WHERE id='loser'").get()).toBeUndefined();
+    beforeBatch(async () => { expect((await invoke('/api/inspiration-boards/b', 'PUT', { parentId: 'a' })).status).toBe(200); });
+    expect((await invoke('/api/inspiration-boards/a', 'PUT', { parentId: 'b', name: '不可保存' })).status).toBe(409);
+    expect(sqlite.prepare("SELECT name FROM inspiration_boards WHERE id='a'").get()?.name).toBe('a');
+    seed('protected', 'a', { collectionBoardIds: ['a', 'c'] });
+    beforeBatch(async () => { await invoke('/api/inspiration-boards/c', 'PUT', { parentId: 'b' }); });
+    expect((await invoke('/api/inspiration-boards/a', 'DELETE')).status).toBe(409);
+    expect(sqlite.prepare("SELECT id FROM inspiration_boards WHERE id='a'").get()?.id).toBe('a');
+    expect((await item('protected')).boardIds).toEqual(['a', 'c']);
+    expect((await (await invoke('/api/inspiration-boards')).json() as any).items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'b', parentId: 'a' }), expect.objectContaining({ id: 'c', parentId: 'b' }),
+    ]));
   } finally { sqlite.close(); }
 });

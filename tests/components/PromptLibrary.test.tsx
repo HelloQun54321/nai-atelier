@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as libraries from '../../components/PromptLibrary';
 import { promptAgentService } from '../../services/promptAgent';
 import type { PromptChain } from '../../types';
+import { PromptLibraryContext } from '../../components/PromptLibraryAccess';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 
 const render = (ui: React.ReactNode) => renderView(<ConfirmDialogProvider>{ui}</ConfirmDialogProvider>);
@@ -351,4 +352,60 @@ describe('管理提示词分类按需展开', () => {
     expect(screen.getAllByRole('button', { name: '展开分类' })).toHaveLength(1);
     view.unmount(); slot.remove();
   });
+});
+
+it('编辑自定义目录片段可调整目录归属，保留原提示词和生成参数', async () => {
+  const directories = { revision: 1, nodes: [{ id: 'a', parentId: null, name: '道具', target: 'global' as const }, { id: 'b', parentId: 'a', name: '武器' }] };
+  const entry = { ...chains[0], type: 'preset', params: { seed: 42, _collectedCategory: 'general', _promptLibraryDirectoryIds: ['a'] } } as unknown as PromptChain;
+  const p = { ...props(), chains: [entry] };
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], directories, save: vi.fn() }}><libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('checkbox', { name: '道具' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '道具 / 武器' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledOnce());
+  expect(p.onUpdateChain.mock.calls[0][1]).toMatchObject({ basePrompt: 'silver_hair', params: { seed: 42, _promptLibraryDirectoryIds: ['b'] } });
+});
+
+it('有当前目录时管理页按真实目录筛选、新建和生成，不显示固定用途导航', async () => {
+  const directories = { revision: 1, nodes: [{ id: 'props', parentId: null, name: '道具', target: 'global' as const }, { id: 'weather', parentId: null, name: '天气', target: 'global' as const }] };
+  const custom = [{ ...chains[0], id: 'sword', type: 'preset', name: '剑', params: { _promptLibraryDirectoryIds: ['props'] } }, { ...chains[0], id: 'rain', type: 'preset', name: '雨', params: { _promptLibraryDirectoryIds: ['weather'] } }, { ...chains[0], id: 'other', type: 'preset', name: '未归类片段', params: { _collectedCategory: 'general', _promptLibraryDirectoryIds: [] } }] as unknown as PromptChain[];
+  const p = { ...props(), chains: custom }; p.onCreate.mockResolvedValue('new');
+  const generate = vi.spyOn(promptAgentService, 'generateLibraryPrompt').mockResolvedValue({ items: [{ name: '银剑', prompt: 'silver sword', bilingual: '', tags: [] }], provider: 'test', model: 'test', count: 1 });
+  render(<PromptLibraryContext.Provider value={{ chains: custom, directories, save: vi.fn() }}><libraries.PromptLibraryHub {...p} embedded /></PromptLibraryContext.Provider>);
+  expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
+  expect(screen.getByRole('button', { name: '片段：剑' })).toBeTruthy(); expect(screen.getByRole('button', { name: '片段：雨' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  expect(screen.queryByRole('button', { name: '管理目录' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '道具' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: '片段：雨' })).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: 'AI 生成片段' }));
+  const generator = screen.getByRole('dialog', { name: 'AI 生成片段' }); expect(generator.parentElement!.style.zIndex).toBe('1950');
+  fireEvent.change(screen.getByRole('textbox', { name: '描述你想要的内容' }), { target: { value: '银剑' } });
+  fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+  await waitFor(() => expect(generate).toHaveBeenCalledWith(expect.objectContaining({ directoryId: 'props', directories, brief: '银剑' })));
+  expect(generate.mock.calls[0][0]).not.toHaveProperty('kind');
+  fireEvent.click(screen.getByRole('button', { name: '关闭生成面板' }));
+  fireEvent.click(screen.getByRole('button', { name: '新建片段' }));
+  await waitFor(() => expect(p.onCreate).toHaveBeenCalledWith('新片段', '', 'preset', expect.objectContaining({ params: expect.objectContaining({ _promptLibraryDirectoryIds: ['props'] }) })));
+});
+
+it('管理树导航与列表并排，收展保留同一编辑草稿与滚动节点', async () => {
+  const directories = { revision: 1, nodes: [{ id: 'props', parentId: null, name: '道具', target: 'global' as const }] };
+  const entry = { ...chains[0], type: 'preset', params: { _promptLibraryDirectoryIds: ['props'] } } as unknown as PromptChain;
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], directories, save: vi.fn() }}><libraries.PromptLibraryHub {...props()} chains={[entry]} embedded /></PromptLibraryContext.Provider>);
+  const search = screen.getByRole('searchbox'); fireEvent.change(search, { target: { value: 'silver' } });
+  const scroll = document.querySelector('.workspace-scroll-viewport') as HTMLDivElement;
+  scroll.scrollTop = 140; fireEvent.scroll(scroll);
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
+  expect(nav.nextElementSibling).toBe(scroll); expect(nav.classList.contains('workspace-fixed-pane')).toBe(false);
+  expect(scroll.scrollTop).toBe(140); expect(screen.getByRole('searchbox')).toBe(search);
+  fireEvent.click(screen.getByRole('button', { name: '片段：形象甲' }));
+  const name = screen.getByRole('textbox', { name: '片段名称' }); fireEvent.change(name, { target: { value: '未保存草稿' } });
+  scroll.scrollTop = 75;
+  fireEvent.click(screen.getByRole('button', { name: '收起目录' }));
+  expect(screen.getByRole('textbox', { name: '片段名称' })).toBe(name); expect((name as HTMLInputElement).value).toBe('未保存草稿');
+  expect(document.querySelector('.workspace-scroll-viewport')).toBe(scroll); expect(scroll.scrollTop).toBe(75);
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  expect(screen.getByRole('textbox', { name: '片段名称' })).toBe(name);
 });

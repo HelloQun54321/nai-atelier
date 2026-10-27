@@ -3,6 +3,7 @@ import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getNaiModelFixedSettings, get
 import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
 import { compileCharacterContent, withGenerationCharacters } from './characterPrompts';
+import { getGlobalPromptSectionKeys } from './promptUtils';
 import { joinNaiTextPrompt, splitNaiTextPrompt, withTransparentPromptTags } from './transparentBackground.mjs';
 export { withTransparentPromptTags } from './transparentBackground.mjs';
 
@@ -95,11 +96,11 @@ export const buildNaiGenerationPayload = (
   const negativeLocked = Boolean(getNaiModelFixedSettings(modelId, runtime));
   let finalNegative = negativeLocked ? '' : negative;
   if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
-  /* 场景 / 镜头各自的内容负面：只属于那一栏的内容，追加在风格负面之后，不覆盖它 */
+  /* 分类负面跟随实际有正文的栏，追加到全局负面。 */
   const sectionNegatives = params._promptSections?.sectionNegatives || {};
-  for (const key of ['scene', 'camera', 'extra']) {
+  for (const key of getGlobalPromptSectionKeys(params._promptSections)) {
     const contentNegative = String(sectionNegatives[key] || '').trim();
-    if (!negativeLocked && params._promptSections?.[key as 'scene' | 'camera' | 'extra']?.trim() && contentNegative) {
+    if (!negativeLocked && params._promptSections?.[key]?.trim() && contentNegative) {
       finalNegative = appendPromptPart(finalNegative, contentNegative, 'suffix');
     }
   }

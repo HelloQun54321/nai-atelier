@@ -1217,7 +1217,8 @@ test('目录确认绑定真实路径，保存工具落盘后才返回成功', ()
   const events = []; const project = { agentSessionId: 's', keyHash: 'key', requestJson: async () => ({ id: 'a' }), requestBuffer: async () => ({ buffer: png, mimeType: 'image/png' }) };
   const tools = service.createTools({ params: {} }, {}, event => events.push(event), project, {});
   const access = tools.find(tool => tool.name === 'request_local_image_folder_access');
-  const waiting = access.execute('t', { directory, access: 'write' }); await new Promise(resolve => setTimeout(resolve, 10));
+  const waiting = access.execute('t', { directory, access: 'write' });
+  while (!events.length) await new Promise(resolve => setImmediate(resolve));
   const patch = events[0].action.patch;
   assert.equal(patch.payload.directory, directory); assert.match(patch.consequence, /不覆盖/);
   service.controlSession('s', 'confirm', '', { requestId: patch.requestId, accepted: true, keyHash: 'key' });
@@ -1501,8 +1502,56 @@ test('收藏夹工具使用真实排序字段，拒绝遗漏或重复的排序',
   requests.length = 0;
   await tools.find(item => item.name === 'reorder_inspiration_boards').execute('id', { ids: ['b', 'a'] });
   assert.deepEqual(requests.map(request => request.options.body.sortOrder), [0, 1]);
+  assert.ok(requests.every(request => !Object.hasOwn(request.options.body, 'parentId')));
   assert.ok(requests[0].path.endsWith('/b'));
   await assert.rejects(tools.find(item => item.name === 'reorder_inspiration_boards').execute('id', { ids: ['a'] }), /全部收藏夹/);
+}));
+
+test('收藏夹树工具保留真实层级，新增和移动仅在明确提供时传parentId且null可回根', () => isolated(async service => {
+  const requests = [], boards = [{ id: 'a', name: '父夹', parentId: null }, { id: 'b', name: '子夹', parentId: 'a' }];
+  const project = { agentOperationScope: 's', requestJson: async (path, options) => {
+    if (!options?.method) return { items: boards, treeRevision: 7 };
+    requests.push({ path, body: options.body });
+    return { item: { id: options.body.id || 'b', ...options.body }, treeRevision: 8 };
+  } };
+  const tools = service.createTools({ params: {} }, {}, () => {}, project);
+  const list = tools.find(item => item.name === 'list_inspiration_boards');
+  const read = await list.execute('t', {});
+  assert.deepEqual(JSON.parse(read.content[0].text), boards);
+  assert.equal(read.details.treeRevision, 7);
+  assert.match(list.description, /parentId/);
+  const create = tools.find(item => item.name === 'create_inspiration_board');
+  for (const args of [{ parentId: 'a' }, { parentId: null }, {}]) {
+    await create.execute('t', { name: '合成收藏夹', color: '#123456', ...args });
+    const { body } = requests.at(-1);
+    assert.equal(body.color, '#123456');
+    assert.match(body.id, /^agent-/);
+    assert.equal(Object.hasOwn(body, 'parentId'), Object.hasOwn(args, 'parentId'));
+    if (Object.hasOwn(args, 'parentId')) assert.equal(body.parentId, args.parentId);
+  }
+  const update = tools.find(item => item.name === 'update_inspiration_board');
+  await update.execute('t', { id: 'b', parentId: null });
+  assert.deepEqual(requests.at(-1), { path: '/api/inspiration-boards/b', body: { parentId: null } });
+  await update.execute('t', { id: 'b', parentId: 'a' });
+  assert.deepEqual(requests.at(-1).body, { parentId: 'a' });
+  await update.execute('t', { id: 'b', name: '改名' });
+  assert.deepEqual(requests.at(-1).body, { name: '改名' });
+  assert.equal(boards[1].parentId, 'a');
+}));
+
+test('删除收藏夹确认保留其他归属并说明直接子夹提升，用户原因不能盖掉实际后果', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const events = [], requests = [];
+  const tools = service.createTools({ params: {} }, {}, event => {
+    events.push(event);
+    if (event.action?.patch?.requestId) service.controlSession('s', 'confirm', '', { requestId: event.action.patch.requestId, accepted: false });
+  }, { agentSessionId: 's', requestJson: async (path, options) => {
+    requests.push({ path, options }); return { items: [{ id: 'a', name: '父夹', parentId: null }, { id: 'b', name: '子夹', parentId: 'a' }] };
+  } });
+  await assert.rejects(tools.find(item => item.name === 'delete_inspiration_board').execute('t', { id: 'a', reason: '整理结构' }), /用户取消/);
+  const consequence = events.find(event => event.action?.kind === 'request_project_action').action.patch.consequence;
+  for (const phrase of ['整理结构', '仅解除图片与本收藏夹的归属', '保留其他收藏夹归属', '直接子收藏夹提升一级', '不删除图片本身']) assert.ok(consequence.includes(phrase));
+  assert.ok(requests.every(request => !request.options?.method));
 }));
 
 test('本机图片可直接创建 Vibe 与角色参考，不经过历史或上传入口', () => isolated(async service => {

@@ -15,6 +15,11 @@ export const normalizeCharacterCoordinate = (value: unknown, freeform: boolean):
 /** 角色分栏的固定顺序：编译与展示都用这一份，避免各处顺序漂移。 */
 export const CHARACTER_SECTION_KEYS = ['appearance', 'wardrobe', 'pose', 'expression'] as const;
 
+export const getCharacterSectionKeys = (character: CharacterParams): Array<typeof CHARACTER_SECTION_KEYS[number] | `directory:${string}`> => [
+  ...CHARACTER_SECTION_KEYS,
+  ...Object.keys(character.sections || {}).filter((key): key is `directory:${string}` => key.startsWith('directory:') && key.length > 10),
+];
+
 const splitTags = (value: unknown): string[] =>
   splitPromptSegments(String(value ?? ''));
 
@@ -37,7 +42,7 @@ const joinTags = (lists: Array<string | undefined>): string => {
 
 /** 角色是否写了任一栏内容（决定它是否算「有内容的角色」）。 */
 export const hasCharacterSections = (character: CharacterParams): boolean =>
-  CHARACTER_SECTION_KEYS.some(key => Boolean(String(character.sections?.[key] || '').trim()));
+  getCharacterSectionKeys(character).some(key => Boolean(String(character.sections?.[key] || '').trim()));
 
 /**
  * 把分栏内容编译进**实际请求**：正文 = 四栏按固定顺序 + 手动补充正文；负面 = 四栏内容负面 + 角色负面。
@@ -48,6 +53,7 @@ export const compileCharacterContent = (
   legacyNegatives?: Record<string, unknown> | null,
 ): CharacterParams => {
   if (!hasCharacterSections(character)) return character;
+  const sectionKeys = getCharacterSectionKeys(character);
   /* 旧格式：params._characterSectionsNegatives['角色id::分类']，新代码没读之前它会被静默丢掉 */
   const legacyOf = (key: string): string => {
     if (!legacyNegatives) return '';
@@ -65,15 +71,15 @@ export const compileCharacterContent = (
   };
   return {
     ...character,
-    // AI 分类只整理原文，重复词也属于原配方，不能套用库片段的去重合并。
-    prompt: Object.values(character.sectionMeta || {}).some(meta => meta?.source === 'ai')
-      ? [...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt].map(value => value?.trim()).filter(Boolean).join(', ')
-      : joinTags([...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt]),
+    // 动态目录和 AI 分类保留原文，重复词也属于原配方。
+    prompt: sectionKeys.some(key => key.startsWith('directory:')) || Object.values(character.sectionMeta || {}).some(meta => meta?.source === 'ai')
+      ? [...sectionKeys.map(key => character.sections?.[key]), character.prompt].map(value => value?.trim()).filter(Boolean).join(', ')
+      : joinTags([...sectionKeys.map(key => character.sections?.[key]), character.prompt]),
     ...(() => {
       /* 没有负面时保持 undefined，不要把空串写进负数提示词字段 */
       const merged = joinTags([
         // 新分栏来源表示该栏已替换，缺少负面也不能复活旧格式负面。
-        ...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]?.trim()
+        ...sectionKeys.map(key => character.sections?.[key]?.trim()
           ? character.sectionNegatives?.[key] ?? (character.sectionMeta?.[key] ? '' : legacyOf(key)) : ''),
         character.negativePrompt,
       ]);

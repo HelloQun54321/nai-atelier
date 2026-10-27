@@ -1,9 +1,11 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Folder, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
+import { Folder, LoaderCircle, Search, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
 import { getCollectionBoardIds } from '../services/inspirationUtils';
+import { getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
+import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -30,7 +32,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedBoardId, setSelectedBoardId] = useState<string>('all');
+  const [selectedBoardId, setSelectedBoardId] = useState<string>('*');
   const [searchQuery, setSearchQuery] = useState('');
   const [importParams, setImportParams] = useState(false);
 
@@ -67,15 +69,16 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
 
-  const boardNameMap = useMemo(() => new Map(boards.map(b => [b.id, b.name])), [boards]);
+  const boardNameMap = useMemo(() => new Map(boards.map(board => [board.id, getDirectoryPath(boards, board.id).map(parent => parent.name).join(' / ')])), [boards]);
+  const filteredBoardIds = useMemo(() => selectedBoardId && selectedBoardId !== '*' ? getDirectoryDescendantIds(boards, selectedBoardId) : null, [boards, selectedBoardId]);
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return items.filter(item => {
-      if (selectedBoardId === 'unorganized') {
+      if (selectedBoardId === '') {
         if (getCollectionBoardIds(item).length) return false;
-      } else if (selectedBoardId !== 'all') {
-        if (!getCollectionBoardIds(item).includes(selectedBoardId)) return false;
+      } else if (filteredBoardIds) {
+        if (!getCollectionBoardIds(item).some(id => filteredBoardIds.has(id))) return false;
       }
       if (q) {
         const text = [item.title, item.prompt, item.negativePrompt, item.notes, ...(item.tags || [])]
@@ -86,7 +89,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
       }
       return true;
     });
-  }, [items, selectedBoardId, searchQuery]);
+  }, [items, selectedBoardId, filteredBoardIds, searchQuery]);
 
   if (!open) return null;
 
@@ -138,46 +141,10 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-            <button
-              type="button"
-              onClick={() => setSelectedBoardId('all')}
-              className={`flex-none rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                selectedBoardId === 'all'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'appearance-group bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300'
-              }`}
-            >
-              {t("全部收藏")}</button>
-            <button
-              type="button"
-              onClick={() => setSelectedBoardId('unorganized')}
-              className={`flex items-center gap-1 flex-none rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                selectedBoardId === 'unorganized'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'appearance-group bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300'
-              }`}
-            >
-              <Sparkles className="h-3 w-3" />
-              {t("未整理")}</button>
-            {boards.map(board => (
-              <button
-                key={board.id}
-                type="button"
-                onClick={() => setSelectedBoardId(board.id)}
-                className={`flex items-center gap-1.5 flex-none rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                  selectedBoardId === board.id
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'appearance-group bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300'
-                }`}
-              >
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: board.color || '#6366f1' }} />
-                <span className="truncate max-w-[8rem]">{board.name}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <DirectoryTreeNavigation label={t("收藏夹目录")} title={t("收藏夹")} nodes={boards} selectedId={selectedBoardId} onSelect={setSelectedBoardId} expanded preferenceKey="nai-collection-picker-tree-branches" allLabel={t("全部收藏")} unclassifiedLabel={t("未整理")} />
         {/* 收藏网格 */}
         <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {loading && items.length === 0 ? (
@@ -226,6 +193,8 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
               ))}
             </div>
           )}
+        </div>
+
         </div>
 
         {/* 底部操作条 */}

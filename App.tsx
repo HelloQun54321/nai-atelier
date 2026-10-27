@@ -39,6 +39,9 @@ import { parsePromptLibraryTags, combinationPicks, createCombinationData, librar
 import { PromptLibraryCategoryManager } from './components/PromptLibraryCategoryManager';
 import { promptLibraryCategoryNames } from './services/promptLibraryCategories';
 import { PromptLibraryBrowser } from './components/PromptLibraryBrowser';
+import { PromptLibraryDirectoryDialog } from './components/PromptLibraryDirectoryDialog';
+import { loadPromptLibraryDirectories, removePromptLibraryDirectory, savePromptLibraryDirectories, PROMPT_LIBRARY_DIRECTORIES_CHANGED, type PromptLibraryTreeState } from './services/promptLibraryDirectories';
+import { loadPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, savePromptLibraryCategoryTree, type PromptLibraryCategoryTreeState } from './services/promptLibraryCategoryTree';
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
 import { ToolbarButton } from './components/DesignSystem';
@@ -198,9 +201,28 @@ const App = () => {
   const [libraryEditEntry, setLibraryEditEntry] = useState<PromptChain | null>(null);
   const [libraryFocusId, setLibraryFocusId] = useState('');
   const [libraryCategoryNames, setLibraryCategoryNames] = useState<string[] | null>(null);
+  const [libraryDirectories, setLibraryDirectories] = useState<PromptLibraryTreeState>();
+  const [libraryCategoryTree, setLibraryCategoryTree] = useState<PromptLibraryCategoryTreeState>();
+  const [libraryDirectoriesError, setLibraryDirectoriesError] = useState('');
+  const [libraryDirectoriesOpen, setLibraryDirectoriesOpen] = useState(false);
+  const [libraryDirectoryCreateParent, setLibraryDirectoryCreateParent] = useState<string | null>();
+  const [libraryDirectoryEditingId, setLibraryDirectoryEditingId] = useState<string>();
+  const directoryLoadRevision = useRef(0);
   const [libraryCategoriesOpen, setLibraryCategoriesOpen] = useState(false);
+  const [libraryCategoryCreateParent, setLibraryCategoryCreateParent] = useState<string | null>();
+  const [libraryCategoryEditingId, setLibraryCategoryEditingId] = useState<string>();
+  const [libraryCategoryDeletingId, setLibraryCategoryDeletingId] = useState<string>();
+  const [movingLibraryDirectory, setMovingLibraryDirectory] = useState(false);
+  const [movingLibraryCategory, setMovingLibraryCategory] = useState(false);
+  const libraryDirectoryMovePending = useRef(false);
+  const libraryCategoryMovePending = useRef(false);
   const [libraryCategoryChange, setLibraryCategoryChange] = useState<{ from: string; to: string; token: number }>();
   const categoryRevisionRef = useRef(0);
+  const openLibraryDirectories = React.useCallback((parentId: string | null) => { setLibraryDirectoryEditingId(undefined); setLibraryDirectoryCreateParent(parentId); setLibraryDirectoriesOpen(true); }, []);
+  const editLibraryDirectory = React.useCallback((id: string) => { setLibraryDirectoryCreateParent(undefined); setLibraryDirectoryEditingId(id); setLibraryDirectoriesOpen(true); }, []);
+  const openLibraryCategories = React.useCallback((parentId: string | null) => { setLibraryCategoryEditingId(undefined); setLibraryCategoryDeletingId(undefined); setLibraryCategoryCreateParent(parentId); setLibraryCategoriesOpen(true); }, []);
+  const editLibraryCategory = React.useCallback((id: string) => { setLibraryCategoryCreateParent(undefined); setLibraryCategoryDeletingId(undefined); setLibraryCategoryEditingId(id); setLibraryCategoriesOpen(true); }, []);
+  const deleteLibraryCategory = React.useCallback((id: string) => { setLibraryCategoryCreateParent(undefined); setLibraryCategoryEditingId(undefined); setLibraryCategoryDeletingId(id); setLibraryCategoriesOpen(true); }, []);
 
   const [libraryManageOpen, setLibraryManageOpen] = useState(false);
   const [libraryManageSection, setLibraryManageSection] = useState<ContentLibrarySection>('items');
@@ -243,6 +265,34 @@ const App = () => {
 
   // Personal-mode owner loaded from the local service.
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const reloadLibraryDirectories = React.useCallback(async () => {
+    if (!currentUser) return;
+    const revision = ++directoryLoadRevision.current;
+    try {
+      const [state, categoryTree] = await Promise.all([loadPromptLibraryDirectories(), loadPromptLibraryCategoryTree()]);
+      if (revision === directoryLoadRevision.current) { setLibraryDirectories(state); setLibraryCategoryTree(categoryTree); setLibraryDirectoriesError(''); }
+    } catch (error) {
+      if (revision === directoryLoadRevision.current) setLibraryDirectoriesError(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }, [currentUser?.id]);
+  useEffect(() => {
+    if (!currentUser) return;
+    void reloadLibraryDirectories().catch(() => {});
+    const changed = (event: Event) => {
+      ++directoryLoadRevision.current;
+      setLibraryDirectories((event as CustomEvent<PromptLibraryTreeState>).detail);
+      setLibraryDirectoriesError('');
+    };
+    const refresh = () => { void reloadLibraryDirectories().catch(() => {}); };
+    window.addEventListener(PROMPT_LIBRARY_DIRECTORIES_CHANGED, changed);
+    window.addEventListener('nai-project-data-changed', refresh);
+    return () => {
+      ++directoryLoadRevision.current;
+      window.removeEventListener(PROMPT_LIBRARY_DIRECTORIES_CHANGED, changed);
+      window.removeEventListener('nai-project-data-changed', refresh);
+    };
+  }, [currentUser?.id, reloadLibraryDirectories]);
   useEffect(() => {
     if (!currentUser) return;
     let cancelled = false;
@@ -283,6 +333,51 @@ const App = () => {
       toastTimerRef.current = null;
     }, 3000);
   }, []);
+
+  const moveLibraryDirectory = useCommittedCallback(async (id: string, parentId: string | null) => {
+    const node = libraryDirectories?.nodes.find(item => item.id === id);
+    if (libraryDirectoryMovePending.current || !libraryDirectories || !node || node.parentId === parentId) return;
+    libraryDirectoryMovePending.current = true; setMovingLibraryDirectory(true);
+    ++directoryLoadRevision.current;
+    try {
+      const saved = await savePromptLibraryDirectories({ ...libraryDirectories, nodes: libraryDirectories.nodes.map(item => item.id === id ? { ...item, parentId } : item) });
+      ++directoryLoadRevision.current; setLibraryDirectories(saved); setLibraryDirectoriesError('');
+      notify(t('已保存'));
+    } catch (error) {
+      await reloadLibraryDirectories().catch(() => {});
+      notify(error instanceof Error ? t(error.message) : t('保存失败，请稍后重试'), 'error');
+    } finally { libraryDirectoryMovePending.current = false; setMovingLibraryDirectory(false); }
+  });
+  const moveLibraryCategory = useCommittedCallback(async (id: string, parentId: string | null) => {
+    if (libraryCategoryMovePending.current || !libraryCategoryTree) return;
+    const current = projectPromptLibraryCategoryTree(chains, libraryCategoryNames || [], libraryCategoryTree);
+    const node = current.nodes.find(item => item.id === id);
+    if (!node || node.parentId === parentId) return;
+    libraryCategoryMovePending.current = true; setMovingLibraryCategory(true);
+    ++directoryLoadRevision.current;
+    try {
+      const saved = await savePromptLibraryCategoryTree({ ...current, nodes: current.nodes.map(item => item.id === id ? { ...item, parentId } : item) });
+      ++directoryLoadRevision.current; setLibraryCategoryTree(saved); setLibraryDirectoriesError('');
+      notify(t('已保存'));
+    } catch (error) {
+      await reloadLibraryDirectories().catch(() => {});
+      notify(error instanceof Error ? t(error.message) : t('保存失败，请稍后重试'), 'error');
+    } finally { libraryCategoryMovePending.current = false; setMovingLibraryCategory(false); }
+  });
+  const deleteLibraryDirectory = useCommittedCallback(async (id: string) => {
+    const node = libraryDirectories?.nodes.find(item => item.id === id);
+    if (!libraryDirectories || !node || libraryDirectoryMovePending.current) return;
+    libraryDirectoryMovePending.current = true; setMovingLibraryDirectory(true);
+    try {
+      if (!await confirmAction({ title: t('删除目录「{0}」？', [node.name]), message: t('只删除目录，子目录提升到上级；关联条目会变为未归类。'), confirmLabel: t('删除目录'), tone: 'danger' })) return;
+      ++directoryLoadRevision.current;
+      await savePromptLibraryDirectories(removePromptLibraryDirectory(libraryDirectories, id));
+      notify(t('已保存'));
+    } catch (error) {
+      await reloadLibraryDirectories().catch(() => {});
+      notify(error instanceof Error ? t(error.message) : t('保存失败，请稍后重试'), 'error');
+    } finally { libraryDirectoryMovePending.current = false; setMovingLibraryDirectory(false); }
+  });
 
   useEffect(() => {
     const onAccountingError = (event: Event) => {
@@ -726,7 +821,7 @@ const App = () => {
   const handleSaveContentRoll = async (name: string, picks: Record<string, unknown>, seed: string, seeds: Record<string, string>, copy = false, tags: string[] = []) => {
     const savedTags = parsePromptLibraryTags(tags.join(','));
     const snapshot = contentSnapshotOf({ picks: libraryPicksWithSources(picks as Parameters<typeof libraryPicksWithSources>[0]), seed, seeds, checks: {}, locked: {} } as never, new Date().toISOString());
-    if (!snapshot) throw new Error(t('这一组没有可保存的六类内容'));
+    if (!snapshot) throw new Error(t('这一组没有可保存的内容'));
     if (contentRollEditId && !copy) {
       const existing = chains.find(item => item.id === contentRollEditId);
       if (!existing) throw new Error(t('原组合已不存在，请另存为新组合'));
@@ -742,7 +837,7 @@ const App = () => {
       return existingId;
     }
     const source = contentRollSourceRef.current;
-    const created = await createLibraryChain(name, source?.description || t('一键 Roll 存下的六类内容组合'), 'preset', {
+    const created = await createLibraryChain(name, source?.description || t('搭配保存的内容组合'), 'preset', {
       tags: replaceCustomChainTags(source?.tags, savedTags), previewImage: source?.previewImage,
       params: { ...source?.params, _rollContentSnapshot: snapshot } as unknown as NAIParams,
     });
@@ -986,17 +1081,23 @@ const App = () => {
           returnTargetId={view === 'list' ? selectedId : undefined}
         />;
       case 'content-library':
+        if (!libraryDirectories || !libraryCategoryTree) return <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-sm" role="status">
+          <span>{libraryDirectoriesError ? t('提示词目录加载失败') : t('加载中…')}</span>
+          {libraryDirectoriesError && <><p role="alert">{t(libraryDirectoriesError)}</p><ToolbarButton onClick={() => void reloadLibraryDirectories().catch(() => {})}>{t('重试')}</ToolbarButton></>}
+        </div>;
         return <ContentLibraryPage
+          directories={libraryDirectories}
           section={contentLibrarySection}
           onSectionChange={setContentLibrarySection}
           active={view === 'content-library'}
-          onCapture={async (text, name, category, tags) => {
+          onCapture={async (text, name, category, tags, directoryIds) => {
             const data = prepareCollectedPrompt(text, name, category);
-            return createLibraryChain(data.name, '', data.type, { ...data, tags });
+            return createLibraryChain(data.name, '', data.type, { ...data, tags, ...(directoryIds !== undefined ? { params: { ...data.params, _promptLibraryDirectoryIds: directoryIds } as NAIParams } : {}) });
           }}
           onViewCaptured={setLibraryFocusId}
-          browse={toolbarSlot => <PromptLibraryBrowser chains={chains} toolbarSlot={toolbarSlot} notify={notify}
-            categoryNames={libraryCategoryNames || []} categoryChange={libraryCategoryChange} onManageCategories={() => setLibraryCategoriesOpen(true)}
+          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
+            directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
+            categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange} onCreateCategory={openLibraryCategories} onRenameCategory={editLibraryCategory} onDeleteCategory={deleteLibraryCategory} onMoveCategory={moveLibraryCategory} categoriesBusy={movingLibraryCategory || libraryCategoriesOpen}
             onDelete={handleDeleteLibraryEntry}
             onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags: replaceCustomChainTags((chains.find(item => item.id === chain.id) || chain).tags, tags) }); }} onManage={() => setLibraryManageOpen(true)} focusEntryId={libraryFocusId} />}
           notify={notify}
@@ -1015,7 +1116,7 @@ const App = () => {
           }}
           items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
             onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
-          roll={toolbarSlot => <ContentRollWorkspace categoryNames={libraryCategoryNames || []} active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+          roll={toolbarSlot => <ContentRollWorkspace directories={libraryDirectories} categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
             editing={!!contentRollEditId}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
@@ -1222,7 +1323,7 @@ const App = () => {
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
     view, chains, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
-    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, language,
+    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, movingLibraryCategory, libraryCategoriesOpen, language,
   ]);
   const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
     if (data.id) { await handleUpdateChain(data.id, data); return; }
@@ -1232,8 +1333,9 @@ const App = () => {
   });
   const clearLibraryRequest = React.useCallback(() => setLibraryEntryRequest(null), []);
   const promptLibrary = useMemo(() => ({ chains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
-    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace, categoryNames: promptLibraryCategoryNames(chains, libraryCategoryNames || []),
-  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames]);
+    directories: libraryDirectories, directoriesError: libraryDirectoriesError, reloadDirectories: reloadLibraryDirectories, onCreateDirectory: openLibraryDirectories, onRenameDirectory: editLibraryDirectory, onDeleteDirectory: deleteLibraryDirectory, onMoveDirectory: moveLibraryDirectory, directoriesBusy: movingLibraryDirectory,
+    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace, categoryNames: promptLibraryCategoryNames(chains, libraryCategoryNames || []), categoryTree: libraryCategoryTree,
+  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, reloadLibraryDirectories, openLibraryDirectories, editLibraryDirectory, deleteLibraryDirectory, moveLibraryDirectory, movingLibraryDirectory]);
 
   if (!currentUser && !dbConfigError) {
     return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
@@ -1314,8 +1416,9 @@ const App = () => {
       >
         <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("正在加载工作区…")}</div>}>
           {renderContent()}
-          {libraryCategoriesOpen && <PromptLibraryCategoryManager onClose={() => setLibraryCategoriesOpen(false)} onSnapshot={({ chains: latestChains, names }) => {
+          {libraryCategoriesOpen && <PromptLibraryCategoryManager initialTree={libraryCategoryTree} initialParentId={libraryCategoryCreateParent} initialEditingId={libraryCategoryEditingId} initialDeletingId={libraryCategoryDeletingId} onClose={() => setLibraryCategoriesOpen(false)} onSnapshot={({ chains: latestChains, names, tree }) => {
             categoryRevisionRef.current++; refreshDataSeqRef.current++;
+            if (tree) { ++directoryLoadRevision.current; setLibraryCategoryTree(tree); }
             setChains(latestChains); setLibraryCategoryNames(names); setLastChainFetch(Date.now()); setLoading(false);
           }} onChanged={(from, to) => setLibraryCategoryChange(previous => ({ from, to, token: (previous?.token || 0) + 1 }))} />}
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
@@ -1327,16 +1430,17 @@ const App = () => {
               requestCloseRef={libraryEditorCloseRef} onClose={() => setLibraryEditEntry(null)} /></div>
           </LibraryDialog>}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'originals' && <ImagePreviewPortal><PromptCaptureDialog key={libraryEditEntry.id} open editing
+            directories={libraryDirectories}
             initialText={libraryEditEntry.basePrompt} initialName={libraryEditEntry.name} initialTags={libraryEditEntry.tags?.join(', ')}
             categoryDisabled={(libraryEditEntry.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative'}
-            onClose={() => setLibraryEditEntry(null)} onSave={async (text, name, category, tags) => {
+            onClose={() => setLibraryEditEntry(null)} onSave={async (text, name, category, tags, directoryIds) => {
               if (category && (libraryEditEntry.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') throw new Error(t('负面原文请保持原文分类'));
               const data = prepareCollectedPrompt(text, name, category);
               if (category) {
-                const id = await createLibraryChain(data.name, libraryEditEntry.description || '', data.type, { ...data, tags, negativePrompt: libraryEditEntry.negativePrompt, previewImage: libraryEditEntry.previewImage });
+                const id = await createLibraryChain(data.name, libraryEditEntry.description || '', data.type, { ...data, tags, params: { ...data.params, ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams, negativePrompt: libraryEditEntry.negativePrompt, previewImage: libraryEditEntry.previewImage });
                 notify(t('已保存片段')); return id;
               }
-              await handleUpdateChain(libraryEditEntry.id, { ...data, tags, params: { ...libraryEditEntry.params, ...data.params } });
+              await handleUpdateChain(libraryEditEntry.id, { ...data, tags, params: { ...libraryEditEntry.params, ...data.params, ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } });
               notify(t('已保存')); return libraryEditEntry.id;
             }} /></ImagePreviewPortal>}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'saved' && <LibraryDialog title="选择组合中的角色" onClose={() => setLibraryEditEntry(null)}>
@@ -1361,6 +1465,7 @@ const App = () => {
                   onSetCover={async (chain, previewImage) => { await handleUpdateChain(chain.id, { previewImage }); }} />}
             </div>
           </LibraryDialog>}
+          {libraryDirectories && libraryDirectoriesOpen && <PromptLibraryDirectoryDialog key={libraryDirectoryEditingId || 'create'} state={libraryDirectories} editingId={libraryDirectoryEditingId} initialParentId={libraryDirectoryCreateParent} onClose={() => setLibraryDirectoriesOpen(false)} onSave={savePromptLibraryDirectories} onReload={reloadLibraryDirectories} />}
         </Suspense>
       </Layout>
       </PromptLibraryContext.Provider>

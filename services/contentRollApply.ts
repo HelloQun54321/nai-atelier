@@ -1,5 +1,5 @@
 ﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
-import { KINDS, META } from './contentRoll';
+import { KINDS, META, isDirectorySectionKey } from './contentRoll';
 import type { RollRow } from './contentRoll';
 import { CHARACTER_SECTION_KEYS } from './characterPrompts';
 
@@ -40,7 +40,7 @@ export const filterPicksByScope = (
   if (scope === 'all') return { ...picks };
   const out: Record<string, RollRow> = {};
   for (const [kind, row] of Object.entries(picks || {})) {
-    const isGlobal = META[kind]?.scope === 'global';
+    const isGlobal = (row.scope || META[kind]?.scope) === 'global';
     if (scope === 'global' ? isGlobal : !isGlobal) out[kind] = row;
   }
   return out;
@@ -63,10 +63,10 @@ export interface ContentRollApplyRow {
 
 /** 一栏要写进角色分栏的内容（含内容负面与来源快照）。 */
 export interface ContentRollRoleWrite {
-  kind: keyof CharacterSectionContent;
+  kind: keyof CharacterSectionContent | `directory:${string}`;
   text: string;
   negative: string;
-  meta: { entryId?: string; entryName?: string; notes?: string; source?: string };
+  meta: { entryId?: string; entryName?: string; notes?: string; source?: string; directoryName?: string; directoryPath?: string[] };
 }
 
 export interface ContentRollApplyPlan {
@@ -150,8 +150,11 @@ export const planContentRollApply = (
   const written: string[] = [];
   const kept: string[] = [];
 
-  for (const kind of target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS) {
-    const meta = META[kind];
+  const legacyKeys = target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS;
+  const keys = Object.keys(picks).some(isDirectorySectionKey)
+    ? Object.keys(picks).filter(key => isDirectorySectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
+  for (const kind of keys) {
+    const meta = META[kind] || { title: picks[kind]?.directoryName || picks[kind]?.title || kind, scope: picks[kind]?.scope || 'global' };
     const row = picks[kind];
     const next = textOfRow(row);
     const negative = negativeOfRow(row);
@@ -166,18 +169,19 @@ export const planContentRollApply = (
         globalParts.push(next);
         globalSections[kind] = next;
         if (negative) globalNegatives[kind] = negative;
-        globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name };
+        globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name, notes: row?.constraintNotes || row?.constraints?.notes || undefined, ...(isDirectorySectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}) };
       } else {
         characterParts.push(next);
         roleWrites.push({
-          kind: kind as keyof CharacterSectionContent,
+          kind: kind as keyof CharacterSectionContent | `directory:${string}`,
           text: next,
           negative,
           meta: {
             entryId: String(row?.id || '') || undefined,
             entryName: String(row?.name || '') || undefined,
-            notes: row?.constraints?.notes || undefined,
+            notes: row?.constraintNotes || row?.constraints?.notes || undefined,
             source: row?.reason || undefined,
+            ...(isDirectorySectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}),
           },
         });
       }

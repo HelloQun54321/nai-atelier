@@ -78,14 +78,16 @@ it('粘贴收录两库均可达，后台隐藏且返回保留原文，不干扰�
   expect(save).not.toHaveBeenCalled();
 });
 
-it('三类资源，筛选、搜索、Roll 操作顺序一致，切库保留草稿', () => {
+it('仅保留片段和组合入口，筛选、搜索、Roll 操作顺序一致，切库保留草稿', () => {
   render(<Harness />);
-  expect(screen.getAllByRole('tab')).toHaveLength(3);
+  expect(screen.getAllByRole('tab')).toHaveLength(2);
+  expect(screen.queryByRole('tab', { name: '全部' })).toBeNull();
+  expect(screen.queryByRole('tab', { name: '原文' })).toBeNull();
   expect(screen.queryByTestId('组合搜索')).toBeNull();
   expect(screen.queryByTestId('搭配草稿')).toBeNull();
   const toolbar = screen.getByRole('banner');
   expect(Array.from(toolbar.querySelectorAll('button,input')).map(node => node.textContent || node.getAttribute('aria-label')))
-    .toEqual(['片段', '组合', '原文', '筛选', '条目搜索', '随机搭配']);
+    .toEqual(['片段', '组合', '筛选', '条目搜索', '随机搭配']);
   fireEvent.change(screen.getByRole('textbox', { name: '条目搜索' }), { target: { value: 'night' } });
   const items = screen.getByTestId('条目搜索');
   fireEvent.keyDown(screen.getByRole('tab', { name: '片段' }), { key: 'ArrowRight' });
@@ -95,6 +97,17 @@ it('三类资源，筛选、搜索、Roll 操作顺序一致，切库保留草�
   fireEvent.keyDown(screen.getByRole('tab', { name: '组合' }), { key: 'Home' });
   expect(screen.getByTestId('条目搜索')).toBe(items);
   expect((screen.getByRole('textbox', { name: '条目搜索' }) as HTMLInputElement).value).toBe('night');
+});
+
+it('旧原文分区请求只读回落片段，不恢复已移除的顶部入口或修改资料', () => {
+  const changeSection = vi.fn(); const originals = vi.fn(() => <div>原文旧面板</div>);
+  render(<ContentLibraryPage section="originals" onSectionChange={changeSection} rollOpen={false} onRollOpenChange={vi.fn()}
+    items={() => <div>片段当前面板</div>} saved={() => null} originals={originals} roll={() => null} />);
+  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['片段', '组合']);
+  expect(screen.getByRole('tab', { name: '片段' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByText('片段当前面板')).toBeTruthy();
+  expect(originals).not.toHaveBeenCalled();
+  expect(changeSection).not.toHaveBeenCalled();
 });
 
 it('Roll 按需打开独立面板，关闭与重新打开保留搭配和原库，焦点回到触发按钮', () => {
@@ -223,4 +236,15 @@ it('统一浏览保留搜索与紧凑 AI 提取入口，隐藏页面释放提取
   expect(screen.getByRole('dialog', { name: 'AI 提取分类' })).toBeTruthy();
   view.rerender(<ContentLibraryPage {...props} active={false} />);
   expect(screen.queryByRole('dialog', { name: 'AI 提取分类' })).toBeNull();
+});
+
+it('统一浏览将窄屏提取交给现有筛选入口，打开的仍是共用提取窗口', async () => {
+  render(<ContentLibraryPage section="items" onSectionChange={vi.fn()} rollOpen={false} onRollOpenChange={vi.fn()} onExtractSave={vi.fn()}
+    browse={(_slot, actions) => <button onClick={actions?.onExtract}>从筛选打开提取</button>} items={() => null} saved={() => null} roll={() => null} />);
+  const toolbarEntry = screen.getByRole('button', { name: 'AI 提取分类' });
+  expect(toolbarEntry.classList.contains('!hidden')).toBe(true);
+  expect(toolbarEntry.classList.contains('md:!inline-flex')).toBe(true);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '从筛选打开提取' }));
+  expect(await screen.findByRole('dialog', { name: 'AI 提取分类' })).toBeTruthy();
 });

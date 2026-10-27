@@ -4,6 +4,8 @@ import {
   MAX_EXTRACTION_PROMPT,
   MAX_EXTRACTION_TEXT,
   assembleTextExtraction,
+  buildTextExtractionSystemPrompt,
+  buildVisionExtractionSystemPrompt,
   fallbackExtractionName,
   hasChineseText,
   parseStoredGenerationMetadata,
@@ -18,6 +20,71 @@ const assemble = (value, response) => {
   const chunks = chunksOf(value);
   return assembleTextExtraction(chunks, parseTextExtractionResponse(JSON.stringify(response), chunks));
 };
+
+const directoryTree = { revision: 8, nodes: [
+  { id: 'user-root', parentId: null, name: '我的风格' },
+  { id: 'custom-leaf', parentId: 'user-root', name: '水彩笔触' },
+  { id: 'custom-deep', parentId: 'custom-leaf', name: '纸张' },
+] };
+
+test('提取按当前任意层目录和多归属重组，未归类也能形成可保存片段', () => {
+  const chunks = chunksOf('1.3::watercolor, paper::, watercolor, masterpiece');
+  const parsed = parseTextExtractionResponse(JSON.stringify({ assignments: [
+    { id: 's0', directoryIds: ['custom-deep', 'custom-leaf'] },
+    { id: 's1', directoryId: 'user-root' },
+    { id: 's2', directoryIds: [] },
+  ] }), chunks, directoryTree);
+  const result = assembleTextExtraction(chunks, parsed);
+  assert.deepEqual(result.items.map(item => item.directoryIds), [['custom-deep', 'custom-leaf'], ['user-root'], []]);
+  assert.deepEqual(result.items.map(item => item.kind), ['preset', 'preset', 'preset']);
+  assert.equal(result.items[0].prompt, '1.3::watercolor, paper::');
+  assert.match(result.items[0].name, /我的风格 \/ 水彩笔触 \/ 纸张/);
+  assert.equal(result.items[2].needsDirectoryReview, false);
+  assert.equal(result.unclassified, null);
+});
+
+test('未知和缺失目录不静默归入旧类别，文字与看图均保留可人工修复候选', () => {
+  const chunks = chunksOf('watercolor, paper');
+  const parsed = parseTextExtractionResponse(JSON.stringify({ assignments: [
+    { id: 's0', directoryIds: ['missing-id'] }, { id: 's1' },
+  ] }), chunks, directoryTree);
+  const text = assembleTextExtraction(chunks, parsed);
+  assert.deepEqual(text.items.map(item => item.directoryIds), [['missing-id'], ['']]);
+  assert.ok(text.items.every(item => item.needsDirectoryReview));
+  const vision = parseVisionExtractionResponse(JSON.stringify({ items: [
+    { directoryId: 'missing-id', name: '水彩', prompt: 'watercolor' },
+    { directoryIds: [], name: '纸张', prompt: 'paper' },
+  ], unclassified: [{ name: '残留文字', prompt: 'text' }] }), directoryTree);
+  assert.equal(vision.items.length, 3);
+  assert.equal(vision.items[0].needsDirectoryReview, true);
+  assert.equal(vision.items[1].needsDirectoryReview, false);
+  assert.deepEqual(vision.items[2].directoryIds, []);
+  assert.equal(vision.unclassified, null);
+});
+
+test('自然语言拆分使用真实目录，英文原片段不能被模型译写', () => {
+  const chunks = chunksOf('穿着白裙在纸上画水彩的少女。, watercolor');
+  const parsed = parseTextExtractionResponse(JSON.stringify({ assignments: [
+    { id: 's0', directoryIds: [] }, { id: 's1', directoryIds: ['custom-leaf'] },
+  ], translations: [{ id: 's1', english: 'rewritten word' }], expansions: [{ id: 's0', parts: [
+    { directoryIds: ['custom-deep'], english: 'paper' },
+    { directoryIds: ['missing-id'], english: 'white dress' },
+  ] }] }), chunks, directoryTree);
+  const result = assembleTextExtraction(chunks, parsed);
+  assert.deepEqual(result.items.map(item => item.prompt), ['paper', 'white dress', 'watercolor']);
+  assert.equal(result.items[1].needsDirectoryReview, true);
+  assert.match(result.items[0].original, /白裙/);
+});
+
+test('动态提取提示包含真实路径与 ID，不固定六类；空树允许未归类', () => {
+  for (const builder of [buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt]) {
+    const system = builder(directoryTree);
+    assert.match(system, /我的风格 \/ 水彩笔触 \/ 纸张/);
+    assert.match(system, /custom-deep/);
+    assert.doesNotMatch(system, /appearance 人物形象/);
+    assert.match(builder({ revision: 1, nodes: [] }), /directoryIds:\[\]/);
+  }
+});
 
 test('负面提示词与生成参数被剥离，正文保持原样', () => {
   const sources = splitExtractionSources('1girl, red eyes\nNegative prompt: bad hands, extra fingers\nSteps: 28, Sampler: Euler a');

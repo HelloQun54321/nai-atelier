@@ -11,13 +11,25 @@ const folders = ['one', 'two', 'three'].map(id => ({ id, name: id, userId: 'test
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('多夹选择器默认未整理，最近收藏夹优先，不重复或展示已失效的目录', () => {
+it('多归属选择使用共用树复选框和完整路径，只勾选指定子夹，不连带勾选祖先', () => {
+  const boards = folders.map((board, index) => ({ ...board, parentId: index ? folders[index - 1].id : null }));
+  const onToggle = vi.fn();
+  render(<CollectionFolderPicker boards={boards} value={['three']} onToggle={onToggle} />);
+  const trigger = screen.getByRole('button', { name: '管理收藏夹' });
+  expect(trigger.textContent).toContain('one / two / three'); fireEvent.click(trigger);
+  expect((screen.getByRole('checkbox', { name: 'one / two / three' }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole('checkbox', { name: 'one' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: 'one / two' }));
+  expect(onToggle).toHaveBeenCalledExactlyOnceWith('two', true);
+});
+
+it('多夹选择器默认未整理，目录保持树顺序，不因最近使用混排或展示已失效目录', () => {
   vi.stubGlobal('innerWidth', 1280);
   rememberCollectionFolder('missing'); rememberCollectionFolder('two');
   render(<CollectionFolderPicker boards={folders} value={[]} onToggle={vi.fn()} />);
   const trigger = screen.getByRole('button', { name: '管理收藏夹' });
   expect(trigger.textContent).toContain('未整理'); fireEvent.click(trigger);
-  expect(screen.getAllByRole('checkbox').map(input => input.closest('label')!.textContent)).toEqual(['two', 'one', 'three']);
+  expect(screen.getAllByRole('checkbox').map(input => input.closest('label')!.textContent)).toEqual(['one', 'two', 'three']);
   expect(getRecentCollectionFolders()).toEqual(['two', 'missing']);
 });
 

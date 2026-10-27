@@ -62,9 +62,9 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   };
   visit(tree); assert.ok(branch);
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  const handler = new AsyncFunction('req', 'res', 'url', 'promptAgent', 'sendJson', 'hasValidLanCookie', 'readRequestBody', `const lanSecret=''; ${branch}`);
+  const handler = new AsyncFunction('req', 'res', 'url', 'promptAgent', 'sendJson', 'hasValidLanCookie', 'readRequestBody', 'requestWorkerJson', `const lanSecret='', workerPort=0; ${branch}`);
   const invoke = (path, method, body) => handler({ method, headers: {} }, {}, { pathname: path }, service,
-    (_res, status, value) => ({ status, value }), () => true, async () => Buffer.from(JSON.stringify(body || {})));
+    (_res, status, value) => ({ status, value }), () => true, async () => Buffer.from(JSON.stringify(body || {})), async path => { assert.equal(path, '/api/prompt-library/directories'); return { revision: 1, nodes: [] }; });
   const endpoint = '/api/prompt-agent/library-prompts';
   assert.deepEqual((await invoke(endpoint, 'GET')).value, { spec: '', extra: '' });
   assert.equal((await invoke(endpoint, 'PUT', { spec: 'saved spec', extra: 'saved extra' })).status, 200);
@@ -74,7 +74,7 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.equal(service.getLibraryPrompts().spec, 'saved spec');
   assert.equal((await invoke(endpoint + '/preview', 'POST', { kind: 'unknown' })).status, 400);
   const classified = [{ id: 'global', kind: 'global', sections: { style: 'artist:synthetic' } }];
-  service.classifyPrompts = async input => { assert.deepEqual(input.documents, [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }]); return { items: classified }; };
+  service.classifyPrompts = async (input, project) => { assert.deepEqual(input.documents, [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }]); assert.deepEqual(await project.requestJson('/api/prompt-library/directories'), { revision: 1, nodes: [] }); return { items: classified }; };
   assert.deepEqual((await invoke('/api/prompt-agent/classify-prompts', 'POST', { documents: [{ id: 'global', kind: 'global', prompt: 'artist:synthetic' }] })).value, { items: classified });
   assert.equal((await invoke('/api/prompt-agent/classify-prompts', 'GET')).status, 405);
   const directEndpoint = '/api/prompt-agent/creative-direct';

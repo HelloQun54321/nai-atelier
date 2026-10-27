@@ -281,6 +281,18 @@ describe('实验室参考分区', () => {
 });
 
 describe('元数据导入后自动分类', () => {
+  it('文生图动态目录正负词可编辑，Medium保持分类负面锁定', async () => {
+    const sectioned = { ...chain, variableValues: { subject: 'forest' }, params: { ...chain.params, model: 'nai-diffusion-5-full-medium',
+      _promptSections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } } } };
+    setup(sectioned);
+    const positive = await screen.findByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement;
+    expect(positive.value).toBe('forest'); expect(positive.disabled).toBe(false);
+    const negative = screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true); expect(negative.value).toBe('city');
+    fireEvent.change(positive, { target: { value: 'rainy forest' } });
+    await waitFor(() => expect(state.agent?.draft.subjectPrompt).toBe('rainy forest'));
+    expect(state.agent?.draft.params._promptSections?.['directory:scene']).toBe('rainy forest');
+  });
   it('整段编辑的复制与一键翻译包含分类正负词和角色内容', async () => {
     const resolve = vi.spyOn(promptTranslations, 'resolvePromptTranslations').mockResolvedValue([]);
     const writeText = vi.fn(async () => {});

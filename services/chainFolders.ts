@@ -1,3 +1,5 @@
+import { flattenDirectoryTree, getDirectoryDescendantIds, getDirectoryPath, validateDirectoryTree } from './directoryTree.mjs';
+
 /** 风格串的目录与归属独立保存，不改写配方、标签或原图。 */
 export interface ChainFolder { id: string; name: string; parentId: string | null }
 export interface ChainFolderState { revision: number; folders: ChainFolder[]; assignments: Record<string, string[]> }
@@ -16,15 +18,8 @@ export function readChainFolders(value: unknown): ChainFolderState {
   const ids = new Set(folders.map(folder => folder.id));
   const names = new Set(folders.map(folder => JSON.stringify([folder.parentId, folder.name.toLowerCase()])));
   if (ids.size !== folders.length || names.size !== folders.length) throw Error('同一位置已有同名文件夹');
-  const parents = new Map(folders.map(folder => [folder.id, folder.parentId]));
-  for (const folder of folders) {
-    const visited = new Set([folder.id]);
-    let parent = folder.parentId;
-    while (parent !== null) {
-      if (!ids.has(parent) || visited.has(parent)) throw Error('文件夹层级无效');
-      visited.add(parent); parent = parents.get(parent)!;
-    }
-  }
+  try { validateDirectoryTree(folders); }
+  catch { throw Error('文件夹层级无效'); }
   const entries = Object.entries(state.assignments).map(([id, value]) => [id, typeof value === 'string' ? [value] : value] as const);
   if (entries.length > 100000 || entries.some(([id, folders]) => !validId(id) || !Array.isArray(folders)
     || folders.length > 500 || folders.some(folder => typeof folder !== 'string' || !ids.has(folder)))) throw Error('风格串归属无效');
@@ -47,16 +42,16 @@ export function updateChainFolderMemberships(state: ChainFolderState, chainIds: 
 }
 
 export function folderTree(folders: ChainFolder[], parentId: string | null = null, depth = 0): Array<ChainFolder & { depth: number }> {
-  return folders.filter(folder => folder.parentId === parentId).flatMap(folder => [
-    { ...folder, depth }, ...folderTree(folders, folder.id, depth + 1),
-  ]);
+  const tree = flattenDirectoryTree(folders);
+  if (parentId === null) return tree.map(folder => ({ ...folder, depth: folder.depth + depth }));
+  const parent = tree.find(folder => folder.id === parentId);
+  if (!parent) return [];
+  const descendants = getDirectoryDescendantIds(folders, parentId);
+  return tree.filter(folder => folder.id !== parentId && descendants.has(folder.id)).map(folder => ({ ...folder, depth: folder.depth - parent.depth - 1 + depth }));
 }
 
 export function folderContains(folders: ChainFolder[], ancestor: string, folderId: string | undefined): boolean {
-  const parents = new Map(folders.map(folder => [folder.id, folder.parentId]));
-  let cursor = folderId;
-  while (cursor) { if (cursor === ancestor) return true; cursor = parents.get(cursor) || undefined; }
-  return false;
+  return Boolean(folderId && getDirectoryPath(folders, folderId).some(folder => folder.id === ancestor));
 }
 
 export function removeChainFolder(state: ChainFolderState, id: string): ChainFolderState {

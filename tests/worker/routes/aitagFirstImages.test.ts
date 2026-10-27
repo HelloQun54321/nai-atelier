@@ -29,6 +29,62 @@ function fixture() {
 const works = [1, 2].map(id => ({ id, title: `synthetic-${id}`, AI_type: 'NAI', image_count: 2 }));
 const detail = (id: number) => ({ work: works[id - 1], images: [{ work_id: id, file_name: `${id}_p3.png`, remote_image_url: `https://ai-img.10118899.xyz/${id}.png`, ai_json: { prompt: `recipe-${id}`, model: 'nai-diffusion-4-5-full' } }] });
 
+it('首图资料独立参与缓存关键词和提示词检索，兼容旧列表、详情及缓存组合', async () => {
+  const f = fixture();
+  await f.invoke('/api/aitag/cache/first-images?ids=&timeout_ms=0');
+  const insert = f.sqlite.prepare("INSERT INTO aitag_works(id,source_sort,source_page,source_index,ai_type,raw_json,local_cover_url,first_image_json,is_favorite) VALUES(?,'new',1,?,'NAI',?,?,?,1)");
+  insert.run(1,0,'{}','/synthetic/one.png',JSON.stringify({ai_json:{prompt:'audit-needle, artist:synthetic'}}));
+  insert.run(2,1,JSON.stringify({prompt:'audit-needle'}),null,null);
+  insert.run(3,2,'{}','/synthetic/three.png',null);
+  insert.run(4,3,'{}',null,'broken-json');
+  insert.run(6,4,'{}','/synthetic/six.png',JSON.stringify({ai_json:{prompt:'normal',uc:'negative-needle',model:'metadata-only'}}));
+  insert.run(7,5,'{}','/synthetic/seven.png',JSON.stringify({ai_json:JSON.stringify({Comment:JSON.stringify({v4_prompt:{caption:{base_caption:'comment-needle',char_captions:[{char_caption:'char-needle'}]}},uc:'excluded-needle'})})}));
+  f.sqlite.prepare('INSERT INTO aitag_work_details(work_id,detail_json) VALUES(3,?)').run(JSON.stringify({images:[{ai_json:{prompt:'audit-needle'},local_image_url:'/synthetic/three.png'}]}));
+  for (const field of ['prompt','q']) {
+    const all = await (await f.invoke(`/api/aitag/cache/search?${field}=AUDIT-NEEDLE`)).json() as any;
+    expect(all.items.map((work: any) => work.id)).toEqual([1,2,3]);
+    const first = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=first-image&${field}=audit-needle`)).json() as any;
+    expect(first.items.map((work: any) => work.id)).toEqual([1]); expect(first.total).toBe(1);
+    const full = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=full&${field}=audit-needle`)).json() as any;
+    expect(full.items.map((work: any) => work.id)).toEqual([3]);
+  }
+  const favorite = await (await f.invoke('/api/aitag/cache/search?cacheFilter=favorite&q=audit-needle&prompt=artist%3Asynthetic')).json() as any;
+  expect(favorite.items.map((work: any) => work.id)).toEqual([1]);
+  for (const value of ['negative-needle','metadata-only','excluded-needle']) {
+    const result = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=first-image&prompt=${value}`)).json() as any;
+    expect(result.items).toHaveLength(0);
+  }
+  for (const value of ['comment-needle','char-needle']) {
+    const result = await (await f.invoke(`/api/aitag/cache/search?cacheFilter=first-image&prompt=${value}`)).json() as any;
+    expect(result.items.map((work: any) => work.id)).toEqual([7]);
+  }
+  expect(f.files.size).toBe(0); expect(f.pending).toHaveLength(0);
+});
+
+it.each(['new','monthly'])('资料等待只在同一来源批次提前所需作品，sort=%s，所有原图仍保存', async sort => {
+  vi.useFakeTimers(); const f = fixture();
+  const listed = [...works, {...works[1],id:3}]; const requested: number[] = [];
+  let finish!: (value: Response) => void;
+  vi.stubGlobal('fetch', vi.fn(async (value: string | URL) => {
+    const url = new URL(value);
+    if (url.pathname.includes('ai_works_search')) return Response.json({items:listed,total:3,page:1});
+    if (url.hostname === 'aitag.win') {
+      const id = Number(url.pathname.split('/').pop()); requested.push(id);
+      if (id === 1) return new Promise<Response>(resolve => { finish = resolve; });
+      return Response.json({...detail(2),work:listed[id-1],images:[{...detail(2).images[0],work_id:id,remote_image_url:`https://ai-img.10118899.xyz/${id}.png`}]});
+    }
+    if (url.hostname !== 'ai-img.10118899.xyz') throw new Error('测试禁止外网');
+    return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'image/png'}});
+  }));
+  await f.invoke('/api/aitag/search'); expect(requested).toEqual([1]);
+  await f.invoke(`/api/aitag/cache/first-images?ids=3&metadata_ids=3,999&timeout_ms=0&sort=${sort}`);
+  finish(Response.json(detail(1))); await vi.advanceTimersByTimeAsync(550);
+  expect(requested).toEqual(sort === 'new' ? [1,3] : [1,2]);
+  await vi.advanceTimersByTimeAsync(1650); await Promise.all(f.pending);
+  expect(requested).toEqual(sort === 'new' ? [1,3,2] : [1,2,3]);
+  expect(f.files.size).toBe(3);
+});
+
 it.each([false, true])('慢原图不阻塞元数据和下一作品，图片失败=%s仍保留真实资料且普通poll不提前命中', async failImage => {
   vi.useFakeTimers(); const f = fixture();
   let finish!: (value: Response) => void;

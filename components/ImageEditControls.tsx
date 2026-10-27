@@ -161,6 +161,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       <LabModuleSection moduleId="prompt" label={t("全局正面提示词")} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <section className="space-y-4">
           {promptClassificationEnabled ? <ChainEditorPromptInputs embedded promptClassificationEnabled
+            negativeLocked={isNaiMediumModel(selectableParams.model)}
             toolbarSlot={promptToolbarSlot}
             prompt={classifiedBase} supplementPrompt={sectionMatches ? sectionText : ''} sections={sectionMatches ? selectableParams._promptSections : undefined}
             setPrompt={value => onPromptChange(mergePromptFields(value, sectionMatches ? sectionText : ''))}

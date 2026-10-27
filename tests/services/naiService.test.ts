@@ -102,6 +102,20 @@ describe('文生图描述符', () => {
     expect(descriptor.history.params.characters![0]).toMatchObject({ prompt: 'manual text', sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'coat' } });
     expect(params.characters[0]).toEqual(role);
   });
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 历史保留动态分栏原文与来源，实际请求编译角色', async operation => {
+    const role = { ...character, prompt: 'manual text', sections: { 'directory:role': 'white dress' },
+      sectionNegatives: { 'directory:role': 'coat' }, sectionMeta: { 'directory:role': { directoryName: '角色目录', directoryPath: ['人物', '服装'] } } };
+    const params = { ...baseParams(), characters: [role], _promptSections: { 'directory:scene': 'forest',
+      sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景目录' } } } };
+    const descriptor = operation === 'text-to-image' ? await textDescriptor({ params, prompt: 'artist, forest' })
+      : await editDescriptor(operation, { params, prompt: 'artist, forest' });
+    expect(readParameters(descriptor).v4_prompt.caption.char_captions[0].char_caption).toBe('white dress, manual text');
+    expect(readParameters(descriptor).v4_negative_prompt.caption.char_captions[0].char_caption).toBe('coat, red hair');
+    expect(readParameters(descriptor).negative_prompt).toContain('city');
+    expect(descriptor.history.params.characters?.[0]).toMatchObject(role);
+    expect(descriptor.history.params._promptSections).toEqual(params._promptSections);
+    expect(JSON.stringify(descriptor.payload)).not.toMatch(/directory:|角色目录|场景目录/);
+  });
   it('按模型设置构建生成 payload，并原样带上历史来源与授权费用', async () => {
     const draft = { ...baseParams(), characters: [positionedCharacter, pausedCharacter, emptyCharacter] };
     const snapshot = structuredClone(draft);

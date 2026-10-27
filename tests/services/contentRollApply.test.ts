@@ -281,3 +281,26 @@ describe('多人应用：旧分类负面同样清掉', () => {
     expect(next.characters?.[1].sectionNegatives?.wardrobe).toBe('keep_neg');
   });
 });
+
+
+describe('动态目录写入', () => {
+  it('按明确scope写入角色与全局，保留手写、其它目录、参数及负面', () => {
+    const params = baseParams();
+    const dynamic = { 'directory:eye': { ...row('directory:eye', 'blue eyes', true, 'closed eyes'), scope: 'character' as const, directoryName: '眼睛' }, 'directory:light': { ...row('directory:light', 'backlight'), scope: 'global' as const, directoryName: '光照' } };
+    const plan = planContentRollApply(dynamic, params, { mode: 'existing', id: 'c1' });
+    const after = applyContentRollToParams(params, plan, () => 'new').params;
+    expect(after.characters?.[0].sections?.['directory:eye']).toBe('blue eyes');
+    expect(after.characters?.[0].sectionNegatives?.['directory:eye']).toBe('closed eyes');
+    expect(after.characters?.[0].prompt).toBe('old_role_text');
+    expect(after._promptSections?.['directory:light']).toBe('backlight');
+    expect(after._promptSections?.extra).toBe('old_extra');
+    expect(after.seed).toBe(params.seed);
+    expect(filterPicksByScope(dynamic, 'global')).toEqual({ 'directory:light': dynamic['directory:light'] });
+  });
+  it('全局入口把全部动态目录写入全局，不靠旧角色类别过滤', () => {
+    const picks = { 'directory:any': { ...row('directory:any', 'custom'), scope: 'character' as const } };
+    const plan = planContentRollApply(picks, baseParams(), { mode: 'global' });
+    expect(plan.globalSections['directory:any']).toBe('custom');
+    expect(plan.roleWrites).toHaveLength(0);
+  });
+});

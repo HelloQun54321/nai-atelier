@@ -4,6 +4,7 @@ import { isAgentImagePath } from './agentMedia';
 import { agentConnectionEndpoint } from './agentConnection.mjs';
 import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace';
 import { stableOperationId } from './operationId';
+import type { PromptLibraryTreeState } from './promptLibraryDirectories';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -264,6 +265,9 @@ export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'expression
 
 /** 一次生成产出的单条方案。 */
 export interface PromptLibraryItem {
+  directoryId?: string;
+  directoryName?: string;
+  directoryPath?: string[];
   name: string;
   prompt: string;
   bilingual: string;
@@ -278,13 +282,20 @@ export interface PromptLibraryResult {
   provider: string;
   model: string;
   count: number;
-  kind: PromptLibraryKind;
+  kind?: PromptLibraryKind;
+  directoryId?: string;
+  directoryName?: string;
+  directoryPath?: string[];
+  target?: 'global' | 'character';
   filteredCount?: number;
 }
 
-/** AI 生成搭配：一段话一次生成六类库，每条带自己的领域 kind。 */
+/** AI 生成搭配：目录身份随当前树返回，旧 kind 仅供兼容调用。 */
 export interface PromptLibraryBundleItem {
-  kind: PromptLibraryKind;
+  kind?: PromptLibraryKind;
+  directoryId?: string;
+  directoryName?: string;
+  directoryPath?: string[];
   label: string;
   name: string;
   prompt: string;
@@ -305,6 +316,8 @@ export interface PromptLibraryBundleResult {
 }
 
 export interface PromptLibraryBundleInput {
+  directories?: PromptLibraryTreeState;
+  directoryIds?: string[] | null;
   brief: string;
   hint?: string;
   detail?: 'strict' | 'moderate' | 'detailed';
@@ -321,7 +334,13 @@ export interface PromptLibraryPrompts {
 
 /** 提示词／图片提取：一条候选即一个未来要落库的库条目（同类内容已按原顺序合并）。 */
 export interface PromptExtractionCandidate {
-  kind: PromptLibraryKind;
+  directoryId?: string;
+  directoryName?: string;
+  directoryPath?: string[];
+  kind: PromptLibraryKind | 'preset';
+  directoryIds?: string[];
+  needsDirectoryReview?: boolean;
+  directoryReviewNote?: string;
   /** 中文名称含义，用户可在审阅时改写。 */
   name: string;
   /** 实际保存进库的英文提示词。 */
@@ -364,6 +383,8 @@ export interface PromptExtractionResult {
 }
 
 export interface PromptExtractionInput {
+  directories?: PromptLibraryTreeState;
+  directoryIds?: string[] | null;
   mode: 'text' | 'vision';
   text?: string;
   /** 图片元数据里的角色分栏正向提示词：带上它才能保留角色归属。 */
@@ -389,7 +410,7 @@ export const promptAgentService = {
     return response.json() as Promise<{ items: Array<{ id: string; kind: 'global' | 'character'; sections: Record<string, string> }> }>;
   },
   /**
-   * 提示词／图片 → 六类库候选（忠实提取，不是六库生成）。
+   * 提示词／图片 → 当前目录候选（忠实提取，不是创作补全）。
    *
    * 文字模式：英文 Tag 由模型判断类别、程序按原片段重组；中文片段翻译及自然语言拆分
    * 依赖模型理解，结果交用户审阅。图片模式由当前助手模型推断，不冒充原始提示词。
@@ -399,6 +420,8 @@ export const promptAgentService = {
     // 图片的 base64 体积很大，operationId 只按结构派生，避免对整段图片数据做哈希。
     const operationId = stableOperationId('extract-candidates', {
       mode: input.mode,
+      directories: input.directories,
+      directoryIds: input.directoryIds,
       text: input.text ?? '',
       characters: (input.characters ?? []).map(entry => `${entry.label}:${entry.prompt.length}`),
       images: (input.images ?? []).map(image => ({ mimeType: image.mimeType, length: image.data.length })),
@@ -459,7 +482,9 @@ export const promptAgentService = {
    * 连接中断时「结果未知」，自动重发等于可能重复消耗模型调用。等网关侧提供幂等查询后再打开重试。
    */
   generateLibraryPrompt: async (input: {
-    kind: PromptLibraryKind;
+    kind?: PromptLibraryKind;
+    directoryId?: string;
+    directories?: PromptLibraryTreeState;
     brief: string;
     count?: number;
     [facet: string]: unknown;
@@ -474,7 +499,7 @@ export const promptAgentService = {
     return response.json();
   },
   /**
-   * AI 生成搭配：一段话一次生成人物形象 / 服饰 / 姿势 / 表情状态 / 场景 / 镜头六类提示词。
+   * AI 生成搭配：按当前目录与本次选择生成提示词，保留无树旧调用的分类兼容。
    *
    * 与 generateLibraryPrompt 同一套路：带 operationId 仅用于追踪，客户端不自动重发，
    * 避免连接中断后重复消耗模型调用。用户主动触发，使用当前助手模型，不消耗生图额度。
@@ -504,10 +529,12 @@ export const promptAgentService = {
     return response.json();
   },
   previewLibrarySystemPrompt: async (input: {
-    kind: PromptLibraryKind;
+    kind?: PromptLibraryKind;
+    directoryId?: string;
+    directories?: PromptLibraryTreeState;
     spec: string;
     extra: string;
-  }): Promise<{ kind: PromptLibraryKind; length: number; systemPrompt: string }> => {
+  }): Promise<{ kind?: PromptLibraryKind; directoryId?: string; length: number; systemPrompt: string }> => {
     const response = await fetch('/api/prompt-agent/library-prompts/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

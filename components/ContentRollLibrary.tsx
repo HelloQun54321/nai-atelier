@@ -1,4 +1,5 @@
 import { getCustomChainTags, replaceCustomChainTags } from '../services/chainTags';
+import { promptLibraryCategoryLabel } from '../services/promptLibraryCategoryTree';
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import React, { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -51,20 +52,17 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
   const records = useMemo(() => chains.filter(chain => librarySectionOf(chain) === section).map(chain => {
     const original = collectedPromptText(chain);
     const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
-    const fields = KINDS.flatMap(kind => {
-      const role = read.roles[0];
+    const fields = read.items?.length ? read.items.map(item => ({ kind: item.unitId, title: item.directoryPath?.join(' / ') || item.directoryName || item.unitId, text: item.text, negative: { text: item.negative, note: item.constraintNotes } })) : KINDS.flatMap(kind => {
       const isRole = META[kind].scope === 'character';
-      const provided = isRole ? role?.provided[kind] : read.global[kind]?.provided;
-      const text = isRole ? role?.sections[kind] : read.global[kind]?.text;
-      const negative = isRole ? role?.negatives[kind] : read.global[kind]?.negative;
-      return provided ? [{ kind, text: text || '', negative }] : [];
+      if (isRole) return read.roles.flatMap(role => role.provided[kind] ? [{ kind: `${role.key}:${kind}`, title: `${read.roles.length > 1 ? `${role.name} / ` : ''}${t(META[kind].title)}`, text: role.sections[kind] || '', negative: role.negatives[kind] }] : []);
+      return read.global[kind]?.provided ? [{ kind, title: t(META[kind].title), text: read.global[kind]?.text || '', negative: read.global[kind]?.negative }] : [];
     });
     return { chain, read, fields, original, scope: contentScopeOf(read) };
   }), [chains, section]);
   const shown = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return records.filter(({ chain, fields, scope, original }) => (!tag || chain.tags?.includes(tag)) && (!keyword || [chain.name, chain.description, original, ...(chain.tags || []), scope.label,
-      ...fields.flatMap(field => [field.text, field.negative?.text, field.negative?.note])].join(' ').toLowerCase().includes(keyword)))
+    return records.filter(({ chain, read, fields, scope, original }) => (!tag || chain.tags?.includes(tag)) && (!keyword || [chain.name, chain.description, original, ...(chain.tags || []), scope.label,
+      ...fields.flatMap(field => [field.title, field.text, field.negative?.text, field.negative?.note]), ...read.roles.flatMap(role => [role.name, ...Object.values(role.sections), ...Object.values(role.negatives).flatMap(value => [value?.text, value?.note])])].join(' ').toLowerCase().includes(keyword)))
       .sort((a, b) => sort === 'name' ? a.chain.name.localeCompare(b.chain.name) : Number(b.chain.updatedAt || 0) - Number(a.chain.updatedAt || 0));
   }, [records, query, sort, tag]);
 
@@ -94,7 +92,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
   };
   const toolbar = <>
     <ToolbarPopover title={t('筛选组合库')} width={280}>
-      <label className="block text-xs font-semibold text-gray-500">{t('自定义标签')}<select aria-label={t('自定义标签')} className={TOOLBAR_FIELD_CLASS} value={tag} onChange={event => { setTag(event.target.value); resetScroll(); }}><option value="">{t('全部标签')}</option>{(section === 'saved' ? promptLibraryCategoryNames(chains, library?.categoryNames) : [...new Set(records.flatMap(({ chain }) => chain.tags || []))].sort()).map(value => <option key={value}>{value}</option>)}</select></label>
+      <label className="block text-xs font-semibold text-gray-500">{t('自定义标签')}<select aria-label={t('自定义标签')} className={TOOLBAR_FIELD_CLASS} value={tag} onChange={event => { setTag(event.target.value); resetScroll(); }}><option value="">{t('全部标签')}</option>{(section === 'saved' ? promptLibraryCategoryNames(chains, [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set(records.flatMap(({ chain }) => chain.tags || []))].sort()).map(value => <option key={value} value={value}>{section === 'saved' ? promptLibraryCategoryLabel(library?.categoryTree, value) : value}</option>)}</select></label>
       <label className="block text-xs font-semibold text-gray-500">{t('排序')}
         <select className={TOOLBAR_FIELD_CLASS} aria-label={t('排序')} value={sort} onChange={event => { setSort(event.target.value); resetScroll(); }}>
           <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
@@ -151,10 +149,10 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
               </div>
               <div className="space-y-3">
                 {read.roles.length > 1 && <select aria-label={t('组合中的角色')} value={roleChoices[chain.id] ?? ''} onChange={event => setRoleChoices(previous => ({ ...previous, [chain.id]: Number(event.target.value) }))} className={TOOLBAR_FIELD_CLASS}><option value="" disabled>{t('请选择角色')}</option>{read.roles.map((role, index) => <option key={role.key} value={index}>{role.name}</option>)}</select>}
-                {library && <PromptLibraryTagEditor key={chain.id} tags={getCustomChainTags(chain.tags)} suggestions={section === 'saved' ? promptLibraryCategoryNames(chains, library.categoryNames) : [...new Set(chains.flatMap(item => item.tags || []))].sort()} onSave={async tags => { await library.save({ id: chain.id, tags: replaceCustomChainTags(chain.tags, tags) }); }} />}
+                {library && <PromptLibraryTagEditor key={chain.id} tags={getCustomChainTags(chain.tags)} suggestionLabel={section === 'saved' ? value => promptLibraryCategoryLabel(library?.categoryTree, value) : undefined} suggestions={section === 'saved' ? promptLibraryCategoryNames(chains, [...(library.categoryNames || []), ...(library.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set(chains.flatMap(item => item.tags || []))].sort()} onSave={async tags => { await library.save({ id: chain.id, tags: replaceCustomChainTags(chain.tags, tags) }); }} />}
                 {original !== null && <p className="max-h-96 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{original}</p>}
-                {fields.map(({ kind, text, negative }) => <div key={kind}>
-                  <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</h3>
+                {fields.map(({ kind, title, text, negative }) => <div key={kind}>
+                  <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{title}</h3>
                   <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{text}</p>
                   {negative && (negative.text || negative.note) && <p className="mt-1 break-words text-xs text-amber-600 dark:text-amber-400">{negative.text ? t('内容负面：') + negative.text : ''}{negative.text && negative.note ? '；' : ''}{negative.note}</p>}
                 </div>)}

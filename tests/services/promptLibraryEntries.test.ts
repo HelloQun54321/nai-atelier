@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NAIParams, PromptChain } from '../../types';
-import { applyLibraryText, combinationPicks, createCombinationData, createFragmentData, librarySectionOf, searchLibraryEntries, workspacePicks, parsePromptLibraryTags } from '../../services/promptLibraryEntries';
+import { applyLibraryText, combinationPicks, createCombinationData, createFragmentData, librarySectionOf, libraryEntryText, searchLibraryEntries, workspacePicks, parsePromptLibraryTags } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { applyLibrarySelection, planLibrarySelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 
@@ -80,4 +80,27 @@ describe('提示词库的对象边界与定向取用', () => {
     expect(after.params.characters![2].prompt).toContain('white dress');
     expect(after.params.characters![2].negativePrompt).toContain('black dress');
   });
+});
+
+it('自定义目录片段与组合保留正文、目录路径和真实存储范围', () => {
+  const directories = { revision: 1, nodes: [{ id: 'custom', parentId: null, name: '道具', target: 'global' as const }] };
+  const entry = chain(createFragmentData('silver sword', '剑', 'general', '', ['custom']));
+  expect(librarySectionOf(entry)).toBe('items');
+  expect((entry.params as unknown as Record<string, unknown>)._promptLibraryDirectoryIds).toEqual(['custom']);
+  const params = { _promptSections: { 'directory:custom': 'sword', sectionNegatives: { 'directory:custom': 'axe' } }, characters: [{ id: 'one', sections: { 'directory:costume': 'cape' } }] } as unknown as NAIParams;
+  const picks = workspacePicks(params, 'one', directories);
+  expect(picks['directory:custom']).toMatchObject({ scope: 'global', directoryName: '道具', text: 'sword', negative: 'axe' });
+  expect(picks['directory:costume']).toMatchObject({ scope: 'character', text: 'cape' });
+  const saved = chain(createCombinationData('道具组合', picks));
+  expect(libraryEntryText(saved)).toBe('sword, cape');
+  expect(libraryEntryText(saved, { directoryId: 'custom', negative: true })).toBe('axe');
+  expect(combinationPicks(saved)['directory:custom']).toMatchObject({ directoryId: 'custom', directoryPath: ['道具'] });
+});
+
+it('同一目录同时存于全局和所选角色时明确拒绝保存，保留两份输入', () => {
+  const params = { _promptSections: { 'directory:shared': 'global sword' }, characters: [{ id: 'one', sections: { 'directory:shared': 'character sword' } }] } as unknown as NAIParams;
+  const before = JSON.stringify(params);
+  expect(() => workspacePicks(params, 'one')).toThrow('同一目录同时包含全局和角色内容');
+  expect(JSON.stringify(params)).toBe(before);
+  expect(workspacePicks(params)['directory:shared'].text).toBe('global sword');
 });

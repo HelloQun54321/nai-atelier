@@ -61,6 +61,18 @@ const draftWith = (patch: Partial<ExtractDraftSnapshot> = {}): ExtractDraftSnaps
 });
 
 describe('提取草稿的本端持久化', () => {
+  it('自定义与未知目录候选保留原文、保存身份、多归属及人工复核状态', () => {
+    const storage = memoryStorage();
+    const draft = draftWith();
+    draft.candidates[0] = { ...draft.candidates[0], kind: 'preset', directoryIds: ['custom-deep', 'unknown-node'],
+      needsDirectoryReview: true, directoryReviewNote: '目录不存在', picked: false };
+    draft.candidates[1] = { ...draft.candidates[1], directoryIds: [] };
+    saveExtractDraft(draft, storage);
+    const restored = loadExtractDraft(storage).draft!;
+    expect(restored.text).toBe(draft.text);
+    expect(restored.candidates).toEqual(draft.candidates);
+  });
+
   it('保存后能原样读回候选、编辑、勾选与待处理标记', () => {
     const storage = memoryStorage();
     expect(saveExtractDraft(draftWith(), storage)).toBe('saved');
