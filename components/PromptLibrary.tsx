@@ -21,8 +21,6 @@ import React, { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef,
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Copy,
   Folder,
   Library,
@@ -43,16 +41,14 @@ import {
 import type { ChainType, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { promptAgentService, type PromptLibraryItem, type PromptLibraryKind } from '../services/promptAgent';
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
-import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
-import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
-import { ImageCardActions } from './ImageCardActions';
-import { PressRevealSurface } from './PressRevealSurface';
-import { OriginalImage, SmartImage } from './SmartImage';
+import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
+import { ImageLightbox } from './ImageLightbox';
+import { SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptLibraryBundleDialog } from './PromptLibraryBundleDialog';
@@ -62,8 +58,8 @@ import { PromptLibraryUsageBadge, PromptLibraryUsageSection } from './PromptLibr
 import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
-import { fragmentKindOf, FRAGMENT_LABELS, parsePromptLibraryTags } from '../services/promptLibraryEntries';
-import { usePromptLibrary } from './PromptLibraryAccess';
+import { fragmentKindOf, FRAGMENT_LABELS, parsePromptLibraryTags, promptLibraryEntryLabel } from '../services/promptLibraryEntries';
+import { LibraryDialog, usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PromptLibraryDirectoryNavigation } from './PromptLibraryDirectoryNavigation';
 import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryLegacyKind, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
@@ -191,12 +187,10 @@ interface LibraryBrowsing {
   query: string;
   tags: string[];
   sort: 'updated' | 'name';
-  view: 'content' | 'cover';
   scrollTop: number;
 }
 
 const DETAIL_FIELD_CLASS = 'mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
-const DETAIL_CARD_CLASS = 'appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900';
 const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-200';
 
 /* ---------------- 内部通用组件 ---------------- */
@@ -226,17 +220,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   useLanguage();
   const library = usePromptLibrary();
   const confirmAction = useConfirmDialog();
-  const imageDisplay = useMobileImageDisplayPreferences();
   const Icon = config.general ? Library : KIND_ICONS[config.kind];
   const generatorTitle = library?.directories ? 'AI 生成片段' : config.generateLabel.replace('✦ ', '');
 
   const [query, setQuery] = useState(browsing?.query || '');
   const [selectedTags, setSelectedTags] = useState<Set<string>>(() => new Set(browsing?.tags));
   const [sort, setSort] = useState<LibraryBrowsing['sort']>(browsing?.sort || 'updated');
-  const [view, setView] = useState<LibraryBrowsing['view']>(browsing?.view || 'content');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const browsingRef = useRef<LibraryBrowsing>({ query, tags: [...selectedTags], sort, view, scrollTop: browsing?.scrollTop || 0 });
-  browsingRef.current = { ...browsingRef.current, query, tags: [...selectedTags], sort, view };
+  const browsingRef = useRef<LibraryBrowsing>({ query, tags: [...selectedTags], sort, scrollTop: browsing?.scrollTop || 0 });
+  browsingRef.current = { ...browsingRef.current, query, tags: [...selectedTags], sort };
   const rememberRef = useRef(rememberBrowsing);
   rememberRef.current = rememberBrowsing;
   useLayoutEffect(() => {
@@ -288,7 +280,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const [generatedBy, setGeneratedBy] = useState('');
 
   const genDialogRef = useModalA11y<HTMLDivElement>(genOpen);
-  const viewerRef = useModalA11y<HTMLDivElement>(viewer !== null);
   // 异步流程里要读取「最新的 chains」：直接读 props 会闭包过期。
   const chainsRef = useRef(chains);
   chainsRef.current = chains;
@@ -417,13 +408,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       message: t('返回{0}将丢弃本次编辑的改动。', [t(config.title)]),
       confirmLabel: t('放弃修改'),
       tone: 'danger',
+      rememberKey: 'prompt-library-fragment.leave',
+      onSave: () => saveDetail(false),
     })) return false;
     setDetail(null);
     onEditorClose?.();
     // 详情关闭时顺手刷新图墙计数：详情内的保存/删除/改名都发生在离开之后才可见。
     void refreshUsage();
     return true;
-  }, [config.title, confirmAction, draftDirty, refreshUsage, savingDetail, onEditorClose]);
+  }, [config.title, confirmAction, draftDirty, refreshUsage, savingDetail, onEditorClose, saveDetail]);
 
   useEffect(() => {
     if (!requestCloseRef) return;
@@ -441,15 +434,14 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return true;
   }), [registerLeaveGuard, closeDetail, generating, savingDrafts, creating]);
 
-  const saveDetail = async () => {
-    if (!detail || savingDetail || library?.directoriesError) return;
+  async function saveDetail(close = true) {
+    if (!detail || savingDetail || library?.directoriesError) return false;
     setSavingDetail(true);
     try {
       const base = chainsRef.current.find(chain => chain.id === detail.id);
       if (!base) {
         notify(t('这条{0}已不在库中，请返回列表刷新', [t(config.itemNoun)]), 'error');
-        setDetail(null);
-        return;
+        return false;
       }
       // params 是整字段覆盖：必须带上原有生图参数，只合并 _promptLibrary。
       const params: PromptLibraryParams = {
@@ -472,15 +464,16 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       await onUpdateChain(detail.id, updates);
       notify(t('{0}已保存', [t(config.itemNoun)]));
       void refreshUsage();
-      setDetail(null);
-      onEditorClose?.();
+      if (close) { setDetail(null); onEditorClose?.(); }
+      return true;
     } catch (error) {
       console.warn('Prompt library save failed:', error);
       notify(t('保存失败，请稍后重试'), 'error');
+      return false;
     } finally {
       setSavingDetail(false);
     }
-  };
+  }
 
   const removeChain = async (id: string, name: string) => {
     if (!await confirmAction({
@@ -541,24 +534,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (!entries.length) return;
     setViewer({ items: entries, index: Math.max(0, Math.min(index, entries.length - 1)) });
   }, []);
-
-  const stepViewer = useCallback((step: number) => {
-    setViewer(previous => (previous
-      ? { ...previous, index: (previous.index + step + previous.items.length) % previous.items.length }
-      : previous));
-  }, []);
-
-  useEffect(() => {
-    if (!viewer) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isTopmostModal(viewerRef.current)) return;
-      if (event.key === 'Escape') { event.preventDefault(); setViewer(null); return; }
-      if (event.key === 'ArrowLeft') stepViewer(-1);
-      else if (event.key === 'ArrowRight') stepViewer(1);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [stepViewer, viewer, viewerRef]);
 
   /* ---------------- 从本地历史选图 ---------------- */
 
@@ -715,94 +690,18 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   /* ---------------- 列表态渲染 ---------------- */
 
   const renderCard = (chain: PromptChain) => {
-    const name = String(chain.name || t('未命名'));
-    const prompt = chainPrompt(chain);
-    const tags = chainTags(chain);
-    const references = chainReferences(chain);
-    const CardIcon = KIND_ICONS[chain.type as PromptLibraryKind] || Icon;
-    const compact = view === 'content';
-    return (
-      <PressRevealSurface
-        as="article"
-        key={chain.id}
-        data-prompt-library-id={chain.id}
-        data-safe-mode-work="true"
-        data-return-item-id={chain.id}
-        role="button"
-        data-agent-action="select"
-        aria-label={t('{0}：{1}', [t(config.itemNoun), name])}
-        tabIndex={0}
-        aria-disabled={savingRename}
-        onClick={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }}
-        onKeyDown={event => {
-          if (renamePending.current) return;
-          if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
-          event.preventDefault();
-          setDetail(draftFromChain(chain));
-        }}
-        className={`appearance-group group relative overflow-hidden rounded-2xl border border-gray-200 bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer hover:border-indigo-400 focus-visible:outline-2 focus-visible:outline-indigo-500 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600 ${compact ? 'flex flex-row items-start p-3 gap-3' : 'gallery-image-card gallery-card-visual flex-col'}`}
-      >
-        <div className={compact ? 'appearance-media relative h-28 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800' : 'appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900'}>
-          {chain.previewImage ? (
-            <SmartImage src={chain.previewImage} alt={name} className="h-full w-full object-cover" />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center text-gray-400">
-              <CardIcon className="h-8 w-8" />
-              {!compact && <span className="mt-2 line-clamp-3 text-meta break-words">{prompt || t('还没有提示词')}</span>}
-            </div>
-          )}
-          {references.length > 0 && (
-            <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [references.length])}</span>
-          )}
-          <PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />
-          <ImageCardActions className="hover-reveal-md">
-            <button
-              type="button"
-              aria-label={t('复制「{0}」的英文提示词', [name])}
-              title={t('复制英文提示词')}
-              onClick={event => { event.stopPropagation(); void copyText(prompt, t('英文提示词')); }}
-              className={`inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}
-            >
-              <Copy className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-label={t('删除「{0}」', [name])}
-              title={t('删除')}
-              onClick={event => { event.stopPropagation(); void removeChain(chain.id, name); }}
-              className="mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow transition hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </ImageCardActions>
-        </div>
-        <div className={compact ? 'min-w-0 flex-1 py-0.5' : 'gallery-card-caption p-3'}>
-          <div className="flex items-center justify-between gap-1.5">
-            {renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
-              className="w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100"
-              value={renameText} onClick={event => event.stopPropagation()}
-              onChange={event => setRenameText(event.target.value)}
-              onBlur={() => { void commitRename(chain); }}
-              onKeyDown={event => { event.stopPropagation();
-                if (event.key === 'Enter') { event.preventDefault(); void commitRename(chain); }
-                if (event.key === 'Escape') { event.preventDefault(); renameCancelled.current = true; setRenamingId(null); }
-              }} /> : <button type="button" data-safe-mode-title="true" aria-label={t('重命名{0}', [name])}
-            className="min-w-0 truncate text-left text-sm font-bold text-gray-900 dark:text-white" title={name} disabled={savingRename}
-              onClick={event => { event.stopPropagation(); if (renamePending.current) return; renameCancelled.current = false; setRenameText(name); setRenamingId(chain.id); }}
-              onKeyDown={event => event.stopPropagation()}>{name}</button>}
-            {config.hideActions && <span className="shrink-0 text-micro text-gray-500">{t(PROMPT_LIBRARY_KINDS[chain.type as PromptLibraryKind]?.itemNoun || '')}</span>}
-          </div>
-          {compact && <p className="mt-2 line-clamp-3 break-words text-xs leading-5 text-gray-600 dark:text-gray-300" title={prompt}>{chainBilingual(chain) || prompt || t('还没有提示词')}</p>}
-          {library?.useEntry && <button type="button" className="mobile-touch mt-1 rounded px-2 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={event => { event.stopPropagation(); library.useEntry?.(chain); }}>{t('取用')}</button>}
-          <div className="gallery-card-meta mt-1 flex flex-wrap items-center gap-1">
-            {tags.slice(0, 3).map(tag => (
-              <span key={tag} className="gallery-card-badge max-w-full truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={tag}>{tag}</span>
-            ))}
-            {!tags.length && !compact && <span className="truncate font-mono text-micro text-gray-400 dark:text-gray-500" title={prompt}>{prompt || t('还没有提示词')}</span>}
-          </div>
-        </div>
-      </PressRevealSurface>
-    );
+    const name = chain.name || t('未命名');
+    return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, library?.directories)} openLabel={t('{0}：{1}', [t(config.itemNoun), name])}
+      busy={savingRename} onOpen={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }} onEdit={() => setDetail(draftFromChain(chain))}
+      onDelete={() => void removeChain(chain.id, name)} onCopy={() => void copyText(chainPrompt(chain), t('英文提示词'))}
+      onUse={library?.useEntry ? () => library.useEntry?.(chain) : undefined} notify={notify}
+      mediaInfo={<><PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />{chainReferences(chain).length > 0 && <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [chainReferences(chain).length])}</span>}</>}
+      summary={!chain.previewImage ? chainBilingual(chain) || chainPrompt(chain) : undefined}
+      title={renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
+        className="w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+        value={renameText} onClick={event => event.stopPropagation()} onChange={event => setRenameText(event.target.value)} onBlur={() => { void commitRename(chain); }}
+        onKeyDown={event => { event.stopPropagation(); if (event.key === 'Enter') { event.preventDefault(); void commitRename(chain); } if (event.key === 'Escape') { event.preventDefault(); renameCancelled.current = true; setRenamingId(null); } }} />
+        : <button type="button" aria-label={t('重命名{0}', [name])} className="min-w-0 truncate text-left" disabled={savingRename} onClick={event => { event.stopPropagation(); if (renamePending.current) return; renameCancelled.current = false; setRenameText(name); setRenamingId(chain.id); }} onKeyDown={event => event.stopPropagation()}>{name}</button>} />;
   };
 
   const itemActions = !config.hideActions && <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -828,10 +727,6 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               <option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option>
             </select>
           </label>
-          <div role="group" aria-label={t('显示方式')} className="flex gap-2">
-            <ToolbarButton active={view === 'content'} aria-pressed={view === 'content'} onClick={() => setView('content')} className="flex-1">{t('内容视图')}</ToolbarButton>
-            <ToolbarButton active={view === 'cover'} aria-pressed={view === 'cover'} onClick={() => setView('cover')} className="flex-1">{t('封面视图')}</ToolbarButton>
-          </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {selectedTags.size > 0 ? t('已启用 {0} 项标签筛选', [selectedTags.size]) : t('全部标签')}
@@ -890,9 +785,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const listToolbar = <WorkspaceToolbar>{listToolbarContent}</WorkspaceToolbar>;
 
   const listBody = shown.length ? (
-    <div className={view === 'content' ? 'content-library-grid' : `${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={view === 'cover' ? mobileGalleryStyle(imageDisplay) : undefined}>
-      {shown.map(renderCard)}
-    </div>
+    <PromptLibraryGallery chains={shown} scrollRef={scrollRef} resetKey={JSON.stringify([query, sort, [...selectedTags], directorySelectionKey])} renderCard={renderCard} />
   ) : (
     <EmptyState
       className="py-20"
@@ -909,6 +802,16 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     ? detail.references.map(row => ({ url: row.url, caption: row.prompt }))
     : [];
 
+  const detailActions = detail ? (
+      <div className="flex flex-none items-center gap-1">
+        <ToolbarButton tone="danger" disabled={savingDetail} onClick={() => void removeChain(detail.id, detail.name)} aria-label={t('删除')} title={t('删除')} className="mobile-touch !px-2.5 md:!px-3">
+          <Trash2 /><span className="hidden sm:inline">{t('删除')}</span>
+        </ToolbarButton>
+        <ToolbarButton tone="save" disabled={savingDetail} onClick={() => void saveDetail()} aria-label={t('保存')} title={t('保存')} className="mobile-touch !px-2.5 md:!px-3">
+          {savingDetail && <LoaderCircle className="animate-spin" />}<span>{savingDetail ? t('保存中…') : t('保存')}</span>
+        </ToolbarButton>
+      </div>
+  ) : null;
   const detailToolbarContent = detail ? (
     <>
       {categoryToggle}
@@ -917,22 +820,14 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       </ToolbarButton>
       <div className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900 dark:text-white" title={detail.name || t('未命名')}>{detail.name || t('未命名')}</div>
       {draftDirty && <span className="flex-none rounded-full bg-amber-50 px-2 py-0.5 text-micro font-semibold text-amber-600 dark:bg-amber-950/40 dark:text-amber-300">{t('未保存')}</span>}
-      <div className="flex flex-none items-center gap-1">
-        <ToolbarButton tone="danger" disabled={savingDetail} onClick={() => void removeChain(detail.id, detail.name)} aria-label={t('删除')} title={t('删除')} className="mobile-touch !px-2.5 md:!px-3">
-          <Trash2 /><span className="hidden sm:inline">{t('删除')}</span>
-        </ToolbarButton>
-        <ToolbarButton tone="primary" disabled={savingDetail} onClick={() => void saveDetail()} aria-label={t('保存')} title={t('保存')} className="mobile-touch !px-2.5 md:!px-3">
-          {savingDetail && <LoaderCircle className="animate-spin" />}<span>{savingDetail ? t('保存中…') : t('保存')}</span>
-        </ToolbarButton>
-      </div>
+      {detailActions}
     </>
   ) : null;
   const detailToolbar = detailToolbarContent ? <WorkspaceToolbar>{detailToolbarContent}</WorkspaceToolbar> : null;
 
   const detailBody = detail ? (
-    <div className="mx-auto grid w-full max-w-[1400px] gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className={`${DETAIL_CARD_CLASS} space-y-4`}>
-        {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={detail.directoryIds} onChange={directoryIds => patchDetail({ directoryIds })} disabled={savingDetail} />}
+    <div className="mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+      <div className="min-w-0 space-y-3">
         <label className="block">
           <span className={DETAIL_LABEL_CLASS}>{t('名称')}</span>
           <input
@@ -987,10 +882,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono`}
           />
         </label>
+        {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={detail.directoryIds} onChange={directoryIds => patchDetail({ directoryIds })} disabled={savingDetail} />}
       </div>
 
-      <div className="space-y-4">
-        <div className={DETAIL_CARD_CLASS}>
+      <div className="min-w-0 space-y-4">
+        <div>
           <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
           {detail.cover ? (
             <button
@@ -1000,22 +896,19 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               title={t('点击查看原图')}
               className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
             >
-              <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="h-full w-full object-cover" containerClassName="relative aspect-[2/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-950" />
+              <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
             </button>
           ) : (
-            <div className="appearance-media mt-1.5 flex aspect-[2/3] items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
+            <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
           )}
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
             <ToolbarButton disabled={!detail.cover} onClick={() => patchDetail({ cover: '', coverChanged: true })} className="mobile-touch flex-1"><X /><span>{t('清除')}</span></ToolbarButton>
           </div>
-          <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('封面保存后由后端转成独立资产，不会随历史清理而失效。')}</p>
         </div>
 
-        <div className={DETAIL_CARD_CLASS}>
-          <div className="flex items-center justify-between gap-2">
-            <span className={DETAIL_LABEL_CLASS}>{t('参考图（{0}）', [detail.references.length])}</span>
-          </div>
+        <details>
+          <summary className="mobile-touch cursor-pointer text-sm font-semibold">{t('参考图（{0}）', [detail.references.length])}</summary>
           {detail.references.length ? (
             <div className="mt-1.5 grid grid-cols-3 gap-2">
               {detail.references.map((reference, index) => (
@@ -1045,10 +938,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             <div className="appearance-group mt-1.5 flex min-h-20 items-center justify-center rounded-xl bg-gray-50 text-meta text-gray-400 dark:bg-gray-950/60">{t('还没有参考图')}</div>
           )}
           <ToolbarButton onClick={() => setPicker('reference')} className="mobile-touch mt-2 w-full"><ImagePlus /><span>{t('从历史导入参考图')}</span></ToolbarButton>
-          <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('参考图复用本地原件，删除历史后仍保留；点图片可看原图。')}</p>
-        </div>
+        </details>
 
-        <PromptLibraryUsageSection chainId={detail.id} notify={notify} />
+        <PromptLibraryUsageSection chainId={detail.id} notify={notify} zIndex={library?.directories || initialEntry ? 2200 : undefined} />
       </div>
     </div>
   ) : null;
@@ -1238,12 +1130,12 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           </div>
 
           <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-            <ToolbarButton onClick={() => void generate()} disabled={generating} tone="primary" className="mobile-touch">
+            <ToolbarButton onClick={() => void generate()} disabled={generating} tone={drafts ? "neutral" : "primary"} className="mobile-touch">
               {generating ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
               <span>{generating ? t('生成中…') : drafts ? t('重新生成') : t('开始生成')}</span>
             </ToolbarButton>
             {drafts && (
-              <ToolbarButton onClick={() => void savePickedDrafts()} disabled={generating || savingDrafts} className="mobile-touch">
+              <ToolbarButton tone="save" onClick={() => void savePickedDrafts()} disabled={generating || savingDrafts} className="mobile-touch">
                 {savingDrafts ? <LoaderCircle className="animate-spin" /> : null}
                 <span>{savingDrafts ? t('保存中…') : t('保存选中（{0}）', [picked.size])}</span>
               </ToolbarButton>
@@ -1255,61 +1147,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     </ImagePreviewPortal>
   ) : null;
 
-  const viewerModal = viewer ? (
-    <ImagePreviewPortal>
-      <div
-        ref={viewerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('查看原图')}
-        style={{ zIndex: library?.directories ? 1950 : undefined }} className="ui-backdrop-enter fixed inset-0 z-[1400] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
-        onMouseDown={event => { if (event.target === event.currentTarget) setViewer(null); }}
-      >
-        <button
-          type="button"
-          onClick={() => setViewer(null)}
-          aria-label={t('关闭原图')}
-          title={t('关闭（Esc）')}
-          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-        >
-          <X className="h-5 w-5" />
-        </button>
-        {viewer.items.length > 1 && (
-          <button
-            type="button"
-            onClick={() => stepViewer(-1)}
-            aria-label={t('上一张')}
-            className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-        )}
-        <OriginalImage
-          src={viewer.items[viewer.index]?.url || ''}
-          alt={t('原图')}
-          data-safe-mode-ignore="true"
-          className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
-        />
-        {viewer.items.length > 1 && (
-          <button
-            type="button"
-            onClick={() => stepViewer(1)}
-            aria-label={t('下一张')}
-            className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-          >
-            <ChevronRight className="h-6 w-6" />
-          </button>
-        )}
-        <div className="absolute bottom-5 left-1/2 max-w-[90%] -translate-x-1/2 truncate rounded bg-black/65 px-4 py-2 text-center text-sm text-white">
-          {viewer.index + 1} / {viewer.items.length}{viewer.items[viewer.index]?.caption ? ` · ${viewer.items[viewer.index].caption}` : ''}
-        </div>
-      </div>
-    </ImagePreviewPortal>
-  ) : null;
+  const viewerModal = viewer ? <ImageLightbox src={viewer.items[viewer.index]?.url || ''} alt={viewer.items[viewer.index]?.caption || t('原图')} notify={notify}
+    zIndex={library?.directories || initialEntry ? 2200 : undefined} onClose={() => setViewer(null)}
+    pager={{ index: viewer.index, count: viewer.items.length, onChange: index => setViewer(previous => previous ? { ...previous, index } : previous) }} /> : null;
 
   const body = <>
     <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row" style={directoryNavigation ? { '--workspace-chrome-height': '0px' } as React.CSSProperties : undefined}>{directoryNavigation}
-    <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+    <div ref={scrollRef} onScroll={event => { if (!detail) browsingRef.current.scrollTop = event.currentTarget.scrollTop; }} className={`workspace-scroll-viewport relative min-h-0 min-w-0 flex-1 overflow-y-auto p-4 ${embedded ? '' : 'pb-28 md:p-6 md:pb-24'}`}>
       {detail ? detailBody : !initialEntry && <>{itemActions}{listBody}</>}
     </div></div>
     {generator}
@@ -1326,12 +1170,14 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
   </>;
-  if (initialEntry) return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      {detailToolbar}
-      {body}
-    </div>
-  );
+  if (initialEntry) return <>
+    <LibraryDialog title={detail?.name || t('编辑')} wide className="max-w-5xl!" busy={savingDetail} headerActions={detailActions} onClose={() => { void closeDetail(); return false; }}>
+      {draftDirty && <p role="status" className="text-xs text-amber-600 dark:text-amber-300">{t('未保存')}</p>}
+      {detailBody}
+    </LibraryDialog>
+    {generator}{viewerModal}
+    <HistoryImagePicker zIndex={2200} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+  </>;
   if (embedded) return (
     <div className="flex min-h-0 flex-1 flex-col">
       {toolbarSlot ? createPortal(detail ? detailToolbarContent : listToolbarContent, toolbarSlot) : categoryToggle ? (detail ? detailToolbar : listToolbar) : null}
@@ -1449,7 +1295,7 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const selectionKey = allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
   const currentPath = allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
   const categoryToggle = <ToolbarButton aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories}><Folder className="h-4 w-4" /></ToolbarButton>;
-  const navigation = <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} />;
+  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:w-52 md:overflow-y-auto"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} /></div>;
   return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
 };
 

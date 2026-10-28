@@ -46,6 +46,7 @@ export interface PromptLibraryUsageSectionProps {
   chainId: string;
   /** 紧凑预览态：只取首屏缩略图，不显示「加载更多」。 */
   preview?: boolean;
+  zIndex?: number;
   notify?: (message: string, type?: 'success' | 'error') => void;
 }
 
@@ -53,7 +54,7 @@ export interface PromptLibraryUsageSectionProps {
  * 详情页「生成记录」：首屏拉一页，总数用后端 count，「加载更多」按同一页大小追加。
  * 加载中 / 失败（可重试）/ 空态 / 有图四态都要有明确落点。
  */
-export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps> = ({ chainId, preview = false, notify }) => {
+export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps> = ({ chainId, preview = false, notify, zIndex }) => {
   useLanguage();
   const pageSize = preview ? PROMPT_LIBRARY_USAGE_PREVIEW_SIZE : PROMPT_LIBRARY_USAGE_PAGE_SIZE;
   const [items, setItems] = useState<PromptLibraryUsageImage[]>([]);
@@ -185,6 +186,7 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
       </div>
       {current && (
         <ImageLightbox
+          zIndex={zIndex}
           src={current.imageUrl}
           alt={t('生成记录')}
           notify={notify}

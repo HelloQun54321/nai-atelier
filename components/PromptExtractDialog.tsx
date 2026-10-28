@@ -933,7 +933,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
               </ToolbarButton>}
               <ToolbarButton onClick={closeDialog} disabled={inputLocked} className="mobile-touch"
                 aria-label={t('关闭并保留草稿')} title={t('关闭并保留草稿')}><span>{t('关闭')}</span></ToolbarButton>
-              <ToolbarButton tone="primary" onClick={() => { if (hasCandidates) void savePicked(); else void runAnalysis(primaryMode); }}
+              <ToolbarButton tone={hasCandidates ? "save" : "primary"} onClick={() => { if (hasCandidates) void savePicked(); else void runAnalysis(primaryMode); }}
                 disabled={analyzing || inputLocked || (hasCandidates ? pickedDrafts.length === 0 : primaryMode === 'vision' ? visionDisabled : !canClassify)} className="mobile-touch">
                 {analyzing || saving ? <LoaderCircle className="animate-spin" /> : !hasCandidates && (primaryMode === 'vision' ? <Sparkles /> : <ClipboardPaste />)}
                 <span>{analyzing ? t('正在提取…') : saving ? t('保存中…') : hasCandidates

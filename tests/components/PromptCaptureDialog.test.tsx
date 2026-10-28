@@ -1,10 +1,44 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
+const render = (ui: React.ReactNode) => renderView(ui, { wrapper: ConfirmDialogProvider });
 import { PromptCaptureDialog } from '../../components/PromptCaptureDialog';
 
 afterEach(cleanup);
+
+it.each(['关闭', '取消', 'Escape'])('原文编辑经%s离开时先确认，取消保留全部草稿，放弃才关闭', async action => {
+  const close = vi.fn(), save = vi.fn();
+  render(<PromptCaptureDialog open editing initialText="旧正文" initialName="旧名称" onSave={save} onClose={close} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: '新的正文' } });
+  fireEvent.change(screen.getByRole('textbox', { name: '名称（可选）' }), { target: { value: '新名称' } });
+  const leave = () => action === 'Escape' ? fireEvent.keyDown(window, { key: 'Escape' }) : fireEvent.click(screen.getByRole('button', { name: action }));
+  leave(); await screen.findByRole('alertdialog');
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '取消' }).at(-1)!); });
+  expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('新的正文');
+  expect((screen.getByRole('textbox', { name: '名称（可选）' }) as HTMLInputElement).value).toBe('新名称');
+  leave(); fireEvent.click(await screen.findByRole('button', { name: '放弃修改' }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('离开前保存失败保留草稿和窗口，重试成功才关闭一次', async () => {
+  const close = vi.fn(), save = vi.fn().mockRejectedValueOnce(new Error('合成失败')).mockResolvedValueOnce('saved');
+  render(<PromptCaptureDialog open editing initialText="旧正文" onSave={save} onClose={close} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: '新正文' } });
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
+  await screen.findByRole('alert');
+  expect(close).not.toHaveBeenCalled();
+  expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('新正文');
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(save).toHaveBeenLastCalledWith('新正文', '', '', []);
+});
 const original = '  {{snow}}, 1.2::blue hair::\r\n[smile]  ';
 const paste = () => fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => original } });
 

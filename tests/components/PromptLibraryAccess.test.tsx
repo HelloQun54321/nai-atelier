@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
+const render = (ui: React.ReactNode) => renderView(ui, { wrapper: ConfirmDialogProvider });
 import { LibraryDialog, PromptLibraryChooser, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryWorkspace, PromptLibraryUseDialog, PromptLibrarySaveDialog, type WorkspaceAccess } from '../../components/PromptLibraryAccess';
 import { ImageActivityProvider } from '../../components/SmartImage';
 import { createCombinationData } from '../../services/promptLibraryEntries';
@@ -10,6 +12,24 @@ import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
 import type { PromptChain } from '../../types';
 
 afterEach(cleanup);
+it('手机等待编辑关闭确认时保留当前返回层，取消后仍可再次返回', async () => {
+  const previousMatchMedia = window.matchMedia;
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  window.history.replaceState({}, '');
+  const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+  const close = vi.fn(() => false);
+  try {
+    render(<LibraryDialog title="编辑" onClose={close}>合成草稿</LibraryDialog>);
+    await waitFor(() => expect(window.history.state?.__naiMobileLayer).toContain('prompt-library'));
+    const marker = window.history.state.__naiMobileLayer;
+    act(() => { window.history.replaceState({}, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: {} })); });
+    expect(close).toHaveBeenCalledOnce();
+    expect(window.history.state.__naiMobileLayer).toBe(marker);
+    act(() => { window.history.replaceState({}, ''); window.dispatchEvent(new PopStateEvent('popstate', { state: {} })); });
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(window.history.state.__naiMobileLayer).toBe(marker);
+  } finally { cleanup(); await Promise.resolve(); back.mockRestore(); window.matchMedia = previousMatchMedia; window.history.replaceState({}, ''); }
+});
 it('分栏收录组合可填写多个自定义标签并选择已有标签', async () => {
   const save = vi.fn().mockResolvedValue(undefined);
   const chain = { id: 'existing', ...createCombinationData('组合', { scene: { kind: 'scene', text: 'rain', filled: true } }), tags: ['已有分类'] } as PromptChain;

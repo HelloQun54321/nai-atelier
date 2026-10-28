@@ -2,11 +2,13 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import type { PromptChain } from '../../types';
 import { PromptBrowseHighlight, PromptLibraryBrowser, type PromptLibraryBrowserProps } from '../../components/PromptLibraryBrowser';
 import { createCombinationData, createFragmentData } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { longPress } from '../support/touchEvents';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 
 vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, containerClassName = 'relative h-full w-full overflow-hidden' }: { src: string; alt: string; className?: string; containerClassName?: string }) => <div className={containerClassName}><img src={src} alt={alt} className={className} /></div> }));
 vi.mock('../../components/ImageShareActions', async importOriginal => ({ ...await importOriginal<typeof import('../../components/ImageShareActions')>(), ImageShareActions: ({ favorite }: { favorite: { sourceType: string; sourceId: string } }) => <div data-card-action="true" data-testid="image-share" data-source-type={favorite.sourceType} data-source-id={favorite.sourceId} onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制图</button></div> }));
@@ -21,6 +23,19 @@ const Harness = ({ chains = entries, notify = vi.fn(), ...props }: Partial<Pick<
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   return <><div ref={setSlot} data-toolbar-caption-host /><PromptLibraryBrowser {...props} chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={notify} /></>;
 };
+
+it('已选详情遇到主动搜索从顶部显示，旧作品锚点不抢回位置', async () => {
+  render(<Harness chains={[entries[0], { ...entries[0], id: 'second', name: '另一条礼服' }]} />);
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-gallery-work-id]'));
+  const { root } = mockGalleryGeometry(cards);
+  fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  expect(root.scrollTop).toBeGreaterThan(0);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '礼服' } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  expect(root.scrollTop).toBe(0);
+  expect(screen.getByRole('complementary', { name: '礼服' })).toBeTruthy();
+});
 
 it('默认片段，只保留片段组合两项，切范围保留查询并正确取用', () => {
   const combo = { id: 'combo', ...createCombinationData('夜间组合', { scene: { kind: 'scene', filled: true, text: 'night sky' } }) } as PromptChain;
@@ -56,6 +71,14 @@ it('带封面详情沿用图库侧栏，图片外层按内容收缩，关闭后�
   expect(image.classList.contains('max-h-[40vh]')).toBe(true);
   expect(image.closest('.rounded-2xl')).toBeTruthy();
   expect(within(detail).getByText('night dress')).toBeTruthy();
+  expect(within(detail).getByRole('button', { name: '下载图片' })).toBeTruthy();
+  expect(within(detail).getByRole('button', { name: '复制图片' })).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: '放大查看：礼服' }));
+  expect(screen.getByRole('dialog', { name: '图片预览' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '放大图片' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '返回图片详情' }));
+  expect(screen.queryByRole('dialog', { name: '图片预览' })).toBeNull();
+  expect(scroll.scrollTop).toBe(130);
   fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
   expect(screen.queryByRole('complementary', { name: '礼服' })).toBeNull();
   expect(document.querySelector('.workspace-scroll-viewport')).toBe(scroll);
@@ -77,33 +100,31 @@ it('新目录组合展示路径正文负面与约束，没有封面不预留图�
 it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关闭恢复且不改偏好', desktopColumns => {
   const preferences = JSON.stringify({ layout: 'masonry', columns: 2, desktopColumns });
   localStorage.setItem('nai_mobile_image_display', preferences);
-  let resize: (width: number) => void = () => {};
+  const resizes = new Map<object, (width: number) => void>();
+  const resize = (width: number) => resizes.forEach(callback => callback(width));
   const OriginalObserver = globalThis.ResizeObserver;
   globalThis.ResizeObserver = class {
     callback: ResizeObserverCallback;
     constructor(callback: ResizeObserverCallback) { this.callback = callback; }
     observe(target: Element) {
-      if (target.classList.contains('workspace-scroll-viewport')) resize = width => this.callback([{ target, contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      if (target.classList.contains('workspace-scroll-viewport')) resizes.set(this, width => this.callback([{ target, contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver));
     }
-    disconnect() {}
-    unobserve() {}
+    disconnect() { resizes.delete(this); }
+    unobserve() { resizes.delete(this); }
   } as unknown as typeof ResizeObserver;
   const view = render(<Harness />);
   try {
-    const grid = document.querySelector<HTMLElement>('.mobile-gallery')!;
-    const revealSelected = vi.fn();
-    grid.querySelector<HTMLElement>('[data-prompt-library-entry="dress"]')!.scrollIntoView = revealSelected;
+    const grid = document.querySelector<HTMLElement>('.chain-masonry')!;
     act(() => resize(800));
-    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('4');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
     expect(localStorage.getItem('nai_mobile_image_display')).toBe(preferences);
     fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
-    revealSelected.mockClear();
     act(() => resize(280));
-    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('1');
-    expect(revealSelected).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(grid.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))');
     fireEvent.click(within(screen.getByRole('complementary', { name: '礼服' })).getByRole('button', { name: '关闭' }));
     act(() => resize(800));
-    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe('4');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(4, minmax(0, 1fr))');
   } finally { view.unmount(); globalThis.ResizeObserver = OriginalObserver; }
 });
 
@@ -452,11 +473,9 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
   const combo = { id: 'combo', ...createCombinationData('搭配', { scene: { kind: 'scene', filled: true, text: 'rainy garden' } }) } as PromptChain;
   const image = { ...entries[0], previewImage: 'data:image/png;base64,synthetic' };
   render(<Harness chains={[image, { id: 'raw', ...createFragmentData('night garden', '花园', 'general') } as PromptChain, combo]} onDelete={async () => {}} />);
-  const grid = document.querySelector('.mobile-gallery') as HTMLElement;
-  expect(grid.classList.contains('mobile-gallery--masonry')).toBe(true);
-  expect(grid.classList.contains('workspace-card-grid')).toBe(true);
-  expect(grid.style.getPropertyValue('--mobile-gallery-cols-setting')).toBe('1');
-  expect(grid.style.getPropertyValue('--mobile-gallery-cols-desktop')).toBe('3');
+  const grid = document.querySelector('.chain-masonry') as HTMLElement;
+  expect(grid.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
+  expect(grid.querySelector('.chain-masonry-column')).toBeTruthy();
   for (const card of document.querySelectorAll<HTMLElement>('[data-prompt-library-entry]')) {
     expect(card.classList.contains('gallery-image-card')).toBe(true);
     expect(card.classList.contains('gallery-card-visual')).toBe(true);

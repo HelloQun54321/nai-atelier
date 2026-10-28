@@ -117,10 +117,10 @@ export function PromptLibraryUseDialog({ entry, state, onChange, onApplied, onCl
   </WorkspaceContext.Provider>;
 }
 
-export function LibraryDialog({ title, onClose, children, busy = false, wide = false, caption, historyLayer = true }: { title: string; onClose: () => void; children: React.ReactNode; busy?: boolean; wide?: boolean; caption?: React.ReactNode; historyLayer?: boolean }) {
+export function LibraryDialog({ title, onClose, children, busy = false, wide = false, caption, historyLayer = true, headerActions, className = '', bodyClassName = 'space-y-3 overflow-y-auto p-4' }: { title: string; onClose: () => void | boolean; children: React.ReactNode; busy?: boolean; wide?: boolean; caption?: React.ReactNode; historyLayer?: boolean; headerActions?: React.ReactNode; className?: string; bodyClassName?: string }) {
   const active = useContext(ImageActivityContext);
   const ref = useModalA11y<HTMLDivElement>(active);
-  useMobileHistoryLayer(active && historyLayer, () => { if (busy) return false; onClose(); }, 'prompt-library');
+  useMobileHistoryLayer(active && historyLayer, () => { if (busy) return false; return onClose(); }, 'prompt-library');
   useEffect(() => {
     if (!active) return;
     const close = (event: KeyboardEvent) => {
@@ -130,9 +130,9 @@ export function LibraryDialog({ title, onClose, children, busy = false, wide = f
     return () => window.removeEventListener('keydown', close);
   }, [active, busy, onClose, ref]);
   return <ImagePreviewPortal><div hidden={!active} className={active ? 'fixed inset-0 z-[1900] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm' : 'hidden'}>
-    <div ref={ref} role="dialog" aria-modal="true" aria-label={t(title)} className={`content-library appearance-panel flex max-h-[90dvh] w-full ${wide ? 'max-w-[1400px]' : 'max-w-2xl'} flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900`}>
-      <header data-toolbar-caption-host={caption ? 'true' : undefined} className={`flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700 ${caption ? 'relative' : ''}`}><h2 className="flex-1 font-semibold">{t(title)}</h2>{caption}<IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
-      <div className="space-y-3 overflow-y-auto p-4">{children}</div>
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={t(title)} className={`content-library appearance-panel flex max-h-[90dvh] w-full ${wide ? 'max-w-[1400px]' : 'max-w-2xl'} flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 ${className}`}>
+      <header data-toolbar-caption-host={caption ? 'true' : undefined} className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700 ${caption ? 'relative' : ''}`}><h2 className="min-w-0 flex-1 truncate font-semibold">{t(title)}</h2>{caption}{headerActions}<IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
+      <div className={`min-h-0 ${bodyClassName}`}>{children}</div>
     </div>
   </div></ImagePreviewPortal>;
 }
@@ -288,7 +288,7 @@ export function PromptLibrarySaveDialog({ text, field = {}, onClose, initialPara
     <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('自定义标签')} value={tags} suggestionLabel={category === 'combination' ? value => promptLibraryCategoryLabel(library?.categoryTree, value) : undefined} suggestions={category === 'combination' ? promptLibraryCategoryNames(library?.chains || [], [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : [...new Set((library?.chains || []).flatMap(chain => chain.tags || []))].sort()} onPick={setTags} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} disabled={busy} className={TOOLBAR_FIELD_CLASS} /></label>
     <p className="max-h-44 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs text-gray-500">{text}</p>
     {error && <p role="alert" className="text-sm text-red-600">{t(error)}</p>}
-    <ToolbarButton tone="primary" disabled={busy || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !text.trim() && category !== 'combination'} onClick={() => void save()}>{t(busy ? '保存中…' : '保存')}</ToolbarButton>
+    <ToolbarButton tone="save" disabled={busy || !!library?.directoriesError || !!library?.reloadDirectories && !library.directories || !text.trim() && category !== 'combination'} onClick={() => void save()}>{t(busy ? '保存中…' : '保存')}</ToolbarButton>
   </LibraryDialog>;
 }
 

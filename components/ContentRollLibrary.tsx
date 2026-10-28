@@ -3,7 +3,7 @@ import { promptLibraryCategoryLabel } from '../services/promptLibraryCategoryTre
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import React, { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Copy, ImagePlus, Layers, LoaderCircle, Trash2 } from 'lucide-react';
+import { ImagePlus, Layers, LoaderCircle } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { LocalGenItem, PromptChain } from '../types';
 import { KINDS, META, contentRead, contentScopeOf } from '../services/contentRoll';
@@ -12,7 +12,8 @@ import { librarySectionOf } from '../services/promptLibraryEntries';
 import { PromptLibrarySaveDialog, usePromptLibrary } from './PromptLibraryAccess';
 import { promptLibraryHistoryImageUrl } from './PromptLibrary';
 import { HistoryImagePicker } from './HistoryImagePicker';
-import { SmartImage } from './SmartImage';
+import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
+import { IMAGE_CARD_ACTION_CLASS } from './ImageShareActions';
 import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
@@ -108,43 +109,27 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
 
   return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'} data-content-roll-library="true">
     {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
-    <div ref={scrollRef} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
+    <div ref={scrollRef} className={`workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-4 ${embedded ? '' : 'pb-28 md:p-6'}`}>
       {section === 'saved' && <div className="mb-3"><ToolbarButton onClick={() => onLoad({ id: '', name: t('新组合'), params: {} } as PromptChain)}>{t('新建组合')}</ToolbarButton></div>}
-      {shown.length ? <div className="content-library-grid items-start">
-        {shown.map(({ chain, read, fields, scope, original }) => {
+      {shown.length ? <PromptLibraryGallery chains={shown.map(record => record.chain)} scrollRef={scrollRef} resetKey={JSON.stringify([section, query, sort, tag])} renderCard={chain => {
+          const { read, fields, original } = shown.find(record => record.chain.id === chain.id)!;
           const expanded = previewId === chain.id;
-          return <article key={chain.id} data-content-roll-record={chain.id} data-safe-mode-work="true"
-            className={`appearance-group overflow-hidden rounded-2xl border bg-white dark:bg-gray-900 ${expanded ? 'border-indigo-300 dark:border-indigo-700' : 'border-gray-200 dark:border-gray-800'}`}>
-            <button type="button" aria-expanded={expanded} aria-controls={`content-preview-${chain.id}`} onClick={() => setPreviewId(expanded ? '' : chain.id)}
-              className="flex w-full items-start gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-indigo-500">
-              <span className="appearance-media flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100 text-gray-400 dark:bg-gray-800">
-                {chain.previewImage ? <SmartImage src={chain.previewImage} alt={chain.name || t('封面')} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" /> : <Layers className="h-6 w-6" />}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span data-safe-mode-title="true" className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{chain.name || t('未命名')}</span>
-                <span data-content-roll-scope={chain.id} className="mt-1 block text-xs text-indigo-600 dark:text-indigo-300">{original !== null ? t('原文收录') : scope.label || t('（没有可载入的内容）')}</span>
-                <span className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-500 dark:text-gray-400">{chain.description || original || fields.map(field => field.text).join(', ')}</span>
-              </span>
-              <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-            </button>
-            <div className="flex items-center justify-between gap-2 px-4 pb-3">
-              <span className="text-xs text-gray-400">{new Date(Number(chain.updatedAt || 0)).toLocaleDateString()}</span>
-              {original !== null ? <ToolbarButton onClick={() => void copySnapshot(chain)}><Copy />{t('复制提示词')}</ToolbarButton>
-                : <ToolbarButton disabled={!read.ok || !!busy || read.roles.length > 1 && roleChoices[chain.id] === undefined} onClick={() => read.roles.length > 1 ? onLoad(chain, roleChoices[chain.id]) : onLoad(chain)}>{t('编辑组合')}</ToolbarButton>}
-              {library?.useEntry && <ToolbarButton onClick={() => library.useEntry?.(chain)}>{t('使用')}</ToolbarButton>}
-            </div>
+          return <article key={chain.id} data-content-roll-record={chain.id} data-safe-mode-work="true" className="min-w-0">
+            <PromptLibraryCard chain={chain} label={t(original !== null ? '原文' : '组合')} selected={expanded} busy={busy === chain.id} deleteDisabled={!!busy} editDisabled={!!busy || original === null && !read.ok} notify={notify}
+              onOpen={() => setPreviewId(expanded ? '' : chain.id)} onEdit={() => { if (original !== null || read.roles.length > 1) setPreviewId(chain.id); else if (read.ok) onLoad(chain); }}
+              onCopy={() => void copySnapshot(chain)} onDelete={() => void remove(chain)} onUse={library?.useEntry ? () => library.useEntry?.(chain) : undefined}
+              summary={!chain.previewImage ? original || fields.map(field => field.text).join(', ') : undefined}
+              actions={<button type="button" data-card-action disabled={!!busy} onClick={event => { event.stopPropagation(); setCoverFor(chain); }} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')} className={`hover-reveal-md inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><ImagePlus className="h-4 w-4" /></button>} />
             {original === null && !read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
-            {expanded && <div id={`content-preview-${chain.id}`} data-content-roll-preview={chain.id} className="border-t border-gray-200 p-4 dark:border-gray-800">
+            {expanded && <div id={`content-preview-${chain.id}`} data-content-roll-preview={chain.id} className="appearance-group mt-2 rounded-xl border border-gray-200 p-3 dark:border-gray-800">
               <div className="mb-3 flex flex-wrap items-center gap-2">
+                {original === null && <ToolbarButton disabled={!read.ok || !!busy || read.roles.length > 1 && roleChoices[chain.id] === undefined} onClick={() => read.roles.length > 1 ? onLoad(chain, roleChoices[chain.id]) : onLoad(chain)}>{t('编辑组合')}</ToolbarButton>}
                 {original !== null && <ToolbarButton onClick={() => setOrganize(chain)}>{t('整理为片段')}</ToolbarButton>}
                 {original !== null && <ToolbarButton onClick={() => onLoad({ ...chain, id: '' })}>{t('整理为组合')}</ToolbarButton>}
                 {renaming?.id === chain.id ? <input autoFocus aria-label={t('重命名这条记录')} value={renaming.value} disabled={!!busy} className={TOOLBAR_FIELD_CLASS}
                   onChange={event => setRenaming({ id: chain.id, value: event.target.value })} onBlur={() => void commitRename()}
                   onKeyDown={event => { if (event.key === 'Enter') void commitRename(); if (event.key === 'Escape') { renameCancelled.current = true; setRenaming(null); } }} />
                   : <ToolbarButton disabled={!!busy} onClick={() => { renameCancelled.current = false; setRenaming({ id: chain.id, value: chain.name }); }}>{t('改名')}</ToolbarButton>}
-                {original === null && <ToolbarButton disabled={!!busy} onClick={() => void copySnapshot(chain)} title={t('复制组合数据')} aria-label={t('复制组合数据')}><Copy /></ToolbarButton>}
-                <ToolbarButton disabled={!!busy} onClick={() => setCoverFor(chain)} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')}><ImagePlus /></ToolbarButton>
-                <ToolbarButton tone="danger" disabled={!!busy} onClick={() => void remove(chain)} title={t('删除')} aria-label={t('删除')}><Trash2 /></ToolbarButton>
                 {busy === chain.id && <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />}
               </div>
               <div className="space-y-3">
@@ -159,8 +144,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
               </div>
             </div>}
           </article>;
-        })}
-      </div> : <EmptyState icon={<Layers className="h-7 w-7" />} title={t(records.length ? '没有符合搜索条件的记录' : section === 'originals' ? '原文还是空的' : '组合库还是空的')}
+        }} /> : <EmptyState icon={<Layers className="h-7 w-7" />} title={t(records.length ? '没有符合搜索条件的记录' : section === 'originals' ? '原文还是空的' : '组合库还是空的')}
         hint={records.length ? undefined : t(section === 'originals' ? '收录提示词，保留原文。' : '新建组合，或随机搭配。')}
         action={records.length ? <ToolbarButton onClick={() => { setQuery(''); resetScroll(); }}>{t('清除筛选')}</ToolbarButton> : undefined} />}
     </div>

@@ -71,7 +71,7 @@ function DirectoryNodeDialogContent({ title, nodes, name, parentId, editingId, b
         <label className="block text-xs text-gray-500">{parentLabel ?? t('上级目录')}<DirectoryTreeSelect nodes={nodes} rootLabel={rootLabel ?? t('顶层')} excludeIds={editingId ? [...getDirectoryDescendantIds(nodes, editingId)] : []} aria-label={parentLabel ?? t('上级目录')} value={parentId} disabled={locked} onChange={event => onParentChange(event.target.value)} className={`${field} mt-2`} /></label>
         {children}
         {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{t(error)}</p>}
-        <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton><ToolbarButton type="submit" disabled={locked || !name.trim()} tone="primary">{t('保存')}</ToolbarButton></div>
+        <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton><ToolbarButton type="submit" disabled={locked || !name.trim()} tone="save">{t('保存')}</ToolbarButton></div>
       </form>
     </div>
   </div>;

@@ -428,17 +428,17 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           ) : null}
 
           <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-            {library && <ToolbarButton disabled={generating || saving || !pickedDrafts.length} onClick={async () => {
+            {library && <ToolbarButton tone="save" disabled={generating || saving || !pickedDrafts.length} onClick={async () => {
               setSaving(true);
               try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedDrafts.map(draft => { const row = draftRow(draft); return [row.kind, row]; })), parsePromptLibraryTags(saveTags))); notify(t('已保存组合')); }
               catch (error) { notify((error as Error).message, 'error'); }
               finally { setSaving(false); }
             }}>{t('保存为组合')}</ToolbarButton>}
-            <ToolbarButton onClick={() => void generate()} disabled={generating || saving || !brief.trim() || !!library?.directoriesError || !!library?.directories && !allDirectories && !directoryIds.length} tone="primary" className="mobile-touch">
+            <ToolbarButton onClick={() => void generate()} disabled={generating || saving || !brief.trim() || !!library?.directoriesError || !!library?.directories && !allDirectories && !directoryIds.length} tone={drafts.length ? "neutral" : "primary"} className="mobile-touch">
               {generating ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
               <span>{generating ? t('正在生成…') : drafts.length ? t('重新生成') : t(library?.directories ? '生成' : '生成六条')}</span>
             </ToolbarButton>
-            <ToolbarButton onClick={() => void saveAll()} disabled={generating || saving || pickedCount === 0} className="mobile-touch">
+            <ToolbarButton tone="save" onClick={() => void saveAll()} disabled={generating || saving || pickedCount === 0} className="mobile-touch">
               {saving ? <LoaderCircle className="animate-spin" /> : null}
               <span>{saving ? t('保存中…') : t('全部保存到提示词库')}</span>
             </ToolbarButton>

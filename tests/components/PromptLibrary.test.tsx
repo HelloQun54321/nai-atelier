@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import * as libraries from '../../components/PromptLibrary';
 import { promptAgentService } from '../../services/promptAgent';
 import type { PromptChain } from '../../types';
@@ -25,6 +26,35 @@ const chains = [
 ] as unknown as PromptChain[];
 const props = () => ({chains,onCreate:vi.fn(),onSelect:vi.fn(),onUpdateChain:vi.fn(),onDelete:vi.fn(),notify:vi.fn()});
 const Hub = () => libraries.PromptLibraryHub;
+
+it('独立编辑只保留一个窗口标题和滚动正文，名称正文在目录前，封面不强制竖幅', () => {
+  const directories = { revision: 1, nodes: [{ id: 'light', parentId: null, name: '光照' }] };
+  const entry = { ...chains[0], previewImage: '/synthetic/cover.png' };
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], directories, save: vi.fn() }}><libraries.PromptLibraryEntryEditor {...props()} chains={[entry]} entry={entry} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  const dialog = screen.getByRole('dialog', { name: entry.name });
+  expect(dialog.querySelectorAll('header')).toHaveLength(1);
+  expect(dialog.querySelector('.workspace-command-bar')).toBeNull();
+  expect(dialog.querySelectorAll('.overflow-y-auto').length).toBe(2); // 正文与仅展开时可见的目录选择区。
+  const prompt = screen.getByRole('textbox', { name: '英文提示词' });
+  expect(prompt.compareDocumentPosition(screen.getByText('选择目录')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const cover = screen.getByRole('img', { name: '封面预览' });
+  expect(cover.classList.contains('max-h-48')).toBe(true);
+  expect(cover.closest('.aspect-\\[2\\/3\\]')).toBeNull();
+  expect(screen.getByRole('button', { name: '保存' }).getAttribute('data-tone')).toBe('save');
+});
+
+it('片段关闭可保存最新草稿后离开，取消确认不覆盖后续输入', async () => {
+  const p = props(), close = vi.fn();
+  render(<libraries.PromptLibraryEntryEditor {...p} entry={chains[0]} onClose={close} />);
+  fireEvent.change(screen.getByRole('textbox', { name: '形象名称' }), { target: { value: '第一次修改' } });
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '形象名称' }), { target: { value: '最后修改' } });
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(p.onUpdateChain).toHaveBeenCalledExactlyOnceWith(chains[0].id, expect.objectContaining({ name: '最后修改' }));
+});
 
 describe('图片提示词库', () => {
   beforeEach(() => localStorage.setItem('nai-prompt-library-categories-expanded', 'true'));
@@ -102,11 +132,11 @@ describe('图片提示词库', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(p.notify).toHaveBeenCalledWith('保存失败，请稍后重试', 'error'));
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '返回外貌' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(await screen.findByRole('button', { name: '取消' }));
     expect((screen.getByRole('textbox', { name: '形象名称' }) as HTMLInputElement).value).toBe('未保存内容');
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '返回外貌' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     fireEvent.click(await screen.findByRole('button', { name: '放弃修改' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(screen.queryByRole('searchbox')).toBeNull();
@@ -137,18 +167,18 @@ describe('图片提示词库', () => {
     expect(controls[1].getAttribute('aria-label')).toBe('筛选');
     expect(controls[2].getAttribute('type')).toBe('search');
   });
-  it('分类独立记住搜索、排序与位置，新搜索重置位置，默认内容视图可切换封面', async () => {
+  it('分类独立记住搜索、排序与位置，新搜索重置位置，统一使用图库卡片', async () => {
     const Component = Hub(); render(<Component {...props()} />);
     const search = screen.getByRole('searchbox', { name: '搜索名称、标签或提示词' });
     fireEvent.change(search, { target: { value: 'silver' } });
     const viewport = screen.getByRole('button', { name: '提示词：形象甲' }).closest('.workspace-scroll-viewport') as HTMLElement;
-    expect(viewport.querySelector('.content-library-grid')).toBeTruthy();
+    expect(viewport.querySelector('.chain-masonry')).toBeTruthy();
     viewport.scrollTop = 250; fireEvent.scroll(viewport);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '排序' }), { target: { value: 'name' } });
     expect(viewport.scrollTop).toBe(0);
-    fireEvent.click(screen.getByRole('button', { name: '封面视图' }));
-    expect(viewport.querySelector('.workspace-character-grid')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '封面视图' })).toBeNull();
+    expect(viewport.querySelector('.chain-masonry')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     viewport.scrollTop = 180; fireEvent.scroll(viewport);
     fireEvent.click(screen.getByRole('tab', { name: '场景 1' }));
@@ -159,7 +189,7 @@ describe('图片提示词库', () => {
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('silver');
     const restored = screen.getByRole('button', { name: '提示词：形象甲' }).closest('.workspace-scroll-viewport') as HTMLElement;
     expect(restored.scrollTop).toBe(180);
-    expect(restored.querySelector('.workspace-character-grid')).toBeTruthy();
+    expect(restored.querySelector('.chain-masonry')).toBeTruthy();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'rainy' } });
     expect(restored.scrollTop).toBe(0);
     expect(screen.getByRole('button', { name: '提示词：雨夜' })).toBeTruthy();
@@ -360,6 +390,8 @@ it('编辑自定义目录片段可调整目录归属，保留原提示词和生�
   const p = { ...props(), chains: [entry] };
   render(<PromptLibraryContext.Provider value={{ chains: [entry], directories, save: vi.fn() }}><libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   fireEvent.click(screen.getByRole('checkbox', { name: '道具' }));
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「道具」' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '道具 / 武器' }));
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledOnce());
@@ -398,7 +430,7 @@ it('管理树导航与列表并排，收展保留同一编辑草稿与滚动节�
   scroll.scrollTop = 140; fireEvent.scroll(scroll);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const nav = screen.getByRole('complementary', { name: '提示词目录导航' });
-  expect(nav.nextElementSibling).toBe(scroll); expect(nav.classList.contains('workspace-fixed-pane')).toBe(false);
+  expect(nav.parentElement?.nextElementSibling).toBe(scroll); expect(nav.parentElement?.classList.contains('md:w-52')).toBe(true); expect(scroll.classList.contains('min-w-0')).toBe(true); expect(nav.classList.contains('workspace-fixed-pane')).toBe(false);
   expect(scroll.scrollTop).toBe(140); expect(screen.getByRole('searchbox')).toBe(search);
   fireEvent.click(screen.getByRole('button', { name: '片段：形象甲' }));
   const name = screen.getByRole('textbox', { name: '片段名称' }); fireEvent.change(name, { target: { value: '未保存草稿' } });

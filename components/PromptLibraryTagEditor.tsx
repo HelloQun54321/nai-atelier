@@ -38,7 +38,7 @@ export const PromptLibraryTagEditor: React.FC<{
         suggestions={suggestions} suggestionLabel={suggestionLabel} inlineSuggestions onChange={event => setDraft(event.target.value)} onPick={setDraft} />
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{t('标签保存失败：{0}', [error])}</p>}
       <div className="flex flex-wrap justify-end gap-2"><ToolbarButton disabled={busy} onClick={() => { setEditing(false); setError(''); }}>{t('取消')}</ToolbarButton>
-        <ToolbarButton tone="primary" disabled={busy} onClick={() => void save()}>{t(busy ? '保存中…' : '保存标签')}</ToolbarButton></div>
+        <ToolbarButton tone="save" disabled={busy} onClick={() => void save()}>{t(busy ? '保存中…' : '保存标签')}</ToolbarButton></div>
     </div> : <div className="mt-2 flex flex-wrap gap-1">{confirmed.length ? confirmed.map(tag => <span key={tag} className="appearance-group max-w-full break-words rounded px-2 py-1 text-xs">{suggestionLabel?.(tag) || tag}</span>) : <span className="text-xs text-gray-400">{t('暂无标签')}</span>}</div>}
   </section>;
 };

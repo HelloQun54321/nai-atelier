@@ -8,6 +8,7 @@ import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
 import { getPromptLibraryDirectoryLegacyKind, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
+import { useConfirmDialog } from './ConfirmDialog';
 
 export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialText = '', initialName = '', initialCategory = '', initialTags = '', editing = false, categoryDisabled = false, directories, initialDirectoryIds, directoriesError, reloadDirectories }: {
   open: boolean; onClose: () => void; onSave: (text: string, name: string, category: string, tags: string[], directoryIds?: string[]) => Promise<string | void>;
@@ -27,12 +28,24 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
   const [tags, setTags] = useState(initialTags);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirmDialog();
+  const initialDraft = useRef({ text, name, category, tags, directoryIds });
+  const closing = useRef(false);
   const saveCategory = categoryDisabled ? '' : directories ? category ? getPromptLibraryDirectoryLegacyKind(directories, directoryIds[0]) || 'general' : '' : category;
   const pending = useRef(false);
   const wasOpen = useRef(open);
   const lastInitial = useRef({ text: initialText, name: initialName, category: initialCategory, tags: initialTags });
   const dialog = useModalA11y<HTMLDivElement>(open);
-  useMobileHistoryLayer(open, () => { if (pending.current) return false; onClose(); }, 'prompt-capture');
+  const requestClose = () => {
+    if (pending.current || closing.current) return false;
+    const dirty = editing && JSON.stringify({ text, name, category, tags, directoryIds }) !== JSON.stringify(initialDraft.current);
+    if (!dirty) { onClose(); return; }
+    closing.current = true;
+    void confirm({ title: t('放弃未保存的修改？'), message: t('返回{0}将丢弃本次编辑的改动。', [t('提示词库')]), confirmLabel: t('放弃修改'), tone: 'danger', rememberKey: 'prompt-library-original.leave', onSave: () => save(true) })
+      .then(leave => { if (leave) onClose(); }).finally(() => { closing.current = false; });
+    return false;
+  };
+  useMobileHistoryLayer(open, requestClose, 'prompt-capture');
   useEffect(() => {
     if (!open) { wasOpen.current = false; return; }
     if (wasOpen.current) return;
@@ -46,33 +59,38 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
   useEffect(() => {
     if (!open) return;
     dialog.current?.querySelector('textarea')?.focus();
+  }, [open, dialog]);
+  useEffect(() => {
+    if (!open) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented && !pending.current && isTopmostModal(dialog.current)) { event.preventDefault(); onClose(); }
+      if (event.key === 'Escape' && !event.defaultPrevented && isTopmostModal(dialog.current)) { event.preventDefault(); requestClose(); }
     };
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
-  }, [open, onClose, dialog]);
+  }, [open, text, name, category, tags, directoryIds, onClose, dialog]);
   const save = async (keepOpen = false) => {
-    if (pending.current || directoriesError) return;
-    try { prepareCollectedPrompt(text, name, saveCategory); } catch (e) { setError(t((e as Error).message)); return; }
+    if (pending.current || directoriesError) return false;
+    try { prepareCollectedPrompt(text, name, saveCategory); } catch (e) { setError(t((e as Error).message)); return false; }
     pending.current = true; setBusy(true); setError('');
     let id: string | void;
     try {
       const parsedTags = [...new Set(tags.split(/[,，]/).map(value => value.trim()).filter(Boolean))];
       id = directories && saveCategory ? await onSave(text, name, saveCategory, parsedTags, directoryIds) : await onSave(text, name, saveCategory, parsedTags);
     }
-    catch (e) { setError(t(editing ? '保存失败：{0}' : '收录失败：{0}', [(e as Error).message])); return; }
+    catch (e) { setError(t(editing ? '保存失败：{0}' : '收录失败：{0}', [(e as Error).message])); return false; }
     finally { pending.current = false; setBusy(false); }
     onSaved?.(typeof id === 'string' ? id : undefined);
     setText(''); setName('');
-    if (keepOpen) return;
+    if (keepOpen) return true;
     setCategory(''); setTags(''); onClose();
+    return true;
   };
   if (!open) return null;
   return <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
-    <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('粘贴收录')}
-      className="content-library appearance-panel flex max-h-[90dvh] w-full max-w-xl flex-col gap-4 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
-      <header className="flex items-center gap-2"><ClipboardPaste className="h-5 w-5 text-indigo-500" /><h2 className="flex-1 font-semibold">{t(editing ? '编辑原文' : '粘贴收录')}</h2><IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
+    <div ref={dialog} role="dialog" aria-modal="true" aria-label={t(editing ? '编辑原文' : '粘贴收录')}
+      className="content-library appearance-panel flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+      <header className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><ClipboardPaste className="h-5 w-5 text-indigo-500" /><h2 className="flex-1 font-semibold">{t(editing ? '编辑原文' : '粘贴收录')}</h2><IconButton label="关闭" disabled={busy} onClick={requestClose}><X /></IconButton></header>
+      <div className="min-h-0 space-y-4 overflow-y-auto p-4">
       <label className="block text-sm">{t('提示词原文')}<textarea aria-label={t('提示词原文')} className={`${TOOLBAR_FIELD_CLASS} mt-2 min-h-56 resize-y font-mono!`} value={text} disabled={busy}
         onChange={event => { setText(event.target.value); setError(''); }}
         onPaste={event => {
@@ -93,7 +111,8 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
       {directoriesError && <p role="alert" className="text-sm text-red-600">{directoriesError}{reloadDirectories && <ToolbarButton onClick={() => void reloadDirectories().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>}
       <label className="block text-sm">{t('标签（可选）')}<input aria-label={t('标签（可选）')} className={TOOLBAR_FIELD_CLASS} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} /></label>
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-      <footer className="flex flex-wrap justify-end gap-2"><ToolbarButton disabled={busy} onClick={onClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="primary" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>
+      </div>
+      <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 p-4 dark:border-gray-700"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>
     </div>
   </div>;
 }

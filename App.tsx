@@ -1095,7 +1095,7 @@ const App = () => {
             return createLibraryChain(data.name, '', data.type, { ...data, tags, ...(directoryIds !== undefined ? { params: { ...data.params, _promptLibraryDirectoryIds: directoryIds } as NAIParams } : {}) });
           }}
           onViewCaptured={setLibraryFocusId}
-          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
+          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
             directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
             categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange} onCreateCategory={openLibraryCategories} onRenameCategory={editLibraryCategory} onDeleteCategory={deleteLibraryCategory} onMoveCategory={moveLibraryCategory} categoriesBusy={movingLibraryCategory || libraryCategoriesOpen}
             onDelete={handleDeleteLibraryEntry}
@@ -1424,11 +1424,9 @@ const App = () => {
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
             onChange={libraryWorkspace.change} onClose={() => setLibraryUseEntry(null)} onApplied={() => { void handleNavigate('playground'); }} />
             : <LibraryDialog title="使用" historyLayer={false} onClose={() => setLibraryUseEntry(null)}><p>{t('正在读取实验室草稿…')}</p></LibraryDialog>)}
-          {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'items' && <LibraryDialog title="编辑" wide onClose={() => libraryEditorCloseRef.current?.()}>
-            <div className="flex h-[70dvh] min-h-0 flex-col"><PromptLibraryEntryEditor entry={libraryEditEntry} chains={chains}
+          {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'items' && <PromptLibraryEntryEditor entry={libraryEditEntry} chains={chains}
               onCreate={createLibraryChain} onUpdateChain={handleUpdateChain} onDelete={handleDelete} notify={notify}
-              requestCloseRef={libraryEditorCloseRef} onClose={() => setLibraryEditEntry(null)} /></div>
-          </LibraryDialog>}
+              requestCloseRef={libraryEditorCloseRef} onClose={() => setLibraryEditEntry(null)} />}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'originals' && <ImagePreviewPortal><PromptCaptureDialog key={libraryEditEntry.id} open editing
             directories={libraryDirectories}
             initialText={libraryEditEntry.basePrompt} initialName={libraryEditEntry.name} initialTags={libraryEditEntry.tags?.join(', ')}
@@ -1448,7 +1446,7 @@ const App = () => {
             <div className="flex flex-wrap gap-2">{contentRead((libraryEditEntry.params as { _rollContentSnapshot?: unknown })?._rollContentSnapshot).roles.map((role, index) =>
               <ToolbarButton key={role.key} onClick={() => { handleLoadContentRoll(libraryEditEntry, index); setLibraryEditEntry(null); }}>{role.name || t('角色 {0}', [String(index + 1)])}</ToolbarButton>)}</div>
           </LibraryDialog>}
-          {libraryManageOpen && <LibraryDialog title="管理提示词" wide onClose={() => libraryManagerCloseRef.current?.()}>
+          {libraryManageOpen && <LibraryDialog title="管理提示词" wide bodyClassName="flex min-h-0 flex-col p-4" onClose={() => { libraryManagerCloseRef.current?.(); return false; }}>
             <div className="flex h-[70dvh] min-h-0 flex-col gap-3">
               <div className="flex flex-wrap gap-2"><select aria-label={t('提示词库分区')} className={`${TOOLBAR_FIELD_CLASS} w-auto!`} value={libraryManageSection}
                 onChange={event => setLibraryManageSection(event.target.value as ContentLibrarySection)}>

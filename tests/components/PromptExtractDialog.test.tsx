@@ -96,10 +96,12 @@ it('提取发送当前目录树并显示完整路径，可修改目录后保存�
   pasteText('watercolor, paper');
   expect(screen.getByText('文字分类发送输入框文字与当前提示词目录')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '按文字分类' }));
-  await screen.findByText('绘画方式 / 水彩 / 纸纹');
+  await screen.findAllByText('绘画方式 / 水彩 / 纸纹');
   expect(mocks.extract.mock.calls[0][0]).toEqual({ mode: 'text', text: 'watercolor, paper', directories });
   expect(screen.queryByRole('combobox', { name: '水彩纸张分类' })).toBeNull();
   fireEvent.click(screen.getByRole('checkbox', { name: '未归类' }));
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「绘画方式」' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '绘画方式 / 水彩' }));
   fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
@@ -173,7 +175,7 @@ it('主按钮随分析与保存阶段切换，重分析失败仍保留可保存�
   mocks.extract.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   renderDialog();
   pasteText();
-  const primary = () => screen.getByRole('dialog').querySelectorAll('button[data-tone="primary"]');
+  const primary = () => screen.getByRole('dialog').querySelectorAll('button[data-tone="primary"], button[data-tone="save"]');
   expect(primary()).toHaveLength(1);
   expect(primary()[0].textContent).toBe('按文字分类');
   fireEvent.click(primary()[0]);

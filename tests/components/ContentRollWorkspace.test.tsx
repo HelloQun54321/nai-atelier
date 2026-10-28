@@ -199,6 +199,8 @@ it('动态目录按默认单位抽取、父含后代，取消目录后旧内容�
   expect(screen.queryByRole('textbox', { name: '环境内容' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
   expect((screen.getByRole('textbox', { name: '人物 / 衣装内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 姿态' }));
   fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(use).toHaveBeenCalledWith(expect.objectContaining({ 'directory:outfits': expect.objectContaining({ text: 'white shirt' }) }));
@@ -220,6 +222,8 @@ it('目录改名不丢手写与固定，新增不自动加入，删源保留当�
   const renamed = { revision: 2, nodes: [...directories.nodes.map(node => node.id === 'outfits' ? { ...node, name: '服装' } : node), { id: 'new', parentId: 'people', name: '新目录' }] };
   view.rerender(<ContentRollWorkspace {...props} directories={renamed} />);
   expect((screen.getByRole('textbox', { name: '人物 / 服装内容' }) as HTMLTextAreaElement).value).toBe('my hand-written clothing');
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
   expect((screen.getByRole('checkbox', { name: '人物 / 新目录' }) as HTMLInputElement).checked).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
   expect((screen.getByRole('textbox', { name: '人物 / 服装内容' }) as HTMLTextAreaElement).value).toBe('my hand-written clothing');
@@ -236,6 +240,8 @@ it('固定全局入口按目录继承范围筛选，全选使用默认单位而�
   render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()} entryTarget={{ mode: 'global' }} />);
   expect(screen.getByRole('textbox', { name: '环境内容' })).toBeTruthy();
   expect(screen.queryByRole('textbox', { name: '人物 / 衣装内容' })).toBeNull();
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
   expect((screen.getByRole('checkbox', { name: '人物 / 衣装' }) as HTMLInputElement).disabled).toBe(true);
 });
 
@@ -247,6 +253,8 @@ it('选中父目录只抽一个单位，改选下级与全部目录时不重复�
   fireEvent.click(screen.getByRole('button', { name: '使用' }));
   expect(Object.keys(use.mock.calls[0][0])).toEqual(['directory:people']);
   fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物 / 衣装」' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 衣装 / 上衣' }));
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
   fireEvent.click(screen.getByRole('button', { name: '使用' }));

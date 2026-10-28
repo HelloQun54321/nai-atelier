@@ -1,9 +1,10 @@
+import { t } from './i18n';
 import type { NAIParams, PromptChain } from '../types';
 import { contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
 import { collectedPromptText, prepareCollectedPrompt } from './collectedPrompt';
 import type { PromptLibraryKind } from './promptAgent';
 import { applyPromptText, type PromptApplyMode } from './promptApply';
-import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, type PromptLibraryTreeState } from './promptLibraryDirectories';
+import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, type PromptLibraryTreeState } from './promptLibraryDirectories';
 
 export type PromptFragmentKind = PromptLibraryKind | 'general';
 export type PromptLibrarySection = 'items' | 'saved' | 'originals';
@@ -11,6 +12,16 @@ export const isLibraryOnlyQuery = (query: string): boolean => /^@(?=[\p{L}\p{N}]
 export const FRAGMENT_LABELS: Record<PromptFragmentKind, string> = {
   appearance: '外貌', wardrobe: '服饰', pose: '动作', expression: '表情', scene: '场景', camera: '镜头', general: '通用',
 };
+/** 有目录上下文时展示真实归属；旧固定分类仅用于无目录的兼容入口。 */
+export function promptLibraryEntryLabel(chain: PromptChain, directories?: PromptLibraryTreeState): string {
+  const section = librarySectionOf(chain);
+  if (section !== 'items') return t(section === 'saved' ? '组合' : '原文');
+  if (directories) {
+    const paths = getPromptLibraryEntryDirectoryIds(chain, directories).map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean);
+    return paths.join('、') || t('未归类');
+  }
+  return t(FRAGMENT_LABELS[fragmentKindOf(chain) || 'general']);
+}
 export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {
   kind?: PromptFragmentKind;

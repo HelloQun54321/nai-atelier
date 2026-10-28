@@ -201,12 +201,14 @@ export const TOOLBAR_CONTROL_CLASS = 'inline-flex h-10 flex-none items-center ju
 const TOOLBAR_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800';
 
 export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
+  tone?: 'neutral' | 'primary' | 'save' | 'danger' | 'favorite';
   active?: boolean;
 }> = ({ tone = 'neutral', active = false, className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
+    : tone === 'save'
+      ? 'border-emerald-600 bg-emerald-700 text-white hover:bg-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-700/90 dark:hover:bg-emerald-800'
     : tone === 'favorite'
       ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'

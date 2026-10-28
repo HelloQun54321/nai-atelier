@@ -2,6 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import { ContentRollLibrary } from '../../components/ContentRollLibrary';
 import { LibraryDialog } from '../../components/PromptLibraryAccess';
 import { PromptLibraryEntryEditor } from '../../components/PromptLibrary';
@@ -36,7 +37,7 @@ it.each([1280, 390])('%spx 组合封面选择位于管理窗口上方，关闭�
   const close = vi.fn(), save = vi.fn(async () => {});
   render(<LibraryDialog title="管理提示词" onClose={close}><ContentRollLibrary active embedded chains={[combination]} notify={vi.fn()}
     onLoad={vi.fn()} onRename={vi.fn(async () => {})} onDelete={vi.fn(async () => {})} onSetCover={save} /></LibraryDialog>);
-  fireEvent.click(screen.getByRole('button', { name: /合成组合 角色：服饰/ }));
+  fireEvent.click(screen.getByRole('button', { name: '查看合成组合' }));
   fireEvent.click(screen.getByRole('button', { name: '从历史选封面' }));
   const picker = await screen.findByRole('dialog', { name: '选择历史图片' });
   const manager = screen.getByRole('dialog', { name: '管理提示词' });

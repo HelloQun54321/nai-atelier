@@ -14,8 +14,8 @@ vi.mock('../../services/promptLibraryUsage', async original => ({
 
 /* 大图查看器本身有独立回归（tests/components/ImageLightbox.test.tsx）；这里只验证接线与传参。 */
 vi.mock('../../components/ImageLightbox', () => ({
-  ImageLightbox: ({ src, onClose }: { src: string; onClose: () => void }) => (
-    <div role="dialog" aria-label="图片预览" data-viewer-src={src}>
+  ImageLightbox: ({ src, onClose, zIndex }: { src: string; onClose: () => void; zIndex?: number }) => (
+    <div role="dialog" aria-label="图片预览" data-viewer-src={src} style={{ zIndex }}>
       <button type="button" onClick={onClose}>返回图片详情</button>
     </div>
   ),
@@ -24,6 +24,13 @@ vi.mock('../../components/ImageLightbox', () => ({
 const row = (id: string) => ({ id, imageUrl: `/api/local-history/${id}/image`, prompt: `prompt ${id}`, createdAt: 1, params: {} });
 const page = (ids: string[], count: number, offset = 0) => ({
   items: ids.map(row), count, limit: 12, offset, linkKind: 'appearance', linkChainName: 'chain',
+});
+
+it('编辑窗口中的生成记录大图沿用调用方层级，避免被编辑器遮住', async () => {
+  mocks.images.mockResolvedValue(page(['synthetic'], 1));
+  render(<PromptLibraryUsageSection chainId="fragment" zIndex={2200} />);
+  fireEvent.click(await screen.findByRole('button', { name: '查看生成图 1' }));
+  expect(screen.getByRole('dialog', { name: '图片预览' }).style.zIndex).toBe('2200');
 });
 
 beforeEach(() => {

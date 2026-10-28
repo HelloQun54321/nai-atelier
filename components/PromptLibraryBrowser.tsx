@@ -1,26 +1,24 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { Copy, FileText, Folder, Layers, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { Folder } from 'lucide-react';
 import type { PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
+import { FRAGMENT_LABELS, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, promptBrowseSummary, type PromptBrowseScope } from '../services/promptLibraryBrowse';
 import { EmptyState, ToolbarButton, ToolbarSearch } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
-import { PressRevealSurface } from './PressRevealSurface';
-import { SmartImage } from './SmartImage';
-import { useMasonryColumnCount } from './ShortestColumnMasonry';
+import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
+import { ViewableImage } from './ImageLightbox';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
+import { ImageActivityContext } from './SmartImage';
 import { DetailImageStage, DetailSidePanel } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { bilingualOf, contentRead } from '../services/contentRoll';
 import { PromptLibraryTagEditor } from './PromptLibraryTagEditor';
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 import { getCustomChainTags } from '../services/chainTags';
-import { ImageCardActions } from './ImageCardActions';
-import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
-import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
-import { useGalleryFrostedCaption } from '../services/appearancePreferences';
+import { ImageShareOverlay } from './ImageShareActions';
 import { createDefaultPromptLibraryTree, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
 import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection } from './PromptLibraryDirectoryNavigation';
 import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
@@ -51,6 +49,7 @@ const readMemory = (directories: PromptLibraryTreeState): { scope: PromptBrowseS
 
 export interface PromptLibraryBrowserProps {
   chains: PromptChain[];
+  selectionFocusEnabled?: boolean;
   toolbarSlot: HTMLElement | null;
   onUse: (chain: PromptChain) => void;
   onOpen: (chain: PromptChain) => void;
@@ -92,7 +91,7 @@ export const PromptBrowseHighlight: React.FC<{ text: string; query: string }> = 
 };
 
 /** 汇总只读卡片；详情与管理继续使用原有编辑组件。 */
-export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, onCreateCategory, onRenameCategory, onDeleteCategory, onMoveCategory, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
+export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, onCreateCategory, onRenameCategory, onDeleteCategory, onMoveCategory, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
   useLanguage();
   const directories = useMemo(() => suppliedDirectories || createDefaultPromptLibraryTree(), [suppliedDirectories]);
   const [memory, setMemory] = useState(() => readMemory(directories));
@@ -115,12 +114,10 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
   const [deletingId, setDeletingId] = useState('');
   const deleting = useRef(false);
-  const imageDisplay = useMobileImageDisplayPreferences();
-  const frostedCaption = useGalleryFrostedCaption();
   const appliedCategoryChange = useRef<number | undefined>(undefined);
   const focusedId = useRef('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const gridColumns = useMasonryColumnCount(imageDisplay, undefined, scrollRef, 180, !!selectedId);
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const scrollPositions = useRef(useMemo(readScroll, []));
   const entries = useMemo(() => promptBrowseEntries(chains), [chains]);
   const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
@@ -140,7 +137,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const tagOptions = useMemo(() => memory.scope === 'saved' ? combinationTags : [...new Set(libraryChains.flatMap(chain => getCustomChainTags(chain.tags)))].sort((a, b) => a.localeCompare(b)), [libraryChains, combinationTags, memory.scope]);
   const selected = entries.find(entry => entry.chain.id === selectedId);
   const selectedRead = selected?.section === 'saved' ? contentRead((selected.chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot) : null;
-  const closeDetail = useMobileHistoryLayer(!!selected, () => setSelectedId(''), 'prompt-library-detail');
+  const closeDetail = useMobileHistoryLayer(!!selected, () => { selectionAnchor.preserveOnClose(); setSelectedId(''); }, 'prompt-library-detail');
   useEffect(() => {
     if (!categoryChange || appliedCategoryChange.current === categoryChange.token) return;
     appliedCategoryChange.current = categoryChange.token;
@@ -165,10 +162,6 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     setSelectedId(focusEntryId);
   }, [focusEntryId, entries]);
   useEffect(() => {
-    if (!selectedId) return;
-    Array.from(scrollRef.current?.querySelectorAll<HTMLElement>('[data-prompt-library-entry]') || []).find(element => element.dataset.promptLibraryEntry === selectedId)?.scrollIntoView?.({ block: 'nearest' });
-  }, [selectedId, shown, gridColumns]);
-  useEffect(() => {
     if (!toolbarSlot) return;
     const update = () => { setWide(toolbarSlot.getBoundingClientRect().width >= 650); setMobile(window.innerWidth < 768); };
     update();
@@ -177,7 +170,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     window.addEventListener('resize', update);
     return () => { observer?.disconnect(); window.removeEventListener('resize', update); };
   }, [toolbarSlot]);
-  const resetScroll = () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; };
+  const resetScroll = () => { selectionAnchor.clearAnchor(); if (scrollRef.current) scrollRef.current.scrollTop = 0; };
   const updateMemory = (next: typeof memory, reset = true) => {
     if (reset) { scrollPositions.current[next.scope] = 0; resetScroll(); }
     setMemory(next);
@@ -258,51 +251,30 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
+      selectionAnchor.onScroll();
       scrollPositions.current[memory.scope] = event.currentTarget.scrollTop;
       try { localStorage.setItem(SCROLL_KEY, JSON.stringify(scrollPositions.current)); } catch { /* 滚动记忆受限时保留本次会话位置。 */ }
     }} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
-      {shown.length ? <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid items-start`} style={mobileGalleryStyle(imageDisplay, gridColumns)}>{shown.map(entry => {
-        const { chain, section, kind } = entry;
-        const label = section === 'items' && kind ? FRAGMENT_LABELS[kind] : section === 'saved' ? '组合' : '原文';
-        const summary = promptBrowseSummary(entry, query);
+      {shown.length ? <PromptLibraryGallery chains={shown.map(entry => entry.chain)} scrollRef={scrollRef} fitColumns={!!selectedId} resetKey={JSON.stringify([memory, query, tags])} renderCard={chain => {
+        const entry = shown.find(item => item.chain.id === chain.id)!;
         const name = chain.name?.trim() || entry.summary.split(/[\r\n]/)[0].slice(0, 48) || t('未命名');
-        const busy = deletingId === chain.id;
-        return <PressRevealSurface as="article" key={chain.id} role="button" tabIndex={0} aria-label={t('查看{0}', [name])} aria-busy={busy} aria-disabled={busy} pressDisabled={busy}
-          className="appearance-group gallery-image-card gallery-card-visual group relative flex flex-col overflow-hidden rounded-2xl bg-white text-left focus-visible:outline-2 focus-visible:outline-indigo-500 dark:bg-gray-900" style={{ display: frostedCaption ? 'grid' : undefined }} data-prompt-library-entry={chain.id} data-safe-mode-work="true"
-          onClick={() => { if (!busy) setSelectedId(chain.id); }} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); if (!busy) setSelectedId(chain.id); } }}>
-          <div className={`appearance-media mobile-gallery-frame relative aspect-[2/3] w-full overflow-hidden ${chain.previewImage ? '' : 'bg-gray-100 dark:bg-gray-800'}`}>
-              {chain.previewImage && <SmartImage src={chain.previewImage} alt={name} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" />}
-            {!chain.previewImage && <div className="absolute inset-0 flex flex-col items-center justify-center px-3 pt-3 text-center text-gray-500 dark:text-gray-400" style={{ paddingBottom: 'calc(var(--image-card-caption-height, 0px) + .75rem)' }}>
-              {section === 'saved' ? <Layers className="h-8 w-8 shrink-0" /> : <FileText className="h-8 w-8 shrink-0" />}
-              <p className="mt-2 min-h-0 line-clamp-3 break-words text-xs leading-5"><PromptBrowseHighlight text={summary || t('还没有提示词')} query={query} /></p>
-            </div>}
-            {onDelete && <div data-card-action="true" data-image-action-left className="hover-reveal-md absolute left-2 top-2 z-20">
-              <button type="button" disabled={!!deletingId} aria-label={t('删除「{0}」', [name])} title={t('删除')} onClick={event => { event.stopPropagation(); void remove(chain); }}
-                className="mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50 md:h-8 md:w-8">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button>
-            </div>}
-            <ImageCardActions>
-              {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={chain.previewImage} filename={`${name || 'cover'}.png`} notify={notify}
-                favorite={{ imageUrl: chain.previewImage, title: name, sourceType: 'other', sourceId: chain.id }} />}
-              <button data-card-action type="button" disabled={busy} aria-label={t('编辑{0}', [name])} title={t('编辑')} onClick={event => { event.stopPropagation(); onOpen(chain); }} className={`hover-reveal-md inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><Pencil className="h-4 w-4" /></button>
-              <button data-card-action type="button" disabled={busy} aria-label={section === 'saved' ? t('复制组合数据') : t('复制{0}', [name])} title={t(section === 'saved' ? '复制组合数据' : '复制提示词')}
-                onClick={event => { event.stopPropagation(); void copy(section === 'saved' ? JSON.stringify((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot, null, 2) : chain.basePrompt || entry.summary, section === 'saved' ? '已复制这条记录的内容快照' : '已复制提示词'); }} className={`hover-reveal-md inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><Copy className="h-4 w-4" /></button>
-            </ImageCardActions>
-          </div>
-          <div className="gallery-card-caption min-w-0 p-3">
-            <div className="flex items-center justify-between gap-2"><h3 data-safe-mode-title="true" className="min-w-0 truncate text-sm font-bold text-gray-800 dark:text-gray-100"><PromptBrowseHighlight text={name} query={query} /></h3>
-              <span className="gallery-card-badge shrink-0 rounded px-1.5 py-0.5 text-micro text-indigo-600 dark:text-indigo-300">{t(label)}</span></div>
-            {chain.previewImage && query.trim() && <p className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-600 dark:text-gray-300"><PromptBrowseHighlight text={summary} query={query} /></p>}
-            <div className="gallery-card-meta mt-2 flex items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap gap-1">{getCustomChainTags(chain.tags).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400"><PromptBrowseHighlight text={tag} query={query} /></span>)}</div>
-              <ToolbarButton data-card-action tone="primary" disabled={busy} onClick={event => { event.stopPropagation(); onUse(chain); }}>{t('使用')}</ToolbarButton></div>
-          </div>
-        </PressRevealSurface>;
-      })}</div> : <EmptyState title={t(entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
+        const summary = promptBrowseSummary(entry, query);
+        return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, directories)} selected={selectedId === chain.id}
+          dimmed={selectionFocusEnabled && !!selectedId && selectedId !== chain.id} busy={deletingId === chain.id} deleteDisabled={!!deletingId}
+          title={<PromptBrowseHighlight text={name} query={query} />} summary={!chain.previewImage || query.trim() ? <PromptBrowseHighlight text={summary || t('还没有提示词')} query={query} /> : undefined}
+          tagContent={getCustomChainTags(chain.tags).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400"><PromptBrowseHighlight text={tag} query={query} /></span>)}
+          onOpen={() => { selectionAnchor.prepareSelection(chain.id); setSelectedId(chain.id); }} onEdit={() => onOpen(chain)} onUse={() => onUse(chain)}
+          onDelete={onDelete ? () => void remove(chain) : undefined} notify={notify}
+          onCopy={() => void copy(entry.section === 'saved' ? JSON.stringify((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot, null, 2) : chain.basePrompt || entry.summary, entry.section === 'saved' ? '已复制这条记录的内容快照' : '已复制提示词')} />;
+      }} /> : <EmptyState title={t(entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
     </div>
     {selected && <DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
-      subInfo={t(selected.kind ? FRAGMENT_LABELS[selected.kind] : selected.section === 'saved' ? '组合' : '原文')}
+      subInfo={promptLibraryEntryLabel(selected.chain, directories)}
       onClose={closeDetail} onBack={closeDetail} headerActions={<><ToolbarButton onClick={() => onOpen(selected.chain)}>{t('编辑')}</ToolbarButton><ToolbarButton tone="primary" onClick={() => onUse(selected.chain)}>{t('使用')}</ToolbarButton></>}>
-      {selected.chain.previewImage && <DetailImageStage><SmartImage src={selected.chain.previewImage} alt={selected.chain.name}
-        containerClassName="relative w-full overflow-hidden" className="block h-auto max-h-[40vh] w-full object-contain" /></DetailImageStage>}
+      {selected.chain.previewImage && <DetailImageStage pressResetKey={selected.chain.id}><ViewableImage src={selected.chain.previewImage} alt={selected.chain.name} notify={notify}
+        favorite={{ imageUrl: selected.chain.previewImage, title: selected.chain.name, sourceType: 'other', sourceId: selected.chain.id }} className="block h-auto max-h-[40vh] w-full object-contain" />
+        <ImageShareOverlay imageUrl={selected.chain.previewImage} filename={selected.chain.name + '.png'} notify={notify} favorite={{ imageUrl: selected.chain.previewImage, title: selected.chain.name, sourceType: 'other', sourceId: selected.chain.id }} />
+      </DetailImageStage>}
       {selected.section === 'saved' && onUpdateTags ? <PromptLibraryTagEditor key={selected.chain.id} tags={getCustomChainTags(selected.chain.tags)} suggestions={combinationTags} suggestionLabel={categoryLabel} onSave={tags => onUpdateTags(selected.chain, tags)} />
         : <div className="mt-3 flex flex-wrap gap-1">{(selected.chain.tags || []).map(tag => <span key={tag} className="appearance-group rounded px-2 py-1 text-xs">{tag}</span>)}</div>}
       {selectedRead ? <>

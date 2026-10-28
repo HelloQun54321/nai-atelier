@@ -17,7 +17,8 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
   notify?:(message:string,type?:'success'|'error')=>void;
   onClose:()=>void;onSwipe?:(delta:number)=>void;customActions?:boolean;hideShareActions?:boolean;
   pager?: { index: number; count: number; onChange: (index: number) => void };
-}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,hideShareActions=false,pager,children})=>{
+  zIndex?: number;
+}>>=({src,alt='图片预览',filename='image.png',generationData,favorite,notify,onClose,onSwipe,customActions=false,hideShareActions=false,pager,children,zIndex})=>{
   useLanguage();
   const dialog=useModalA11y<HTMLDivElement>(true);
   const close=useMobileHistoryLayer(true,onClose,'image-zoom');
@@ -40,7 +41,7 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
     };
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   });
-  return <ImagePreviewPortal><div ref={dialog} role="dialog" aria-modal="true" aria-label={t("图片预览")} className="fixed inset-0 z-[1500] overflow-hidden bg-black/90 backdrop-blur-sm">
+  return <ImagePreviewPortal><div ref={dialog} role="dialog" aria-modal="true" aria-label={t("图片预览")} style={{ zIndex }} className="fixed inset-0 z-[1500] overflow-hidden bg-black/90 backdrop-blur-sm">
     <PressRevealSurface elementRef={view.stageRef} pressResetKey={src} {...view.handlers} aria-label={t("图片平移与缩放")} className="absolute inset-0 overflow-hidden touch-none" onClick={event=>{if(event.target===event.currentTarget)close();}}>
       <OriginalImage key={`${src}:${retry}`} src={src} alt={alt} draggable={false} style={{...view.imageStyle,visibility:failed?'hidden':undefined}} onLoad={event=>{view.onLoad(event);setFailedSrc(null);}} onError={()=>setFailedSrc(src)} data-safe-mode-ignore="true" />
       {failed&&<button type="button" data-card-action="true" className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-black/75 px-4 py-3 text-sm text-white" onClick={()=>{setFailedSrc(null);setRetry(value=>value+1);}}>{t('原图加载失败 · 重试')}</button>}
