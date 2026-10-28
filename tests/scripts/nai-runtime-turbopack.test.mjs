@@ -3,9 +3,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
+import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE, NAI_PRICING_SUBSCRIPTION_BUNDLE } from '../fixtures/nai-runtime.mjs';
+import { Script, createContext } from 'node:vm';
 import { extractNaiRuntimeChunkPaths, extractNaiImagesPerPercent, extractNaiMetadataModelMappings,
-  extractNaiBillingRules, computeNaiRuntimeSync, syncNaiRuntime, getNaiRuntime } from '../../scripts/media-gateway.mjs';
+  extractNaiBillingRules, extractNaiCostCalculator, extractNaiPricingSubscription, computeNaiRuntimeSync, syncNaiRuntime, getNaiRuntime } from '../../scripts/media-gateway.mjs';
 import { compareOfficialVibeBilling } from '../live/nai-live-sync.mjs';
 
 const bundle = [
@@ -63,6 +64,44 @@ test('Turbopack 计价保留旧算式语义，未知附加费或步数表达式�
   }
 });
 
+test('扁平计价订阅与数值上限保持已知规则，转换字段或免费条件变化仍告警', async () => {
+  const current = NAI_PRICING_SUBSCRIPTION_BUNDLE;
+  const billing = extractNaiBillingRules(current);
+  assert.deepEqual(billing, extractNaiBillingRules(NAI_TURBOPACK_BILLING_BUNDLE));
+  await compareOfficialVibeBilling(current, billing);
+  assert.equal(extractNaiBillingRules(current.replace('(v-=1)', '(v-=2)')).freeSamples, 2);
+  assert.deepEqual(extractNaiBillingRules(current.replace('return y>140?-3:y*v', 'return y>n.maxPrice?-3:y*v')), billing);
+  const normalizer = extractNaiPricingSubscription(current);
+  const normalize = new Script(`(${normalizer[0]})`).runInContext(createContext({ AS: value => value.active }));
+  for (const active of [true, false]) for (const usage of [undefined, { isNegative: false }, { isNegative: true }]) {
+    assert.deepEqual({ ...normalize({ subscription: { tier: 3, active, usage } }) }, { tier: 3, active, usageNegative: usage?.isNegative ?? false });
+  }
+  for (const broken of [
+    current.replace('"pricingSubscription",()=>PS', '"otherSubscription",()=>PS'),
+    current.replace('tier:e.subscription.tier', 'tier:3'),
+    current.replace('active:AS(e.subscription)', 'active:!0'),
+    current.replace('usageNegative:e.subscription.usage?.isNegative??!1', 'usageNegative:!1'),
+    current.replace('usage?.isNegative??!1', 'usage?.isNegative??!0'),
+    current.replace('t.tier>=3&&t.active', 't.tier>=3&&t.unknown'),
+    current.replace('t.tier>=3&&t.active', 't.tier>=3&&t.activeOther'),
+    current.replace('t.tier>=3&&t.active', 't.tier>=3||t.active'),
+    current.replace('(u,(0,ns.pricingSubscription)(p),f)', '(u,p,f)'),
+    current.replace('return y>140?-3:y*v', 'return y>unknown()?-3:y*v'),
+  ]) {
+    assert.equal(extractNaiBillingRules(broken), null);
+    assert.ok(computeNaiRuntimeSync(broken).health.missed.includes('billing'));
+  }
+});
+
+test('计价函数按括号边界截取，未知返回不能吞入后续函数而误报成功', () => {
+  const current = NAI_PRICING_SUBSCRIPTION_BUNDLE;
+  const calculator = extractNaiCostCalculator(current);
+  assert.ok(calculator.endsWith('return y>140?-3:y*v}'));
+  assert.ok(calculator.length < current.indexOf('"vtAdditionalPrice"'));
+  assert.equal(extractNaiCostCalculator(current.replace('return y>140?-3:y*v', 'return unknown(y,v)')
+    + ';function unrelated(e){return e*v}'), null);
+});
+
 test('部署查询参数新页面完成全部提取，部分失败保持完整快照与磁盘记录', async () => {
   const path = join(process.cwd(), 'local-data', 'novelai-webapp-sync.json');
   const backup = await readFile(path, 'utf8');
@@ -73,6 +112,16 @@ test('部署查询参数新页面完成全部提取，部分失败保持完整�
   };
   try {
     assert.deepEqual(computeNaiRuntimeSync(bundle).health.missed, []);
+    const current = bundle.replace(NAI_TURBOPACK_BILLING_BUNDLE, NAI_PRICING_SUBSCRIPTION_BUNDLE);
+    assert.deepEqual(computeNaiRuntimeSync(current).health.missed, []);
+    assert.equal(await syncNaiRuntime(async url => new Response(url.endsWith('/image')
+      ? '<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>' : current)), true);
+    assert.equal(getNaiRuntime().health.ok, true);
+    const normalizedSnapshot = await readFile(path, 'utf8');
+    assert.equal(await syncNaiRuntime(async url => new Response(url.endsWith('/image')
+      ? '<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>' : current.replace('active:AS(e.subscription)', 'active:!0'))), false);
+    assert.ok(getNaiRuntime().health.missed.includes('billing'));
+    assert.equal(await readFile(path, 'utf8'), normalizedSnapshot);
     assert.equal(await syncNaiRuntime(remote), true);
     assert.equal(getNaiRuntime().health.ok, true);
     assert.equal(getNaiRuntime().imagesPerPercent, 21.4);

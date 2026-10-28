@@ -1241,13 +1241,23 @@ export const extractNaiFreeTierLimits = text => {
 };
 
 // 费用界面拷贝实际参数后叠加参考附加费。免费判定也用于自动重试，不能只看判定函数。
-export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{let (\w+)=\{\.\.\.(\w+)\};[\s\S]{0,3500}?\w+\(\{price:\(0,\w+\.\w+\)\(\1,\w+,\w+\)\+\w+,additionalPrice:\w+\}\)\}/)?.[0] || null;
+export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{let (\w+)=\{\.\.\.(\w+)\};[\s\S]{0,3500}?\w+\(\{price:\(0,\w+\.\w+\)\(\1,(?:\w+|\(0,\w+\.pricingSubscription\)\(\w+\)),\w+\)\+\w+,additionalPrice:\w+\}\)\}/)?.[0] || null;
+
+// 新版将会话转换为扁平计价订阅，字段含义变化时仍要求人工核对。
+export const extractNaiPricingSubscription = text => {
+  const name = text.match(/"pricingSubscription",\(\)=>(\w+)/)?.[1];
+  return name ? text.match(new RegExp(`function ${name}\\((\\w+)\\)\\{return\\{tier:\\1\\.subscription\\.tier,active:(\\w+)\\(\\1\\.subscription\\),usageNegative:\\1\\.subscription\\.usage\\?\\.isNegative\\?\\?!1\\}\\}`)) : null;
+};
 
 export const extractNaiCostCalculator = text => {
   const formula = text.match(/Math\.ceil\(\d+(?:\.\d+)?e-?\d+\*\w+\+\d+(?:\.\d+)?e-?\d+\*\w+\*\w+(?:\*\w+)?\)/);
   if (!formula) return null;
-  const start = [...text.slice(0, formula.index).matchAll(/(?:let \w+=|"checkStableDiffusionPrice",0,)function\(\w+,\w+,\w+\)\{/g)].at(-1)?.index;
-  return start === undefined ? null : text.slice(start).match(/^(?:let \w+=|"checkStableDiffusionPrice",0,)(function\(\w+,\w+,\w+\)\{[\s\S]*?return \w+(?:>\w+\.\w+\?-3:\w+)?\*\w+\})/)?.[1] || null;
+  const declaration = [...text.slice(0, formula.index).matchAll(/(?:let \w+=|"checkStableDiffusionPrice",0,)function\(\w+,\w+,\w+\)\{/g)].at(-1);
+  if (!declaration) return null;
+  const start = declaration.index + declaration[0].indexOf('function');
+  const end = findBalancedEnd(text, text.indexOf('{', start), '{', '}');
+  const calculator = end < 0 ? '' : text.slice(start, end + 1);
+  return /return (\w+)(?:>(?:\w+\.\w+|\d+)\?-3:\1)?\*\w+\}$/.test(calculator) ? calculator : null;
 };
 
 export const extractNaiVibeCostCalculator = text => text.match(/"vtAdditionalPrice",0,(function\((\w+)\)\{return (\d+)\*Math\.max\(0,\2-(\d+)\)\})/);
@@ -1266,12 +1276,17 @@ export const extractNaiBillingRules = text => {
   const calculator = extractNaiCostCalculator(text);
   if (!calculator || /\w+\+=/.test(calculator) || [...calculator.matchAll(/\w+-=/g)].length !== 1) return null;
   const minimum = calculator.match(/Math\.max\(Math\.ceil\(\w+\*\w+\),(\d+)\)/);
-  const freeSamples = calculator.match(/subscription\.tier>=3[^;]{0,150}&&\(\w+-=(\d+)\)/);
   const vibe = text.match(/(?:let |var |,)(\w+)=(\d+);function \w+\((\w+)\)\{return Math\.max\(0,\3-(\d+)\)\*\1\}/);
   const exportedVibe = extractNaiVibeCostCalculator(text);
   const priceCalculator = extractNaiPriceCalculator(text);
   // 出现新的 characterRef 映射时要求重新核对调用语义，不能沿用“参考取消免费”的推测。
   if (!priceCalculator || /\bcharacterRef\b/.test(priceCalculator)) return null;
+  const normalizedSubscription = /\(0,\w+\.pricingSubscription\)\(\w+\)/.test(priceCalculator);
+  if (normalizedSubscription && !extractNaiPricingSubscription(text)) return null;
+  const subscription = calculator.match(/^function\(\w+,(\w+),\w+\)/)[1];
+  const freeSamples = calculator.match(normalizedSubscription
+    ? new RegExp(`\\b${subscription}\\.tier>=3&&${subscription}\\.active&&!\\w+&&!\\w+&&\\(\\w+-=(\\d+)\\)`)
+    : /subscription\.tier>=3[^;]{0,150}&&\(\w+-=(\d+)\)/);
   const additional = priceCalculator.match(/additionalPrice:(\w+)/)?.[1];
   if (!additional) return null;
   const additions = [...priceCalculator.matchAll(new RegExp(`\\b${additional}\\+=`, 'g'))].length;

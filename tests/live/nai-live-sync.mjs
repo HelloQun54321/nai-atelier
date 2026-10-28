@@ -6,7 +6,7 @@
  * 任何一项未命中（官方改版或提取器被改坏）即以非零码退出。
  * 用法：npm run test:live-sync
  */
-import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, extractNaiCostCalculator, extractNaiPriceCalculator, extractNaiVibeCostCalculator, extractNaiPriceCallback, extractNaiRuntimeChunkPaths, fetchNaiRuntimeText } from '../../scripts/media-gateway.mjs';
+import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, extractNaiCostCalculator, extractNaiPriceCalculator, extractNaiPricingSubscription, extractNaiVibeCostCalculator, extractNaiPriceCallback, extractNaiRuntimeChunkPaths, fetchNaiRuntimeText } from '../../scripts/media-gateway.mjs';
 import { estimateNaiBilling } from '../../worker/naiBilling.mjs';
 import { createContext, Script } from 'node:vm';
 import assert from 'node:assert/strict';
@@ -57,10 +57,12 @@ const compareOfficialBilling = async (bundle, runtime) => {
   assert.ok(guard, '未识别官方免费资格函数');
   const usage = source.match(/\(0,(\w+)\.(\w+)\)\(\w+\)\.opusUsageLimit/);
   const family = source.match(/\(0,(\w+)\.(\w+)\)\(\w+\)===\1\.(\w+)\.v\d+/);
-  const free = source.match(/\(0,(\w+)\.(\w+)\)\(\w+\)&&\w+\.subscription\.tier/);
+  const free = source.match(/\(0,(\w+)\.(\w+)\)\(\w+\)&&\w+\.(?:subscription\.)?tier/);
   const active = source.match(/subscription\.tier>=3&&\(0,(\w+)\.(\w+)\)\(/);
+  const flatActive = source.match(/(\w+)\.tier>=3&&\1\.active/);
   const limit = source.match(/return \w+>(\w+)\.(\w+)\?-3/);
-  assert.ok(usage && family && free && active && limit, '官方计价依赖结构发生变化');
+  const literalLimit = source.match(/return (\w+)>\d+\?-3:\1\*\w+\}/);
+  assert.ok(usage && family && free && (active || flatActive) && (limit || literalLimit), '官方计价依赖结构发生变化');
   const bindings = {};
   const bind = (name, key, value) => { (bindings[name] ||= {})[key] = value; };
   bind(usage[1], usage[2], model => ({ opusUsageLimit: runtime.usageLimitedModels.includes(model) }));
@@ -70,8 +72,8 @@ const compareOfficialBilling = async (bundle, runtime) => {
   if (modelEnum) bind(modelEnum[1], modelEnum[2], Object.fromEntries(
     [...bundle.matchAll(/\w+\.(naiDiffusion\w+)="(nai-diffusion-[^"]+)"/g)].map(match => [match[1], match[2]]),
   ));
-  bind(active[1], active[2], subscription => subscription.active);
-  bind(limit[1], limit[2], Number.MAX_SAFE_INTEGER);
+  if (active) bind(active[1], active[2], subscription => subscription.active);
+  if (limit) bind(limit[1], limit[2], Number.MAX_SAFE_INTEGER);
   const context = createContext(bindings, { codeGeneration: { strings: false, wasm: false } });
   bind(free[1], free[2], new Script(`(${guard})`).runInContext(context, { timeout: 1000 }));
   // createContext 之后新增命名空间仍需显式暴露。
@@ -89,6 +91,13 @@ const compareOfficialBilling = async (bundle, runtime) => {
   const encoding = priceSource.match(/(\w+)\.(\w+)\.getPrice\(/);
   assert.ok(params?.length === 11 && price && account && capability && vibePrice && validate && inpainting && encoding, '官方费用调用依赖发生变化');
   bind(price[1], price[2], context.cost);
+  const pricingSubscription = priceSource.match(/\(0,(\w+)\.pricingSubscription\)\(\w+\)/);
+  if (pricingSubscription) {
+    const normalizer = extractNaiPricingSubscription(bundle);
+    assert.ok(normalizer && flatActive, '未识别官方计价订阅转换');
+    context[normalizer[2]] = subscription => subscription.active;
+    bind(pricingSubscription[1], 'pricingSubscription', new Script(`(${normalizer[0]})`).runInContext(context, { timeout: 1000 }));
+  }
   bind(account[1], account[2], session => session);
   bind(account[1], account[5], 'state');
   bind(account[3], account[4], 'session');

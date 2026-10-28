@@ -5,7 +5,7 @@ import { extractAndroidShared } from '../../scripts/android-shared.mjs';
 import { androidDictionaryGenerator } from '../../scripts/android-dictionary.mjs';
 import { projectRoot } from '../support/workspace.mjs';
 import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths } from '../../scripts/media-gateway.mjs';
-import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
+import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE, NAI_PRICING_SUBSCRIPTION_BUNDLE } from '../fixtures/nai-runtime.mjs';
 
 test('手机 Vibe 删除核查和写入互斥至完成，保留读取且失败释放锁', async () => {
   const { transform } = await import('esbuild');
@@ -107,6 +107,9 @@ test('Android 打包源码覆盖助手启动签名全部文件，文件系统 sh
   const agent = await readFile(join(projectRoot, 'scripts/prompt-agent.mjs'), 'utf8');
   const packaged = JSON.parse(build.match(/for \(const name of (\[[^\n]+\])\) sources\[name\]/)[1].replace(/'/g, '"'));
   const required = JSON.parse(agent.match(/const runtimeSourceFiles = (\[[^\n]+\]);/)[1].replace(/'/g, '"'));
+  for (const file of required) {
+    assert.ok(packaged.includes(new URL(file, 'file:///scripts/prompt-agent.mjs').pathname.slice(1)), `启动签名文件未打包：${file}`);
+  }
   const sources = Object.fromEntries(await Promise.all(packaged.map(async name => [name, await readFile(join(projectRoot, name), 'utf8')])));
   const source = extractAndroidShared(join(projectRoot, 'mobile/shims/fs.mjs'), ['readFileSync'], `const sources = ${JSON.stringify(sources)};`);
   const shim = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
@@ -139,6 +142,7 @@ test('Android 默认规则和官方提取复用电脑声明，不能带入 Node 
   assert.deepEqual(mobile.DEFAULT_NAI_RUNTIME,DEFAULT_NAI_RUNTIME);assert.deepEqual(mobile.computeNaiRuntimeSync('synthetic missing official rules'),computeNaiRuntimeSync('synthetic missing official rules'));
   assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE), computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE));
   assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_TURBOPACK_BILLING_BUNDLE), computeNaiRuntimeSync(NAI_TURBOPACK_BILLING_BUNDLE));
+  assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_PRICING_SUBSCRIPTION_BUNDLE), computeNaiRuntimeSync(NAI_PRICING_SUBSCRIPTION_BUNDLE));
   const html = '<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>';
   assert.deepEqual(mobile.extractNaiRuntimeChunkPaths(html), extractNaiRuntimeChunkPaths(html));
   assert.doesNotMatch(source,/node:|readFile|process\.cwd/);

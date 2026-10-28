@@ -27,3 +27,10 @@ export const NAI_TURBOPACK_BILLING_BUNDLE = NAI_MEDIUM_BILLING_BUNDLE
   .replace('p=2;function M(e){return Math.max(0,e-4)*p}', '"vtAdditionalPrice",0,function(e){return 2*Math.max(0,e-4)}')
   .replace('let g=0;g+=await priceForEncoding(s);g+=(0,q.H_0)(s.length);', 'let g=0;g=0+(await Promise.all(s.map(e=>{let{id:t,information_extracted:i,mask:r,enabled:n}=e;return!1===n?{exists:!0,price:0}:cn.VTSHelper.getPrice(t,p,o,{information_extracted:i,mask:r})}))).map(EI).reduce(EA,0)+(0,Ex.vtAdditionalPrice)(s.filter(ET).length);')
   + ';function EI(e){let{price:t}=e;return t}function EA(e,t){return e+t}function ET(e){return e.enabled}';
+
+/** 合成扁平计价订阅与数值费用上限，不依赖官方完整包或用户订阅。 */
+export const NAI_PRICING_SUBSCRIPTION_BUNDLE = NAI_TURBOPACK_BILLING_BUNDLE
+  .replace('t.subscription.tier>=3&&(0,n.ax)(t.subscription)', 't.tier>=3&&t.active')
+  .replace('return y*v}', 'return y>140?-3:y*v}')
+  .replace('(u,p,f)+g', '(u,(0,ns.pricingSubscription)(p),f)+g')
+  + ';"pricingSubscription",()=>PS;function PS(e){return{tier:e.subscription.tier,active:AS(e.subscription),usageNegative:e.subscription.usage?.isNegative??!1}}';
