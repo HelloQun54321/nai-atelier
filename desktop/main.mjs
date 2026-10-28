@@ -1,10 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, Tray } from 'electron';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace, pickDesktopDirectory } from '../scripts/desktop-runtime.mjs';
 import { createDesktopUpdater } from './app-updater.mjs';
@@ -225,6 +225,69 @@ ipcMain.handle('atelier-export', async (event, input) => {
   if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || !isDesktopNavigation(event.senderFrame.url, appUrl)) throw new Error('文件导出只允许本应用主窗口操作');
   if (typeof input?.data !== 'string' || input.data.length > 180 * 1024 * 1024 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.data) || input.data.length % 4 !== 0) throw new Error('导出文件无效或过大');
   return exportWithPreferences({ data: Buffer.from(input.data, 'base64'), filename: input.filename, workspace, pickDirectory: chooseDirectory, systemDirectory: app.getPath('downloads') });
+});
+
+// 画布导出使用独立目录偏好；仅保留选择结果，不改变全局导出设置。
+const canvasExportPreferenceFile = join(dataRoot, 'canvas-export-preferences.json');
+const canvasExportDirectories = readFile(canvasExportPreferenceFile, 'utf8').then(JSON.parse).catch(() => ({}));
+let canvasExportPreferenceWrite = Promise.resolve();
+const canvasExportTargets = new Map();
+const checkCanvasExportSender = event => {
+  if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || !isDesktopNavigation(event.senderFrame.url, appUrl)) throw new Error('画布导出只允许本应用主窗口操作');
+};
+
+ipcMain.handle('atelier-canvas-export-begin', async (event, kind, filename) => {
+  checkCanvasExportSender(event);
+  if (!['project', 'image'].includes(kind) || typeof filename !== 'string' || !filename || filename !== basename(filename)) throw new Error('画布导出文件名无效');
+  const directories = await canvasExportDirectories;
+  const extension = filename.toLowerCase().endsWith('.jpg') || filename.toLowerCase().endsWith('.jpeg') ? 'jpg' : 'png';
+  const filters = kind === 'project' ? [{ name: '画布工程', extensions: ['nai-canvas'] }] : [{ name: '图片', extensions: extension === 'jpg' ? ['jpg', 'jpeg'] : ['png'] }];
+  const result = await dialog.showSaveDialog(window, { defaultPath: join(directories[kind] || app.getPath('downloads'), filename), filters });
+  if (result.canceled || !result.filePath) return null;
+  directories[kind] = dirname(result.filePath);
+  const operation = canvasExportPreferenceWrite.then(() => writeFile(canvasExportPreferenceFile, JSON.stringify(directories) + '\n'));
+  canvasExportPreferenceWrite = operation.catch(() => {});
+  await operation;
+  const token = randomUUID();
+  canvasExportTargets.set(token, { path: result.filePath, tempPath: null, handle: null });
+  return token;
+});
+
+ipcMain.handle('atelier-canvas-export-start', async (event, token) => {
+  checkCanvasExportSender(event);
+  const target = canvasExportTargets.get(token);
+  if (!target || target.handle) throw new Error('画布导出目标已失效');
+  const tempPath = join(dirname(target.path), `.nai-canvas-${randomUUID()}.tmp`);
+  target.handle = await open(tempPath, 'wx');
+  target.tempPath = tempPath;
+});
+
+ipcMain.handle('atelier-canvas-export-chunk', async (event, token, data) => {
+  checkCanvasExportSender(event);
+  const target = canvasExportTargets.get(token);
+  if (!target?.handle || !(data instanceof Uint8Array)) throw new Error('画布导出数据无效');
+  await target.handle.writeFile(data);
+});
+
+ipcMain.handle('atelier-canvas-export-end', async (event, token) => {
+  checkCanvasExportSender(event);
+  const target = canvasExportTargets.get(token);
+  if (!target?.handle) throw new Error('画布导出目标已失效');
+  await target.handle.close();
+  target.handle = null;
+  await rename(target.tempPath, target.path);
+  canvasExportTargets.delete(token);
+});
+
+ipcMain.handle('atelier-canvas-export-abort', async (event, token) => {
+  checkCanvasExportSender(event);
+  const target = canvasExportTargets.get(token);
+  canvasExportTargets.delete(token);
+  try {
+    if (target?.handle) await target.handle.close();
+  } finally {
+    if (target?.tempPath) await unlink(target.tempPath).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
 });
 
 function prepareUpdate() {

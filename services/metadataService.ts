@@ -46,6 +46,8 @@ export interface BaseImageImport {
     mode: 'base-image';
     baseImageUrl: string;
     imageEditOperation: import('../types').ImageEditOperation;
+    /** 画布合成图只替换目标模式的底图，保留目标模式自身的文本和参数。 */
+    origin?: 'canvas';
 }
 
 /** 安全的 ID 生成器回退 */

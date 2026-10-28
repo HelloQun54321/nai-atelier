@@ -1226,9 +1226,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setArtistSampleTarget(data.mode === 'prompt-fragments' ? data.artistSampleTarget || null : null);
         setArtistSampleRandomSeed(false);
         if (data.mode === 'base-image') {
+            const targetDraft = data.origin === 'canvas' ? workspaceSession.edits[data.imageEditOperation] : activeEditDraft;
             void createEditDraftFromSource(data.imageEditOperation, data.baseImageUrl, 'upload', undefined,
-                activeEditDraft?.prompt ?? finalPrompt, activeEditDraft?.negativePrompt ?? negativePrompt,
-                activeEditDraft?.params ?? params).catch(error => notify(error instanceof Error ? error.message : '底图读取失败', 'error'));
+                targetDraft?.prompt ?? finalPrompt, targetDraft?.negativePrompt ?? negativePrompt,
+                targetDraft?.params ?? params).catch(error => notify(error instanceof Error ? error.message : '底图读取失败', 'error'));
             return;
         }
         if (data.targetMode === 'text-to-image') {

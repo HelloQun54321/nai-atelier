@@ -62,12 +62,13 @@ const PromptLibraryEntryEditor = lazy(() => import('./components/PromptLibrary')
 const ContentRollWorkspace = lazy(() => import('./components/ContentRollWorkspace').then(module => ({ default: module.ContentRollWorkspace })));
 const ContentRollLibrary = lazy(() => import('./components/ContentRollLibrary').then(module => ({ default: module.ContentRollLibrary })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
+const CanvasWorkspace = lazy(() => import('./components/canvas/CanvasWorkspace').then(module => ({ default: module.CanvasWorkspace })));
 
-type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
+type ViewState = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library' | 'canvas';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'content-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll', 'prompts', 'content-roll', 'content-roll-library'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'content-library', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll', 'prompts', 'content-roll', 'content-roll-library', 'canvas'];
 const chainLibraryView = (type?: ChainType): ViewState => type === 'character' ? 'characters'
   : type && ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(type) ? 'content-library' : 'list';
 
@@ -1259,6 +1260,8 @@ const App = () => {
         />;
       case 'history':
         return <GenHistory currentUser={currentUser} chains={chains} notify={notify} initialQuery={historyEntry} onOpenFootprint={() => void handleNavigate('footprint')} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
+      case 'canvas':
+        return <CanvasWorkspace active={view === 'canvas'} notify={notify} onSendToLab={() => void handleNavigate('playground', undefined, { externalImport: true })} confirmClose={() => confirmAction({ title: '关闭画布', message: '若你还没有导出为工程，你可能会永久失去该画布，是否确认？', confirmLabel: '关闭画布', tone: 'danger' })} />;
       case 'roll':
         return <StyleRollPage active={view === 'roll'} chains={chains} notify={notify}
           continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
@@ -1314,7 +1317,7 @@ const App = () => {
 
   // 页面元素只随实际资料、外观和激活状态更新，实验室输入及 toast 不重建其他保活页。
   const cachedViews = useMemo(() => Object.fromEntries(
-    (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll'] as const)
+    (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll', 'canvas'] as const)
       .map(target => [target, renderViewContent(target)]),
   ), [view, chains, currentUser, loading, selectedId, appearancePreferences, inspirationsCache, historyEntry, libraryEntry, rollPinnedEntry, language]);
   const playgroundContent = useMemo(() => renderViewContent('playground'), [

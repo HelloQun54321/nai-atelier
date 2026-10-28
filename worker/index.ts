@@ -19,6 +19,7 @@ import { handleChainFolderRoute } from './routes/chainFolderRoutes';
 import { handleCatalogGroupRoute } from './routes/catalogGroupRoutes';
 import { handlePromptLibraryDirectoryRoute } from './routes/promptLibraryDirectoryRoutes';
 import { handlePromptLibraryCategoryTreeRoute } from './routes/promptLibraryCategoryTreeRoutes';
+import { handleCanvasProjectRoute } from './routes/canvasProjectRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -200,6 +201,8 @@ export default {
       if (promptLibraryDirectoryResult) return promptLibraryDirectoryResult;
       const promptLibraryCategoryTreeResult = await handlePromptLibraryCategoryTreeRoute(routeContext);
       if (promptLibraryCategoryTreeResult) return promptLibraryCategoryTreeResult;
+      const canvasProjectResult = await handleCanvasProjectRoute(routeContext);
+      if (canvasProjectResult) return canvasProjectResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 

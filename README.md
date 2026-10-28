@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.137.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.138.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -173,6 +173,8 @@ flowchart LR
 ---
 
 ## 🧪 核心创作工作流
+
+- **电脑端画布**：左侧「工作区 → 画布」将多张素材放到独立图层，支持画布尺寸和背景、图层变换、矩形／多边形／自由套索选区、剪裁及可恢复擦除。笔刷显示范围并在拖动中预览；多边形可点击首点、双击或按 Enter 闭合，套索松开时闭合，已锁定选区显示动态虚线。选区内用移动工具拖动当前图层的选中像素，撤销和重做同步移动选区；Esc 可先取消草绘、再取消选区。移动图层或选区像素时按住 Shift 可沿水平或垂直辅助线移动，松开后继续自由移动。新建工程时指定名称和画幅；打开工程可查看缩略图，关闭工程需确认。工程自动保存在当前工坊，也可导入或导出包含素材的工程文件；PNG 支持透明，JPEG 透明处填白。导出时打开系统另存为窗口，工程与图片分别记住上次目录。合成图可主动送往实验室作为底图，送入不触发生图。画布尺寸不设固定产品上限，但实际处理受设备和浏览器能力限制。
 
 ### 🎨 风格串：可复用的创作配方
 

@@ -2,6 +2,13 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('atelierExports', { save: input => ipcRenderer.invoke('atelier-export', input) });
+contextBridge.exposeInMainWorld('atelierCanvasExport', {
+  begin: (kind, filename) => ipcRenderer.invoke('atelier-canvas-export-begin', kind, filename),
+  start: token => ipcRenderer.invoke('atelier-canvas-export-start', token),
+  write: (token, data) => ipcRenderer.invoke('atelier-canvas-export-chunk', token, data),
+  end: token => ipcRenderer.invoke('atelier-canvas-export-end', token),
+  abort: token => ipcRenderer.invoke('atelier-canvas-export-abort', token),
+});
 contextBridge.exposeInMainWorld('atelierLanguage', {
   initial: process.argv.find(value => value.startsWith('--atelier-language='))?.split('=')[1] || 'zh-CN',
   set: value => ipcRenderer.invoke('atelier-language', value),
