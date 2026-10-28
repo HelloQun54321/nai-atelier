@@ -1715,7 +1715,8 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent edit' }));
   expect(textPrompt().value).toBe('manual edit');
   const dialog = screen.getByRole('dialog', { name: '查看助手草稿差异' });
-  expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
+  // 差异默认只显示改动：删除的 manual 与新增的 Agent 分别标出，共用词按需展开。
+  expect(dialog.textContent).toContain('−manual'); expect(dialog.textContent).toContain('+Agent');
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');
 });
@@ -1771,7 +1772,7 @@ it('助手审阅只在原目标展示，切模式保留提议与人工内容', a
   expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
   await switchTo('文生图');
   expect(textPrompt().value).toBe('manual edit');
-  expect(screen.getByRole('dialog', { name: '查看助手草稿差异' }).textContent).toContain('Agent edit');
+  expect(screen.getByRole('dialog', { name: '查看助手草稿差异' }).textContent).toContain('+Agent');
 });
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('完全访问下 Agent %s 的免费、付费、预算不足和排队请求直接生成', async mode => {
