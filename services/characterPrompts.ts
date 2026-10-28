@@ -1,3 +1,4 @@
+import { isCreativeSectionKey, type PurposeSectionKey } from './promptPurposes.mjs';
 import type { CharacterParams, NAIParams } from '../types';
 import { splitPromptSegments } from './promptTagFilter';
 
@@ -15,9 +16,9 @@ export const normalizeCharacterCoordinate = (value: unknown, freeform: boolean):
 /** 角色分栏的固定顺序：编译与展示都用这一份，避免各处顺序漂移。 */
 export const CHARACTER_SECTION_KEYS = ['appearance', 'wardrobe', 'pose', 'expression'] as const;
 
-export const getCharacterSectionKeys = (character: CharacterParams): Array<typeof CHARACTER_SECTION_KEYS[number] | `directory:${string}`> => [
+export const getCharacterSectionKeys = (character: CharacterParams): Array<typeof CHARACTER_SECTION_KEYS[number] | `directory:${string}` | PurposeSectionKey> => [
   ...CHARACTER_SECTION_KEYS,
-  ...Object.keys(character.sections || {}).filter((key): key is `directory:${string}` => key.startsWith('directory:') && key.length > 10),
+  ...Object.keys(character.sections || {}).filter((key): key is `directory:${string}` | PurposeSectionKey => isCreativeSectionKey(key)),
 ];
 
 const splitTags = (value: unknown): string[] =>
@@ -72,7 +73,7 @@ export const compileCharacterContent = (
   return {
     ...character,
     // 动态目录和 AI 分类保留原文，重复词也属于原配方。
-    prompt: sectionKeys.some(key => key.startsWith('directory:')) || Object.values(character.sectionMeta || {}).some(meta => meta?.source === 'ai')
+    prompt: sectionKeys.some(isCreativeSectionKey) || Object.values(character.sectionMeta || {}).some(meta => meta?.source === 'ai')
       ? [...sectionKeys.map(key => character.sections?.[key]), character.prompt].map(value => value?.trim()).filter(Boolean).join(', ')
       : joinTags([...sectionKeys.map(key => character.sections?.[key]), character.prompt]),
     ...(() => {

@@ -1,5 +1,6 @@
+import { isCreativeSectionKey, type PurposeSectionKey } from './promptPurposes.mjs';
 ﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
-import { KINDS, META, isDirectorySectionKey } from './contentRoll';
+import { KINDS, META } from './contentRoll';
 import type { RollRow } from './contentRoll';
 import { CHARACTER_SECTION_KEYS } from './characterPrompts';
 
@@ -63,7 +64,7 @@ export interface ContentRollApplyRow {
 
 /** 一栏要写进角色分栏的内容（含内容负面与来源快照）。 */
 export interface ContentRollRoleWrite {
-  kind: keyof CharacterSectionContent | `directory:${string}`;
+  kind: keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey;
   text: string;
   negative: string;
   meta: { entryId?: string; entryName?: string; notes?: string; source?: string; directoryName?: string; directoryPath?: string[] };
@@ -151,14 +152,14 @@ export const planContentRollApply = (
   const kept: string[] = [];
 
   const legacyKeys = target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS;
-  const keys = Object.keys(picks).some(isDirectorySectionKey)
-    ? Object.keys(picks).filter(key => isDirectorySectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
+  const keys = Object.keys(picks).some(isCreativeSectionKey)
+    ? Object.keys(picks).filter(key => isCreativeSectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
   for (const kind of keys) {
     const meta = META[kind] || { title: picks[kind]?.directoryName || picks[kind]?.title || kind, scope: picks[kind]?.scope || 'global' };
     const row = picks[kind];
     const next = textOfRow(row);
     const negative = negativeOfRow(row);
-    const isGlobal = target.mode === 'global' || meta.scope === 'global';
+    const isGlobal = target.mode === 'global' || (row?.scope || meta.scope) === 'global';
     const current = isGlobal
       ? String(globalSectionsMap[kind] || '')
       : String(sections[kind] || '');
@@ -169,11 +170,11 @@ export const planContentRollApply = (
         globalParts.push(next);
         globalSections[kind] = next;
         if (negative) globalNegatives[kind] = negative;
-        globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name, notes: row?.constraintNotes || row?.constraints?.notes || undefined, ...(isDirectorySectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}) };
+        globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name, notes: row?.constraintNotes || row?.constraints?.notes || undefined, ...(isCreativeSectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}) };
       } else {
         characterParts.push(next);
         roleWrites.push({
-          kind: kind as keyof CharacterSectionContent | `directory:${string}`,
+          kind: kind as keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey,
           text: next,
           negative,
           meta: {
@@ -181,7 +182,7 @@ export const planContentRollApply = (
             entryName: String(row?.name || '') || undefined,
             notes: row?.constraintNotes || row?.constraints?.notes || undefined,
             source: row?.reason || undefined,
-            ...(isDirectorySectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}),
+            ...(isCreativeSectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}),
           },
         });
       }

@@ -42,12 +42,26 @@ describe('动态目录提示词取用', () => {
     expect(compiled.negativePrompt).toContain('closed eyes');
     expect(next.params.characters![0].sections).toBeUndefined();
   });
-  it('单条自定义目录片段使用实时树确定来源范围，全局目标仍明确写入全局', () => {
-    const entry = { id: 'fragment', type: 'preset', name: '眼睛片段', basePrompt: 'green eyes', negativePrompt: 'closed eyes', params: { _promptLibraryDirectoryIds: ['eyes'] } } as unknown as PromptChain;
+  it('片段按固定用途写入指定全局目标，目录不改变其语义', () => {
+    const entry = { id: 'fragment', type: 'preset', name: '眼睛片段', basePrompt: 'green eyes', negativePrompt: 'closed eyes', params: { _promptLibraryDirectoryIds: ['eyes'], _promptLibraryPurposes: ['appearance'] } } as unknown as PromptChain;
     const selection = planLibrarySelection(state(), entry, { mode: 'global' }, 'replace', {}, 0, undefined, directories);
-    expect(selection.plan.rows.map(row => row.kind)).toEqual(['directory:eyes']);
+    expect(selection.plan.rows.map(row => row.kind)).toEqual(['purpose:appearance']);
     const next = applyLibrarySelection(selection);
-    expect(next.params._promptSections!['directory:eyes']).toBe('green eyes');
+    expect(next.params._promptSections!['purpose:appearance']).toBe('green eyes');
     expect(next.params.characters![0].sections!['directory:eyes']).toBe('old eyes');
   });
+});
+
+it('用途小区从组合只取当前用途，并按入口角色重新确定落点', () => {
+  const before = state();
+  const entry = { id: 'grouped', ...createCombinationData('跨目标组合', {
+    'purpose:clothing': { kind: 'purpose:clothing', scope: 'global', filled: true, text: 'white dress', negative: 'coat' },
+    'purpose:lighting': { kind: 'purpose:lighting', scope: 'global', filled: true, text: 'backlight' },
+  }) } as PromptChain;
+  const next = applyLibrarySelection(planLibrarySelection(before, entry, { mode: 'existing', id: 'role' }, 'replace', { roleId: 'role', purposeId: 'clothing' }));
+  expect(next.params.characters![0].sections?.['purpose:clothing']).toBe('white dress');
+  expect(next.params.characters![0].sectionNegatives?.['purpose:clothing']).toBe('coat');
+  expect(next.params.characters![0].sections?.['purpose:lighting']).toBeUndefined();
+  expect(next.params._promptSections).toEqual(before.params._promptSections);
+  expect(next.params.characters![0].prompt).toBe(before.params.characters![0].prompt);
 });

@@ -1,3 +1,4 @@
+import { openPurposeGroup } from '../../support/promptPurposeGroups';
 // @vitest-environment jsdom
 import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -224,22 +225,24 @@ describe('提示词上下文工具隔离', () => {
     };
     render(<Harness />);
     expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('legacy subject');
-    fireEvent.change(screen.getByRole('textbox', { name: '外貌' }), { target: { value: 'silver_hair' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '服饰' }), { target: { value: 'blue_dress' } });
-    expect(screen.getByRole('status').textContent).toBe('silver_hair, blue_dress, legacy subject');
-    const group = within(screen.getByRole('group', { name: '外貌' }));
-    fireEvent.click(group.getByRole('button', { name: '清空当前提示词' }));
-    expect(screen.getByRole('status').textContent).toBe('blue_dress, legacy subject');
+    openPurposeGroup('主体与外观');
+    fireEvent.change(screen.getByRole('textbox', { name: '外貌与身体' }), { target: { value: 'silver_hair' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '服饰与配件' }), { target: { value: 'blue_dress' } });
+    expect(screen.getByRole('status').textContent).toBe('legacy subject, silver_hair, blue_dress');
+    const group = within(screen.getByRole('group', { name: '外貌与身体' }));
+    fireEvent.click(group.getAllByRole('button', { name: '清空当前提示词' })[0]);
+    expect(screen.getByRole('status').textContent).toBe('legacy subject, blue_dress');
     fireEvent.click(group.getByRole('button', { name: '撤销清空' }));
-    expect(screen.getByRole('status').textContent).toBe('silver_hair, blue_dress, legacy subject');
+    expect(screen.getByRole('status').textContent).toBe('legacy subject, silver_hair, blue_dress');
   });
 
   it('助手只改合并文本后，不显示旧分栏；继续编辑也不覆盖助手的新内容', () => {
     const setSubject = vi.fn();
     setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject });
-    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByRole('textbox', { name: '服饰' })).toBeNull();
     expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('blue_dress');
-    fireEvent.change(screen.getByRole('textbox', { name: '动作' }), { target: { value: 'sitting' } });
-    expect(setSubject).toHaveBeenCalledWith('sitting, blue_dress');
+    openPurposeGroup('动作与关系');
+    fireEvent.change(screen.getByRole('textbox', { name: '动作与姿态' }), { target: { value: 'sitting' } });
+    expect(setSubject).toHaveBeenCalledWith('blue_dress, sitting');
   });
 });

@@ -609,3 +609,18 @@ it('一批新建多个条目时，打开详情优先补算当前条目', async (
   await f.invoke('/api/prompt-library-links/summary');
   expect(linkIds(f, 'old')).toEqual(ids);
 });
+
+
+it('用途 Tag 写入校验固定清单，更新不抹掉旧自由标签', async () => {
+  const f = fixture();
+  const body = { id: 'purpose-test', name: 'dress', type: 'preset', basePrompt: 'dress', tags: ['旧自由标签'], params: { _collectedCategory: 'general', _promptLibraryPurposes: ['clothing'] } };
+  const response = await f.invoke('/api/chains', 'POST', body);
+  expect(response.status).toBe(200);
+  const { id } = await response.json() as { id: string };
+  expect((await f.invoke('/api/chains/' + id, 'PUT', { params: { ...body.params, _promptLibraryPurposes: ['clothing', 'pose'] } })).status).toBe(200);
+  const row = f.sqlite.prepare('SELECT params, tags FROM chains WHERE id = ?').get(id) as any;
+  expect(JSON.parse(row.params)._promptLibraryPurposes).toEqual(['clothing', 'pose']);
+  expect(JSON.parse(row.tags)).toEqual(['旧自由标签']);
+  expect((await f.invoke('/api/chains/' + id, 'PUT', { params: { _promptLibraryPurposes: ['custom'] } })).status).toBe(422);
+  expect(f.sqlite.prepare('SELECT params FROM chains WHERE id = ?').get(id)?.params).toBe(row.params);
+});

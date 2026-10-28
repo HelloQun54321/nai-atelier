@@ -480,3 +480,18 @@ test('权重与括号组内部的标题词不剥离，后续真正负面和参�
   });
   assert.deepEqual(splitExtractionSources(positive), { positive, negative: '', parameters: '' });
 });
+
+
+test('固定用途提取保留完整混合权重组，目录名不参与分组', () => {
+  const prepared = prepareExtractionChunks('1.3::white dress, smiling::, blue eyes');
+  const context = { semantic: true };
+  const parsed = parseTextExtractionResponse(JSON.stringify({ assignments: [
+    { id: 's0', purposes: ['clothing', 'expression'] }, { id: 's1', purposes: ['appearance'] },
+  ] }), prepared.chunks, context);
+  const result = assembleTextExtraction(prepared.chunks, parsed);
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].prompt, '1.3::white dress, smiling::');
+  assert.deepEqual(result.items[0].purposes, ['clothing', 'expression']);
+  assert.deepEqual(result.items[0].directoryIds, []);
+  assert.throws(() => parseVisionExtractionResponse(JSON.stringify({ items: [{ prompt: 'dress', purposes: ['custom'] }] }), context), /用途 Tag 无效/);
+});

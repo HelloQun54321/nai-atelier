@@ -28,7 +28,7 @@ const KINDS: Array<[string, string]> = [
 ];
 
 const bundleItem = (kind: string, label: string) => ({
-  kind, label, name: `${label}候选`, prompt: `${kind} prompt, night`, bilingual: `${label}候选 / 夜景`,
+  kind, purposes: [({ wardrobe: 'clothing', scene: 'place' } as Record<string, string>)[kind] || kind], label, name: `${label}候选`, prompt: `${kind} prompt, night`, bilingual: `${label}候选 / 夜景`,
   negativePrompt: 'lowres, blurry', tags: [kind, '夜景'], note: `${label}说明`,
 });
 const bundleResult = (items = KINDS.map(([kind, label]) => bundleItem(kind, label)), missing: string[] = []) => ({
@@ -81,23 +81,23 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it('一段话生成六类候选，取消一条勾选后只保存勾选的五条，并带齐参数形状', async () => {
   mocks.generate.mockResolvedValue(bundleResult());
   setup();
-  const generateButton = screen.getByRole('button', { name: '生成六条' }) as HTMLButtonElement;
+  const generateButton = screen.getByRole('button', { name: '生成搭配' }) as HTMLButtonElement;
   expect(generateButton.disabled).toBe(true);
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '雨夜天台，少女，湿发' } });
   expect(generateButton.disabled).toBe(false);
   fireEvent.click(generateButton);
-  await waitFor(() => expect(mocks.generate).toHaveBeenCalledWith({ brief: '雨夜天台，少女，湿发' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledWith({ brief: '雨夜天台，少女，湿发', purposes: ['appearance', 'clothing', 'pose', 'expression', 'place', 'camera'] }));
 
   await screen.findByText('已生成 6 条');
   expect(screen.getAllByRole('checkbox')).toHaveLength(6);
   expect(screen.getAllByRole('checkbox').every(box => (box as HTMLInputElement).checked)).toBe(true);
 
-  fireEvent.click(screen.getByLabelText('选择镜头画面'));
-  expect((screen.getByLabelText('选择镜头画面') as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByLabelText('选择视角与景别'));
+  expect((screen.getByLabelText('选择视角与景别') as HTMLInputElement).checked).toBe(false);
   const saveButton = screen.getByRole('button', { name: '全部保存到提示词库' }) as HTMLButtonElement;
   expect(saveButton.disabled).toBe(false);
-  fireEvent.change(screen.getByLabelText('人物形象名称'), { target: { value: '改过的名字' } });
-  fireEvent.change(screen.getByLabelText('人物形象提示词'), { target: { value: 'appearance prompt, edited' } });
+  fireEvent.change(screen.getByLabelText('外貌与身体名称'), { target: { value: '改过的名字' } });
+  fireEvent.change(screen.getByLabelText('外貌与身体提示词'), { target: { value: 'appearance prompt, edited' } });
 
   fireEvent.click(saveButton);
   await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(5));
@@ -105,7 +105,7 @@ it('一段话生成六类候选，取消一条勾选后只保存勾选的五条�
   expect(mocks.create).toHaveBeenNthCalledWith(1, '改过的名字', '人物形象说明', 'appearance', expect.objectContaining({
     basePrompt: 'appearance prompt, edited',
     negativePrompt: 'lowres, blurry',
-    tags: ['appearance', '夜景'],
+    tags: [],
     variableValues: { subject: '' },
     modules: [],
     params: expect.objectContaining({
@@ -120,7 +120,7 @@ it('一段话生成六类候选，取消一条勾选后只保存勾选的五条�
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('已保存 5 条'));
   expect(mocks.saved).toHaveBeenCalledOnce();
   // 未勾选的镜头仍留在面板里，重新勾选即可再存。
-  expect(screen.getByLabelText('选择镜头画面')).toBeTruthy();
+  expect(screen.getByLabelText('选择视角与景别')).toBeTruthy();
   expect(mocks.close).not.toHaveBeenCalled();
 });
 
@@ -128,7 +128,7 @@ it('缺库时提示可重试，生成失败给出可读原因且保留候选', a
   mocks.generate.mockResolvedValueOnce(bundleResult(KINDS.slice(0, 5).map(([kind, label]) => bundleItem(kind, label)), ['camera']));
   setup();
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '海边黄昏' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 5 条');
   expect(screen.getByRole('status').textContent).toBe('1 类缺失，可重试');
 
@@ -143,7 +143,7 @@ it('组合标签只取用户输入，允许留空，多标签去重且保存失�
   mocks.saveCombination.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('保存暂不可用'));
   setupWithLibrary([{ tags: ['已有标签'] }]);
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '雨夜' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 2 条');
   const tags = screen.getByRole('textbox', { name: '组合标签' }) as HTMLInputElement;
   expect(tags.value).toBe('');
@@ -173,7 +173,7 @@ it('全部取消勾选后保存按钮禁用；保存全部失败时保留六条�
   mocks.create.mockRejectedValue(new Error('写入失败'));
   setup();
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '废墟中的剑士' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 6 条');
 
   const saveButton = () => screen.getByRole('button', { name: '全部保存到提示词库' }) as HTMLButtonElement;
@@ -193,7 +193,7 @@ it('六条可以按栏写进已有风格串：人物四栏进角色 1、场景/�
   mocks.generate.mockResolvedValue(bundleResult());
   setupWithChain();
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '苗族少女，废弃游乐园' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 6 条');
 
   fireEvent.click(screen.getByRole('button', { name: '写入风格串…' }));
@@ -207,20 +207,20 @@ it('六条可以按栏写进已有风格串：人物四栏进角色 1、场景/�
   const payload = mocks.writeChain.mock.calls[0][0];
   expect(payload.chain).toMatchObject({ id: 'chain-1', name: '路西法5串1' });
   expect(payload.params.characters[0].sections).toMatchObject({
-    appearance: 'appearance prompt, night',
-    wardrobe: 'wardrobe prompt, night',
-    pose: 'pose prompt, night',
-    expression: 'expression prompt, night',
+    'purpose:appearance': 'appearance prompt, night',
+    'purpose:clothing': 'wardrobe prompt, night',
+    'purpose:pose': 'pose prompt, night',
+    'purpose:expression': 'expression prompt, night',
   });
-  expect(payload.params._promptSections.scene).toBe('scene prompt, night');
-  expect(payload.params._promptSections.camera).toBe('camera prompt, night');
+  expect(payload.params._promptSections['purpose:place']).toBe('scene prompt, night');
+  expect(payload.params._promptSections['purpose:camera']).toBe('camera prompt, night');
   // 角色类不重复写进全局栏，主体只合并全局栏
-  expect(payload.params._promptSections.appearance).toBeUndefined();
-  expect(payload.variableValues.subject).toBe('scene prompt, night, camera prompt, night, 旧主体');
+  expect(payload.params._promptSections['purpose:appearance']).toBeUndefined();
+  expect(payload.variableValues.subject).toBe('旧主体, scene prompt, night, camera prompt, night');
   expect(payload.params.characters[0].sectionNegatives).toEqual(Object.fromEntries(
-    ['appearance', 'wardrobe', 'pose', 'expression'].map(kind => [kind, 'lowres, blurry']),
+    ['appearance', 'clothing', 'pose', 'expression'].map(kind => ['purpose:' + kind, 'lowres, blurry']),
   ));
-  expect(payload.params._promptSections.sectionNegatives).toEqual({ scene: 'lowres, blurry', camera: 'lowres, blurry' });
+  expect(payload.params._promptSections.sectionNegatives).toEqual({ 'purpose:place': 'lowres, blurry', 'purpose:camera': 'lowres, blurry' });
   await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('已写入风格串：角色 4 栏、全局 2 栏'));
 });
 
@@ -228,7 +228,7 @@ it('没有风格串可写时不显示入口，取消勾选后写入按钮禁用'
   mocks.generate.mockResolvedValue(bundleResult());
   setup();
   fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '海边' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成六条' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
   await screen.findByText('已生成 6 条');
   expect(screen.queryByRole('button', { name: '写入风格串…' })).toBeNull();
 });
@@ -236,7 +236,7 @@ it('没有风格串可写时不显示入口，取消勾选后写入按钮禁用'
 it('Esc、遮罩与取消都能关闭，且说明只走当前助手模型、可能收费、不消耗生图额度', async () => {
   setup();
   expect(screen.getByRole('dialog', { name: 'AI 生成搭配' }).getAttribute('aria-modal')).toBe('true');
-  expect(screen.getByText('用一段话一次生成六类提示词')).toBeTruthy();
+  expect(screen.getByText('按所选用途生成提示词搭配')).toBeTruthy();
   expect(screen.getByText('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')).toBeTruthy();
   expect((screen.getByLabelText('描述你想要的画面') as HTMLTextAreaElement).placeholder).toBe('例如：雨夜天台，少女，湿发，霓虹倒影');
 
@@ -252,8 +252,8 @@ it('Esc、遮罩与取消都能关闭，且说明只走当前助手模型、可�
 });
 
 it('一键六库相关文案在四语言字典中齐全且占位符一致', () => {
-  const keys = ['AI 生成搭配', '用一段话一次生成六类提示词', '描述你想要的画面', '例如：雨夜天台，少女，湿发，霓虹倒影',
-    '生成六条', '正在生成…', '生成失败：{0}', '已生成 {0} 条', '{0} 类缺失，可重试', '勾选后一起保存', '选择{0}',
+  const keys = ['AI 生成搭配', '按所选用途生成提示词搭配', '描述你想要的画面', '例如：雨夜天台，少女，湿发，霓虹倒影',
+    '生成搭配', '正在生成…', '生成失败：{0}', '已生成 {0} 条', '{0} 类缺失，可重试', '勾选后一起保存', '选择{0}',
     '{0}提示词', '{0}名称', '全部保存到提示词库', '已保存 {0} 条', '保存失败：{0}', '条目名称', '提示词',
     '写入风格串', '写入风格串…', '新建风格串', '写入已有风格串', '写入这条风格串', '新建并写入',
     '已写入风格串：角色 {0} 栏、全局 {1} 栏', '来自一键六库内容', '组合标签（可选）', '组合标签'];
@@ -268,18 +268,31 @@ it('一键六库相关文案在四语言字典中齐全且占位符一致', () =
   }
 });
 
-it('当前自定义目录参与AI生成并按目录保存组合快照，标签仍独立', async () => {
-  const directories = { revision: 3, nodes: [{ id: 'props', parentId: null, name: '道具', target: 'global' as const }] };
-  mocks.generate.mockResolvedValue({ items: [{ directoryId: 'props', directoryName: '道具', directoryPath: ['道具'], name: '银剑', prompt: 'silver sword', negativePrompt: 'axe', tags: [] }], missing: [] });
-  render(<PromptLibraryContext.Provider value={{ chains: [], directories, save: mocks.saveCombination }}><PromptLibraryBundleDialog open onClose={mocks.close} notify={mocks.notify} onCreate={mocks.create} /></PromptLibraryContext.Provider>);
-  fireEvent.change(screen.getByRole('textbox', { name: '描述你想要的画面' }), { target: { value: '银剑' } });
-  fireEvent.click(screen.getByRole('button', { name: '生成' }));
-  await screen.findByDisplayValue('silver sword');
-  expect(mocks.generate).toHaveBeenCalledWith({ brief: '银剑', directories, directoryIds: null });
-  fireEvent.change(screen.getByRole('textbox', { name: '组合标签' }), { target: { value: '私人, 道具' } });
+it('改名或清空目录仍发送固定用途，保存时可校正 Tag', async () => {
+  mocks.generate.mockResolvedValue(bundleResult([bundleItem('clothing', '服饰')]));
+  render(<PromptLibraryContext.Provider value={{ chains: [], directories: { revision: 9, nodes: [] }, save: mocks.saveCombination }}>
+    <PromptLibraryBundleDialog open onClose={mocks.close} notify={mocks.notify} onCreate={mocks.create} />
+  </PromptLibraryContext.Provider>);
+  fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '白裙' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
+  await screen.findByText('已生成 1 条');
+  expect(mocks.generate.mock.calls[0][0]).toEqual({ brief: '白裙', purposes: ['appearance', 'clothing', 'pose', 'expression', 'place', 'camera'] });
+  const group = screen.getAllByRole('button', { name: '主体与外观' }).at(-1)!;
+  if (group.getAttribute('aria-expanded') === 'false') fireEvent.click(group);
+  fireEvent.click(screen.getAllByRole('button', { name: '物品与道具' }).at(-1)!);
+  fireEvent.click(screen.getByRole('button', { name: '全部保存到提示词库' }));
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+  expect(mocks.create.mock.calls[0][3].params._promptLibraryPurposes).toEqual(['clothing', 'object']);
+  expect(mocks.create.mock.calls[0][3].params._promptLibraryDirectoryIds).toEqual([]);
+});
+
+it('混合片段可入库但不能伪装成单用途组合', async () => {
+  mocks.generate.mockResolvedValue({ items: [{ ...bundleItem('clothing', '服饰'), purposes: ['clothing', 'pose'] }], missing: [] });
+  setupWithLibrary();
+  fireEvent.change(screen.getByLabelText('描述你想要的画面'), { target: { value: '白裙站立' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成搭配' }));
+  await screen.findByText('已生成 1 条');
   fireEvent.click(screen.getByRole('button', { name: '保存为组合' }));
-  await waitFor(() => expect(mocks.saveCombination).toHaveBeenCalledOnce());
-  const saved = mocks.saveCombination.mock.calls[0][0];
-  expect(saved.tags).toEqual(['私人', '道具']);
-  expect(saved.params._rollContentSnapshot.items[0]).toMatchObject({ directoryId: 'props', text: 'silver sword', scope: 'global' });
+  await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith(expect.stringContaining('单一用途'), 'error'));
+  expect(mocks.saveCombination).not.toHaveBeenCalled();
 });

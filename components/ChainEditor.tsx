@@ -4,6 +4,7 @@ import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
+import { applyAgentPromptChange } from '../services/agentPromptChanges.mjs';
 import { promptAgentService } from '../services/promptAgent';
 import { getClassificationDocuments, applyPromptClassification } from '../services/promptClassificationDraft';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
@@ -296,10 +297,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!supportsReferences) setMobileEditorTab(tab => tab === 'reference' ? 'global' : tab);
     }, [supportsReferences]);
     const [promptToolbarSlot, setPromptToolbarSlot] = useState<PromptToolbarSlot | null>(null);
-    const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
+    const [agentProposal, setAgentProposal] = useState<{ draft: PromptAgentDraft; onApplied?: (before: PromptAgentDraft, after: PromptAgentDraft) => void } | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
     const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement) => Promise<PromptAgentGenerationResult | boolean>) | null>(null);
-    const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
     const agentRunRevisionRef = useRef(0);
 
@@ -2144,25 +2144,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 openToken={agentOpenToken}
                 draft={currentAgentDraft()}
                 apiKey={apiKey}
-                onRunStart={snapshot => { agentRunRevisionRef.current = editorRevisionRef.current; setAgentUndoSnapshot(snapshot); }}
-                onFinalDraft={(draft, reviewOnly) => {
+                onRunStart={() => { agentRunRevisionRef.current = editorRevisionRef.current; }}
+                onFinalDraft={(draft, reviewOnly, onApplied) => {
                     if (draft.target && (draft.target.chainId !== chain.id || draft.target.mode !== activeGenerationMode)) { notify('草稿属于其他作品或模式，请回到原目标后恢复', 'error'); return; }
-                    if (reviewOnly) { setAgentProposal(draft); return; }
-                    if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal(draft); return; }
-                    setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft);
+                    if (reviewOnly) { setAgentProposal({ draft, onApplied }); return; }
+                    if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal({ draft, onApplied }); return; }
+                    const before = currentAgentDraft();
+                    applyAgentDraft(draft); onApplied?.(before, draft);
+                }}
+                onPromptChange={(change, direction) => {
+                    applyAgentDraft(applyAgentPromptChange(currentAgentDraft(), change, direction));
+                    notify(direction === 'undo' ? '已撤回本次提示词修改' : '已重做本次提示词修改');
                 }}
                 onRequestGeneration={requestAgentGeneration}
                 onGenerationInterrupted={() => {
                     if (generationSeriesRef.current?.agent) stopGenerationSeries();
                     for (const session of getQueuedGenerationSeries(chain.id)) if (session.agent) stopGenerationSeriesSession(session);
                 }}
-                canUndo={Boolean(agentUndoSnapshot)}
-                onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
                 promptClassificationEnabled={promptClassificationEnabled}
             />
-            {agentProposal && (!agentProposal.target || agentProposal.target.chainId === chain.id && agentProposal.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
+            {agentProposal && (!agentProposal.draft.target || agentProposal.draft.target.chainId === chain.id && agentProposal.draft.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal.draft} onClose={() => setAgentProposal(null)} onApply={draft => { const before = currentAgentDraft(); applyAgentDraft(draft); agentProposal.onApplied?.(before, draft); setAgentProposal(null); }}/>}
             {(classificationPending || classificationResult && classificationResult.before.target?.chainId === chain.id && classificationResult.before.target?.mode === activeGenerationMode) && <div role="status" className="appearance-group flex items-center gap-3 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
                 {classificationPending ? t('正在自动分类…') : <>
                     <span>{classificationResult!.applied ? t('已自动分类') : t('分类已完成，当前编辑已保留')}</span>
@@ -2174,7 +2177,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             const content = (draft: PromptAgentDraft) => ({ prompt: compilePrompt(draft, draft.subjectPrompt), negativePrompt: draft.negativePrompt, params: draft.params });
                             if (agentDraftFingerprint(content(state)) !== agentDraftFingerprint(content(expected))) { notify(t('提示词已修改，无法直接撤销分类'), 'error'); return; }
                             applyAgentDraft(before); setClassificationResult(null);
-                        } else setAgentProposal(classificationResult!.after);
+                        } else setAgentProposal({ draft: classificationResult!.after });
                     }}>{classificationResult!.applied ? t('撤销分类') : t('查看分类结果')}</button>
                     <button type="button" className="mobile-touch ml-auto" aria-label={t('关闭')} onClick={() => setClassificationResult(null)}>×</button>
                 </>}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { builtinModules } from 'node:module';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 import { RUNTIME_FILES, DESKTOP_FILES, DESKTOP_SCRIPT_FILES, copyDesktopScripts, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
@@ -50,6 +50,17 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
       const dependency = name.startsWith('@') ? name.split('/').slice(0, 2).join('/') : name.split('/')[0];
       if (builtinModules.includes(dependency)) continue;
       assert.ok(RUNTIME_DEPENDENCIES.includes(dependency), `${file} 缺少运行依赖 ${dependency}`);
+    }
+  }
+});
+
+test('助手及提示词共用模块的相对依赖均进入安装包清单', async () => {
+  for (const file of ['scripts/prompt-agent.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
+    const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');
+    for (const match of source.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)) {
+      if (!match[1].startsWith('.') || !match[1].endsWith('.mjs')) continue;
+      const dependency = posix.normalize(posix.join(posix.dirname(file), match[1]));
+      assert.ok(RUNTIME_FILES.includes(dependency), `${file} 的依赖 ${dependency} 未进入安装包`);
     }
   }
 });

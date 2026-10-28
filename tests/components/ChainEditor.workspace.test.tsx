@@ -6,6 +6,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalGenItem, PromptAgentGenerationResult, PromptChain } from '../../types';
+import { createAgentPromptChange } from '../../services/agentPromptChanges.mjs';
 import { cloneDefaultLabPageLayouts, DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from '../../services/appearancePreferences';
 import { blobToDataUrl, createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 import { ChainEditor, type ChainEditorSaveHandle } from '../../components/ChainEditor';
@@ -758,7 +759,7 @@ it.each(['playground', 'style', 'character'] as const)('%s 重启仅带回角色
   saveLabWorkspaceSession(entry.id, session); sessionStorage.clear();
   const memory: GenerationMemoryPreferences = { parameters: false, globalPrompt: false, negativePrompt: false, characterPrompt: true, characterNegativePrompt: false };
   const view = setup(entry, true, memory);
-  expect(textPrompt().value).toBe(entry.basePrompt);
+  expect(state.agent!.draft.basePrompt).toBe(entry.basePrompt);
   const restored = loadLabWorkspaceSession(entry.id, fallback());
   expect(restored.activeMode).toBe('text-to-image');
   expect(restored.textToImage.params.characters![0]).toMatchObject({ id: 'shared', prompt: 'remembered role',
@@ -1717,6 +1718,37 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent %s 提示词可撤回重做，回执来自真实应用且不生成', async mode => {
+  const session = fallback(); session.activeMode = mode;
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const before = structuredClone(state.agent!.draft), after = { ...before, basePrompt: 'changed prompt' };
+  const change = createAgentPromptChange(before, after, 'round');
+  const receipt = vi.fn();
+  await act(async () => state.agent!.onFinalDraft(after, false, receipt));
+  expect(receipt).toHaveBeenCalledWith(before, after);
+  expect(state.agent!.draft.basePrompt).toBe('changed prompt');
+  await act(async () => state.agent!.onPromptChange(change, 'undo'));
+  expect(state.agent!.draft.basePrompt).toBe(before.basePrompt);
+  await act(async () => state.agent!.onPromptChange(change, 'redo'));
+  expect(state.agent!.draft.basePrompt).toBe('changed prompt');
+  await act(async () => state.agent!.onFinalDraft({ ...state.agent!.draft, basePrompt: 'later manual content' }));
+  expect(() => state.agent!.onPromptChange(change, 'undo')).toThrow('未覆盖');
+  expect(state.agent!.draft.basePrompt).toBe('later manual content');
+  expect(state.startJob).not.toHaveBeenCalled();
+});
+
+it('Agent 审阅仅回传用户实际选择的提示词修改', async () => {
+  setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const before = structuredClone(state.agent!.draft), receipt = vi.fn();
+  await act(async () => state.agent!.onFinalDraft({ ...before, basePrompt: 'chosen', negativePrompt: 'not chosen' }, true, receipt));
+  expect(receipt).not.toHaveBeenCalled();
+  const dialog = screen.getByRole('dialog', { name: '查看助手草稿差异' });
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: '负面提示词' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: '应用选中修改' }));
+  expect(receipt).toHaveBeenCalledWith(before, expect.objectContaining({ basePrompt: 'chosen', negativePrompt: before.negativePrompt }));
 });
 
 it.each([false, true])('其他模式的助手草稿不会进入当前模式，审阅=%s', async reviewOnly => {

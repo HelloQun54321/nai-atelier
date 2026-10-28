@@ -24,7 +24,8 @@ export function PromptLibraryCard({ chain, label, title, summary, tagContent, op
   const [imageRatio, setImageRatio] = useState<{ src: string; value: number }>();
   const ratio = imageRatio && imageRatio.src === chain.previewImage ? imageRatio.value : 2 / 3;
   const name = chain.name?.trim() || t('未命名');
-  const combination = librarySectionOf(chain) === 'saved';
+  const section = librarySectionOf(chain);
+  const combination = section === 'saved';
   return <PressRevealSurface as="article" role="button" tabIndex={0} aria-label={openLabel || t('查看{0}', [name])} aria-pressed={selected} aria-busy={busy} aria-disabled={busy} pressDisabled={busy}
     data-prompt-library-entry={chain.id} data-prompt-library-id={chain.id} data-return-item-id={chain.id} data-gallery-work-id={chain.id} data-safe-mode-work="true"
     className={`appearance-group gallery-image-card gallery-card-visual group relative flex flex-col overflow-hidden rounded-2xl border bg-white text-left transition-[filter,border-color] focus-visible:outline-2 focus-visible:outline-indigo-500 dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'} ${dimmed ? 'brightness-[.7]' : ''}`}
@@ -50,7 +51,7 @@ export function PromptLibraryCard({ chain, label, title, summary, tagContent, op
       <div className="flex items-center justify-between gap-2"><h3 data-safe-mode-title className="min-w-0 truncate text-sm font-bold text-gray-800 dark:text-gray-100">{title ?? name}</h3><span title={label} className="gallery-card-badge max-w-[45%] truncate rounded px-1.5 py-0.5 text-micro text-indigo-600 dark:text-indigo-300">{label}</span></div>
       {chain.previewImage && summary && <p className="mt-2 line-clamp-2 break-words text-xs leading-5 text-gray-600 dark:text-gray-300">{summary}</p>}
       <div className="gallery-card-meta mt-2 flex items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap gap-1">{tagContent ?? getCustomChainTags(chain.tags).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400">{tag}</span>)}</div>
-        {onUse && <ToolbarButton data-card-action tone="primary" disabled={busy} onClick={event => { event.stopPropagation(); onUse(); }}>{t('使用')}</ToolbarButton>}
+        {onUse && section !== 'items' && <ToolbarButton data-card-action tone="primary" disabled={busy} onClick={event => { event.stopPropagation(); onUse(); }}>{t('送到实验室')}</ToolbarButton>}
       </div>
     </div>
   </PressRevealSurface>;

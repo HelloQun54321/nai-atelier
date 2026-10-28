@@ -1,3 +1,5 @@
+import type { PromptPurposeId } from './promptPurposes.mjs';
+import type { AgentPromptChange } from './agentPromptChanges.mjs';
 import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
@@ -192,6 +194,7 @@ export interface PromptAgentVisionUsage {
 }
 
 export interface PromptAgentHistoryMessage {
+  promptChange?: AgentPromptChange;
   id: string;
   role: 'user' | 'agent';
   text: string;
@@ -217,7 +220,7 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
-  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; errorDetail?: string; stopReason?: string; draftChanged?: boolean }
+  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; errorDetail?: string; stopReason?: string; draftChanged?: boolean; promptChange?: AgentPromptChange }
   | { type: 'error'; error: string; errorDetail?: string }));
 
 export interface PromptAgentTask {
@@ -265,6 +268,8 @@ export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'expression
 
 /** 一次生成产出的单条方案。 */
 export interface PromptLibraryItem {
+  negativePrompt?: string;
+  purposes?: PromptPurposeId[];
   directoryId?: string;
   directoryName?: string;
   directoryPath?: string[];
@@ -292,6 +297,7 @@ export interface PromptLibraryResult {
 
 /** AI 生成搭配：目录身份随当前树返回，旧 kind 仅供兼容调用。 */
 export interface PromptLibraryBundleItem {
+  purposes?: PromptPurposeId[];
   kind?: PromptLibraryKind;
   directoryId?: string;
   directoryName?: string;
@@ -316,6 +322,7 @@ export interface PromptLibraryBundleResult {
 }
 
 export interface PromptLibraryBundleInput {
+  purposes?: PromptPurposeId[];
   directories?: PromptLibraryTreeState;
   directoryIds?: string[] | null;
   brief: string;
@@ -334,6 +341,7 @@ export interface PromptLibraryPrompts {
 
 /** 提示词／图片提取：一条候选即一个未来要落库的库条目（同类内容已按原顺序合并）。 */
 export interface PromptExtractionCandidate {
+  purposes?: PromptPurposeId[];
   directoryId?: string;
   directoryName?: string;
   directoryPath?: string[];
@@ -603,7 +611,7 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>>): Promise<PromptAgentSession> => {
+  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>> & { promptChange?: Pick<AgentPromptChange, 'id' | 'status' | 'appliedChanges'> }): Promise<PromptAgentSession> => {
     // 本地设置也可能遇到后台暂停，不能让发送与模型入口永久停留在保存状态。
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);

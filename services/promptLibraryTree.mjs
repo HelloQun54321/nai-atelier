@@ -7,14 +7,14 @@ export const LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS = Object.freeze({
 
 export function createDefaultPromptLibraryTree() {
   const groups = [
-    ['person', '人物整体', 'character', [['person-appearance', '外貌与身体'], ['person-wardrobe', '服饰与配件'], ['person-pose', '动作与姿态'], ['person-expression', '表情与情绪']]],
-    ['subjects', '其他主体与物品', 'global', [['subjects-creatures', '动物与生物'], ['subjects-objects', '物品与道具'], ['subjects-machines', '交通工具与机械']]],
-    ['environment', '场景环境', 'global', [['environment-scene', '地点与空间'], ['environment-nature', '自然与天气'], ['environment-time', '时间与季节']]],
-    ['interaction', '互动与关系', 'global', [['interaction-people', '人物关系与互动'], ['interaction-object', '主体与物品互动']]],
-    ['composition', '构图与镜头', 'global', [['composition-camera', '视角与景别'], ['composition-layout', '构图与空间安排']]],
-    ['lighting', '光照与色彩', 'global', [['lighting-light', '光源与明暗'], ['lighting-color', '色彩与氛围']]],
-    ['style', '画风与表现', 'global', [['style-medium', '媒介与技法'], ['style-expression', '视觉表现']]],
-    ['quality', '质量与补充修饰', 'global', [['quality-detail', '质量与细节'], ['quality-supplement', '补充修饰']]],
+    ['person', '人物', 'character', [['person-appearance', '外貌与身体'], ['person-wardrobe', '服饰与配件'], ['person-pose', '动作与姿态'], ['person-expression', '表情与情绪']]],
+    ['subjects', '其他主体', 'global', [['subjects-creatures', '动物与生物'], ['subjects-objects', '物品与道具'], ['subjects-machines', '载具与机械']]],
+    ['environment', '场景环境', 'global', [['environment-scene', '地点与布景'], ['environment-nature', '自然与天气'], ['environment-time', '时间与季节']]],
+    ['interaction', '互动与关系', 'global', [['interaction-people', '人物互动'], ['interaction-object', '与物品及环境互动']]],
+    ['composition', '构图与镜头', 'global', [['composition-camera', '视角与景别'], ['composition-layout', '构图与布局']]],
+    ['lighting', '光照与色彩', 'global', [['lighting-light', '光照与阴影'], ['lighting-color', '色彩与色调']]],
+    ['style', '画风与表现', 'global', [['style-medium', '媒介与技法'], ['style-expression', '线条与质感']]],
+    ['quality', '质量与细节', 'global', [['quality-detail', '质量标签'], ['quality-supplement', '细节表现']]],
   ];
   return { revision: 0, nodes: groups.flatMap(([id, name, target, children]) => [
     { id, parentId: null, name, target }, ...children.map(([childId, childName]) => ({ id: childId, parentId: id, name: childName })),
@@ -68,11 +68,10 @@ export function flattenPromptLibraryDirectories(state) {
 
 export const getPromptLibraryDirectoryRollKey = id => `directory:${id}`;
 
-/** 初始抽取单元取当前二级目录；没有子目录的根节点本身也可抽取。 */
+/** AI 搭配与随机搭配共用当前末级目录，不依赖预设名称或固定层数。 */
 export function getPromptLibraryDefaultSelection(state) {
-  const roots = new Set(state.nodes.filter(node => node.parentId === null).map(node => node.id));
   const parents = new Set(state.nodes.map(node => node.parentId));
-  return state.nodes.filter(node => roots.has(node.parentId) || node.parentId === null && !parents.has(node.id)).map(node => node.id);
+  return state.nodes.filter(node => !parents.has(node.id)).map(node => node.id);
 }
 
 export function getPromptLibraryDescendantIds(state, id) {

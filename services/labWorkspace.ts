@@ -1,3 +1,4 @@
+import { isCreativeSectionKey } from './promptPurposes.mjs';
 import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
@@ -44,7 +45,7 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         extra: String(sections.extra ?? ''),
     };
     for (const key of getGlobalPromptSectionKeys(sections)) {
-        if (key.startsWith('directory:') && typeof sections[key] === 'string') next[key] = sections[key];
+        if (isCreativeSectionKey(key) && typeof sections[key] === 'string') next[key] = sections[key];
     }
     /* 分类负面同样只跟随有内容的栏 */
     const negatives = (sections as { sectionNegatives?: Record<string, unknown> }).sectionNegatives;

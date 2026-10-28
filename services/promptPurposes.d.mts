@@ -1,0 +1,15 @@
+export type PromptPurposeId = 'identity' | 'appearance' | 'clothing' | 'pose' | 'expression' | 'creature' | 'object' | 'vehicle' | 'place' | 'nature' | 'time' | 'interaction' | 'camera' | 'composition' | 'lighting' | 'color' | 'artist' | 'style' | 'texture' | 'effect' | 'quality' | 'text';
+export type PurposeSectionKey = `purpose:${PromptPurposeId}`;
+export type CreativeSectionKey = PurposeSectionKey | `directory:${string}`;
+export const PROMPT_PURPOSES: ReadonlyArray<{ id: PromptPurposeId; label: string; description: string }>;
+export const PROMPT_PURPOSE_GROUPS: ReadonlyArray<{ id: string; label: string; purposes: readonly PromptPurposeId[] }>;
+export const PROMPT_PURPOSE_IDS: readonly PromptPurposeId[];
+export const PROMPT_PURPOSES_KEY: '_promptLibraryPurposes';
+export const PROMPT_PURPOSE_INSTRUCTION: string;
+export function promptPurposeLabel(id: string): string;
+export function purposeSectionKey(id: PromptPurposeId): PurposeSectionKey;
+export function isPurposeSectionKey(key: unknown): key is PurposeSectionKey;
+export function isCreativeSectionKey(key: unknown): key is CreativeSectionKey;
+export function readPromptPurposes(value: unknown): PromptPurposeId[];
+export function getEntryPurposes(entry: { params?: unknown } | null | undefined): PromptPurposeId[];
+export function selectPurposeEntries<T extends { params?: unknown }>(entries: readonly T[], purposeId: PromptPurposeId, pure?: boolean): T[];

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PromptLibraryCard } from '../../components/PromptLibraryCard';
 import { ToolbarButton } from '../../components/DesignSystem';
-import { promptLibraryEntryLabel } from '../../services/promptLibraryEntries';
+import { createCombinationData, promptLibraryEntryLabel } from '../../services/promptLibraryEntries';
 import type { PromptChain } from '../../types';
 
 vi.mock('../../components/SmartImage', () => ({ SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement> & { containerClassName?: string; thumbnailVariant?: string }) => {
@@ -30,20 +30,31 @@ it('按封面真实比例显示，换图不会沿用旧图片比例', () => {
   expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('0.5');
 });
 
-it('选中边框与变暗分别生效，使用不会冒泡打开详情', () => {
+it('片段卡片保留选中与变暗状态，即使传入回调也不展示使用', () => {
   const open = vi.fn(), use = vi.fn();
   const props = { chain, label: '光照', onOpen: open, onUse: use, notify: vi.fn() };
   const view = render(<PromptLibraryCard {...props} selected />);
   const card = screen.getByRole('button', { name: '查看柔光' });
   expect(card.getAttribute('aria-pressed')).toBe('true');
   expect(card.classList.contains('ring-2')).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(use).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '使用' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '送到实验室' })).toBeNull();
+  expect(use).not.toHaveBeenCalled(); expect(open).not.toHaveBeenCalled();
   view.rerender(<PromptLibraryCard {...props} dimmed />);
   expect(card.getAttribute('aria-pressed')).toBe('false');
   expect(card.classList.contains('brightness-[.7]')).toBe(true);
   view.rerender(<PromptLibraryCard {...props} />);
   expect(card.classList.contains('brightness-[.7]')).toBe(false);
+});
+
+it('组合卡片明确送到实验室，操作不冒泡打开详情', () => {
+  const open = vi.fn(), use = vi.fn();
+  const combination = { ...chain, ...createCombinationData('夜景组合', { scene: { kind: 'scene', text: 'night sky', filled: true } }) } as PromptChain;
+  render(<PromptLibraryCard chain={combination} label="组合" onOpen={open} onUse={use} notify={vi.fn()} />);
+  const send = screen.getByRole('button', { name: '送到实验室' });
+  expect(send.getAttribute('data-tone')).toBe('primary');
+  fireEvent.click(send);
+  expect(use).toHaveBeenCalledOnce(); expect(open).not.toHaveBeenCalled();
 });
 
 it('当前目录显示真实路径与多归属，未归类和旧类型分别回退', () => {

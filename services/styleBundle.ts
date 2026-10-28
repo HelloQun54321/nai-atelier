@@ -1,3 +1,4 @@
+import { isCreativeSectionKey } from './promptPurposes.mjs';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { api } from './api';
 import { vibeService } from './vibeService';
@@ -77,11 +78,11 @@ const creativeSnapshot = (value: unknown, depth = 0): unknown => {
   if (typeof value === 'number') return finite(value);
   if (typeof value === 'string') return text(value);
   if (Array.isArray(value)) return list(value, 200).map(value => creativeSnapshot(value, depth + 1));
-  return Object.fromEntries(Object.entries(object(value)).filter(([key]) => creativeSnapshotKeys.has(key) || key.startsWith('directory:') && key.length > 10).map(([key, value]) => [key, creativeSnapshot(value, depth + 1)]));
+  return Object.fromEntries(Object.entries(object(value)).filter(([key]) => creativeSnapshotKeys.has(key) || isCreativeSectionKey(key)).map(([key, value]) => [key, creativeSnapshot(value, depth + 1)]));
 };
 const sections = (value: unknown) => {
   const item = object(value), result: Record<string, unknown> = {};
-  for (const key of Object.keys(item).filter(key => ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra'].includes(key) || key.startsWith('directory:') && key.length > 10)) result[key] = text(item[key]);
+  for (const key of Object.keys(item).filter(key => ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra'].includes(key) || isCreativeSectionKey(key))) result[key] = text(item[key]);
   if (item.sectionNegatives !== undefined) result.sectionNegatives = stringMap(item.sectionNegatives);
   if (item.sectionMeta !== undefined) result.sectionMeta = Object.fromEntries(Object.entries(object(item.sectionMeta)).map(([key, value]) => {
     const meta = object(value); return [text(key, 100), {

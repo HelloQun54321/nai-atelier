@@ -8,6 +8,8 @@ import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
+import { applyAgentPromptChange, createAgentPromptChange, type AgentPromptChange } from '../services/agentPromptChanges.mjs';
+import { AgentPromptChangeCard } from './AgentPromptDiff';
 import { AgentChatDisplayOptions, AgentDisclosure, AgentLiveOutput, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { AgentModelControl } from './AgentModelControl';
@@ -34,11 +36,10 @@ interface PromptAgentPanelProps {
   draft: PromptAgentDraft;
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
-  onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
+  onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: (before: PromptAgentDraft, after: PromptAgentDraft) => void) => void;
+  onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo') => void;
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult> | void;
   onGenerationInterrupted?: () => void;
-  onUndo: () => void;
-  canUndo: boolean;
   tagAssistEnabled: boolean;
   splitPromptFields?: boolean;
   /** 实验室「分类编辑」：助手按外貌、服饰等栏位读取和写入。 */
@@ -46,7 +47,7 @@ interface PromptAgentPanelProps {
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number; resumable?: boolean };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number; resumable?: boolean; promptChange?: AgentPromptChange };
 // 限额、截断、超时与服务中断后可直接接续；用户主动停止、鉴权或额度失败不提供。
 const RESUMABLE_STOPS = new Set(['turn_limit', 'output_limit', 'output_truncated', 'stalled', 'model_idle', 'model_timeout', 'timeout', 'truncated', 'aborted']);
 const resumableStop = (status?: string, stopReason?: string) => status === 'interrupted' || RESUMABLE_STOPS.has(String(stopReason));
@@ -157,6 +158,7 @@ const AgentMessageList = React.memo(({
   onEdit,
   onRetry,
   onResume,
+  onPromptChange,
   onMediaReady,
 }: {
   messages: PanelMessage[];
@@ -169,6 +171,7 @@ const AgentMessageList = React.memo(({
   onEdit: (message: PanelMessage) => void;
   onRetry: () => void;
   onResume: () => void;
+  onPromptChange: (change: AgentPromptChange, direction: 'apply' | 'undo' | 'redo' | 'save') => Promise<void>;
   onMediaReady: () => void;
 }) => {
   const visibleMessages = messages.slice(-visibleMessageCount);
@@ -182,6 +185,7 @@ const AgentMessageList = React.memo(({
         <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? t("处理中") : tool.state === 'error' ? t("失败") : tool.state === 'interrupted' ? t("未完成") : t("完成")} · {t(toolLabels[tool.name] || tool.name)}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label={t("工具回执")} className="appearance-group my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
+      {message.promptChange && <AgentPromptChangeCard change={message.promptChange} disabled={running} onAction={direction => onPromptChange(message.promptChange!, direction)} />}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       {message.role === 'error' && message.detail && <details className="mt-2 text-xs font-normal"><summary className="cursor-pointer select-none opacity-80">{t('原始错误')}</summary><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/60 p-2 text-micro leading-5 dark:bg-black/20">{message.detail}</pre></details>}
       </div>
@@ -256,6 +260,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     edit: (_message: PanelMessage) => {},
     retry: () => {},
     resume: () => {},
+    promptChange: async (_change: AgentPromptChange, _direction: 'apply' | 'undo' | 'redo' | 'save') => {},
   });
   const confirmAction = useConfirmDialog();
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
@@ -265,6 +270,37 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   currentDraftRef.current = props.draft;
   const currentPropsRef = useRef(props);
   currentPropsRef.current = props;
+  const promptChangeReceipts = useRef(new Map<string, AgentPromptChange>());
+  const promptChangeSaveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const withPromptReceipt = (message: PanelMessage, fromServer = false) => {
+    const receipt = message.promptChange && promptChangeReceipts.current.get(message.promptChange.id);
+    if (!receipt) return message;
+    if (fromServer && !receipt.savePending && message.promptChange?.status === receipt.status && JSON.stringify(message.promptChange.appliedChanges) === JSON.stringify(receipt.appliedChanges)) {
+      promptChangeReceipts.current.delete(receipt.id);
+      return message;
+    }
+    return { ...message, promptChange: receipt };
+  };
+  const savePromptChange = async (change: AgentPromptChange, sessionId: string) => {
+    const pending = { ...change, savePending: true };
+    promptChangeReceipts.current.set(change.id, pending);
+    setMessages(previous => previous.map(message => withPromptReceipt(message)));
+    try {
+      const saving = promptChangeSaveQueue.current.catch(() => {}).then(() => promptAgentService.updateSession(sessionId, { promptChange: { id: change.id, status: change.status, appliedChanges: change.appliedChanges } }));
+      promptChangeSaveQueue.current = saving;
+      await saving;
+      const saved = { ...change, savePending: false };
+      if (promptChangeReceipts.current.get(change.id) === pending) {
+        promptChangeReceipts.current.set(change.id, saved);
+        setMessages(previous => previous.map(message => message.promptChange?.id === change.id ? { ...message, promptChange: saved } : message));
+      }
+    } catch { throw new Error('提示词操作已完成，但修改记录保存失败，请重试保存记录'); }
+  };
+  const recordPromptApplication = (change: AgentPromptChange, sessionId: string) => (before: PromptAgentDraft, after: PromptAgentDraft) => {
+    const appliedChanges = createAgentPromptChange(before, after).changes.filter(item => change.changes.some(original => JSON.stringify(original.path) === JSON.stringify(item.path) && JSON.stringify(original.after) === JSON.stringify(item.after)));
+    if (!appliedChanges.length) return;
+    void savePromptChange({ ...change, status: 'applied', appliedChanges }, sessionId).catch(error => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error.message }]));
+  };
   const generationInterruptRef = useRef<(() => void) | undefined>(undefined);
   const interruptGeneration = () => (generationInterruptRef.current || currentPropsRef.current.onGenerationInterrupted)?.();
   useEffect(() => {
@@ -424,7 +460,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (loadSeq !== sessionLoadSeqRef.current) return;
       taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events: task.events || [] };
       setTaskSnapshot(task);
-      const restored: PanelMessage[] = items.map(item => ({ ...item }));
+      const restored: PanelMessage[] = items.map(item => withPromptReceipt(item, true));
       if ((['interrupted', 'preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status))) && task.events?.length) {
         const replayText = task.events.map(event => {
           if (event.type === 'text_delta') return event.delta;
@@ -470,7 +506,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           if (task.status !== 'completed') interruptGeneration();
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
-          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail, resumable: resumableStop(task.status, task.stopReason) }] : [])]);
+          if (!disposed) setMessages([...history.map(item => withPromptReceipt(item, true)), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail, resumable: resumableStop(task.status, task.stopReason) }] : [])]);
           void refreshSessions();
         }
         wasRunning = isRunning;
@@ -757,7 +793,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'done') {
           const completed = !event.status || event.status === 'completed';
           setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, errorDetail: event.errorDetail, stopReason: event.stopReason }));
-          if ((labChanged || event.draftChanged) && completed) currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
+          if (event.promptChange) setMessages(previous => previous.map(item => item.id === responseId ? { ...item, promptChange: event.promptChange } : item));
+          if ((labChanged || event.draftChanged) && completed) {
+            if (event.promptChange) currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft, recordPromptApplication(event.promptChange, activeSessionId));
+            else currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
+          }
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
             props.onClose();
@@ -885,6 +925,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     edit: message => { setEditingMessageId(message.id); setInput(message.text); },
     retry: () => { void run('', 'retry'); },
     resume: () => { void run(t('继续处理'), 'resume'); },
+    promptChange: async (change, direction) => {
+      if (running) return;
+      if (direction === 'save') { await savePromptChange(change, activeSessionId); return; }
+      if (direction === 'apply') {
+        const draft = applyAgentPromptChange(currentDraftRef.current, change, 'apply');
+        currentPropsRef.current.onFinalDraft(draft, true, recordPromptApplication(change, activeSessionId));
+      } else {
+        currentPropsRef.current.onPromptChange(change, direction);
+        await savePromptChange({ ...change, status: direction === 'undo' ? 'undone' : 'applied' }, activeSessionId);
+      }
+    },
   };
 
   return createPortal(<div aria-hidden={!props.open} className={`agent-overlay pointer-events-none fixed inset-0 z-[1100] ${props.open ? 'agent-overlay--open' : 'agent-overlay--closed'}`}>
@@ -1021,6 +1072,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             onEdit={message => messageActionsRef.current.edit(message)}
             onRetry={() => messageActionsRef.current.retry()}
             onResume={() => messageActionsRef.current.resume()}
+            onPromptChange={(change, direction) => messageActionsRef.current.promptChange(change, direction)}
             onMediaReady={() => { if (followBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' }); }}
           />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}

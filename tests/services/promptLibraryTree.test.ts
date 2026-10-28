@@ -18,6 +18,16 @@ describe('用户完整掌控的提示词目录树', () => {
   it('预设只是两层起点，每次创建独立对象；空树照常保留', () => {
     const state = readPromptLibraryTree(createDefaultPromptLibraryTree());
     expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(8);
+    expect(state.nodes.filter(node => node.parentId === null).map(node => [node.name, state.nodes.filter(child => child.parentId === node.id).map(child => child.name)])).toEqual([
+      ['人物', ['外貌与身体', '服饰与配件', '动作与姿态', '表情与情绪']],
+      ['其他主体', ['动物与生物', '物品与道具', '载具与机械']],
+      ['场景环境', ['地点与布景', '自然与天气', '时间与季节']],
+      ['互动与关系', ['人物互动', '与物品及环境互动']],
+      ['构图与镜头', ['视角与景别', '构图与布局']],
+      ['光照与色彩', ['光照与阴影', '色彩与色调']],
+      ['画风与表现', ['媒介与技法', '线条与质感']],
+      ['质量与细节', ['质量标签', '细节表现']],
+    ]);
     expect(Math.max(...flattenPromptLibraryDirectories(state).map(node => node.depth))).toBe(1);
     state.nodes[0].name = '已更名';
     expect(createDefaultPromptLibraryTree().nodes[0].name).not.toBe('已更名');
@@ -36,14 +46,32 @@ describe('用户完整掌控的提示词目录树', () => {
     expect(() => readPromptLibraryTree({ revision: -1, nodes: [] })).toThrow();
   });
 
-  it('按当前树选择二级与独立根，父子交叠只保留父目录且显式空选择不回落', () => {
-    expect(getPromptLibraryDefaultSelection(tree())).toEqual(['child', 'single']);
+  it('按当前末级目录选择，父子交叠只保留父目录且显式空选择不回落', () => {
+    expect(getPromptLibraryDefaultSelection(tree())).toEqual(['deep', 'single']);
     expect(normalizePromptLibraryDirectorySelection(tree(), ['root', 'deep', 'root', 'missing'])).toEqual(['root']);
     expect(normalizePromptLibraryDirectorySelection(tree(), [])).toEqual([]);
     expect(normalizePromptLibraryDirectorySelection(tree(), null)).toEqual(['root', 'single']);
     expect(getPromptLibraryDirectoryPath(tree(), 'deep').map(node => node.name)).toEqual(['自定根', '自定子', '继续细分']);
     expect(flattenPromptLibraryDirectories(tree()).map(node => [node.id, node.depth])).toEqual([['root', 0], ['child', 1], ['deep', 2], ['single', 0]]);
     expect(getPromptLibraryDirectoryRollKey('deep')).toBe('directory:deep');
+  });
+
+  it('预设每个节点均可改名、删除和继续细分；默认选择随实际树变化', () => {
+    const preset = createDefaultPromptLibraryTree();
+    for (const node of preset.nodes) {
+      const renamed = readPromptLibraryTree({ ...preset, nodes: preset.nodes.map(item => item.id === node.id ? { ...item, name: '用户自定名称' } : item) });
+      expect(renamed.nodes.find(item => item.id === node.id)?.name).toBe('用户自定名称');
+      expect(readPromptLibraryTree(removePromptLibraryDirectory(renamed, node.id)).nodes.some(item => item.id === node.id)).toBe(false);
+      const extended = readPromptLibraryTree({ ...renamed, nodes: [...renamed.nodes,
+        { id: 'custom-child', parentId: node.id, name: '继续细分' },
+        { id: 'custom-deep', parentId: 'custom-child', name: '再细分' },
+      ] });
+      expect(getPromptLibraryDefaultSelection(extended)).toContain('custom-deep');
+      expect(getPromptLibraryDefaultSelection(extended)).not.toContain(node.id);
+      expect(getPromptLibraryDefaultSelection(extended)).not.toContain('custom-child');
+    }
+    expect(getPromptLibraryDefaultSelection({ revision: 1, nodes: [] })).toEqual([]);
+    expect(getPromptLibraryDefaultSelection(removePromptLibraryDirectory(tree(), 'deep'))).toEqual(['child', 'single']);
   });
 
   it('旧六类只读映射稳定ID，改名不丢归属；显式空、删后孤立不恢复旧type', () => {

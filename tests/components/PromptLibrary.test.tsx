@@ -1,3 +1,5 @@
+import { openPurposeGroup } from '../support/promptPurposeGroups';
+import { PromptLibraryBrowser } from '../../components/PromptLibraryBrowser';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
@@ -106,7 +108,7 @@ describe('图片提示词库', () => {
     const entry = { ...chains[0], type: kind === 'general' ? 'preset' : kind, params: {
       seed: 42, _collectedCategory: kind === 'general' ? 'general' : undefined,
       _promptLibrary: { bilingual: '银发', references: [] },
-    }, negativePrompt: 'blur' } as unknown as PromptChain;
+    }, negativePrompt: 'blur', tags: ['旧自由标签'] } as unknown as PromptChain;
     const p = { ...props(), chains: [entry] }, onClose = vi.fn();
     render(<libraries.PromptLibraryEntryEditor {...p} entry={entry} onClose={onClose} />);
     expect(screen.queryByRole('searchbox')).toBeNull();
@@ -114,11 +116,13 @@ describe('图片提示词库', () => {
     const name = screen.getByRole('textbox', { name: kind === 'general' ? '片段名称' : '形象名称' });
     expect((name as HTMLInputElement).value).toBe(entry.name);
     fireEvent.change(name, { target: { value: '修改后的名称' } });
+    openPurposeGroup('主体与外观'); fireEvent.click(screen.getByRole('button', { name: '外貌与身体' }));
+    openPurposeGroup('动作与关系'); fireEvent.click(screen.getByRole('button', { name: '表情与情绪' }));
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(p.onUpdateChain).toHaveBeenCalledWith(entry.id, expect.objectContaining({
-      name: '修改后的名称', basePrompt: 'silver_hair', negativePrompt: 'blur',
-      params: expect.objectContaining({ seed: 42, _promptLibrary: { bilingual: '银发', references: [] } }),
+      name: '修改后的名称', basePrompt: 'silver_hair', negativePrompt: 'blur', tags: ['旧自由标签'],
+      params: expect.objectContaining({ seed: 42, _promptLibraryPurposes: ['appearance', 'expression'], _promptLibrary: { bilingual: '银发', references: [] } }),
     }));
     expect(p.onCreate).not.toHaveBeenCalled();
   });
@@ -210,7 +214,7 @@ describe('图片提示词库', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
     fireEvent.click(await screen.findByRole('button', { name: '保存选中（2）' }));
     await waitFor(() => expect(p.notify).toHaveBeenCalledWith('已保存 1 条形象，1 条失败'));
-    expect(p.onCreate.mock.calls[0]).toEqual(['成功方案', '', 'appearance', expect.objectContaining({
+    expect(p.onCreate.mock.calls[0]).toEqual(['成功方案', '', 'preset', expect.objectContaining({
       basePrompt: 'silver_hair', variableValues: { subject: '' }, params: expect.objectContaining({ _promptLibrary: { bilingual: '银发', references: [] } }),
     })]);
     expect(p.onUpdateChain).not.toHaveBeenCalled();
@@ -349,13 +353,14 @@ describe('管理提示词分类按需展开', () => {
     expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
   });
   it('切分类后收起保留搜索、标签、未存编辑，按钮继续标明当前用途', async () => {
-    render(<libraries.PromptLibraryHub {...props()} chains={[{ ...chains[0], tags: ['保留标签'] }, chains[1]]} />);
+    render(<libraries.PromptLibraryHub {...props()} chains={[{ ...chains[0], params: { ...chains[0].params, _promptLibraryPurposes: ['appearance'] }, tags: ['保留标签'] }, chains[1]]} />);
     fireEvent.click(screen.getByRole('button', { name: '展开分类' }));
     fireEvent.click(screen.getByRole('tab', { name: '外貌 1' }));
     await screen.findByRole('button', { name: '新建形象' });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'silver' } });
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('button', { name: '保留标签（1）' }));
+    openPurposeGroup('主体与外观');
+    fireEvent.click(screen.getByRole('button', { name: '外貌与身体（1）' }));
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '收起分类' }));
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('silver');
@@ -440,4 +445,65 @@ it('管理树导航与列表并排，收展保留同一编辑草稿与滚动节�
   expect(document.querySelector('.workspace-scroll-viewport')).toBe(scroll); expect(scroll.scrollTop).toBe(75);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.getByRole('textbox', { name: '片段名称' })).toBe(name);
+});
+
+
+it('片段详情直接编辑，封面位于名称和正文前；保存留在原位并保留元数据', async () => {
+  const entry = { ...chains[0], description: '纸张效果', previewImage: '/synthetic/cover.png', negativePrompt: 'lowres', params: { seed: 42, _promptLibraryPurposes: ['style'], _promptLibrary: { bilingual: '银发', references: [] } }, tags: ['旧标签'] } as unknown as PromptChain;
+  const save = vi.fn();
+  function Harness() {
+    const [items, setItems] = React.useState([entry]);
+    return <libraries.PromptLibraryEntryEditor panel entry={items[0]} chains={items} onClose={vi.fn()} onCreate={vi.fn()} onDelete={vi.fn()} notify={vi.fn()}
+      onUpdateChain={async (id, updates) => { save(id, updates); setItems(previous => previous.map(item => item.id === id ? { ...item, ...updates } : item)); }} />;
+  }
+  render(<Harness />);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('button', { name: '编辑' })).toBeNull();
+  const prompt = screen.getByRole('textbox', { name: '英文提示词' });
+  const cover = screen.getByRole('button', { name: '查看封面原图' });
+  expect(cover.compareDocumentPosition(screen.getByRole('textbox', { name: '形象名称' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(cover.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(prompt.closest('fieldset')?.className).not.toContain('lg:grid-cols');
+  fireEvent.change(prompt, { target: { value: 'watercolor, paper texture' } });
+  fireEvent.change(screen.getByRole('textbox', { name: '备注' }), { target: { value: '更新备注' } });
+  openPurposeGroup('画风与表现'); fireEvent.click(screen.getByRole('button', { name: '线条与质感' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][1]).toMatchObject({ basePrompt: 'watercolor, paper texture', description: '更新备注', negativePrompt: 'lowres', tags: ['旧标签'], params: { seed: 42, _promptLibraryPurposes: ['style', 'texture'] } });
+  expect(screen.getByRole('complementary', { name: entry.name })).toBeTruthy();
+  await waitFor(() => expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true));
+  fireEvent.change(prompt, { target: { value: 'latest prompt' } });
+  expect(screen.queryByRole('button', { name: '使用' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '保存并使用' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][1].basePrompt).toBe('latest prompt');
+  expect(screen.getByRole('complementary', { name: entry.name })).toBeTruthy();
+});
+
+it('就地编辑切换条目先处理未保存内容；取消与保存失败保留草稿', async () => {
+  const save = vi.fn().mockRejectedValueOnce(new Error('synthetic failure')).mockResolvedValue(undefined);
+  const use = vi.fn();
+  function Harness() {
+    const [items, setItems] = React.useState(chains);
+    return <PromptLibraryBrowser chains={items} toolbarSlot={null} onUse={use} onOpen={vi.fn()} notify={vi.fn()}
+      renderEntryEditor={(entry, controls) => <libraries.PromptLibraryEntryEditor panel entry={entry} chains={items} onClose={controls.onClose} panelActionsRef={controls.actionsRef} onCreate={vi.fn()} onDelete={vi.fn()} notify={vi.fn()}
+        onUpdateChain={async (id, updates) => { await save(id, updates); setItems(previous => previous.map(item => item.id === id ? { ...item, ...updates } : item)); }} />} />;
+  }
+  render(<Harness />);
+  fireEvent.click(screen.getByRole('button', { name: '查看形象甲' }));
+  fireEvent.change(screen.getByRole('textbox', { name: '英文提示词' }), { target: { value: 'unsaved' } });
+  fireEvent.click(screen.getByRole('button', { name: '查看雨夜' }));
+  fireEvent.click(await screen.findByRole('button', { name: '取消' }));
+  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(use).not.toHaveBeenCalled();
+  await waitFor(() => expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('unsaved');
+  fireEvent.click(screen.getByRole('button', { name: '查看雨夜' }));
+  fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
+  await screen.findByRole('complementary', { name: '雨夜' });
+  expect(save).toHaveBeenCalledTimes(2);
+  expect((screen.getByRole('textbox', { name: '英文提示词' }) as HTMLTextAreaElement).value).toBe('rainy_street');
 });

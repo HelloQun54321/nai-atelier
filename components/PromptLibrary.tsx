@@ -1,3 +1,8 @@
+import { ImageShareOverlay } from './ImageShareActions';
+import { DetailSidePanel } from './DetailPanel';
+import { PromptPurposePicker } from './PromptPurposePicker';
+import { PromptPurposeGroup } from './PromptPurposeGroup';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, promptPurposeLabel, getEntryPurposes, readPromptPurposes, type PromptPurposeId } from '../services/promptPurposes.mjs';
 /**
  * 提示词库：人物形象 / 服饰 / 姿势 / 场景共用一套配置驱动实现。
  *
@@ -58,11 +63,11 @@ import { PromptLibraryUsageBadge, PromptLibraryUsageSection } from './PromptLibr
 import { fetchPromptLibraryUsageSummary } from '../services/promptLibraryUsage';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
-import { fragmentKindOf, FRAGMENT_LABELS, parsePromptLibraryTags, promptLibraryEntryLabel } from '../services/promptLibraryEntries';
+import { fragmentKindOf, FRAGMENT_LABELS, promptLibraryEntryLabel } from '../services/promptLibraryEntries';
 import { LibraryDialog, usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { PromptLibraryDirectoryNavigation } from './PromptLibraryDirectoryNavigation';
-import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryLegacyKind, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
+import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
@@ -92,7 +97,7 @@ export interface PromptLibraryMeta {
 }
 
 /** NAIParams 上的扩展键；写入时必须与既有生图参数合并，不能整体覆盖。 */
-type PromptLibraryParams = NAIParams & { _promptLibrary?: PromptLibraryMeta };
+type PromptLibraryParams = NAIParams & { _collectedCategory?: 'general'; _promptLibrary?: PromptLibraryMeta };
 
 /** 历史图片统一用网关地址引用，Worker 保存封面时会转成独立资产。 */
 export const promptLibraryHistoryImageUrl = (historyId: string) => `/api/local-history/${encodeURIComponent(historyId)}/image`;
@@ -130,6 +135,8 @@ const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6];
 
 /** 详情态的表单草稿：与库里的 chain 分开保存，未点「保存」不落库。 */
 interface LibraryDraft {
+  purposes: PromptPurposeId[];
+  description: string;
   directoryIds: string[];
   id: string;
   name: string;
@@ -168,7 +175,10 @@ export interface PromptLibraryProps {
   onClose?: () => void;
 }
 
+export interface PromptLibraryPanelActions { leave: () => Promise<boolean> }
 interface PromptLibraryInternalProps extends PromptLibraryProps {
+  panel?: boolean;
+  panelActionsRef?: React.MutableRefObject<PromptLibraryPanelActions | null>;
   dynamicDirectories?: boolean;
   initialDirectoryIds?: string[];
   directoryNavigation?: React.ReactNode;
@@ -197,6 +207,7 @@ const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-2
 
 export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   config,
+  panel = false, panelActionsRef,
   initialEntry,
   onEditorClose,
   requestCloseRef,
@@ -261,6 +272,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return onCreate(name, t('来自一键六库内容'), 'style', { params, variableValues });
   }, [onCreate, onUpdateChain]);
   const [brief, setBrief] = useState('');
+  const [generationPurposes, setGenerationPurposes] = useState<import('../services/promptPurposes.mjs').PromptPurposeId[]>([]);
   const [generationDirectoryIds, setGenerationDirectoryIds] = useState<string[]>(initialDirectoryIds.slice(0, 1));
   const previousDirectorySelection = useRef(directorySelectionKey);
   useLayoutEffect(() => {
@@ -325,13 +337,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const tagOptions = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const chain of items) for (const value of chainTags(chain)) counts.set(value, (counts.get(value) || 0) + 1);
-    return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'));
+    for (const chain of items) for (const value of getEntryPurposes(chain)) counts.set(value, (counts.get(value) || 0) + 1);
+    return PROMPT_PURPOSES.map(item => [item.id, counts.get(item.id) || 0] as [string, number]);
   }, [items]);
 
   const visibleTagOptions = useMemo(() => {
     const keyword = tagQuery.trim().toLowerCase();
-    return tagOptions.filter(([value]) => !keyword || value.toLowerCase().includes(keyword));
+    return tagOptions.filter(([value]) => !keyword || t(promptPurposeLabel(value)).toLowerCase().includes(keyword));
   }, [tagOptions, tagQuery]);
 
   const shown = useMemo(() => {
@@ -339,7 +351,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return items
       .filter(chain => {
         if (selectedTags.size) {
-          const tags = chainTags(chain);
+          const tags: string[] = getEntryPurposes(chain);
           for (const tag of selectedTags) if (!tags.includes(tag)) return false;
         }
         if (!keyword) return true;
@@ -373,6 +385,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   function draftFromChain(chain: PromptChain): LibraryDraft { return {
     id: chain.id,
+    purposes: getEntryPurposes(chain),
+    description: chain.description || '',
     directoryIds: library?.directories ? getPromptLibraryEntryDirectoryIds(chain, library.directories) : [],
     name: String(chain.name || ''),
     tags: chainTags(chain).join(', '),
@@ -394,7 +408,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (!base) return false;
     if (detail.coverChanged) return true;
     return !!library?.directories && !sameIds(detail.directoryIds, getPromptLibraryEntryDirectoryIds(base, library.directories)) || detail.name !== String(base.name || '')
-      || detail.tags !== chainTags(base).join(', ')
+      || !sameIds(detail.purposes, getEntryPurposes(base))
+      || detail.description !== (base.description || '')
       || detail.prompt !== chainPrompt(base)
       || detail.bilingual !== chainBilingual(base)
       || detail.negativePrompt !== String(base.negativePrompt || '')
@@ -405,7 +420,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (savingDetail) return false;
     if (draftDirty && !await confirmAction({
       title: t('放弃未保存的修改？'),
-      message: t('返回{0}将丢弃本次编辑的改动。', [t(config.title)]),
+      message: t('返回{0}将丢弃本次编辑的改动。', [t(panel ? '提示词库' : config.title)]),
       confirmLabel: t('放弃修改'),
       tone: 'danger',
       rememberKey: 'prompt-library-fragment.leave',
@@ -446,6 +461,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       // params 是整字段覆盖：必须带上原有生图参数，只合并 _promptLibrary。
       const params: PromptLibraryParams = {
         ...(base.params || ({} as NAIParams)),
+        _promptLibraryPurposes: detail.purposes,
         ...(library?.directories ? { _promptLibraryDirectoryIds: detail.directoryIds } : {}),
         _promptLibrary: {
           ...libraryMeta(base),
@@ -454,8 +470,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         },
       };
       const updates: Partial<PromptChain> = {
+        description: detail.description,
         name: detail.name.trim() || t('未命名{0}', [t(config.itemNoun)]),
-        tags: parsePromptLibraryTags(detail.tags),
+        tags: base.tags,
         basePrompt: detail.prompt,
         negativePrompt: detail.negativePrompt,
         params,
@@ -474,6 +491,12 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       setSavingDetail(false);
     }
   }
+
+  useEffect(() => {
+    if (!panelActionsRef) return;
+    panelActionsRef.current = { leave: closeDetail };
+    return () => { panelActionsRef.current = null; };
+  });
 
   const removeChain = async (id: string, name: string) => {
     if (!await confirmAction({
@@ -510,6 +533,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       setDetail({
         id: newId,
         directoryIds: initialDirectoryIds,
+        purposes: [],
+        description: '',
         name: t(config.defaultName),
         tags: '',
         prompt: '',
@@ -559,14 +584,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const generate = async () => {
     const text = brief.trim();
     if (!text) { notify(t('请先描述想要的{0}', [t(config.itemNoun)]), 'error'); return; }
-    if (library?.directories && !generationDirectoryIds.length) { notify(t('请选择目录'), 'error'); return; }
     setGenerating(true);
     try {
       // 限定项按顶层字段提交：空串代表「不限」，由后端决定是否写进系统提示。
       const facetInput: Record<string, string> = {};
       for (const facet of config.facets) facetInput[facet.key] = Array.isArray(facets[facet.key]) ? (facets[facet.key] as string[]).join(', ') : String(facets[facet.key] || '');
       const result = await promptAgentService.generateLibraryPrompt({
-        ...(library?.directories ? {} : { kind: config.kind }),
+        purposes: generationPurposes,
         ...(library?.directories ? { directories: library.directories, directoryId: generationDirectoryIds[0] } : {}),
         brief: text,
         count,
@@ -631,12 +655,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         const params: PromptLibraryParams = {
           ...LAB_DEFAULT_PARAMS,
           _promptLibrary: { bilingual: String(item.bilingual || ''), references: [] },
+          _promptLibraryPurposes: readPromptPurposes(item.purposes),
+          _collectedCategory: 'general',
           ...(library?.directories ? { _promptLibraryDirectoryIds: item.directoryId ? [item.directoryId] : generationDirectoryIds } : {}),
         };
-        const generatedKind = library?.directories ? getPromptLibraryDirectoryLegacyKind(library.directories, item.directoryId || generationDirectoryIds[0]) : config.kind;
-        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [t(config.itemNoun)]), String(item.note || ''), generatedKind && generatedKind !== 'general' ? generatedKind : 'preset', {
-          tags: Array.isArray(item.tags) ? item.tags.map(value => String(value || '').trim()).filter(Boolean).slice(0, 12) : [],
-          basePrompt: String(item.prompt || ''),
+        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [t(config.itemNoun)]), String(item.note || ''), 'preset', {
+          tags: [],
+          basePrompt: String(item.prompt || ''), negativePrompt: String(item.negativePrompt || ''),
           params, variableValues: { subject: '' }, modules: [],
         });
         if (!newId) throw new Error('创建提示词条目失败');
@@ -694,7 +719,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, library?.directories)} openLabel={t('{0}：{1}', [t(config.itemNoun), name])}
       busy={savingRename} onOpen={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }} onEdit={() => setDetail(draftFromChain(chain))}
       onDelete={() => void removeChain(chain.id, name)} onCopy={() => void copyText(chainPrompt(chain), t('英文提示词'))}
-      onUse={library?.useEntry ? () => library.useEntry?.(chain) : undefined} notify={notify}
+      notify={notify}
       mediaInfo={<><PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />{chainReferences(chain).length > 0 && <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [chainReferences(chain).length])}</span>}</>}
       summary={!chain.previewImage ? chainBilingual(chain) || chainPrompt(chain) : undefined}
       title={renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
@@ -747,9 +772,13 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {tagOptions.length === 0 ? (
             <p className="text-xs text-gray-400">{t('还没有标签，可在详情里添加')}</p>
           ) : (
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-64 space-y-2 overflow-y-auto">
+              {PROMPT_PURPOSE_GROUPS.map(group => {
+                const options = group.purposes.flatMap(id => visibleTagOptions.filter(([value]) => value === id));
+                return options.length > 0 && <PromptPurposeGroup key={group.id + (tagQuery.trim() ? ':search' : '')} id={group.id} label={group.label} defaultOpen={!!tagQuery.trim()}
+                  summary={group.purposes.filter(id => selectedTags.has(id)).map(id => t(promptPurposeLabel(id))).join('、')}>
               <div className="flex flex-wrap gap-1.5">
-                {visibleTagOptions.map(([value, total]) => (
+                {options.map(([value, total]) => (
                   <button
                     key={value}
                     type="button"
@@ -757,10 +786,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                     onClick={() => toggleTag(value)}
                     className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(value) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
-                    {t('{0}（{1}）', [value, total])}
+                    {t('{0}（{1}）', [t(promptPurposeLabel(value)), total])}
                   </button>
                 ))}
-              </div>
+              </div></PromptPurposeGroup>;
+              })}
               {visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t('没有匹配的标签')}</p>}
             </div>
           )}
@@ -804,10 +834,10 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const detailActions = detail ? (
       <div className="flex flex-none items-center gap-1">
-        <ToolbarButton tone="danger" disabled={savingDetail} onClick={() => void removeChain(detail.id, detail.name)} aria-label={t('删除')} title={t('删除')} className="mobile-touch !px-2.5 md:!px-3">
+        {!panel && <ToolbarButton tone="danger" disabled={savingDetail} onClick={() => void removeChain(detail.id, detail.name)} aria-label={t('删除')} title={t('删除')} className="mobile-touch !px-2.5 md:!px-3">
           <Trash2 /><span className="hidden sm:inline">{t('删除')}</span>
-        </ToolbarButton>
-        <ToolbarButton tone="save" disabled={savingDetail} onClick={() => void saveDetail()} aria-label={t('保存')} title={t('保存')} className="mobile-touch !px-2.5 md:!px-3">
+        </ToolbarButton>}
+        <ToolbarButton tone="save" disabled={savingDetail || panel && !draftDirty} onClick={() => void saveDetail(!panel)} aria-label={t('保存')} title={t('保存')} className="mobile-touch !px-2.5 md:!px-3">
           {savingDetail && <LoaderCircle className="animate-spin" />}<span>{savingDetail ? t('保存中…') : t('保存')}</span>
         </ToolbarButton>
       </div>
@@ -825,8 +855,32 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
   const detailToolbar = detailToolbarContent ? <WorkspaceToolbar>{detailToolbarContent}</WorkspaceToolbar> : null;
 
+  const detailCover = detail ? (
+        <div>
+          <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
+          {detail.cover ? (
+            <div className="group relative"><button
+              type="button"
+              onClick={() => openViewer([{ url: detail.cover, caption: detail.name }], 0)}
+              aria-label={t('查看封面原图')}
+              title={t('点击查看原图')}
+              className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
+            >
+              <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
+            </button>{panel && <ImageShareOverlay imageUrl={detail.cover} filename={detail.name + '.png'} notify={notify} favorite={{ imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id }} />}</div>
+          ) : (
+            <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
+            <ToolbarButton disabled={!detail.cover} onClick={() => patchDetail({ cover: '', coverChanged: true })} className="mobile-touch flex-1"><X /><span>{t('清除')}</span></ToolbarButton>
+          </div>
+        </div>
+  ) : null;
+
   const detailBody = detail ? (
-    <div className="mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+    <fieldset disabled={savingDetail} className={panel ? "min-w-0 space-y-4" : "mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_15rem]"}>
+      {panel && detailCover}
       <div className="min-w-0 space-y-3">
         <label className="block">
           <span className={DETAIL_LABEL_CLASS}>{t('名称')}</span>
@@ -838,16 +892,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             className={DETAIL_FIELD_CLASS}
           />
         </label>
-        <label className="block">
-          <span className={DETAIL_LABEL_CLASS}>{t('标签（逗号分隔）')}</span>
-          <input
-            value={detail.tags}
-            onChange={event => patchDetail({ tags: event.target.value })}
-            placeholder={t(config.tagPlaceholder)}
-            aria-label={t('{0}标签', [t(config.itemNoun)])}
-            className={DETAIL_FIELD_CLASS}
-          />
-        </label>
+
         <div>
           <div className="flex items-center justify-between gap-2">
             <span className={DETAIL_LABEL_CLASS}>{t('纯英文提示词（生图用）')}</span>
@@ -860,6 +905,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             className={`${DETAIL_FIELD_CLASS} h-32 resize-y font-mono`}
           />
         </div>
+        <PromptPurposePicker value={detail.purposes} onChange={purposes => patchDetail({ purposes })} disabled={savingDetail} />
         <div>
           <div className="flex items-center justify-between gap-2">
             <span className={DETAIL_LABEL_CLASS}>{t('中英对照')}</span>
@@ -870,7 +916,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             onChange={event => patchDetail({ bilingual: event.target.value })}
             placeholder={t('AI 生成时自动写入，也可以手写或粘贴')}
             aria-label={t('中英对照提示词')}
-            className={`${DETAIL_FIELD_CLASS} h-32 resize-y`}
+            className={`${DETAIL_FIELD_CLASS} ${panel ? 'h-20' : 'h-32'} resize-y`}
           />
         </div>
         <label className="block">
@@ -882,30 +928,12 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono`}
           />
         </label>
+        <label className="block"><span className={DETAIL_LABEL_CLASS}>{t('备注')}</span><textarea aria-label={t('备注')} value={detail.description} onChange={event => patchDetail({ description: event.target.value })} className={`${DETAIL_FIELD_CLASS} h-20 resize-y`} /></label>
         {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={detail.directoryIds} onChange={directoryIds => patchDetail({ directoryIds })} disabled={savingDetail} />}
       </div>
 
       <div className="min-w-0 space-y-4">
-        <div>
-          <span className={DETAIL_LABEL_CLASS}>{t('封面')}</span>
-          {detail.cover ? (
-            <button
-              type="button"
-              onClick={() => openViewer([{ url: detail.cover, caption: detail.name }], 0)}
-              aria-label={t('查看封面原图')}
-              title={t('点击查看原图')}
-              className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
-            >
-              <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="block max-h-48 w-full object-contain" containerClassName="relative w-full overflow-hidden" />
-            </button>
-          ) : (
-            <div className="appearance-media mt-1.5 flex h-24 items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
-            <ToolbarButton disabled={!detail.cover} onClick={() => patchDetail({ cover: '', coverChanged: true })} className="mobile-touch flex-1"><X /><span>{t('清除')}</span></ToolbarButton>
-          </div>
-        </div>
+        {!panel && detailCover}
 
         <details>
           <summary className="mobile-touch cursor-pointer text-sm font-semibold">{t('参考图（{0}）', [detail.references.length])}</summary>
@@ -942,7 +970,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
         <PromptLibraryUsageSection chainId={detail.id} notify={notify} zIndex={library?.directories || initialEntry ? 2200 : undefined} />
       </div>
-    </div>
+    </fieldset>
   ) : null;
 
   /* ---------------- 浮层渲染 ---------------- */
@@ -981,6 +1009,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
             {facetSummary && <p className="text-xs text-gray-600 dark:text-gray-300">{t(`限定：${facetSummary}`)}</p>}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <PromptPurposePicker label="生成用途" value={generationPurposes} onChange={setGenerationPurposes} disabled={generating} />
               {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} mode="single" includeAll={false} selectedIds={generationDirectoryIds} onChange={setGenerationDirectoryIds} disabled={generating} />}
               {(library?.directories ? [] : config.facets).map(facet => facet.multiple ? (
                 <fieldset key={facet.key} className="min-w-0">
@@ -1117,11 +1146,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                         </div>
                       );
                     })()}
-                    {draft.tags && draft.tags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {draft.tags.map(value => <span key={value} className="rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400">{value}</span>)}
-                      </div>
-                    )}
+                    <PromptPurposePicker value={draft.purposes || []} onChange={purposes => patchDraft(index, { purposes })} disabled={savingDrafts} />
                     {draft.note && <p className="mt-1 text-micro text-gray-400">{draft.note}</p>}
                   </div>
                 ))}
@@ -1170,6 +1195,15 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
   </>;
+  if (initialEntry && panel) return <>
+    <DetailSidePanel open title={detail?.name || initialEntry.name} sensitiveTitle subInfo={draftDirty ? t('未保存') : promptLibraryEntryLabel(initialEntry, library?.directories)}
+      onClose={() => void closeDetail()} onBack={() => void closeDetail()}
+      headerActions={detailActions}>
+      {detailBody}
+    </DetailSidePanel>
+    {viewerModal}
+    <HistoryImagePicker zIndex={2200} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+  </>;
   if (initialEntry) return <>
     <LibraryDialog title={detail?.name || t('编辑')} wide className="max-w-5xl!" busy={savingDetail} headerActions={detailActions} onClose={() => { void closeDetail(); return false; }}>
       {draftDirty && <p role="status" className="text-xs text-amber-600 dark:text-amber-300">{t('未保存')}</p>}
@@ -1196,6 +1230,8 @@ const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance,
 const GENERAL_CONFIG: PromptLibraryKindConfig = { ...PROMPT_LIBRARY_KINDS.appearance, general: true, type: 'preset', title: '通用', itemNoun: '片段', defaultName: '新片段', createLabel: '新建片段', emptyTitle: '通用片段还是空的', facets: [] };
 export type PromptLibraryEntryEditorProps = Omit<PromptLibraryProps, 'embedded' | 'toolbarSlot'> & {
   entry: PromptChain;
+  panel?: boolean;
+  panelActionsRef?: React.MutableRefObject<PromptLibraryPanelActions | null>;
   onClose: () => void;
   requestCloseRef?: React.MutableRefObject<(() => void) | null>;
 };

@@ -21,39 +21,18 @@ test('缺词、重复文档、非法分类和坏 JSON 均拒绝，不能部分�
   assert.deepEqual(preparePromptClassification({ documents: [{ id: 'a', kind: 'global', prompt: ' ' }] }), []);
 });
 
-test('当前目录决定分类keys与路径，改名及自定义层级无需固定六类', () => {
-  const directories = { revision: 7, nodes: [
-    { id: 'person', parentId: null, name: '我的人物', target: 'character' },
-    { id: 'custom', parentId: 'person', name: '特殊装备' },
-    { id: 'light', parentId: null, name: '自定环境光', target: 'global' },
-  ] };
-  const documents = preparePromptClassification({ directories, documents: [
-    { id: 'global', kind: 'global', prompt: 'artist:test, {{golden light}}, shiny armor, shiny armor' },
-    { id: 'role', kind: 'character', prompt: '1.2::silver armor, blue eyes::, smile' },
-  ] });
-  assert.deepEqual(documents[0].categories, ['style', 'directory:person', 'directory:custom', 'directory:light', 'extra']);
-  assert.deepEqual(documents[1].categories, ['directory:person', 'directory:custom', 'extra']);
-  assert.deepEqual(documents[1].directoryCategories[1], { key: 'directory:custom', directoryId: 'custom', directoryName: '特殊装备', directoryPath: ['我的人物', '特殊装备'], scope: 'character' });
+test('目录任意命名、层级或空树都得到相同用途字段', () => {
+  const input = { documents: [{ id: 'global', kind: 'global', prompt: 'artist:test, {{golden light}}, shiny armor, shiny armor' }, { id: 'role', kind: 'character', prompt: '1.2::silver armor, blue eyes::, smile' }] };
+  const documents = preparePromptClassification({ ...input, directories: { revision: 7, nodes: [{ id: 'anything', parentId: null, name: '随便起名' }] } });
+  const empty = preparePromptClassification({ ...input, directories: { revision: 8, nodes: [] } });
+  assert.deepEqual(documents, empty);
+  assert.equal(documents[0].categories.length, 23);
   const items = parsePromptClassification(JSON.stringify([
-    { id: 'global', categories: ['style', 'directory:light', 'directory:custom', 'directory:custom'] },
-    { id: 'role', categories: ['directory:custom', 'extra'] },
+    { id: 'global', categories: ['purpose:artist', 'purpose:lighting', 'purpose:clothing', 'purpose:clothing'] },
+    { id: 'role', categories: ['extra', 'purpose:expression'] },
   ]), documents);
-  assert.equal(items[0].sections['directory:custom'], 'shiny armor, shiny armor');
-  assert.equal(items[1].sections['directory:custom'], '1.2::silver armor, blue eyes::');
-  assert.deepEqual(items[1].sectionMeta['directory:custom'], { source: 'ai', directoryId: 'custom', directoryName: '特殊装备', directoryPath: ['我的人物', '特殊装备'] });
-  assert.throws(() => parsePromptClassification(JSON.stringify([
-    { id: 'global', categories: ['style', 'directory:light', 'directory:custom', 'directory:custom'] },
-    { id: 'role', categories: ['directory:light', 'extra'] },
-  ]), documents), /分类结果/);
-});
-
-test('空目录保留补充兜底，不复活六类；损坏目录不降级猜分类', () => {
-  const documents = preparePromptClassification({ directories: { revision: 1, nodes: [] }, documents: [
-    { id: 'global', kind: 'global', prompt: 'artist:test, landscape' },
-    { id: 'role', kind: 'character', prompt: 'blue hair' },
-  ] });
-  assert.deepEqual(documents.map(document => document.categories), [['style', 'extra'], ['extra']]);
-  const parsed = parsePromptClassification(JSON.stringify([{ id: 'global', categories: ['style', 'extra'] }, { id: 'role', categories: ['extra'] }]), documents);
-  assert.equal(parsed[1].sections.extra, 'blue hair');
-  assert.throws(() => preparePromptClassification({ documents: [], directories: { revision: 0 } }), /目录数据无效/);
+  assert.equal(items[0].sections['purpose:clothing'], 'shiny armor, shiny armor');
+  assert.equal(items[1].sections.extra, '1.2::silver armor, blue eyes::');
+  assert.deepEqual(items[0].sectionMeta['purpose:clothing'], { source: 'ai', directoryName: '服饰与配件' });
+  assert.throws(() => parsePromptClassification(JSON.stringify([{ id: 'global', categories: ['purpose:custom'] }, { id: 'role', categories: [] }]), documents), /分类结果/);
 });

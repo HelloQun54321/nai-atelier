@@ -8,6 +8,8 @@ import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { NAIParams } from '../../types';
 import { promptAgentService } from '../../services/promptAgent';
 import { promptAgentCoordinator } from '../../services/promptAgentCoordinator';
+import { createAgentPromptChange, type AgentPromptChange } from '../../services/agentPromptChanges.mjs';
+import type { PromptAgentDraft } from '../../types';
 
 vi.mock('../../components/MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
@@ -77,7 +79,7 @@ const stubServices = (
   return { createCount: () => createCount };
 };
 
-const panelElement = (canUndo = false, overrides = {}) => {
+const panelElement = (_canUndo = false, overrides = {}) => {
   return (
     React.createElement(
       ConfirmDialogProvider,
@@ -106,8 +108,7 @@ const panelElement = (canUndo = false, overrides = {}) => {
         onRunStart: () => {},
         onFinalDraft: () => {},
         onRequestGeneration: () => {},
-        onUndo: () => {},
-        canUndo,
+        onPromptChange: () => {},
         tagAssistEnabled: true,
         ...overrides,
       })
@@ -117,6 +118,47 @@ const panelElement = (canUndo = false, overrides = {}) => {
 const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
+
+  it('对话差异在实际应用回调后才标为已应用，撤回重做保存回执且不调用模型', async () => {
+    stubServices();
+    const save = vi.spyOn(promptAgentService, 'updateSession').mockResolvedValue(mockSession);
+    let applied!: (before: PromptAgentDraft, after: PromptAgentDraft) => void;
+    let before!: PromptAgentDraft, after!: PromptAgentDraft;
+    const runner = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, emit) => {
+      before = input.draft; after = { ...before, basePrompt: 'new style' };
+      emit({ type: 'done', status: 'completed', draftChanged: true, draft: after, message: '完成', provider: 'synthetic', model: 'synthetic', promptChange: createAgentPromptChange(before, after, 'diff-run') });
+    });
+    const apply = vi.fn((_draft: PromptAgentDraft, _review: boolean, onApplied: typeof applied) => { applied = onApplied; });
+    const undo = vi.fn();
+    renderPanel(false, { onFinalDraft: apply, onPromptChange: undo });
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: '改提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    expect(await screen.findByText('待应用')).toBeTruthy(); expect(save).not.toHaveBeenCalled();
+    await act(async () => applied(before, after));
+    expect(await screen.findByText('已应用')).toBeTruthy();
+    await waitFor(() => expect((screen.getByRole('button', { name: '撤回本次提示词修改' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '撤回本次提示词修改' }));
+    expect(await screen.findByText('已撤回')).toBeTruthy();
+    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ id: 'diff-run' }), 'undo');
+    await waitFor(() => expect((screen.getByRole('button', { name: '重做本次提示词修改' }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '重做本次提示词修改' }));
+    expect(await screen.findByText('已应用')).toBeTruthy();
+    expect(undo).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'diff-run' }), 'redo');
+    expect(runner).toHaveBeenCalledOnce();
+    expect(save.mock.calls.map(call => call[1].promptChange?.status)).toEqual(['applied', 'undone', 'applied']);
+  });
+
+  it('重新打开会话保留红绿差异与重做状态，旧消息不补造差异', async () => {
+    stubServices();
+    const promptChange: AgentPromptChange = { id: 'saved-change', target: { chainId: 'lab', mode: 'text-to-image' }, status: 'undone', changes: [{ path: ['basePrompt'], before: 'old', after: 'new' }] };
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'old-message', role: 'agent', text: '旧消息' }, { id: 'with-change', role: 'agent', text: '已修改', promptChange }]);
+    renderPanel();
+    expect(await screen.findByText('已撤回')).toBeTruthy();
+    expect(screen.getAllByRole('region', { name: '提示词修改' })).toHaveLength(1);
+    expect((screen.getByRole('button', { name: '重做本次提示词修改' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('首次启动忽略旧会话偏好并发创建一次，严格模式和重挂载沿用本次会话', async () => {
     const old = { ...mockSession, id: 'old-session', title: '旧历史对话' };
     const fresh = { ...mockSession, id: 'fresh-session', title: '本次新对话' };

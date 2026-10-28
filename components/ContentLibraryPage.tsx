@@ -25,7 +25,7 @@ interface ContentLibraryPageProps {
   rollOpen: boolean;
   rollTitle?: string;
   onRollOpenChange: (open: boolean) => void;
-  onCapture?: (text: string, name: string, category: string, tags?: string[], directoryIds?: string[]) => Promise<string | void>;
+  onCapture?: (text: string, name: string, category: string, tags?: string[], directoryIds?: string[], purposes?: import('../services/promptPurposes.mjs').PromptPurposeId[]) => Promise<string | void>;
   onExtractSave?: (draft: ExtractedEntryDraft) => Promise<void>;
   notify?: (message: string, type?: 'success' | 'error') => void;
   onCaptureSaved?: (id?: string) => void;

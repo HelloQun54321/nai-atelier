@@ -1,3 +1,4 @@
+import { getEntryPurposes, type PromptPurposeId } from './promptPurposes.mjs';
 /**
  * 「AI 提取分类」审阅草稿在本端浏览器存储中的保存与恢复。
  *
@@ -40,6 +41,7 @@ export interface ExtractDraftCandidate {
   id: number;
   entryId: string;
   kind: PromptLibraryKind | 'preset';
+  purposes?: PromptPurposeId[];
   directoryIds?: string[];
   needsDirectoryReview?: boolean;
   directoryReviewNote?: string;
@@ -136,6 +138,7 @@ const normalizeCandidate = (value: unknown, fallbackId: number): ExtractDraftCan
     id,
     entryId: text(source.entryId).trim() || createUuid(),
     kind,
+    ...(source.purposes === undefined ? {} : { purposes: getEntryPurposes({ params: { _promptLibraryPurposes: source.purposes } }) }),
     ...(Array.isArray(source.directoryIds) ? { directoryIds: [...new Set(source.directoryIds.filter((id): id is string => typeof id === 'string'))] } : {}),
     ...(source.needsDirectoryReview ? { needsDirectoryReview: true, directoryReviewNote: text(source.directoryReviewNote) } : {}),
     name: text(source.name).slice(0, 200),

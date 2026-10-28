@@ -1,8 +1,10 @@
+import { PROMPT_PURPOSE_GROUPS, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type CreativeSectionKey, type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useId, useRef } from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { mergePromptSections, resolvePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
+import { PromptPurposeGroup } from '../PromptPurposeGroup';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryRandomButton, type PromptToolbarSlot } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
@@ -27,11 +29,11 @@ interface PromptFieldProps {
     value: string;
     placeholder: string;
     library?: PromptFragmentKind;
-    directoryId?: string;
+    directoryId?: string; purposeId?: PromptPurposeId; roleId?: string; negativeLabel?: string;
     disabled: boolean;
     tagAssistEnabled: boolean;
     onChange: (value: string, source?: PromptSectionSource) => void;
-    onCopy: (value: string, label: string) => void;
+    onCopy?: (value: string, label: string) => void;
     /** 该栏现有来源（条目名），显示在标签旁做追溯 */
     sourceName?: string;
     negative?: string;
@@ -39,7 +41,7 @@ interface PromptFieldProps {
     onNegativeChange?: (value: string) => void;
 }
 
-const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange }) => {
+export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
@@ -50,20 +52,20 @@ const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, li
             </label>
             <div className="flex shrink-0 items-center gap-1">
                 <span ref={clearSlot} />
-                <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />
+                {onCopy && <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />}
             </div>
         </div>
         <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
-            libraryField={{ kind: library, directoryId }}
-            tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
+            libraryField={{ kind: library, directoryId, purposeId, roleId }}
+            tagAssistEnabled={tagAssistEnabled} showTranslations={!!value.trim()} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
-            className={`min-h-[100px] w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
+            className={`min-h-20 w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
                 ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
                 : 'border-gray-200 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200'}`} />
         {onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
             <label htmlFor={`${id}-negative`} className="mb-1 block text-micro font-semibold text-gray-500">{t('内容负面')}</label>
-            <TagAutocompleteTextarea id={`${id}-negative`} aria-label={`${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, negative: true }}
-                tagAssistEnabled={tagAssistEnabled && !negativeLocked} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
+            <TagAutocompleteTextarea id={`${id}-negative`} aria-label={negativeLabel || `${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, purposeId, roleId, negative: true }}
+                tagAssistEnabled={tagAssistEnabled && !negativeLocked} showTranslations={!!negative?.trim()} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
                 className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
         </div>}
     </div>;
@@ -101,15 +103,19 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
 }) => {
     useLanguage();
     const current = resolvePromptSections(sections, supplementPrompt);
-    const dynamicKeys = getGlobalPromptSectionKeys(current).filter((key): key is `directory:${string}` => key.startsWith('directory:'));
+    const dynamicKeys = getGlobalPromptSectionKeys(current).filter((key): key is CreativeSectionKey => isCreativeSectionKey(key));
     for (const key of dynamicKeys) {
         const meta = sections?.sectionMeta?.[key];
         if (meta && !current.sectionMeta?.[key]) current.sectionMeta = { ...current.sectionMeta, [key]: meta };
     }
+    const legacyFields = useRef(new Set<SectionKey>());
+    for (const field of SECTION_FIELDS) if (field.key !== 'extra' && (current[field.key] || current.sectionNegatives?.[field.key])) legacyFields.current.add(field.key);
+    const showBase = useRef(!!prompt);
+    if (prompt) showBase.current = true;
     const writeSection = (key: SectionKey, value: string, source?: PromptSectionSource) => {
         const meta = { ...(current.sectionMeta || {}) } as Record<string, PromptSectionSource>;
         if (source) meta[key] = source;
-        else if (key.startsWith('directory:')) meta[key] = { ...meta[key], entryId: undefined, entryName: undefined, source: 'manual' };
+        else if (isCreativeSectionKey(key)) meta[key] = { ...meta[key], entryId: undefined, entryName: undefined, source: 'manual' };
         else if (String(value || '').trim()) meta[key] = { source: 'manual' };
         else delete meta[key];
         const next = { ...current, [key]: value, sectionMeta: meta } as PromptSections;
@@ -135,25 +141,41 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }
                         markPresetSectionModified('base'); markPresetSectionModified('subject'); markChange();
                     }} /> : <>
-                <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
-                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
-                        setPrompt(value); markPresetSectionModified('base'); markChange();
-                    }} />
-                {SECTION_FIELDS.map(field => <PromptField key={field.key} label={field.label} library={field.library}
-                    value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
-                    sourceName={current.sectionMeta?.[field.key]?.entryName}
-                    negative={current.sectionNegatives?.[field.key]} negativeLocked={negativeLocked}
-                    onNegativeChange={current.sectionNegatives?.[field.key] ? value => writeNegative(field.key, value) : undefined}
-                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                    onChange={(value, source) => writeSection(field.key, value, source)} />)}
-                {dynamicKeys.map(key => {
-                    const meta = current.sectionMeta?.[key];
-                    const label = meta?.directoryPath?.length ? meta.directoryPath.join(' / ') : meta?.directoryName || key.slice(10);
-                    return <PromptField key={key} label={label} directoryId={key.slice(10)} value={current[key] || ''} placeholder={label} disabled={!canEdit}
-                        sourceName={meta?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
-                        onNegativeChange={value => writeNegative(key, value)} tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                        onChange={(value, source) => writeSection(key, value, source)} />;
-                })}
+                {PROMPT_PURPOSE_GROUPS.map(group => <PromptPurposeGroup key={group.id} id={group.id} label={group.label}
+                    summary={group.purposes.filter(id => current[purposeSectionKey(id)]).map(id => t(promptPurposeLabel(id))).join('、')}>
+                    {group.purposes.map(id => {
+                        const key = purposeSectionKey(id), label = promptPurposeLabel(id);
+                        return <PromptField key={key} label={label} purposeId={id} value={current[key] || ''} placeholder={label} disabled={!canEdit}
+                            sourceName={current.sectionMeta?.[key]?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
+                            onNegativeChange={current[key] || current.sectionNegatives?.[key] ? value => writeNegative(key, value) : undefined}
+                            tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={(value, source) => writeSection(key, value, source)} />;
+                    })}
+                </PromptPurposeGroup>)}
+                <PromptField label="补充" library="general" value={current.extra || ''} placeholder="人数、道具与其他补充" disabled={!canEdit}
+                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={(value, source) => writeSection('extra', value, source)}
+                    negative={current.sectionNegatives?.extra} negativeLocked={negativeLocked}
+                    onNegativeChange={current.sectionNegatives?.extra ? value => writeNegative('extra', value) : undefined} />
+                {(showBase.current || legacyFields.current.size > 0 || dynamicKeys.some(key => !isPurposeSectionKey(key))) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
+                    {showBase.current && <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
+                        tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
+                            setPrompt(value); markPresetSectionModified('base'); markChange();
+                        }} />}
+                    {SECTION_FIELDS.filter(field => legacyFields.current.has(field.key)).map(field => <PromptField key={field.key} label={field.label} library={field.library}
+                        value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
+                        sourceName={current.sectionMeta?.[field.key]?.entryName}
+                        negative={current.sectionNegatives?.[field.key]} negativeLocked={negativeLocked}
+                        onNegativeChange={current.sectionNegatives?.[field.key] ? value => writeNegative(field.key, value) : undefined}
+                        tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
+                        onChange={(value, source) => writeSection(field.key, value, source)} />)}
+                    {dynamicKeys.filter(key => !isPurposeSectionKey(key)).map(key => {
+                        const meta = current.sectionMeta?.[key];
+                        const label = meta?.directoryPath?.length ? meta.directoryPath.join(' / ') : meta?.directoryName || key.slice(10);
+                        return <PromptField key={key} label={label} directoryId={key.slice(10)} value={current[key] || ''} placeholder={label} disabled={!canEdit}
+                            sourceName={meta?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
+                            onNegativeChange={value => writeNegative(key, value)} tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
+                            onChange={(value, source) => writeSection(key, value, source)} />;
+                    })}
+                </PromptPurposeGroup>}
                 </>}
             </div>
         </section>;

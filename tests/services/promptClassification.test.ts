@@ -39,16 +39,17 @@ describe('导入提示词分类', () => {
     ] };
     const documents = preparePromptClassification({ directories, documents: getClassificationDocuments(original) });
     const items = parsePromptClassification(JSON.stringify([
-      { id: 'global', categories: ['style', 'directory:light', 'directory:equipment', 'directory:equipment'] },
-      { id: 'role', categories: ['directory:equipment', 'directory:equipment', 'directory:equipment', 'extra'] },
+      { id: 'global', categories: ['purpose:artist', 'purpose:lighting', 'purpose:clothing', 'purpose:clothing'] },
+      { id: 'role', categories: ['purpose:clothing', 'purpose:clothing', 'purpose:clothing', 'extra'] },
     ]), documents);
     const result = applyPromptClassification(original, items);
-    expect(result.basePrompt).toBe('artist:test');
+    expect(result.basePrompt).toBe('');
+    expect(result.params._promptSections?.['purpose:artist']).toBe('artist:test');
     expect(result.subjectPrompt).toContain('{{golden light}}');
-    expect(result.params._promptSections?.['directory:equipment']).toBe('red dress, red dress');
-    expect(result.params._promptSections?.sectionMeta?.['directory:light']).toEqual({ source: 'ai', directoryId: 'light', directoryName: '光照', directoryPath: ['光照'] });
-    expect(result.params.characters![0].sections?.['directory:equipment']).toBe('1.3::blue hair, blue eyes::, smile, smile');
-    expect(result.params.characters![0].sectionMeta?.['directory:equipment']?.directoryName).toBe('装备');
+    expect(result.params._promptSections?.['purpose:clothing']).toBe('red dress, red dress');
+    expect(result.params._promptSections?.sectionMeta?.['purpose:lighting']).toEqual({ source: 'ai', directoryName: '光照与阴影' });
+    expect(result.params.characters![0].sections?.['purpose:clothing']).toBe('1.3::blue hair, blue eyes::, smile, smile');
+    expect(result.params.characters![0].sectionMeta?.['purpose:clothing']?.directoryName).toBe('服饰与配件');
     expect(compileCharacterContent(result.params.characters![0]).prompt).toBe('1.3::blue hair, blue eyes::, smile, smile, 1girl');
     expect(result.params.seed).toBe(42); expect(result.params.steps).toBe(28);
     expect(result.negativePrompt).toBe('lowres');

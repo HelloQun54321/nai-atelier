@@ -1,3 +1,4 @@
+import { PROMPT_PURPOSES, purposeSectionKey, promptPurposeLabel, isPurposeSectionKey, isCreativeSectionKey, type PromptPurposeId } from './promptPurposes.mjs';
 /*
  * 一键 Roll · 纯内容快照与四态约束派生（纯逻辑核）
  * ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ export interface ConstraintSummary {
 }
 /** 纯内容快照读取结果（白名单读取之后）。 */
 export interface RollUnit {
-  id: string; directoryId: string; name: string; path: string[]; scope: 'global' | 'character';
+  id: string; directoryId: string; name: string; path: string[]; scope: 'global' | 'character'; purposeId?: PromptPurposeId;
 }
 export interface ContentItem {
   unitId: string; directoryId: string; directoryName: string; directoryPath: string[]; scope: 'global' | 'character';
@@ -111,6 +112,7 @@ export type RollPicks = Record<string, RollRow>;
 export type RollRng = () => number;
 
 export const META: Record<string, { short: string; title: string; scope: 'global' | 'character' }> = {
+  ...Object.fromEntries(PROMPT_PURPOSES.map(item => [purposeSectionKey(item.id), { short: item.label, title: item.label, scope: ['identity', 'appearance', 'clothing', 'pose', 'expression'].includes(item.id) ? 'character' as const : 'global' as const }])),
   appearance: { short: '形象', title: '人物形象', scope: 'character' },
   wardrobe: { short: '服饰', title: '服饰穿搭', scope: 'character' },
   pose: { short: '动作', title: '动作互动', scope: 'character' },
@@ -330,8 +332,8 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
   const picks = (record && record.picks) || {};
   const checks = (record && record.checks) || {};
   const items: ContentItem[] = Object.entries(picks).flatMap(([key, row]) => {
-    if (!isDirectorySectionKey(key) || checks[key] === false || !row?.filled || !String(row.text || '').trim()) return [];
-    return [{ unitId: key, directoryId: key.slice(10), directoryName: String(row.directoryName || row.title || row.label || key.slice(10)),
+    if (!isCreativeSectionKey(key) || checks[key] === false || !row?.filled || !String(row.text || '').trim()) return [];
+    return [{ unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(row.directoryName || row.title || row.label || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
       directoryPath: Array.isArray(row.directoryPath) ? row.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
       scope: row.scope === 'character' ? 'character' as const : 'global' as const, text: String(row.text).trim(), negative: String(row.negative || '').trim(),
       constraintNotes: String(row.constraintNotes || row.constraints?.notes || ''), meta: contentMetaOf(row.meta || { entryId: row.id, entryName: row.name }) }];
@@ -411,8 +413,8 @@ export const contentRead = (raw: Json): ContentRead => {
   if (version !== 1 && version !== CONTENT_VERSION) warnings.push('结构版本 ' + String(version) + ' 与当前载入器（' + String(CONTENT_VERSION) + '）不同：只按已知字段读取，未知字段不应用');
   const items: ContentItem[] = (Array.isArray(raw.items) ? raw.items : []).flatMap((item: Json) => {
     const key = String(item?.unitId || '');
-    if (!isDirectorySectionKey(key) || !String(item?.text || '').trim()) return [];
-    return [{ unitId: key, directoryId: key.slice(10), directoryName: String(item.directoryName || key.slice(10)),
+    if (!isCreativeSectionKey(key) || !String(item?.text || '').trim()) return [];
+    return [{ unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(item.directoryName || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
       directoryPath: Array.isArray(item.directoryPath) ? item.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
       scope: item.scope === 'character' ? 'character' as const : 'global' as const, text: String(item.text).trim(), negative: String(item.negative || '').trim(),
       constraintNotes: String(item.constraintNotes || ''), meta: contentMetaOf(item.meta) }];

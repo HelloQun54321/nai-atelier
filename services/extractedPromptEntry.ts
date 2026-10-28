@@ -1,3 +1,4 @@
+import { readPromptPurposes, type PromptPurposeId } from './promptPurposes.mjs';
 /**
  * 把审阅后的「AI 提取候选」转换成本地库条目。
  *
@@ -14,6 +15,7 @@ export interface ExtractedEntryDraft {
   entryId: string;
   kind: ChainType;
   /** 显式空数组为未归类；旧候选未提供时保留原类型兼容。 */
+  purposes?: PromptPurposeId[];
   directoryIds?: string[];
   name: string;
   prompt: string;
@@ -38,6 +40,7 @@ export const buildExtractedChainPayload = (draft: ExtractedEntryDraft): {
 } => {
   const params: ExtractedParams = {
     ...LAB_DEFAULT_PARAMS,
+    _promptLibraryPurposes: readPromptPurposes(draft.purposes),
     _promptLibrary: { bilingual: String(draft.original || '').trim(), references: [] },
     ...(draft.directoryIds === undefined ? {} : { _promptLibraryDirectoryIds: [...new Set(draft.directoryIds)] }),
     ...(draft.kind === 'preset' ? { _collectedCategory: 'general' as const } : {}),

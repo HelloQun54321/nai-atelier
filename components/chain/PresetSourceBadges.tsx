@@ -2,6 +2,7 @@ import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
+import type { AgentPromptChange } from '../../services/agentPromptChanges.mjs';
 
 const PromptAgentPanel = React.lazy(() => import('../PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -42,11 +43,10 @@ interface PromptAgentOverlayControllerProps {
     draft: PromptAgentDraft;
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
-    onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
+    onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: (before: PromptAgentDraft, after: PromptAgentDraft) => void) => void;
+    onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo') => void;
     onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult>;
     onGenerationInterrupted?: () => void;
-    canUndo: boolean;
-    onUndo: () => void;
     tagAssistEnabled: boolean;
     splitPromptFields?: boolean;
     promptClassificationEnabled?: boolean;
@@ -62,8 +62,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     onFinalDraft,
     onRequestGeneration,
     onGenerationInterrupted,
-    canUndo,
-    onUndo,
+    onPromptChange,
     tagAssistEnabled,
     splitPromptFields,
     promptClassificationEnabled,
@@ -96,8 +95,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             onFinalDraft={onFinalDraft}
             onRequestGeneration={onRequestGeneration}
             onGenerationInterrupted={onGenerationInterrupted}
-            canUndo={canUndo}
-            onUndo={onUndo}
+            onPromptChange={onPromptChange}
             tagAssistEnabled={tagAssistEnabled}
             splitPromptFields={splitPromptFields}
             promptClassificationEnabled={promptClassificationEnabled}

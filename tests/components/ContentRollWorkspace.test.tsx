@@ -1,3 +1,4 @@
+import { openPurposeGroup } from '../support/promptPurposeGroups';
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -186,83 +187,56 @@ const directories: PromptLibraryTreeState = { revision: 1, nodes: [
   { id: 'world', parentId: null, name: '环境', target: 'global' },
 ] };
 const directoryChains = [
-  { ...chains[0], id: 'shirt', name: '衬衫', basePrompt: 'white shirt', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['shirts'] } },
-  { ...chains[0], id: 'move', name: '站立', basePrompt: 'standing', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['motion'] } },
-  { ...chains[0], id: 'world-entry', name: '湖边', basePrompt: 'lake', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['world'] } },
+  { ...chains[0], id: 'shirt', name: '衬衫', basePrompt: 'white shirt', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['shirts'], _promptLibraryPurposes: ['clothing'] } },
+  { ...chains[0], id: 'move', name: '站立', basePrompt: 'standing', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['motion'], _promptLibraryPurposes: ['pose'] } },
+  { ...chains[0], id: 'world-entry', name: '湖边', basePrompt: 'lake', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['world'], _promptLibraryPurposes: ['place'] } },
 ] as PromptChain[];
 
-it('动态目录按默认单位抽取、父含后代，取消目录后旧内容不进入使用或保存', async () => {
+it('Roll 按固定用途抽取，取消用途后不参与使用和保存', async () => {
   const use = vi.fn(); const save = vi.fn(async () => 'saved');
   render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()} onUseCombination={use} onSaveRoll={save} />);
-  expect(screen.getByRole('textbox', { name: '人物 / 衣装内容' })).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: '人物 / 衣装 / 上衣内容' })).toBeNull();
-  expect(screen.queryByRole('textbox', { name: '环境内容' })).toBeNull();
+  openPurposeGroup('主体与外观'); openPurposeGroup('动作与关系');
   fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
-  expect((screen.getByRole('textbox', { name: '人物 / 衣装内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
-  fireEvent.click(screen.getByText('选择目录'));
-  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 姿态' }));
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(use).toHaveBeenCalledWith(expect.objectContaining({ 'directory:outfits': expect.objectContaining({ text: 'white shirt' }) }));
-  expect(use.mock.calls[0][0]['directory:motion']).toBeUndefined();
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
+  fireEvent.click(screen.getByRole('checkbox', { name: '参与「动作与姿态」的抽取' }));
+  fireEvent.click(screen.getByRole('button', { name: '送到实验室' }));
+  expect(use.mock.calls[0][0]['purpose:clothing'].text).toBe('white shirt');
+  expect(use.mock.calls[0][0]['purpose:pose']).toBeUndefined();
   fireEvent.click(screen.getByRole('button', { name: '保存组合' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '衣装组合' } });
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect((save.mock.calls[0] as unknown[])[1]).not.toHaveProperty('directory:motion');
+  expect((save.mock.calls[0] as unknown[])[1]).not.toHaveProperty('purpose:pose');
 });
 
-it('目录改名不丢手写与固定，新增不自动加入，删源保留当前内容并说明不能重抽', () => {
-  const notify = vi.fn(); const use = vi.fn();
-  const props = { active: true, chains: directoryChains, notify, onUseCombination: use };
+it('目录任意改名删除后固定手写用途内容不变，重抽仍按 Tag', () => {
+  const use = vi.fn(); const props = { active: true, chains: directoryChains, notify: vi.fn(), onUseCombination: use };
   const view = render(<ContentRollWorkspace {...props} directories={directories} />);
-  fireEvent.change(screen.getByRole('textbox', { name: '人物 / 衣装内容' }), { target: { value: 'my hand-written clothing' } });
-  const card = document.querySelector('[data-content-roll-row="directory:outfits"]')!;
+  openPurposeGroup('主体与外观'); openPurposeGroup('动作与关系');
+  fireEvent.change(screen.getByRole('textbox', { name: '服饰与配件内容' }), { target: { value: '{{manual dress}}' } });
+  const card = document.querySelector('[data-content-roll-row="purpose:clothing"]')!;
   fireEvent.click(Array.from(card.querySelectorAll('button')).find(button => button.textContent === '固定')!);
-  const renamed = { revision: 2, nodes: [...directories.nodes.map(node => node.id === 'outfits' ? { ...node, name: '服装' } : node), { id: 'new', parentId: 'people', name: '新目录' }] };
-  view.rerender(<ContentRollWorkspace {...props} directories={renamed} />);
-  expect((screen.getByRole('textbox', { name: '人物 / 服装内容' }) as HTMLTextAreaElement).value).toBe('my hand-written clothing');
-  fireEvent.click(screen.getByText('选择目录'));
-  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  expect((screen.getByRole('checkbox', { name: '人物 / 新目录' }) as HTMLInputElement).checked).toBe(false);
+  view.rerender(<ContentRollWorkspace {...props} directories={{ revision: 3, nodes: [] }} />);
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
-  expect((screen.getByRole('textbox', { name: '人物 / 服装内容' }) as HTMLTextAreaElement).value).toBe('my hand-written clothing');
-  view.rerender(<ContentRollWorkspace {...props} directories={{ revision: 3, nodes: renamed.nodes.filter(node => !['outfits', 'shirts'].includes(node.id)) }} />);
-  const deleted = document.querySelector('[data-content-roll-row="directory:outfits"]')!;
-  fireEvent.click(Array.from(deleted.querySelectorAll('button')).find(button => button.textContent === '已固定')!);
-  fireEvent.click(Array.from(deleted.querySelectorAll('button')).find(button => button.textContent === '换一个')!);
-  expect(notify).toHaveBeenCalledWith('来源目录已删除，当前内容仍可使用；无法重新抽取', 'error');
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(use.mock.calls[0][0]['directory:outfits'].text).toBe('my hand-written clothing');
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('{{manual dress}}');
+  expect((screen.getByRole('textbox', { name: '动作与姿态内容' }) as HTMLTextAreaElement).value).toBe('standing');
 });
 
-it('固定全局入口按目录继承范围筛选，全选使用默认单位而不把每个叶目录分别抽取', () => {
+it('全局入口允许全部固定用途，不根据文件夹目标限制内容', () => {
   render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()} entryTarget={{ mode: 'global' }} />);
-  expect(screen.getByRole('textbox', { name: '环境内容' })).toBeTruthy();
-  expect(screen.queryByRole('textbox', { name: '人物 / 衣装内容' })).toBeNull();
-  fireEvent.click(screen.getByText('选择目录'));
-  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  expect((screen.getByRole('checkbox', { name: '人物 / 衣装' }) as HTMLInputElement).disabled).toBe(true);
+  openPurposeGroup('场景与环境'); openPurposeGroup('主体与外观');
+  expect(screen.getByRole('textbox', { name: '地点与布景内容' })).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: '服饰与配件内容' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
 });
 
-it('选中父目录只抽一个单位，改选下级与全部目录时不重复抽祖孙', () => {
-  const use = vi.fn();
-  render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()} onUseCombination={use} />);
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
-  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(Object.keys(use.mock.calls[0][0])).toEqual(['directory:people']);
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
-  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
-  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物 / 衣装」' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 衣装 / 上衣' }));
-  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(Object.keys(use.mock.calls[1][0])).toEqual(['directory:shirts']);
-  fireEvent.click(screen.getByRole('checkbox', { name: '全部目录' }));
-  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  expect(Object.keys(use.mock.calls[2][0]).sort()).toEqual(['directory:motion', 'directory:outfits']);
+it('混合与未标注片段不进入纯用途候选池', () => {
+  const entries = [...directoryChains, { ...directoryChains[0], id: 'mixed', basePrompt: 'dress, smiling', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryPurposes: ['clothing', 'expression'] } }, { ...directoryChains[0], id: 'unknown', params: LAB_DEFAULT_PARAMS }] as PromptChain[];
+  render(<ContentRollWorkspace active directories={directories} chains={entries} notify={vi.fn()} />);
+  openPurposeGroup('主体与外观');
+  const select = screen.getByRole('combobox', { name: '选择服饰与配件片段' });
+  expect(select.querySelectorAll('option')).toHaveLength(2);
+  expect(select.textContent).toContain('衬衫');
 });
 
 it('旧草稿兼容目录键且保留参与状态，刷新不会自动加入后来新增的目录', () => {

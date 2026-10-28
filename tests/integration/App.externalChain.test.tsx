@@ -1,4 +1,5 @@
-import { PromptLibraryContext, PromptLibraryWorkspace, PromptLibraryRandomButton } from '../../components/PromptLibraryAccess';
+import { openPurposeGroup } from '../support/promptPurposeGroups';
+import { PromptLibraryContext, PromptLibraryWorkspace, PromptLibraryRandomButton, PromptLibraryFieldActions } from '../../components/PromptLibraryAccess';
 import { normalizeAppearancePreferences, saveAppearancePreferences } from '../../services/appearancePreferences';
 // @vitest-environment jsdom
 import React from 'react';
@@ -55,7 +56,7 @@ vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdate
   mocks.editorDraft = chain;
   mocks.updatePlayground = onUpdateChain;
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
-  return <PromptLibraryWorkspace register state={{ params: chain.params, base: chain.basePrompt || '', subject: chain.variableValues?.subject || '', negative: chain.negativePrompt || '', classified: true }} onChange={next => onUpdateChain(chain.id, { params: next.params, basePrompt: next.base, negativePrompt: next.negative, variableValues: { ...chain.variableValues, subject: next.subject } })}><PromptLibraryRandomButton /><div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onContentRollForGlobal}>全局随机搭配</button><button onClick={() => onContentRollForRole(1)}>角色二随机搭配</button><button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div></PromptLibraryWorkspace>;
+  return <PromptLibraryWorkspace register state={{ params: chain.params, base: chain.basePrompt || '', subject: chain.variableValues?.subject || '', negative: chain.negativePrompt || '', classified: true }} onChange={next => onUpdateChain(chain.id, { params: next.params, basePrompt: next.base, negativePrompt: next.negative, variableValues: { ...chain.variableValues, subject: next.subject } })}><PromptLibraryRandomButton /><PromptLibraryFieldActions value={chain.variableValues?.subject || ''} onText={text => onUpdateChain(chain.id, { variableValues: { ...chain.variableValues, subject: text } })} field={{ purposeId: 'place' }} /><div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onContentRollForGlobal}>全局随机搭配</button><button onClick={() => onContentRollForRole(1)}>角色二随机搭配</button><button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div></PromptLibraryWorkspace>;
 } }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
@@ -110,7 +111,7 @@ vi.mock('../../components/ArtistLibrary', () => ({ ArtistLibrary: (props: any) =
 } }));
 vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-has-lab-order={String(Object.hasOwn(props, 'labModuleOrder'))}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 vi.mock('../../components/StyleRollPage', () => ({ StyleRollPage: ({ onSaveChain, onNavigateToPlayground, chains }: any) => <div><span data-testid="roll-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span><button onClick={() => void onSaveChain(source)}>保存 Roll 候选</button><button onClick={onNavigateToPlayground}>Roll 送往实验室</button></div> }));
-vi.mock('../../components/PromptLibrary', () => ({ PromptLibraryHub: ({ chains, onCreate }: any) => <div>
+vi.mock('../../components/PromptLibrary', async importOriginal => ({ ...(await importOriginal<typeof import('../../components/PromptLibrary')>()), PromptLibraryHub: ({ chains, onCreate }: any) => <div>
   <span data-testid="prompt-library-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span>
   <button onClick={() => void onCreate('合成服饰', '', 'wardrobe')}>新建合成服饰</button>
 </div> }));
@@ -144,6 +145,7 @@ beforeEach(() => {
   mocks.save.mockReset(); mocks.save.mockResolvedValue(true);
   consumeEditorSessionDiscarded(saved.id);
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const setup = async (entry = 'aitag') => {
@@ -279,7 +281,7 @@ it.each([false, true])('组合分类编辑只更新组合标签并同步已选�
     { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['来源类', '目标类', '保留'], params: { ...saved.params, seed: 42, _rollContentSnapshot: snapshot } },
     { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['来源类', '另一标签'], params: { _rollContentSnapshot: snapshot } },
     { ...saved, id: 'fragment-same', name: '同名片段标签', type: 'scene', tags: ['来源类'], basePrompt: 'forest' },
-    { ...saved, id: 'raw-same', name: '同名原文标签', type: 'preset', tags: ['来源类'], params: { _collectedPrompt: 1 }, basePrompt: 'raw forest' },
+    { ...saved, id: 'raw-same', name: '同名原文标签', type: 'preset', tags: ['来源类'], params: { _collectedPrompt: 1, _promptLibraryPurposes: [] }, basePrompt: 'raw forest' },
   ] as unknown as PromptChain[];
   const before = structuredClone(records);
   mocks.getAllChains.mockImplementation(async () => records);
@@ -291,8 +293,8 @@ it.each([false, true])('组合分类编辑只更新组合标签并同步已选�
     selectPromptScope('items');
     fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
     const fragmentNavigation = await screen.findByRole('complementary', { name: '提示词目录导航' });
-    fireEvent.click(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与空间' }));
-    expect(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与空间' }).getAttribute('aria-current')).toBe('page');
+    fireEvent.click(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与布景' }));
+    expect(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
 
     selectPromptScope('saved');
     expect(screen.getByRole('button', { name: '展开目录' }).getAttribute('aria-expanded')).toBe('false');
@@ -328,7 +330,7 @@ it.each([false, true])('组合分类编辑只更新组合标签并同步已选�
     selectPromptScope('items');
     expect(screen.getByRole('button', { name: '收起目录' }).getAttribute('aria-expanded')).toBe('true');
     const restoredFragments = screen.getByRole('complementary', { name: '提示词目录导航' });
-    expect(within(restoredFragments).getByRole('button', { name: '场景环境 / 地点与空间' }).getAttribute('aria-current')).toBe('page');
+    expect(within(restoredFragments).getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
     selectPromptScope('saved');
     expect(screen.getByRole('button', { name: '展开目录' }).getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
@@ -375,7 +377,7 @@ it('真实App组合分类可建子类、按父类浏览、移父后删除空父�
   selectPromptScope('items');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const fragmentNav = screen.getByRole('complementary', { name: '提示词目录导航' });
-  fireEvent.click(within(fragmentNav).getByRole('button', { name: '场景环境 / 地点与空间' }));
+  fireEvent.click(within(fragmentNav).getByRole('button', { name: '场景环境 / 地点与布景' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-fragment"]')).toBeTruthy();
 
   selectPromptScope('saved');
@@ -422,7 +424,7 @@ it('真实App组合分类可建子类、按父类浏览、移父后删除空父�
   await waitFor(() => expect((within(categoryNav).getByRole('button', { name: '新建目录' }) as HTMLButtonElement).disabled).toBe(false));
 
   selectPromptScope('items');
-  expect(screen.getByRole('button', { name: '场景环境 / 地点与空间' }).getAttribute('aria-current')).toBe('page');
+  expect(screen.getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
   expect(document.querySelector('[data-prompt-library-entry="nested-category-fragment"]')).toBeTruthy();
   expect(records[1]).toEqual(originalFragment);
   selectPromptScope('saved');
@@ -628,10 +630,10 @@ it('主导航标题编辑可改名和上级，删除取消或保存失败时保�
 it('片段目录独立导航保留搜索标签，其他范围不受目录限制且不残留重复管理入口', async () => {
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night sky', filled: true } } }, '2026-10-21')!;
   mocks.getAllChains.mockResolvedValue([
-    { ...saved, id: 'night-scene', name: '夜景', type: 'scene', basePrompt: 'night street', tags: ['夜间'] },
-    { ...saved, id: 'night-pose', name: '夜间动作', type: 'pose', basePrompt: 'night walk', tags: ['夜间'] },
+    { ...saved, id: 'night-scene', name: '夜景', type: 'scene', basePrompt: 'night street', params: { _promptLibraryPurposes: ['time'] }, tags: ['夜间'] },
+    { ...saved, id: 'night-pose', name: '夜间动作', type: 'pose', basePrompt: 'night walk', params: { _promptLibraryPurposes: ['time'] }, tags: ['夜间'] },
     { ...saved, id: 'night-untagged', name: '未分类动作', type: 'pose', basePrompt: 'night sit', tags: [] },
-    { ...saved, id: 'night-original', name: '夜间原文', type: 'preset', basePrompt: 'night fog', tags: ['夜间'], params: { _collectedPrompt: 1 } },
+    { ...saved, id: 'night-original', name: '夜间原文', type: 'preset', basePrompt: 'night fog', tags: ['夜间'], params: { _collectedPrompt: 1, _promptLibraryPurposes: [] } },
     { ...saved, id: 'night-combination', name: '夜间组合', type: 'preset', tags: ['夜间'], params: { _rollContentSnapshot: snapshot } },
   ]);
   await setup('prompts');
@@ -639,7 +641,7 @@ it('片段目录独立导航保留搜索标签，其他范围不受目录限制�
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } });
   expect(screen.queryByRole('tablist', { name: '提示词分类' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('button', { name: '夜间' }));
+  openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '时间与季节' }));
   expect(screen.queryByRole('button', { name: '管理目录' })).toBeNull();
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
@@ -647,18 +649,18 @@ it('片段目录独立导航保留搜索标签，其他范围不受目录限制�
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
   expect(screen.queryByRole('button', { name: '查看夜间原文' })).toBeNull();
   expect(screen.queryByRole('button', { name: '查看夜间组合' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '场景环境 / 地点与空间' }));
-  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('场景环境 / 地点与空间');
+  fireEvent.click(screen.getByRole('button', { name: '场景环境 / 地点与布景' }));
+  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('场景环境 / 地点与布景');
   expect(screen.getByRole('button', { name: '查看夜景' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看夜间动作' })).toBeNull();
   expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('night');
-  fireEvent.click(screen.getByRole('button', { name: '人物整体 / 动作与姿态' }));
-  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('人物整体 / 动作与姿态');
+  fireEvent.click(screen.getByRole('button', { name: '人物 / 动作与姿态' }));
+  expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('人物 / 动作与姿态');
   expect(screen.getByRole('button', { name: '查看夜间动作' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '查看未分类动作' })).toBeNull();
   expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('night');
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  expect(screen.getByRole('button', { name: '夜间' }).getAttribute('aria-pressed')).toBe('true');
+  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByRole('button', { name: '查看夜间原文' })).toBeNull();
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
@@ -748,12 +750,12 @@ it.each([false, true])('分享包回读使用真实刷新返回约定，刷新�
 
 it('内容库粘贴原文直接保存，查看回执打开原文详情且不修改实验室或拆分提示词', async () => {
   const text = '  {{snow}}, 1.2::hair::\r\n[smile]  ';
-  mocks.createChainWithData.mockImplementation(async (name, description, data, type) => ({ ...saved, ...data, id: type === 'scene' ? 'organized-fragment' : 'captured', name, description, type }));
+  mocks.createChainWithData.mockImplementation(async (name, description, data, type) => ({ ...saved, ...data, id: data.params?._collectedCategory ? 'organized-fragment' : 'captured', name, description, type }));
   await setup('prompts');
   fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
   fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => text } });
   fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
-  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('{{snow}}, 1.2::hair::', '', { type: 'preset', name: '{{snow}}, 1.2::hair::', tags: [], basePrompt: text, params: { _collectedPrompt: 1 } }, 'preset'));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('{{snow}}, 1.2::hair::', '', { type: 'preset', name: '{{snow}}, 1.2::hair::', tags: [], basePrompt: text, params: { _collectedPrompt: 1, _promptLibraryPurposes: [] } }, 'preset'));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: '粘贴收录' })).toBeNull());
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
   fireEvent.click(await screen.findByRole('button', { name: '查看' }));
@@ -761,19 +763,21 @@ it('内容库粘贴原文直接保存，查看回执打开原文详情且不修�
   expect(detail.textContent).toContain(text);
   expect(screen.queryByRole('button', { name: '查看{{snow}}, 1.2::hair::' })).toBeNull();
   fireEvent.click(within(detail).getByRole('button', { name: '编辑' }));
-  const editor = await screen.findByRole('dialog', { name: '粘贴收录' });
+  const editor = await screen.findByRole('dialog', { name: '编辑原文' });
   fireEvent.change(within(editor).getByRole('combobox', { name: '分类' }), { target: { value: 'fragment' } });
-  fireEvent.click(within(editor).getByRole('checkbox', { name: '场景环境 / 地点与空间' }));
+  fireEvent.click(within(editor).getByText('选择目录'));
+  fireEvent.click(within(editor).getByRole('button', { name: '展开目录「场景环境」' }));
+  fireEvent.click(within(editor).getByRole('checkbox', { name: '场景环境 / 地点与布景' }));
   fireEvent.click(within(editor).getByRole('button', { name: '另存片段' }));
   await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledTimes(2));
   expect(mocks.createChainWithData).toHaveBeenNthCalledWith(2, '{{snow}}, 1.2::hair::', '', expect.objectContaining({
-    type: 'scene', basePrompt: text, params: expect.objectContaining({ _collectedPrompt: 1, _collectedCategory: 'scene', _promptLibraryDirectoryIds: [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS.scene] }),
-  }), 'scene');
+    type: 'preset', basePrompt: text, params: expect.objectContaining({ _collectedPrompt: 1, _collectedCategory: 'general', _promptLibraryDirectoryIds: [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS.scene], _promptLibraryPurposes: [] }),
+  }), 'preset');
   expect(detail.textContent).toContain(text);
   expect(mocks.updateChain).not.toHaveBeenCalled();
   expect(mocks.deleteChain).not.toHaveBeenCalled();
   const originalDetail = await screen.findByRole('complementary', { name: '{{snow}}, 1.2::hair::' });
-  fireEvent.click(within(originalDetail).getByRole('button', { name: '使用' }));
+  fireEvent.click(within(originalDetail).getByRole('button', { name: '送到实验室' }));
   const useDialog = await screen.findByRole('dialog', { name: '使用提示词' });
   fireEvent.click(within(useDialog).getByRole('button', { name: '使用' }));
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('playground'));
@@ -848,9 +852,11 @@ it('App读取实际用户目录后，粘贴收录将所选深层目录归属保�
   const dialog = await screen.findByRole('dialog', { name: '粘贴收录' });
   fireEvent.change(within(dialog).getByRole('textbox', { name: '提示词原文' }), { target: { value: '1.2::blue eyes::' } });
   fireEvent.change(within(dialog).getByRole('combobox', { name: '分类' }), { target: { value: 'fragment' } });
+  fireEvent.click(within(dialog).getByText('选择目录'));
+  fireEvent.click(within(dialog).getByRole('button', { name: '展开目录「我的素材」' }));
   fireEvent.click(within(dialog).getByRole('checkbox', { name: '我的素材 / 局部描述' }));
   fireEvent.click(within(dialog).getByRole('button', { name: '保存片段' }));
-  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('1.2::blue eyes::', '', expect.objectContaining({ basePrompt: '1.2::blue eyes::', params: { _collectedPrompt: 1, _collectedCategory: 'general', _promptLibraryDirectoryIds: ['own-leaf'] } }), 'preset'));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('1.2::blue eyes::', '', expect.objectContaining({ basePrompt: '1.2::blue eyes::', params: { _collectedPrompt: 1, _collectedCategory: 'general', _promptLibraryDirectoryIds: ['own-leaf'], _promptLibraryPurposes: [] } }), 'preset'));
   expect(mocks.loadDirectories).toHaveBeenCalled();
   expect(mocks.getAllChains).toHaveBeenCalledTimes(reads);
   expect(screen.getByTestId('view').textContent).toBe('content-library');
@@ -864,14 +870,16 @@ it('粘贴原文可选指定分类，直接创建对应条目库记录', async (
   fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
   fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => text } });
   fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'fragment' } });
-  fireEvent.click(screen.getByRole('checkbox', { name: '人物整体 / 外貌与身体' }));
+  fireEvent.click(screen.getByText('选择目录'));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录「人物」' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与身体' }));
   fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
-  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('snow, night', '', { type: 'appearance', name: 'snow, night', tags: [], basePrompt: text, params: { _collectedPrompt: 1, _collectedCategory: 'appearance', _promptLibraryDirectoryIds: [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS.appearance] } }, 'appearance'));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('snow, night', '', { type: 'preset', name: 'snow, night', tags: [], basePrompt: text, params: { _collectedPrompt: 1, _collectedCategory: 'general', _promptLibraryDirectoryIds: [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS.appearance], _promptLibraryPurposes: [] } }, 'preset'));
 });
 
 it('主库默认只显示片段，真实收录回执可独立打开原文详情', async () => {
   mocks.getAllChains.mockResolvedValue([
-    { ...saved, id: 'raw', name: '旧原文', type: 'preset', basePrompt: 'forest, 1.3::mist::', params: { _collectedPrompt: 1 }, tags: ['自然'] },
+    { ...saved, id: 'raw', name: '旧原文', type: 'preset', basePrompt: 'forest, 1.3::mist::', params: { _collectedPrompt: 1, _promptLibraryPurposes: [] }, tags: ['自然'] },
     { ...saved, id: 'fragment', name: '旧片段', type: 'scene', basePrompt: 'forest_path', tags: ['自然'] },
     { ...saved, id: 'other', name: '另一个片段', type: 'scene', basePrompt: 'beach' },
   ]);
@@ -884,9 +892,9 @@ it('主库默认只显示片段，真实收录回执可独立打开原文详情'
   mocks.createChainWithData.mockImplementationOnce(async (name, description, data, type) => ({ ...saved, ...data, id: 'captured-with-tags', name, description, type }));
   fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
   fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: 'new_sky' } });
-  fireEvent.change(screen.getByRole('textbox', { name: '标签（可选）' }), { target: { value: '天空，常用,天空' } });
+  openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '自然与天气' }));
   fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
-  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('new_sky', '', expect.objectContaining({ tags: ['天空', '常用'], basePrompt: 'new_sky' }), 'preset'));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('new_sky', '', expect.objectContaining({ tags: [], params: expect.objectContaining({ _promptLibraryPurposes: ['nature'] }), basePrompt: 'new_sky' }), 'preset'));
   fireEvent.click(await screen.findByRole('button', { name: '查看' }));
   const detail = await screen.findByRole('complementary', { name: 'new_sky' });
   expect(detail.textContent).toContain('new_sky');
@@ -895,24 +903,27 @@ it('主库默认只显示片段，真实收录回执可独立打开原文详情'
   expect(mocks.updateChain).not.toHaveBeenCalled();
 });
 
-it('冷启动从库使用片段先确认再到实验室，共用撤销且不修改源记录', async () => {
-  const entry = { ...saved, id: 'use-entry', name: '待用资料', type: 'scene', basePrompt: 'silent_night', negativePrompt: '', params: saved.params } as PromptChain;
+it('库页片段只维护资料，从实验室目标取用可撤销且不修改源记录', async () => {
+  const entry = { ...saved, id: 'use-entry', name: '待用资料', type: 'scene', basePrompt: 'silent_night', negativePrompt: '', params: { ...saved.params, _promptLibraryPurposes: ['place'] } } as PromptChain;
   mocks.getAllChains.mockResolvedValue([entry]);
   await setup('prompts');
   expect(screen.queryByTestId('editor')).toBeNull();
   selectPromptScope('items');
   fireEvent.click(screen.getByRole('button', { name: '查看待用资料' }));
-  fireEvent.click(screen.getByRole('button', { name: '使用' }));
-  const dialog = await screen.findByRole('dialog', { name: '使用提示词' });
-  expect(screen.getByTestId('view').textContent).toBe('content-library');
-  expect(within(dialog).queryByRole('searchbox')).toBeNull();
-  expect(screen.getAllByRole('dialog')).toHaveLength(1);
-  expect(within(dialog).getByRole('combobox', { name: '取用目标' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '使用' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '保存并使用' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '送到实验室' })).toBeNull();
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'playground' }));
+  await screen.findByTestId('editor');
   const before = structuredClone(mocks.editorDraft);
+  fireEvent.click(screen.getByRole('button', { name: '使用提示词' }));
+  const dialog = await screen.findByRole('dialog', { name: '使用提示词' });
+  fireEvent.click(within(dialog).getByRole('button', { name: /待用资料/ }));
   fireEvent.click(within(dialog).getByRole('button', { name: '使用' }));
-  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('playground'));
-  expect(screen.queryByRole('dialog', { name: '使用提示词' })).toBeNull();
-  expect(mocks.editorDraft?.variableValues?.subject).toContain('silent_night');
+  await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toContain('silent_night'));
+  expect(screen.getByTestId('view').textContent).toBe('playground');
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
   fireEvent.click(screen.getByRole('button', { name: '撤销上次填入' }));
   await waitFor(() => expect(mocks.editorDraft?.variableValues).toEqual(before?.variableValues));
   expect(mocks.editorDraft?.basePrompt).toBe(before?.basePrompt);
@@ -948,7 +959,7 @@ it('旧多人组合编辑先选择角色，所选角色另存新组合不覆盖�
 });
 
 it.each([[' 夜景，常用,夜景 ', ['夜景', '常用']], ['', []]] as const)('新组合保存标签 %s，创建回执可直接用于库页筛选', async (text, tags) => {
-  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene-fragment', name: '夜景片段', type: 'scene', basePrompt: 'night' }]);
+  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene-fragment', name: '夜景片段', type: 'scene', basePrompt: 'night', params: { ...saved.params, _promptLibraryPurposes: ['place'] } }]);
   mocks.createChainWithData.mockImplementationOnce(async (name, description, data, type) => ({ ...saved, ...data, id: 'tagged-combination', name, description, type }));
   await setup('prompts');
   selectPromptScope('saved');
@@ -1056,13 +1067,13 @@ it('组合详情清空自定义标签仍保留内部状态且不改创作内容'
   expect(mocks.createChainWithData).not.toHaveBeenCalled();
 });
 
-it.each(['global', 'character'] as const)('实验室 %s 按实际自定义目录填入当前目标，保留其它内容并可撤销', async entry => {
+it.each(['global', 'character'] as const)('实验室 %s 按五组用途填入当前目标，保留其它内容并可撤销', async entry => {
   const directoryId = 'custom-clothing';
-  const key: `directory:${string}` = `directory:${directoryId}`;
+  const key = 'purpose:clothing' as const;
   mocks.loadDirectories.mockResolvedValue({ revision: 4, nodes: [{ id: directoryId, parentId: null, name: '本次自选服装', target: entry }, { id: 'custom-scene', parentId: null, name: '当前背景', target: 'global' }] });
   mocks.getAllChains.mockResolvedValue([
-    { ...saved, id: 'wardrobe', type: 'preset', basePrompt: 'new_dress', negativePrompt: 'new_negative', params: { _promptLibraryDirectoryIds: [directoryId] } },
-    { ...saved, id: 'scene', type: 'preset', basePrompt: 'new_scene', params: { _promptLibraryDirectoryIds: ['custom-scene'] } },
+    { ...saved, id: 'wardrobe', type: 'preset', basePrompt: 'new_dress', negativePrompt: 'new_negative', params: { _promptLibraryDirectoryIds: [directoryId], _promptLibraryPurposes: ['clothing'] } },
+    { ...saved, id: 'scene', type: 'preset', basePrompt: 'new_scene', params: { _promptLibraryDirectoryIds: ['custom-scene'], _promptLibraryPurposes: ['place'] } },
   ]);
   await setup();
   fireEvent.click(screen.getByRole('button', { name: 'playground' }));
@@ -1075,9 +1086,10 @@ it.each(['global', 'character'] as const)('实验室 %s 按实际自定义目录
   await act(async () => { await mocks.updatePlayground!('playground', { basePrompt: 'keep_artist', negativePrompt: 'keep_negative', variableValues: { subject: originalSubject }, params }); });
   fireEvent.click(screen.getByRole('button', { name: entry === 'global' ? '全局随机搭配' : '角色二随机搭配' }));
   const roll = await screen.findByRole('dialog', { name: '随机搭配' });
+  for (const label of ['主体与外观', '动作与关系', '场景与环境', '镜头与光影', '画风与表现']) openPurposeGroup(label, roll);
   const participation = within(roll).getAllByRole('checkbox', { name: /^参与「/ });
-  expect(participation.some(check => check.getAttribute('aria-label')?.includes('本次自选服装'))).toBe(true);
-  for (const check of participation) if (!check.getAttribute('aria-label')?.includes('本次自选服装')) fireEvent.click(check);
+  expect(participation.some(check => check.getAttribute('aria-label')?.includes('服饰与配件'))).toBe(true);
+  for (const check of participation) if (!check.getAttribute('aria-label')?.includes('服饰与配件')) fireEvent.click(check);
   fireEvent.click(within(roll).getByRole('button', { name: '抽一次' }));
   fireEvent.click(within(roll).getByRole('button', { name: '使用' }));
   expect(within(roll).getByText((entry === 'global' ? 'old_dress' : 'role_dress') + ' → new_dress')).toBeTruthy();
@@ -1105,7 +1117,7 @@ it.each(['global', 'character'] as const)('实验室 %s 按实际自定义目录
 });
 
 it('内容 Roll 保留旧手写正文与参数，使用统一确认后可完整撤销并返回库页', async () => {
-  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene', type: 'scene', basePrompt: 'night', negativePrompt: 'day' }]);
+  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene', type: 'scene', basePrompt: 'night', params: { ...saved.params, _promptLibraryPurposes: ['place'] }, negativePrompt: 'day' }]);
   await setup();
   fireEvent.click(screen.getByRole('button', { name: 'playground' }));
   await screen.findByTestId('editor');
@@ -1115,17 +1127,17 @@ it('内容 Roll 保留旧手写正文与参数，使用统一确认后可完整�
   expect(screen.getByRole('dialog', { name: '搭配' })).toBeTruthy();
   fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
   fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('button', { name: '使用' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('button', { name: '送到实验室' }));
   const useDialog = await screen.findByRole('dialog', { name: '使用提示词' });
   expect(screen.getByTestId('view').textContent).toBe('content-library');
   expect(within(useDialog).queryByRole('searchbox')).toBeNull();
   fireEvent.click(within(useDialog).getByRole('button', { name: '使用' }));
   await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toBe('legacy_subject, night'));
-  expect(mocks.editorDraft?.params).toMatchObject({ seed: 42, _promptSections: { extra: 'legacy_subject', 'directory:environment-scene': 'night', sectionNegatives: { 'directory:environment-scene': 'day' } } });
+  expect(mocks.editorDraft?.params).toMatchObject({ seed: 42, _promptSections: { extra: 'legacy_subject', 'purpose:place': 'night', sectionNegatives: { 'purpose:place': 'day' } } });
   fireEvent.click(screen.getByRole('button', { name: '撤销上次填入' }));
   await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toBe('legacy_subject'));
   expect(mocks.editorDraft?.params.seed).toBe(42);
-  expect(mocks.editorDraft?.params._promptSections?.['directory:environment-scene']).toBeUndefined();
+  expect(mocks.editorDraft?.params._promptSections?.['purpose:place']).toBeUndefined();
   expect(screen.getByTestId('view').textContent).toBe('playground');
   fireEvent.click(await screen.findByRole('button', { name: '返回资料库' }));
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('content-library'));

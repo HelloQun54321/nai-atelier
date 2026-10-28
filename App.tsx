@@ -1,3 +1,4 @@
+import { getEntryPurposes } from './services/promptPurposes.mjs';
 import { getCustomChainTags, replaceCustomChainTags } from './services/chainTags';
 import { t, useLanguage } from './services/i18n';
 
@@ -1090,15 +1091,17 @@ const App = () => {
           section={contentLibrarySection}
           onSectionChange={setContentLibrarySection}
           active={view === 'content-library'}
-          onCapture={async (text, name, category, tags, directoryIds) => {
+          onCapture={async (text, name, category, tags, directoryIds, purposes) => {
             const data = prepareCollectedPrompt(text, name, category);
-            return createLibraryChain(data.name, '', data.type, { ...data, tags, ...(directoryIds !== undefined ? { params: { ...data.params, _promptLibraryDirectoryIds: directoryIds } as NAIParams } : {}) });
+            return createLibraryChain(data.name, '', data.type, { ...data, tags, params: { ...data.params, _promptLibraryPurposes: purposes || [], ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams });
           }}
           onViewCaptured={setLibraryFocusId}
           browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
             directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
             categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange} onCreateCategory={openLibraryCategories} onRenameCategory={editLibraryCategory} onDeleteCategory={deleteLibraryCategory} onMoveCategory={moveLibraryCategory} categoriesBusy={movingLibraryCategory || libraryCategoriesOpen}
             onDelete={handleDeleteLibraryEntry}
+            renderEntryEditor={(entry, controls) => <Suspense fallback={<div className="p-4 text-sm text-gray-500">{t('加载中…')}</div>}><PromptLibraryEntryEditor entry={entry} chains={chains} panel panelActionsRef={controls.actionsRef}
+              onCreate={createLibraryChain} onUpdateChain={handleUpdateChain} onDelete={handleDelete} notify={notify} onClose={controls.onClose} /></Suspense>}
             onUse={handleUseLibraryEntry} onOpen={editLibraryEntry} onUpdateTags={async (chain, tags) => { await handleUpdateChain(chain.id, { tags: replaceCustomChainTags((chains.find(item => item.id === chain.id) || chain).tags, tags) }); }} onManage={() => setLibraryManageOpen(true)} focusEntryId={libraryFocusId} />}
           notify={notify}
           onExtractSave={async draft => {
@@ -1429,16 +1432,16 @@ const App = () => {
               requestCloseRef={libraryEditorCloseRef} onClose={() => setLibraryEditEntry(null)} />}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'originals' && <ImagePreviewPortal><PromptCaptureDialog key={libraryEditEntry.id} open editing
             directories={libraryDirectories}
-            initialText={libraryEditEntry.basePrompt} initialName={libraryEditEntry.name} initialTags={libraryEditEntry.tags?.join(', ')}
+            initialPurposes={getEntryPurposes(libraryEditEntry)} initialText={libraryEditEntry.basePrompt} initialName={libraryEditEntry.name} initialTags={libraryEditEntry.tags?.join(', ')}
             categoryDisabled={(libraryEditEntry.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative'}
-            onClose={() => setLibraryEditEntry(null)} onSave={async (text, name, category, tags, directoryIds) => {
+            onClose={() => setLibraryEditEntry(null)} onSave={async (text, name, category, tags, directoryIds, purposes) => {
               if (category && (libraryEditEntry.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') throw new Error(t('负面原文请保持原文分类'));
               const data = prepareCollectedPrompt(text, name, category);
               if (category) {
-                const id = await createLibraryChain(data.name, libraryEditEntry.description || '', data.type, { ...data, tags, params: { ...data.params, ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams, negativePrompt: libraryEditEntry.negativePrompt, previewImage: libraryEditEntry.previewImage });
+                const id = await createLibraryChain(data.name, libraryEditEntry.description || '', data.type, { ...data, tags, params: { ...data.params, _promptLibraryPurposes: purposes || [], ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams, negativePrompt: libraryEditEntry.negativePrompt, previewImage: libraryEditEntry.previewImage });
                 notify(t('已保存片段')); return id;
               }
-              await handleUpdateChain(libraryEditEntry.id, { ...data, tags, params: { ...libraryEditEntry.params, ...data.params, ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } });
+              await handleUpdateChain(libraryEditEntry.id, { ...data, tags, params: { ...libraryEditEntry.params, ...data.params, _promptLibraryPurposes: purposes || [], ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } });
               notify(t('已保存')); return libraryEditEntry.id;
             }} /></ImagePreviewPortal>}
           {libraryEditEntry && librarySectionOf(libraryEditEntry) === 'saved' && <LibraryDialog title="选择组合中的角色" onClose={() => setLibraryEditEntry(null)}>

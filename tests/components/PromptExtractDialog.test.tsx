@@ -267,7 +267,7 @@ it('未确认不入库；改名称与分类、取消勾选后只保存勾选项'
   fireEvent.click(screen.getByRole('button', { name: '保存所选片段（1）' }));
 
   await waitFor(() => expect(mocks.save).toHaveBeenCalledTimes(1));
-  expect(mocks.save).toHaveBeenCalledWith({ entryId: expect.any(String), kind: 'scene', name: '银发少女', prompt: 'long_white_hair, red_eyes', original: '' });
+  expect(mocks.save).toHaveBeenCalledWith({ entryId: expect.any(String), purposes: [], kind: 'scene', name: '银发少女', prompt: 'long_white_hair, red_eyes', original: '' });
   // 没勾选的三条留在面板里等用户处理，保存完不会连窗口一起关掉。
   expect(mocks.close).not.toHaveBeenCalled();
   expect(kindNames().length).toBe(3);

@@ -1,3 +1,4 @@
+import { getEntryPurposes, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { t } from './i18n';
 import type { NAIParams, PromptChain } from '../types';
 import { contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
@@ -25,7 +26,7 @@ export function promptLibraryEntryLabel(chain: PromptChain, directories?: Prompt
 export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {
   kind?: PromptFragmentKind;
-  directoryId?: string;
+  directoryId?: string; purposeId?: PromptPurposeId;
   roleId?: string;
   negative?: boolean;
   textOnly?: boolean;
@@ -65,10 +66,11 @@ export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<stri
 }
 
 export function libraryEntryText(chain: PromptChain, field: PromptLibraryField = {}): string {
+  if (field.purposeId && !isContentRecord(chain) && (getEntryPurposes(chain).length !== 1 || !getEntryPurposes(chain).includes(field.purposeId))) return '';
   if ((chain.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') return field.negative ? chain.basePrompt || '' : '';
   if (!isContentRecord(chain)) return field.negative ? chain.negativePrompt || '' : chain.basePrompt || '';
   const picks = combinationPicks(chain);
-  return Object.entries(picks).filter(([kind, row]) => field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
+  return Object.entries(picks).filter(([kind, row]) => field.purposeId ? kind === purposeSectionKey(field.purposeId) : field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
     .map(([, row]) => field.negative ? row.negative : row.text).filter(Boolean).join(', ');
 }
 
@@ -115,10 +117,10 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
     ['global', params._promptSections, params._promptSections?.sectionNegatives],
     ['character', role?.sections, role?.sectionNegatives],
   ] as const) for (const [kind, text] of Object.entries(sections || {})) {
-    if (!kind.startsWith('directory:') || typeof text !== 'string' || !text.trim()) continue;
-    const directoryId = kind.slice('directory:'.length);
+    if (!isCreativeSectionKey(kind) || typeof text !== 'string' || !text.trim()) continue;
+    const directoryId = isPurposeSectionKey(kind) ? '' : kind.slice('directory:'.length);
     if (picks[kind]) throw new Error('同一目录同时包含全局和角色内容，请先调整归属后保存组合');
-    const path = directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
+    const path = isPurposeSectionKey(kind) ? [promptPurposeLabel(kind.slice(8))] : directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
     picks[kind] = { kind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
       scope,
       filled: true, text, negative: String((negatives as Record<string, unknown> | undefined)?.[kind] || '') };

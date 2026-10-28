@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkStaged } from '../../scripts/check-staged.mjs';
 import { installGitHooks } from '../../scripts/install-git-hooks.mjs';
-import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
+import { createWorkspace, removeWorkspace, temporaryRoot } from '../support/workspace.mjs';
 
 for (const [staged, working, failure] of [['lint-error', 'valid', 'ESLint'], ['type-error', 'valid', 'TypeScript'], ['valid', 'lint-error', null]]) {
   test(`门禁只检查暂存快照：暂存 ${staged}、工作区 ${working}`, () => {
@@ -23,11 +23,14 @@ for (const [staged, working, failure] of [['lint-error', 'valid', 'ESLint'], ['t
         writeFileSync(path, `const fs=require('node:fs');if(fs.readFileSync('example.js','utf8').includes('${marker}')||fs.existsSync('untracked.js'))process.exitCode=1;`);
       }
       const index = Buffer.from(git('diff', '--cached'));
+      const snapshots = readdirSync(temporaryRoot).filter(name => name.startsWith('commit-')).sort();
       if (failure) assert.throws(() => checkStaged(root), new RegExp(failure));
       else assert.doesNotThrow(() => checkStaged(root));
       assert.equal(readFileSync(join(root, 'example.js'), 'utf8'), working);
       assert.deepEqual(git('diff', '--cached'), index);
       assert.ok(existsSync(join(root, 'node_modules/eslint/bin/eslint.js')));
+      assert.ok(existsSync(join(root, 'node_modules/typescript/bin/tsc')));
+      assert.deepEqual(readdirSync(temporaryRoot).filter(name => name.startsWith('commit-')).sort(), snapshots);
     } finally { removeWorkspace(root); }
   });
 }

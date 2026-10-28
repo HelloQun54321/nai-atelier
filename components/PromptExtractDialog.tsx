@@ -1,3 +1,5 @@
+import { PromptPurposePicker } from './PromptPurposePicker';
+import { readPromptPurposes } from '../services/promptPurposes.mjs';
 /**
  * 提示词／图片 → AI 按当前目录提取候选 → 用户审阅 → 分别落库。
  *
@@ -105,6 +107,7 @@ const toPersistedCandidate = (draft: ExtractedDraft): ExtractDraftCandidate => (
   id: draft.id,
   entryId: draft.entryId,
   kind: draft.kind as ExtractDraftCandidate['kind'],
+  purposes: draft.purposes,
   ...(draft.directoryIds === undefined ? {} : { directoryIds: draft.directoryIds }),
   needsDirectoryReview: draft.needsDirectoryReview,
   directoryReviewNote: draft.directoryReviewNote,
@@ -122,7 +125,7 @@ const fromPersistedCandidate = (item: ExtractDraftCandidate): ExtractedDraft => 
   entryId: item.entryId,
   picked: item.picked,
   kind: item.kind as ExtractedEntryDraft['kind'],
-  directoryIds: item.directoryIds,
+  directoryIds: item.directoryIds, purposes: readPromptPurposes(item.purposes),
   needsDirectoryReview: item.needsDirectoryReview,
   directoryReviewNote: item.directoryReviewNote,
   name: item.name,
@@ -513,7 +516,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
           picked: !needsTranslation && !needsReview && !needsDirectoryReview,
           kind: item.kind as ExtractedEntryDraft['kind'],
           name: String(item.name || '').trim() || PROMPT_LIBRARY_KIND_LABELS[item.kind as PromptLibraryKind] || t('未归类'),
-          directoryIds: item.directoryIds,
+          directoryIds: item.directoryIds, purposes: readPromptPurposes(item.purposes),
           needsDirectoryReview,
           directoryReviewNote: item.directoryReviewNote,
           prompt,
@@ -609,7 +612,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
       for (const draft of batch) {
         try {
           await onSave({ entryId: draft.entryId, kind: draft.kind, name: draft.name, prompt: draft.prompt, original: draft.original,
-            ...(directories ? { directoryIds: draftDirectoryIds(draft) } : draft.directoryIds === undefined ? {} : { directoryIds: draft.directoryIds }) });
+            purposes: draft.purposes, ...(directories ? { directoryIds: draftDirectoryIds(draft) } : draft.directoryIds === undefined ? {} : { directoryIds: draft.directoryIds }) });
           savedIds.add(draft.id);
         } catch (e) {
           console.warn('Prompt extraction save failed:', e);
@@ -841,7 +844,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
             {canClassify && <p className="text-xs text-gray-500 dark:text-gray-400">{text.trim()
               ? t(directories ? '文字分类发送输入框文字与当前提示词目录' : '文字分类仅发送输入框文字')
               : t(directories ? '文字分类发送图片内嵌提示词与当前提示词目录' : '文字分类仅发送图片内嵌提示词')}</p>}
-            {directories && image && <p className="text-xs text-gray-500 dark:text-gray-400">{t('看图分类同时发送当前提示词目录的名称与路径。')}</p>}
+            {directories && image && <p className="text-xs text-gray-500 dark:text-gray-400">{t('看图按固定用途标记，保存前可调整。')}</p>}
 
             {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -873,6 +876,7 @@ export const PromptExtractDialog: React.FC<PromptExtractDialogProps> = ({ open, 
                               {KIND_ORDER.map(kind => <option key={kind} value={kind}>{t(PROMPT_LIBRARY_KIND_LABELS[kind])}</option>)}
                             </select>}
                           </div>
+                          <PromptPurposePicker value={draft.purposes || []} onChange={purposes => patchDraft(draft.id, { purposes })} disabled={inputLocked} />
                           {directories && <div className="mt-2" aria-label={t('{0}目录', [label])}>
                             <PromptLibraryDirectoryPicker state={directories} selectedIds={draftDirectoryIds(draft)}
                               onChange={directoryIds => patchDraft(draft.id, { directoryIds })} mode="multiple" includeAll={false}

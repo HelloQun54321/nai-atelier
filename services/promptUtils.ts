@@ -1,11 +1,12 @@
+import { isCreativeSectionKey, type PurposeSectionKey } from './promptPurposes.mjs';
 
 import { PromptChain, PromptSections } from '../types';
 
 const GLOBAL_SECTION_KEYS = ['appearance', 'wardrobe', 'pose', 'scene', 'camera', 'extra'] as const;
 /** 旧栏顺序保留，目录片段按保存时的顺序编译；来源等对象不属于正文。 */
-export const getGlobalPromptSectionKeys = (sections?: PromptSections | null): Array<typeof GLOBAL_SECTION_KEYS[number] | `directory:${string}`> => [
+export const getGlobalPromptSectionKeys = (sections?: PromptSections | null): Array<typeof GLOBAL_SECTION_KEYS[number] | `directory:${string}` | PurposeSectionKey> => [
   ...GLOBAL_SECTION_KEYS,
-  ...Object.keys(sections || {}).filter((key): key is `directory:${string}` => key.startsWith('directory:') && key.length > 10),
+  ...Object.keys(sections || {}).filter((key): key is `directory:${string}` | PurposeSectionKey => isCreativeSectionKey(key)),
 ];
 
 /**

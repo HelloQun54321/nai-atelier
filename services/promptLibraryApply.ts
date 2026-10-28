@@ -1,3 +1,4 @@
+import { getEntryPurposes, purposeSectionKey } from './promptPurposes.mjs';
 import type { NAIParams, PromptChain } from '../types';
 import { applyContentRollToParams, planContentRollApply, type ContentRollTarget } from './contentRollApply';
 import { combinationPicks, applyLibraryText, fragmentKindOf, type PromptLibraryField } from './promptLibraryEntries';
@@ -9,7 +10,7 @@ import { META, type RollRow } from './contentRoll';
 import { createUuid } from './id';
 import { getRuntimeNaiModelInfo } from './naiModels';
 import { parsePromptTags } from './tagTranslations';
-import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, type PromptLibraryTreeState } from './promptLibraryTree.mjs';
+import { type PromptLibraryTreeState } from './promptLibraryTree.mjs';
 
 export interface PromptLibraryWorkspaceState {
   params: NAIParams;
@@ -33,7 +34,7 @@ export function removeLibraryCompletion(state: PromptLibraryWorkspaceState, edit
   const next = { ...state, params: { ...state.params } };
   const { field } = edit;
   const role = next.params.characters?.find(item => item.id === field.roleId);
-  const sectionKey = field.directoryId ? 'directory:' + field.directoryId : field.kind === 'general' ? 'extra' : field.kind;
+  const sectionKey = field.purposeId ? purposeSectionKey(field.purposeId) : field.directoryId ? 'directory:' + field.directoryId : field.kind === 'general' ? 'extra' : field.kind;
   const sections = resolvePromptSections(next.params._promptSections, next.subject);
   const current = role ? sectionKey ? role.sections?.[sectionKey as keyof typeof role.sections] || '' : role.prompt || ''
     : sectionKey ? String((sections as Record<string, unknown>)[sectionKey] || '') : getEditableGlobalPrompt(next.base, next.subject);
@@ -52,21 +53,19 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
   mode: PromptApplyMode, field: PromptLibraryField = {}, roleIndex = 0, completion?: LibraryCompletionEdit, directories?: PromptLibraryTreeState) {
   const before = removeLibraryCompletion(state, completion);
   const kind = fragmentKindOf(entry);
-  const destinationKind = field.kind && field.kind !== 'general' ? field.kind : kind;
-  let picks: Record<string, RollRow> = kind && kind !== 'general'
-    ? { [destinationKind!]: { kind: destinationKind!, filled: true, text: entry.basePrompt, negative: entry.negativePrompt || '', id: entry.id, name: entry.name } }
-    : combinationPicks(entry, roleIndex);
-  const directoryId = field.directoryId || (directories && kind ? getPromptLibraryEntryDirectoryIds(entry, directories)[0] : undefined);
-  if (kind && directoryId && (!field.kind || field.directoryId)) {
-    const key = 'directory:' + directoryId;
-    const path = directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
-    picks = { [key]: { kind: key, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
-      scope: directories ? getPromptLibraryDirectoryTarget(directories, directoryId) : field.roleId ? 'character' : 'global',
+  let picks: Record<string, RollRow> = kind ? {} : combinationPicks(entry, roleIndex);
+  const purposes = getEntryPurposes(entry);
+  if (field.purposeId && kind && (purposes.length !== 1 || purposes[0] !== field.purposeId)) throw new Error('此栏位只接受对应的单一用途片段');
+  if (kind && purposes.length === 1) {
+    const key = purposeSectionKey(purposes[0]);
+    picks = { [key]: { kind: key, scope: target.mode === 'global' ? 'global' : 'character',
       filled: !!entry.basePrompt.trim(), text: entry.basePrompt, negative: entry.negativePrompt || '', id: entry.id, name: entry.name } };
-  }
-  if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === 'directory:' + field.directoryId));
+  } else if (kind) picks = {};
+  if (field.purposeId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === purposeSectionKey(field.purposeId!))
+    .map(([key, row]) => [key, { ...row, scope: target.mode === 'global' ? 'global' : 'character' }]));
+  else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === 'directory:' + field.directoryId));
   else if (field.kind) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === field.kind));
-  else if (field.roleId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => (picks[key]?.scope || META[key]?.scope) === 'character'));
+  else if (field.roleId && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[key]?.scope) === 'character'));
   const params = { ...before.params, _promptSections: resolvePromptSections(before.params._promptSections, before.subject) };
   const plan = planContentRollApply(picks, params, target);
   for (const row of plan.rows) {

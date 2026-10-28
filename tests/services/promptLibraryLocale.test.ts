@@ -1,3 +1,4 @@
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES } from '../../services/promptPurposes.mjs';
 import { expect, it } from 'vitest';
 import dictionary from '../../locales/messages.json';
 import { PROMPT_LIBRARY_KINDS } from '../../components/promptLibraryConfig';
@@ -55,4 +56,15 @@ it('动态目录界面文案具有完整的四语译文，模板变量保持一�
         .toEqual([...key.matchAll(/\{\d+\}/g)].map(match => match[0]).sort());
     }
   }
+});
+
+
+it('固定用途的名称与含义均具有四语翻译', () => {
+  for (const item of PROMPT_PURPOSES) for (const key of [item.label, item.description]) {
+    expect((dictionary as Record<string, string[]>)[key], key).toHaveLength(4);
+  }
+});
+
+it('大区与原有分类名称使用四语翻译', () => {
+  for (const key of [...PROMPT_PURPOSE_GROUPS.map(group => group.label), '原有分类']) expect((dictionary as Record<string, string[]>)[key], key).toHaveLength(4);
 });

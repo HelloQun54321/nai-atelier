@@ -22,6 +22,7 @@ export interface PromptModule {
 /** 角色分栏内容：与全局四类内容同名；prompt 保留为手动补充正文。 */
 export interface CharacterSectionContent {
   [key: `directory:${string}`]: string | undefined;
+  [key: `purpose:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;
@@ -165,6 +166,7 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  _promptLibraryPurposes?: import('./services/promptPurposes.mjs').PromptPurposeId[];
   /** 提示词片段的目录归属；只供本地资料整理。 */
   _promptLibraryDirectoryIds?: string[];
   /** 风格串分享来源快照，不进入 NovelAI 生成请求；再次分享时保留。 */
@@ -182,12 +184,14 @@ export interface PromptSectionSource {
   directoryId?: string;
   directoryName?: string;
   directoryPath?: string[];
+  purposes?: string[];
   /** 选入时用的应用模式 */
   mode?: 'replace' | 'append' | 'fill-missing';
 }
 
 export interface PromptSections {
   [key: `directory:${string}`]: string | undefined;
+  [key: `purpose:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;

@@ -741,6 +741,10 @@ test('五轮实际模型工具链输入累计超过 64k 仍完成写入', () => 
     await service.run({ sessionId: session.id, message: '修改提示词', draft: { params: {} } }, e => events.push(e));
     assert.equal(calls, 5); const done = events.find(e => e.type === 'done');
     assert.equal(done.status, 'completed'); assert.equal(done.draft.basePrompt, 'synthetic style'); assert.equal(done.draftChanged, true);
+    assert.equal(done.promptChange.status, 'pending');
+    assert.deepEqual(done.promptChange.changes.map(({ path, before, after }) => ({ path, before, after })), [{ path: ['basePrompt'], before: '', after: 'synthetic style' }]);
+    assert.deepEqual((await service.getSessionHistory(session.id)).at(-1).promptChange, done.promptChange);
+    assert.equal((await service.loadMessages(session.id)).at(-1).promptChange, undefined);
     assert.equal((await service.getTask(session.id)).error, undefined);
   } finally { globalThis.fetch = previous; }
 }));

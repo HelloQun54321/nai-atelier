@@ -237,3 +237,15 @@ it('组合收录分类候选显示完整路径而保存真实标签名', async (
   fireEvent.click(screen.getByRole('button', { name: '#父类 / 子类' })); expect((screen.getByRole('textbox', { name: '自定义标签' }) as HTMLInputElement).value).toBe('子类');
   fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(save).toHaveBeenCalledOnce()); expect(save.mock.calls[0][0].tags).toEqual(['子类']);
 });
+
+
+it('混合片段整段取用保留正负词，不写入任何纯用途栏位', async () => {
+  const entry = { id: 'mixed', type: 'preset', name: '混合片段', basePrompt: '1.3::dress, smiling::', negativePrompt: 'hat', params: { _collectedCategory: 'general', _promptLibraryPurposes: ['clothing', 'expression'] } } as unknown as PromptChain;
+  const changed = vi.fn(), close = vi.fn();
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}>
+    <PromptLibraryUseDialog entry={entry} state={{ params: { ...LAB_DEFAULT_PARAMS }, base: 'artist:test', subject: '', negative: 'lowres', classified: true }} onChange={changed} onApplied={vi.fn()} onClose={close} />
+  </PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  expect(changed.mock.calls[0][0]).toMatchObject({ base: 'artist:test, 1.3::dress, smiling::', negative: 'lowres, hat', params: { _promptSections: {} } });
+});

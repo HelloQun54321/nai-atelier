@@ -1,3 +1,4 @@
+import { openPurposeGroup } from '../support/promptPurposeGroups';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
@@ -37,7 +38,7 @@ it('离开前保存失败保留草稿和窗口，重试成功才关闭一次', a
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   fireEvent.click(await screen.findByRole('button', { name: '保存并离开' }));
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
-  expect(save).toHaveBeenLastCalledWith('新正文', '', '', []);
+  expect(save).toHaveBeenLastCalledWith('新正文', '', '', [], undefined, []);
 });
 const original = '  {{snow}}, 1.2::blue hair::\r\n[smile]  ';
 const paste = () => fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => original } });
@@ -51,7 +52,7 @@ it('主动粘贴后原样保存，空白禁用，保存期间不重复提交或�
   paste(); fireEvent.change(screen.getByRole('textbox', { name: '名称（可选）' }), { target: { value: '雪天' } });
   fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
   fireEvent.click(screen.getAllByRole('button', { name: '保存中…' })[0]); fireEvent.keyDown(window, { key: 'Escape' });
-  expect(onClose).not.toHaveBeenCalled(); expect(onSave).toHaveBeenCalledTimes(1); expect(onSave).toHaveBeenCalledWith(original, '雪天', '', []);
+  expect(onClose).not.toHaveBeenCalled(); expect(onSave).toHaveBeenCalledTimes(1); expect(onSave).toHaveBeenCalledWith(original, '雪天', '', [], undefined, []);
   await act(async () => done()); expect(onClose).toHaveBeenCalledTimes(1); expect(onSaved).toHaveBeenCalledWith('entry-id');
   view.rerender(<PromptCaptureDialog {...p} open={false} />); view.rerender(<PromptCaptureDialog {...p} />);
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('');
@@ -65,7 +66,7 @@ it('保存失败保留原文供重试；Esc 可关闭当前窗口', async () => 
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe(original.replace(/\r\n/g, '\n'));
   fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-  expect(onSave.mock.calls[1]).toEqual([original, '', '', []]);
+  expect(onSave.mock.calls[1]).toEqual([original, '', '', [], undefined, []]);
 });
 
 it('可选择六类分类，保存时传入分类并在成功后恢复不分类', async () => {
@@ -75,7 +76,7 @@ it('可选择六类分类，保存时传入分类并在成功后恢复不分类'
   const button = screen.getByRole('button', { name: '保存片段' }) as HTMLButtonElement;
   expect(button.disabled).toBe(false);
   fireEvent.click(button);
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '', 'appearance', []));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '', 'appearance', [], undefined, []));
   view.rerender(<PromptCaptureDialog open onSave={onSave} onClose={onClose} />);
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('');
 });
@@ -86,20 +87,20 @@ it('保存并继续清空正文和名称，保留分类与标签；失败时保�
   render(<PromptCaptureDialog open onSave={onSave} onSaved={onSaved} onClose={onClose} />);
   paste(); fireEvent.change(screen.getByRole('textbox', { name: '名称（可选）' }), { target: { value: '雪夜' } });
   fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'scene' } });
-  fireEvent.change(screen.getByRole('textbox', { name: '标签（可选）' }), { target: { value: '冬天, 夜景，冬天' } });
+  openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '时间与季节' }));
   fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '雪夜', 'scene', ['冬天', '夜景']));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '雪夜', 'scene', [], undefined, ['time']));
   expect(onSaved).toHaveBeenCalledWith('one'); expect(onClose).not.toHaveBeenCalled();
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('');
   expect((screen.getByRole('textbox', { name: '名称（可选）' }) as HTMLInputElement).value).toBe('');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  expect((screen.getByRole('textbox', { name: '标签（可选）' }) as HTMLInputElement).value).toBe('冬天, 夜景，冬天');
+  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: '新文本' } });
   fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
   await screen.findByRole('alert');
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('新文本');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  expect((screen.getByRole('textbox', { name: '标签（可选）' }) as HTMLInputElement).value).toBe('冬天, 夜景，冬天');
+  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true');
   expect(onSaved).toHaveBeenCalledTimes(1);
 });
 
@@ -126,10 +127,10 @@ it('编辑模式保留初值，隐藏连续收录并使用修改提示', async (
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('原文正文');
   expect((screen.getByRole('textbox', { name: '名称（可选）' }) as HTMLInputElement).value).toBe('原文名称');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  expect((screen.getByRole('textbox', { name: '标签（可选）' }) as HTMLInputElement).value).toBe('冬夜');
+  expect(screen.queryByRole('textbox', { name: '标签（可选）' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '另存片段' }));
   await screen.findByRole('alert');
-  expect(onSave).toHaveBeenCalledWith('原文正文', '原文名称', 'scene', ['冬夜']);
+  expect(onSave).toHaveBeenCalledWith('原文正文', '原文名称', 'scene', ['冬夜'], undefined, []);
   expect(screen.getByRole('alert').textContent).toBe('保存失败：暂时不可用');
 });
 
@@ -140,7 +141,7 @@ it('分类禁用时保持原文分类并隐藏另存片段操作', async () => {
   expect(category.disabled).toBe(true); expect(category.value).toBe('');
   expect(screen.queryByRole('button', { name: '另存片段' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith('negative prompt', '', '', []));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith('negative prompt', '', '', [], undefined, []));
 });
 
 it('真实目录支持片段不归类并通过第五参数保留明确空归属', async () => {
@@ -149,5 +150,19 @@ it('真实目录支持片段不归类并通过第五参数保留明确空归属'
   paste();
   fireEvent.change(screen.getByRole('combobox', { name: '分类' }), { target: { value: 'fragment' } });
   fireEvent.click(screen.getByRole('button', { name: '保存片段' }));
-  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '', 'general', [], []));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(original, '', 'general', [], [], []));
+});
+
+
+it('关闭再打开保留人工用途选择，新的入口初值才替换', () => {
+  const props = { open: true, onSave: vi.fn(), onClose: vi.fn(), initialText: 'dress' };
+  const view = render(<PromptCaptureDialog {...props} />);
+  openPurposeGroup('主体与外观'); fireEvent.click(screen.getByRole('button', { name: '服饰与配件' }));
+  view.rerender(<PromptCaptureDialog {...props} open={false} />);
+  view.rerender(<PromptCaptureDialog {...props} />);
+  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('true');
+  view.rerender(<PromptCaptureDialog {...props} open={false} />);
+  view.rerender(<PromptCaptureDialog {...props} initialPurposes={['pose']} />);
+  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('false');
+  openPurposeGroup('动作与关系'); expect(screen.getByRole('button', { name: '动作与姿态' }).getAttribute('aria-pressed')).toBe('true');
 });

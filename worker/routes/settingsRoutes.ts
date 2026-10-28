@@ -1,3 +1,4 @@
+import { readPromptPurposes } from '../../services/promptPurposes.mjs';
 // LAN access, anlas budget, admin endpoints, NAI proxy (generate/upload),
 // chains and artists CRUD.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
@@ -349,6 +350,7 @@ const promptLibraryReferenceUrls = (params: any): string[] => Array.isArray(para
 
 /** 将历史条目地址转为原件资产引用；删除历史后参考图继续可用，同一原件不重复复制。 */
 const preparePromptLibraryParams = async (params: any, db: D1Database, userId: string) => {
+    if (params?._promptLibraryPurposes !== undefined) params = { ...params, _promptLibraryPurposes: readPromptPurposes(params._promptLibraryPurposes) };
     if (!Array.isArray(params?._promptLibrary?.references)) return params;
     const references = [];
     for (const reference of params._promptLibrary.references) {

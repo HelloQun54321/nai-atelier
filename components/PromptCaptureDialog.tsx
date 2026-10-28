@@ -1,3 +1,5 @@
+import { PromptPurposePicker } from './PromptPurposePicker';
+import type { PromptPurposeId } from '../services/promptPurposes.mjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardPaste, X } from 'lucide-react';
 import { t } from '../services/i18n';
@@ -6,14 +8,14 @@ import { IconButton, ToolbarButton } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
-import { getPromptLibraryDirectoryLegacyKind, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
+import { LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { useConfirmDialog } from './ConfirmDialog';
 
-export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialText = '', initialName = '', initialCategory = '', initialTags = '', editing = false, categoryDisabled = false, directories, initialDirectoryIds, directoriesError, reloadDirectories }: {
-  open: boolean; onClose: () => void; onSave: (text: string, name: string, category: string, tags: string[], directoryIds?: string[]) => Promise<string | void>;
+export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialText = '', initialName = '', initialCategory = '', initialTags = '', initialPurposes = [], editing = false, categoryDisabled = false, directories, initialDirectoryIds, directoriesError, reloadDirectories }: {
+  open: boolean; onClose: () => void; onSave: (text: string, name: string, category: string, tags: string[], directoryIds?: string[], purposes?: PromptPurposeId[]) => Promise<string | void>;
   onSaved?: (id?: string) => void;
-  initialText?: string; initialName?: string; initialCategory?: string; initialTags?: string;
+  initialText?: string; initialName?: string; initialCategory?: string; initialTags?: string; initialPurposes?: PromptPurposeId[];
   editing?: boolean;
   categoryDisabled?: boolean;
   directories?: PromptLibraryTreeState;
@@ -26,19 +28,20 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
   const [category, setCategory] = useState(initialCategory);
   const [directoryIds, setDirectoryIds] = useState<string[]>(initialDirectoryIds || (initialCategory && initialCategory in LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[initialCategory as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS]] : []));
   const [tags, setTags] = useState(initialTags);
+  const [purposes, setPurposes] = useState<PromptPurposeId[]>(initialPurposes);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const confirm = useConfirmDialog();
-  const initialDraft = useRef({ text, name, category, tags, directoryIds });
+  const initialDraft = useRef({ text, name, category, tags, directoryIds, purposes });
   const closing = useRef(false);
-  const saveCategory = categoryDisabled ? '' : directories ? category ? getPromptLibraryDirectoryLegacyKind(directories, directoryIds[0]) || 'general' : '' : category;
+  const saveCategory = categoryDisabled ? '' : directories ? category ? 'general' : '' : category;
   const pending = useRef(false);
   const wasOpen = useRef(open);
-  const lastInitial = useRef({ text: initialText, name: initialName, category: initialCategory, tags: initialTags });
+  const lastInitial = useRef({ text: initialText, name: initialName, category: initialCategory, tags: initialTags, purposes: JSON.stringify(initialPurposes), directories: JSON.stringify(initialDirectoryIds) });
   const dialog = useModalA11y<HTMLDivElement>(open);
   const requestClose = () => {
     if (pending.current || closing.current) return false;
-    const dirty = editing && JSON.stringify({ text, name, category, tags, directoryIds }) !== JSON.stringify(initialDraft.current);
+    const dirty = editing && JSON.stringify({ text, name, category, tags, directoryIds, purposes }) !== JSON.stringify(initialDraft.current);
     if (!dirty) { onClose(); return; }
     closing.current = true;
     void confirm({ title: t('放弃未保存的修改？'), message: t('返回{0}将丢弃本次编辑的改动。', [t('提示词库')]), confirmLabel: t('放弃修改'), tone: 'danger', rememberKey: 'prompt-library-original.leave', onSave: () => save(true) })
@@ -50,8 +53,10 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     if (!open) { wasOpen.current = false; return; }
     if (wasOpen.current) return;
     wasOpen.current = true;
-    const next = { text: initialText, name: initialName, category: initialCategory, tags: initialTags };
+    const next = { text: initialText, name: initialName, category: initialCategory, tags: initialTags, purposes: JSON.stringify(initialPurposes), directories: JSON.stringify(initialDirectoryIds) };
     if (Object.keys(next).some(key => next[key as keyof typeof next] !== lastInitial.current[key as keyof typeof next])) {
+      setPurposes(initialPurposes); setDirectoryIds(initialDirectoryIds || []);
+      initialDraft.current = { text: next.text, name: next.name, category: next.category, tags: next.tags, purposes: initialPurposes, directoryIds: initialDirectoryIds || [] };
       setText(next.text); setName(next.name); setCategory(next.category); setTags(next.tags); setError('');
     }
     lastInitial.current = next;
@@ -67,7 +72,7 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     };
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
-  }, [open, text, name, category, tags, directoryIds, onClose, dialog]);
+  }, [open, text, name, category, tags, directoryIds, purposes, onClose, dialog]);
   const save = async (keepOpen = false) => {
     if (pending.current || directoriesError) return false;
     try { prepareCollectedPrompt(text, name, saveCategory); } catch (e) { setError(t((e as Error).message)); return false; }
@@ -75,14 +80,14 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
     let id: string | void;
     try {
       const parsedTags = [...new Set(tags.split(/[,，]/).map(value => value.trim()).filter(Boolean))];
-      id = directories && saveCategory ? await onSave(text, name, saveCategory, parsedTags, directoryIds) : await onSave(text, name, saveCategory, parsedTags);
+      id = await onSave(text, name, saveCategory, parsedTags, directories && saveCategory ? directoryIds : undefined, purposes);
     }
     catch (e) { setError(t(editing ? '保存失败：{0}' : '收录失败：{0}', [(e as Error).message])); return false; }
     finally { pending.current = false; setBusy(false); }
     onSaved?.(typeof id === 'string' ? id : undefined);
     setText(''); setName('');
     if (keepOpen) return true;
-    setCategory(''); setTags(''); onClose();
+    setCategory(''); setTags(''); setPurposes([]); onClose();
     return true;
   };
   if (!open) return null;
@@ -109,7 +114,7 @@ export function PromptCaptureDialog({ open, onClose, onSave, onSaved, initialTex
       </div>
       {directories && !!category && !categoryDisabled && <PromptLibraryDirectoryPicker state={directories} selectedIds={directoryIds} onChange={setDirectoryIds} disabled={busy} />}
       {directoriesError && <p role="alert" className="text-sm text-red-600">{directoriesError}{reloadDirectories && <ToolbarButton onClick={() => void reloadDirectories().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>}
-      <label className="block text-sm">{t('标签（可选）')}<input aria-label={t('标签（可选）')} className={TOOLBAR_FIELD_CLASS} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('用逗号分隔')} /></label>
+<PromptPurposePicker value={purposes} onChange={setPurposes} disabled={busy} />
       {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       </div>
       <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 p-4 dark:border-gray-700"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton>{!editing && <ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save(true)}>{t(busy ? '保存中…' : '保存并继续')}</ToolbarButton>}<ToolbarButton tone="save" disabled={busy || !!directoriesError || !text.trim()} onClick={() => void save()}>{t(busy ? '保存中…' : editing ? (saveCategory ? '另存片段' : '保存修改') : (saveCategory ? '保存片段' : '保存原文'))}</ToolbarButton></footer>

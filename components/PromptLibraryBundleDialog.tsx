@@ -1,6 +1,9 @@
+import { PromptPurposePicker } from './PromptPurposePicker';
+import { readPromptPurposes, purposeSectionKey, promptPurposeLabel, type PromptPurposeId } from '../services/promptPurposes.mjs';
+import { META } from '../services/contentRoll';
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
 /**
- * AI 生成搭配：用一段话一次生成外貌 / 服饰 / 动作 / 表情 / 场景 / 镜头六类提示词，
+ * AI 生成搭配：按当前目录与本次选择生成提示词，无目录上下文时兼容旧六类入口，
  * 逐条勾选、改名、改提示词后一次性保存到对应提示词库。
  *
  * 费用与授权：由用户主动点击生成，使用当前创作助手模型做文本补全，不消耗 NovelAI 生图额度；
@@ -14,7 +17,6 @@ import { planRollToChain } from '../services/contentRollToChain';
 import { createCombinationData, parsePromptLibraryTags } from '../services/promptLibraryEntries';
 import { usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
-import { getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryRollKey } from '../services/promptLibraryDirectories';
 import { CollectionTagInput } from './inspiration/CollectionControls';
 import {
   PROMPT_LIBRARY_KIND_LABELS,
@@ -59,7 +61,7 @@ export interface PromptLibraryBundleDialogProps {
 }
 
 /** NAIParams 上的提示词库扩展键（与 PromptLibrary 的存储约定一致）。 */
-type BundleParams = NAIParams & { _promptLibrary?: { bilingual?: string; references?: Array<{ id: string; url: string; prompt: string }> } };
+type BundleParams = NAIParams & { _collectedCategory?: 'general'; _promptLibrary?: { bilingual?: string; references?: Array<{ id: string; url: string; prompt: string }> } };
 
 /** 生成结果的本地草稿：多了勾选态与稳定 id，便于保存后只移除成功项。 */
 interface BundleDraft extends PromptLibraryBundleItem {
@@ -69,6 +71,7 @@ interface BundleDraft extends PromptLibraryBundleItem {
 
 const draftFromItem = (item: PromptLibraryBundleItem, id: number): BundleDraft => ({
   id,
+  purposes: readPromptPurposes(item.purposes),
   picked: true,
   kind: item.kind,
   directoryId: item.directoryId, directoryName: item.directoryName, directoryPath: item.directoryPath,
@@ -87,11 +90,12 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [brief, setBrief] = useState('');
   const [directoryIds, setDirectoryIds] = useState<string[]>([]);
-  const [allDirectories, setAllDirectories] = useState(true);
+  const [purposes, setPurposes] = useState<PromptPurposeId[]>(['appearance', 'clothing', 'pose', 'expression', 'place', 'camera']);
   const draftRow = (draft: BundleDraft) => {
-    const kind = draft.directoryId ? getPromptLibraryDirectoryRollKey(draft.directoryId) : draft.kind || '';
+    if (draft.purposes?.length !== 1) throw new Error('组合分栏只接受单一用途片段；混合片段可先保存到提示词库');
+    const kind = purposeSectionKey(draft.purposes[0]);
     return { kind, directoryId: draft.directoryId, directoryName: draft.directoryName, directoryPath: draft.directoryPath,
-      scope: draft.directoryId && library?.directories ? getPromptLibraryDirectoryTarget(library.directories, draft.directoryId) : undefined,
+      scope: META[kind].scope,
       name: draft.name, text: draft.prompt, negative: draft.negativePrompt, filled: true };
   };
   const [saveTags, setSaveTags] = useState('');
@@ -149,7 +153,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
     if (!text || generating || saving) return;
     setGenerating(true);
     try {
-      const result = await promptAgentService.generateLibraryBundle({ brief: text, ...(library?.directories ? { directories: library.directories, directoryIds: allDirectories ? null : directoryIds } : {}) });
+      const result = await promptAgentService.generateLibraryBundle({ brief: text, purposes });
       if (!aliveRef.current) return;
       const list = (Array.isArray(result?.items) ? result.items : []).filter(item => item && String(item.prompt || '').trim());
       if (!list.length) throw new Error(t('没有生成可用的方案，请换个描述再试'));
@@ -187,14 +191,16 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           const params: BundleParams = {
             ...LAB_DEFAULT_PARAMS,
             _promptLibrary: { bilingual: String(draft.bilingual || ''), references: [] },
-            ...(library?.directories ? { _promptLibraryDirectoryIds: draft.directoryId ? [draft.directoryId] : [], _collectedCategory: 'general' } : {}),
+            _promptLibraryPurposes: readPromptPurposes(draft.purposes),
+            _collectedCategory: 'general',
+            ...(library?.directories ? { _promptLibraryDirectoryIds: directoryIds, _collectedCategory: 'general' } : {}),
           };
           const newId = await onCreate(
             String(draft.name || '').trim() || t('未命名'),
             String(draft.note || ''),
             (draft.kind || 'preset') as ChainType,
             {
-              tags: draft.tags,
+              tags: [],
               basePrompt: String(draft.prompt || ''),
               negativePrompt: String(draft.negativePrompt || ''),
               params,
@@ -225,6 +231,11 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
   };
 
   const pickedDrafts = drafts.filter(draft => draft.picked && String(draft.prompt || '').trim());
+  const pickedRows = () => {
+    const rows = pickedDrafts.map(draftRow);
+    if (new Set(rows.map(row => row.kind)).size !== rows.length) throw new Error('同一用途有多个候选，请只勾选一个后保存组合');
+    return rows;
+  };
   const tagSuggestions = promptLibraryCategoryNames(library?.chains || [], library?.categoryNames);
   const selectedChain = styleChains.find(item => item.id === chainTarget) || null;
 
@@ -239,7 +250,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
     try {
       const plan = planRollToChain(
         selectedChain,
-        pickedDrafts.map(draftRow),
+        pickedRows(),
         { scope: 'split', targetRoleId: selectedChain?.params.characters?.some(role => role.id === chainRoleId) ? chainRoleId : 'new' },
       );
       await onWriteToChain({
@@ -292,7 +303,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
             <div>
-              <p className="text-xs text-gray-600 dark:text-gray-300">{t(library?.directories ? '按所选目录生成提示词' : '用一段话一次生成六类提示词')}</p>
+              <p className="text-xs text-gray-600 dark:text-gray-300">{t('按所选用途生成提示词搭配')}</p>
               <label className="mt-2 block">
                 <span className={DETAIL_LABEL_CLASS}>{t('描述你想要的画面')}</span>
                 <textarea
@@ -307,7 +318,8 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
               <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('使用当前创作助手模型生成提示词，模型服务可能收费；不消耗生图额度。')}</p>
             </div>
 
-            {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={setDirectoryIds} includeAll allSelected={allDirectories} onAllChange={setAllDirectories} disabled={generating || saving} />}
+            <PromptPurposePicker label="生成用途" value={purposes} onChange={setPurposes} disabled={generating || saving} />
+            {library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={setDirectoryIds} disabled={generating || saving} />}
             {drafts.length > 0 && (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -321,7 +333,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                 )}
                 <p className="text-micro text-gray-400 dark:text-gray-500">{t('勾选后一起保存')}</p>
                 {drafts.map(draft => {
-                  const label = draft.directoryPath?.join(' / ') || draft.directoryName || t(draft.kind ? PROMPT_LIBRARY_KIND_LABELS[draft.kind] : '提示词');
+                  const label = draft.purposes?.map(id => t(promptPurposeLabel(id))).join('、') || t('未标记用途');
                   return (
                     <div
                       key={draft.id}
@@ -354,13 +366,7 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
                           className={`${DETAIL_FIELD_CLASS} h-20 resize-y font-mono`}
                         />
                       </label>
-                      {draft.tags.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {draft.tags.map(value => (
-                            <span key={value} className="rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400">{value}</span>
-                          ))}
-                        </div>
-                      )}
+                      <PromptPurposePicker value={draft.purposes || []} onChange={purposes => patchDraft(draft.id, { purposes })} disabled={saving} />
                       {draft.note && <p className="mt-1 break-words text-micro text-gray-400">{draft.note}</p>}
                     </div>
                   );
@@ -430,13 +436,13 @@ export const PromptLibraryBundleDialog: React.FC<PromptLibraryBundleDialogProps>
           <footer className="flex flex-none flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
             {library && <ToolbarButton tone="save" disabled={generating || saving || !pickedDrafts.length} onClick={async () => {
               setSaving(true);
-              try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedDrafts.map(draft => { const row = draftRow(draft); return [row.kind, row]; })), parsePromptLibraryTags(saveTags))); notify(t('已保存组合')); }
+              try { await library.save(createCombinationData(brief.slice(0, 80), Object.fromEntries(pickedRows().map(row => [row.kind, row])), parsePromptLibraryTags(saveTags))); notify(t('已保存组合')); }
               catch (error) { notify((error as Error).message, 'error'); }
               finally { setSaving(false); }
             }}>{t('保存为组合')}</ToolbarButton>}
-            <ToolbarButton onClick={() => void generate()} disabled={generating || saving || !brief.trim() || !!library?.directoriesError || !!library?.directories && !allDirectories && !directoryIds.length} tone={drafts.length ? "neutral" : "primary"} className="mobile-touch">
+            <ToolbarButton onClick={() => void generate()} disabled={generating || saving || !brief.trim() || !!library?.directoriesError || !purposes.length} tone={drafts.length ? "neutral" : "primary"} className="mobile-touch">
               {generating ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
-              <span>{generating ? t('正在生成…') : drafts.length ? t('重新生成') : t(library?.directories ? '生成' : '生成六条')}</span>
+              <span>{generating ? t('正在生成…') : drafts.length ? t('重新生成') : t('生成搭配')}</span>
             </ToolbarButton>
             <ToolbarButton tone="save" onClick={() => void saveAll()} disabled={generating || saving || pickedCount === 0} className="mobile-touch">
               {saving ? <LoaderCircle className="animate-spin" /> : null}

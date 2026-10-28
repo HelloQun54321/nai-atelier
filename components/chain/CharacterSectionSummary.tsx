@@ -1,3 +1,4 @@
+import { isPurposeSectionKey, promptPurposeLabel } from '../../services/promptPurposes.mjs';
 ﻿import React, { useState } from 'react';
 import { t } from '../../services/i18n';
 import type { CharacterParams, CharacterSectionContent } from '../../types';
@@ -11,6 +12,7 @@ const SECTION_LABELS: Record<keyof CharacterSectionContent, string> = {
 };
 
 export const getCharacterSectionLabel = (character: CharacterParams, key: keyof CharacterSectionContent): string => {
+  if (isPurposeSectionKey(key)) return promptPurposeLabel(key.slice(8));
   const meta = character.sectionMeta?.[key];
   return meta?.directoryPath?.length ? meta.directoryPath.join(' / ') : meta?.directoryName || SECTION_LABELS[key] || key.slice(10);
 };

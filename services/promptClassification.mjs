@@ -1,5 +1,6 @@
+import { PROMPT_PURPOSES, purposeSectionKey } from './promptPurposes.mjs';
 import { splitPromptSegments } from './promptSegments.mjs';
-import { flattenPromptLibraryDirectories, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryRollKey, getPromptLibraryDirectoryTarget, readPromptLibraryTree } from './promptLibraryTree.mjs';
+import { readPromptLibraryTree } from './promptLibraryTree.mjs';
 
 const GLOBAL_KEYS = ['style', 'appearance', 'wardrobe', 'pose', 'scene', 'camera', 'extra'];
 const CHARACTER_KEYS = ['appearance', 'wardrobe', 'pose', 'expression', 'extra'];
@@ -11,10 +12,8 @@ export function preparePromptClassification(input) {
   let directories;
   try { directories = input.directories === undefined ? undefined : readPromptLibraryTree(input.directories); }
   catch (cause) { fail(cause.message); }
-  const directoryCategories = directories && flattenPromptLibraryDirectories(directories).map(node => ({
-    key: getPromptLibraryDirectoryRollKey(node.id), directoryId: node.id, directoryName: node.name,
-    directoryPath: getPromptLibraryDirectoryPath(directories, node.id).map(parent => parent.name),
-    scope: getPromptLibraryDirectoryTarget(directories, node.id),
+  const directoryCategories = directories && PROMPT_PURPOSES.map(purpose => ({
+    key: purposeSectionKey(purpose.id), directoryName: purpose.label, description: purpose.description,
   }));
   const ids = new Set();
   let length = 0;
@@ -22,9 +21,9 @@ export function preparePromptClassification(input) {
     if (!item || typeof item.id !== 'string' || ids.has(item.id) || !['global', 'character'].includes(item.kind) || typeof item.prompt !== 'string') fail('分类文本无效');
     ids.add(item.id); length += item.prompt.length;
     if (length > 100_000) fail('待分类的提示词过长');
-    const available = directoryCategories?.filter(category => item.kind === 'global' || category.scope === 'character');
+    const available = directoryCategories;
     return { id: item.id, kind: item.kind, chunks: splitPromptSegments(item.prompt),
-      categories: available ? [...(item.kind === 'global' ? ['style'] : []), ...available.map(category => category.key), 'extra']
+      categories: available ? [...available.map(category => category.key), 'extra']
         : item.kind === 'global' ? GLOBAL_KEYS : CHARACTER_KEYS,
       ...(available ? { directoryCategories: available } : {}),
     };
@@ -47,7 +46,7 @@ export function parsePromptClassification(raw, documents) {
     for (const key of document.categories) sections[key] = document.chunks.filter((_, index) => categories[index] === key).join(', ');
     const sectionMeta = document.directoryCategories && Object.fromEntries(document.directoryCategories
       .filter(category => sections[category.key])
-      .map(({ key, directoryId, directoryName, directoryPath }) => [key, { source: 'ai', directoryId, directoryName, directoryPath }]));
+      .map(({ key, directoryName }) => [key, { source: 'ai', directoryName }]));
     return { id: document.id, kind: document.kind, sections, ...(sectionMeta ? { sectionMeta } : {}) };
   });
 }
