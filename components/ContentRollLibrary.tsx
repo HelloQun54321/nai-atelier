@@ -148,7 +148,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
         hint={records.length ? undefined : t(section === 'originals' ? '收录提示词，保留原文。' : '新建组合，或随机搭配。')}
         action={records.length ? <ToolbarButton onClick={() => { setQuery(''); resetScroll(); }}>{t('清除筛选')}</ToolbarButton> : undefined} />}
     </div>
-    <HistoryImagePicker zIndex={embedded ? 1950 : undefined} open={active && !!coverFor} onClose={() => setCoverFor(null)} onSelect={async (item: LocalGenItem) => {
+    <HistoryImagePicker zIndex={embedded ? 1950 : undefined} allowImportParams={false} open={active && !!coverFor} onClose={() => setCoverFor(null)} onSelect={async (item: LocalGenItem) => {
       const target = coverFor;
       setCoverFor(null);
       if (!target || !item?.id) return;

@@ -1,5 +1,5 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { collectionSnapshot, collectionTargetActive, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
+import { collectionSnapshot, collectionTargetActive, ensureCollection, readLegacyFavoriteIds, subscribeCollection, toggleCollectionTarget } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ImageLightbox, ViewableImage } from './ImageLightbox';
@@ -13,6 +13,7 @@ import { drawLibraryIndices } from '../services/libraryRandom';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import {
   CharacterDictionaryEntry,
+  normalizeTagQuery,
   CharacterDictionarySort,
   getCharacterDictionaryEntriesAt,
   getCharacterDictionaryEntries,
@@ -41,8 +42,11 @@ import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 import { useCatalogGroupBrowser } from './CatalogGroups';
-import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
+import { buildCharacterVariantIndex, groupCharacterVariantKeys, resolveCharacterVariantMembershipKeys, characterVariantFavoriteTarget, type CharacterVariantFavorite } from '../services/characterVariants';
+import { createUuid } from '../services/id';
+import { ChainInfoModal, type ChainInfoUpdate, UpdateChainInfo } from './chain/ChainInfoModal';
 
 const CATALOG_MARKER = '__character_catalog__';
 const getDanbooruPostsUrl = (tagName: string) =>
@@ -74,12 +78,17 @@ interface CharacterCard {
   chain?: PromptChain;
 }
 
+interface CharacterCardGroup { id: string; representative: CharacterCard; members: CharacterCard[] }
+
 interface CharacterLibraryProps {
   selectionFocusEnabled?: boolean;
+  tagAssistEnabled?: boolean;
+  onTagAssistEnabledChange?: (enabled: boolean) => void;
   chains: PromptChain[];
   onCreate: (name: string, description: string, type: 'character') => void;
   onSelect: (id: string) => void;
   onUpdateChain: UpdateChainInfo;
+  onCreateCatalogOverride?: (data: Partial<PromptChain>, creationId: string) => Promise<string>;
   onDelete: (id: string) => Promise<void> | void;
   onNavigateToPlayground: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -91,15 +100,18 @@ const LazyImage = SmartImage;
 export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   chains,
   onCreate,
-  onSelect,
   onUpdateChain,
+  onCreateCatalogOverride,
   onDelete,
   onNavigateToPlayground,
   notify,
   returnTargetId,
   selectionFocusEnabled = true,
+  tagAssistEnabled = true,
+  onTagAssistEnabledChange,
 }) => {
-  useLanguage();
+  const language = useLanguage();
+  const active = React.useContext(ImageActivityContext);
   const imageDisplay = useMobileImageDisplayPreferences('characters');
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [cardRatios, updateImageRatio] = useImageRatios();
@@ -118,15 +130,15 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
       return imageHeight + (frostedCaption ? 2 : 82);
     }, [cardRatios, frostedCaption]);
-    const renderCharacterCard = (card: CharacterCard) => {
+    const renderCharacterCard = (card: CharacterCard, family?: CharacterCardGroup) => {
             const selected = selectedKeys.has(card.key);
             return (
-              <PressRevealSurface as="article" key={card.key} {...groups.cardDragProps(card.key)} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
+              <PressRevealSurface as="article" key={card.key} {...groups.cardDragProps(card.key)} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action={family ? "expand" : "select"} aria-label={family ? t(expandedFamilies.has(family.id) ? "收起角色变体：{0}" : "展开角色变体：{0}", [card.name]) : t("选择角色：{0}", [card.name])} aria-expanded={family ? expandedFamilies.has(family.id) : undefined} tabIndex={0} onClick={() => family ? toggleFamily(family.id) : toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
-                event.preventDefault(); toggleSelect(card);
+                event.preventDefault(); if (family) toggleFamily(family.id); else toggleSelect(card);
               }} aria-pressed={selected} className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectionFocusEnabled && selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="appearance-media mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} imageClassName={imageDisplay.layout === 'masonry' && !cardRatios[card.key] ? 'h-full w-full object-contain' : undefined} notify={notify} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} onCandidateChange={candidate => updateCandidateRatio(card.key, candidate)} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} showSourceBadge={false} imageClassName={imageDisplay.layout === 'masonry' && !cardRatios[card.key] ? 'h-full w-full object-contain' : undefined} notify={notify} favoritePending={linkVariantFavorites && !groupCatalogReady} favoriteVariants={favoriteVariants(card)} favoriteRecipe={{ prompt: cardPromptText(card), negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} onEdit={() => editCatalog(card)} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.tagName || card.chain?.id || card.key) && !item.archived))} onCandidateChange={candidate => updateCandidateRatio(card.key, candidate)} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
                     <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} className={imageDisplay.layout === 'masonry' && !cardRatios[card.key] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
@@ -140,7 +152,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     </div>
                     <ImageCardActions>
                       {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} />}
-                      <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
+                      <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoCatalog(undefined); setInfoChain(card.chain!); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
                     </ImageCardActions>
                   </>}
                   {selected && (
@@ -149,13 +161,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                 </div>
                 <div className="gallery-card-caption p-3">
                   <div className="flex items-center justify-between gap-1.5">
-                    <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-600 dark:text-indigo-400" strokeWidth={4} />}{card.name}</h2>
+                    <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-600 dark:text-indigo-400" strokeWidth={4} />}{family ? <button type="button" aria-label={t("选择角色：{0}", [card.name])} aria-pressed={selected} onClick={event => { event.stopPropagation(); toggleSelect(card); }} className="max-w-full truncate text-left">{card.name}</button> : card.name}</h2>
                     {card.kind === 'custom' ? (
                       <span className="gallery-card-badge flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("自定义")}</span>
                     ) : (
-                      <span className="gallery-card-badge flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
+                      <span className="gallery-card-badge flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">Danbooru</span>
                     )}
                   </div>
+                  {family && <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('{0} 种形态', [family.members.length])}<ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 ${expandedFamilies.has(family.id) ? 'rotate-180' : ''}`} /></div>}
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
                     <div className="gallery-card-meta mt-1 flex items-center justify-between gap-1 text-micro">
@@ -167,15 +180,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <div className="truncate font-mono text-gray-400 dark:text-gray-500" title={card.chain?.basePrompt || card.chain?.description || ''}>
                         {card.chain?.basePrompt || card.chain?.description || t("手工组合外貌与服装提示词")}
                       </div>
-                      <button
-                        type="button"
-                        onClick={event => {
-                          event.stopPropagation();
-                          if (card.chain) onSelect(card.chain.id);
-                        }}
-                        className="flex-none font-bold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-                      >
-                        {t("编辑")}</button>
                     </div>
                   )}
                 </div>
@@ -185,8 +189,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const confirmAction = useConfirmDialog();
   const [infoChain, setInfoChain] = useState<PromptChain | null>(null);
-  const [tab, setTab] = useState<CharacterTab>('all');
-  const [showFavOnly, setShowFavOnly] = useState(false);
+  const [infoCatalog, setInfoCatalog] = useState<{ tag: string; name: string } | undefined>();
+  const catalogCreates = useRef(new Map<string, { creationId: string; data: Partial<PromptChain>; id?: string }>());
   const [searchTerm, setSearchTerm] = useState('');
   const [sort, setSort] = useState<CharacterDictionarySort>(() => {
     const saved = localStorage.getItem('nai_character_sort');
@@ -224,26 +228,58 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [groupRetry, setGroupRetry] = useState(0);
   const [groupLimit, setGroupLimit] = useState(60);
   const [groupCatalogReady, setGroupCatalogReady] = useState(false);
+  const [expandedFamilies, setExpandedFamilies] = useState(() => new Set<string>());
+  const toggleFamily = (id: string) => setExpandedFamilies(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const [linkVariantFavorites, setLinkVariantFavorites] = useState(() => localStorage.getItem('nai_character_link_variant_favorites') !== 'false');
+  const [collectionReady, setCollectionReady] = useState(false);
+  const [variantBackfillBusy, setVariantBackfillBusy] = useState(false);
+  const [variantBackfillError, setVariantBackfillError] = useState('');
+  const [variantBackfillRetry, setVariantBackfillRetry] = useState(0);
+  const backfillRunning = useRef(false), backfillAttempted = useRef(new Set<string>()), backfillFailed = useRef(new Set<string>());
+  const backfillMounted = useRef(true);
+  useEffect(() => { backfillMounted.current = true; return () => { backfillMounted.current = false; }; }, []);
+  const variantIndex = useMemo(() => groupCatalogReady ? buildCharacterVariantIndex(groupCatalog) : new Map<string, readonly CharacterDictionaryEntry[]>(), [groupCatalogReady, groupCatalog]);
   const characterChains = useMemo(() => chains.filter(chain => chain.type === 'character'), [chains]);
   const catalogChains = useMemo(() => characterChains.filter(chain => chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
   const customChains = useMemo(() => characterChains.filter(chain => !chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
   const catalogKeys = useMemo(() => groupCatalogReady && !groupLoading && !groupError
     ? [...groupCatalog.map(entry => `catalog:${entry.name}`), ...customChains.map(chain => `custom:${chain.id}`)] : undefined,
   [groupCatalogReady, groupLoading, groupError, groupCatalog, customChains]);
-  const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys);
+  const catalogSourceCount = useMemo(() => catalogKeys ? new Set(catalogKeys.filter(key => key.length <= 512 && /^catalog:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(8).trim())).size : undefined, [catalogKeys]);
+  const customSourceCount = useMemo(() => new Set(customChains.map(chain => `custom:${chain.id}`).filter(key => key.length <= 512 && /^custom:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(7).trim())).size, [customChains]);
+  const sourceGroups = useMemo(() => [
+    { id: '#source:catalog', name: 'danbooru', matches: (key: string) => key.startsWith('catalog:'), count: catalogSourceCount },
+    { id: '#source:custom', name: t('自定义'), matches: (key: string) => key.startsWith('custom:'), count: customSourceCount },
+  ], [catalogSourceCount, customSourceCount, language]);
+  const matchesFavorite = useCallback((key: string) => favorites.has(key), [favorites]);
+  const favoriteCount = useMemo(() => collectionReady && catalogKeys ? new Set(catalogKeys.filter(key => key.length <= 512 && /^(catalog|custom):[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(key.indexOf(':') + 1).trim() && matchesFavorite(key))).size : undefined, [collectionReady, catalogKeys, matchesFavorite]);
+  const resolveMembershipKeys = useCallback((keys: readonly string[]) => {
+    if (keys.some(key => key.startsWith('catalog:')) && (!groupCatalogReady || groupLoading || groupError)) {
+      throw new Error(t(groupError ? '角色 Tag 目录加载失败，请重试' : '角色目录加载中，请稍后重试'));
+    }
+    return resolveCharacterVariantMembershipKeys(keys, variantIndex);
+  }, [groupCatalogReady, groupLoading, groupError, variantIndex, language]);
+  const groups = useCatalogGroupBrowser('character', groupKeys, notify, 'character', catalogKeys, { virtualGroups: sourceGroups, favorites: { matches: matchesFavorite, count: favoriteCount }, resolveMembershipKeys });
+  const showFavOnly = groups.activeGroup === DIRECTORY_FAVORITES_ID;
+  const tab: CharacterTab = groups.activeGroup === '#source:catalog' ? 'catalog' : groups.activeGroup === '#source:custom' ? 'custom' : 'all';
+  const customSource = tab === 'custom';
   const grouped = groups.activeGroup !== '*';
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
     return saved === 'catalog' || saved === 'custom' ? saved : 'mixed';
   });
+  const drawMode: GachaMode = tab === 'all' ? gachaMode : tab;
   const [gachaCount, setGachaCount] = useState<6 | 12 | 24>(() => {
     const saved = Number(localStorage.getItem('nai_character_gacha_count'));
     return saved === 6 || saved === 24 ? saved : 12;
   });
   const [gachaCards, setGachaCards] = useState<CharacterCard[] | null>(null);
   const [isGachaLoading, setIsGachaLoading] = useState(false);
-  const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
+  const persistedCatalog = useMemo(() => new Map(catalogChains.map(chain => [(chain.params._characterCatalogTag || chain.basePrompt).trim().toLowerCase(), chain])), [catalogChains]);
+  const [lightboxCard, setLightbox] = useState<CharacterCard | null>(null);
+  const lightboxChain = lightboxCard?.kind === 'catalog' ? persistedCatalog.get((lightboxCard.tagName || '').toLowerCase()) : customChains.find(chain => chain.id === lightboxCard?.chain?.id);
+  const lightbox = lightboxChain && lightboxCard ? { ...lightboxCard, name: lightboxCard.kind === 'custom' ? lightboxChain.name : lightboxCard.name, previewImage: lightboxChain.previewImage, chain: lightboxChain } : lightboxCard;
   const [desktopPreview, setDesktopPreview] = useState(() => window.innerWidth >= 768);
   useEffect(() => {
     const resize = () => setDesktopPreview(window.innerWidth >= 768);
@@ -272,13 +308,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useEffect(() => () => { gachaGenerationRef.current++; }, []);
   useEffect(() => { leaveGacha(); recentGachaRef.current = []; setGroupLimit(60); scrollRef.current?.scrollTo({ top: 0 }); }, [groups.activeGroup, leaveGacha]);
   useEffect(() => {
-    if ((!grouped && !groups.expanded) || groupCatalogReady) { setGroupLoading(false); return; }
+    if (groupCatalogReady) { setGroupLoading(false); return; }
     let current = true; setGroupLoading(true); setGroupError(false);
     void getCharacterDictionaryEntries().then(entries => { if (current) { setGroupCatalog(entries); setGroupCatalogReady(true); } })
       .catch(() => { if (current) { setGroupError(true); notify('角色 Tag 目录加载失败', 'error'); } })
       .finally(() => { if (current) setGroupLoading(false); });
     return () => { current = false; };
-  }, [grouped, groups.expanded, groupCatalogReady, groupRetry, notify]);
+  }, [groupCatalogReady, groupRetry, notify]);
   useEffect(() => { setGroupLimit(60); }, [searchTerm, tab, showFavOnly, sort, groups.state]);
   // 无限加载失败的时间戳：失败后 300ms 内挡住哨兵的立即重触发，避免静默失败循环。
   const lastLoadMoreErrorAtRef = useRef(0);
@@ -300,9 +336,31 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const groupedCustomPool = useMemo(() => customChains.filter(chain => groups.matches(`custom:${chain.id}`)), [customChains, groups.matches]);
   const drawCatalogTotal = grouped ? groupedCatalogPool.length : catalogTotal;
   const drawCustomChains = grouped ? groupedCustomPool : customChains;
-  const drawReady = !grouped || groups.ready && !groups.error && (gachaMode === 'custom' || !groupLoading && !groupError);
-  const drawAvailable = gachaMode === 'custom' ? drawCustomChains.length : grouped && gachaMode === 'mixed' ? drawCustomChains.length + drawCatalogTotal : drawCatalogTotal;
-  const persistedCatalog = useMemo(() => new Map(catalogChains.map(chain => [chain.basePrompt.trim().toLowerCase(), chain])), [catalogChains]);
+  const drawReady = !grouped || groups.ready && !groups.error && (drawMode === 'custom' || groupCatalogReady && !groupLoading && !groupError);
+  const drawAvailable = drawMode === 'custom' ? drawCustomChains.length : grouped && drawMode === 'mixed' ? drawCustomChains.length + drawCatalogTotal : drawCatalogTotal;
+  const editCatalog = (card: CharacterCard) => {
+    const tag = card.tagName!;
+    const identity = { tag, name: card.name };
+    setInfoCatalog(identity);
+    setInfoChain(card.chain || { id: createUuid(), userId: '', type: 'character', name: card.name, description: '', tags: [CATALOG_MARKER], basePrompt: tag, negativePrompt: '', modules: [], params: { ...DEFAULT_PARAMS, _characterCatalogTag: tag }, variableValues: { subject: '' }, createdAt: 0, updatedAt: 0 });
+    setLightbox(null);
+  };
+  const saveInfo = async (id: string, updates: ChainInfoUpdate) => {
+    if (!infoCatalog || !infoChain) { await onUpdateChain(id, updates); return; }
+    const tag = infoCatalog.tag;
+    const existing = persistedCatalog.get(tag.toLowerCase());
+    const patch = { ...updates, name: infoCatalog.name, basePrompt: tag, params: { ...(existing || infoChain).params, _characterCatalogTag: tag } };
+    if (existing) { await onUpdateChain(existing.id, patch); return; }
+    let pending = catalogCreates.current.get(tag);
+    const data = { ...infoChain, ...patch, tags: [...new Set([...updates.tags, CATALOG_MARKER])] };
+    if (!pending) { pending = { creationId: createUuid(), data }; catalogCreates.current.set(tag, pending); }
+    if (!pending.id) {
+      if (!onCreateCatalogOverride) throw new Error('角色保存不可用');
+      pending.id = await onCreateCatalogOverride(pending.data, pending.creationId);
+    }
+    if (JSON.stringify(pending.data) !== JSON.stringify(data)) await onUpdateChain(pending.id, { ...patch, negativePrompt: data.negativePrompt, previewImage: data.previewImage || '', variableValues: data.variableValues });
+  };
+
 
   useEffect(() => {
     localStorage.setItem('nai_character_sort', sort);
@@ -431,7 +489,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const ungroupedCards = useMemo(() => {
     if (gachaCards) return gachaCards.flatMap(card => {
-      if (card.kind !== 'custom') return [card];
+      if (card.kind === 'catalog') {
+        const chain = persistedCatalog.get((card.tagName || '').toLowerCase());
+        return [{ ...card, chain, previewImage: chain?.previewImage }];
+      }
       const current = customChains.find(chain => chain.id === card.chain?.id);
       return current ? [customToCard(current)] : [];
     });
@@ -441,7 +502,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     // 收藏快照 → 按键名兜底（名称/封面来自本地已有角色链）。
     if (showFavOnly && !query) {
       const customByKey = new Map(customChains.map(chain => [`custom:${chain.id}`, customToCard(chain)]));
-      const loadedByName = new Map(loadedCatalog.map(entry => [entry.name, entry]));
+      const loadedByName = new Map([...loadedCatalog, ...groupedCatalogPool].map(entry => [entry.name, entry]));
       const cards: CharacterCard[] = [];
       for (const key of favorites) {
         if (key.startsWith('custom:')) {
@@ -473,7 +534,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       }
       return cards.sort((left, right) => compareLibraryTags(left, right, sort));
     }
-    const catalog = (grouped ? filterCharacterDictionaryEntries(groupedCatalogPool, searchTerm, sort) : query ? searchResults : loadedCatalog).map(catalogToCard);
+    const catalog = (grouped || query && groupCatalogReady ? filterCharacterDictionaryEntries(groupedCatalogPool, searchTerm, sort) : query ? searchResults : loadedCatalog).map(catalogToCard);
     const custom = customChains
       .filter(chain => !query || chain.name.toLowerCase().includes(query) || chain.basePrompt.toLowerCase().includes(query))
       .map(customToCard)
@@ -481,33 +542,60 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     let cards = tab === 'catalog' ? catalog : tab === 'custom' ? custom : [...custom, ...catalog];
     if (showFavOnly) cards = cards.filter(card => favorites.has(card.key));
     return cards;
-  }, [grouped, groupedCatalogPool, catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
-  const groupCards = useMemo(() => grouped && !groups.ready ? [] : ungroupedCards.filter(card => groups.matches(card.key)), [grouped, groups.ready, ungroupedCards, groups.matches]);
-  const visibleCards = grouped && !gachaCards ? groupCards.slice(0, groupLimit) : groupCards;
+  }, [grouped, groupedCatalogPool, catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab, groupCatalogReady]);
+  const groupCards = useMemo(() => grouped && !groups.ready && !customSource ? [] : ungroupedCards.filter(card => groups.matches(card.key)), [grouped, groups.ready, customSource, ungroupedCards, groups.matches]);
+  const cardGroups = useMemo((): CharacterCardGroup[] => {
+    const eligible = new Map<string, CharacterCard>();
+    if (!gachaCards && tab !== 'custom') {
+      const candidates = new Map<string, CharacterDictionaryEntry>();
+      for (const card of groupCards) {
+        if (card.kind !== 'catalog' || !card.tagName) continue;
+        for (const entry of variantIndex.get(normalizeTagQuery(card.tagName)) || []) {
+          if (groups.matches('catalog:' + entry.name)) candidates.set(entry.name, entry);
+        }
+      }
+      for (const entry of filterCharacterDictionaryEntries([...candidates.values()], searchTerm, sort)) {
+        const card = catalogToCard(entry); eligible.set(card.key, card);
+      }
+    }
+    for (const card of groupCards) if (!eligible.has(card.key)) eligible.set(card.key, card);
+    return groupCharacterVariantKeys(groupCards.map(card => card.key), variantIndex, new Set(eligible.keys())).map(group => ({
+      id: group.id, representative: eligible.get(group.representativeKey)!, members: group.memberKeys.map(key => eligible.get(key)!),
+    }));
+  }, [gachaCards, tab, groups.matches, searchTerm, sort, catalogToCard, groupCards, variantIndex]);
+  const visibleGroups = (grouped || Boolean(searchTerm.trim())) && !gachaCards ? cardGroups.slice(0, groupLimit) : cardGroups;
+  const visibleCards = visibleGroups.flatMap(group => expandedFamilies.has(group.id) ? group.members : [group.representative]);
+  const renderCharacterGroup = (group: CharacterCardGroup) => group.members.length < 2 ? renderCharacterCard(group.representative) : <div key={group.id} data-character-family={group.id} role="group" aria-label={t('角色变体：{0}', [group.representative.name])} className="flex min-w-0 flex-col gap-4">
+    {renderCharacterCard(group.representative, group)}
+    {expandedFamilies.has(group.id) && <div data-character-variants={group.id} className="flex min-w-0 flex-col gap-4">{group.members.slice(1).map(card => renderCharacterCard(card))}</div>}
+  </div>;
+  const estimateCharacterGroupHeight = (group: CharacterCardGroup, width: number) => (expandedFamilies.has(group.id) ? group.members : [group.representative]).reduce((height, card, index) => height + estimateCharacterCardHeight(card, width) + (index ? 16 : 0), 0);
   const resultKey = JSON.stringify([searchTerm, tab, showFavOnly, sort, groups.activeGroup]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`, resultKey);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
 
   useEffect(() => {
+    const catalogTagsById = new Map(catalogChains.map(chain => [chain.id, (chain.params._characterCatalogTag || chain.basePrompt).trim()]));
     const sync = () => setFavorites(previous => {
       const next = new Set(previous);
       const groups = new Map<string, boolean>();
       for (const item of collectionSnapshot()) {
         if (!["character"].includes(item.sourceType || '') || !item.sourceId) continue;
-        const id = item.sourceId!.startsWith('catalog:') || item.sourceId!.startsWith('custom:') ? item.sourceId! : customChains.some(chain => chain.id === item.sourceId) ? 'custom:' + item.sourceId : 'catalog:' + item.sourceId;
+        const catalogTag = catalogTagsById.get(item.sourceId.startsWith('catalog:') ? item.sourceId.slice(8) : item.sourceId);
+        const id = catalogTag ? 'catalog:' + catalogTag : item.sourceId!.startsWith('catalog:') || item.sourceId!.startsWith('custom:') ? item.sourceId! : customChains.some(chain => chain.id === item.sourceId) ? 'custom:' + item.sourceId : 'catalog:' + item.sourceId;
         groups.set(id, Boolean(groups.get(id) || !item.archived));
       }
       groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
       for (const chain of customChains) {
         const key = `custom:${chain.id}`;
-        const active = chain.previewImage ? collectionTargetActive({ imageUrl: chain.previewImage, sourceType: 'character', sourceId: chain.id }) : legacyCustomFavorites.current.has(key);
+        const active = groups.has(key) ? groups.get(key)! : chain.previewImage ? collectionTargetActive({ imageUrl: chain.previewImage, sourceType: 'character', sourceId: chain.id }) : legacyCustomFavorites.current.has(key);
         if (active) next.add(key); else next.delete(key);
       }
       return next;
     });
     sync(); return subscribeCollection(sync);
-  }, [customChains]);
+  }, [customChains, catalogChains]);
 
   const toggleFavorite = (card: CharacterCard, active?: boolean) => {
     const wasFavorite = !(active ?? !favorites.has(card.key));
@@ -532,14 +620,61 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     });
   };
 
-  /** 单卡复制文本：角色 Tag 用其英文 Tag，自定义角色用编译后的完整提示词。 */
-  const cardPromptText = (card: CharacterCard): string => card.kind === 'catalog'
-    ? card.tagName || card.name
-    : compilePrompt(card.chain!, card.chain?.variableValues?.subject || '');
+  /** 已保存角色取完整配方，尚无个人覆写的词库角色直接取原 Tag。 */
+  const cardPromptText = (card: CharacterCard): string => card.chain
+    ? compilePrompt(card.chain, card.chain.variableValues?.subject || '')
+    : card.tagName || card.name;
+
+  const favoriteVariants = (card: CharacterCard): CharacterVariantFavorite[] | undefined => {
+    if (!linkVariantFavorites || !card.tagName) return undefined;
+    const family = variantIndex.get(normalizeTagQuery(card.tagName));
+    return family && family.length > 1 ? family.map(entry => {
+      const chain = persistedCatalog.get(entry.name.toLowerCase());
+      return { tag: entry.name, title: entry.chinese || entry.name, fixedSrc: chain?.previewImage, prompt: chain ? compilePrompt(chain, chain.variableValues?.subject || '') : entry.name, negativePrompt: chain?.negativePrompt, params: chain?.params };
+    }) : undefined;
+  };
+
+  const backfillLatest = useRef({ enabled: false, favorites, variantIndex, persistedCatalog });
+  backfillLatest.current = { enabled: active && linkVariantFavorites, favorites, variantIndex, persistedCatalog };
+  useEffect(() => {
+    if (!active || collectionReady) return;
+    let current = true;
+    void ensureCollection().then(() => { if (current) setCollectionReady(true); })
+      .catch(error => { if (current) setVariantBackfillError(error instanceof Error ? error.message : '读取收藏失败'); });
+    return () => { current = false; };
+  }, [active, collectionReady, variantBackfillRetry]);
+  useEffect(() => {
+    if (!active || !linkVariantFavorites || !groupCatalogReady || !collectionReady || backfillRunning.current) return;
+    backfillRunning.current = true; setVariantBackfillBusy(true);
+    void (async () => {
+      while (backfillMounted.current && backfillLatest.current.enabled) {
+        const latest = backfillLatest.current;
+        let next: readonly CharacterDictionaryEntry[] | undefined;
+        for (const key of latest.favorites) {
+          if (!key.startsWith('catalog:')) continue;
+          const family = latest.variantIndex.get(normalizeTagQuery(key.slice(8)));
+          if (family && family.length > 1 && !backfillAttempted.current.has(family[0].name)) { next = family; break; }
+        }
+        if (!next) break;
+        const familyKey = next[0].name;
+        backfillAttempted.current.add(familyKey);
+        const variants = next.map(entry => {
+          const chain = latest.persistedCatalog.get(entry.name.toLowerCase());
+          return { tag: entry.name, title: entry.chinese || entry.name, fixedSrc: chain?.previewImage, prompt: chain ? compilePrompt(chain, chain.variableValues?.subject || '') : entry.name, negativePrompt: chain?.negativePrompt, params: chain?.params };
+        });
+        try {
+          await toggleCollectionTarget(characterVariantFavoriteTarget({ imageUrl: '', sourceType: 'character', sourceId: variants[0].tag, title: variants[0].title }, variants), true);
+        } catch (error) {
+          backfillFailed.current.add(familyKey);
+          if (backfillMounted.current) setVariantBackfillError(error instanceof Error ? error.message : '补齐角色变体收藏失败');
+        }
+      }
+    })().finally(() => { backfillRunning.current = false; if (backfillMounted.current) setVariantBackfillBusy(false); });
+  }, [active, linkVariantFavorites, groupCatalogReady, collectionReady, favorites, variantIndex, persistedCatalog, variantBackfillRetry]);
 
   const copyCharacter = async (card: CharacterCard) => {
     await navigator.clipboard.writeText(cardPromptText(card));
-    notify(card.kind === 'catalog' ? '角色 Tag 已复制' : '完整角色提示词已复制');
+    notify(card.chain ? '完整角色提示词已复制' : '角色 Tag 已复制');
   };
 
   const sendToPlayground = (card: CharacterCard) => {
@@ -617,8 +752,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     onNavigateToPlayground();
   };
   const drawGacha = async () => {
-    if (!drawReady || isGachaLoading || (gachaMode !== 'custom' && drawAvailable <= 0)) return;
-    if (gachaMode === 'custom' && drawCustomChains.length === 0) {
+    if (!drawReady || isGachaLoading || (drawMode !== 'custom' && drawAvailable <= 0)) return;
+    if (drawMode === 'custom' && drawCustomChains.length === 0) {
       notify('还没有自定义还原角色', 'error');
       return;
     }
@@ -626,15 +761,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     setFocusedKey(null);
     setIsGachaLoading(true);
     setSearchTerm('');
-    setShowFavOnly(false);
-    setTab('all');
     localStorage.setItem('nai_character_gacha_mode', gachaMode);
     localStorage.setItem('nai_character_gacha_count', String(gachaCount));
     try {
       const customCards = [...drawCustomChains].sort(() => Math.random() - 0.5).slice(0, gachaCount).map(customToCard);
-      let customTarget = gachaMode === 'custom' ? gachaCount : gachaMode === 'mixed' ? Math.min(customCards.length, Math.max(1, Math.round(gachaCount * 0.25))) : 0;
+      let customTarget = drawMode === 'custom' ? gachaCount : drawMode === 'mixed' ? Math.min(customCards.length, Math.max(1, Math.round(gachaCount * 0.25))) : 0;
       const catalogTarget = Math.min(drawCatalogTotal, gachaCount - customTarget);
-      if (grouped && gachaMode === 'mixed') customTarget += Math.min(customCards.length - customTarget, gachaCount - customTarget - catalogTarget);
+      if (grouped && drawMode === 'mixed') customTarget += Math.min(customCards.length - customTarget, gachaCount - customTarget - catalogTarget);
       const indices = drawLibraryIndices(drawCatalogTotal, catalogTarget, 'mixed', recentGachaRef.current);
       const entries = grouped ? indices.map(index => groupedCatalogPool[index]) : indices.length ? await getCharacterDictionaryEntriesAt(indices) : [];
       const cards = [...customCards.slice(0, customTarget), ...entries.map(catalogToCard)].sort(() => Math.random() - 0.5);
@@ -685,58 +818,55 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   return (
     <div className="workspace-canvas relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
-       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
+       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} tagAssistEnabled={tagAssistEnabled} onTagAssistEnabledChange={onTagAssistEnabledChange} catalogIdentity={infoCatalog} onSave={saveInfo} onClose={() => { setInfoChain(null); setInfoCatalog(undefined); }} notify={notify} />}
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
          <div className="relative min-w-0 flex-1">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
-           {isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
+           {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
          </div>
-         <ToolbarPopover title={t("筛选角色")} count={Number(tab !== 'all') + Number(sort !== 'popular') + Number(showFavOnly)}>
+         <ToolbarPopover title={t("筛选角色")} count={Number(sort !== 'popular')}>
            <div className="space-y-3">
-             <label className="block text-sm font-semibold dark:text-white">{t("显示范围")}<select aria-label={t("角色范围")} value={tab} onChange={event => { setTab(event.target.value as CharacterTab); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="all">{t("全部角色")}</option><option value="catalog">{t("角色 Tag")}</option><option value="custom">{t("自定义角色")}</option></select></label>
              <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("角色排序")} value={sort} onChange={event => { setSort(event.target.value as CharacterDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}><option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option></select></label>
-             <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={showFavOnly} onChange={event => { setShowFavOnly(event.target.checked); leaveGacha(); }} />{t("只看收藏")}</label>
-             <button type="button" onClick={() => { setTab('all'); setSort('popular'); setShowFavOnly(false); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
+             <button type="button" onClick={() => { setSort('popular'); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
            </div>
          </ToolbarPopover>
          <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
            <ToolbarButton aria-label={gachaCards ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={!drawReady || isGachaLoading || drawAvailable <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">{isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaCards ? t("再抽一批") : t("随机抽卡")}</span></ToolbarButton>
-           <ToolbarPopover label={t("抽卡设置")} title={t("角色抽卡设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+           <ToolbarPopover label={t("角色库设置")} title={t("角色库设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
+             <label className="mobile-touch mb-3 flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={linkVariantFavorites} onChange={event => { const enabled = event.target.checked; if (enabled) { backfillAttempted.current.clear(); backfillFailed.current.clear(); setVariantBackfillError(''); } setLinkVariantFavorites(enabled); localStorage.setItem('nai_character_link_variant_favorites', String(enabled)); }} />{t('同角色变体联动收藏')}</label>
+             <p className="mb-3 text-xs text-gray-500">{t('每个变体收藏一张代表封面')}</p>
+             {linkVariantFavorites && variantBackfillBusy && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在补齐已有角色收藏…')}</p>}
+             {(linkVariantFavorites || !collectionReady) && variantBackfillError && <div role="alert" className="mb-3 text-xs text-red-500">{t(variantBackfillError)}<button type="button" disabled={variantBackfillBusy} onClick={() => { for (const key of backfillFailed.current) backfillAttempted.current.delete(key); backfillFailed.current.clear(); setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></div>}
              <div className="grid grid-cols-2 gap-3">
-               <label className="text-sm font-semibold dark:text-white">{t("抽卡范围")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("Tag + 自定义")}</option><option value="catalog">{t("只抽角色 Tag")}</option><option value="custom">{t("只抽自定义")}</option></select></label>
+               <label className="text-sm font-semibold dark:text-white">{t("抽卡范围")}<select value={drawMode} disabled={tab !== 'all'} onChange={event => setGachaMode(event.target.value as GachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("Tag + 自定义")}</option><option value="catalog">{t("只抽角色 Tag")}</option><option value="custom">{t("只抽自定义")}</option></select></label>
                <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
              </div>
            </ToolbarPopover>
          </div>
          <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
        </WorkspaceToolbar>
-       {!isLoading && (!grouped || groups.ready && !groupLoading && !groupError) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{grouped && !gachaCards ? t(groupCards.length > groupLimit ? '已加载 {0} 位' : '共 {0} 位', [visibleCards.length]) : searchTerm.trim()
-         ? t(tab === 'custom' ? '匹配 {0} 位' : '已加载中匹配 {0} 位', [visibleCards.length])
-         : gachaCards ? t('本次抽取 {0} 位', [visibleCards.length])
-         : showFavOnly ? t('匹配 {0} 位', [visibleCards.length])
-         : tab !== 'custom' && nextPage < pageCount ? t('已加载 {0} 位', [visibleCards.length])
-         : t('共 {0} 位', [visibleCards.length])}</ToolbarCountCaption>}
+       {(!showFavOnly || collectionReady) && (customSource || !isLoading) && (!grouped || groups.ready && (customSource || !groupLoading && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{t('角色 {0} · 显示 {1} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length, visibleCards.length])}</ToolbarCountCaption>}
 
-       {gachaCards && <GalleryActiveStateBanner count={visibleCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
+       {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
       </WorkspaceChrome>
       <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">{groups.navigation}
       <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-scroll-viewport relative min-w-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
-          <ShortestColumnMasonry<CharacterCard>
+          <ShortestColumnMasonry<CharacterCardGroup>
             resetKey={resultKey}
             stableColumns
-            items={visibleCards}
+            items={visibleGroups}
             columns={gridColumns}
-            getItemKey={(card: CharacterCard) => card.key}
-            estimateItemHeight={estimateCharacterCardHeight}
-            renderItem={(card: CharacterCard) => renderCharacterCard(card)}
+            getItemKey={(group: CharacterCardGroup) => group.id}
+            estimateItemHeight={estimateCharacterGroupHeight}
+            renderItem={(group: CharacterCardGroup) => renderCharacterGroup(group)}
           />
         ) : (
         <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={mobileGalleryStyle(imageDisplay, gridColumns)}>
-          {visibleCards.map(renderCharacterCard)}
+          {visibleGroups.map(renderCharacterGroup)}
         </div>
         )}
 
@@ -745,10 +875,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             {isLoadingMore ? t("正在加载更多角色…") : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
           </div>
         )}
-        {grouped && !gachaCards && groupCards.length > groupLimit && <button type="button" className="mobile-touch mx-auto block py-6 text-sm" onClick={() => setGroupLimit(value => value + 60)}>{t("继续向下滚动加载更多")}</button>}
-        {grouped && groupError && <ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton>}
-        {grouped && groupLoading && <p role="status">{t("正在加载更多角色…")}</p>}
-        {!isLoading && (!grouped || groups.ready) && !groupLoading && !groupError && visibleCards.length === 0 && (
+        {(grouped || Boolean(searchTerm.trim())) && !gachaCards && cardGroups.length > groupLimit && <button type="button" className="mobile-touch mx-auto block py-6 text-sm" onClick={() => setGroupLimit(value => value + 60)}>{t("继续向下滚动加载更多")}</button>}
+        {showFavOnly && !collectionReady && (variantBackfillError
+          ? <p role="alert" className="text-sm text-red-500">{t(variantBackfillError)}<button type="button" onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></p>
+          : <p role="status" className="text-sm text-gray-500">{t('加载中…')}</p>)}
+        {!customSource && groupError && <ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton>}
+        {!customSource && groupLoading && <p role="status">{t("正在加载更多角色…")}</p>}
+        {(!showFavOnly || collectionReady) && (customSource || !isLoading) && (!grouped || groups.ready) && (customSource || !groupLoading && !groupError) && visibleCards.length === 0 && (
           <EmptyState
             title={t("没有找到符合条件的角色")}
             className="py-20"
@@ -770,7 +903,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          <button onClick={() => sendToPlayground(lightbox)} className="mobile-touch flex-1 rounded-xl bg-indigo-600 font-bold text-white">{t("导入实验室")}</button>
        </> : null}>
          {lightbox && <div className="space-y-4 p-3">
-           <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{lightbox.previewImage ? <>
+           <PressRevealSurface className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30" style={{ aspectRatio: lightbox.kind === 'catalog' ? cardRatios[lightbox.key] || 2 / 3 : undefined }}>{lightbox.kind === 'catalog' && lightbox.tagName ? <DanbooruCover tag={lightbox.tagName} kind="character" alt={lightbox.name} fixedSrc={lightbox.previewImage} showSourceBadge={false} imageClassName="w-full object-contain" notify={notify} onEdit={() => editCatalog(lightbox)} favoritePending={linkVariantFavorites && !groupCatalogReady} favoriteVariants={favoriteVariants(lightbox)} favoriteRecipe={{ prompt: cardPromptText(lightbox), negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} onFavoriteChange={() => toggleFavorite(lightbox, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === lightbox.tagName && !item.archived))} /> : lightbox.previewImage ? <>
              <ViewableImage src={lightbox.previewImage} alt={lightbox.name} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} className="w-full object-contain" data-safe-mode-ignore="true" />
              <ImageShareOverlay imageUrl={getMobileOriginalUrl(lightbox.previewImage)} filename={`character-${lightbox.name}.png`} favorite={{ imageUrl: lightbox.previewImage, sourceType: 'character', sourceId: lightbox.chain?.id || lightbox.tagName || lightbox.key, title: lightbox.name, prompt: lightbox.chain?.basePrompt, negativePrompt: lightbox.chain?.negativePrompt, params: lightbox.chain?.params }} notify={notify} />
            </> : <div className="flex aspect-[2/3] items-center justify-center text-gray-400">{t("暂无封面")}</div>}</PressRevealSurface>
@@ -778,7 +911,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
              <div className="font-bold dark:text-white">{lightbox.name}</div>
              {lightbox.tagName && <div className="mt-1 break-all font-mono text-xs text-gray-500">{lightbox.tagName}</div>}
              <div className="mt-3 grid grid-cols-2 gap-2">
-               {lightbox.kind === 'custom' ? <button onClick={() => { const id = lightbox.chain!.id; setLightbox(null); onSelect(id); }} className="appearance-group mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">{t("编辑还原")}</button> : <a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">Danbooru</a>}
+               {lightbox.kind === 'custom' ? <button onClick={() => { setInfoCatalog(undefined); setInfoChain(lightbox.chain!); setLightbox(null); }} className="appearance-group mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">{t("编辑还原")}</button> : <><button onClick={() => editCatalog(lightbox)} className="appearance-group mobile-touch rounded-xl bg-gray-100 dark:bg-gray-700">{t("编辑角色信息")}</button><a href={getDanbooruPostsUrl(lightbox.tagName || '')} target="_blank" rel="noreferrer" className="mobile-touch flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40">Danbooru</a></>}
              </div>
              {lightbox.kind === 'custom' && <button onClick={() => void deleteCustom(lightbox)} className="mobile-touch mt-2 w-full rounded-xl bg-red-50 font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("删除这个自定义角色")}</button>}
            </div>

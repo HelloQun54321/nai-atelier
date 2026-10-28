@@ -4,7 +4,7 @@ import { t, useLanguage } from '../services/i18n';
 import { createUuid } from '../services/id';
 import { readCatalogGroups, removeCatalogGroup, updateCatalogGroupMemberships, type CatalogGroupKind, type CatalogGroupState } from '../services/catalogGroups';
 import { flattenDirectoryTree, getDirectoryDescendantIds, getDirectoryPath } from '../services/directoryTree.mjs';
-import { DirectoryTreeNavigation } from './DirectoryTreeNavigation';
+import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from './DirectoryTreeNavigation';
 import { DirectoryTreeSelect } from './DirectoryTreeSelect';
 import { DirectoryTreeChecklist } from './DirectoryTreeChecklist';
 import { DirectoryNodeDialog } from './DirectoryNodeDialog';
@@ -23,7 +23,7 @@ const preference = (scope: string) => {
   try { return JSON.parse(localStorage.getItem(`nai_catalog_groups_${scope}`) || '{}') as { expanded?: boolean; active?: string }; } catch { return {}; }
 };
 
-export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[], navigationOptions?: { navigationHeader?: React.ReactNode; activeFilterLabel?: string }) {
+export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: readonly string[], notify: Notify, scope: string = kind, catalogKeys?: readonly string[], navigationOptions?: { navigationHeader?: React.ReactNode; activeFilterLabel?: string; favorites?: { matches: (key: string) => boolean; count?: number }; virtualGroups?: readonly { id: string; name: string; matches: (key: string) => boolean; count?: number }[]; resolveMembershipKeys?: (keys: readonly string[]) => readonly string[] }) {
   useLanguage();
   const data = useCatalogGroups(kind), navigationId = useId();
   const confirmAction = useConfirmDialog(), active = useContext(ImageActivityContext);
@@ -33,7 +33,9 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   const [view, setView] = useState(() => ({ scope, ...preference(scope) }));
   const current = view.scope === scope ? view : { scope, ...preference(scope) };
   const expanded = Boolean(current.expanded), requested = current.active ?? '*';
-  const activeGroup = data.ready && requested !== '*' && requested !== '' && !data.state.groups.some(group => group.id === requested) ? '*' : requested;
+  const virtualGroups = [...(navigationOptions?.favorites ? [{ id: DIRECTORY_FAVORITES_ID, name: t('收藏'), ...navigationOptions.favorites }] : []), ...(navigationOptions?.virtualGroups ?? [])];
+  const virtualGroup = virtualGroups?.find(group => group.id === requested);
+  const activeGroup = !virtualGroup && data.ready && requested !== '*' && requested !== '' && !data.state.groups.some(group => group.id === requested) ? '*' : requested;
   const [dialog, setDialog] = useState<{ scope: string; keys: string[]; editing?: string; parentId?: string | null } | null>(null);
   const dragRef = useRef<{ kind: CatalogGroupKind; scope: string; keys: string[]; token: string } | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null), [dropping, setDropping] = useState(false);
@@ -45,8 +47,8 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   };
   const selectGroup = (active: string) => update({ active });
   const activeIds = useMemo(() => data.ready && activeGroup !== '*' && activeGroup !== '' ? getDirectoryDescendantIds(data.state.groups, activeGroup) : new Set<string>(), [data.ready, data.state.groups, activeGroup]);
-  const matches = useCallback((key: string) => activeGroup === '*' || (data.ready && (activeGroup === '' ? !data.state.memberships[key]?.length : data.state.memberships[key]?.some(id => activeIds.has(id)) === true)), [data.ready, data.state, activeGroup, activeIds]);
-  const label = activeGroup === '*' ? t('全部') : activeGroup === '' ? t('未分组') : data.state.groups.find(group => group.id === activeGroup)?.name || t('全部');
+  const matches = useCallback((key: string) => activeGroup === '*' || (virtualGroup ? virtualGroup.matches(key) : (data.ready && (activeGroup === '' ? !data.state.memberships[key]?.length : data.state.memberships[key]?.some(id => activeIds.has(id)) === true))), [data.ready, data.state, activeGroup, activeIds, virtualGroup]);
+  const label = virtualGroup?.name ?? (activeGroup === '*' ? t('全部') : activeGroup === '' ? t('未分组') : data.state.groups.find(group => group.id === activeGroup)?.name || t('全部'));
   const counts = useMemo(() => {
     if (catalogKeys === undefined || !data.ready || data.error) return null;
     const values = new Map<string, number>([['*', 0], ['', 0], ...data.state.groups.map(group => [group.id, 0] as [string, number])]);
@@ -60,6 +62,8 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
     }
     return values;
   }, [catalogKeys, data.ready, data.error, data.state, kind]);
+  const navigationCounts = new Map<string, number | string>(counts ?? [['*', '—'], ['', '—'], ...data.state.groups.map(group => [group.id, '—'] as [string, string])]);
+  for (const group of virtualGroups ?? []) navigationCounts.set(group.id, group.count ?? '—');
   const currentGroup = data.state.groups.find(group => group.id === activeGroup);
   const blocked = !data.ready || data.busy || removing || dropping || Boolean(data.error);
   const dragBlocked = blocked || !active || Boolean(dialog);
@@ -87,9 +91,12 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
     event.preventDefault(); event.stopPropagation(); setDragOver(null);
     const source = dragRef.current; dragRef.current = null;
     if (!source || event.dataTransfer.getData(DRAG_TYPE) !== source.token || dragBlocked || dropLock.current || !data.state.groups.some(group => group.id === id)) return;
-    if (source.keys.every(key => data.state.memberships[key]?.includes(id))) return;
     dropLock.current = true; setDropping(true); setNavigationError('');
-    try { await data.save(updateCatalogGroupMemberships(data.state, source.keys, { [id]: true })); notify(t('分组已保存'), 'success'); }
+    try {
+      const keys = navigationOptions?.resolveMembershipKeys?.(source.keys) ?? source.keys;
+      if (keys.every(key => data.state.memberships[key]?.includes(id))) return;
+      await data.save(updateCatalogGroupMemberships(data.state, keys, { [id]: true })); notify(t('分组已保存'), 'success');
+    }
     catch (cause) { const message = cause instanceof Error ? cause.message : '分组保存失败'; setNavigationError(message); notify(t(message), 'error'); }
     finally { dropLock.current = false; setDropping(false); }
   };
@@ -118,9 +125,9 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
     matches, cardDragProps,
     toolbar: <><ToolbarButton aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
       {selectedKeys.length > 0 && <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!data.ready || data.busy || Boolean(data.error)} onClick={() => setDialog({ scope, keys: [...new Set(selectedKeys)] })}><FolderPlus /></ToolbarButton>}
-      {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
+      {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} resolveMembershipKeys={navigationOptions?.resolveMembershipKeys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
     navigation: <DirectoryTreeNavigation id={navigationId} label={t('分组导航')} title={t('分组')} nodes={data.state.groups} selectedId={activeGroup} onSelect={selectGroup} expanded={expanded}
-      preferenceKey={`nai_catalog_group_branches_${scope}`} counts={counts ?? new Map([['*', '—'], ['', '—'], ...data.state.groups.map(group => [group.id, '—'] as [string, string])])}
+      preferenceKey={`nai_catalog_group_branches_${scope}`} counts={navigationCounts} virtualNodes={virtualGroups}
       unclassifiedLabel={t('未分组')} embedded={scope === 'roll-artists'} disabled={blocked} header={navigationOptions?.navigationHeader}
       createLabel={t('新建分组')} renameLabel={t('重命名分组')} deleteLabel={t('删除分组')} selectLabel={t('选择分组')}
       asideProps={{ onDragOver: event => hover(event, '*'), onDrop: event => void drop(event, '*'), className: 'catalog-group-navigation' }}
@@ -135,7 +142,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   };
 }
 
-function GroupDialog({ keys, editing, parentId: initialParentId, state, save, busy, onClose, onSaved, notify }: { keys: string[]; editing?: string; parentId?: string | null; state: CatalogGroupState; save: (next: CatalogGroupState) => Promise<void>; busy: boolean; onClose: () => void; onSaved: (id: string) => void; notify: Notify }) {
+function GroupDialog({ keys, resolveMembershipKeys, editing, parentId: initialParentId, state, save, busy, onClose, onSaved, notify }: { keys: string[]; resolveMembershipKeys?: (keys: readonly string[]) => readonly string[]; editing?: string; parentId?: string | null; state: CatalogGroupState; save: (next: CatalogGroupState) => Promise<void>; busy: boolean; onClose: () => void; onSaved: (id: string) => void; notify: Notify }) {
   const confirmAction = useConfirmDialog();
   const active = useContext(ImageActivityContext), dialog = useModalA11y<HTMLDivElement>(active && !editing);
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [name, setName] = useState(() => editing && editing !== 'new' ? state.groups.find(group => group.id === editing)?.name || '' : '');
@@ -145,6 +152,8 @@ function GroupDialog({ keys, editing, parentId: initialParentId, state, save, bu
   const excludedParents = (id: string) => [...getDirectoryDescendantIds(state.groups, id)];
   const parentField = (value: string, onChange: (value: string) => void, excludeIds: string[] = [], label = t('上级目录')) => <DirectoryTreeSelect aria-label={label} nodes={state.groups} rootLabel={t('根目录')} value={value} disabled={locked} excludeIds={excludeIds} onChange={event => onChange(event.target.value)} className={`${field} w-full`} />;
   const [names, setNames] = useState<Record<string, string>>({}), [changes, setChanges] = useState<Record<string, boolean>>({});
+  let membershipKeys: readonly string[] = keys;
+  try { membershipKeys = resolveMembershipKeys?.(keys) ?? keys; } catch { /* 新增保存时明确报错，已有归属仍可查看和移除。 */ }
   const locked = pending || busy, lock = useRef(false);
   const close = useMobileHistoryLayer(active && !editing, () => { if (locked) return false; onClose(); }, 'catalog-groups');
   useEffect(() => {
@@ -175,10 +184,10 @@ function GroupDialog({ keys, editing, parentId: initialParentId, state, save, bu
   return <ImagePreviewPortal><div hidden={!active} className={active ? 'fixed inset-0 z-[1400] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm' : 'hidden'} onClick={event => { if (event.target === event.currentTarget && !locked) close(); }}><section ref={dialog} role="dialog" aria-modal="true" aria-label={t(title)} className="appearance-panel flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
     <header className="mb-4 flex items-center gap-2"><h2 className="flex-1 font-bold">{t(title)}</h2><IconButton label="关闭" disabled={locked} onClick={close}><X /></IconButton></header>
     <div className="min-h-0 flex-1 overflow-y-auto py-3"><fieldset disabled={locked}>
-      {keys.length > 0 && <p className="text-xs text-gray-500">{t('已选 {0} 项', [keys.length])}</p>}
+      {keys.length > 0 && <p className="text-xs text-gray-500">{t('已选 {0} 项', [membershipKeys.length])}</p>}
       {keys.length > 0 && <DirectoryTreeChecklist nodes={state.groups}
-        selectedIds={state.groups.filter(group => changes[group.id] ?? keys.every(key => state.memberships[key]?.includes(group.id))).map(group => group.id)}
-        mixedIds={state.groups.filter(group => changes[group.id] === undefined && keys.some(key => state.memberships[key]?.includes(group.id)) && !keys.every(key => state.memberships[key]?.includes(group.id))).map(group => group.id)}
+        selectedIds={state.groups.filter(group => changes[group.id] ?? membershipKeys.every(key => state.memberships[key]?.includes(group.id))).map(group => group.id)}
+        mixedIds={state.groups.filter(group => changes[group.id] === undefined && membershipKeys.some(key => state.memberships[key]?.includes(group.id)) && !membershipKeys.every(key => state.memberships[key]?.includes(group.id))).map(group => group.id)}
         onToggle={(id, value) => setChanges(current => ({ ...current, [id]: value }))} disabled={locked} />}
       {tree.map(group => <div key={group.id} className="space-y-2 border-b border-gray-200 py-2 dark:border-gray-800">
         <div className="flex gap-2"><input aria-label={t('分组名称：{0}', [group.path.join(' / ')])} maxLength={60} value={names[group.id] ?? group.name} onChange={event => setNames(current => ({ ...current, [group.id]: event.target.value }))} className={`${field} flex-1`} /><ToolbarButton disabled={!(names[group.id] ?? group.name).trim() || ((names[group.id] ?? group.name).trim() === group.name && (parents[group.id] ?? group.parentId ?? '') === (group.parentId ?? ''))} onClick={() => void perform({ ...state, groups: state.groups.map(item => item.id === group.id ? { ...item, name: (names[group.id] ?? group.name).trim(), ...((parents[group.id] ?? group.parentId) ? { parentId: parents[group.id] ?? group.parentId } : item.parentId === undefined ? {} : { parentId: null }) } : item) })}>{t('重命名')}</ToolbarButton><ToolbarButton onClick={() => void remove(group.id)}>{t('删除')}</ToolbarButton></div>
@@ -189,7 +198,14 @@ function GroupDialog({ keys, editing, parentId: initialParentId, state, save, bu
     </fieldset></div>
     {error && <p role="alert" className="py-2 text-sm text-red-500">{t(error)}</p>}
     <footer className="flex justify-end gap-2"><ToolbarButton disabled={locked} onClick={close}>{t('取消')}</ToolbarButton>{keys.length > 0 && <ToolbarButton tone="primary" disabled={locked || !Object.keys(changes).length} onClick={() => {
-      try { void perform(updateCatalogGroupMemberships(state, keys, changes), () => { notify(t('分组已保存'), 'success'); onClose(); }); } catch (cause) { setError(cause instanceof Error ? cause.message : '分组保存失败'); }
+      try {
+        const additions = Object.fromEntries(Object.entries(changes).filter(([, value]) => value));
+        const removals = Object.fromEntries(Object.entries(changes).filter(([, value]) => !value));
+        let next = state;
+        if (Object.keys(additions).length) next = updateCatalogGroupMemberships(next, resolveMembershipKeys?.(keys) ?? keys, additions);
+        if (Object.keys(removals).length) next = updateCatalogGroupMemberships(next, keys, removals);
+        void perform(next, () => { notify(t('分组已保存'), 'success'); onClose(); });
+      } catch (cause) { setError(cause instanceof Error ? cause.message : '分组保存失败'); }
     }}>{t('保存分组')}</ToolbarButton>}</footer>
   </section></div></ImagePreviewPortal>;
 }

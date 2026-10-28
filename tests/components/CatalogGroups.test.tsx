@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useCatalogGroupBrowser } from '../../components/CatalogGroups';
+import { DIRECTORY_FAVORITES_ID } from '../../components/DirectoryTreeNavigation';
 import { ImageActivityContext } from '../../components/SmartImage';
 import type { CatalogGroupKind, CatalogGroupState } from '../../services/catalogGroups';
 
@@ -36,6 +37,47 @@ const shownCount = (name: string) => {
   const row = screen.getByRole('button', { name });
   return document.getElementById(row.getAttribute('aria-describedby')!)?.textContent;
 };
+
+it('新增归属可扩展到关联成员，移除只处理明确选中项并保留其他归属', async () => {
+  mocks.state.memberships['artist:a'] = ['one', 'two'];
+  function RelatedBrowser() {
+    const groups = useCatalogGroupBrowser('artist', ['artist:a'], mocks.notify, 'artist', completeKeys, {
+      resolveMembershipKeys: () => ['artist:a', 'artist:b'],
+    });
+    return <>{groups.toolbar}</>;
+  }
+  render(<RelatedBrowser />);
+  fireEvent.click(screen.getByRole('button', { name: '设置分组' }));
+  expect(screen.getByText('已选 2 项')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox', { name: '组一' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '组二' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存分组' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls[0][0].memberships).toEqual({ 'artist:a': ['one'], 'artist:b': ['two', 'one'], 'artist:outside': ['one', 'two'] });
+});
+
+it('收藏使用业务已有对象状态，位于来源前并保留浏览选择，不写入分组或归属', () => {
+  localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ active: DIRECTORY_FAVORITES_ID, expanded: true }));
+  function FavoritesBrowser() {
+    const groups = useCatalogGroupBrowser('artist', ['artist:a'], mocks.notify, 'artist', completeKeys, {
+      favorites: { matches: key => key === 'artist:b', count: 1 },
+      virtualGroups: [{ id: '#source', name: '来源', matches: () => true, count: 5 }],
+    });
+    return <>{groups.toolbar}{groups.navigation}<output data-testid="favorite-matches">{String(groups.matches('artist:a'))}/{String(groups.matches('artist:b'))}</output><article data-testid="favorite-drag" {...groups.cardDragProps('artist:a')} /></>;
+  }
+  render(<FavoritesBrowser />);
+  expect(screen.getByTestId('favorite-matches').textContent).toBe('false/true');
+  expect(shownCount('收藏')).toBe('1');
+  expect(Array.from(screen.getByRole('combobox', { name: '选择分组' }).querySelectorAll('option')).slice(0, 4).map(option => option.value)).toEqual(['*', '', DIRECTORY_FAVORITES_ID, '#source']);
+  expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
+  const dataTransfer = transfer();
+  fireEvent.dragStart(screen.getByTestId('favorite-drag'), { dataTransfer });
+  fireEvent.drop(screen.getByRole('button', { name: '收藏' }), { dataTransfer });
+  expect(mocks.save).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '*' } });
+  fireEvent.click(screen.getByRole('button', { name: '收藏' }));
+  expect(JSON.parse(localStorage.getItem('nai_catalog_groups_artist')!).active).toBe(DIRECTORY_FAVORITES_ID);
+});
 
 it('业务范围嵌入已有导航，收起保留筛选与分组，按钮提示范围且不改归属计数', () => {
   function StatusBrowser() {

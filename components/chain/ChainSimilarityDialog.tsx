@@ -153,7 +153,7 @@ const ChainCard = ({ profile, tokens, onOpen, onDelete, deletingId, busy, detail
         </div>}
       </details>
     </div>
-  </section>{previewOpen && chain.previewImage && <ImageLightbox src={chain.previewImage} alt={chain.name} filename={`${chain.name || 'cover'}.png`} onClose={() => setPreviewOpen(false)} />}</>;
+  </section>{previewOpen && chain.previewImage && <ImageLightbox src={chain.previewImage} alt={chain.name} filename={`${chain.name || 'cover'}.png`} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: 'chain', sourceId: chain.id }} onClose={() => setPreviewOpen(false)} />}</>;
 };
 
 const GroupComparison = ({ members, ...props }: Omit<React.ComponentProps<typeof ChainCard>, 'profile' | 'tokens' | 'detailsOpen' | 'onDetailsChange'> & {

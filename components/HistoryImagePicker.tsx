@@ -11,6 +11,7 @@ import { ToolbarCountCaption } from './ToolbarCountCaption';
 
 interface HistoryImagePickerProps {
   zIndex?: number;
+  allowImportParams?: boolean;
   open: boolean;
   onClose: () => void;
   /** 选中历史图后回调；importParams 表示是否同时载入该图的提示词与参数（默认仅替换底图）。 */
@@ -39,7 +40,7 @@ const getHistoryTypeLabel = (item: LocalGenItem) => {
   return '扩图';
 };
 
-export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect, scopeChainId = null, zIndex }) => {
+export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, onClose, onSelect, scopeChainId = null, zIndex, allowImportParams = true }) => {
   useLanguage();
   const [items, setItems] = useState<LocalGenItem[]>([]);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
@@ -169,7 +170,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => onSelect(item, importParams)}
+                  onClick={() => onSelect(item, allowImportParams && importParams)}
                   className="appearance-group group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
                   aria-label={t("选择历史生成图片，{0}", [new Date(item.createdAt).toLocaleString(getLanguage())])}
                 >
@@ -185,9 +186,9 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
           <span className="text-xs text-gray-500 dark:text-gray-400">{t("第 {0} / {1} 页 · 每页 {2} 张", [page, totalPages, pageSize])}</span>
-          <label className={`flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 ${scopeChainId ? 'invisible' : ''}`} title={t("开启后同时载入该图的提示词与生成参数")}>
+          {allowImportParams && <label className={`flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 ${scopeChainId ? 'invisible' : ''}`} title={t("开启后同时载入该图的提示词与生成参数")}>
             <input type="checkbox" checked={importParams} onChange={event => setImportParams(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
-            {t("同时导入该图参数")}</label>
+            {t("同时导入该图参数")}</label>}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="appearance-group mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("上一页历史图片")}><ChevronLeft className="h-4 w-4" />{t("上一页")}</button>
             <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="appearance-group mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("下一页历史图片")}>{t("下一页")}<ChevronRight className="h-4 w-4" /></button>

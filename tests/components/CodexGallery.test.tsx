@@ -4,10 +4,27 @@ import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CodexBootstrap, CodexEntry, CodexImageMetadata } from '../../services/codexService';
-const mocks = vi.hoisted(() => ({ bootstrap: vi.fn(), book: vi.fn(), community: vi.fn(), file: vi.fn(), metadata: vi.fn(), notify: vi.fn(), navigate: vi.fn(), create: vi.fn() }));
+import type { Inspiration } from '../../types';
+const mocks = vi.hoisted(() => ({ bootstrap: vi.fn(), book: vi.fn(), community: vi.fn(), file: vi.fn(), metadata: vi.fn(), notify: vi.fn(), navigate: vi.fn(), create: vi.fn(), realFavorites: false, saved: [] as Inspiration[] }));
 vi.mock('../../services/codexService', async original => ({ ...await original<typeof import('../../services/codexService')>(), loadCodexBootstrap: mocks.bootstrap, loadCodexBook: mocks.book, loadCodexCommunity: mocks.community, readCodexImageFile: mocks.file, readCodexImageMetadata: mocks.metadata }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionRevision: () => 0, subscribeCollection: () => () => {}, collectionTargetActive: () => false }));
-vi.mock('../../components/ImageShareActions', () => ({ ImageShareOverlay: () => null }));
+vi.mock('../../services/collectionFavorites', async original => {
+  const actual = await original<typeof import('../../services/collectionFavorites')>();
+  return { ...actual, collectionRevision: () => mocks.realFavorites ? actual.collectionRevision() : 0,
+    subscribeCollection: (listener: () => void) => mocks.realFavorites ? actual.subscribeCollection(listener) : () => {},
+    collectionTargetActive: (target: Parameters<typeof actual.collectionTargetActive>[0]) => mocks.realFavorites && actual.collectionTargetActive(target),
+    collectionTargetComplete: (target: Parameters<typeof actual.collectionTargetComplete>[0]) => mocks.realFavorites && actual.collectionTargetComplete(target) };
+});
+vi.mock('../../services/api', () => ({ ApiError: class extends Error {}, api: {
+  get: async (path: string) => path === '/auth/me' ? { id: 'owner', username: 'user', role: 'admin' } : path === '/inspirations' ? mocks.saved : [],
+  post: async (_path: string, item: Inspiration) => { mocks.saved = [...mocks.saved, item]; return { item }; },
+  put: async (path: string, updates: Partial<Inspiration>) => { mocks.saved = mocks.saved.map(item => path.endsWith('/' + item.id) ? { ...item, ...updates } : item); },
+  uploadFile: async () => ({ url: '/api/assets/synthetic-favorite.png' }),
+} }));
+vi.mock('../../services/localHistory', () => ({ localHistory: { getPage: async () => ({ items: [], count: 0 }) } }));
+vi.mock('../../components/ImageShareActions', async original => {
+  const actual = await original<typeof import('../../components/ImageShareActions')>();
+  return { ...actual, ImageShareOverlay: (props: React.ComponentProps<typeof actual.ImageShareOverlay>) => mocks.realFavorites ? <actual.ImageShareOverlay {...props} /> : null };
+});
 vi.mock('../../components/ImageLightbox', () => ({ ViewableImage: ({ src, alt, width, height, className }: React.ImgHTMLAttributes<HTMLImageElement>) => <img src={src} alt={alt} width={width} height={height} className={className} /> }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className = 'h-full w-full object-cover', onLoad }: { src: string; alt: string; className?: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} className={className} onLoad={onLoad} /> }));
 import { CodexGallery, codexCollectionImage } from '../../components/CodexGallery';
@@ -26,6 +43,7 @@ const chooseSource = (name: string | RegExp) => {
 };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
+  mocks.realFavorites = false; mocks.saved = [];
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'portrait', columns: 2 }));
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ media, matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
@@ -188,6 +206,37 @@ it('原图参数读取迟到时不会改写另一页的默认导入', async () =
 it('多图收藏用稳定文件编号去重，保留展示词与当前图片的来源快照', () => {
   const image = codexCollectionImage(entry, 1);
   expect(image).toMatchObject({ sourceId: 'synthetic:one', imageId: 'image-1', analysis: { externalSourcePage: 1, collectionGroupSize: 2, codex: { prompt: 'weighted prompt', note: '说明' } } });
+});
+
+it('真实收藏快照中只存一页时组心亮且保留部分提示，详情逐页取消与补齐同步', async () => {
+  mocks.realFavorites = true;
+  mocks.saved = [{ id: 'synthetic-saved-page', userId: 'owner', username: 'user', title: entry.title,
+    sourceType: 'codex', sourceId: 'synthetic:one', imageUrl: '/api/assets/old-first-page.png', prompt: 'old snapshot', tags: [],
+    analysis: { collectionImageId: 'image-0', externalSourcePage: 0, collectionGroupSize: 2 }, createdAt: 1, updatedAt: 1 }];
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection({ id: 'owner', username: 'user', role: 'admin', createdAt: 1 });
+  setup();
+  const open = await screen.findByRole('button', { name: /合成词条/ });
+  const card = open.closest<HTMLElement>('[data-gallery-work-id]')!;
+  const groupHeart = () => within(card).getByRole('button', { name: '取消整组收藏' });
+  expect(groupHeart().getAttribute('aria-pressed')).toBe('true');
+  expect(within(card).getByText(/部分已收藏/)).toBeTruthy();
+  fireEvent.click(open);
+  await ready();
+  const detail = screen.getByRole('complementary', { name: '合成词条' });
+  fireEvent.click(within(detail).getByRole('button', { name: '取消收藏' }));
+  await waitFor(() => expect(within(card).getByRole('button', { name: '收藏整个作品组' }).getAttribute('aria-pressed')).toBe('false'));
+  expect(within(card).queryByText(/部分已收藏/)).toBeNull();
+  fireEvent.click(within(detail).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(groupHeart().getAttribute('aria-pressed')).toBe('true'));
+  expect(within(card).getByText(/部分已收藏/)).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: '下一页' }));
+  expect(within(detail).getByRole('button', { name: '收藏' }).getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(within(detail).getByRole('button', { name: '收藏' }));
+  await waitFor(() => expect(within(detail).getByRole('button', { name: '取消收藏' }).getAttribute('aria-pressed')).toBe('true'));
+  expect(groupHeart().getAttribute('aria-pressed')).toBe('true');
+  expect(within(card).queryByText(/部分已收藏/)).toBeNull();
+  expect(service.collectionSnapshot().filter(item => !item.archived).map(item => item.analysis?.collectionImageId).sort()).toEqual(['image-0', 'image-1']);
 });
 
 it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格串，保留来源、当前图片及角色，不执行生图', async mode => {

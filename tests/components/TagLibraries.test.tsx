@@ -65,8 +65,8 @@ vi.mock('../../services/collectionFavorites', async original => ({
 vi.mock('../../services/generationJob', async importOriginal => ({ ...await importOriginal<typeof import('../../services/generationJob')>(), startGenerationJob: vi.fn() }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
-vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange, imageClassName }: any) =>
-  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
+vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange, imageClassName, showSourceBadge }: any) =>
+  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc} data-image-class={imageClassName} data-show-source-badge={String(showSourceBadge)}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
 }));
 vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, onPackChange, preferred, blocked, onBlock, imageClassName }: any) =>
   <div data-testid={`cover-${tag}`} data-image-class={imageClassName}>{tag}<ArtistPreferenceActions tag={tag} pack={pack} onPackChange={onPackChange} preferred={preferred} blocked={blocked} onBlock={onBlock} onFavorite={() => { void import('../../services/collectionFavorites').then(service => service.toggleArtistPreference(tag, '')); }} /></div>,
@@ -89,9 +89,14 @@ vi.mock('../../services/tagDictionary', async importOriginal => ({
   getArtistDictionaryPage: vi.fn(),
   getArtistDictionaryEntriesAt: vi.fn(),
   getCharacterDictionaryPage: vi.fn(),
+  getCharacterDictionaryEntries: vi.fn(async () => fixtures.characters),
   getCharacterDictionaryEntriesAt: vi.fn(),
   searchArtistDictionary: vi.fn(async (query: string) => fixtures.artists.filter(item => item.name.includes(query))),
   searchCharacterDictionary: vi.fn(async (query: string) => fixtures.characters.filter(item => item.name.includes(query))),
+  searchTagDictionary: vi.fn(async () => []),
+  lookupTagTranslations: vi.fn(async (tags: string[]) => new Map(tags.map(tag => [tag.toLowerCase(), { name: tag, chinese: `合成译文:${tag}`, category: 0, categoryLabel: '一般', postCount: 10, isNovelAI: false }]))),
+  lookupTagCatalogEntries: vi.fn(async () => new Map()),
+  preloadTagDictionary: vi.fn(),
 }));
 
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
@@ -127,16 +132,21 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
 });
 const entriesFor = (kind: Kind) => kind === 'artist' ? fixtures.artists : fixtures.characters;
 const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEntriesAt : getCharacterDictionaryEntriesAt;
-/** 两个目录的抽卡入口与收藏筛选叫法不同：画师库用「选画师／只看收藏画师」，角色库仍是「抽卡／只看收藏」。 */
+/** 画师与角色收藏都从目录进入，抽取动作仍保留各自命名。 */
 const kindLabels = (kind: Kind) => kind === 'artist'
-  ? { draw: '随机选画师', redraw: '再选一批', favorite: '只看收藏画师' }
-  : { draw: '随机抽卡', redraw: '再抽一批', favorite: '只看收藏' };
+  ? { draw: '随机选画师', redraw: '再选一批' }
+  : { draw: '随机抽卡', redraw: '再抽一批' };
+const chooseFavorites = (_kind: Kind, enabled = true) => {
+  const navigation = screen.getByRole('button', { name: '分组导航' });
+  if (navigation.getAttribute('aria-expanded') !== 'true') fireEvent.click(navigation);
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: enabled ? '#favorites' : '*' } });
+};
 const seedFavorites = (kind: Kind, names: string[]) => {
   if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
   else names.forEach(name => fixtures.favorites.set(`artist:${name}`, { sourceType: 'artist', sourceId: name, archived: false }));
 };
 
-it.each(['nai_chain_favs', 'nai_character_favorites'] as const)('自建角色兼容%s旧标记，有图筛选跟随当前图片，取消后保留无图标记', async key => {
+it.each(['nai_chain_favs', 'nai_character_favorites'] as const)('自建角色兼容%s旧标记，换封面保留角色收藏来源，取消后保留无图标记', async key => {
   const current = { ...custom, previewImage: '/api/assets/current.png' };
   const changed = { ...custom, id: 'changed', name: '已换封面的角色', previewImage: '/api/assets/changed.png' };
   const missing = { ...custom, id: 'missing', name: '无封面旧角色' };
@@ -150,10 +160,10 @@ it.each(['nai_chain_favs', 'nai_character_favorites'] as const)('自建角色兼
   expect(within(screen.getByRole('button', { name: '选择角色：' + changed.name })).getByRole('button', { name: '收藏' })).toBeTruthy();
   await screen.findByTestId('cover-' + fixtures.characters[0].name);
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+  chooseFavorites('character');
   expect(screen.getByRole('button', { name: '选择角色：' + current.name })).toBeTruthy();
   expect(screen.getByRole('button', { name: '选择角色：' + missing.name })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '选择角色：' + changed.name })).toBeNull();
+  expect(screen.getByRole('button', { name: '选择角色：' + changed.name })).toBeTruthy();
   act(() => { fixtures.favorites.get('character:' + current.id).archived = true; fixtures.revision++; fixtures.listeners.forEach(listener => listener()); });
   expect(screen.queryByRole('button', { name: '选择角色：' + current.name })).toBeNull();
   expect(screen.getByRole('button', { name: '选择角色：' + missing.name })).toBeTruthy();
@@ -202,7 +212,11 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('本测试禁止联网'); }));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(private callback: IntersectionObserverCallback) {}
+    observe(target: Element) { if (target.classList.contains('bg-gray-200')) this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+    unobserve() {} disconnect() {}
+  });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: copy } });
   vi.mocked(getArtistDictionaryPage).mockImplementation(async () => ({ entries: fixtures.artists, total: 2, page: 0, pageSize: 500, pageCount: 1 }));
@@ -327,10 +341,10 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const { root } = mockGalleryGeometry(cards);
     root.scrollTop = 1600;
     fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
+    chooseFavorites(kind);
     expect(root.scrollTop).toBe(0);
     root.scrollTop = 800;
-    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
+    chooseFavorites(kind, false);
     expect(root.scrollTop).toBe(0);
     fireEvent.keyDown(window, { key: 'Escape' });
     root.scrollTop = 900;
@@ -373,7 +387,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const toolbar = within(container.querySelector('header')!);
     expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
       '分组导航', ...(kind === 'artist' ? [null, null] : []),
-      '筛选', kindLabels(kind).draw, kind === 'artist' ? '画师库设置' : '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
+      '筛选', kindLabels(kind).draw, kind === 'artist' ? '画师库设置' : '角色库设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
     ]);
     expect(toolbar.getByRole('searchbox')).toBeTruthy();
     const draw = toolbar.getByRole('button', { name: kindLabels(kind).draw });
@@ -410,11 +424,11 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     if (kind === 'artist') expect(getArtistDictionaryEntriesAt).not.toHaveBeenCalled();
     else expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
+    chooseFavorites(kind);
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
     expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1);
     expect(screen.getByTestId(`cover-${entry.name}`)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+    chooseFavorites(kind, false);
     expect(screen.getAllByTestId(/^cover-/)).toHaveLength(2);
   });
 
@@ -424,7 +438,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entries[0].name}`);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('checkbox', { name: kindLabels(kind).favorite }));
+    chooseFavorites(kind);
     const sort = screen.getByRole('combobox', { name: kind === 'artist' ? '画师排序' : '角色排序' });
     for (const value of ['name-desc', 'least']) {
       fireEvent.change(sort, { target: { value } });
@@ -460,8 +474,17 @@ it('角色目录小池被近期批次覆盖后仍随机换批，不固定抽热�
   });
   renderLibrary('character');
   await screen.findByTestId('cover-small_pool_character_0');
+  const catalogCard = screen.getByRole('button', { name: '选择角色：small_pool_character_0' });
+  expect(within(catalogCard).getByText('Danbooru')).toBeTruthy();
+  expect(within(catalogCard).queryByText('Tag 词库')).toBeNull();
+  expect(within(catalogCard).getByTestId('cover-small_pool_character_0').getAttribute('data-show-source-badge')).toBe('false');
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
   await screen.findByText(/正在浏览随机抽取的 12 位角色/);
+  const randomCard = screen.getAllByRole('button', { name: /选择角色：small_pool_character_/ })[0];
+  expect(within(randomCard).getByText('Danbooru')).toBeTruthy();
+  expect(within(randomCard).queryByText('Tag 词库')).toBeNull();
+  const randomCover = within(randomCard).getByTestId(/^cover-small_pool_character_/);
+  expect(randomCover.getAttribute('data-show-source-badge')).toBe('false');
   for (let round = 1; round < 6; round++) {
     fireEvent.click(screen.getByRole('button', { name: '再抽一批' }));
     await waitFor(() => expect(getCharacterDictionaryEntriesAt).toHaveBeenCalledTimes(round + 1));
@@ -476,16 +499,26 @@ it('角色目录小池被近期批次覆盖后仍随机换批，不固定抽热�
 
 it('角色目录为空时仍能抽取自定义角色，不生成预览', async () => {
   vi.mocked(getCharacterDictionaryPage).mockResolvedValue({ entries: [], total: 0, page: 0, pageSize: 500, pageCount: 0 });
-  const { onSelect } = renderLibrary('character', 1280, [custom]);
-  fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
+  const p = renderLibrary('character', 1280, [custom]);
+  fireEvent.click(screen.getByRole('button', { name: '角色库设置' }));
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
   await screen.findByText(/正在浏览随机抽取的 1 位角色/);
   expect(getCharacterDictionaryEntriesAt).not.toHaveBeenCalled();
   expect(screen.queryByRole('button', { name: '生成预览' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '编辑' }));
-  expect(onSelect).toHaveBeenCalledWith(custom.id);
+  const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+  fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
+  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
+  fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '新的角色名称' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: '新的角色名称', description: '', tags: [] }));
+  const updated = { ...custom, name: '新的角色名称', previewImage: '/synthetic-updated-cover.webp' };
+  p.rerender(<CharacterLibrary chains={[updated]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={p.onDelete} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={p.notify} />);
+  const updatedCard = screen.getByRole('button', { name: '选择角色：新的角色名称' });
+  await waitFor(() => expect(within(updatedCard).getByRole('img', { name: updated.name }).getAttribute('src')).toContain(updated.previewImage));
+  expect(within(updatedCard).getByRole('button', { name: '下载图片' })).toBeTruthy();
+  expect(p.onSelect).not.toHaveBeenCalled(); expect(p.navigate).not.toHaveBeenCalled();
 });
 
 it('自定义角色保留创建入口，画师选择仍能送往实验室', async () => {
@@ -554,27 +587,47 @@ it('角色送往独立槽位时默认 AI 构图，目录不强制站位', async 
   expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
-it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更新', async () => {
-  const p = renderLibrary('character', 390, [custom]);
-  await screen.findByRole('button', { name: '编辑自定义角色信息' });
-  fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
+it('自定义角色卡片铅笔编辑正负提示词，不显示文字编辑或切入工作台', async () => {
+  const p = renderLibrary('character', 1280, [custom]);
+  const card = await screen.findByRole('button', { name: '选择角色：合成自定义角色' });
+  const edit = within(card).getByRole('button', { name: '编辑自定义角色信息' });
+  expectCustomCardLayout(card, false);
+  expect(within(card).getByText('自定义')).toBeTruthy();
+  expect(within(card).queryByText('Danbooru')).toBeNull();
+  expect(within(card).queryByRole('button', { name: '编辑' })).toBeNull();
+  fireEvent.click(edit);
+  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
+  fireEvent.change(screen.getByRole('combobox', { name: '正面提示词' }), { target: { value: 'new positive' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '负面提示词' }), { target: { value: 'new negative' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: custom.name, description: '', tags: [], basePrompt: 'new positive', negativePrompt: 'new negative' }));
+  expect(p.onSelect).not.toHaveBeenCalled(); expect(p.navigate).not.toHaveBeenCalled();
+  expect(startGenerationJob).not.toHaveBeenCalled();
+  const updated = { ...custom, previewImage: '/synthetic-updated-cover.webp', basePrompt: 'new positive', negativePrompt: 'new negative' };
+  p.rerender(<CharacterLibrary chains={[updated]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={p.onDelete} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={p.notify} />);
+  const updatedCard = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+  await waitFor(() => expect(within(updatedCard).getByRole('img', { name: custom.name }).getAttribute('src')).toContain(updated.previewImage));
+  expectCustomCardLayout(updatedCard, true);
+  expect(p.onSelect).not.toHaveBeenCalled(); expect(p.navigate).not.toHaveBeenCalled();
+});
+
+it('自定义角色抽卡卡片和已打开的大图随最新封面一起更新', async () => {
+  const original = { ...custom, previewImage: '/synthetic-original-cover.webp' };
+  const p = renderLibrary('character', 1280, [original]);
+  fireEvent.click(screen.getByRole('button', { name: '角色库设置' }));
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
   await screen.findByText(/正在浏览随机抽取的 1 位角色/);
-  const edit = screen.getByRole('button', { name: '编辑自定义角色信息' });
-  expect(edit.className).not.toContain('md:hidden');
-  expectCustomCardLayout(edit.closest('article')!, false);
-  fireEvent.click(edit);
-  expect(screen.queryByRole('button', { name: '复制' })).toBeNull();
-  expect(p.onSelect).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole('textbox', { name: '名称' }), { target: { value: '新的角色名称' } });
-  fireEvent.click(screen.getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(p.onUpdateChain).toHaveBeenCalledWith(custom.id, { name: '新的角色名称', description: '', tags: [] }));
-  p.rerender(<CharacterLibrary chains={[{ ...custom, name: '新的角色名称' }]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={vi.fn()} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={vi.fn()} />);
-  expect(screen.getByRole('heading', { name: '新的角色名称' })).toBeTruthy();
-  expect(screen.queryByRole('heading', { name: custom.name })).toBeNull();
-  expect(startGenerationJob).not.toHaveBeenCalled();
+  const card = screen.getByRole('button', { name: `选择角色：${custom.name}` });
+  fireEvent.click(card.querySelector('button.h-full.w-full')!);
+  const viewer = screen.getByRole('dialog', { name: '图片预览' });
+  expect(within(viewer).getByRole('img', { name: custom.name }).getAttribute('src')).toContain(original.previewImage);
+  const updated = { ...original, previewImage: '/synthetic-replaced-cover.webp' };
+  p.rerender(<CharacterLibrary chains={[updated]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={p.onDelete} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={p.notify} />);
+  expect(within(viewer).getByRole('img', { name: custom.name }).getAttribute('src')).toContain(updated.previewImage);
+  await waitFor(() => expect(within(card).getByRole('img', { name: custom.name }).getAttribute('src')).toContain(updated.previewImage));
+  expect(p.onSelect).not.toHaveBeenCalled(); expect(p.navigate).not.toHaveBeenCalled();
 });
 
 it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，收藏不改变所选 Tag，角色保留长按操作', async kind => {
@@ -590,11 +643,19 @@ it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，收藏不�
   expect(favorite.classList.contains('hover-reveal-touch')).toBe(false); fireEvent.click(favorite);
   await waitFor(() => expect(within(card).getByRole('button', { name: kind === 'artist' ? '取消偏好画师：' + fixtures.artists[0].name : '取消收藏' }).getAttribute('aria-pressed')).toBe('true')); expect(card.getAttribute('aria-pressed')).toBe('false');
 });
-it('自定义角色长按显露编辑和收藏，松手不打开图或选择；编辑只走信息窗口', () => {
-  renderLibrary('character', 390, [custom]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
+it('自定义角色长按可用铅笔，详情编辑入口也打开同一信息窗而不进工作台', async () => {
+  const roleWithCover = { ...custom, previewImage: '/synthetic-character.webp' };
+  const p = renderLibrary('character', 390, [roleWithCover]); const card = screen.getByRole('button', { name: '选择角色：合成自定义角色' });
   longPress(card); expect(card.getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(within(card).getByRole('button', { name: '编辑自定义角色信息' }));
   expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(card.querySelector('button.h-full.w-full')!);
+  const detail = (await screen.findAllByRole('dialog', { name: custom.name })).find(dialog => dialog.classList.contains('mobile-detail'))!;
+  expect(detail).toBeTruthy();
+  fireEvent.click(within(detail).getByRole('button', { name: '编辑还原' }));
+  expect(screen.getByRole('dialog', { name: '编辑自定义角色信息' })).toBeTruthy();
+  expect(p.onSelect).not.toHaveBeenCalled(); expect(p.navigate).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -646,7 +707,7 @@ it('自定义角色删除失败保留选择和详情且只提示失败，重试�
 
 it('删除抽卡中的自定义角色后，父级刷新移除抽卡卡片且不打开工作台', async () => {
   const p = renderLibrary('character', 1280, [custom]);
-  fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
+  fireEvent.click(screen.getByRole('button', { name: '角色库设置' }));
   fireEvent.change(screen.getByRole('combobox', { name: '抽卡范围' }), { target: { value: 'custom' } });
   fireEvent.keyDown(window, { key: 'Escape' });
   fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));

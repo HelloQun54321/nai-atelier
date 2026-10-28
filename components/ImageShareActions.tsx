@@ -36,7 +36,12 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
   useEffect(() => { void ensureCollection().catch(() => {}); }, []);
   const target: CollectionTarget = { imageUrl, title: filename.replace(/\.[^.]+$/, ''), ...generationData, ...favorite };
-  const active = favoriteActive ?? collectionTargetActive(target);
+  const collectionActive = collectionTargetActive(target);
+  const active = target.sourceType === 'history' && onToggleFavorite
+    ? Boolean(favoriteActive || collectionActive)
+    : favoriteActive ?? collectionActive;
+  const variantGroup = target.sourceType === 'character' && Boolean(target.groupSourceIds?.length);
+  const favoriteLabel = variantGroup ? active ? '取消所有变体收藏' : '收藏所有变体' : target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏';
   const toggleFavorite = async () => {
     if (favoriteBusyRef.current || favoritePending) return;
     favoriteBusyRef.current = true; setFavoriteBusy(true); setError('');
@@ -45,7 +50,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       else {
         const next = await toggleCollectionTarget(target);
         onFavoriteChange?.(next);
-        notify?.(next ? (target.getGroup ? '已收藏整个作品组' : '已加入收藏库') : '已取消收藏', 'success');
+        notify?.(next ? (variantGroup ? '已收藏该角色的所有变体' : target.getGroup ? '已收藏整个作品组' : '已加入收藏库') : '已取消收藏', 'success');
       }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : '收藏失败';
@@ -84,8 +89,8 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   ];
   return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`image-share-actions flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
     {showFavorite && <button type="button" data-image-favorite="true" aria-pressed={active}
-      title={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
-      aria-label={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
+      title={t(favoriteLabel)}
+      aria-label={t(favoriteLabel)}
       aria-busy={Boolean(favoriteBusy || favoritePending)} disabled={favoriteBusy || favoritePending} onClick={() => void toggleFavorite()}
       className={`inline-flex shrink-0 items-center justify-center gap-1.5 transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${active ? '!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400' : ''} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}>
       {favoriteBusy || favoritePending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${active ? 'fill-current' : ''}`} />}

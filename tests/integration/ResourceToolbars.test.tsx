@@ -56,7 +56,7 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({}) })));
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => ({ ok: true, json: async () => String(input).includes('/catalog-groups/') ? { revision: 0, groups: [], memberships: {} } : {} })));
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
@@ -82,22 +82,25 @@ describe('资料目录工具栏行为', () => {
     expect(startGenerationJob).not.toHaveBeenCalled();
   });
 
-  it('角色范围、排序与收藏集中筛选，抽卡设置独立且不会启动生成', async () => {
+  it('角色来源与收藏由目录导航选择，排序筛选与角色库设置独立', async () => {
     render(<CharacterLibrary chains={[]} onCreate={vi.fn()} onDelete={vi.fn()} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} onSelect={vi.fn()} />);
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '角色排序' }), { target: { value: 'least' } });
     await waitFor(() => expect(getCharacterDictionaryPage).toHaveBeenCalledWith(0, 'least'));
     expect(localStorage.getItem('nai_character_sort')).toBe('least');
-    fireEvent.change(screen.getByRole('combobox', { name: '角色范围' }), { target: { value: 'custom' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
-    expect(screen.getByRole('button', { name: '筛选 3' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+    await screen.findByRole('option', { name: '自定义 (0)' });
+    fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#source:custom' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#favorites' } });
+    expect(screen.getByRole('button', { name: '筛选 1' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
-    expect((screen.getByRole('combobox', { name: '角色范围' }) as HTMLSelectElement).value).toBe('all');
-    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByRole('combobox', { name: '角色范围' })).toBeNull();
+    expect(screen.getByRole('button', { name: '收藏' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('checkbox', { name: '只看收藏' })).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: '抽卡设置' }));
-    const settings = screen.getByRole('dialog', { name: '角色抽卡设置' });
+    fireEvent.click(screen.getByRole('button', { name: '角色库设置' }));
+    const settings = screen.getByRole('dialog', { name: '角色库设置' });
     fireEvent.change(within(settings).getByRole('combobox', { name: '数量' }), { target: { value: '24' } });
     expect((within(settings).getByRole('combobox', { name: '数量' }) as HTMLSelectElement).value).toBe('24');
     expect(startGenerationJob).not.toHaveBeenCalled();

@@ -831,7 +831,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                 value={weightInput}
                 onChange={event => { setWeightInput(event.target.value.replace(/[^\d.]/g, '')); setWeightInputEdited(true); }}
                 onBlur={commitWeightInput}
-                onKeyDown={event => { if (event.key === 'Enter') commitWeightInput(); }}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitWeightInput(); } }}
                 disabled={!editable || !selectedTokens.length}
                 inputMode="decimal"
                 aria-label={t("数值权重")}

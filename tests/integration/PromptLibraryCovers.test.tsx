@@ -40,6 +40,7 @@ it.each([1280, 390])('%spx 组合封面选择位于管理窗口上方，关闭�
   fireEvent.click(screen.getByRole('button', { name: '查看合成组合' }));
   fireEvent.click(screen.getByRole('button', { name: '从历史选封面' }));
   const picker = await screen.findByRole('dialog', { name: '选择历史图片' });
+  expect(within(picker).queryByRole('checkbox', { name: '同时导入该图参数' })).toBeNull();
   const manager = screen.getByRole('dialog', { name: '管理提示词' });
   const layer = picker.closest<HTMLElement>('.fixed')!;
   expect(Number(layer.style.zIndex)).toBeGreaterThan(Number(/z-\[(\d+)\]/.exec(manager.parentElement!.className)?.[1]));
@@ -62,6 +63,7 @@ it('片段封面选择与清除只提交显式修改，正文和生成参数保�
     onUpdateChain={update} onDelete={vi.fn()} notify={vi.fn()} onClose={close} /></ConfirmDialogProvider>);
   fireEvent.click(screen.getByRole('button', { name: '从历史选图' }));
   const picker = await screen.findByRole('dialog', { name: '选择历史图片' });
+  expect(within(picker).queryByRole('checkbox', { name: '同时导入该图参数' })).toBeNull();
   fireEvent.click(await within(picker).findByRole('button', { name: /^选择历史生成图片，/ }));
   expect(update).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '保存' }));

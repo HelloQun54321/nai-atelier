@@ -9,10 +9,10 @@ import { saveChainFolders } from '../../services/useChainFolders';
 import type { ChainFolderState } from '../../services/chainFolders';
 import type { PromptChain } from '../../types';
 
-const { get, put, confirm } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), confirm: vi.fn(async () => true) }));
+const { get, put, confirm, favorites, favoriteListeners, ensureFavorites } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), confirm: vi.fn(async () => true), favorites: [] as any[], favoriteListeners: new Set<() => void>(), ensureFavorites: vi.fn(async () => {}) }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirm }));
 vi.mock('../../services/api', () => ({ api: { get, put, post: vi.fn() } }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionTargetActive: () => false, readLegacyFavoriteIds: () => new Set(), subscribeCollection: () => () => {} }));
+vi.mock('../../services/collectionFavorites', () => ({ ensureCollection: ensureFavorites, collectionSnapshot: () => favorites, readLegacyFavoriteIds: () => new Set(), subscribeCollection: (listener: () => void) => { favoriteListeners.add(listener); return () => { favoriteListeners.delete(listener); }; } }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));
 vi.mock('../../services/stChatu8Sync', () => ({ useStChatu8Selection: () => ({ open: false, selecting: false, busy: false, entries: new Map(), available: new Set(), selected: new Set(), accepts: () => true, cancel: vi.fn() }), wisdomEntryLabel: () => '' }));
 vi.mock('../../services/appearancePreferences', () => ({ useGalleryFrostedCaption: () => false }));
@@ -36,6 +36,39 @@ const setup = async () => {
   return { ...view, props };
 };
 const choose = (id: string) => fireEvent.change(screen.getByLabelText('选择文件夹'), { target: { value: id } });
+
+it('收藏目录按对象身份计数、换封面仍保留，并且不接受作品拖入或被用于新建归属', async () => {
+  favorites.push({ sourceType: 'chain', sourceId: 'a', imageUrl: '/synthetic/previous.png' }, { sourceType: 'chain', sourceId: 'a', imageUrl: '/synthetic/another.png' }, { sourceType: 'chain', sourceId: 'b', imageUrl: '/synthetic/archived.png', archived: true });
+  localStorage.setItem('nai-style-folder-selection', '#favorites');
+  const { props, rerender } = await setup();
+  await waitFor(() => expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy());
+  expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 b' })).toBeNull();
+  expect(localStorage.getItem('nai-style-folder-selection')).toBe('#favorites');
+  rerender(<ChainList {...props} chains={[{ ...makeChain('a'), previewImage: '/synthetic/new-cover.png' }, makeChain('b')]} />);
+  expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+  const favorite = screen.getByRole('button', { name: '收藏' });
+  const dataTransfer = { types: [CHAIN_FOLDER_DRAG_TYPE], getData: () => JSON.stringify(['a']) };
+  fireEvent.dragOver(favorite, { dataTransfer }); fireEvent.drop(favorite, { dataTransfer });
+  expect(put).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '编辑文件夹' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '新建文件夹' }));
+  expect((screen.getByRole('combobox', { name: '上级文件夹' }) as HTMLSelectElement).value).toBe('');
+  fireEvent.click(screen.getByRole('button', { name: '取消' }));
+  act(() => { favorites.forEach(item => { item.archived = true; }); favoriteListeners.forEach(listener => listener()); });
+  expect(screen.getByRole('option', { name: '收藏 (0)' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 a' })).toBeNull();
+});
+
+it('收藏目录读取失败显示未知计数和重试，成功后恢复真实内容', async () => {
+  localStorage.setItem('nai-style-folder-selection', '#favorites');
+  ensureFavorites.mockRejectedValueOnce(Error('合成失败'));
+  await setup();
+  await screen.findByText('收藏库加载失败，请稍后重试');
+  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+  await screen.findByRole('option', { name: '收藏 (0)' });
+});
 // 单条归属改由多选工具栏入口设置，卡片悬浮层不再提供该按钮。
 const selectChainsForFolders = (ids: string[]) => {
   fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
@@ -56,7 +89,7 @@ const dragDirectory = (source: HTMLElement, target: HTMLElement | (() => HTMLEle
   fireEvent.dragEnd(source, { dataTransfer: transfer });
 };
 beforeEach(() => {
-  localStorage.clear(); get.mockReset(); put.mockReset();
+  localStorage.clear(); get.mockReset(); put.mockReset(); favorites.length = 0; favoriteListeners.clear(); ensureFavorites.mockReset().mockResolvedValue();
   stored = { revision: 1, folders: [{ id: 'root', name: '画风实验', parentId: null }, { id: 'child', name: '平涂', parentId: 'root' }], assignments: { a: ['child'] } };
   get.mockImplementation(async () => structuredClone(stored));
   put.mockImplementation(async (_path, state) => { stored = { ...structuredClone(state), revision: stored.revision + 1 }; return structuredClone(stored); });

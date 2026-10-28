@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Inspiration, LocalGenItem, PromptChain, User } from '../../types';
+import type { CollectionImage, CollectionTarget } from '../../services/collectionFavorites';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), uploadFile: vi.fn(), historyPage: vi.fn(), historyFavorites: vi.fn(), workFavorite: vi.fn(), pixivImport: vi.fn(), danbooruImport: vi.fn(), codexFile: vi.fn(), codexMetadata: vi.fn() }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, post: mocks.post, put: mocks.put, uploadFile: mocks.uploadFile } }));
@@ -170,6 +171,28 @@ it('偏好沿用空格与下划线同名画师的收藏，收藏自建样张保�
   await service.toggleArtistPreference('beta', sample.imageUrl);
   expect(service.collectionSnapshot().find(item => item.sourceId === 'beta')).toMatchObject({ prompt: sample.prompt, negativePrompt: sample.negativePrompt, params: sample.params });
 });
+it('画师偏好与页面一样补齐括号空格，亮心点击取消既有来源', async () => {
+  stored = [{ id: 'artist', userId: user.id, sourceType: 'artist', sourceId: 'foo(bar)', title: '画师', prompt: '', imageUrl: '/original.png', createdAt: 1 }];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  await expect(service.toggleArtistPreference('foo (bar)', '/new.png')).resolves.toBe(false);
+  expect(service.collectionSnapshot()).toHaveLength(1);
+  expect(service.collectionSnapshot()[0].archived).toBe(true);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(0);
+});
+
+it('画师早期归档不遮蔽其他规范同名活动来源，取消全部本用户活动记录', async () => {
+  stored = [
+    { id: 'archived', userId: user.id, sourceType: 'artist', sourceId: 'foo_bar', title: '归档', prompt: '', imageUrl: '/old.png', archived: true, createdAt: 1 },
+    { id: 'active', userId: user.id, sourceType: 'artist', sourceId: 'foo bar', title: '活动', prompt: '', imageUrl: '/active.png', createdAt: 2 },
+    { id: 'active-alias', userId: user.id, sourceType: 'artist', sourceId: 'FOO_BAR', title: '活动别名', prompt: '', imageUrl: '/active-alias.png', createdAt: 3 },
+    { id: 'foreign', userId: 'other-owner', sourceType: 'artist', sourceId: 'foo_bar', title: '他人', prompt: '', imageUrl: '/foreign.png', createdAt: 4 },
+  ];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  await expect(service.toggleArtistPreference('foo_bar', '/new.png')).resolves.toBe(false);
+  expect(service.collectionSnapshot().map(item => Boolean(item.archived))).toEqual([true, true, true, false]);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(0);
+});
+
 let stored: Inspiration[];
 let details: any[];
 let chains: PromptChain[];
@@ -193,6 +216,253 @@ const legacyChain = (id: string, type: 'style' | 'character' = 'style', previewI
   id, type, userId: user.id, name: id, description: '', tags: [], previewImage,
   basePrompt: 'original prompt', negativePrompt: 'original negative', modules: [],
   params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 123 }, createdAt: 10, updatedAt: 20,
+});
+
+const variantSourceIds = [
+  'ulrich von hutten (azur lane)',
+  'ulrich von hutten (mayhem maid) (azur lane)',
+  'ulrich von hutten (ignition matrician) (azur lane)',
+  'ulrich von hutten (what comes after the bell) (azur lane)',
+  'ulrich von hutten (liebestrank) (azur lane)',
+];
+const variantImages = (): CollectionImage[] => variantSourceIds.map((sourceId, index) => ({
+  imageUrl: `/synthetic/${index}.webp`, title: sourceId, sourceType: 'character', sourceId,
+  imageId: `post-${index}`, prompt: `prompt-${index}`, params: { seed: index },
+}));
+const variantTarget = (images = variantImages(), sourceIds: readonly string[] = variantSourceIds): CollectionTarget => ({
+  ...images[0], groupSourceIds: sourceIds, getGroup: async () => images,
+});
+
+it('跨 Tag 角色组按五个独立来源各收藏一张代表封面，成员顺序不影响并发去重', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const images = variantImages();
+  const target = variantTarget(images);
+  const getGroup = vi.fn(target.getGroup);
+  target.getGroup = getGroup;
+  const reversed = { ...target, groupSourceIds: [...variantSourceIds].reverse() };
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(await Promise.all([service.toggleCollectionTarget(target, true), service.toggleCollectionTarget(reversed, true)])).toEqual([true, true]);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(5);
+  expect(service.collectionSnapshot().map(item => [item.sourceType, item.sourceId, item.analysis?.collectionImageId])).toEqual(
+    images.map(image => ['character', image.sourceId, image.imageId]));
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(getGroup).toHaveBeenCalledOnce();
+  await expect(service.toggleCollectionTarget(target, true)).resolves.toBe(true);
+  expect(getGroup).toHaveBeenCalledOnce();
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(5);
+});
+
+it('跨 Tag 变体共用同一封面URL与图片ID时仍保留五个来源引用并整体取消', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const images = variantImages().map(image => ({ ...image, imageUrl: '/synthetic/shared-cover.webp', imageId: 'shared-post' }));
+  const target = variantTarget(images);
+  await service.toggleCollectionTarget(target, true);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(5);
+  expect(service.collectionSnapshot().map(item => item.sourceId)).toEqual(variantSourceIds);
+  expect(service.collectionSnapshot().map(item => item.analysis?.collectionImageId)).toEqual(Array(5).fill('shared-post'));
+  expect(service.collectionTargetActive(target)).toBe(true);
+  await expect(service.toggleCollectionTarget(target, false)).resolves.toBe(false);
+  expect(service.collectionSnapshot().filter(item => variantSourceIds.includes(item.sourceId || '') && item.archived)).toHaveLength(5);
+});
+
+it('显式补齐与同族用户切换并发时按队列顺序保留后一次点击', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const target = variantTarget();
+  expect(await Promise.all([service.toggleCollectionTarget(target, true), service.toggleCollectionTarget(target)])).toEqual([true, false]);
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionSnapshot().filter(item => variantSourceIds.includes(item.sourceId || '') && !item.archived)).toHaveLength(0);
+  expect(service.collectionSnapshot().filter(item => variantSourceIds.includes(item.sourceId || '') && item.archived)).toHaveLength(5);
+});
+
+it('显式取消空的跨 Tag 组不解析或新增封面', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const target = variantTarget();
+  const getGroup = vi.fn(target.getGroup);
+  target.getGroup = getGroup;
+  await expect(service.toggleCollectionTarget(target, false)).resolves.toBe(false);
+  expect(getGroup).not.toHaveBeenCalled();
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(0);
+  expect(service.collectionSnapshot()).toEqual([]);
+});
+
+it('跨 Tag 组补齐缺失成员并恢复归档原图，取消只归档当前用户该族作品', async () => {
+  stored = [
+    { id: 'active-base', userId: user.id, title: '保留底图', prompt: '旧提示词', imageUrl: '/old/base.webp', sourceType: 'character', sourceId: variantSourceIds[0], createdAt: 1, analysis: { collectionImageId: 'old-base' } },
+    { id: 'archived-variant', userId: user.id, title: '历史服装图', prompt: '历史提示词', imageUrl: '/old/maid.webp', sourceType: 'character', sourceId: variantSourceIds[1], archived: true, createdAt: 2, analysis: { collectionImageId: 'old-maid' } },
+    { id: 'foreign-variant', userId: 'another-user', title: '他人收藏', prompt: 'foreign', imageUrl: '/foreign.webp', sourceType: 'character', sourceId: variantSourceIds[2], createdAt: 3 },
+    { id: 'unrelated', userId: user.id, title: '其他角色', prompt: 'keep', imageUrl: '/other.webp', sourceType: 'character', sourceId: 'another-character', createdAt: 4 },
+  ];
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const target = variantTarget();
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.getCollectionSourceImage('character', variantSourceIds[0])).toMatchObject({ imageUrl: '/old/base.webp', prompt: '旧提示词', imageId: 'old-base' });
+  expect(service.getCollectionSourceImage('character', variantSourceIds[1])).toBeUndefined();
+  expect(service.getCollectionSourceImage('character', variantSourceIds[2])).toBeUndefined();
+  await service.toggleCollectionTarget(target, true);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(mocks.put).toHaveBeenCalledWith('/inspirations/archived-variant', { archived: false });
+  expect(service.collectionSnapshot().find(item => item.id === 'active-base')).toMatchObject({ imageUrl: '/old/base.webp', prompt: '旧提示词' });
+  expect(service.collectionSnapshot().find(item => item.id === 'archived-variant')).toMatchObject({ imageUrl: '/old/maid.webp', prompt: '历史提示词', archived: false });
+  expect(service.getCollectionSourceImage('character', variantSourceIds[1])).toMatchObject({ imageUrl: '/old/maid.webp', prompt: '历史提示词', imageId: 'old-maid' });
+  expect(service.collectionSnapshot().filter(item => item.userId === user.id && variantSourceIds.includes(item.sourceId || '') && !item.archived)).toHaveLength(5);
+  expect(service.collectionSnapshot().find(item => item.id === 'foreign-variant')?.archived).toBeFalsy();
+
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionSnapshot().filter(item => item.userId === user.id && variantSourceIds.includes(item.sourceId || '') && !item.archived)).toHaveLength(0);
+  expect(service.collectionSnapshot().find(item => item.id === 'foreign-variant')?.archived).toBeFalsy();
+  expect(service.collectionSnapshot().find(item => item.id === 'unrelated')?.archived).toBeFalsy();
+});
+
+it('跨 Tag 组保存中途失败后重试只补缺失来源，不重复新增已成功成员', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const originalPost = mocks.post.getMockImplementation()!;
+  let creates = 0;
+  mocks.post.mockImplementation(async (path: string, body: any) => {
+    if (path === '/inspirations' && ++creates === 2) throw new Error('合成成员保存失败');
+    return originalPost(path, body);
+  });
+  const target = variantTarget();
+  await expect(service.toggleCollectionTarget(target, true)).rejects.toThrow('合成成员保存失败');
+  expect(service.collectionSnapshot().filter(item => !item.archived && variantSourceIds.includes(item.sourceId || ''))).toHaveLength(1);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetActive({ ...target, sourceId: variantSourceIds[1], imageUrl: '/missing-current.webp' })).toBe(false);
+  await service.toggleCollectionTarget(target, true);
+  expect(service.collectionSnapshot().filter(item => !item.archived && variantSourceIds.includes(item.sourceId || ''))).toHaveLength(5);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(6);
+  expect(new Set(service.collectionSnapshot().filter(item => variantSourceIds.includes(item.sourceId || '')).map(item => item.sourceId)).size).toBe(5);
+});
+
+it('部分家族当前角色亮心，普通点击取消整族而不尝试补齐', async () => {
+  stored = variantImages().slice(0, 2).map((image, index) => ({ ...image, id: `partial-${index}`, userId: user.id, title: image.title!, prompt: '', createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const target = variantTarget();
+  const getGroup = vi.fn(target.getGroup); target.getGroup = getGroup;
+  expect(service.collectionTargetActive(target)).toBe(true);
+  // 另一成员即使复用当前图片，来源未收藏也不能冒充已收藏。
+  expect(service.collectionTargetActive({ ...target, sourceId: variantSourceIds[2] })).toBe(false);
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(getGroup).not.toHaveBeenCalled();
+  expect(service.collectionSnapshot().every(item => item.archived)).toBe(true);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(0);
+});
+
+it.each(['role-id', 'custom:role-id', 'catalog:role-id'])('角色旧来源%s在换封面后仍亮且能取消，其他来源不受影响', async sourceId => {
+  stored = [{ id: 'role', userId: user.id, title: '角色', prompt: '', imageUrl: '/old-cover.png', sourceType: 'character', sourceId, createdAt: 1 }];
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const target: CollectionTarget = { imageUrl: '/new-cover.png', imageId: 'new-candidate', sourceType: 'character', sourceId: 'role-id' };
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetActive({ ...target, sourceType: 'pixiv' })).toBe(false);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'absent' })).toBe(false);
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(service.collectionSnapshot()[0].archived).toBe(true);
+  expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('关闭联动时同封面角色按独立来源亮心与取消，无来源旧图仍兼容', async () => {
+  stored = variantImages().slice(0, 2).map((image, index) => ({ ...image, imageUrl: '/shared.png', id: `shared-${index}`, userId: user.id, title: image.title!, prompt: '', createdAt: 1 }));
+  stored.push({ id: 'unrelated-shared', userId: user.id, title: '其他角色', prompt: '', imageUrl: '/shared.png', sourceType: 'character', sourceId: 'another-role', createdAt: 1 });
+  stored.push({ id: 'legacy-image', userId: user.id, title: '无来源旧图', prompt: '', imageUrl: '/legacy.png', createdAt: 1 });
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const current: CollectionTarget = { ...variantImages()[0], imageUrl: '/shared.png' };
+  expect(service.collectionTargetActive(current)).toBe(true);
+  expect(service.collectionTargetActive({ ...current, sourceId: variantSourceIds[2] })).toBe(false);
+  expect(service.collectionTargetActive({ ...current, sourceId: 'unknown', imageUrl: '/legacy.png' })).toBe(true);
+  expect(service.collectionTargetActive({ ...current, collectionId: 'unrelated-shared' })).toBe(true);
+  await expect(service.toggleCollectionTarget(current)).resolves.toBe(false);
+  expect(service.collectionSnapshot().map(item => Boolean(item.archived))).toEqual([true, false, false, false]);
+  expect(service.collectionTargetActive(current)).toBe(false);
+  expect(service.collectionTargetActive({ ...current, sourceId: variantSourceIds[1] })).toBe(true);
+});
+
+it.each(['chain', 'other'] as const)('%s 换封面仍按对象亮心，取消保留同封面的其他对象及其他用户资料', async sourceType => {
+  stored = [
+    { id: 'own-object', userId: user.id, sourceType, sourceId: 'object', title: '当前', prompt: '', imageUrl: '/shared.png', createdAt: 1 },
+    { id: 'own-second-cover', userId: user.id, sourceType, sourceId: 'object', title: '旧封面', prompt: '', imageUrl: '/older.png', createdAt: 1 },
+    { id: 'another-object', userId: user.id, sourceType, sourceId: 'another', title: '其他对象', prompt: '', imageUrl: '/shared.png', createdAt: 1 },
+    { id: 'foreign-object', userId: 'other-owner', sourceType, sourceId: 'object', title: '其他用户', prompt: '', imageUrl: '/foreign.png', createdAt: 1 },
+    { id: 'legacy-cover', userId: user.id, title: '无来源旧封面', prompt: '', imageUrl: '/legacy.png', createdAt: 1 },
+  ];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const target: CollectionTarget = { imageUrl: '/new.png', sourceType, sourceId: 'object' };
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetActive({ ...target, sourceId: 'missing', imageUrl: '/shared.png' })).toBe(false);
+  expect(service.collectionTargetActive({ ...target, sourceId: 'missing', imageUrl: '/legacy.png' })).toBe(true);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'missing' })).toBe(false);
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(service.collectionSnapshot().map(item => Boolean(item.archived))).toEqual([true, true, false, false, false]);
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionTargetActive({ ...target, sourceId: 'another' })).toBe(true);
+});
+
+it.each(['character', 'chain', 'other'] as const)('%s 共用历史封面仍需独立收藏，创建和取消不触及历史引用', async sourceType => {
+  stored = [
+    { id: 'history-ref', userId: user.id, title: '历史', prompt: '', imageUrl: '/shared-history.png', sourceType: 'history', sourceId: 'history-source', createdAt: 1 },
+    { id: 'legacy-ref', userId: user.id, title: '无来源旧图', prompt: '', imageUrl: '/legacy.png', createdAt: 1 },
+  ];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const target: CollectionTarget = { imageUrl: '/shared-history.png', sourceType, sourceId: 'object-source' };
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.matchesCollectionImage(stored[0], target)).toBe(false);
+  expect(service.collectionTargetActive({ ...target, imageUrl: '/legacy.png' })).toBe(true);
+  expect(service.collectionTargetActive({ ...target, collectionId: 'history-ref' })).toBe(true);
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(true);
+  expect(service.collectionSnapshot()).toHaveLength(3);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionSnapshot()[2]).toMatchObject({ sourceType, sourceId: 'object-source' });
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(service.collectionSnapshot().map(item => Boolean(item.archived))).toEqual([false, false, true]);
+  expect(mocks.historyFavorites).not.toHaveBeenCalled();
+});
+
+it('同URL不同收藏记录并发取消各自生效，不共用图片URL锁', async () => {
+  stored = ['first', 'second'].map(id => ({ id, userId: user.id, title: id, prompt: '', imageUrl: '/shared.png', createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const targets = stored.map(item => ({ imageUrl: item.imageUrl, collectionId: item.id }));
+  await expect(Promise.all(targets.map(target => service.toggleCollectionTarget(target)))).resolves.toEqual([false, false]);
+  expect(service.collectionSnapshot().every(item => item.archived)).toBe(true);
+  expect(mocks.put).toHaveBeenCalledTimes(2);
+  expect(mocks.put.mock.calls.map(([path]) => path)).toEqual(['/inspirations/first', '/inspirations/second']);
+});
+
+it('同一显式收藏记录并发取消仍合并一次写入', async () => {
+  stored = [{ id: 'same-record', userId: user.id, title: '记录', prompt: '', imageUrl: '/shared.png', createdAt: 1 }];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const target = { imageUrl: '/shared.png', collectionId: 'same-record' };
+  await expect(Promise.all([service.toggleCollectionTarget(target), service.toggleCollectionTarget({ ...target, imageUrl: '/another-preview.png' })])).resolves.toEqual([false, false]);
+  expect(service.collectionSnapshot()[0].archived).toBe(true);
+  expect(mocks.put).toHaveBeenCalledOnce();
+});
+
+it('同一角色列表和大图使用不同封面并发点击只保存或取消一次', async () => {
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  const first: CollectionTarget = { imageUrl: '/first.png', imageId: 'one', sourceType: 'character', sourceId: 'role' };
+  const second = { ...first, imageUrl: '/second.png', imageId: 'two', sourceId: 'catalog:role' };
+  await expect(Promise.all([service.toggleCollectionTarget(first), service.toggleCollectionTarget(second)])).resolves.toEqual([true, true]);
+  expect(mocks.post.mock.calls.filter(([path]) => path === '/inspirations')).toHaveLength(1);
+  expect(service.collectionTargetActive(second)).toBe(true);
+  await expect(Promise.all([service.toggleCollectionTarget(first), service.toggleCollectionTarget(second)])).resolves.toEqual([false, false]);
+  expect(mocks.put).toHaveBeenCalledOnce();
+  expect(service.collectionSnapshot()[0].archived).toBe(true);
+});
+
+it('关闭联动后取消当前角色保留其余已收藏变体', async () => {
+  stored = variantImages().slice(0, 2).map((image, index) => ({ ...image, id: `single-${index}`, userId: user.id, title: image.title!, prompt: '', createdAt: 1 }));
+  const service = await import('../../services/collectionFavorites');
+  await service.loadCollection(user);
+  await expect(service.toggleCollectionTarget({ ...variantImages()[0], imageUrl: '/new-candidate.webp' })).resolves.toBe(false);
+  expect(service.collectionSnapshot().map(item => Boolean(item.archived))).toEqual([true, false]);
 });
 
 it('复用调用方有效串快照汇总旧标记，未提供快照的完整刷新重新读取串库', async () => {
@@ -307,7 +577,8 @@ it('同串换封面保留确切图片，不复用已保存旧封面ID，旧归�
   const result = await service.loadCollection(user);
   expect(result).toHaveLength(2); expect(result[0]).toMatchObject({ id: old.id, imageUrl: '/api/assets/old.png', archived: true });
   expect(result[1].imageUrl).toBe('/api/assets/new.png'); expect(result[1].id).not.toBe(old.id);
-  expect(service.collectionTargetActive({ imageUrl: '/api/assets/old.png', sourceType: 'chain', sourceId: 'source' })).toBe(false);
+  expect(service.collectionTargetActive({ imageUrl: '/api/assets/old.png', sourceType: 'chain', sourceId: 'source' })).toBe(true);
+  expect(service.collectionTargetActive({ imageUrl: '/api/assets/old.png', collectionId: old.id })).toBe(false);
   expect(service.collectionTargetActive({ imageUrl: '/api/assets/new.png', sourceType: 'chain', sourceId: 'source' })).toBe(true);
   const stable = await service.loadCollection(user); expect(stable[1].id).toBe(result[1].id);
   await service.updateCollection([stable[1].id], { notes: 'new image' });
@@ -347,8 +618,9 @@ it.each(['codex', 'codex-community'] as const)('%s 收藏存原件和真实参�
   expect(stored[0]).toMatchObject({ prompt: '', params: { steps: 12 }, imageUrl: '/api/assets/inspirations/saved.png', analysis: { codex: { note: 'source note' } } });
   expect(stored[0].params?.width).toBeUndefined(); expect(stored[0].params?.sampler).toBeUndefined();
   const group = { ...first, groupSize: 2, getGroup: async () => [first, { ...first, imageId: 'second.png', imageUrl: 'https://assets.quicktagcloud.com/originals/book/second.png' }] };
-  expect(service.collectionTargetActive(group)).toBe(false);
-  await service.toggleCollectionTarget(group);
+  expect(service.collectionTargetActive(group)).toBe(true);
+  expect(service.collectionTargetComplete(group)).toBe(false);
+  await service.toggleCollectionTarget(group, true);
   expect(stored).toHaveLength(2); expect(mocks.uploadFile).toHaveBeenCalledTimes(2);
   expect(service.collectionTargetActive(group)).toBe(true);
 });
@@ -415,9 +687,9 @@ it('整组收藏、逐张取消、补齐整组与重复点击共用同一批图�
   const first = service.collectionSnapshot()[0];
   await service.updateCollection([first.id], { boardId: 'folder', notes: '备注' });
   expect(await service.toggleCollectionTarget(images[0])).toBe(false);
-  expect(service.collectionTargetActive(group)).toBe(false); expect(service.collectionTargetActive(images[1])).toBe(true);
+  expect(service.collectionTargetActive(group)).toBe(true); expect(service.collectionTargetComplete(group)).toBe(false); expect(service.collectionTargetActive(images[1])).toBe(true);
   expect(stored[0]).toEqual(expect.objectContaining({ boardId: 'folder', notes: '备注', archived: true }));
-  expect(await service.toggleCollectionTarget(group)).toBe(true); expect(stored).toHaveLength(2);
+  expect(await service.toggleCollectionTarget(group, true)).toBe(true); expect(stored).toHaveLength(2);
   expect(stored[0]).toEqual(expect.objectContaining({ boardId: 'folder', notes: '备注', archived: false }));
   expect(await service.toggleCollectionTarget(group)).toBe(false);
   expect(stored.every(item => item.archived)).toBe(true);
@@ -435,8 +707,8 @@ it('组内图片保存失败时保留已完成收藏，重试补齐缺少的图�
     return original(path, body);
   });
   await expect(service.toggleCollectionTarget(group)).rejects.toThrow('合成保存失败');
-  expect(stored).toHaveLength(1); expect(service.collectionTargetActive(group)).toBe(false);
-  await service.toggleCollectionTarget(group); expect(stored).toHaveLength(2);
+  expect(stored).toHaveLength(1); expect(service.collectionTargetActive(group)).toBe(true); expect(service.collectionTargetComplete(group)).toBe(false);
+  await service.toggleCollectionTarget(group, true); expect(stored).toHaveLength(2);
 });
 
 it('旧收藏首次拖入收藏夹只保存当前条目的引用和元数据，随后沿用既有更新接口', async () => {
@@ -531,13 +803,63 @@ it('未知旧来源安全归入其他来源，访客收藏失败前不写入任�
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it('旧作品组仅缓存首图时不会误认为全组已收藏', async () => {
+it('旧作品组仅缓存首图仍亮心，但完整性不冒充已齐全', async () => {
   const service = await import('../../services/collectionFavorites');
   details = [{ work: { id: 5, image_count: 3 }, images: [{ id: 1, work_id: 5, file_name: '5_p0', local_image_url: '/api/assets/first.webp' }] }];
   await service.loadCollection(user);
-  expect(service.collectionTargetActive({ imageUrl: '/api/assets/first.webp', sourceType: 'aitag', sourceId: '5', groupSize: 3, getGroup: async () => [] })).toBe(false);
+  const target = { imageUrl: '/api/assets/first.webp', sourceType: 'aitag' as const, sourceId: '5', groupSize: 3, getGroup: async () => [] };
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetComplete(target)).toBe(false);
 });
 
+
+it.each(['aitag', 'pixiv', 'codex', 'codex-community'] as const)('%s 部分页亮心，普通点击只取消已有页，明确补齐保持幂等', async sourceType => {
+  stored = [{ id: 'own', userId: user.id, imageUrl: '/saved-first.png', sourceType, sourceId: 'work', title: '作品', prompt: '', createdAt: 1, analysis: { collectionImageId: '0', collectionGroupSize: 2 } }];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const images: CollectionImage[] = [0, 1].map(page => ({ imageUrl: `/page-${page}.png`, sourceType, sourceId: 'work', imageId: String(page) }));
+  const getGroup = vi.fn(async () => images);
+  const target = { ...images[0], groupSize: 2, getGroup };
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetComplete(target)).toBe(false);
+  await expect(service.toggleCollectionTarget(target)).resolves.toBe(false);
+  expect(stored[0].archived).toBe(true);
+  expect(getGroup).not.toHaveBeenCalled();
+  await expect(service.toggleCollectionTarget(target, true)).resolves.toBe(true);
+  expect(stored).toHaveLength(2);
+  expect(service.collectionTargetComplete(target)).toBe(true);
+  const calls = mocks.post.mock.calls.length + mocks.put.mock.calls.length;
+  await service.toggleCollectionTarget(target, true);
+  expect(getGroup).toHaveBeenCalledOnce();
+  expect(mocks.post.mock.calls.length + mocks.put.mock.calls.length).toBe(calls);
+});
+
+it('作品来源与页码旧数值身份只读兼容，代理地址变化不导致灰心或重复页', async () => {
+  stored = [
+    { id: 'numeric', userId: user.id, imageUrl: '/local.png', sourceType: 'pixiv', sourceId: 42 as unknown as string, title: '作品', prompt: '', createdAt: 1, analysis: { collectionImageId: 0 } },
+    { id: 'duplicate', userId: user.id, imageUrl: '/duplicate.png', sourceType: 'pixiv', sourceId: '42', title: '重复页', prompt: '', createdAt: 1, analysis: { externalSourcePage: '0' } },
+  ];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const target: CollectionTarget = { imageUrl: '/api/media?source=remote-original&variant=original', sourceType: 'pixiv', sourceId: '42', imageId: '0', groupSize: 2, getGroup: async () => [] };
+  expect(service.collectionTargetActive({ ...target, getGroup: undefined })).toBe(true);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetComplete(target)).toBe(false);
+  expect(service.matchesCollectionImage(stored[0], target)).toBe(true);
+  await service.toggleCollectionTarget(target);
+  expect(service.collectionSnapshot().every(item => item.archived)).toBe(true);
+  expect(stored[0].sourceId).toBe(42);
+});
+
+it('其他用户同作品收藏不点亮本用户作品组或阻止本用户保存', async () => {
+  stored = [{ id: 'foreign', userId: 'other-owner', imageUrl: '/same.png', sourceType: 'pixiv', sourceId: 'work', title: '作品', prompt: '', createdAt: 1, analysis: { collectionImageId: '0' } }];
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const image: CollectionImage = { imageUrl: '/same.png', sourceType: 'pixiv', sourceId: 'work', imageId: '0' };
+  const target = { ...image, groupSize: 1, getGroup: async () => [image] };
+  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionTargetComplete(target)).toBe(false);
+  await service.toggleCollectionTarget(target, true);
+  expect(service.collectionSnapshot().filter(item => item.userId === user.id)).toHaveLength(1);
+  expect(stored.find(item => item.id === 'foreign')?.archived).toBeFalsy();
+});
 
 it('收藏库内未收全的作品组仍显示已收藏，整组取消仅移除该用户已经收藏的图片', async () => {
   stored = [
@@ -646,12 +968,14 @@ it('组索引保留所属用户、首个声明页数、原始身份去重及收�
   ];
   await service.loadCollection(user);
   const target = { imageUrl: '/one', sourceType: 'pixiv' as const, sourceId: 'group', getGroup: async () => [], groupSize: 2 };
-  expect(service.collectionTargetActive(target)).toBe(false);
+  expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetComplete(target)).toBe(false);
   expect(service.collectionTargetActive({ ...target, collectionId: 'one' })).toBe(true);
   expect(service.collectionTargetActive({ ...target, collectionId: 'foreign' })).toBe(true);
   expect(service.collectionTargetActive({ ...target, collectionId: 'absent' })).toBe(false);
   await service.updateCollection(['duplicate'], { analysis: { collectionImageId: 1 } });
   expect(service.collectionTargetActive(target)).toBe(true);
+  expect(service.collectionTargetComplete(target)).toBe(false);
   await service.updateCollection(['foreign'], { archived: true });
   expect(service.collectionTargetActive({ ...target, collectionId: 'foreign' })).toBe(false);
   await service.loadCollection({ ...user, id: 'other-owner' });

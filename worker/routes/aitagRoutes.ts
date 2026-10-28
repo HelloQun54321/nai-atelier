@@ -1019,7 +1019,7 @@ function firstImagePromptMatchSql() {
 
 async function searchAitagCache(
   db: D1Database,
-  options: { page: number; pageSize: number; sort: string; aiType: AitagAiTypeFilter; cacheFilter?: AitagCacheFilter; q?: string; prompt?: string }
+  options: { page: number; pageSize: number; sort: string; aiType: AitagAiTypeFilter; cacheFilter?: AitagCacheFilter; q?: string; prompt?: string; userId: string }
 ) {
   const sourceSort = normalizeAitagSourceSort(options.sort);
   const where = ['w.source_sort = ?'];
@@ -1055,7 +1055,12 @@ async function searchAitagCache(
       )
     `);
   } else if (options.cacheFilter === 'favorite') {
-    where.push('COALESCE(w.is_favorite, 0) = 1');
+    where.push(`(COALESCE(w.is_favorite, 0) = 1 OR EXISTS (
+      SELECT 1 FROM inspirations favorite
+      WHERE favorite.user_id = ? AND favorite.source_type = 'aitag'
+        AND favorite.source_id = CAST(w.id AS TEXT) AND COALESCE(favorite.archived, 0) = 0
+    ))`);
+    values.push(options.userId);
   }
 
   const q = (options.q || '').trim().toLowerCase();
@@ -1401,6 +1406,7 @@ export async function handleAitagRoute(ctx: RouteContext): Promise<Response | nu
       sort: sourceSort,
       aiType,
       cacheFilter,
+      userId: ctx.currentUser.id,
       q: url.searchParams.get('q') || '',
       prompt: url.searchParams.get('prompt') || '',
     });

@@ -20,7 +20,7 @@ import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache'
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { getLabModeLabel } from '../services/labWorkspace';
-import { syncHistoryCollectionFavorites } from '../services/collectionFavorites';
+import { collectionTargetActive, syncHistoryCollectionFavorites } from '../services/collectionFavorites';
 import { ImageShareActions } from './ImageShareActions';
 import { ImageCardActions } from './ImageCardActions';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
@@ -135,6 +135,7 @@ const HistoryCard = React.memo(function HistoryCard({
     const ratio = useMemo(() => resolveHistoryImageRatio(item, measuredRatio), [item, measuredRatio]);
 
     const createdAt = useMemo(() => new Date(item.createdAt).toLocaleString(getLanguage()), [item.createdAt, language]);
+    const favoriteTarget = { imageUrl: item.imageUrl, sourceType: 'history' as const, sourceId: item.id };
 
     return (
         <PressRevealSurface pressDisabled={selectionMode}
@@ -162,7 +163,7 @@ const HistoryCard = React.memo(function HistoryCard({
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                 {selectionMode && <div className={`absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${isSelected ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}>{isSelected ? '✓' : ''}</div>}
                 {!selectionMode && <ImageCardActions onPointerDown={event => event.stopPropagation()}>
-                    <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
+                    <ImageShareActions imageUrl={item.imageUrl} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} filename={getDownloadFilename(item.createdAt)} notify={notify} variant="card" className="flex-col" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={isFavoritePending} onToggleFavorite={() => onFavorite(item)} />
                 </ImageCardActions>}
                 {!selectionMode && <div data-card-action="true" data-image-action-left className={`absolute left-2 top-2 z-10 ${HISTORY_CARD_HOVER_ACTIONS}`} onPointerDown={event => event.stopPropagation()}>
                     <button type="button" onClick={e => onDelete(item, e)} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t("删除历史图片")} title={t("删除")}>
@@ -794,7 +795,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const handleFavorite = async (item: LocalGenItem, event?: React.SyntheticEvent) => {
         event?.stopPropagation();
         if (pendingFavoriteIds.has(item.id)) return;
-        const favorite = !item.isFavorite;
+        const favoriteTarget = { imageUrl: item.imageUrl, sourceType: 'history' as const, sourceId: item.id };
+        const favorite = !(Boolean(item.isFavorite) || collectionTargetActive(favoriteTarget));
         const originalQueryKey = getHistoryQueryKey();
         setFavoritePending([item.id], true);
         try {

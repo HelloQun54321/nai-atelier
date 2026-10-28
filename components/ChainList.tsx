@@ -1,5 +1,5 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { collectionTargetActive, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
+import { collectionSnapshot, ensureCollection, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -39,6 +39,7 @@ import { useChainFolders } from '../services/useChainFolders';
 import { folderContains, getChainFolderIds, updateChainFolderMemberships } from '../services/chainFolders';
 import { CHAIN_FOLDER_DRAG_TYPE, ChainFolderMembershipDialog, ChainFolderNavigation } from './chain/ChainFolders';
 import { Folder, FolderInput } from 'lucide-react';
+import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 const ChainSimilarityDialog = React.lazy(() => import('./chain/ChainSimilarityDialog').then(module => ({ default: module.ChainSimilarityDialog })));
 const StyleBundleDialog = React.lazy(() => import('./chain/StyleBundleDialog').then(module => ({ default: module.StyleBundleDialog })));
@@ -93,11 +94,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [foldersExpanded, setFoldersExpanded] = useState(() => { try { return localStorage.getItem('nai-style-folders-expanded') === 'true'; } catch { return false; } });
   const toggleFolders = () => setFoldersExpanded(previous => { const next = !previous; try { localStorage.setItem('nai-style-folders-expanded', String(next)); } catch { /* 本端存储不可用时仍可展开。 */ } return next; });
   const [moveIds, setMoveIds] = useState<string[] | null>(null);
-  const activeFolder = folderStore.ready && !folderStore.error ? selectedFolder : '*';
+  const activeFolder = type === 'style' && !isGuest && (selectedFolder === DIRECTORY_FAVORITES_ID || folderStore.ready && !folderStore.error) ? selectedFolder : '*';
   const matchingFolderIds = useMemo(() => new Set(folderStore.state.folders.filter(folder => folderContains(folderStore.state.folders, activeFolder, folder.id)).map(folder => folder.id)), [folderStore.state.folders, activeFolder]);
   const selectFolder = (id: string) => { setSelectedFolder(id); try { localStorage.setItem('nai-style-folder-selection', id); } catch { /* 浏览仍可继续。 */ } };
   useEffect(() => {
-    if (folderStore.ready && selectedFolder && selectedFolder !== '*' && !folderStore.state.folders.some(folder => folder.id === selectedFolder)) selectFolder('*');
+    if (folderStore.ready && selectedFolder && selectedFolder !== '*' && selectedFolder !== DIRECTORY_FAVORITES_ID && !folderStore.state.folders.some(folder => folder.id === selectedFolder)) selectFolder('*');
   }, [folderStore.ready, folderStore.state.folders, selectedFolder]);
   const setFolderMemberships = async (ids: string[], changes: Record<string, boolean>) => {
     if (!ids.length) return;
@@ -108,9 +109,13 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   };
   const [sortOption, setSortOption] = useState<'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'>('updated_desc');
   const [favOnly, setFavOnly] = useState(false);
+  const favoritesOnly = type === 'style' && !isGuest ? activeFolder === DIRECTORY_FAVORITES_ID : favOnly;
   const [untestedOnly, setUntestedOnly] = useState(false);
   const [isFolderImportOpen, setIsFolderImportOpen] = useState(false);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favoritesReady, setFavoritesReady] = useState(false);
+  const [favoritesError, setFavoritesError] = useState('');
+  const [favoritesRetry, setFavoritesRetry] = useState(0);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [showDesktopFilters, setShowDesktopFilters] = useState(false);
   const filterAnchorRef = useRef<HTMLDivElement>(null);
@@ -138,7 +143,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   }, [type, isGuest]);
 
   const legacyFavorites = useRef(new Set<string>());
-  // 无封面旧标记继续可筛选；有图项由共用图片收藏决定。
+  // 无封面旧标记继续可筛选；共用收藏按对象身份保留已换封面的条目。
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -152,19 +157,24 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   useEffect(() => {
     const sync = () => {
       const next = new Set(legacyFavorites.current);
+      const saved = collectionSnapshot().filter(item => !item.archived);
       for (const chain of chains) {
-        if (!chain.previewImage) continue;
-        if (collectionTargetActive({ imageUrl: chain.previewImage, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id })) next.add(chain.id);
-        else next.delete(chain.id);
+        if (saved.some(item => (item.sourceType === (chain.type === 'character' ? 'character' : 'chain') && item.sourceId === chain.id) || (!item.sourceId && chain.previewImage && (item.imageUrl === chain.previewImage || item.analysis?.collectionOriginalUrl === chain.previewImage)))) next.add(chain.id);
+        else if (chain.previewImage) next.delete(chain.id);
       }
       setFavorites(next);
     };
-    sync(); return subscribeCollection(sync);
-  }, [chains]);
+    let cancelled = false;
+    const unsubscribe = subscribeCollection(() => { sync(); setFavoritesReady(true); setFavoritesError(''); });
+    sync();
+    setFavoritesError('');
+    void ensureCollection().then(() => { if (!cancelled) { sync(); setFavoritesReady(true); } }).catch(() => { if (!cancelled) { setFavoritesReady(false); setFavoritesError(t('收藏库加载失败，请稍后重试')); } });
+    return () => { cancelled = true; unsubscribe(); };
+  }, [chains, favoritesRetry]);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
-    if (type === 'style' && activeFolder && activeFolder !== '*') onCreate(newName, newDesc, type, activeFolder);
+    if (type === 'style' && folderStore.state.folders.some(folder => folder.id === activeFolder)) onCreate(newName, newDesc, type, activeFolder);
     else onCreate(newName, newDesc, type);
     setIsModalOpen(false);
     setNewName('');
@@ -252,10 +262,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
          c.description.toLowerCase().includes(searchTerm.toLowerCase()))
       )
-      .filter(c => !favOnly || favorites.has(c.id))
+      .filter(c => !favoritesOnly || favorites.has(c.id))
       .filter(c => !untestedOnly || isUntestedChain(c))
       .filter(c => !selectedModel || (c.params?.model?.trim() || DEFAULT_NAI_MODEL) === selectedModel)
-      .filter(c => type !== 'style' || isGuest || activeFolder === '*' || (activeFolder === '' ? !getChainFolderIds(folderStore.state, c.id).length : getChainFolderIds(folderStore.state, c.id).some(folder => matchingFolderIds.has(folder))))
+      .filter(c => type !== 'style' || isGuest || activeFolder === '*' || activeFolder === DIRECTORY_FAVORITES_ID || (activeFolder === '' ? !getChainFolderIds(folderStore.state, c.id).length : getChainFolderIds(folderStore.state, c.id).some(folder => matchingFolderIds.has(folder))))
       .filter(c => {
         if (selectedTags.size === 0) return true;
         const tags = new Set(getCustomChainTags(c.tags));
@@ -280,7 +290,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             return ub - ua;
         }
       });
-  }, [chains, type, searchTerm, favOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
+  }, [chains, type, searchTerm, favoritesOnly, untestedOnly, favorites, selectedModel, selectedTags, sortOption, selecting, syncSelection.open, syncSelection.view, syncSelection.recordFilter, syncSelection.entries, activeFolder, matchingFolderIds, folderStore.state, isGuest]);
 
   // 批量删除只针对当前筛选；隐藏项与已消失项不保留选择。
   const selectedChains = filteredChains.filter(chain => selectedIds.has(chain.id));
@@ -454,7 +464,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const title = type === 'character' ? t('我的自定义角色') : t('我的风格串');
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
-  const filterCount = Number(Boolean(selectedModel)) + Number(favOnly) + Number(untestedOnly) + selectedTags.size;
+  const filterCount = Number(Boolean(selectedModel)) + Number((type !== 'style' || isGuest) && favOnly) + Number(untestedOnly) + selectedTags.size;
   const filtersActive = filterCount > 0 || sortOption !== 'updated_desc';
   const countCaptionFiltered = filterCount > 0 || !!searchTerm || syncSelection.open && syncSelection.view !== 'pick';
   const countCaptionTotal = syncSelection.open && syncSelection.view !== 'pick'
@@ -470,9 +480,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("排序")}<select aria-label={t("排序")} value={sortOption} onChange={event => setSortOption(event.target.value as typeof sortOption)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="updated_desc">{t("最近更新")}</option><option value="updated_asc">{t("最早更新")}</option><option value="created_desc">{t("最近创建")}</option><option value="created_asc">{t("最早创建")}</option></select></label>
       <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t("模型")}<select aria-label={t("模型筛选")} value={selectedModel} onChange={event => setSelectedModel(event.target.value)} className="mobile-touch mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs font-normal outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800"><option value="">{t("全部模型")}</option>{modelFilterOptions.map(model => <option key={model.id} value={model.id}>{t(model.label)}</option>)}</select></label>
     </div>
-    <div className="grid grid-cols-2 gap-2">
+    <div className={`grid gap-2 ${type === 'style' && !isGuest ? 'grid-cols-1' : 'grid-cols-2'}`}>
       <button type="button" aria-pressed={untestedOnly} onClick={() => setUntestedOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${untestedOnly ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><EyeOff className="h-4 w-4" />{t("只看待实测")}</button>
-      <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t("只看收藏")}</button>
+      {(type !== 'style' || isGuest) && <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'appearance-group bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t("只看收藏")}</button>}
     </div>
     <div>
       <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
@@ -499,7 +509,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
             </div>
             <ToolbarButton aria-label={t('退出多选')} title={t('退出多选')} disabled={bulkDeleteBusy} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
           </> : <>
-          {!isGuest && type === 'style' && <ToolbarButton aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /></ToolbarButton>}
+          {!isGuest && type === 'style' && <ToolbarButton aria-label={t(foldersExpanded ? '收起文件夹' : '展开文件夹')} title={[t(foldersExpanded ? '收起文件夹' : '展开文件夹'), activeFolder === '*' ? t('全部') : activeFolder === '' ? t('未整理') : activeFolder === DIRECTORY_FAVORITES_ID ? t('收藏') : folderStore.state.folders.find(folder => folder.id === activeFolder)?.name || t('全部')].join(' · ')} aria-expanded={foldersExpanded} active={foldersExpanded || activeFolder !== '*'} disabled={folderStore.busy} onClick={toggleFolders}><Folder className="h-4 w-4" /></ToolbarButton>}
           <ToolbarSearch value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t("搜索{0}", [title])} containerClassName="min-w-0 flex-1 md:max-w-none!" />
           <div className="hidden flex-none items-center gap-2 md:flex">
             <div ref={filterAnchorRef} className="relative flex-none">
@@ -542,9 +552,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
+        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} favoriteCount={favoritesReady ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
-          {filteredChains.length === 0 ? (
+          {activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? <WorkspacePageState role={favoritesError ? 'alert' : 'status'} className="py-20 text-center text-sm text-gray-500">{favoritesError || t('加载中…')}{favoritesError && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button>}</WorkspacePageState> : filteredChains.length === 0 ? (
             <WorkspacePageState className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
               {!isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}

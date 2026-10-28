@@ -166,6 +166,8 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  /** 角色词库个人覆写的原始完整 Tag，缺省旧记录仍按 basePrompt 识别。 */
+  _characterCatalogTag?: string;
   _promptLibraryPurposes?: import('./services/promptPurposes.mjs').PromptPurposeId[];
   /** 提示词片段的目录归属；只供本地资料整理。 */
   _promptLibraryDirectoryIds?: string[];

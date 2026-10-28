@@ -1,10 +1,13 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit2, ImageIcon } from 'lucide-react';
 import { DanbooruCoverCandidate, DanbooruCoverSet, danbooruService } from '../services/danbooruService';
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import { getMobileOriginalUrl, selectThumbnailVariant } from '../services/mobileImageCache';
-import { ImageShareOverlay } from './ImageShareActions';
+import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
+import { ImageCardActions } from './ImageCardActions';
+import type { CollectionImage } from '../services/collectionFavorites';
+import { characterVariantFavoriteTarget, type CharacterVariantFavorite } from '../services/characterVariants';
 import { createMediaPrewarmSession } from '../services/mediaPrewarm';
 import { ApiError } from '../services/api';
 
@@ -13,12 +16,17 @@ interface DanbooruCoverProps {
   kind: 'artist' | 'character';
   alt: string;
   fixedSrc?: string;
+  showSourceBadge?: boolean;
   imageClassName?: string;
   onCandidateChange?: (candidate: DanbooruCoverCandidate | null) => void;
   /** 封面图片加载完成后上报自然宽高（瀑布流按真实比例排布用）。 */
   onImageLoad?: (width: number, height: number) => void;
   notify?: (message: string, type?: 'success' | 'error') => void;
   onFavoriteChange?: (active: boolean) => void;
+  favoriteRecipe?: Pick<CollectionImage, 'prompt' | 'negativePrompt' | 'params'>;
+  favoriteVariants?: readonly CharacterVariantFavorite[];
+  favoritePending?: boolean;
+  onEdit?: () => void;
 }
 
 const firstCandidateIndex = (result: DanbooruCoverSet) => {
@@ -32,7 +40,7 @@ const lookupErrorMessage = (error: unknown) => {
     ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
 };
 
-export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', imageClassName, onCandidateChange, onImageLoad, notify, onFavoriteChange }) => {
+export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', showSourceBadge = true, imageClassName, onCandidateChange, onImageLoad, notify, onFavoriteChange, favoriteRecipe, favoriteVariants, favoritePending, onEdit }) => {
   useLanguage();
   const rootRef = useRef<HTMLDivElement>(null);
   const viewActive = useContext(ImageActivityContext);
@@ -268,6 +276,12 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
     });
   };
   return <div ref={rootRef} className="absolute inset-0">
+    {(displayedSrc || onEdit) && <ImageCardActions>
+      {displayedSrc && <ImageShareActions variant="card" imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify}
+        favorite={characterVariantFavoriteTarget({ imageUrl: getMobileOriginalUrl(displayedSrc), title: alt || tag, sourceType: kind, sourceId: tag, imageId: String(currentCandidate?.id || displayedSrc), ...favoriteRecipe }, favoriteVariants)}
+        favoritePending={favoritePending} onFavoriteChange={onFavoriteChange} />}
+      {onEdit && <button type="button" data-card-action="true" title={t('编辑信息')} aria-label={t('编辑信息')} onClick={event => { event.stopPropagation(); onEdit(); }} className={`hover-reveal-md inline-flex shrink-0 items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><Edit2 className="h-4 w-4" /></button>}
+    </ImageCardActions>}
     {displayedSrc ? <>
       <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} className={imageClassName} pin eager={visible} onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {
         const image = event.currentTarget;
@@ -275,9 +289,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
           onImageLoad?.(image.naturalWidth, image.naturalHeight);
         }
       }} />
-      <ImageShareOverlay imageUrl={getMobileOriginalUrl(displayedSrc)} filename={`${kind}-${tag}-${currentCandidate?.id || 'cover'}.png`} notify={notify}
-        favorite={{ imageUrl: getMobileOriginalUrl(displayedSrc), title: alt || tag, sourceType: kind, sourceId: tag, imageId: String(currentCandidate?.id || displayedSrc) }} onFavoriteChange={onFavoriteChange} />
-      <span className="gallery-cover-source pointer-events-none absolute bottom-16 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{isSavedCover ? t("已保存封面") : 'Danbooru'}</span>
+      {showSourceBadge && <span className="gallery-cover-source pointer-events-none absolute bottom-16 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{isSavedCover ? t("已保存封面") : 'Danbooru'}</span>}
       {canBrowse && <button data-card-action="true" type="button" disabled={previousIndex < 0} onClick={event => { event.stopPropagation(); moveCandidate(-1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute left-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-60" title={t("上一张")} aria-label={t("上一张")}><ChevronLeft className="h-4 w-4" /></button>}
       {canBrowse && <button data-card-action="true" type="button" disabled={isLoadingMore || (nextIndex < 0 && !coverSet?.hasMore)} onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85 disabled:cursor-default disabled:opacity-35" title={t("下一张")} aria-label={t("下一张")}><ChevronRight className="h-4 w-4" /></button>}
       {fixedSrc && !browseSaved && !canBrowse && <button data-card-action="true" type="button" onClick={event => { event.stopPropagation(); moveCandidate(1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute right-2 bottom-2 rounded-full bg-black/65 p-2 text-white backdrop-blur hover:bg-black/85" title={t("下一张")} aria-label={t("下一张")}><ChevronRight className="h-4 w-4" /></button>}

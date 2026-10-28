@@ -10,7 +10,7 @@ import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { ImageActivityContext } from '../SmartImage';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { useConfirmDialog } from '../ConfirmDialog';
-import { DirectoryTreeNavigation } from '../DirectoryTreeNavigation';
+import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from '../DirectoryTreeNavigation';
 import { DirectoryTreeChecklist } from '../DirectoryTreeChecklist';
 import { DirectoryNodeDialog } from '../DirectoryNodeDialog';
 
@@ -35,8 +35,9 @@ function FolderDialog({ title, busy, onClose, children }: { title: string; busy:
   </div>;
 }
 
-export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onMove, notify, disabled = false, expanded = true }: {
+export function ChainFolderNavigation({ store, selected, onSelect, chainIds, favoriteCount, onMove, notify, disabled = false, expanded = true }: {
   store: Store; selected: string; onSelect: (id: string) => void; chainIds: string[];
+  favoriteCount?: number | string;
   onMove: (ids: string[], folderId: string) => Promise<void>; notify: Notify; disabled?: boolean; expanded?: boolean;
 }) {
   const [editing, setEditing] = useState<ChainFolder | 'new' | null>(null);
@@ -95,20 +96,20 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, onM
   const drop = (event: React.DragEvent, id: string) => {
     if (!event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) return;
     event.preventDefault(); setDragOver(null);
-    if (blocked || !id || id === '*') return;
+    if (blocked || !folders.some(folder => folder.id === id)) return;
     try {
       const ids: unknown = JSON.parse(event.dataTransfer.getData(CHAIN_FOLDER_DRAG_TYPE));
       if (Array.isArray(ids)) void onMove(ids.filter((item): item is string => typeof item === 'string' && chainIds.includes(item)), id);
     } catch { /* 外部文件和文字不作为风格串移动。 */ }
   };
   return <>
-    <DirectoryTreeNavigation label={t('风格串文件夹')} title={t('文件夹')} nodes={folders} selectedId={selected} onSelect={onSelect} expanded={expanded} preferenceKey="nai-style-folder-branches" counts={counts} disabled={busy} actionDisabled={blocked}
+    <DirectoryTreeNavigation label={t('风格串文件夹')} title={t('文件夹')} nodes={folders} selectedId={selected} onSelect={onSelect} expanded={expanded} preferenceKey="nai-style-folder-branches" counts={new Map<string, number | string>([...counts, [DIRECTORY_FAVORITES_ID, favoriteCount ?? '—']])} virtualNodes={[{ id: DIRECTORY_FAVORITES_ID, name: t('收藏') }]} disabled={busy} actionDisabled={blocked}
       className="chain-folder-navigation" selectLabel={t('选择文件夹')} createLabel={t('新建文件夹')} renameLabel={t('编辑文件夹')} deleteLabel={t('删除文件夹')} unclassifiedLabel={t('未整理')}
       onCreate={() => open('new')} onRename={id => { const folder = folders.find(item => item.id === id); if (folder) open(folder); }} onDelete={() => void remove()}
       onMove={(id, targetParentId) => void moveFolder(id, targetParentId)}
       header={<>{!store.ready && !store.error && <p role="status" className="text-xs text-gray-500">{t('正在加载文件夹…')}</p>}{store.error && <div role="alert" className="mb-2 text-xs text-red-500">{t(store.error)}<button type="button" onClick={() => void store.reload()} className="mobile-touch ml-2 underline">{t('重新加载')}</button></div>}</>}
       nodeProps={id => ({
-        onDragOver: event => { if (!blocked && id && id !== '*' && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(id); } },
+        onDragOver: event => { if (!blocked && folders.some(folder => folder.id === id) && event.dataTransfer.types.includes(CHAIN_FOLDER_DRAG_TYPE)) { event.preventDefault(); event.dataTransfer.dropEffect = 'link'; setDragOver(id); } },
         onDragLeave: () => setDragOver(null), onDrop: event => drop(event, id),
         className: dragOver === id ? 'ring-2 ring-indigo-500' : '',
       })}

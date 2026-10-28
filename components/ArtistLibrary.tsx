@@ -36,6 +36,7 @@ import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { artistSampleGenerationBusy, artistSampleGenerationRevision, getArtistSampleGeneration, getGeneratedArtistSamples, readArtistSampleApiKey, subscribeArtistSampleGeneration } from '../services/artistSampleGeneration';
 import { useAgentCommand } from '../services/agentCommands';
 import { useCatalogGroupBrowser } from './CatalogGroups';
+import { DIRECTORY_FAVORITES_ID } from './DirectoryTreeNavigation';
 
 interface CartItem {
     name: string;
@@ -52,7 +53,7 @@ interface ArtistLibraryProps {
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
-type ArtistStatusFilter = 'all' | 'preferred' | 'blocked';
+type ArtistStatusFilter = 'all' | 'blocked';
 type ArtistStatusLoad = 'loading' | 'ready' | 'error';
 type ArtistLibrarySort = ArtistBrowseSort;
 type ArtistUsageState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; index: ArtistUsageIndex };
@@ -209,29 +210,35 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const searchTerms = useMemo(() => parseArtistSearchTerms(searchTerm), [searchTerm]);
     const hasSearch = searchTerms.length > 0;
     const [cart, setCart] = useState<CartItem[]>([]);
+    const [favorites, setFavorites] = useState<Set<string>>(new Set());
+    const [preferredStatus, setPreferredStatus] = useState<ArtistStatusLoad>('loading');
+    const [preferredRetry, setPreferredRetry] = useState(0);
+    const favoriteKeys = useMemo(() => new Set([...favorites].map(normalizeRollArtistKey)), [favorites]);
     const [statusFilter, setStatusFilter] = useState<ArtistStatusFilter>('all');
     const statusBrowse = statusFilter !== 'all';
     const catalogKeys = useMemo(() => sampleLoading || sampleError || Object.values(catalogErrors).some(Boolean)
         ? undefined : [...new Set(libraryDictionary.map(entry => 'artist:' + entry.name))], [sampleLoading, sampleError, catalogErrors, libraryDictionary]);
     const groups = useCatalogGroupBrowser('artist', cart.map(item => 'artist:' + item.name), notify, 'artist', catalogKeys, {
+        favorites: {
+            matches: key => favoriteKeys.has(normalizeRollArtistKey(key.slice('artist:'.length))),
+            count: preferredStatus === 'ready' && catalogKeys ? catalogKeys.filter(key => favoriteKeys.has(normalizeRollArtistKey(key.slice('artist:'.length)))).length : undefined,
+        },
         navigationHeader: <label className="mb-3 block text-xs font-semibold text-gray-500 dark:text-gray-400">{t('画师范围')}
             <select aria-label={t('画师范围')} value={statusFilter} onChange={event => changeStatus(event.target.value as ArtistStatusFilter)} className={`${TOOLBAR_FIELD_CLASS} mt-1 w-full`}>
-                <option value="all">{t('全部画师')}</option><option value="preferred">{t('偏好画师')}</option><option value="blocked">{t('已屏蔽')}</option>
+                <option value="all">{t('全部画师')}</option><option value="blocked">{t('已屏蔽')}</option>
             </select>
         </label>,
-        activeFilterLabel: statusBrowse ? t(statusFilter === 'preferred' ? '偏好画师' : '已屏蔽') : undefined,
+        activeFilterLabel: statusBrowse ? t('已屏蔽') : undefined,
     });
+    const favoriteBrowse = groups.activeGroup === DIRECTORY_FAVORITES_ID;
     const groupBrowse = groups.activeGroup !== '*';
     const gachaPool = useMemo(() => sampledArtists.filter(entry => !groupBrowse || groups.ready && !groups.error && groups.matches('artist:' + entry.name))
         .sort((left, right) => compareLibraryTags(left, right, 'popular')), [sampledArtists, groupBrowse, groups.ready, groups.error, groups.matches]);
     const [focusedName, setFocusedName] = useState<string | null>(null);
-    const [favorites, setFavorites] = useState<Set<string>>(new Set());
-    const [preferredStatus, setPreferredStatus] = useState<ArtistStatusLoad>('loading');
-    const [preferredRetry, setPreferredRetry] = useState(0);
-    const favoriteKeys = useMemo(() => new Set([...favorites].map(normalizeRollArtistKey)), [favorites]);
-    const statusLoad = statusFilter === 'preferred' ? preferredStatus : blockedStatus;
-    const statusReady = !statusBrowse || statusLoad === 'ready';
-    const matchesStatus = useCallback((name: string) => statusFilter === 'all' || (statusFilter === 'preferred' ? favoriteKeys : blockedKeys).has(normalizeRollArtistKey(name)), [statusFilter, favoriteKeys, blockedKeys]);
+    const favoriteStatusPending = favoriteBrowse && preferredStatus !== 'ready';
+    const statusLoad = favoriteStatusPending ? preferredStatus : blockedStatus;
+    const statusReady = (!favoriteBrowse || preferredStatus === 'ready') && (!statusBrowse || blockedStatus === 'ready');
+    const matchesStatus = useCallback((name: string) => statusFilter === 'all' || blockedKeys.has(normalizeRollArtistKey(name)), [statusFilter, blockedKeys]);
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const agentRootRef = useRef<HTMLDivElement>(null);
@@ -780,7 +787,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="workspace-canvas workspace-scroll-viewport min-w-0 flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {(groupBrowse || statusBrowse) && !gachaArtists && <>
                     {!statusReady ? statusLoad === 'error'
-                        ? <div role="alert" className="py-4 text-sm text-red-500">{t('画师状态读取失败')}<button type="button" className="mobile-touch ml-2 underline" onClick={() => statusFilter === 'preferred' ? setPreferredRetry(current => current + 1) : setBlockedRetry(current => current + 1)}>{t('重新加载')}</button></div>
+                        ? <div role="alert" className="py-4 text-sm text-red-500">{t('画师状态读取失败')}<button type="button" className="mobile-touch ml-2 underline" onClick={() => favoriteStatusPending ? setPreferredRetry(current => current + 1) : setBlockedRetry(current => current + 1)}>{t('重新加载')}</button></div>
                         : <p role="status" className="py-4 text-sm text-gray-400">{t('正在读取画师状态…')}</p>
                         : (groupBrowse && groups.error) || (onlySamples ? currentSampleError : sampleError) ? <div role="alert" className="py-4 text-sm text-red-500">{t(groupBrowse && groups.error || (onlySamples ? currentSampleError : sampleError))}<button type="button" className="mobile-touch ml-2 underline" onClick={() => { if (groupBrowse && groups.error) void groups.reload(); else setSampleRefresh(current => current + 1); }}>{t('重试')}</button></div>
                         : groupBrowse && !groups.ready || sampleLoading ? <p role="status" className="py-4 text-sm text-gray-400">{t('正在加载画师…')}</p>

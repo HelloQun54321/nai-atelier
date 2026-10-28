@@ -11,7 +11,7 @@ import { setMobileImageDisplayPreferences } from '../../services/imageDisplayPre
 import { createDefaultRollTemplate } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
-const mocks = vi.hoisted(() => ({ groupGet: vi.fn(), groupPut: vi.fn(), block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
+const mocks = vi.hoisted(() => ({ ensure: vi.fn(), groupGet: vi.fn(), groupPut: vi.fn(), block: vi.fn(), favorite: vi.fn(), urls: vi.fn(), usage: vi.fn(), data: vi.fn(), status: vi.fn(), catalog: vi.fn(), lookup: vi.fn(), begin: vi.fn(), remove: vi.fn(), confirm: vi.fn(), refresh: undefined as undefined | (() => void), items: [] as any[] }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { ...(await original<typeof import('../../services/api')>()).api, get: mocks.groupGet, put: mocks.groupPut } }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { subscribe: (listener: () => void) => { mocks.refresh = listener; return () => { mocks.refresh = undefined; }; } } }));
@@ -23,10 +23,11 @@ vi.mock('../../services/anlasBudget', async original => ({ ...await original<typ
 vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
 vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => DEFAULT_NAI_RUNTIME }));
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, renderItem, columns }: any) => <div data-testid="masonry" data-columns={columns}>{items.map(renderItem)}</div> }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: async () => {}, toggleArtistPreference: mocks.favorite }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.items, subscribeCollection: () => () => {}, ensureCollection: mocks.ensure, toggleArtistPreference: mocks.favorite }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, onLoad, previewTransform }: any) => <img src={src} alt={alt} className={className} onLoad={onLoad} data-preview-transform={previewTransform} /> }));
 const ownSample = (tag: string, imageUrl: string, pack: 'v45' | 'v5' = 'v45', id = imageUrl): ArtistOwnSample => ({ ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), id, tag, pack, imageUrl, createdAt: 1, params: { ...createDefaultRollTemplate(DEFAULT_NAI_RUNTIME).params, model: pack === 'v5' ? 'nai-diffusion-5-full' : 'nai-diffusion-4-5-full' } });
 beforeEach(() => {
+  mocks.ensure.mockResolvedValue(undefined);
   mocks.groupGet.mockResolvedValue({ revision: 1, groups: [], memberships: {} });
   mocks.groupPut.mockImplementation(async (_path, state) => ({ ...state, revision: state.revision + 1 }));
   mocks.catalog.mockReset();
@@ -37,6 +38,40 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.clearAllMocks(); mocks.usage.mockResolvedValue({ byTag: new Map(), indexed: 0, total: 0 }); localStorage.clear(); mocks.items = []; mocks.urls.mockImplementation(async () => new Map([['alpha', '/api/assets/alpha.png']])); mocks.block.mockResolvedValue(undefined); mocks.favorite.mockResolvedValue(true); vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+const chooseFavoriteDirectory = () => {
+  if (!screen.queryByLabelText('选择分组')) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
+  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: '#favorites' } });
+};
+
+it('Roll画师收藏目录共享真实收藏，计数去重、忽略归档且保留独立浏览选择', async () => {
+  mocks.items = [{ sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'beta' }, { sourceType: 'artist', sourceId: 'alpha', archived: true }];
+  localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
+  render(<Fixture />);
+  await screen.findByRole('option', { name: '收藏 (1)' });
+  expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
+  expect(Array.from(screen.getByLabelText('选择分组').querySelectorAll('option')).slice(0, 3).map(option => option.value)).toEqual(['*', '', '#favorites']);
+  expect(screen.queryByRole('button', { name: '偏好画师' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'no-match' } });
+  expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  expect(localStorage.getItem('nai_catalog_groups_artist')).toBeNull();
+  expect(mocks.groupPut).not.toHaveBeenCalled();
+});
+
+it('Roll画师收藏读取失败保持未知计数，主动重试后展示真实结果', async () => {
+  mocks.items = [{ sourceType: 'artist', sourceId: 'beta' }];
+  mocks.ensure.mockRejectedValueOnce(Error('合成收藏读取失败'));
+  localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: '#favorites', expanded: true }));
+  render(<Fixture />);
+  await screen.findByText('合成收藏读取失败');
+  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+  await screen.findByRole('option', { name: '收藏 (1)' });
+  expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
+});
 
 const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '', postCount: 1 })), initialRules = DEFAULT_ROLL_RULES }: { library?: ArtistDictionaryEntry[]; initialRules?: RollRules }) => {
   const [pinned, setPinned] = useState<string[]>([]), [blocked, setBlocked] = useState<string[]>([]), [sampledOnly, setSampledOnly] = useState(false), [rules, setRules] = useState(initialRules);
@@ -255,7 +290,7 @@ it('复用画师库四种排序，排序重置滚动且保留锁定、筛选和�
   expect(order()).toEqual(['beta', 'alpha', 'charlie']); expect(gallery.scrollTop).toBe(0);
   fireEvent.change(select, { target: { value: 'name-asc' } }); expect(order()).toEqual(['alpha', 'beta', 'charlie']);
   fireEvent.change(select, { target: { value: 'name-desc' } }); expect(order()).toEqual(['charlie', 'beta', 'alpha']);
-  fireEvent.click(screen.getByRole('button', { name: '偏好画师' })); expect(order()).toEqual(['beta', 'alpha']);
+  chooseFavoriteDirectory(); expect(order()).toEqual(['beta', 'alpha']);
   expect(screen.getByRole('button', { name: '锁定画师：alpha' }).getAttribute('aria-pressed')).toBe('true');
   expect(library).toEqual(before); expect(localStorage.getItem('nai_roll_artist_sort')).toBe('name-desc');
   expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
@@ -335,7 +370,7 @@ it('收藏库已有的画师会直接显示偏好，并可按偏好筛选', asyn
   mocks.items = [{ sourceType: 'artist', sourceId: 'beta', archived: false }];
   render(<Fixture />); await screen.findByAltText('alpha');
   expect(screen.getByRole('button', { name: '取消偏好画师：beta' }).getAttribute('aria-pressed')).toBe('true');
-  fireEvent.click(screen.getByRole('button', { name: '偏好画师' }));
+  chooseFavoriteDirectory();
   expect(screen.queryByRole('button', { name: '锁定画师：alpha' })).toBeNull();
   expect(screen.getByRole('button', { name: '锁定画师：beta' })).toBeTruthy();
 });
@@ -344,7 +379,7 @@ it.each([390, 1280])('宽度 %s：参数以独立小卡片弹出，关闭保留�
   vi.stubGlobal('innerWidth', width);
   render(<Fixture />); const image = await screen.findByAltText('alpha');
   expect(screen.queryByRole('spinbutton', { name: '偏好抽中倍率' })).toBeNull();
-  expect(screen.getByRole('dialog', { name: 'Roll 画师' }).querySelector('aside')).toBeNull();
+  expect(screen.queryByRole('complementary', { name: '分组导航' })).toBeNull();
   expect(screen.queryByText('1 倍不加权，0 位不保底；已锁定的偏好计入保底，不足时停止。')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '锁定画师：alpha' }));
   const settings = screen.getByRole('button', { name: '抽取设置' });
@@ -476,7 +511,7 @@ it('多词搜索仍与偏好锁定屏蔽和使用统计取交集，搜索不改�
   await screen.findByText('收录 2 串 · 生成 0 张');
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label')!.slice('锁定画师：'.length));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: ' ALPHA TAG，beta_tag, gamma ' } });
-  fireEvent.click(screen.getByRole('button', { name: '偏好画师' })); expect(names()).toEqual(['alpha_tag', 'beta_tag']);
+  chooseFavoriteDirectory(); expect(names()).toEqual(['alpha_tag', 'beta_tag']);
   fireEvent.click(screen.getByRole('button', { name: '已锁定' })); expect(names()).toEqual(['beta_tag']);
   expect(screen.getByRole('button', { name: '锁定画师：beta_tag' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['alpha_tag']);
@@ -502,7 +537,8 @@ it('Roll分组浏览与原搜索、偏好、屏蔽取交集，不改固定名单
   fireEvent.change(await screen.findByLabelText('选择分组'), { target: { value: 'g' } });
   const names = () => screen.getAllByRole('button', { name: /^锁定画师：/ }).map(card => card.getAttribute('aria-label'));
   expect(names()).toEqual(['锁定画师：alpha_tag', '锁定画师：beta_tag']);
-  fireEvent.click(screen.getByRole('button', { name: '偏好画师' })); expect(names()).toEqual(['锁定画师：beta_tag']);
+  chooseFavoriteDirectory(); expect(names()).toEqual(['锁定画师：beta_tag']);
+  fireEvent.change(screen.getByLabelText('选择分组'), { target: { value: 'g' } });
   fireEvent.click(screen.getByRole('button', { name: '已屏蔽' })); expect(names()).toEqual(['锁定画师：alpha_tag']);
   fireEvent.click(screen.getByRole('button', { name: '全部画师' }));
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索画师' }), { target: { value: 'beta' } });

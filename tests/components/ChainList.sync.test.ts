@@ -513,6 +513,8 @@ describe('风格串列表的酒馆筛选交互', () => {
     ];
     render(React.createElement(ChainList, { ...props(), chains: items }));
     fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '共同' } });
+    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
+    await screen.findByRole('option', { name: '收藏 (2)' });
     fireEvent.click(screen.getByRole('button', { name: surface === 'desktop' ? '筛选' : '筛选与排序' }));
     const dialog = screen.getByRole('dialog', { name: '筛选与排序' });
     const filter = within(dialog);
@@ -520,7 +522,7 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(filter.getByRole('button', { name: '标签甲' })).toBeTruthy();
     expect(filter.queryByRole('button', { name: '待实测' })).toBeNull();
     expect(screen.getByText('共同 A')).toBeTruthy(); expect(screen.getByText('共同 B')).toBeTruthy();
-    fireEvent.click(filter.getByRole('button', { name: '只看收藏' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '选择文件夹' }), { target: { value: '#favorites' } });
     expect(screen.queryByText('共同 B')).toBeNull(); expect(screen.getByText('共同 V5')).toBeTruthy();
     fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-4-5-full' } });
     expect(screen.queryByText('共同 V5')).toBeNull(); expect(screen.getByText('共同 A')).toBeTruthy();
@@ -685,7 +687,7 @@ vi.mock('../../services/collectionFavorites', async original => ({
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
 
-it.each(['style', 'character'] as const)('%s收藏筛选与当前封面红心一致，无封面旧标记保留，归档不会滞留筛选', async type => {
+it.each(['style', 'character'] as const)('%s收藏目录按对象身份保留已换封面和无封面旧标记，归档不会滞留筛选', async type => {
   const current = { ...chain('legacy-current', '旧当前封面'), type, previewImage: '/api/assets/current.png' };
   const replaced = { ...chain('legacy-replaced', '已换封面'), type, previewImage: '/api/assets/replaced.png' };
   const missing = { ...chain('legacy-missing', '无封面旧标记'), type };
@@ -699,9 +701,15 @@ it.each(['style', 'character'] as const)('%s收藏筛选与当前封面红心一
   const card = screen.getByRole('button', { name: `打开${label}：${current.name}` });
   expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy();
   expect(within(screen.getByRole('button', { name: `打开${label}：${replaced.name}` })).getByRole('button', { name: '收藏' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
-  expect(screen.getByText(current.name)).toBeTruthy(); expect(screen.getByText(missing.name)).toBeTruthy(); expect(screen.queryByText(replaced.name)).toBeNull();
+  if (type === 'style') {
+    fireEvent.click(screen.getByRole('button', { name: '展开文件夹' }));
+    await screen.findByRole('option', { name: '收藏 (3)' });
+    fireEvent.change(screen.getByRole('combobox', { name: '选择文件夹' }), { target: { value: '#favorites' } });
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
+  }
+  expect(screen.getByText(current.name)).toBeTruthy(); expect(screen.getByText(missing.name)).toBeTruthy(); expect(screen.getByText(replaced.name)).toBeTruthy();
   act(() => { collectionState.rows[0].archived = true; collectionState.revision++; collectionState.listeners.forEach(listener => listener()); });
   expect(screen.queryByText(current.name)).toBeNull(); expect(screen.getByText(missing.name)).toBeTruthy();
   expect(localStorage.getItem('nai_chain_favs')).toBe(raw);

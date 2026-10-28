@@ -1147,6 +1147,9 @@ const App = () => {
         />;
       case 'characters':
         return <CharacterLibrary
+          onCreateCatalogOverride={(data, creationId) => createLibraryChain(data.name || '', data.description || '', 'character', data, creationId)}
+          tagAssistEnabled={appearancePreferences.tagAssistEnabled}
+          onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           chains={chains}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           onCreate={handleCreateChain}

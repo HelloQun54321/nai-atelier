@@ -14,6 +14,7 @@ const { syncSelection } = vi.hoisted(() => ({
 }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
 vi.mock('../../services/collectionFavorites', () => ({
+  ensureCollection: async () => {}, collectionSnapshot: () => [],
   collectionTargetActive: () => false, readLegacyFavoriteIds: () => new Set(), subscribeCollection: () => () => {},
 }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => ({ enabled: false }) }));

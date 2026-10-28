@@ -66,7 +66,9 @@ import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibr
 import { fragmentKindOf, FRAGMENT_LABELS, promptLibraryEntryLabel } from '../services/promptLibraryEntries';
 import { LibraryDialog, usePromptLibrary } from './PromptLibraryAccess';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
-import { PromptLibraryDirectoryNavigation } from './PromptLibraryDirectoryNavigation';
+import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection } from './PromptLibraryDirectoryNavigation';
+import { usePromptLibraryFavorites } from './usePromptLibraryFavorites';
+import type { CollectionTarget } from '../services/collectionFavorites';
 import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
@@ -154,6 +156,7 @@ interface LibraryDraft {
 interface ViewerEntry {
   url: string;
   caption?: string;
+  favorite?: CollectionTarget;
 }
 
 /* ---------------- Props ---------------- */
@@ -861,7 +864,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {detail.cover ? (
             <div className="group relative"><button
               type="button"
-              onClick={() => openViewer([{ url: detail.cover, caption: detail.name }], 0)}
+              onClick={() => openViewer([{ url: detail.cover, caption: detail.name, favorite: { imageUrl: detail.cover, title: detail.name, sourceType: 'other', sourceId: detail.id } }], 0)}
               aria-label={t('查看封面原图')}
               title={t('点击查看原图')}
               className="mt-1.5 block w-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-800"
@@ -1172,7 +1175,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     </ImagePreviewPortal>
   ) : null;
 
-  const viewerModal = viewer ? <ImageLightbox src={viewer.items[viewer.index]?.url || ''} alt={viewer.items[viewer.index]?.caption || t('原图')} notify={notify}
+  const viewerModal = viewer ? <ImageLightbox src={viewer.items[viewer.index]?.url || ''} alt={viewer.items[viewer.index]?.caption || t('原图')} favorite={viewer.items[viewer.index]?.favorite} notify={notify}
     zIndex={library?.directories || initialEntry ? 2200 : undefined} onClose={() => setViewer(null)}
     pager={{ index: viewer.index, count: viewer.items.length, onChange: index => setViewer(previous => previous ? { ...previous, index } : previous) }} /> : null;
 
@@ -1191,7 +1194,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       styleChains={styleChains}
       onWriteToChain={writeBundleToChain}
     />
-    <HistoryImagePicker zIndex={library?.directories ? 1950 : undefined} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
+    <HistoryImagePicker zIndex={library?.directories ? 1950 : undefined} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
       scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
   </>;
@@ -1202,7 +1205,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       {detailBody}
     </DetailSidePanel>
     {viewerModal}
-    <HistoryImagePicker zIndex={2200} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+    <HistoryImagePicker zIndex={2200} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
   </>;
   if (initialEntry) return <>
     <LibraryDialog title={detail?.name || t('编辑')} wide className="max-w-5xl!" busy={savingDetail} headerActions={detailActions} onClose={() => { void closeDetail(); return false; }}>
@@ -1210,7 +1213,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       {detailBody}
     </LibraryDialog>
     {generator}{viewerModal}
-    <HistoryImagePicker zIndex={2200} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+    <HistoryImagePicker zIndex={2200} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
   </>;
   if (embedded) return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -1306,6 +1309,7 @@ const LegacyPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
 };
 
 const DIRECTORY_CONFIG: PromptLibraryKindConfig = { ...GENERAL_CONFIG, title: '片段', emptyTitle: '还没有片段', emptyHint: '新建片段或使用 AI 生成片段。', generateLabel: 'AI 生成片段', briefLabel: '描述你想要的内容', briefPlaceholder: '描述要生成的提示词内容', generateHint: '', facets: [] };
+const MANAGER_DIRECTORY_KEY = 'nai-prompt-library-manager-directory';
 
 const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const library = usePromptLibrary()!;
@@ -1313,13 +1317,24 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   const navigationId = useId();
   const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem('nai-prompt-library-directories-expanded') === 'true'; } catch { return false; } });
   const toggleDirectories = () => { const next = !expanded; setExpanded(next); try { localStorage.setItem('nai-prompt-library-directories-expanded', String(next)); } catch { /* 本端存储受限时仍可切换。 */ } };
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [allSelected, setAllSelected] = useState(true);
-  const [unclassified, setUnclassified] = useState(false);
+  const [selection, setSelection] = useState<PromptLibraryDirectorySelection>(() => {
+    const all = { directoryIds: [], allDirectories: true, unclassified: false, favorites: false };
+    try {
+      const saved = JSON.parse(localStorage.getItem(MANAGER_DIRECTORY_KEY) || 'null');
+      if (!saved || !Array.isArray(saved.directoryIds) || saved.directoryIds.some((id: unknown) => typeof id !== 'string' || !directories.nodes.some(node => node.id === id))
+        || typeof saved.allDirectories !== 'boolean' || typeof saved.unclassified !== 'boolean' || typeof saved.favorites !== 'boolean'
+        || Number(saved.allDirectories) + Number(saved.unclassified) + Number(saved.favorites) + Number(saved.directoryIds.length > 0) !== 1) return all;
+      return { directoryIds: [...new Set<string>(saved.directoryIds)], allDirectories: saved.allDirectories, unclassified: saved.unclassified, favorites: saved.favorites };
+    } catch { return all; }
+  });
+  const { directoryIds: selectedIds, allDirectories: allSelected, unclassified, favorites: favoritesSelected = false } = selection;
+  const favorites = usePromptLibraryFavorites(props.chains);
   const leaveGuard = useRef<(() => Promise<boolean>) | null>(null);
-  const select = async (ids: string[], all: boolean, unclassifiedOnly: boolean) => {
+  const select = async (ids: string[], all: boolean, unclassifiedOnly: boolean, favoriteOnly = false) => {
     if (leaveGuard.current && !await leaveGuard.current()) return;
-    setSelectedIds(ids); setAllSelected(all); setUnclassified(unclassifiedOnly);
+    const next = { directoryIds: ids, allDirectories: all, unclassified: unclassifiedOnly, favorites: favoriteOnly };
+    setSelection(next);
+    try { localStorage.setItem(MANAGER_DIRECTORY_KEY, JSON.stringify(next)); } catch { /* 本端存储受限时仍保留本次选择。 */ }
   };
   useEffect(() => {
     if (!props.requestCloseRef) return;
@@ -1327,12 +1342,12 @@ const DirectoryPromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     return () => { props.requestCloseRef!.current = null; };
   }, [props.requestCloseRef, props.onClose]);
   const fragments = props.chains.filter(chain => !!fragmentKindOf(chain));
-  const chains = allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
-  const selectionKey = allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
-  const currentPath = allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
+  const chains = favoritesSelected ? fragments.filter(chain => favorites.ids?.has(chain.id)) : allSelected ? fragments : unclassified ? fragments.filter(chain => !getPromptLibraryEntryDirectoryIds(chain, directories).length) : selectPromptLibraryDirectoryEntries(fragments, directories, selectedIds);
+  const selectionKey = favoritesSelected ? 'favorites' : allSelected ? 'all' : unclassified ? 'unclassified' : selectedIds.join(',');
+  const currentPath = favoritesSelected ? t('收藏') : allSelected ? t('全部') : unclassified ? t('未归类') : selectedIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).join('、');
   const categoryToggle = <ToolbarButton aria-label={t(expanded ? '收起目录' : '展开目录')} title={[t(expanded ? '收起目录' : '展开目录'), currentPath].join(' · ')} aria-expanded={expanded} aria-controls={navigationId} active={expanded || !allSelected || unclassified} onClick={toggleDirectories}><Folder className="h-4 w-4" /></ToolbarButton>;
-  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:w-52 md:overflow-y-auto"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified); }} /></div>;
-  return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
+  const navigation = expanded && <div className="min-h-0 min-w-0 shrink-0 md:w-52 md:overflow-y-auto"><PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={fragments} selectedIds={selectedIds} allSelected={allSelected} unclassified={unclassified} favorites={favoritesSelected} favoriteIds={favorites.ids} expanded={expanded} embedded onCreate={library.onCreateDirectory} onRename={library.onRenameDirectory} onDelete={library.onDeleteDirectory} onMove={library.onMoveDirectory} disabled={library.directoriesBusy} onSelect={selection => { void select(selection.directoryIds, selection.allDirectories, selection.unclassified, selection.favorites); }} /></div>;
+  return <PromptLibrary {...props} chains={chains} requestCloseRef={undefined} config={favoritesSelected && favorites.status !== 'ready' ? { ...DIRECTORY_CONFIG, emptyTitle: favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…', emptyHint: '' } : DIRECTORY_CONFIG} dynamicDirectories initialDirectoryIds={favoritesSelected || allSelected || unclassified ? [] : selectedIds} directorySelectionKey={selectionKey} directoryNavigation={navigation} categoryToggle={categoryToggle} registerLeaveGuard={guard => { leaveGuard.current = guard; return () => { leaveGuard.current = null; }; }} />;
 };
 
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => usePromptLibrary()?.directories ? <DirectoryPromptLibraryHub {...props} /> : <LegacyPromptLibraryHub {...props} />;

@@ -1,8 +1,10 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, Heart, Pencil, Plus, Trash2 } from 'lucide-react';
 import { flattenDirectoryTree, type DirectoryTreeNode } from '../services/directoryTree.mjs';
 import { t, useLanguage } from '../services/i18n';
 import { ToolbarButton } from './DesignSystem';
+
+export const DIRECTORY_FAVORITES_ID = '#favorites';
 
 export interface DirectoryTreeNavigationProps {
   id?: string;
@@ -22,6 +24,7 @@ export interface DirectoryTreeNavigationProps {
   allLabel?: string;
   unclassifiedLabel?: string;
   hideSpecial?: boolean;
+  virtualNodes?: readonly { id: string; name: string }[];
   embedded?: boolean;
   disabled?: boolean;
   actionDisabled?: boolean;
@@ -48,12 +51,12 @@ const readBranches = (key: string): Record<string, boolean> => {
 };
 const DIRECTORY_DRAG_MIME = 'application/x-nai-directory-node-';
 
-export function DirectoryTreeNavigation({ id, label, title, className, asideProps, nodes, selectedId, selectedIds, onSelect, expanded, preferenceKey, counts, totalCount, unclassifiedCount, allLabel, unclassifiedLabel, hideSpecial = false, embedded = false, disabled = false, actionDisabled = disabled, header, footer, onCreate, onRename, onDelete, onMove, selectLabel, createLabel, renameLabel, deleteLabel, nodeProps, nodeActions, nodeLeading }: DirectoryTreeNavigationProps) {
+export function DirectoryTreeNavigation({ id, label, title, className, asideProps, nodes, selectedId, selectedIds, onSelect, expanded, preferenceKey, counts, totalCount, unclassifiedCount, allLabel, unclassifiedLabel, hideSpecial = false, virtualNodes = [], embedded = false, disabled = false, actionDisabled = disabled, header, footer, onCreate, onRename, onDelete, onMove, selectLabel, createLabel, renameLabel, deleteLabel, nodeProps, nodeActions, nodeLeading }: DirectoryTreeNavigationProps) {
   useLanguage();
   const generatedId = useId();
   const navigationId = id || generatedId;
   const tree = useMemo(() => flattenDirectoryTree(nodes), [nodes]);
-  const countIds = useMemo(() => new Map(['*', '', ...nodes.map(node => node.id)].map((value, index) => [value, `${navigationId}-count-${index}`])), [nodes, navigationId]);
+  const countIds = useMemo(() => new Map(['*', '', ...virtualNodes.map(node => node.id), ...nodes.map(node => node.id)].map((value, index) => [value, `${navigationId}-count-${index}`])), [nodes, virtualNodes, navigationId]);
   const byId = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
   const parents = useMemo(() => new Set(nodes.map(node => node.parentId)), [nodes]);
   const dragMime = DIRECTORY_DRAG_MIME + generatedId.replace(/[^a-z0-9]/gi, '').toLowerCase();
@@ -130,9 +133,10 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
   });
   const current = byId.get(selectedId);
   const currentSelection = tree.filter(node => selected.has(node.id));
-  const selectionCount = currentSelection.length + Number(selected.has(''));
-  const mobileValue = !hideSpecial && selected.has('*') ? '*' : selectionCount > 1 ? '#selected' : currentSelection[0]?.id ?? (!hideSpecial && selected.has('') ? '' : '#selected');
-  const special = hideSpecial ? [] : [{ id: '*', name: allLabel ?? t('全部') }, { id: '', name: unclassifiedLabel ?? t('未归类') }];
+  const selectedVirtual = virtualNodes.filter(node => selected.has(node.id));
+  const selectionCount = currentSelection.length + selectedVirtual.length + Number(selected.has(''));
+  const mobileValue = !hideSpecial && selected.has('*') ? '*' : selectionCount > 1 ? '#selected' : currentSelection[0]?.id ?? selectedVirtual[0]?.id ?? (!hideSpecial && selected.has('') ? '' : '#selected');
+  const special = [...(hideSpecial ? [] : [{ id: '*', name: allLabel ?? t('全部') }, { id: '', name: unclassifiedLabel ?? t('未归类') }]), ...virtualNodes];
   const count = (value: string) => value === '*' ? totalCount ?? counts?.get(value) : value === '' ? unclassifiedCount ?? counts?.get(value) : counts?.get(value);
   const countNode = (value: string) => count(value) === undefined ? null : <span id={countIds.get(value)} className="shrink-0 text-xs tabular-nums opacity-60">{count(value)}</span>;
   const row = (value: string, name: string, path: string, depth: number, node?: DirectoryTreeNode) => {
@@ -140,7 +144,7 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
     const props = nodeProps?.(value) || {};
     const hasChildren = node && parents.has(value);
     return <div key={value} onDragOverCapture={event => hoverDirectory(event, node?.id)} onDropCapture={event => dropDirectory(event, node?.id)} onDragLeave={event => { if (directoryPayload(event) && !(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setDropTarget(undefined); }} className={`directory-tree-row mobile-touch flex min-w-0 items-center gap-2 rounded-lg text-left text-sm ${active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'} ${node && dropTarget === value ? 'ring-2 ring-indigo-500' : ''} ${disabled ? 'opacity-50' : ''}`} style={{ paddingLeft: 8 + Math.min(depth, 6) * 14 }}>
-      {hasChildren ? <button type="button" disabled={disabled} aria-label={t(open(node) ? '收起目录「{0}」' : '展开目录「{0}」', [path])} aria-expanded={open(node)} onClick={event => { event.stopPropagation(); toggleBranch(node); }} className="flex h-11 w-4 flex-none items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-indigo-500"><>{open(node) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</></button> : node ? <span className="w-4 flex-none" /> : null}
+      {hasChildren ? <button type="button" disabled={disabled} aria-label={t(open(node) ? '收起目录「{0}」' : '展开目录「{0}」', [path])} aria-expanded={open(node)} onClick={event => { event.stopPropagation(); toggleBranch(node); }} className="flex h-11 w-4 flex-none items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-indigo-500"><>{open(node) ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}</></button> : <span aria-hidden="true" className="w-4 flex-none" />}
       {nodeLeading?.(value)}
       <button {...props} type="button" disabled={disabled} draggable={node && onMove ? moveAvailable : props.draggable} onDragStart={event => {
         if (!node || !onMove) { props.onDragStart?.(event); return; }
@@ -148,7 +152,7 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
         event.stopPropagation(); event.dataTransfer.setData(dragMime, node.id); event.dataTransfer.effectAllowed = 'move';
         drag.current = { id: node.id, scope: preferenceKey }; setDraggingId(node.id); setDropTarget(undefined);
       }} onDragEnd={event => { if (drag.current) { event.stopPropagation(); clearDrag(); } else props.onDragEnd?.(event); }} aria-label={props['aria-label'] || path} title={props.title || path} aria-current={active ? 'page' : undefined} aria-describedby={props['aria-describedby'] || (count(value) !== undefined ? countIds.get(value) : undefined)} onClick={event => { if (disabled) return; props.onClick?.(event); if (!event.defaultPrevented) onSelect(value); }} className={`flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pr-2 text-left focus-visible:outline-2 focus-visible:outline-indigo-500 ${props.className || ''}`}>
-        <Folder className="h-4 w-4 flex-none" /><span className="min-w-0 flex-1 truncate">{name}</span>{countNode(value)}
+        {value === DIRECTORY_FAVORITES_ID ? <Heart className="h-4 w-4 flex-none" /> : <Folder className="h-4 w-4 flex-none" />}<span className="min-w-0 flex-1 truncate">{name}</span>{countNode(value)}
       </button>
       {nodeActions?.(value)}
     </div>;

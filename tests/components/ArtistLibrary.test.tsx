@@ -19,7 +19,7 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { installPointerEvents, longPress } from '../support/touchEvents';
-const mocks = vi.hoisted(() => ({ ensureCollection: vi.fn(), blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ ensureCollection: vi.fn(), blockLoad: vi.fn(), blockSave: vi.fn(), status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), focus: vi.fn(), control: vi.fn(), usage: vi.fn(), historyListeners: new Set<(change: any) => void>(), historySubscribe: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean; imageUrl?: string }[], collectionListeners: new Set<() => void>() }));
 vi.mock('../../services/artistUsage', async original => ({ ...await original<typeof import('../../services/artistUsage')>(), getArtistUsage: mocks.usage }));
 vi.mock('../../services/localHistory', async original => {
   const module = await original<typeof import('../../services/localHistory')>();
@@ -185,7 +185,7 @@ it.each(['dictionary', 'catalog'])('分组数量在%s读取失败时保持未知
   expect(screen.getByRole('option', { name: '全部 (—)' })).toBeTruthy();
   expect(screen.getByRole('option', { name: '合成组 (—)' })).toBeTruthy();
 });
-it('分组与搜索、偏好、样张和使用统计取交集，原名身份不合并', async () => {
+it('收藏作为独立目录切换，真实分组与搜索、样张和使用统计继续取交集', async () => {
   localStorage.setItem('nai_artist_only_samples', 'false');
   prepareGroups({ 'artist:alpha artist': ['g1'], 'artist:missing artist': ['g1'], 'artist:alpha_artist': ['g2'] });
   mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }, { sourceType: 'artist', sourceId: 'beta artist' }];
@@ -193,8 +193,9 @@ it('分组与搜索、偏好、样张和使用统计取交集，原名身份不�
   fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'g1' } });
   expect(sampleCards()).toHaveLength(2);
   setArtistScope('preferred');
-  expect(sampleCards()).toHaveLength(1);
+  expect(sampleCards()).toHaveLength(2);
   setArtistScope('all');
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: 'g1' } });
   openArtistFilters();
   fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'unused' } });
   expect(screen.getByTestId('cover-missing artist')).toBeTruthy();
@@ -213,8 +214,9 @@ it.each([390, 1280])('画师范围在%s宽度使用相同入口与选项', async
   setup(); await screen.findByTestId('cover-alpha artist');
   const scope = getArtistScope();
   expect(Array.from(scope.options, option => [option.value, option.textContent])).toEqual([
-    ['all', '全部画师'], ['preferred', '偏好画师'], ['blocked', '已屏蔽'],
+    ['all', '全部画师'], ['blocked', '已屏蔽'],
   ]);
+  expect(screen.getByRole('option', { name: /^收藏/ })).toBeTruthy();
 });
 it('偏好和屏蔽范围按现有名单即时更新，并保留无样张的屏蔽画师', async () => {
   localStorage.setItem('nai_artist_only_samples', 'false');
@@ -452,13 +454,13 @@ it.each(['favorites', 'blocked'])('排除%s等待最新名单，失败保留浏�
   await act(async () => reject(new Error('合成名单读取失败')));
   expect(notify).toHaveBeenCalledWith('合成名单读取失败', 'error');
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('alpha');
-  expect((screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement).value).toBe('preferred');
+  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', '#favorites');
   let resolve!: (value?: string[]) => void;
   read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   fireEvent.click(screen.getByRole('button', { name: '随机选画师' }));
   mocks.collection = [{ sourceType: 'artist', sourceId: 'beta_artist' }];
   await act(async () => resolve(source === 'blocked' ? ['beta_artist'] : undefined));
-  expect(screen.getByText('本次抽取 2 位')).toBeTruthy();
+  expect(screen.getByText('本次抽取 1 位')).toBeTruthy();
   expect(screen.queryByTestId('cover-beta artist')).toBeNull();
   expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('');
@@ -643,7 +645,52 @@ const getArtistScope = () => {
   if (!screen.queryByRole('combobox', { name: '画师范围' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   return screen.getByRole('combobox', { name: '画师范围' }) as HTMLSelectElement;
 };
-const setArtistScope = (value: 'all' | 'preferred' | 'blocked') => fireEvent.change(getArtistScope(), { target: { value } });
+const setArtistScope = (value: 'all' | 'preferred' | 'blocked') => {
+  const scope = getArtistScope();
+  fireEvent.change(scope, { target: { value: value === 'preferred' ? 'all' : value } });
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: value === 'preferred' ? '#favorites' : '*' } });
+};
+
+it('收藏目录按现有画师去重计数，保留本端选择并即时响应收藏归档', async () => {
+  mocks.collection = [
+    { sourceType: 'artist', sourceId: 'alpha artist', imageUrl: '/synthetic/old-cover.png' },
+    { sourceType: 'artist', sourceId: 'alpha artist', imageUrl: '/synthetic/another.png' },
+    { sourceType: 'artist', sourceId: 'beta artist', archived: true },
+    { sourceType: 'artist', sourceId: 'deleted artist' },
+  ];
+  localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ active: '#favorites', expanded: true }));
+  const view = setup();
+  await screen.findByRole('option', { name: '收藏 (1)' });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']);
+  const options = Array.from(screen.getByRole('combobox', { name: '选择分组' }).querySelectorAll('option'));
+  expect(options.slice(0, 3).map(option => option.value)).toEqual(['*', '', '#favorites']);
+  expect(screen.queryByRole('button', { name: '重命名分组' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no-match' } });
+  expect(screen.getByRole('option', { name: '收藏 (1)' })).toBeTruthy();
+  act(() => { mocks.collection = []; mocks.collectionListeners.forEach(listener => listener()); });
+  expect(screen.getByRole('option', { name: '收藏 (0)' })).toBeTruthy();
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '*' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#favorites' } });
+  view.unmount();
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'beta artist' }];
+  setup();
+  await screen.findByRole('option', { name: '收藏 (1)' });
+  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', '#favorites');
+});
+
+it('收藏目录叠加屏蔽范围时，名单读取失败仍显示错误而不是空结果', async () => {
+  mocks.collection = [{ sourceType: 'artist', sourceId: 'alpha artist' }];
+  mocks.blockLoad.mockRejectedValueOnce(Error('合成屏蔽名单失败'));
+  setup(); await screen.findByTestId('cover-alpha artist');
+  setArtistScope('blocked');
+  fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: '#favorites' } });
+  expect(screen.getByText('画师状态读取失败')).toBeTruthy();
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  mocks.blockLoad.mockResolvedValueOnce(['alpha artist']);
+  fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+  await screen.findByTestId('cover-alpha artist');
+  expect(sampleCards()).toHaveLength(1);
+});
 const openArtistFilters = () => { const button = screen.getByRole('button', { name: /^筛选/ }); if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button); };
 const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
 const switchCard = (tag: string, pack: 'v45' | 'v5') => fireEvent.click(within(screen.getByTestId('cover-' + tag)).getByRole('button', { name: '卡片 ' + pack }));
@@ -1422,6 +1469,9 @@ it('使用统计筛选先筛完整目录，支持零值交集并保留搜索与�
   fireEvent.change(chains, { target: { value: 'used' } });
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：beta artist']));
   fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
+  await waitFor(() => expect(sampleCards()).toHaveLength(0));
+  expect(screen.getByRole('combobox', { name: '选择分组' })).toHaveProperty('value', '#favorites');
+  setArtistScope('all');
   await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
   expect((screen.getByRole('combobox', { name: '风格串收录' }) as HTMLSelectElement).value).toBe('all');
   expect((screen.getByRole('combobox', { name: '图片生成' }) as HTMLSelectElement).value).toBe('all');

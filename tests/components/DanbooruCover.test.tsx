@@ -8,6 +8,7 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import { ApiError } from '../../services/api';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
 import { getMobileOriginalUrl } from '../../services/mobileImageCache';
+import * as collectionFavorites from '../../services/collectionFavorites';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 
 vi.mock('../../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn(), getCoverFallback: vi.fn() } }));
@@ -53,6 +54,19 @@ it('保存封面直接展示，一次翻图才检索并立即显示代表图', a
   await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
   expect(covers).toHaveBeenCalledTimes(1);
 });
+it('默认显示来源标记，关闭标记后封面和翻页仍可用', async () => {
+  covers.mockResolvedValue(set([candidate(1), candidate(2)]));
+  const props = { tag: 'badge', kind: 'character' as const, alt: '封面' };
+  const view = render(<DanbooruCover {...props} />);
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  expect(screen.getByText('Danbooru').className).toContain('gallery-cover-source');
+  view.rerender(<DanbooruCover {...props} showSourceBadge={false} />);
+  expect(screen.queryByText('Danbooru')).toBeNull();
+  expect(document.querySelector('.gallery-cover-source')).toBeNull();
+  expect(image().src).toBe(candidate(1).sampleUrl);
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  await waitFor(() => expect(image().src).toBe(candidate(2).sampleUrl));
+});
 it('离开视图取消查询和预热，回来保留已选图片且不重新查询', async () => {
   covers.mockResolvedValue(set([candidate(1), candidate(2), candidate(3)]));
   const view = (active: boolean) => <ImageActivityContext.Provider value={active}><DanbooruCover tag="retained" kind="artist" alt="封面" /></ImageActivityContext.Provider>;
@@ -74,6 +88,34 @@ beforeEach(() => {
   fallback.mockResolvedValue({ representative: null, candidates: [] });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it('词库封面编辑共用操作区，无封面时铅笔仍能打开编辑', async () => {
+  covers.mockResolvedValue(set([]));
+  const edit = vi.fn();
+  const parent = vi.fn();
+  render(<div onClick={parent}><DanbooruCover tag="editable" kind="character" alt="角色" onEdit={edit} /></div>);
+  await screen.findByText('暂无可用的 Danbooru 封面');
+  fireEvent.click(screen.getByRole('button', { name: '编辑信息' }));
+  expect(edit).toHaveBeenCalledOnce();
+  expect(parent).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
+});
+it('变体收藏保留原Tag和个人配方，名单未就绪时不能降级保存单张', async () => {
+  const toggle = vi.spyOn(collectionFavorites, 'toggleCollectionTarget').mockResolvedValue(true);
+  try {
+    const variants = [{ tag: 'sample (series)', title: '原版' }, { tag: 'sample (skin) (series)', title: '服装' }];
+    const props = { tag: variants[0].tag, kind: 'character' as const, alt: '角色', favoriteVariants: variants, favoriteRecipe: { prompt: 'sample (series), custom outfit', negativePrompt: 'bad hands' } };
+    const view = render(<DanbooruCover {...props} favoritePending />);
+    await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+    const button = screen.getByRole('button', { name: '收藏所有变体' });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(toggle).not.toHaveBeenCalled();
+    view.rerender(<DanbooruCover {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: '收藏所有变体' }));
+    await waitFor(() => expect(toggle).toHaveBeenCalledOnce());
+    expect(toggle.mock.calls[0][0]).toMatchObject({ sourceType: 'character', sourceId: variants[0].tag, imageId: '1', prompt: props.favoriteRecipe.prompt, negativePrompt: 'bad hands', groupSourceIds: variants.map(item => item.tag), getGroup: expect.any(Function) });
+  } finally { toggle.mockRestore(); }
+});
 it.each(['artist', 'character'] as const)('%s 分享跟随当前候选和加载回退，不操作上一张或已保存封面', async kind => {
   covers.mockResolvedValue(set([candidate(1), candidate(2)]));
   const parent = vi.fn();

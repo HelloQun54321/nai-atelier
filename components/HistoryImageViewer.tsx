@@ -38,6 +38,7 @@ const imageSize = (item: LocalGenItem) => {
 export const HistoryImageViewer: React.FC<Props> = props => {
   useLanguage();
   const { item, index, total, navigating, onNavigate, onClose } = props;
+  const favoriteTarget = { imageUrl: item.imageUrl, sourceType: 'history' as const, sourceId: item.id };
   const dialogRef = useModalA11y<HTMLDivElement>(true);
   const detailsRef = useRef<HTMLElement>(null);
   const [imageFailed, setImageFailed] = useState(false);
@@ -82,7 +83,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
               <div data-card-action="true" className="hover-reveal-touch history-viewer-manage">
                 <button className="history-viewer-button history-viewer-delete" aria-label={t("删除这张历史图片")} onClick={props.onDelete}><Trash2 /></button>
               </div>
-              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.onFavorite} />
+              <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.onFavorite} />
               <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label={t("上一张图片")} disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
               <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label={t("下一张图片")} disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
               {navigating && <span role="status" className="history-viewer-loading"><LoaderCircle className="animate-spin" />{t("正在加载图片")}</span>}

@@ -27,6 +27,7 @@ import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection 
 import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
 import { emptyPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
 import { PromptLibraryCategoryNavigation } from './PromptLibraryCategoryNavigation';
+import { usePromptLibraryFavorites } from './usePromptLibraryFavorites';
 
 const SCOPES = [['items', '片段'], ['saved', '组合']] as const;
 const MEMORY_KEY = 'nai-prompt-library-browse';
@@ -39,15 +40,15 @@ const readScroll = (): Partial<Record<PromptBrowseScope, number>> => {
     return Object.fromEntries(SCOPES.flatMap(([key]) => Number.isFinite(value[key]) && value[key] >= 0 ? [[key, value[key]]] : []));
   } catch { return {}; }
 };
-const readMemory = (directories: PromptLibraryTreeState): { scope: PromptBrowseScope; directoryIds: string[]; allDirectories: boolean; unclassified: boolean; combinationCategory: string | null; combinationUnclassified: boolean; sort: 'updated' | 'name' } => {
+const readMemory = (directories: PromptLibraryTreeState): { scope: PromptBrowseScope; directoryIds: string[]; allDirectories: boolean; unclassified: boolean; favorites: boolean; combinationFavorites: boolean; combinationCategory: string | null; combinationUnclassified: boolean; sort: 'updated' | 'name' } => {
   try {
     const value = JSON.parse(localStorage.getItem(MEMORY_KEY) || '{}');
     const scope = SCOPES.some(([key]) => key === value.scope) ? value.scope : 'items';
     const candidateLegacyId = Object.hasOwn(LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, value.kind) ? LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[value.kind as keyof typeof LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS] : '';
     const legacyId = directories.nodes.some(node => node.id === candidateLegacyId) ? candidateLegacyId : '';
     const hasDirectoryPreference = Array.isArray(value.directoryIds) || !!legacyId;
-    return { scope, combinationCategory: typeof value.combinationCategory === 'string' ? value.combinationCategory : null, combinationUnclassified: value.combinationUnclassified === true, directoryIds: Array.isArray(value.directoryIds) ? value.directoryIds.filter((id: unknown) => typeof id === 'string') : legacyId ? [legacyId] : [], allDirectories: typeof value.allDirectories === 'boolean' ? value.allDirectories : !hasDirectoryPreference, unclassified: value.unclassified === true, sort: value.sort === 'name' ? 'name' : 'updated' };
-  } catch { return { scope: 'items', combinationCategory: null, combinationUnclassified: false, directoryIds: [], allDirectories: true, unclassified: false, sort: 'updated' }; }
+    return { scope, favorites: value.favorites === true, combinationFavorites: value.combinationFavorites === true, combinationCategory: typeof value.combinationCategory === 'string' ? value.combinationCategory : null, combinationUnclassified: value.combinationUnclassified === true, directoryIds: Array.isArray(value.directoryIds) ? value.directoryIds.filter((id: unknown) => typeof id === 'string') : legacyId ? [legacyId] : [], allDirectories: typeof value.allDirectories === 'boolean' ? value.allDirectories : !hasDirectoryPreference, unclassified: value.unclassified === true, sort: value.sort === 'name' ? 'name' : 'updated' };
+  } catch { return { scope: 'items', favorites: false, combinationFavorites: false, combinationCategory: null, combinationUnclassified: false, directoryIds: [], allDirectories: true, unclassified: false, sort: 'updated' }; }
 };
 
 export interface PromptLibraryBrowserProps {
@@ -126,6 +127,8 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const scrollPositions = useRef(useMemo(readScroll, []));
   const entries = useMemo(() => promptBrowseEntries(chains), [chains]);
+  const favorites = usePromptLibraryFavorites(chains);
+  const favoritesSelected = memory.scope === 'saved' ? memory.combinationFavorites : memory.favorites;
   const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
   const combinationChains = useMemo(() => entries.filter(entry => entry.section === 'saved').map(entry => entry.chain), [entries]);
   const categoryTree = useMemo(() => projectPromptLibraryCategoryTree(combinationChains, categoryNames, suppliedCategoryTree || emptyPromptLibraryCategoryTree()), [combinationChains, categoryNames, suppliedCategoryTree]);
@@ -134,10 +137,10 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const scopeTotal = useMemo(() => entries.filter(entry => entry.section === memory.scope).length, [entries, memory.scope]);
   const directoryEntries = useMemo(() => memory.scope !== 'items' ? entries : (() => {
     const fragments = entries.filter(entry => isPromptLibraryFragmentEntry(entry.chain));
-    const included = new Set((memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
-    return entries.filter(entry => entry.section !== 'items' || included.has(entry.chain.id) || memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
-  })(), [entries, memory.scope, memory.allDirectories, memory.directoryIds, memory.unclassified, directories]);
-  const folderEntries = useMemo(() => memory.scope !== 'saved' ? directoryEntries : directoryEntries.filter(entry => memory.combinationCategory !== null ? getCustomChainTags(entry.chain.tags).some(tag => selectedCategoryIds?.has(tag)) : !memory.combinationUnclassified || !getCustomChainTags(entry.chain.tags).length), [directoryEntries, memory.scope, memory.combinationCategory, memory.combinationUnclassified, selectedCategoryIds]);
+    const included = new Set((memory.favorites ? fragments.filter(entry => favorites.ids?.has(entry.chain.id)).map(entry => entry.chain) : memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
+    return entries.filter(entry => entry.section !== 'items' || included.has(entry.chain.id) || !memory.favorites && memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
+  })(), [entries, memory.scope, memory.allDirectories, memory.directoryIds, memory.unclassified, memory.favorites, favorites.ids, directories]);
+  const folderEntries = useMemo(() => memory.scope !== 'saved' ? directoryEntries : directoryEntries.filter(entry => memory.combinationFavorites ? favorites.ids?.has(entry.chain.id) : memory.combinationCategory !== null ? getCustomChainTags(entry.chain.tags).some(tag => selectedCategoryIds?.has(tag)) : !memory.combinationUnclassified || !getCustomChainTags(entry.chain.tags).length), [directoryEntries, memory.scope, memory.combinationCategory, memory.combinationUnclassified, memory.combinationFavorites, favorites.ids, selectedCategoryIds]);
   const shown = useMemo(() => filterPromptBrowseEntries(folderEntries, { ...memory, kind: '', query, tags: memory.scope === 'saved' ? tags : [], purposes: memory.scope === 'items' ? tags : [] }), [folderEntries, memory, query, tags]);
   const combinationTags = useMemo(() => promptLibraryCategoryNames(chains, [...categoryNames, ...categoryTree.nodes.map(node => node.name)]), [chains, categoryNames, categoryTree]);
   const selected = entries.find(entry => entry.chain.id === selectedId);
@@ -181,7 +184,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     const entry = entries.find(entry => entry.chain.id === focusEntryId)!;
     const scope = entry.section === 'saved' ? 'saved' : 'items';
     setQuery(''); setScopeTags(previous => ({ ...previous, [scope]: [] }));
-    setMemory(previous => entry.section === 'saved' ? { ...previous, scope, combinationCategory: null, combinationUnclassified: false } : { ...previous, scope, directoryIds: [], allDirectories: true, unclassified: false });
+    setMemory(previous => entry.section === 'saved' ? { ...previous, scope, combinationCategory: null, combinationUnclassified: false, combinationFavorites: false } : { ...previous, scope, directoryIds: [], allDirectories: true, unclassified: false, favorites: false });
     void selectEntry(entry.chain);
   }, [focusEntryId, entries]);
   useEffect(() => {
@@ -204,14 +207,14 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     scrollPositions.current[scope] = 0;
     resetScroll();
     setMemory(previous => {
-      const next = { ...previous, scope, ...patch };
+      const next = { ...previous, scope, ...patch, favorites: patch.favorites === true };
       try { localStorage.setItem(MEMORY_KEY, JSON.stringify(next)); } catch { /* 本端存储受限时仍可浏览。 */ }
       return next;
     });
   };
   const setScope = (scope: PromptBrowseScope) => updateMemory({ ...memory, scope }, false);
   const directoryScope = memory.scope === 'items';
-  const selectedDirectoryPath = memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
+  const selectedDirectoryPath = favoritesSelected ? t('收藏') : memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
   const filterIconOnly = mobile || !wide;
   const copy = async (text: string, message = '已复制提示词') => {
     try { await navigator.clipboard.writeText(text); notify(t(message)); }
@@ -235,7 +238,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   };
   const toolbar = <>
     <div className={!mobile && wide ? "prompt-library-navigation-tools flex shrink-0 items-center gap-1" : "contents"}>
-    <ToolbarButton aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
+    <ToolbarButton aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
     {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 min-w-0 flex-1 gap-0.5 rounded-xl p-0.5 md:h-10">
       {SCOPES.map(([scope, label], index) => <button key={scope} type="button" role="tab" aria-selected={memory.scope === scope} tabIndex={memory.scope === scope ? 0 : -1}
         onClick={() => setScope(scope)} onKeyDown={event => {
@@ -269,10 +272,10 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         {onManage && <ToolbarButton onClick={() => void openManage(close, mobile, onManage)}>{t('管理提示词')}</ToolbarButton>}{mobile && onExtract && <ToolbarButton onClick={() => void openManage(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
     </ToolbarPopover>
-    <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [shown.length, scopeTotal])}</ToolbarCountCaption>
+    <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [favoritesSelected && favorites.status !== 'ready' ? '?' : shown.length, scopeTotal])}</ToolbarCountCaption>
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
-    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified })} />}
+    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       selectionAnchor.onScroll();
@@ -290,7 +293,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
           onOpen={() => void selectEntry(chain)} onEdit={() => { if (entry.section === 'items' && renderEntryEditor) void selectEntry(chain); else if (!editorActions.current) onOpen(chain); else void leaveDetail().then(leave => { if (leave) onOpen(chain); }); }} onUse={() => void handleUseEntry(chain)}
           onDelete={onDelete ? () => void remove(chain) : undefined} notify={notify}
           onCopy={() => void copy(entry.section === 'saved' ? JSON.stringify((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot, null, 2) : chain.basePrompt || entry.summary, entry.section === 'saved' ? '已复制这条记录的内容快照' : '已复制提示词')} />;
-      }} /> : <EmptyState title={t(entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
+      }} /> : <EmptyState title={t(favoritesSelected && favorites.status !== 'ready' ? favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…' : entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={favoritesSelected && favorites.status !== 'ready' ? undefined : t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
     </div>
     {selected && (selected.section === 'items' && renderEntryEditor ? renderEntryEditor(selected.chain, { onClose: finishClose, actionsRef: editorActions }) : <DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
       subInfo={promptLibraryEntryLabel(selected.chain, directories)}

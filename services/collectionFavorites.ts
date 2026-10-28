@@ -11,7 +11,7 @@ import { createUuid } from './id';
 import { readCodexImageFile, readCodexImageMetadata } from './codexService';
 import { t } from './i18n';
 import { getArtistSampleData } from './artistSampleDrafts';
-import { normalizeArtistSampleTag } from './artistSamples';
+import { normalizeRollArtistKey } from './styleRollSeed';
 
 export interface CollectionImage {
   imageUrl: string;
@@ -30,6 +30,7 @@ export interface CollectionImage {
 export interface CollectionTarget extends CollectionImage {
   groupSize?: number;
   getGroup?: () => Promise<CollectionImage[]>;
+  groupSourceIds?: readonly string[];
 }
 
 const favoriteId = (source: string, userId: string, id: string) => `favorite-${source}-${encodeURIComponent(userId)}-${encodeURIComponent(id)}`;
@@ -115,15 +116,25 @@ export function aitagFavorites(detail: AitagWorkDetail, user: User): Inspiration
   }));
 }
 
+const characterSourceId = (id: string) => id.replace(/^(?:catalog|custom):/, '');
+const sourceIdentity = (id: unknown) => id == null ? id : String(id);
+const objectSourceTypes = new Set<InspirationSourceType>(['character', 'chain', 'other']);
+const objectSourceId = (type: InspirationSourceType | undefined, id: string) => type === 'character' ? characterSourceId(id) : sourceIdentity(id);
+const sameSource = (type: InspirationSourceType | undefined, left: string | undefined, right: string | undefined) =>
+  type === 'character' ? Boolean(left && right && characterSourceId(left) === characterSourceId(right)) : sourceIdentity(left) === sourceIdentity(right);
+
 export function matchesCollectionImage(item: Inspiration, image: CollectionImage): boolean {
   if (image.collectionId) return item.id === image.collectionId;
+  if (image.sourceType && objectSourceTypes.has(image.sourceType) && image.sourceId && item.sourceId) {
+    return item.userId === owner?.id && item.sourceType === image.sourceType && sameSource(image.sourceType, item.sourceId, image.sourceId);
+  }
   // 缺样张画师只收藏 Tag；空地址不能把不同画师合并为同一张图。
   if (!image.imageUrl) return !item.imageUrl && image.sourceType === 'artist' && item.sourceType === 'artist' && Boolean(image.sourceId) && item.sourceId === image.sourceId;
   if (item.imageUrl === image.imageUrl || item.analysis?.collectionOriginalUrl === image.imageUrl) return true;
   if (image.sourceType && image.sourceId) {
-    if (item.sourceType !== image.sourceType || item.sourceId !== image.sourceId) return false;
+    if (item.sourceType !== image.sourceType || !sameSource(image.sourceType, item.sourceId, image.sourceId)) return false;
     if (image.sourceType === 'history' || image.sourceType === 'danbooru') return true;
-    if (image.imageId !== undefined) return String(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? '') === image.imageId;
+    if (image.imageId !== undefined) return String(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? '') === String(image.imageId);
   }
   return item.imageUrl === image.imageUrl;
 }
@@ -280,66 +291,148 @@ const collectionKey = (...parts: unknown[]) => JSON.stringify(parts);
 let activeIndex: ReturnType<typeof buildActiveIndex> | undefined;
 function buildActiveIndex() {
   const byId = new Map<string, Inspiration>();
-  const ids = new Set<string>(), urls = new Set<string>(), sources = new Set<string>(), artistTags = new Set<string>();
+  const ids = new Set<string>(), urls = new Set<string>(), sources = new Set<string>(), artistTags = new Set<string>(), objects = new Set<string>(), legacyObjectUrls = new Set<string>();
+  const sourceImages = new Map<string, Inspiration>();
   const groups = new Map<string, { size: number; hasSize: boolean; identities: Set<unknown> }>();
   for (const item of items) {
     if (!byId.has(item.id)) byId.set(item.id, item);
-    const key = collectionKey(item.userId, item.sourceType, item.sourceId);
+    const key = collectionKey(item.userId, item.sourceType, sourceIdentity(item.sourceId));
     let group = groups.get(key);
     if (!group) { group = { size: 1, hasSize: false, identities: new Set() }; groups.set(key, group); }
     const declaredSize = item.analysis?.collectionGroupSize;
     if (!group.hasSize && declaredSize) { group.size = Number(declaredSize) || 1; group.hasSize = true; }
     if (item.archived) continue;
-    group.identities.add(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? item.imageUrl);
+    if (item.sourceType && objectSourceTypes.has(item.sourceType) && item.sourceId) objects.add(collectionKey(item.userId, item.sourceType, objectSourceId(item.sourceType, item.sourceId)));
+    group.identities.add(String(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? item.imageUrl));
     ids.add(item.id);
     if (item.imageUrl) urls.add(item.imageUrl);
     const original = item.analysis?.collectionOriginalUrl;
     if (typeof original === 'string' && original) urls.add(original);
+    if (!item.sourceId) {
+      if (item.imageUrl) legacyObjectUrls.add(item.imageUrl);
+      if (typeof original === 'string' && original) legacyObjectUrls.add(original);
+    }
     if (!item.imageUrl && item.sourceType === 'artist' && item.sourceId) artistTags.add(item.sourceId);
-    if (item.sourceType && item.sourceId) sources.add(collectionKey(item.sourceType, item.sourceId,
+    if (item.sourceType && item.sourceId) sources.add(collectionKey(item.sourceType, sourceIdentity(item.sourceId),
       item.sourceType === 'history' || item.sourceType === 'danbooru' ? '' : String(item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage ?? '')));
+    const imageSourceKey = collectionKey(item.userId, item.sourceType, item.sourceType === 'character' && item.sourceId ? characterSourceId(item.sourceId) : sourceIdentity(item.sourceId));
+    if (item.sourceType && item.sourceId && item.imageUrl && !sourceImages.has(imageSourceKey)) {
+      sourceImages.set(imageSourceKey, item);
+    }
   }
-  return { snapshot: items, byId, ids, urls, sources, artistTags, groups };
+  return { snapshot: items, byId, ids, urls, sources, artistTags, objects, legacyObjectUrls, groups, sourceImages };
+}
+
+export function getCollectionSourceImage(sourceType: InspirationSourceType, sourceId: string): CollectionImage | undefined {
+  if (activeIndex?.snapshot !== items) activeIndex = buildActiveIndex();
+  if (!owner) return undefined;
+  const item = activeIndex.sourceImages.get(collectionKey(owner.id, sourceType, sourceType === 'character' ? characterSourceId(sourceId) : sourceIdentity(sourceId)));
+  if (!item) return undefined;
+  const imageId = item.analysis?.collectionImageId ?? item.analysis?.externalSourcePage;
+  return {
+    imageUrl: item.imageUrl, title: item.title, sourceType: item.sourceType, sourceId: item.sourceId,
+    sourceUrl: item.sourceUrl, ...(imageId === undefined ? {} : { imageId: String(imageId) }),
+    prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params, analysis: item.analysis,
+  };
+}
+
+function characterGroupComplete(target: CollectionTarget): boolean {
+  if (activeIndex?.snapshot !== items) activeIndex = buildActiveIndex();
+  return Boolean(owner && target.groupSourceIds?.every(sourceId => activeIndex!.objects.has(collectionKey(owner!.id, 'character', characterSourceId(sourceId)))));
+}
+
+/** 仅用于显式补齐与完整性提示；亮心表示已有收藏，不要求整组齐全。 */
+export function collectionTargetComplete(target: CollectionTarget): boolean {
+  if (target.collectionId || !target.getGroup) return collectionTargetActive(target);
+  if (activeIndex?.snapshot !== items) activeIndex = buildActiveIndex();
+  if (target.groupSourceIds?.length) {
+    if (target.sourceType === 'character') return characterGroupComplete(target);
+    return Boolean(owner && target.groupSourceIds.every(sourceId => activeIndex!.groups.get(collectionKey(owner!.id, target.sourceType, sourceIdentity(sourceId)))?.identities.size));
+  }
+  const userId = target.collectionId ? activeIndex.byId.get(target.collectionId)?.userId : owner?.id;
+  const group = activeIndex.groups.get(collectionKey(userId, target.sourceType, sourceIdentity(target.sourceId)));
+  return (group?.identities.size || 0) >= Math.max(group?.size || 1, target.groupSize || 1);
 }
 
 export function collectionTargetActive(target: CollectionTarget): boolean {
   // 所有写入与加载均替换快照；同一快照的各卡片共用索引，owner 切换在查询时读取。
   if (activeIndex?.snapshot !== items) activeIndex = buildActiveIndex();
   const index = activeIndex;
-  if (target.getGroup) {
-    const userId = target.collectionId ? index.byId.get(target.collectionId)?.userId : owner?.id;
-    const group = index.groups.get(collectionKey(userId, target.sourceType, target.sourceId));
-    if (target.collectionId) return Boolean(group?.identities.size);
-    return (group?.identities.size || 0) >= Math.max(group?.size || 1, target.groupSize || 1);
-  }
   if (target.collectionId) return index.ids.has(target.collectionId);
+  if (target.sourceType && objectSourceTypes.has(target.sourceType)) {
+    if (target.sourceId && owner && index.objects.has(collectionKey(owner.id, target.sourceType, objectSourceId(target.sourceType, target.sourceId)))) return true;
+    if (target.getGroup && target.groupSourceIds?.length) return false;
+    // 旧的同图收藏继续回显，但不能把其他明确对象当作当前对象。
+    return Boolean(target.imageUrl && (target.sourceId ? index.legacyObjectUrls : index.urls).has(target.imageUrl));
+  }
+  if (target.getGroup && target.groupSourceIds?.length) {
+    return Boolean(target.sourceType && owner && [...new Set(target.groupSourceIds)].every(sourceId =>
+      index.groups.get(collectionKey(owner!.id, target.sourceType, sourceIdentity(sourceId)))?.identities.size));
+  }
+  if (target.getGroup) {
+    return Boolean(owner && index.groups.get(collectionKey(owner.id, target.sourceType, sourceIdentity(target.sourceId)))?.identities.size);
+  }
   if (!target.imageUrl) return target.sourceType === 'artist' && Boolean(target.sourceId) && index.artistTags.has(target.sourceId!);
   if (index.urls.has(target.imageUrl)) return true;
   if (!target.sourceType || !target.sourceId) return false;
-  if (target.sourceType === 'history' || target.sourceType === 'danbooru') return index.sources.has(collectionKey(target.sourceType, target.sourceId, ''));
-  return target.imageId !== undefined && index.sources.has(collectionKey(target.sourceType, target.sourceId, target.imageId));
+  if (target.sourceType === 'history' || target.sourceType === 'danbooru') return index.sources.has(collectionKey(target.sourceType, sourceIdentity(target.sourceId), ''));
+  return target.imageId !== undefined && index.sources.has(collectionKey(target.sourceType, sourceIdentity(target.sourceId), String(target.imageId)));
 }
 
 const pendingTargets = new Map<string, Promise<boolean>>();
 let mutation: Promise<boolean> = Promise.resolve(false);
-export async function toggleCollectionTarget(target: CollectionTarget): Promise<boolean> {
+export async function toggleCollectionTarget(target: CollectionTarget, desiredFavorite?: boolean): Promise<boolean> {
   await ensureCollection();
   if (owner?.role === 'guest') throw new Error('访客无法修改收藏');
-  const key = `${target.sourceType}:${target.sourceId}:${target.getGroup ? 'group' : target.imageId ?? target.imageUrl}`;
+  const groupSourceIds = target.getGroup && target.groupSourceIds?.length ? [...new Set(target.groupSourceIds)] : undefined;
+  const targetKey = target.collectionId
+    ? JSON.stringify(['collection', target.collectionId, Boolean(target.getGroup)])
+    : groupSourceIds
+    ? JSON.stringify([target.sourceType, groupSourceIds.slice().sort()])
+    : target.sourceType && objectSourceTypes.has(target.sourceType) && target.sourceId && !target.collectionId
+    ? JSON.stringify([target.sourceType, objectSourceId(target.sourceType, target.sourceId)])
+    : `${target.sourceType}:${target.sourceId}:${target.getGroup ? 'group' : target.imageId ?? target.imageUrl}`;
+  const key = JSON.stringify([targetKey, desiredFavorite === undefined ? 'toggle' : desiredFavorite]);
   const pending = pendingTargets.get(key);
   if (pending) return pending;
-  const favorite = !collectionTargetActive(target);
+  const toggledFavorite = !collectionTargetActive(target);
   const action = mutation.catch(() => false).then(async () => {
+    const favorite = desiredFavorite ?? (groupSourceIds ? !collectionTargetActive(target) : toggledFavorite);
+    if (desiredFavorite === true && collectionTargetComplete(target)) return true;
     if (!favorite) {
       const userId = target.collectionId ? items.find(item => item.id === target.collectionId)?.userId : owner?.id;
-      const selected = items.filter(item => !item.archived && (target.getGroup ? item.userId === userId && item.sourceType === target.sourceType && item.sourceId === target.sourceId : matchesCollectionImage(item, target)));
+      const memberIds = groupSourceIds && new Set(groupSourceIds.map(id => target.sourceType === 'character' ? characterSourceId(id) : id));
+      const selected = items.filter(item => !item.archived && (memberIds
+        ? item.userId === owner?.id && item.sourceType === target.sourceType && memberIds.has(target.sourceType === 'character' ? characterSourceId(item.sourceId || '') : item.sourceId || '')
+        : target.getGroup ? item.userId === userId && item.sourceType === target.sourceType && sameSource(target.sourceType, item.sourceId, target.sourceId)
+          : matchesCollectionImage(item, target)));
       await removeCollection(selected.map(item => item.id));
       return false;
     }
     const images = target.getGroup ? await target.getGroup() : [target];
     if (!images.length) throw new Error('没有可收藏的图片');
+    if (groupSourceIds) {
+      if (!target.sourceType) throw new Error('收藏组成员不完整');
+      const resolvedIds = new Set<string>();
+      for (const image of images) {
+        if (image.sourceType !== target.sourceType || !image.sourceId || !groupSourceIds.some(id => sameSource(target.sourceType, image.sourceId, id))) throw new Error('收藏组成员不完整');
+        resolvedIds.add(target.sourceType === 'character' ? characterSourceId(image.sourceId) : image.sourceId);
+      }
+      if (groupSourceIds.some(id => !resolvedIds.has(target.sourceType === 'character' ? characterSourceId(id) : id))) throw new Error('收藏组成员不完整');
+    }
     for (const image of images) {
-      const existing = items.find(item => matchesCollectionImage(item, image));
+      if (groupSourceIds && image.sourceType && image.sourceId) {
+        const activeMember = items.some(item => item.userId === owner?.id && item.sourceType === image.sourceType && sameSource(image.sourceType, item.sourceId, image.sourceId) && !item.archived);
+        if (activeMember) continue;
+        const archivedMember = items.find(item => item.userId === owner?.id && item.sourceType === image.sourceType && sameSource(image.sourceType, item.sourceId, image.sourceId) && item.archived);
+        if (archivedMember) {
+          await updateCollection([archivedMember.id], { archived: false });
+          continue;
+        }
+      }
+      const existing = items.find(item => groupSourceIds
+        ? item.userId === owner?.id && item.sourceType === image.sourceType && item.sourceId === image.sourceId && matchesCollectionImage(item, image)
+        : (!target.getGroup || target.collectionId || item.userId === owner?.id) && matchesCollectionImage(item, image));
       if (existing && owner?.role !== 'admin' && existing.userId !== owner?.id) throw new Error('无法修改其他用户的收藏');
       if (existing) {
         if (existing.archived) await updateCollection([existing.id], { archived: false });
@@ -368,7 +461,7 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
         prompt: reverse?.prompt || (codexMetadata?.prompt ?? image.prompt ?? ''), negativePrompt: codexMetadata?.negativePrompt ?? image.negativePrompt ?? '', params: codexMetadata?.params || image.params,
         sourceType: image.sourceType || target.sourceType || 'other', sourceId: image.sourceId || target.sourceId,
         sourceUrl: image.sourceUrl || target.sourceUrl, tags: [],
-        analysis: { ...image.analysis, ...(reverse ? { imageTagger: reverse } : {}), ...(!image.imageUrl.startsWith('data:') ? { collectionOriginalUrl: image.imageUrl } : {}), ...(image.imageId === undefined ? {} : { collectionImageId: image.imageId }), ...(target.getGroup ? { collectionGroupSize: images.length } : {}) },
+        analysis: { ...image.analysis, ...(reverse ? { imageTagger: reverse } : {}), ...(!image.imageUrl.startsWith('data:') ? { collectionOriginalUrl: image.imageUrl } : {}), ...(image.imageId === undefined ? {} : { collectionImageId: image.imageId }), ...(target.getGroup && !groupSourceIds ? { collectionGroupSize: images.length } : {}) },
         createdAt: now, updatedAt: now,
       };
       const response = await api.post('/inspirations', item);
@@ -388,12 +481,12 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
 /** 画师偏好与收藏库共用来源组，取消偏好只归档收藏引用，原图保留。 */
 export async function toggleArtistPreference(tag: string, imageUrl: string, sample?: CollectionImage): Promise<boolean> {
   await ensureCollection();
-  const existing = collectionSnapshot().find(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId && normalizeArtistSampleTag(item.sourceId) === normalizeArtistSampleTag(tag));
+  const saved = collectionSnapshot().filter(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId && normalizeRollArtistKey(item.sourceId) === normalizeRollArtistKey(tag));
+  const existing = saved.find(item => !item.archived) || saved[0];
   const sourceId = existing?.sourceId || tag;
-  const saved = collectionSnapshot().filter(item => item.userId === owner?.id && item.sourceType === 'artist' && item.sourceId === sourceId);
-  const ownSample = !sample && !saved.length && imageUrl.startsWith('/api/assets/') ? (await getArtistSampleData()).samples.find(sample => sample.imageUrl === imageUrl && normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(tag)) : undefined;
+  const ownSample = !sample && !saved.length && imageUrl.startsWith('/api/assets/') ? (await getArtistSampleData()).samples.find(sample => sample.imageUrl === imageUrl && normalizeRollArtistKey(sample.tag) === normalizeRollArtistKey(tag)) : undefined;
   const image: CollectionImage = { title: tag, prompt: ownSample?.prompt ?? `artist:${tag}`, negativePrompt: ownSample?.negativePrompt, params: ownSample?.params, imageId: imageUrl || 'tag', ...sample, imageUrl, sourceType: 'artist', sourceId };
-  return toggleCollectionTarget({ ...image, ...(saved[0] ? { collectionId: saved[0].id } : {}), getGroup: async () => saved.length ? saved.map(item => ({ ...item, collectionId: item.id })) : [image] });
+  return toggleCollectionTarget({ ...image, ...(existing ? { collectionId: existing.id, groupSourceIds: [...new Set(saved.map(item => item.sourceId!))] } : {}), getGroup: async () => saved.length ? saved.map(item => ({ ...item, collectionId: item.id })) : [image] });
 }
 
 export async function syncHistoryCollectionFavorites(ids: string[], favorite: boolean): Promise<void> {

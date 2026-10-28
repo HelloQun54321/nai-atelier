@@ -6,7 +6,7 @@ import { t, useLanguage } from '../services/i18n';
 import type { User, ImageEditOperation, PromptChain } from '../types';
 import { IMPORT_SESSION_KEY, type BaseImageImport } from '../services/metadataService';
 import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCodexBook, loadCodexBootstrap, loadCodexCommunity, readCodexImageFile, readCodexImageMetadata, type CodexBootstrap, type CodexEntry, type CodexImageMetadata, type CodexResult } from '../services/codexService';
-import { collectionRevision, collectionTargetActive, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
+import { collectionRevision, collectionTargetActive, collectionTargetComplete, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
@@ -240,7 +240,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   }, [frostedCaption, imageRatios]);
   const renderCard = (entry: CodexEntry) => {
     const image = entry.images[entry.coverIndex];
-    const partial = image && !collectionTargetActive(groupTarget(entry)) && entry.images.some((_, i) => collectionTargetActive(codexCollectionImage(entry, i)));
+    const partial = image && !collectionTargetComplete(groupTarget(entry)) && entry.images.some((_, i) => collectionTargetActive(codexCollectionImage(entry, i)));
     const imageRatio = image ? imageRatios[entry.key] || (image.width && image.height ? image.width / image.height : 0.75) : 0.75;
     return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectionFocusEnabled && selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => { anchor.prepareSelection(entry.key); setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>

@@ -27,6 +27,7 @@ import { useMobileHistoryLayer } from '../MobileUI';
 import { PressRevealSurface } from '../PressRevealSurface';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
 import { useCatalogGroupBrowser } from '../CatalogGroups';
+import { DIRECTORY_FAVORITES_ID } from '../DirectoryTreeNavigation';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
 interface Props {
@@ -46,6 +47,8 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   useLanguage();
   const collection = useSyncExternalStore(subscribeCollection, collectionSnapshot);
   const preferred = useMemo(() => new Set(collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => normalizeRollArtistKey(item.sourceId!))), [collection]);
+  const [collectionStatus, setCollectionStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [collectionRetry, setCollectionRetry] = useState(0);
   const [sampleData, setSampleData] = useState<ArtistSampleData>({ templates: {}, samples: [] });
   const [sampleCatalogs, setSampleCatalogs] = useState<Partial<Record<ArtistSamplePack, ArtistSampleCatalog>>>({});
   const [sampleStatus, setSampleStatus] = useState<ArtistSampleStatus | null>(null), [sampleLoading, setSampleLoading] = useState(true);
@@ -90,9 +93,18 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   const closeSettings = React.useCallback(() => setSettingsOpen(false), []);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const notify = React.useCallback((message: string, type?: 'success' | 'error') => setError(type === 'success' ? '' : message), []);
+  const catalogArtists = useMemo(() => {
+    const entries = new Map(library.map(entry => [entry.name, entry]));
+    const known = new Set(library.map(entry => normalizeRollArtistKey(entry.name)));
+    for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!known.has(normalizeRollArtistKey(tag))) { entries.set(tag, { name: tag, chinese: '', postCount: 0, postCountKnown: false }); known.add(normalizeRollArtistKey(tag)); }
+    return [...entries.values()];
+  }, [library, pinned, blocked, excluded, collection]);
   const groupSelection = useMemo(() => library.filter(entry => pinned.includes(entry.name)).map(entry => 'artist:' + entry.name), [library, pinned]);
   const catalogKeys = useMemo(() => loading || sampleLoading || libraryError ? undefined : library.map(entry => 'artist:' + entry.name), [library, loading, sampleLoading, libraryError]);
-  const groups = useCatalogGroupBrowser('artist', groupSelection, notify, 'roll-artists', catalogKeys);
+  const groups = useCatalogGroupBrowser('artist', groupSelection, notify, 'roll-artists', catalogKeys, {
+    favorites: { matches: key => preferred.has(normalizeRollArtistKey(key.slice('artist:'.length))), count: collectionStatus === 'ready' && catalogKeys ? catalogArtists.filter(entry => preferred.has(normalizeRollArtistKey(entry.name))).length : undefined },
+  });
+  const favoritesPending = groups.activeGroup === DIRECTORY_FAVORITES_ID && collectionStatus !== 'ready';
   const groupRevision = groups.activeGroup === '*' ? 0 : groups.state.revision;
   useEffect(() => { setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }, [groups.activeGroup, groupRevision]);
   const active = useContext(ImageActivityContext);
@@ -129,22 +141,20 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
     const timer = window.setInterval(() => setSampleRetry(value => value + 1), 2000);
     return () => window.clearInterval(timer);
   }, [sampleStatus]);
-  useEffect(() => { void ensureCollection().catch(cause => setError((cause as Error).message)); }, []);
+  useEffect(() => {
+    let current = true; setCollectionStatus('loading');
+    void ensureCollection().then(() => { if (current) setCollectionStatus('ready'); }).catch(cause => { if (current) { setCollectionStatus('error'); setError((cause as Error).message); } });
+    return () => { current = false; };
+  }, [collectionRetry]);
   const pinnedKeys = useMemo(() => new Set(pinned.map(normalizeRollArtistKey)), [pinned]);
   const blockedKeys = useMemo(() => new Set([...blocked, ...excluded].map(normalizeRollArtistKey)), [blocked, excluded]);
-  const catalogArtists = useMemo(() => {
-    const entries = new Map(library.map(entry => [entry.name, entry]));
-    const known = new Set(library.map(entry => normalizeRollArtistKey(entry.name)));
-    for (const tag of [...pinned, ...blocked, ...excluded, ...collection.filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!)]) if (!known.has(normalizeRollArtistKey(tag))) { entries.set(tag, { name: tag, chinese: '', postCount: 0, postCountKnown: false }); known.add(normalizeRollArtistKey(tag)); }
-    return [...entries.values()];
-  }, [library, pinned, blocked, excluded, collection]);
   const samplesByPack = useMemo(() => indexArtistSampleGallery(catalogArtists, sampleData, sampleCatalogs, generatedSamples), [catalogArtists, sampleData, sampleCatalogs, generatedSamples]);
   const artists = useMemo(() => {
     const index = usage || { byTag: new Map(), indexed: 0, total: 0 };
     const activeSort = !usage && isArtistUsageSort(sort) ? 'popular' : sort;
     return catalogArtists.filter(entry => {
       const key = normalizeRollArtistKey(entry.name);
-      return groups.matches('artist:' + entry.name) && matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'preferred' && preferred.has(key) || filter === 'blocked' && blockedKeys.has(key));
+      return groups.matches('artist:' + entry.name) && matchesArtistSearch(entry, searchTerms) && (!usage || matchesArtistUsage(entry.name, usage, chainsFilter, imagesFilter)) && (filter === 'all' || filter === 'pinned' && pinnedKeys.has(key) || filter === 'blocked' && blockedKeys.has(key));
     }).sort((left, right) => compareArtistUsage(left, right, activeSort, index));
   }, [catalogArtists, searchTerms, filter, pinnedKeys, preferred, blockedKeys, sort, usage, chainsFilter, imagesFilter, groups.matches]);
   const changeFilter = (value: string) => { setFilter(value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; };
@@ -193,11 +203,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         <ToolbarSearch containerClassName="order-last basis-full !max-w-none sm:order-none sm:basis-0" aria-label={t('搜索画师')} placeholder={t('搜索画师，多个词用逗号分隔')} value={query} onChange={event => { setQuery(event.target.value); setLimit(60); if (gallery.current) gallery.current.scrollTop = 0; }} />
         <div ref={settingsAnchor} className="shrink-0"><ToolbarButton aria-label={t('抽取设置')} aria-expanded={settingsOpen} aria-haspopup="dialog" active={settingsOpen} onClick={() => { setUsageOpen(false); setSettingsOpen(value => !value); }}><SlidersHorizontal /><span className="hidden sm:inline">{t('抽取设置')}</span></ToolbarButton></div>
         <ToolbarButton tone="primary" disabled={busy} onClick={close}>{t('完成')}</ToolbarButton>
-        <ToolbarCountCaption>{loading ? t('已加载 {0} 位', [artists.length]) : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
+        <ToolbarCountCaption>{favoritesPending ? t('匹配 {0} 位', ['—']) : loading ? t('已加载 {0} 位', [artists.length]) : groups.activeGroup !== '*' || filter !== 'all' || chainsFilter !== 'all' || imagesFilter !== 'all' || searchTerms.length > 0 ? t('匹配 {0} 位', [artists.length]) : t('共 {0} 位', [artists.length])}</ToolbarCountCaption>
       </header>
       <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2 sm:px-5">
         <div role="group" aria-label={t('画师范围')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
-          {([['all', '全部画师', undefined], ['pinned', '已锁定', pinned.length], ['preferred', '偏好画师', preferred.size], ['blocked', '已屏蔽', blockedKeys.size]] as const).map(([value, label, total]) => <button key={value} type="button" aria-label={t(label)} aria-pressed={filter === value} onClick={() => changeFilter(value)} className={`mobile-touch flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${filter === value ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>{t(label)}{total !== undefined && <span className="text-micro tabular-nums opacity-70">{total}</span>}</button>)}
+          {([['all', '全部画师', undefined], ['pinned', '已锁定', pinned.length], ['blocked', '已屏蔽', blockedKeys.size]] as const).map(([value, label, total]) => <button key={value} type="button" aria-label={t(label)} aria-pressed={filter === value} onClick={() => changeFilter(value)} className={`mobile-touch flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs transition-colors ${filter === value ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>{t(label)}{total !== undefined && <span className="text-micro tabular-nums opacity-70">{total}</span>}</button>)}
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <span className="hidden text-xs tabular-nums text-gray-400 lg:block">{t('{0} 位画师', [artists.length])}</span>
@@ -245,10 +255,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       {groups.navigation}
       <div ref={gallery} data-roll-artist-gallery className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
-        {(loading || sampleLoading) && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取画师样张…')}</p>}
-        {imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>}
+        {(loading || sampleLoading || favoritesPending && collectionStatus === 'loading') && <p role="status" className="mb-3 text-xs text-gray-500">{t(favoritesPending ? '加载中…' : '正在读取画师样张…')}</p>}
+        {favoritesPending && collectionStatus === 'error' && <button type="button" className="mobile-touch text-xs underline" onClick={() => { setError(''); setCollectionRetry(value => value + 1); }}>{t('重新加载')}</button>}
+        {!favoritesPending && (imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>)}
         {artists.length > limit && <ToolbarButton className="mt-5 w-full" onClick={() => setLimit(current => current + 60)}>{t('加载更多')}</ToolbarButton>}
-        {!loading && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
+        {!loading && !favoritesPending && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
       </div>
       </div>
     </div>

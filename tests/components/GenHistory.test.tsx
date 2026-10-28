@@ -11,8 +11,9 @@ import type { LocalGenItem } from '../../types';
 import { db } from '../../services/dbService';
 import { buildBrowserHistoryOrder } from '../../services/historyBrowse';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
+import { syncHistoryCollectionFavorites } from '../../services/collectionFavorites';
 
-const { confirmAction, listeners, imageRender } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), imageRender: vi.fn(), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
+const { confirmAction, listeners, imageRender, collectionState } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), imageRender: vi.fn(), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>(), collectionState: { active: false } }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../components/SmartImage', () => ({
     ImageActivityContext: React.createContext(true),
@@ -42,6 +43,8 @@ let loadMore: (() => void) | undefined;
 
 beforeEach(() => {
     localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks();
+    collectionState.active = false;
+    items.forEach(item => { delete item.isFavorite; delete item.favoriteAt; });
     loadMore = undefined; confirmAction.mockResolvedValue(false);
     vi.mocked(localHistory.getPage).mockResolvedValue({ items, count: items.length });
     vi.mocked(localHistory.getBrowseOrder).mockResolvedValue({ ids: items.map(item => item.id), models: [], sources: [] });
@@ -260,6 +263,40 @@ describe('历史缩略图就地操作', () => {
         expect(localHistory.delete).not.toHaveBeenCalled();
         expect(timer.mock.calls.some(([, delay]) => delay === 450)).toBe(false);
         expect(screen.queryByText('图片详情')).toBeNull();
+    });
+
+    it('本地标记未收藏但共享记录仍有效时列表和大图保持亮心，失败重试继续取消', async () => {
+        collectionState.active = true;
+        items[0].isFavorite = false;
+        vi.mocked(localHistory.setFavorite).mockImplementation(async (id, favorite) => {
+            const item = items.find(entry => entry.id === id);
+            if (item) item.isFavorite = favorite;
+            listeners.forEach(listener => listener({ type: 'favorite', id, favorite }));
+            return 1;
+        });
+        vi.mocked(syncHistoryCollectionFavorites).mockRejectedValue(new Error('合成收藏同步失败'));
+        const { cards, notify } = await setup();
+        const listHeart = () => within(cards[0]).getByRole('button', { name: '取消收藏' });
+        expect(listHeart().getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(listHeart());
+        await waitFor(() => expect(localHistory.setFavorite).toHaveBeenLastCalledWith(items[0].id, false));
+        await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('合成收藏同步失败'), 'error'));
+        expect(listHeart().getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(listHeart());
+        await waitFor(() => expect(localHistory.setFavorite).toHaveBeenCalledTimes(2));
+        expect(localHistory.setFavorite).toHaveBeenNthCalledWith(2, items[0].id, false);
+        expect(localHistory.setFavorite).not.toHaveBeenCalledWith(items[0].id, true);
+
+        fireEvent.click(cards[0]);
+        const viewer = await screen.findByRole('dialog', { name: '历史图片查看器' });
+        const viewerHeart = within(viewer).getByRole('button', { name: '取消收藏' });
+        expect(viewerHeart.getAttribute('aria-pressed')).toBe('true');
+        fireEvent.click(viewerHeart);
+        await waitFor(() => expect(localHistory.setFavorite).toHaveBeenCalledTimes(3));
+        expect(localHistory.setFavorite).toHaveBeenNthCalledWith(3, items[0].id, false);
+        expect(localHistory.setFavorite).not.toHaveBeenCalledWith(items[0].id, true);
     });
 
     it('多选时隐藏所有单图操作，点击卡片只选择图片', async () => {
@@ -588,6 +625,6 @@ describe('历史顶栏状态一致性', () => {
 vi.mock('../../services/collectionFavorites', async original => ({
   ...await original<typeof import('../../services/collectionFavorites')>(),
   ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
-  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: vi.fn(() => collectionState.active),
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));

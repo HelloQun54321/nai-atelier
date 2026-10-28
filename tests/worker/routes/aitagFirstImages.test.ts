@@ -19,7 +19,7 @@ function fixture() {
   const files = new Map<string, Uint8Array>(), pending: Promise<unknown>[] = [];
   const invoke = async (path: string) => {
     const url = new URL(path, 'http://localhost');
-    return (await handleAitagRoute({ db, url, path: url.pathname, method: 'GET', request: new Request(url),
+    return (await handleAitagRoute({ db, url, path: url.pathname, method: 'GET', request: new Request(url), currentUser: { id: 'owner' },
       env: { BUCKET: { put: async (key: string, bytes: ArrayBuffer) => files.set(key, new Uint8Array(bytes)) } },
       ctx: { waitUntil: (task: Promise<unknown>) => pending.push(task) }, initDB: async () => { throw new Error('不迁移真实资料'); },
     } as unknown as RouteContext))!;
