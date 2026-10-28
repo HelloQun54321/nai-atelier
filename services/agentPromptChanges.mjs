@@ -103,28 +103,53 @@ export function applyAgentPromptChange(current, change, direction) {
   return result;
 }
 
-// 字符级最短编辑保留原文、权重和重复词；共同长段仅在展示时折叠。
+// 英文按词、其他文字按字符匹配，保留权重、重复词和换行；共同部分只在展示时折叠。
 export function diffPromptText(before, after) {
   if (before === after) return [{ kind: 'equal', text: before }];
-  const a = Array.from(before), b = Array.from(after);
-  let start = 0, end = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
-  const left = a.slice(start, a.length - end), right = b.slice(start, b.length - end);
-  const parts = [{ kind: 'equal', text: a.slice(0, start).join('') }];
+  const tokens = text => text.match(/[A-Za-z_]+|\d+|[^A-Za-z_\d]/gu) || [];
+  const parts = [];
   const push = (kind, text) => { if (!text) return; if (parts.at(-1)?.kind === kind) parts.at(-1).text += text; else parts.push({ kind, text }); };
-  // shortcut: 极长重写显示中间整段；需要大篇幅逐字定位时再换线性空间算法。
-  if (left.length * right.length > 1_000_000) { push('delete', left.join('')); push('insert', right.join('')); }
-  else {
-    const rows = Array.from({ length: left.length + 1 }, () => new Uint32Array(right.length + 1));
-    for (let i = left.length - 1; i >= 0; i--) for (let j = right.length - 1; j >= 0; j--) rows[i][j] = left[i] === right[j] ? rows[i + 1][j + 1] + 1 : Math.max(rows[i + 1][j], rows[i][j + 1]);
-    let i = 0, j = 0;
-    while (i < left.length || j < right.length) {
-      if (i < left.length && j < right.length && left[i] === right[j]) { push('equal', left[i++]); j++; }
-      else if (i < left.length && (j === right.length || rows[i + 1][j] >= rows[i][j + 1])) push('delete', left[i++]);
-      else push('insert', right[j++]);
+  // Hirschberg 只保留 LCS 当前行，长文本也继续匹配共同内容，不退化成整段替换。
+  const lengths = (a, b) => {
+    const row = new Uint32Array(b.length + 1);
+    for (const token of a) {
+      let diagonal = 0;
+      for (let j = 0; j < b.length; j++) {
+        const previous = row[j + 1];
+        row[j + 1] = token === b[j] ? diagonal + 1 : Math.max(row[j], previous);
+        diagonal = previous;
+      }
     }
-  }
-  push('equal', end ? a.slice(-end).join('') : '');
-  return parts.filter(part => part.text);
+    return row;
+  };
+  const splitAt = (a, b, middle) => {
+    const front = lengths(a.slice(0, middle), b), back = lengths(a.slice(middle).reverse(), [...b].reverse());
+    let split = 0, best = -1;
+    for (let j = 0; j <= b.length; j++) {
+      const score = front[j] + back[b.length - j];
+      if (score > best) { best = score; split = j; }
+    }
+    return split;
+  };
+  const visit = (a, b) => {
+    let start = 0, end = 0;
+    while (start < a.length && start < b.length && a[start] === b[start]) start++;
+    while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
+    push('equal', a.slice(0, start).join(''));
+    const left = a.slice(start, a.length - end), right = b.slice(start, b.length - end);
+    if (!left.length) push('insert', right.join(''));
+    else if (!right.length) push('delete', left.join(''));
+    else if (left.length === 1) {
+      const position = right.indexOf(left[0]);
+      if (position < 0) { push('delete', left[0]); push('insert', right.join('')); }
+      else { push('insert', right.slice(0, position).join('')); push('equal', left[0]); push('insert', right.slice(position + 1).join('')); }
+    } else {
+      const middle = Math.floor(left.length / 2), split = splitAt(left, right, middle);
+      visit(left.slice(0, middle), right.slice(0, split));
+      visit(left.slice(middle), right.slice(split));
+    }
+    push('equal', end ? a.slice(-end).join('') : '');
+  };
+  visit(tokens(before), tokens(after));
+  return parts;
 }

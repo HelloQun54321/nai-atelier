@@ -3,6 +3,7 @@ import { Redo2, Undo2 } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { diffPromptText, type AgentPromptChange, type AgentPromptFieldChange } from '../services/agentPromptChanges.mjs';
 import { promptPurposeLabel } from '../services/promptPurposes.mjs';
+import { splitPromptSegments } from '../services/promptSegments.mjs';
 
 const labels: Record<string, string> = { basePrompt: '全局正面提示词', subjectPrompt: '主体提示词', negativePrompt: '负面提示词', prompt: '正面提示词', appearance: '外貌', wardrobe: '服饰', pose: '动作', expression: '表情', scene: '场景', camera: '镜头', extra: '补充', content: '提示词', isActive: '启用' };
 const fieldLabel = (change: AgentPromptFieldChange) => {
@@ -28,23 +29,58 @@ const visibleFields = (changes: AgentPromptFieldChange[]) => changes.flatMap(cha
   return output;
 });
 
+type DiffBlock = { kind: 'context'; text: string } | { kind: 'change'; parts: ReturnType<typeof diffPromptText> };
+const promptSpans = (value: string) => {
+  // 仅用于定位：换行按等长分隔符处理，正文和权重组仍保留原文。
+  const text = value.replace(/[\r\n]/g, ',');
+  let cursor = 0;
+  return splitPromptSegments(text).map(segment => {
+    const start = text.indexOf(segment, cursor);
+    cursor = start + segment.length;
+    return { start, end: cursor };
+  });
+};
+const diffBlocks = (before: string, after: string) => {
+  const parts = diffPromptText(before, after), beforeSpans = promptSpans(before), afterSpans = promptSpans(after);
+  const tagList = beforeSpans.length > 1 || afterSpans.length > 1;
+  const afterBounds = new Set(afterSpans.map(span => `${span.start}:${span.end}`));
+  const blocks: DiffBlock[] = [];
+  let oldPosition = 0, newPosition = 0;
+  for (const part of parts) {
+    // Tag 列表按完整未变片段分块；改动 Tag 内共用的词、逗号和权重继续原位显示。
+    const context = part.kind === 'equal' && (tagList ? beforeSpans.some(span => span.start >= oldPosition && span.end <= oldPosition + part.text.length
+      && afterBounds.has(`${newPosition + span.start - oldPosition}:${newPosition + span.end - oldPosition}`)) : !/^[\s\d\p{P}]+$/u.test(part.text));
+    if (context) blocks.push({ kind: 'context', text: part.text });
+    else {
+      const previous = blocks.at(-1);
+      if (previous?.kind === 'change') previous.parts.push(part);
+      else blocks.push({ kind: 'change', parts: [part] });
+    }
+    if (part.kind !== 'insert') oldPosition += part.text.length;
+    if (part.kind !== 'delete') newPosition += part.text.length;
+  }
+  return blocks;
+};
+
 export const AgentPromptDiff: React.FC<{ changes: AgentPromptFieldChange[] }> = ({ changes }) => {
   useLanguage();
   const [expanded, setExpanded] = useState(false);
-  const fields = useMemo(() => visibleFields(changes).map(change => ({ change, parts: diffPromptText(String(change.before ?? ''), String(change.after ?? '')) })), [changes]);
+  const fields = useMemo(() => visibleFields(changes).map(change => ({ change, blocks: diffBlocks(String(change.before ?? ''), String(change.after ?? '')) })), [changes]);
   if (!changes.length || changes.every(change => change.hidden)) return null;
-  return <div className="min-w-0 text-xs leading-6">
-    {fields.map(({ change, parts }, index) => <div key={index} className="border-t border-gray-200 px-3 py-2 dark:border-gray-700">
+  return <div className="min-w-0 text-xs leading-5">
+    {fields.map(({ change, blocks }, index) => <div key={index} className="border-t border-gray-200 px-3 py-2 dark:border-gray-700">
       <div className="mb-1 break-words font-semibold text-gray-600 dark:text-gray-300">{fieldLabel(change)}</div>
-      {(['delete', 'insert'] as const).filter(kind => parts.some(part => part.kind === kind)).map(kind => <div key={kind} className={`flex gap-2 rounded px-2 py-1 ${kind === 'delete' ? 'bg-red-50 text-red-900 dark:bg-red-950/40 dark:text-red-200' : 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'}`}>
-        <span aria-label={t(kind === 'delete' ? '删除' : '新增')} className="select-none font-bold">{kind === 'delete' ? '−' : '+'}</span>
-        <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{parts.map((part, partIndex) => part.kind !== kind && part.kind !== 'equal' ? null : part.kind === 'equal'
-          ? <span key={partIndex} className="opacity-65">{expanded || part.text.length <= 72 ? part.text : `${partIndex ? part.text.slice(0, 24) : ''} … ${partIndex < parts.length - 1 ? part.text.slice(-24) : ''}`}</span>
-          : <mark key={partIndex} className={`rounded-sm text-inherit ${kind === 'delete' ? 'bg-red-200/80 dark:bg-red-800/70' : 'bg-emerald-200/80 dark:bg-emerald-800/70'}`}>{part.text}</mark>)}</span>
-      </div>)}
+      {blocks.map((block, blockIndex) => block.kind === 'context'
+        ? <div key={blockIndex} className="whitespace-pre-wrap px-2 text-gray-500 [overflow-wrap:anywhere] dark:text-gray-400">{expanded ? block.text : '…'}</div>
+        : <div key={blockIndex} className="overflow-hidden rounded-lg">{(['delete', 'insert'] as const).filter(kind => block.parts.some(part => part.kind === kind)).map(kind => <div key={kind} className={`flex gap-2 px-2 py-0.5 ${kind === 'delete' ? 'bg-red-50/70 text-red-900 dark:bg-red-950/30 dark:text-red-200' : 'bg-emerald-50/70 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200'}`}>
+          <span aria-label={t(kind === 'delete' ? '删除' : '新增')} className="select-none font-bold">{kind === 'delete' ? '−' : '+'}</span>
+          <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{block.parts.filter(part => part.kind === kind || part.kind === 'equal').map((part, partIndex) => part.kind === 'equal'
+            ? <span key={partIndex} className="text-gray-600 dark:text-gray-400">{part.text}</span>
+            : kind === 'delete' ? <del key={partIndex} className="no-underline">{part.text}</del> : <ins key={partIndex} className="no-underline">{part.text}</ins>)}</span>
+        </div>)}</div>)}
     </div>)}
     {!fields.length && <p className="px-3 py-2 text-gray-500">{t('提示词来源已更新')}</p>}
-    {fields.some(field => field.parts.some(part => part.kind === 'equal' && part.text.length > 72)) && <button type="button" className="mobile-touch px-3 text-indigo-600 dark:text-indigo-300" onClick={() => setExpanded(value => !value)}>{t(expanded ? '只看改动' : '展开完整上下文')}</button>}
+    {fields.some(field => field.blocks.some(block => block.kind === 'context')) && <button type="button" aria-expanded={expanded} className="mobile-touch px-3 text-indigo-600 dark:text-indigo-300" onClick={() => setExpanded(value => !value)}>{t(expanded ? '只看改动' : '展开完整上下文')}</button>}
   </div>;
 };
 

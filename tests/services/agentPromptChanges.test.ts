@@ -72,12 +72,39 @@ describe('助手提示词差异与恢复', () => {
     expect(() => validateAgentPromptChanges([{ path: ['params', '_promptSections', '__proto__'], after: 'x' }])).toThrow();
   });
 
+  it.each(['\n', ', '])('长文首尾小改时保留中间完整未变内容（分隔符 %j）', separator => {
+    const unchanged = Array.from({ length: 100 }, (_, index) => `1.9::unchanged scenery ${index}::`).join(separator);
+    const before = `old opening${separator}${unchanged}${separator}old ending`;
+    const after = `new opening${separator}${unchanged}${separator}new ending`;
+    expect(before.length * after.length).toBeGreaterThan(1_000_000);
+    const parts = diffPromptText(before, after);
+    expect(parts.some(part => part.kind === 'equal' && part.text.includes(unchanged))).toBe(true);
+    expect(parts.filter(part => part.kind === 'delete').map(part => part.text).join('')).toBe('oldold');
+    expect(parts.filter(part => part.kind === 'insert').map(part => part.text).join('')).toBe('newnew');
+    expect(parts.filter(part => part.kind !== 'insert').map(part => part.text).join('')).toBe(before);
+    expect(parts.filter(part => part.kind !== 'delete').map(part => part.text).join('')).toBe(after);
+  });
+
+  it('长文多处修改保留完整未变行和重复 Tag，不把称呼拆成碎片', () => {
+    const lines = Array.from({ length: 60 }, (_, index) => `1.9::same camera angle ${index}::, repeated tag, repeated tag`);
+    const before = [...lines.slice(0, 20), '1.2::white shirt::', ...lines.slice(20, 40), 'beside the commander', ...lines.slice(40)].join('\n');
+    const after = [...lines.slice(0, 20), '1.4::black jacket::', ...lines.slice(20, 40), 'beside Qun', ...lines.slice(40)].join('\n');
+    const parts = diffPromptText(before, after);
+    const equal = parts.filter(part => part.kind === 'equal').map(part => part.text).join('');
+    for (const line of lines) expect(equal).toContain(line);
+    expect(parts.filter(part => part.kind === 'delete').map(part => part.text).join('')).toContain('the commander');
+    expect(parts.filter(part => part.kind === 'insert').map(part => part.text).join('')).toContain('Qun');
+    expect(parts.filter(part => part.kind !== 'insert').map(part => part.text).join('')).toBe(before);
+    expect(parts.filter(part => part.kind !== 'delete').map(part => part.text).join('')).toBe(after);
+  });
+
   it.each([
     ['1.2::artist:test::, (blue sky), blue sky', '1.4::artist:test::, (red sky), blue sky'],
     ['女孩 😀\nwhite shirt, standing', '女孩 🎨\nblack jacket, sitting'],
     ['', 'new prompt'], ['old prompt', ''],
     ['prefix '.repeat(100) + 'old' + ' suffix'.repeat(100), 'prefix '.repeat(100) + 'new' + ' suffix'.repeat(100)],
     ['x'.repeat(1500), 'y'.repeat(1500)],
+    ['旧开头\r\n' + '未变的景物和人物😀'.repeat(100) + '\r\n旧结尾', '新开头\r\n' + '未变的景物和人物😀'.repeat(100) + '\r\n新结尾'],
   ])('文本差异逐字还原原文，不改写权重、重复词或换行', (before, after) => {
     const parts = diffPromptText(before, after);
     expect(parts.filter(part => part.kind !== 'insert').map(part => part.text).join('')).toBe(before);
