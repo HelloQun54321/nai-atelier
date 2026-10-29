@@ -85,6 +85,44 @@ it('已有候选冻结生成配置，画师锁定及排除仍可保存且不改�
   expect(value.candidates).toEqual(initial.candidates); expect(value.template).toEqual(initial.template);
   expect(value.rules).toMatchObject({ minWeight: 0.2, maxWeight: 2.5 });
 });
+it('仅收藏抽取随配置保存并在重新编辑恢复，开关往返保留倍率和保底且不改旧记录', async () => {
+  const initial = rollFixture();
+  initial.rules.preferredMultiplier = 4.5; initial.rules.preferredMinArtists = 2;
+  delete initial.rules.preferredOnly;
+  const original = structuredClone(initial);
+  const save = vi.fn(async (_value: RollExperiment) => {});
+  const props = { library: [], onBlockedChange: async () => {}, enforceFreeStepLimit: true, onSave: save, onClose: vi.fn() };
+  const view = render(<StyleRollSetup {...props} initial={initial} />);
+  const openDrawingSettings = () => {
+    fireEvent.click(screen.getByRole('button', { name: /管理画师与偏好/ }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Roll 画师' })).getByRole('button', { name: '抽取设置' }));
+    return screen.getByRole('checkbox', { name: '只抽取收藏画师' });
+  };
+  const finishArtistSettings = () => {
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  };
+  expect(screen.queryByRole('checkbox', { name: '只抽取收藏画师' })).toBeNull();
+  const only = openDrawingSettings(); expect(only).toHaveProperty('checked', false); fireEvent.click(only);
+  finishArtistSettings();
+  expect(openDrawingSettings()).toHaveProperty('checked', true);
+  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' })).toHaveProperty('value', '4.5');
+  expect(screen.getByRole('spinbutton', { name: '每串偏好保底人数' })).toHaveProperty('value', '2');
+  finishArtistSettings(); fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  const saved = save.mock.calls[0][0];
+  expect(saved.rules).toMatchObject({ preferredOnly: true, preferredMultiplier: 4.5, preferredMinArtists: 2 });
+  expect(initial).toEqual(original);
+  view.unmount();
+  render(<StyleRollSetup {...props} initial={saved} />);
+  const restored = openDrawingSettings(); expect(restored).toHaveProperty('checked', true); fireEvent.click(restored);
+  expect(screen.getByRole('spinbutton', { name: '偏好抽中倍率' }).matches(':disabled')).toBe(false);
+  finishArtistSettings(); fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][0].rules).toMatchObject({ preferredOnly: false, preferredMultiplier: 4.5, preferredMinArtists: 2 });
+  expect(saved.rules.preferredOnly).toBe(true);
+});
+
 it('保存失败保留输入和窗口，空白 Seed 或无效规则不投递', async () => {
   const save = vi.fn(async () => { throw new Error('合成保存失败'); }), close = vi.fn();
   render(<StyleRollSetup library={rollFixture().artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 }))} onBlockedChange={async () => {}} initial={rollFixture()} enforceFreeStepLimit onSave={save} onClose={close} />);

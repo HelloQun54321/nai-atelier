@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { rollCandidates, validateRollExperiment } from '../../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../../services/styleRollWorkflow';
@@ -50,6 +50,40 @@ it('提取来源照常受样张、屏蔽和排除约束，偏好不足不借全�
   expect(() => beginRollRound(e, ['outside'], 1, { blockedTags: ['alpha'] })).toThrow('可用画师不足');
   e.rules.preferredMinArtists = 1;
   expect(() => beginRollRound(e, ['outside'], 1, { preferredTags: ['outside', 'beta'] })).toThrow('可用偏好画师不足');
+});
+
+it('只抽收藏仍限定来源并保留来源频次，轮次快照保存开关且不改旧资料', () => {
+  const e = rollFixture(); e.artists = []; e.pinnedArtists = [];
+  e.rules = { ...e.rules, minArtists: 1, maxArtists: 1, preferredOnly: true, preferredMultiplier: 100, preferredMinArtists: 0 };
+  e.chainArtistSource = { chainIds: ['one', 'two'], artists: [{ tag: 'alpha', count: 2 }, { tag: 'beta', count: 1 }, { tag: 'ordinary', count: 2 }] };
+  const before = structuredClone(e);
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.6);
+  try {
+    const options = { preferredTags: ['alpha', 'beta', 'outside'] };
+    const next = beginRollRound(e, ['outside'], 1, options);
+    expect(next.candidates[0].tags[0].tag).toBe('alpha');
+    expect(currentRollRound(next)!.snapshot!.rules).toEqual(e.rules);
+    expect(() => validateRollExperiment(JSON.parse(JSON.stringify(next)))).not.toThrow();
+    expect(e).toEqual(before);
+    e.chainArtistSource.artists[0].count = 1; e.chainArtistSource.artists[1].count = 2;
+    expect(beginRollRound(e, ['outside'], 1, options).candidates[0].tags[0].tag).toBe('beta');
+    expect(beginRollRound(e, ['beta'], 1, { ...options, sampledOnly: true }).candidates[0].tags[0].tag).toBe('beta');
+    expect(() => beginRollRound(e, ['ordinary', 'outside'], 1, { ...options, sampledOnly: true })).toThrow('可用收藏画师不足');
+    expect(() => beginRollRound(e, ['outside'], 1, { preferredTags: ['outside'] })).toThrow('可用收藏画师不足');
+  } finally { random.mockRestore(); }
+});
+
+it('只抽收藏继续排除屏蔽与旧排除项，不足整轮停止，已收藏固定沿用原范围例外', () => {
+  const e = rollFixture(); e.artists = [{ tag: 'beta', excluded: true, locked: false, weight: 1 }];
+  e.pinnedArtists = []; e.rules = { ...e.rules, minArtists: 2, maxArtists: 2, preferredOnly: true };
+  const before = structuredClone(e);
+  expect(() => beginRollRound(e, ['alpha', 'beta', 'gamma', 'ordinary'], 1, { preferredTags: ['alpha', 'beta', 'gamma'], blockedTags: ['gamma'] })).toThrow('可用收藏画师不足');
+  expect(e).toEqual(before);
+  e.pinnedArtists = ['fixed-outside'];
+  const next = beginRollRound(e, ['alpha'], 1, { sampledOnly: true, preferredTags: ['alpha', 'fixed-outside'] });
+  expect(next.candidates[0].tags.map(tag => tag.tag)).toEqual(['fixed-outside', 'alpha']);
+  expect(next.rules.preferredOnly).toBe(true);
+  expect(() => beginRollRound(e, ['alpha'], 1, { preferredTags: ['alpha'] })).toThrow('固定画师未收藏：fixed-outside');
 });
 
 it('来源计数与快照在保存边界校验，旧无来源记录继续合法', () => {

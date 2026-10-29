@@ -952,6 +952,54 @@ it('本轮人数与权重各占一行，保存范围并让助手遵循偏好保�
   expect(saved.candidates.slice(-6).every((candidate: any) => candidate.tags.some((tag: any) => tag.tag === 'beta'))).toBe(true);
 });
 
+it('只抽收藏：倍率1保底0仍读取有效收藏，整轮仅抽收藏且重进保留规则与快照', async () => {
+  experiment.candidates = [];
+  experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1, preferredMultiplier: 1, preferredMinArtists: 0, preferredOnly: true };
+  preferredItems.push({ sourceType: 'artist', sourceId: 'beta', archived: false }, { sourceType: 'artist', sourceId: 'alpha', archived: true }, { sourceType: 'character', sourceId: 'gamma' });
+  const view = await setup();
+  mocks.ensureCollection.mockClear();
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.ensureCollection).toHaveBeenCalled();
+  const [saved, candidates] = mocks.generate.mock.calls[0] as [RollExperiment, RollExperiment['candidates']];
+  expect(candidates.length).toBeGreaterThan(0);
+  expect(candidates.every(candidate => candidate.tags.length === 1 && candidate.tags[0].tag === 'beta')).toBe(true);
+  expect(saved.rules).toMatchObject({ preferredOnly: true, preferredMultiplier: 1, preferredMinArtists: 0 });
+  expect(saved.rounds.at(-1)?.snapshot?.rules.preferredOnly).toBe(true);
+  expect(mocks.save.mock.calls.at(-1)![0].rules.preferredOnly).toBe(true);
+  view.unmount();
+  experiment = structuredClone(saved);
+  const reopened = await setup();
+  const state = await executeAgentCommand(reopened.container, 'get_roll_state', {}, true) as { rules: RollRules };
+  expect(state.rules.preferredOnly).toBe(true);
+});
+
+it('只抽收藏：没有有效收藏时页面与助手都停止，不保存候选或发起生成', async () => {
+  experiment.candidates = [];
+  experiment.rules = { ...experiment.rules, minArtists: 1, maxArtists: 1, preferredMultiplier: 1, preferredMinArtists: 0, preferredOnly: true };
+  preferredItems.push({ sourceType: 'artist', sourceId: 'alpha', archived: true }, { sourceType: 'character', sourceId: 'beta' });
+  const { container } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await screen.findByText('可用收藏画师不足，请调整收藏、屏蔽、样张或来源范围，或降低每串总人数');
+  await expect(executeAgentCommand(container, 'run_roll_round', { count: 1, generate: false }, false)).rejects.toThrow('可用收藏画师不足');
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
+it('只抽收藏：沿用轮次条件恢复开关，不自动保存或生成', async () => {
+  experiment.rules = { ...experiment.rules, preferredOnly: false };
+  experiment.rounds = [{ id: 'preferred-round', candidateIds: ['a'], createdAt: 1, snapshot: { rules: { ...experiment.rules, minArtists: 1, maxArtists: 1, preferredOnly: true, preferredMultiplier: 1, preferredMinArtists: 0 }, mode: 'random' } }];
+  const { container } = await setup();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect(screen.getByRole('option', { name: /只抽取收藏画师/ })).toHaveProperty('value', 'preferred-round');
+  fireEvent.change(screen.getByRole('combobox', { name: '查看轮次' }), { target: { value: 'preferred-round' } });
+  fireEvent.click(screen.getByRole('button', { name: '沿用这轮条件' }));
+  const state = await executeAgentCommand(container, 'get_roll_state', {}, true) as { rules: RollRules };
+  expect(state.rules).toMatchObject({ preferredOnly: true, preferredMultiplier: 1, preferredMinArtists: 0 });
+  expect(mocks.save).not.toHaveBeenCalled();
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+
 it('偏好不足时页面和助手都停止，不保存候选也不触发生图', async () => {
   experiment.rules.preferredMinArtists = 2;
   preferredItems.push({ sourceType: 'artist', sourceId: 'alpha', archived: false });

@@ -351,6 +351,43 @@ it.each([390, 1280])('宽度 %s：偏好倍率滑条与数字双向同步，回�
   expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
 });
 
+it.each([320, 1280])('宽度 %s：仅收藏开关只在抽取卡片显示，旧规则默认关闭且切换保留倍率保底', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const initialRules = { ...DEFAULT_ROLL_RULES, preferredMultiplier: 4.5, preferredMinArtists: 2 };
+  delete initialRules.preferredOnly;
+  render(<Fixture initialRules={initialRules} />);
+  const image = await screen.findByAltText('alpha');
+  expect(screen.queryByRole('checkbox', { name: '只抽取收藏画师' })).toBeNull();
+  const settings = screen.getByRole('button', { name: '抽取设置' }); fireEvent.click(settings);
+  const panel = screen.getByRole('dialog', { name: '抽取设置' });
+  const only = within(panel).getByRole('checkbox', { name: '只抽取收藏画师' });
+  expect(only).toHaveProperty('checked', false);
+  expect(only.closest('label')?.classList.contains('min-h-11')).toBe(true);
+  expect(panel.style.width).toBe(`${Math.min(320, width - 24)}px`);
+  const multiplier = within(panel).getByRole('spinbutton', { name: '偏好抽中倍率' });
+  const slider = within(panel).getByRole('slider', { name: '偏好抽中倍率滑条' });
+  const minimum = within(panel).getByRole('spinbutton', { name: '每串偏好保底人数' });
+  fireEvent.click(only);
+  expect(only).toHaveProperty('checked', true);
+  for (const control of [multiplier, slider, minimum]) expect(control.matches(':disabled')).toBe(true);
+  expect(multiplier.closest('fieldset')?.classList.contains('opacity-50')).toBe(true);
+  expect(multiplier).toHaveProperty('value', '4.5'); expect(minimum).toHaveProperty('value', '2');
+  expect(screen.getByRole('checkbox', { name: '只从有样张的画师中抽取' }).matches(':disabled')).toBe(false);
+  fireEvent.keyDown(window, { key: 'Escape' }); fireEvent.click(settings);
+  const restored = screen.getByRole('checkbox', { name: '只抽取收藏画师' });
+  expect(restored).toHaveProperty('checked', true); fireEvent.click(restored);
+  const enabledMultiplier = screen.getByRole('spinbutton', { name: '偏好抽中倍率' });
+  expect(enabledMultiplier.matches(':disabled')).toBe(false);
+  expect(enabledMultiplier).toHaveProperty('value', '4.5');
+  expect(screen.getByRole('spinbutton', { name: '每串偏好保底人数' })).toHaveProperty('value', '2');
+  fireEvent.change(enabledMultiplier, { target: { value: '6' } });
+  expect(screen.getByRole('slider', { name: '偏好抽中倍率滑条' })).toHaveProperty('value', '6');
+  expect(screen.getByAltText('alpha')).toBe(image);
+  expect(initialRules).toMatchObject({ preferredMultiplier: 4.5, preferredMinArtists: 2 });
+  expect(initialRules.preferredOnly).toBeUndefined();
+  expect(mocks.favorite).not.toHaveBeenCalled(); expect(mocks.block).not.toHaveBeenCalled();
+});
+
 it('已存大倍率不截断，数字扩大滑条范围后拖回低倍率也不收缩跳动', async () => {
   render(<Fixture initialRules={{ ...DEFAULT_ROLL_RULES, preferredMultiplier: 250 }} />);
   await screen.findByAltText('alpha');

@@ -4,7 +4,7 @@ import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
 import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
 import { beginRollRound } from '../../services/styleRollWorkflow';
-import type { RollPreset } from '../../services/styleRoll';
+import { ROLL_MAX_ARTISTS, type RollPreset } from '../../services/styleRoll';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -103,10 +103,18 @@ it('预设无效模板、访客、坏存档和缺少删除版本均拒绝且不�
 
 it('人数范围与偏好条件持久保存，无效保底和倍率被拒绝', async () => {
   const f = fixture(), experiment = { ...rollFixture(), revision: 0 };
-  experiment.rules = { ...experiment.rules, minArtists: 4, maxArtists: 6, preferredMultiplier: 2.5, preferredMinArtists: 2 };
+  experiment.rules = { ...experiment.rules, minArtists: 4, maxArtists: 6, preferredMultiplier: 2.5, preferredMinArtists: 2, preferredOnly: true };
+  const candidate = candidateFixture('strict');
+  experiment.candidates = [candidate];
+  experiment.rounds = [{ id: 'strict-round', candidateIds: [candidate.id], createdAt: 1, snapshot: { rules: { ...experiment.rules }, pinnedArtists: [] } }];
   const saved = await (await f.invoke(experiment))!.json() as any;
   expect(saved.experiment.rules).toEqual(experiment.rules);
-  expect((await f.invoke({ ...saved.experiment, rules: { ...experiment.rules, preferredMinArtists: 7 } }))!.status).toBe(400);
+  expect(saved.experiment.rounds[0].snapshot.rules.preferredOnly).toBe(true);
+  const { experiments: [restored] } = await (await f.invoke())!.json() as any;
+  expect(restored.rules.preferredOnly).toBe(true);
+  expect(restored.rounds[0].snapshot.rules.preferredOnly).toBe(true);
+  expect((await f.invoke({ ...restored, rules: { ...restored.rules, preferredOnly: 'true' } }))!.status).toBe(400);
+  expect((await f.invoke({ ...saved.experiment, rules: { ...experiment.rules, preferredMinArtists: ROLL_MAX_ARTISTS + 1 } }))!.status).toBe(400);
   expect((await f.invoke({ ...saved.experiment, rules: { ...experiment.rules, preferredMultiplier: 0 } }))!.status).toBe(400);
 });
 

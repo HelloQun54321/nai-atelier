@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate } from '../../services/styleRoll';
+import { createDefaultRollTemplate, DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, formatRollStyle, ROLL_MAX_ARTISTS, getRollPinnedArtists, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollPreset, validateRollTemplate, type RollExperiment } from '../../services/styleRoll';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
 
 it('推荐模板工厂沿用当前默认值且各次结果独立', () => {
@@ -70,6 +70,55 @@ it('保存边界校验偏好设置，旧记录缺省为不加权且不保底', (
   const e = rollFixture(); expect(() => validateRollExperiment(e)).not.toThrow();
   for (const preferredMultiplier of [0, -1, Infinity, NaN]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredMultiplier } })).toThrow('偏好');
   for (const preferredMinArtists of [-1, 1.5, 5]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredMinArtists } })).toThrow('偏好');
+});
+
+it.each([0, 0.999999])('只抽收藏在随机极值%s仍不混普通，已收藏固定计入且倍率保底保持原值', random => {
+  const e = rollFixture(); e.pinnedArtists = ['alpha'];
+  e.rules = { ...e.rules, minArtists: 3, maxArtists: 3, preferredOnly: true, preferredMultiplier: 100, preferredMinArtists: 1 };
+  const before = structuredClone(e);
+  const [candidate] = rollCandidates(e, 1, { preferredTags: ['alpha', 'beta', 'gamma'], random: () => random });
+  expect(candidate.tags.map(tag => tag.tag).sort()).toEqual(['alpha', 'beta', 'gamma']);
+  expect(new Set(candidate.tags.map(tag => tag.tag)).size).toBe(3);
+  expect(e).toEqual(before);
+});
+
+it('只抽收藏拒绝未收藏固定及不足最大人数，不补普通或降低本串人数', () => {
+  const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 3, preferredOnly: true };
+  const before = structuredClone(e);
+  expect(() => rollCandidates(e, 1, { preferredTags: [], random: () => 0 })).toThrow('可用收藏画师不足');
+  expect(() => rollCandidates(e, 1, { preferredTags: ['alpha', 'beta'], random: () => 0 })).toThrow('可用收藏画师不足');
+  e.pinnedArtists = ['theta'];
+  expect(() => rollCandidates(e, 1, { preferredTags: ['alpha', 'beta', 'gamma'] })).toThrow('固定画师未收藏：theta');
+  expect(e.candidates).toEqual(before.candidates); expect(e.rounds).toEqual(before.rounds);
+  expect(e.pinnedArtists).toEqual(['theta']);
+});
+
+it('只抽收藏忽略保留的旧保底，降低人数仍可抽且关闭后恢复原保底校验', () => {
+  const e = rollFixture();
+  e.rules = { ...e.rules, minArtists: 2, maxArtists: 2, preferredOnly: true, preferredMinArtists: 4, preferredMultiplier: 100 };
+  expect(() => validateRollExperiment(e)).not.toThrow();
+  expect(rollCandidates(e, 1, { preferredTags: ['alpha', 'beta'] })[0].tags.map(tag => tag.tag).sort()).toEqual(['alpha', 'beta']);
+  expect(e.rules).toMatchObject({ preferredMinArtists: 4, preferredMultiplier: 100 });
+  e.rules.preferredOnly = false;
+  expect(() => validateRollExperiment(e)).toThrow('偏好抽中倍率和保底人数');
+  expect(() => rollCandidates(e, 1, { preferredTags: ['alpha', 'beta'] })).toThrow('偏好抽中倍率和保底人数');
+  e.rules.preferredOnly = true;
+  for (const preferredMinArtists of [-1, 1.5, ROLL_MAX_ARTISTS + 1]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredMinArtists } })).toThrow('偏好抽中倍率和保底人数');
+});
+
+it('只抽收藏缺省或关闭保持原加权抽取，保存与旧轮次快照校验布尔类型', () => {
+  const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 1, preferredMultiplier: 100 };
+  const draw = () => rollCandidates(e, 1, { preferredTags: ['alpha'], random: () => 0.999999 })[0].tags[0].tag;
+  expect(draw()).toBe('theta');
+  e.rules.preferredOnly = true; expect(draw()).toBe('alpha');
+  e.rules.preferredOnly = false; expect(draw()).toBe('theta');
+  expect(() => validateRollExperiment(e)).not.toThrow();
+  for (const preferredOnly of ['true', 1, null]) expect(() => validateRollExperiment({ ...e, rules: { ...e.rules, preferredOnly: preferredOnly as unknown as boolean } })).toThrow('只抽取收藏画师设置无效');
+  const candidate = candidateFixture('old');
+  const old: RollExperiment = { ...e, candidates: [candidate], rounds: [{ id: 'old-round', createdAt: 1, candidateIds: [candidate.id], snapshot: { rules: { ...e.rules, preferredOnly: undefined }, pinnedArtists: [] } }] };
+  expect(() => validateRollExperiment(old)).not.toThrow();
+  old.rounds[0].snapshot!.rules.preferredOnly = 'true' as unknown as boolean;
+  expect(() => validateRollExperiment(old)).toThrow('只抽取收藏画师设置无效');
 });
 
 describe('Roll 串画师与规则', () => {

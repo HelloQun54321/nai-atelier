@@ -94,10 +94,15 @@ describe('界面语言', () => {
       }
     }
   });
-  it('收藏画师抽取倍率滑条与说明具备四种译文', () => {
-    for (const key of ['偏好抽中倍率滑条', '1× 不加成；倍率只影响收藏画师的抽取机会。']) {
+  it('收藏画师抽取设置、倍率滑条与提示具备四种译文', () => {
+    for (const key of ['只抽取收藏画师', '只抽取收藏画师设置无效', '固定画师未收藏：{0}，请先收藏或取消固定', '可用收藏画师不足，请调整收藏、屏蔽、样张或来源范围，或降低每串总人数', '偏好抽中倍率滑条', '1× 不加成；倍率只影响收藏画师的抽取机会。']) {
       expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
       for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), key).not.toBe(key);
+    }
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      const translated = translate(language.code, '固定画师未收藏：synthetic_artist，请先收藏或取消固定');
+      expect(translated).toContain('synthetic_artist');
+      expect(translated).not.toContain('固定画师未收藏');
     }
   });
   it('画师抽取排除选项与提示具备四种译文', () => {

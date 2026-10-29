@@ -251,7 +251,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (returned) void returned.then(() => { if (mounted.current) open(); }); else open();
   };
   const readPreferredTags = async () => {
-    if ((roundRules.preferredMultiplier ?? 1) === 1 && !roundRules.preferredMinArtists) return [];
+    if (!roundRules.preferredOnly && (roundRules.preferredMultiplier ?? 1) === 1 && !roundRules.preferredMinArtists) return [];
     await ensureCollection();
     return collectionSnapshot().filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId).map(item => item.sourceId!);
   };
@@ -640,7 +640,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const roundConditionLabel = (item: RollExperiment['rounds'][number]) => {
     const snapshot = item.snapshot;
     if (!snapshot) return '';
-    return `${t('{0} 位画师', [artistCountLabel(snapshot.rules)])} · ${t('固定 {0} 位', [snapshot.pinnedArtists?.length ?? 0])} · ${snapshot.rules.minWeight.toFixed(1)}～${snapshot.rules.maxWeight.toFixed(1)} · ${t('{0} 张', [item.candidateIds.length])}`;
+    return `${t('{0} 位画师', [artistCountLabel(snapshot.rules)])} · ${t('固定 {0} 位', [snapshot.pinnedArtists?.length ?? 0])}${snapshot.rules.preferredOnly ? ` · ${t('只抽取收藏画师')}` : ''} · ${snapshot.rules.minWeight.toFixed(1)}～${snapshot.rules.maxWeight.toFixed(1)} · ${t('{0} 张', [item.candidateIds.length])}`;
   };
   return <div ref={rootRef} className="workspace-canvas flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceChrome>

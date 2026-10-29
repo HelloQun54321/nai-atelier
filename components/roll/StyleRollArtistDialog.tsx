@@ -241,6 +241,8 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       {settingsOpen && <AnchoredToolbarPopover anchorRef={settingsAnchor} title={t('抽取设置')} width={320} allowMobile onClose={closeSettings}>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2"><strong className="text-sm">{t('抽取设置')}</strong><IconButton label="关闭" className="!h-7 !w-7 !border-transparent !bg-transparent" onClick={closeSettings}><X /></IconButton></div>
+          <label className="mobile-touch flex min-h-11 min-w-0 items-center gap-2 text-xs"><input type="checkbox" className="h-4 w-4 shrink-0 accent-indigo-600" checked={rules.preferredOnly ?? false} onChange={event => onRulesChange({ ...rules, preferredOnly: event.target.checked })} />{t('只抽取收藏画师')}</label>
+          <fieldset disabled={rules.preferredOnly ?? false} className={`min-w-0 space-y-3 ${rules.preferredOnly ? 'opacity-50' : ''}`}>
           <div>
             <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('偏好抽中倍率')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('偏好抽中倍率')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={1} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} /><span aria-hidden="true">×</span></span></label>
             <input type="range" aria-label={t('偏好抽中倍率滑条')} min={1} max={preferredSliderMax} step={0.1} value={preferredMultiplier} onChange={event => onRulesChange({ ...rules, preferredMultiplier: Number(event.target.value) })} className="mobile-touch block w-full accent-[var(--nai-accent)]" />
@@ -248,6 +250,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
             <p className="mt-1 text-micro text-gray-400">{t('1× 不加成；倍率只影响收藏画师的抽取机会。')}</p>
           </div>
           <label className="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"><span>{t('每串偏好保底人数')}</span><span className="flex w-24 shrink-0 items-center gap-1.5"><input aria-label={t('每串偏好保底人数')} className={`${TOOLBAR_FIELD_CLASS} !mt-0 !px-2 text-center tabular-nums`} type="number" min={0} max={rules.maxArtists} step={1} value={rules.preferredMinArtists ?? 0} onChange={event => onRulesChange({ ...rules, preferredMinArtists: Number(event.target.value) })} /><span aria-hidden="true">{t('人')}</span></span></label>
+          </fieldset>
           <label className="mobile-touch flex items-center gap-2 border-t border-gray-200 pt-3 text-xs dark:border-gray-800"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={sampledOnly} onChange={event => onSampledOnlyChange(event.target.checked)} />{t('只从有样张的画师中抽取')}</label>
           <details><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('手动添加固定 Tag')}</summary><div className="mt-2"><StyleRollArtistInput label="固定画师 Tag（可选）" value={pinned} onChange={onPinnedChange} limit={rules.maxArtists} blocked={[...blocked, ...excluded]} disabled={busy} /></div></details>
         </div>

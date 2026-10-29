@@ -7,7 +7,7 @@ import { normalizeRollArtistKey } from './styleRollSeed';
 export interface RollArtist { tag: string; weight: number; locked: boolean; excluded: boolean }
 /** 候选只记录本次抽到的画师与权重，不保存来源关系或代数。 */
 export interface RollTag { tag: string; weight: number }
-export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number }
+export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number; preferredMultiplier?: number; preferredMinArtists?: number; preferredOnly?: boolean }
 /** 所选来源及当时提取次数；抽样范围独立于每张图片的人数上限。 */
 export interface RollChainArtistSource { chainIds: string[]; artists: { tag: string; count: number }[] }
 export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
@@ -143,8 +143,9 @@ function validateRuleRanges(rules: RollRules): void {
   if (!rules || !Number.isSafeInteger(rules.minArtists) || !Number.isSafeInteger(rules.maxArtists) ||
     rules.minArtists < 1 || rules.maxArtists > ROLL_MAX_ARTISTS || rules.minArtists > rules.maxArtists ||
     !validWeight(rules.minWeight) || !validWeight(rules.maxWeight) || rules.minWeight > rules.maxWeight) throw new Error('请检查画师数量和权重范围');
+  if (rules.preferredOnly !== undefined && typeof rules.preferredOnly !== 'boolean') throw new Error('只抽取收藏画师设置无效');
   if ((rules.preferredMultiplier !== undefined && (!Number.isFinite(rules.preferredMultiplier) || rules.preferredMultiplier < 1 || rules.preferredMultiplier > Number.MAX_SAFE_INTEGER)) ||
-    (rules.preferredMinArtists !== undefined && (!Number.isSafeInteger(rules.preferredMinArtists) || rules.preferredMinArtists < 0 || rules.preferredMinArtists > rules.maxArtists))) throw new Error('请检查偏好抽中倍率和保底人数');
+    (rules.preferredMinArtists !== undefined && (!Number.isSafeInteger(rules.preferredMinArtists) || rules.preferredMinArtists < 0 || rules.preferredMinArtists > (rules.preferredOnly ? ROLL_MAX_ARTISTS : rules.maxArtists)))) throw new Error('请检查偏好抽中倍率和保底人数');
 }
 
 export function validateRollPinnedArtists(tags: string[]): void {
@@ -260,14 +261,16 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   const excluded = new Set(experiment.artists.filter(artist => artist.excluded).map(artist => keyOf(artist.tag)));
   const unavailable = pinnedTags.find(tag => blocked.has(keyOf(tag)) || excluded.has(keyOf(tag)));
   if (unavailable) throw new Error(`固定画师不可用：${unavailable}（已排除或屏蔽）`);
+  const preferred = new Set((options.preferredTags || []).map(keyOf));
+  const unpreferredPinned = rules.preferredOnly && pinnedTags.find(tag => !preferred.has(keyOf(tag)));
+  if (unpreferredPinned) throw new Error(`固定画师未收藏：${unpreferredPinned}，请先收藏或取消固定`);
   const pinnedKeys = new Set(pinnedTags.map(keyOf));
   const drawArtists = frequencies ? [...new Map(experiment.artists.map(artist => [keyOf(artist.tag), artist])).values()] : experiment.artists;
-  const pool = drawArtists.filter(artist => !artist.excluded && !excluded.has(keyOf(artist.tag)) && !blocked.has(keyOf(artist.tag)) && !pinnedKeys.has(keyOf(artist.tag)) && (!frequencies || frequencies.has(keyOf(artist.tag))));
-  if (pool.length + pinnedTags.length < rules.maxArtists) throw new Error('可用画师不足，请调整排除项或降低每串总人数');
-  const preferred = new Set((options.preferredTags || []).map(keyOf));
+  const pool = drawArtists.filter(artist => !artist.excluded && !excluded.has(keyOf(artist.tag)) && !blocked.has(keyOf(artist.tag)) && !pinnedKeys.has(keyOf(artist.tag)) && (!frequencies || frequencies.has(keyOf(artist.tag))) && (!rules.preferredOnly || preferred.has(keyOf(artist.tag))));
+  if (pool.length + pinnedTags.length < rules.maxArtists) throw new Error(rules.preferredOnly ? '可用收藏画师不足，请调整收藏、屏蔽、样张或来源范围，或降低每串总人数' : '可用画师不足，请调整排除项或降低每串总人数');
   const preferredPool = pool.filter(artist => preferred.has(keyOf(artist.tag)));
   const ordinaryPool = pool.filter(artist => !preferred.has(keyOf(artist.tag)));
-  const needed = Math.max(0, (rules.preferredMinArtists ?? 0) - pinnedTags.filter(tag => preferred.has(keyOf(tag))).length);
+  const needed = rules.preferredOnly ? 0 : Math.max(0, (rules.preferredMinArtists ?? 0) - pinnedTags.filter(tag => preferred.has(keyOf(tag))).length);
   if (needed > preferredPool.length) throw new Error('可用偏好画师不足，请减少保底人数或调整屏蔽与样张过滤');
   const minimum = Math.max(rules.minArtists, pinnedTags.length + needed);
   if (minimum > rules.maxArtists) throw new Error('固定画师与偏好保底超出人数上限，请调整抽取条件');
