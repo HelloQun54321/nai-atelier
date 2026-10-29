@@ -158,23 +158,23 @@ export function DirectoryTreeNavigation({ id, label, title, className, asideProp
     </div>;
   };
   if (!expanded) return <aside id={navigationId} hidden aria-label={label} className="hidden" />;
-  return <aside {...asideProps} id={navigationId} aria-label={label} className={`directory-tree-navigation min-h-0 ${embedded ? 'w-full' : 'workspace-category-navigation appearance-panel workspace-fixed-pane flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r'} ${className || ''} ${asideProps?.className || ''}`}>
-    {header}
+  return <aside {...asideProps} id={navigationId} aria-label={label} className={`directory-tree-navigation flex min-h-0 flex-col overflow-hidden ${embedded ? 'w-full md:h-full' : 'workspace-category-navigation appearance-panel workspace-fixed-pane flex-none border-b border-gray-200 p-3 dark:border-gray-800 md:w-52 md:border-b-0 md:border-r'} ${className || ''} ${asideProps?.className || ''}`}>
+    <div className="directory-tree-header shrink-0">{header}
     <div className="mb-2 flex items-center justify-between gap-1"><span title={title} className="min-w-0 truncate text-xs font-semibold text-gray-500">{title}</span><div className="flex shrink-0 gap-1">
       {onCreate && <ToolbarButton aria-label={createLabel ?? t('新建目录')} title={createLabel ?? t('新建目录')} disabled={disabled || actionDisabled} onClick={() => onCreate(current?.id ?? null)} className="!px-2"><Plus className="h-4 w-4" /></ToolbarButton>}
       {current && onRename && <ToolbarButton aria-label={renameLabel ?? t('重命名目录')} title={renameLabel ?? t('重命名目录')} disabled={disabled || actionDisabled} onClick={() => onRename(current.id)} className="!px-2"><Pencil className="h-4 w-4" /></ToolbarButton>}
       {current && onDelete && <ToolbarButton aria-label={deleteLabel ?? t('删除目录')} title={deleteLabel ?? t('删除目录')} disabled={disabled || actionDisabled} onClick={() => onDelete(current.id)} className="!px-2"><Trash2 className="h-4 w-4" /></ToolbarButton>}
-    </div></div>
-    <select aria-label={selectLabel ?? t('选择目录')} value={mobileValue} disabled={disabled} onChange={event => { if (!disabled) onSelect(event.target.value); }} className="mobile-touch min-h-11 w-full min-w-0 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-sm dark:border-gray-700 md:hidden">
+    </div></div></div>
+    <select aria-label={selectLabel ?? t('选择目录')} value={mobileValue} disabled={disabled} onChange={event => { if (!disabled) onSelect(event.target.value); }} className="mobile-touch min-h-11 w-full min-w-0 shrink-0 rounded-lg border border-gray-300 bg-transparent px-2 py-2 text-sm dark:border-gray-700 md:hidden">
       {mobileValue === '#selected' && <option value="#selected" disabled>{t('已选 {0} 个目录', [selectionCount])}</option>}
       {special.map(node => <option key={node.id} value={node.id}>{node.name}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
       {tree.map(node => <option key={node.id} value={node.id}>{node.path.join(' / ')}{count(node.id) === undefined ? '' : ` (${count(node.id)})`}</option>)}
     </select>
-    <nav className="hidden space-y-1 md:block" onClickCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDropCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDragStartCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }}>
+    <nav className="directory-tree-scroll-viewport hidden min-h-0 space-y-1 md:block md:flex-1 md:overflow-y-auto" onClickCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDropCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }} onDragStartCapture={event => { if (disabled) { event.preventDefault(); event.stopPropagation(); } }}>
       {draggingId && moveAvailable && <div role="group" aria-label={t('移到根目录')} data-directory-root-drop="true" onDragOver={event => hoverDirectory(event, null)} onDrop={event => dropDirectory(event, null)} onDragLeave={() => setDropTarget(undefined)} className={`mb-2 rounded-lg border border-dashed px-2 py-2 text-xs ${dropTarget === null ? 'border-indigo-500 text-indigo-600 ring-2 ring-indigo-500 dark:text-indigo-300' : 'border-gray-300 text-gray-500 dark:border-gray-700'}`}>{t('移到根目录')}</div>}
       {special.map(node => row(node.id, node.name, node.name, 0))}{visible.map(node => row(node.id, node.name, node.path.join(' / '), node.depth, node))}
       {dropTarget !== undefined && dropTarget !== null && <p role="status" className="break-words px-2 pt-1 text-xs text-indigo-600 dark:text-indigo-300">{t('移入目录「{0}」', [tree.find(node => node.id === dropTarget)?.path.join(' / ') || ''])}</p>}
     </nav>
-    {footer}
+    {footer && <div className="shrink-0">{footer}</div>}
   </aside>;
 }

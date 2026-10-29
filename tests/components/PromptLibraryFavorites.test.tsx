@@ -36,6 +36,35 @@ const managerKey = 'nai-prompt-library-manager-directory';
 function Manager() {
   return <ConfirmDialogProvider><PromptLibraryContext.Provider value={{ chains, directories, save: vi.fn() }}><PromptLibraryHub chains={chains} onCreate={vi.fn()} onUpdateChain={vi.fn()} onDelete={vi.fn()} notify={notify} embedded /></PromptLibraryContext.Provider></ConfirmDialogProvider>;
 }
+
+it('文件夹固定标题：片段管理器只让目录列表滚动，标题动作留在滚动区外', async () => {
+  const create = vi.fn(), rename = vi.fn(), remove = vi.fn();
+  localStorage.setItem(managerKey, JSON.stringify({ directoryIds: ['clothes'], allDirectories: false, unclassified: false, favorites: false }));
+  render(<ConfirmDialogProvider><PromptLibraryContext.Provider value={{ chains, directories, save: vi.fn(), onCreateDirectory: create, onRenameDirectory: rename, onDeleteDirectory: remove }}><PromptLibraryHub chains={chains} onCreate={vi.fn()} onUpdateChain={vi.fn()} onDelete={vi.fn()} notify={notify} embedded /></PromptLibraryContext.Provider></ConfirmDialogProvider>);
+  const aside = screen.getByRole('complementary', { name: '提示词目录导航' });
+  const wrapper = aside.parentElement!;
+  const viewport = aside.querySelector<HTMLElement>('.directory-tree-scroll-viewport')!;
+  const header = aside.querySelector<HTMLElement>('.directory-tree-header')!;
+  expect(wrapper.classList.contains('md:overflow-hidden')).toBe(true);
+  expect(wrapper.classList.contains('md:flex-col')).toBe(true);
+  expect(wrapper.classList.contains('md:overflow-y-auto')).toBe(false);
+  expect(aside.classList.contains('md:h-full')).toBe(true);
+  expect(aside.classList.contains('overflow-hidden')).toBe(true);
+  expect(viewport.classList.contains('md:overflow-y-auto')).toBe(true);
+  expect(viewport.classList.contains('md:flex-1')).toBe(true);
+  expect(viewport.contains(header)).toBe(false);
+  expect(header.parentElement).toBe(aside);
+  for (const name of ['新建目录', '重命名目录', '删除目录']) {
+    const button = screen.getByRole('button', { name });
+    expect(header.contains(button)).toBe(true);
+    expect(viewport.contains(button)).toBe(false);
+    fireEvent.click(button);
+  }
+  expect(create).toHaveBeenCalledWith('clothes');
+  expect(rename).toHaveBeenCalledWith('clothes');
+  expect(remove).toHaveBeenCalledWith('clothes');
+  await waitFor(() => expect(collection.ensure).toHaveBeenCalled());
+});
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem('nai-prompt-library-directories-expanded', 'true');

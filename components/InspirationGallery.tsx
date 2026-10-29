@@ -253,7 +253,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     if (!drag || event.pointerId !== drag.pointerId) return;
     const list = event.currentTarget.closest<HTMLElement>('[data-collection-folders]');
     if (!list) return;
-    const scroller = list.closest<HTMLElement>('.overflow-y-auto');
+    const scroller = event.currentTarget.closest<HTMLElement>('.directory-tree-scroll-viewport');
     if (scroller) {
       const bounds = scroller.getBoundingClientRect();
       if (event.clientY < bounds.top + 24) scroller.scrollTop -= 12;
@@ -396,7 +396,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         const target = siblings[siblings.findIndex(candidate => candidate.id === board.id) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (target) void reorderBoard(board.id, target.id);
       }}><GripVertical className="h-3.5 w-3.5" /></button>;
-  const renderNavigation = () => <div data-collection-folders="true">
+  const renderNavigation = () => <div data-collection-folders="true" className="min-h-0 md:flex md:h-full md:flex-col">
     <DirectoryTreeNavigation label={t('收藏夹目录')} title={t('自定义收藏夹')} nodes={boards} expanded embedded preferenceKey="nai-collection-tree-branches" selectedId={boardId || (collection === 'unorganized' ? '' : '*')}
       selectedIds={sourceFilter ? [] : undefined} createLabel={t('新建收藏夹')} renameLabel={t('编辑收藏夹')} deleteLabel={t('删除收藏夹')}
       counts={boardCounts} totalCount={counts.all} unclassifiedCount={counts.unorganized} allLabel={t('全部')} unclassifiedLabel={t('未整理')} disabled={Boolean(busy)}
@@ -484,7 +484,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
     </WorkspaceChrome>
     <div data-workspace-body className="flex min-h-0 flex-1">
-      <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-panel min-h-0 hidden w-52 flex-none overflow-y-auto border-r border-gray-200 p-3 dark:border-gray-800 md:block" : "hidden"}>
+      <aside id={navigationId} hidden={!navigationExpanded} aria-label={t('收藏分类')} className={navigationExpanded ? "workspace-fixed-pane workspace-category-navigation appearance-panel min-h-0 hidden w-52 flex-none overflow-hidden border-r border-gray-200 p-3 dark:border-gray-800 md:flex md:flex-col" : "hidden"}>
         {navigationExpanded && renderNavigation()}
       </aside>
 

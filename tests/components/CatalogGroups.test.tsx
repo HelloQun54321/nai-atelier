@@ -38,6 +38,22 @@ const shownCount = (name: string) => {
   return document.getElementById(row.getAttribute('aria-describedby')!)?.textContent;
 };
 
+it('文件夹固定标题：Roll嵌入分组保持受限宽度与完整高度，仅目录列表滚动', () => {
+  render(<Harness selected={[]} scope="roll-artists" />); openNavigation();
+  fireEvent.click(screen.getByRole('button', { name: '组一' }));
+  const aside = screen.getByRole('complementary', { name: '分组导航' });
+  const header = aside.querySelector<HTMLElement>('.directory-tree-header')!;
+  const viewport = aside.querySelector<HTMLElement>('.directory-tree-scroll-viewport')!;
+  for (const className of ['flex-none', 'md:w-52', 'md:h-full', 'min-h-0', 'flex-col', 'overflow-hidden']) expect(aside.classList.contains(className)).toBe(true);
+  expect(aside.classList.contains('appearance-panel')).toBe(false);
+  expect(aside.classList.contains('workspace-fixed-pane')).toBe(false);
+  expect(viewport.classList.contains('md:flex-1')).toBe(true);
+  expect(viewport.classList.contains('md:overflow-y-auto')).toBe(true);
+  expect(viewport.contains(header)).toBe(false);
+  for (const name of ['新建分组', '重命名分组', '删除分组']) expect(header.contains(screen.getByRole('button', { name }))).toBe(true);
+  expect(mocks.save).not.toHaveBeenCalled();
+});
+
 it('新增归属可扩展到关联成员，移除只处理明确选中项并保留其他归属', async () => {
   mocks.state.memberships['artist:a'] = ['one', 'two'];
   function RelatedBrowser() {

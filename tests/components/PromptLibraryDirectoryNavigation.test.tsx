@@ -32,7 +32,14 @@ it('目录导航沿用文件夹布局，父目录含后代计数去重，全部�
   expect(aside.className).toContain('workspace-category-navigation');
   expect(aside.className).toContain('directory-tree-navigation');
   expect(aside.className).toContain('md:w-52');
-  expect(aside.className).toContain('md:overflow-y-auto');
+  expect(aside.className).toContain('overflow-hidden');
+  expect(aside.className).not.toContain('overflow-y-auto');
+  const viewport = screen.getByRole('navigation');
+  expect(viewport.classList.contains('directory-tree-scroll-viewport')).toBe(true);
+  expect(viewport.className).toContain('md:overflow-y-auto');
+  const header = screen.getByText('提示词目录').closest('.directory-tree-header');
+  expect(header?.parentElement).toBe(aside);
+  expect(viewport.contains(header)).toBe(false);
   expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('6');
   expect(describedCount(screen.getByRole('button', { name: '未归类' }))).toBe('2');
   expect(describedCount(screen.getByRole('button', { name: '人物' }))).toBe('2');

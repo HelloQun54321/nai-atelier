@@ -1238,6 +1238,41 @@ const prepareFolderPointers = (root: HTMLElement) => {
   });
 };
 
+it('文件夹固定标题：收藏侧栏只滚目录列表，排序把手边缘滚动驱动新列表而非外层', async () => {
+  vi.mocked(db.getInspirationBoards).mockResolvedValue(sortableBoards());
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, notify: vi.fn(), onRefresh: vi.fn(async () => {}) }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  const outer = screen.getByRole('complementary', { name: '收藏分类' });
+  const tree = screen.getByRole('complementary', { name: '收藏夹目录' });
+  const folders = tree.closest<HTMLElement>('[data-collection-folders]')!;
+  const header = tree.querySelector<HTMLElement>('.directory-tree-header')!;
+  const viewport = tree.querySelector<HTMLElement>('.directory-tree-scroll-viewport')!;
+  expect(outer.classList.contains('overflow-hidden')).toBe(true);
+  expect(outer.classList.contains('md:flex-col')).toBe(true);
+  expect(outer.classList.contains('overflow-y-auto')).toBe(false);
+  expect(folders.classList.contains('md:h-full')).toBe(true);
+  expect(folders.classList.contains('min-h-0')).toBe(true);
+  expect(viewport.classList.contains('md:overflow-y-auto')).toBe(true);
+  expect(viewport.contains(header)).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '选择收藏夹：角色设计' }));
+  for (const name of ['新建收藏夹', '编辑收藏夹', '删除收藏夹']) expect(header.contains(screen.getByRole('button', { name }))).toBe(true);
+  prepareFolderPointers(outer);
+  viewport.getBoundingClientRect = () => ({ top: 100, bottom: 220, left: 0, right: 176, width: 176, height: 120 }) as DOMRect;
+  outer.getBoundingClientRect = () => ({ top: 0, bottom: 600, left: 0, right: 176, width: 176, height: 600 }) as DOMRect;
+  outer.scrollTop = 70; folders.scrollTop = 35; viewport.scrollTop = 120;
+  const handle = screen.getByRole('button', { name: '排序收藏夹：角色设计' });
+  fireEvent.pointerDown(handle, { pointerType: 'mouse', pointerId: 7, clientX: 12, clientY: 120, button: 0 });
+  fireEvent.pointerMove(handle, { pointerType: 'mouse', pointerId: 7, clientX: 12, clientY: 208 });
+  expect(viewport.scrollTop).toBe(132);
+  expect(outer.scrollTop).toBe(70);
+  expect(folders.scrollTop).toBe(35);
+  fireEvent.pointerMove(handle, { pointerType: 'mouse', pointerId: 7, clientX: 12, clientY: 108 });
+  expect(viewport.scrollTop).toBe(120);
+  fireEvent.pointerCancel(handle, { pointerId: 7 });
+  expect(db.updateInspirationBoard).not.toHaveBeenCalled();
+  expect(view.container.contains(outer)).toBe(true);
+});
+
 it.each([[1280, 'mouse'], [390, 'touch']] as const)('宽度 %s：%s 拖动收藏夹保存顺序，重进页面仍保留，不移动作品或切换当前收藏夹', async (width, pointerType) => {
   vi.stubGlobal('innerWidth', width);
   let storedBoards = sortableBoards();

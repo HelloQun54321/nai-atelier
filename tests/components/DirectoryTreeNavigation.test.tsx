@@ -17,7 +17,7 @@ it('使用统一侧栏与手机完整路径选择，折叠箭头不选择且按�
   expect(screen.getByRole('complementary').className).toContain('appearance-panel');
   expect(screen.getByRole('complementary').className).toContain('workspace-category-navigation');
   expect(screen.getByRole('complementary').className).toContain('md:w-52');
-  expect(screen.getByRole('navigation').className).toBe('hidden space-y-1 md:block');
+  expect(screen.getByRole('navigation').className).toBe('directory-tree-scroll-viewport hidden min-h-0 space-y-1 md:block md:flex-1 md:overflow-y-auto');
   expect(screen.getByRole('combobox').className).toContain('md:hidden');
   expect(screen.getByRole('option', { name: '根 / 子项 / 末层' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '根 / 子项 / 末层' })).toBeNull();
@@ -93,6 +93,31 @@ it('标题动作把当前目录交回业务，拖放属性与额外行控件原�
   expect(row.getAttribute('data-directory-id')).toBe('child'); fireEvent.drop(row); expect(onDrop).toHaveBeenCalledOnce();
   expect(screen.getByText('排序把手')).toBeTruthy(); expect(screen.getByRole('button', { name: '颜色' })).toBeTruthy();
   expect(screen.getByText('业务抬头')).toBeTruthy(); expect(screen.getByText('业务状态')).toBeTruthy();
+});
+
+it.each([false, true])('嵌入=%s：长目录只在列表滚动，标题操作、手机选择及状态留在列表外', embedded => {
+  const p = props(), onCreate = vi.fn(), onRename = vi.fn(), onDelete = vi.fn();
+  render(<DirectoryTreeNavigation {...p} embedded={embedded} selectedId="child" nodes={[...nodes, ...Array.from({ length: 120 }, (_, index) => ({ id: `long-${index}`, name: `目录 ${index}` }))]}
+    onCreate={onCreate} onRename={onRename} onDelete={onDelete} header={<p>业务抬头</p>} footer={<p>业务状态</p>} />);
+  const pane = screen.getByRole('complementary'), list = screen.getByRole('navigation');
+  for (const name of ['flex', 'flex-col', 'min-h-0', 'overflow-hidden']) expect(pane.classList.contains(name)).toBe(true);
+  expect(pane.className).not.toContain('overflow-y-auto');
+  for (const name of ['min-h-0', 'md:flex-1', 'md:overflow-y-auto', 'md:block', 'hidden']) expect(list.classList.contains(name)).toBe(true);
+  const fixedHeader = screen.getByText('业务抬头').parentElement!;
+  expect(fixedHeader.classList.contains('directory-tree-header')).toBe(true);
+  expect(list.classList.contains('directory-tree-scroll-viewport')).toBe(true);
+  expect(fixedHeader.parentElement).toBe(pane); expect(fixedHeader.className).toContain('shrink-0');
+  for (const name of ['新建目录', '重命名目录', '删除目录']) expect(fixedHeader.contains(screen.getByRole('button', { name }))).toBe(true);
+  expect(fixedHeader.contains(screen.getByTitle('文件夹'))).toBe(true);
+  expect(list.contains(screen.getByRole('button', { name: '目录 119' }))).toBe(true);
+  expect(list.contains(fixedHeader)).toBe(false);
+  expect(screen.getByRole('combobox').className).toContain('shrink-0');
+  expect(screen.getByRole('combobox').parentElement).toBe(pane);
+  expect(screen.getByText('业务状态').parentElement?.className).toContain('shrink-0');
+  expect(list.contains(screen.getByText('业务状态'))).toBe(false);
+  expect(pane.className).not.toContain('sticky'); expect(fixedHeader.className).not.toContain('sticky');
+  fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
+  expect(onCreate).toHaveBeenCalledWith('child');
 });
 
 it('禁用后不改变选择或分支，收起不占空间，嵌入窗口避开页面固定偏移', () => {

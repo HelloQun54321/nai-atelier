@@ -128,7 +128,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
       {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} resolveMembershipKeys={navigationOptions?.resolveMembershipKeys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
     navigation: <DirectoryTreeNavigation id={navigationId} label={t('分组导航')} title={t('分组')} nodes={data.state.groups} selectedId={activeGroup} onSelect={selectGroup} expanded={expanded}
       preferenceKey={`nai_catalog_group_branches_${scope}`} counts={navigationCounts} virtualNodes={virtualGroups}
-      unclassifiedLabel={t('未分组')} embedded={scope === 'roll-artists'} disabled={blocked} header={navigationOptions?.navigationHeader}
+      unclassifiedLabel={t('未分组')} embedded={scope === 'roll-artists'} className={scope === 'roll-artists' ? 'flex-none md:w-52' : undefined} disabled={blocked} header={navigationOptions?.navigationHeader}
       createLabel={t('新建分组')} renameLabel={t('重命名分组')} deleteLabel={t('删除分组')} selectLabel={t('选择分组')}
       asideProps={{ onDragOver: event => hover(event, '*'), onDrop: event => void drop(event, '*'), className: 'catalog-group-navigation' }}
       onCreate={parentId => setDialog({ scope, keys: [], editing: 'new', parentId })}
