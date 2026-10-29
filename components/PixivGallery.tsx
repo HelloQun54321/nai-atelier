@@ -128,6 +128,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<PixivIllust | null>(null);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { skipRestore: selectionAnchor.hasAnchor });
   const [selectedPage, setSelectedPage] = useState(0);
@@ -155,7 +156,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const loginSessionRef = useRef<PixivLoginStatus | null>(null);
   const loginPollRef = useRef<number | null>(null);
 
-  const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
+  const selected = useMemo(() => items.find(item => item.id === selectedId)
+    || (selectedSnapshot?.id === selectedId ? selectedSnapshot : null), [items, selectedId, selectedSnapshot]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => { selectionAnchor.preserveOnClose(); setSelectedId(null); }, 'pixiv-detail');
   const connected = Boolean(status?.connected);
 
@@ -396,7 +398,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     } else {
       setRelatedItems([]);
     }
-  }, [selected]);
+    return () => { relatedLoadSeqRef.current += 1; };
+    // 同一作品的收藏状态更新不重新读取推荐或重复记录浏览。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
   const loadHistory = () => {
     const history = galleryHistoryService.getHistory('pixiv');
@@ -417,6 +422,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         notify('已从 Pixiv 收藏中移除');
       }
       setItems(prev => prev.map(item => (item.id === illust.id ? { ...item, isBookmarked: willBookmark } : item)));
+      setSelectedSnapshot(prev => prev?.id === illust.id ? { ...prev, isBookmarked: willBookmark } : prev);
     } catch (e: any) {
       const message = String(e?.message || '');
       // Pixiv 上游常见 400/404 原文（作品失效、收藏状态不同步等），转成可理解提示。
@@ -543,6 +549,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
   const openDetail = (illust: PixivIllust) => {
     selectionAnchor.prepareSelection(illust.id);
+    // 相关推荐不属于当前 feed，独立保存详情，不把它插入或替换浏览列表。
+    setSelectedSnapshot(illust);
     setSelectedId(illust.id);
     setSelectedPage(0);
   };

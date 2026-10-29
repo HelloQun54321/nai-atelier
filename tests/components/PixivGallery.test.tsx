@@ -41,6 +41,7 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })));
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} });
   vi.mocked(pixivService.status).mockResolvedValue({ connected: true });
+  vi.mocked(pixivService.getRelated).mockResolvedValue([]);
   vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: mode === 'related' ? [] : [illust], nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([]);
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue([]);
@@ -206,6 +207,29 @@ it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情�
   expect(surface.hasAttribute('data-press-revealed')).toBe(false);
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
   await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(illust.metaPages[1]) + '&variant=original', 'pixiv-100-p2.png', false));
+});
+it('相关推荐可连续打开列表外作品，翻页归零并保留原列表', async () => {
+  const related = { ...illust, id: '102', title: 'related synthetic' };
+  const next = { ...illust, id: '103', title: 'next synthetic' };
+  vi.mocked(pixivService.getRelated).mockResolvedValueOnce([related]).mockResolvedValueOnce([next]);
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '放大查看 Pixiv 图片' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '图片预览' })).getByRole('button', { name: '下一张图片' }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(await screen.findByRole('button', { name: '查看相关作品 related synthetic' }));
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/102'));
+  expect(container.querySelector('[data-gallery-work-id="102"]')).toBeNull();
+  expect(container.querySelector('[data-gallery-work-id="100"]')).toBeTruthy();
+  expect(pixivService.getRelated).toHaveBeenCalledWith('102');
+  expect(galleryHistoryService.recordView).toHaveBeenCalledWith(expect.objectContaining({ sourceId: '102' }));
+  expect(within(screen.getByRole('button', { name: '放大查看 Pixiv 图片' })).getByRole('img', { name: 'related synthetic 第 1 页' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '收藏到 Pixiv' }));
+  await screen.findByRole('button', { name: '取消 Pixiv 收藏' });
+  expect(pixivService.addBookmark).toHaveBeenCalledWith('102');
+  fireEvent.click(await screen.findByRole('button', { name: '查看相关作品 next synthetic' }));
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/103'));
+  expect(pixivService.getRelated).toHaveBeenCalledWith('103');
 });
 it('相关推荐沿用首图取用，复制图片不切换当前详情', async () => {
   const related = { ...illust, id: '102', title: 'related synthetic', metaPages: ['https://i.pximg.net/related.png'] };
