@@ -4,6 +4,7 @@ import { promptAgentCoordinator, agentDraftFingerprint } from '../../services/pr
 import { promptAgentService } from '../../services/promptAgent';
 import type { PromptAgentDraft } from '../../types';
 import { getAgentPageClientId, readAgentPage } from '../../services/agentWorkspace';
+import { registerAgentCommand } from '../../services/agentCommands';
 
 it('统一任务持有，重复运行拒绝，结束归还任务', async () => {
   let release!: () => void;
@@ -15,6 +16,31 @@ it('统一任务持有，重复运行拒绝，结束归还任务', async () => {
   release(); await task;
   expect(promptAgentCoordinator.running('s')).toBe(false);
   mock.mockRestore();
+});
+
+it.each([false, true])('页面辅助改词保存真实raw原稿；保存成功=%s决定是否执行，可信会话覆盖模型伪造', async success => {
+  document.body.innerHTML = '<main data-agent-view="playground"><section id="raw-scope"></section></main>';
+  let raw = { basePrompt: 'raw original', subjectPrompt: 'raw subject', negativePrompt: '', modules: [], params: { _promptSections: { scene: 'raw legacy source' } }, target: { chainId: 'work', mode: 'text-to-image', fingerprint: 'raw-target' } } as unknown as PromptAgentDraft;
+  const mutate = vi.fn(async (args: Record<string, unknown>) => { raw = { ...raw, basePrompt: 'actual page change' }; return { session: args.agentSessionId }; });
+  const releaseRead = registerAgentCommand({ name: 'get_prompt_version_state', label: 'raw', description: '', parameters: {}, readOnly: true, scope: () => document.getElementById('raw-scope'), execute: () => ({ draft: structuredClone(raw) }) });
+  const releaseWrite = registerAgentCommand({ name: 'synthetic_prompt_edit', label: 'edit', description: '', parameters: {}, scope: () => document.getElementById('raw-scope'), execute: mutate });
+  const save = vi.spyOn(promptAgentService, 'savePromptVersion');
+  if (success) save.mockResolvedValue({ id: 'raw-version', versionId: 'raw-version', fingerprint: 'raw-hash' }); else save.mockRejectedValue(new Error('版本落盘失败'));
+  const finish = vi.spyOn(promptAgentService, 'finishPromptVersion').mockResolvedValue(undefined);
+  let done!: () => void;
+  const control = vi.spyOn(promptAgentService, 'pageControl').mockImplementation(async (_session, action) => { if (action === 'ui_claim') return { execute: true, claimId: 'raw-claim' }; if (action === 'ui_result') done(); return { ok: true }; });
+  const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, emit) => { await new Promise<void>(resolve => { done = resolve; emit({ type: 'ui_request', requestId: `raw-edit-${success}`, operation: { action: 'command', command: 'synthetic_prompt_edit', snapshotId: readAgentPage().snapshotId, agentSessionId: 'forged-operation-session', args: { sessionId: 'forged-session', agentSessionId: 'forged-args-session' } } }); }); });
+  try {
+    await promptAgentCoordinator.run({ sessionId: 'actual-session', message: 'edit', draft: { ...raw, basePrompt: 'normalized backend draft' }, context: {} }, () => {});
+    expect(save).toHaveBeenCalledExactlyOnceWith('actual-session', expect.objectContaining({ source: 'page', reason: 'before_page_edit', draft: expect.objectContaining({ basePrompt: 'raw original', subjectPrompt: 'raw subject' }) }));
+    if (success) {
+      expect(mutate.mock.calls[0][0].agentSessionId).toBe('actual-session');
+      expect(finish).toHaveBeenCalledExactlyOnceWith('actual-session', 'raw-version', expect.objectContaining({ basePrompt: 'actual page change' }));
+    } else {
+      expect(mutate).not.toHaveBeenCalled(); expect(finish).not.toHaveBeenCalled();
+      expect(control).toHaveBeenCalledWith('actual-session', 'ui_result', expect.objectContaining({ error: '版本落盘失败' }));
+    }
+  } finally { releaseRead(); releaseWrite(); run.mockRestore(); control.mockRestore(); save.mockRestore(); finish.mockRestore(); document.body.innerHTML = ''; }
 });
 it('页面 RPC 由任务持有层执行，消息重复不重复操作，不依赖面板回调', async () => {
   document.body.innerHTML = '<main data-agent-view="history"><h1>最新作品</h1></main>';
@@ -69,7 +95,7 @@ it('轮询恢复未执行请求一次，其他标签页和过期请求不执行'
   const page = readAgentPage(), clientId = getAgentPageClientId();
   const mock = vi.spyOn(promptAgentService, 'pageControl').mockImplementation(async (_s, action) => action === 'ui_claim' ? { execute: true, claimId: 'claim-new' } : { ok: true });
   const request = { requestId: 'recovered-new', operation: { action: 'check' as const, checked: true, snapshotId: page.snapshotId, controlId: page.controls[0].id }, clientId, expiresAt: Date.now() + 2000 };
-  const task = { status: 'running', clientDraft: {} as PromptAgentDraft, pendingUI: [request, { ...request, requestId: 'wrong-client', clientId: 'someone-else' }, { ...request, requestId: 'expired', expiresAt: 1 }] };
+  const task = { status: 'waiting_user_input', clientDraft: {} as PromptAgentDraft, pendingUI: [request, { ...request, requestId: 'wrong-client', clientId: 'someone-else' }, { ...request, requestId: 'expired', expiresAt: 1 }] };
   try {
     promptAgentCoordinator.resumePageRequests('recover-new', task, () => ({} as PromptAgentDraft)); promptAgentCoordinator.resumePageRequests('recover-new', task, () => ({} as PromptAgentDraft));
     await vi.waitFor(() => expect(mock.mock.calls.filter(([, action]) => action === 'ui_result')).toHaveLength(1));

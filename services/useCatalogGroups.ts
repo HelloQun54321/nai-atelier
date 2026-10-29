@@ -18,13 +18,16 @@ export function useCatalogGroups(kind: CatalogGroupKind) {
   const fail = useCallback((message: string) => {
     if (scopeRef.current === scope) setSnapshot(previous => ({ ...(previous.scope === scope ? previous : { scope, state: emptyCatalogGroups(), ready: false, busy: false }), error: message }));
   }, [scope]);
+  const refresh = useCallback(async () => {
+    if (scopeRef.current !== scope) return;
+    try { accept(readCatalogGroups(await api.get(`/catalog-groups/${kind}`, { cache: 'no-store' }))); }
+    catch (cause) { fail(cause instanceof Error ? cause.message : '分组加载失败'); }
+  }, [scope, kind, accept, fail]);
   const reload = useCallback(async () => {
     if (scope.locked || scopeRef.current !== scope) return;
     scope.locked = true;
-    try { accept(readCatalogGroups(await api.get(`/catalog-groups/${kind}`, { cache: 'no-store' }))); }
-    catch (cause) { fail(cause instanceof Error ? cause.message : '分组加载失败'); }
-    finally { scope.locked = false; }
-  }, [scope, kind, accept, fail]);
+    try { await refresh(); } finally { scope.locked = false; }
+  }, [scope, refresh]);
   useEffect(() => {
     void reload();
     const focus = () => void reload();
@@ -32,9 +35,13 @@ export function useCatalogGroups(kind: CatalogGroupKind) {
       const detail = (event as CustomEvent<{ kind: CatalogGroupKind; state: CatalogGroupState }>).detail;
       if (detail.kind === kind) accept(readCatalogGroups(detail.state));
     };
+    const projectChanged = (event: Event) => {
+      if ((event as CustomEvent<{ resource?: string }>).detail?.resource === 'catalog_groups') void refresh();
+    };
     window.addEventListener('focus', focus); window.addEventListener(UPDATED, updated);
-    return () => { window.removeEventListener('focus', focus); window.removeEventListener(UPDATED, updated); };
-  }, [kind, accept, reload]);
+    window.addEventListener('nai-project-data-changed', projectChanged);
+    return () => { window.removeEventListener('focus', focus); window.removeEventListener(UPDATED, updated); window.removeEventListener('nai-project-data-changed', projectChanged); };
+  }, [kind, accept, reload, refresh]);
   const save = async (next: CatalogGroupState) => {
     if (!current.ready || current.error || scope.locked || scopeRef.current !== scope) throw Error('分组尚未就绪，请重新加载后再试');
     const checked = readCatalogGroups(next);

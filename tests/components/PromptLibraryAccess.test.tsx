@@ -9,6 +9,113 @@ import { ImageActivityProvider } from '../../components/SmartImage';
 import { createCombinationData } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
+import { LAB_PICTURE_PURPOSES } from '../../services/labPromptLayout';
+import type { PromptChain } from '../../types';
+
+const promptEntry: PromptChain = { id: 'synthetic', userId: 'owner', type: 'preset', name: '合成片段', description: '', tags: [], basePrompt: '', negativePrompt: '', modules: [], params: { ...LAB_DEFAULT_PARAMS }, createdAt: 0, updatedAt: 0 };
+
+it('取用目录范围从未归类或具体目录切回全部时包含两种片段', () => {
+  const directories = { revision: 1, nodes: [{ id: 'folder', parentId: null, name: '我的目录' }] };
+  const entries: PromptChain[] = [{ id: 'loose', name: '未归类候选', ids: [] }, { id: 'filed', name: '目录内候选', ids: ['folder'] }].map(item => ({ ...promptEntry, id: item.id, name: item.name, basePrompt: item.id + ' prompt', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: item.ids, _promptLibraryPurposes: ['place'] } }));
+  render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('checkbox', { name: '未归类' }));
+  expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.queryByText('目录内候选')).toBeNull();
+  fireEvent.click(screen.getByRole('checkbox', { name: '全部目录' }));
+  expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.getByText('目录内候选')).toBeTruthy();
+  expect((screen.getByRole('checkbox', { name: '未归类' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: '我的目录' }));
+  expect(screen.queryByText('未归类候选')).toBeNull(); expect(screen.getByText('目录内候选')).toBeTruthy();
+  expect((screen.getByRole('checkbox', { name: '全部目录' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', { name: '全部目录' }));
+  expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.getByText('目录内候选')).toBeTruthy();
+});
+
+it('实验室随机入口透传画面名单，应用保留完整全局风格与主负面', async () => {
+  localStorage.clear();
+  const changed = vi.fn();
+  const entry: PromptChain = { ...promptEntry, id: 'place', name: '雨夜', basePrompt: 'rainy street', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['place'] } };
+  const state = { params: LAB_DEFAULT_PARAMS, base: 'artist:original, watercolor, warm lighting', subject: '', negative: 'lowres, bad anatomy', classified: false };
+  render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}><PromptLibraryWorkspace state={state} onChange={changed}><PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} /></PromptLibraryWorkspace></PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+  expect(screen.queryByRole('textbox', { name: '画风与技法内容' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '编辑地点与布景' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '选择地点与布景片段' }), { target: { value: 'place' } });
+  expect(document.querySelector('[data-content-roll-apply-preview]')!.textContent).toContain('rainy street');
+  const inserted = Array.from(document.querySelectorAll('[data-roll-insert]')).map(node => node.textContent).join('');
+  expect(inserted).toContain('rainy street');
+  expect(inserted).not.toContain('artist:original');
+  fireEvent.click(screen.getByRole('button', { name: '填入全局' }));
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  expect(changed.mock.calls[0][0]).toMatchObject({ base: `${state.base}, rainy street`, negative: state.negative, subject: '', classified: false });
+  expect(changed.mock.calls[0][0].base.match(/artist:original/g)).toHaveLength(1);
+  expect(changed.mock.calls[0][0].params._promptSections).toBeUndefined();
+  localStorage.clear();
+});
+
+it.each(['global', 'character'] as const)('整段%s骰子关闭重开仍替换本轮内容，撤销恢复回执，手改方向保留', async mode => {
+  localStorage.clear();
+  const changed = vi.fn(), roleId = mode === 'character' ? 'subject-one' : undefined;
+  const purpose = roleId ? 'clothing' : 'place', label = roleId ? '服饰与配件' : '地点与布景';
+  const entries: PromptChain[] = ['first', 'second'].map(id => ({ ...promptEntry, id, name: id, basePrompt: `${id} positive`, negativePrompt: `${id} negative`, params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: [purpose] } }));
+  const initial = { params: { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'subject-one', prompt: 'original subject', negativePrompt: 'original subject negative', x: .5, y: .5 }, { id: 'subject-two', prompt: 'other subject', negativePrompt: 'other negative', x: .5, y: .5 }] }, base: 'complete style', subject: '', negative: 'complete style negative', classified: false };
+  function Harness() {
+    const [state, setState] = useState(initial);
+    return <PromptLibraryContext.Provider value={{ chains: entries, save: vi.fn() }}><PromptLibraryWorkspace state={state} onChange={next => { changed(next); setState(next as typeof initial); }}>
+      <button onClick={() => setState(value => roleId ? { ...value, params: { ...value.params, characters: value.params.characters.map(role => role.id === roleId ? { ...role, prompt: role.prompt + ', handwritten' } : role) } } : { ...value, base: value.base + ', handwritten' })}>手动补词</button>
+      <PromptLibraryRandomButton roleId={roleId} />
+    </PromptLibraryWorkspace></PromptLibraryContext.Provider>;
+  }
+  render(<Harness />);
+  const open = () => fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+  const edit = () => fireEvent.click(screen.getByRole('button', { name: `编辑${label}` }));
+  const pick = (id: string) => { edit(); fireEvent.change(screen.getByRole('combobox', { name: `选择${label}片段` }), { target: { value: id } }); fireEvent.click(screen.getByRole('button', { name: '完成' })); };
+  const fill = () => fireEvent.click(screen.getByRole('button', { name: roleId ? '填入角色 1' : '填入全局' }));
+  const field = (state: typeof initial, negative = false) => roleId ? state.params.characters.find(role => role.id === roleId)![negative ? 'negativePrompt' : 'prompt'] : state[negative ? 'negative' : 'base'];
+  const positivePreview = () => document.querySelector(`[data-content-roll-apply-row="${roleId ? `${roleId}:positive` : 'global:positive'}"]`)!;
+  const before = field(initial), beforeNegative = field(initial, true);
+  open();
+  const participation = screen.getByRole('checkbox', { name: `参与「${label}」的抽取` });
+  pick('first');
+  const preview = document.querySelector('[data-content-roll-apply-preview]')!;
+  expect(positivePreview().textContent).toContain(`${before}, first positive`);
+  expect(positivePreview().textContent?.match(new RegExp(before.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))).toHaveLength(1);
+  expect(preview.textContent).not.toContain('→');
+  fireEvent.click(participation);
+  expect(document.querySelector(`[data-content-roll-row="purpose:${purpose}"]`)?.getAttribute('data-content-roll-on')).toBe('false');
+  expect(document.querySelector('[data-content-roll-apply-preview]')).toBe(preview);
+  expect(positivePreview().textContent).toContain(before);
+  expect(positivePreview().textContent).not.toContain('first positive');
+  fireEvent.click(participation);
+  expect(document.querySelector('[data-content-roll-row]')).not.toBeNull();
+  expect(positivePreview().textContent).toContain(`${before}, first positive`);
+  fill();
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  expect(field(changed.mock.calls[0][0])).toBe(`${before}, first positive`);
+  expect(field(changed.mock.calls[0][0], true)).toBe(`${beforeNegative}, first negative`);
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  open();
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  await waitFor(() => expect(document.querySelector('[data-content-roll-name]')?.textContent).toBe('second'));
+  expect(positivePreview().textContent).toContain(`${before}, second positive`);
+  fill();
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(2));
+  expect(field(changed.mock.calls[1][0])).toBe(`${before}, second positive`);
+  fireEvent.click(screen.getAllByRole('button', { name: '撤销上次填入' }).at(-1)!);
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(3));
+  expect(field(changed.mock.calls[2][0])).toBe(`${before}, first positive`);
+  fill();
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(4));
+  expect(field(changed.mock.calls[3][0])).toBe(`${before}, second positive`);
+  fireEvent.click(screen.getByRole('button', { name: '手动补词' }));
+  pick('first'); fill();
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(5));
+  expect(field(changed.mock.calls[4][0])).toBe(`${before}, second positive, handwritten`);
+  expect(field(changed.mock.calls[4][0], true)).toBe(`${beforeNegative}, first negative`);
+  expect(screen.getAllByText('已保留手动修改的内容').length).toBeGreaterThan(0);
+  expect(changed.mock.calls[4][0].params.characters[1]).toEqual(initial.params.characters[1]);
+  if (roleId) expect(changed.mock.calls[4][0].base).toBe(initial.base);
+  localStorage.clear();
+});
 
 it('条目读取状态：实验室取用继承context加载失败和重试，不把未知当空', () => {
   const retry = vi.fn(), save = vi.fn();
@@ -29,7 +136,6 @@ it('条目读取状态：实验室嵌套搭配沿用同一失败状态和重试�
   expect(screen.queryAllByText('该库当前 0 条，该栏留空')).toHaveLength(0);
   fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
 });
-import type { PromptChain } from '../../types';
 
 afterEach(cleanup);
 it('手机等待编辑关闭确认时保留当前返回层，取消后仍可再次返回', async () => {

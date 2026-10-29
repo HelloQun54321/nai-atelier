@@ -337,3 +337,13 @@ describe('.naia 风格串分享包', () => {
     await expect(exportStyleBundle([item], { allChainIds: [item.id], coverMode: 'none', author: '新作者', sourceUrl: '', note: '' })).rejects.toThrow('数量');
   });
 });
+
+it('分享包完整往返保留呈现形式正文负面和来源，不改画风', async () => {
+  const input = chain();
+  input.params._promptSections = { presentation: '{two panels}', sectionNegatives: { presentation: 'single panel' }, sectionMeta: { presentation: { source: 'manual', entryName: '双格' } } };
+  const bundle = await exportStyleBundle([input], options);
+  const read = await readStyleBundle(bundle);
+  const preview = getStyleBundleEntryPreview(read, 's0');
+  expect(preview.params._promptSections).toMatchObject(input.params._promptSections);
+  expect(preview.basePrompt).toBe(input.basePrompt); expect(preview.negativePrompt).toBe(input.negativePrompt);
+});

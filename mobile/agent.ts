@@ -8,7 +8,7 @@ import { json } from '../worker/routes/types';
 import { PixivWebLoginOrchestrator } from 'mobile:pixiv-login';
 import { native } from './native';
 
-const agent = new PromptAgentService({ lanSecret: 'android-local', configFile: '/agent' });
+const agent = new PromptAgentService({ lanSecret: 'android-local', configFile: '/agent', runtimePlatform: 'android' });
 export async function assertMobileAgentVibeNotReferenced(vibeId: string, encodingId?: string) {
   if (agent.activeAgents.size || agent.startingAgents.size) throw Object.assign(new Error('请先停止助手任务，再删除 Vibe'), { status: 409 });
   let existingEncodingIds: string[] | undefined;

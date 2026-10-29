@@ -56,7 +56,7 @@ export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<stri
     id: String(item.meta?.entryId || ''), name: String(item.meta?.entryName || item.directoryName || chain.name), meta: item.meta,
   }]));
   const role = read.roles[roleIndex];
-  return { ...Object.fromEntries(KINDS.flatMap(kind => {
+  return { ...Object.fromEntries([...KINDS, 'presentation'].flatMap(kind => {
     const global = read.global[kind];
     const text = META[kind].scope === 'character' ? role?.sections[kind] : global?.text;
     if (!text) return [];
@@ -127,6 +127,8 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
       scope,
       filled: true, text, negative: String((negatives as Record<string, unknown> | undefined)?.[kind] || '') };
   }
+  const presentation = params._promptSections?.presentation;
+  if (presentation?.trim()) picks.presentation = { kind: 'presentation', scope: 'global', filled: true, text: presentation, negative: params._promptSections?.sectionNegatives?.presentation || '', meta: params._promptSections?.sectionMeta?.presentation };
   return picks;
 }
 

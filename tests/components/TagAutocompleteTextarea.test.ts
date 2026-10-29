@@ -262,6 +262,19 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(textarea.value).toBe('masterpiece, ');
   });
 
+  it.each(['masterpiece', '1.2::masterpiece, alpha::'])('助手可双击普通词或权重组成员原位编辑，标记不暴露拖动：%s', async initial => {
+    render(React.createElement('main', { 'data-agent-view': 'playground' }, React.createElement(Harness, { initial, showTranslations: true })));
+    await within(screen.getByLabelText('提示词中文翻译')).findByText('杰作');
+    const page = readAgentPage();
+    const control = page.controls.find(item => item.actions.includes('double_click') && item.label.includes('masterpiece'))!;
+    expect(control).toBeTruthy(); expect(control.actions).not.toContain('drag');
+    await act(async () => { await operateAgentPage({ action: 'double_click', controlId: control.id, snapshotId: page.snapshotId }); });
+    const input = screen.getByRole('combobox', { name: '修改提示词' }) as HTMLTextAreaElement;
+    expect(input.value).toBe('masterpiece');
+    fireEvent.change(input, { target: { value: 'replacement' } }); fireEvent.keyDown(input, { key: 'Enter' });
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe(initial.replace('masterpiece', 'replacement'));
+  });
+
   it('双击译文修改同一份原文，改词立即去掉旧译文并按新词匹配，文本框修改也同步', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;

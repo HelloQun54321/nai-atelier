@@ -1,3 +1,4 @@
+import { compilePrompt } from '../services/promptUtils';
 import { LabEditorTabs } from './LabEditorTabs';
 import type { GenerationPlacement } from '../services/generationTask';
 import type { PromptToolbarSlot } from './PromptLibraryAccess';
@@ -57,7 +58,6 @@ interface ImageEditPanelProps {
   generationCountControl?: GenerationCountControlProps;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
-  promptClassificationEnabled?: boolean;
   promptToolbarSlot?: PromptToolbarSlot | null;
   forceEmptySeed?: boolean;
   onForceEmptySeedChange?: (enabled: boolean) => void;
@@ -130,7 +130,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   maskData,
   generationCostLabel,
   tagAssistEnabled,
-  promptClassificationEnabled = false,
   promptToolbarSlot,
   forceEmptySeed = false,
   onForceEmptySeedChange,
@@ -1069,7 +1068,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       minimumContextArea: focused && operation === 'inpaint' ? minimumContextArea : undefined,
       expansion: operation === 'outpaint' ? draft.appliedExpansion || emptyExpansion : undefined,
       focusedRect: focused && operation === 'inpaint' ? state.focusedRect || undefined : undefined,
-      prompt: override ? [override.basePrompt, override.subjectPrompt, ...override.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', ') : draft.prompt,
+      prompt: override ? compilePrompt(override, override.subjectPrompt) : draft.prompt,
       negativePrompt: override?.negativePrompt ?? draft.negativePrompt,
       promptSource: override ? 'custom' : draft.promptSource,
       }, override || placement ? { params: outputParams, onApproved, agent: Boolean(override), count, placement } : undefined);
@@ -1219,7 +1218,6 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           isBusy={isLoading || isImportingImage || isGenerating || isApplyingOutpaint}
           safeMode={safeMode}
           tagAssistEnabled={tagAssistEnabled}
-          promptClassificationEnabled={promptClassificationEnabled}
           apiKey={apiKey}
           allChains={allChains}
           chainsLoading={chainsLoading}

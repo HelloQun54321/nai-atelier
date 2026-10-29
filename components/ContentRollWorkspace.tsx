@@ -5,7 +5,7 @@ import { parsePromptLibraryTags, FRAGMENT_LABELS, librarySectionOf, type PromptF
 import { CollectionTagInput } from './inspiration/CollectionControls';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Copy, Dice5, Info, Lock, LockOpen, Pencil, RefreshCw, RotateCcw } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { PromptChain } from '../types';
 import { KINDS, META, rollSectionKey } from '../services/contentRoll';
@@ -20,11 +20,15 @@ import type { NAIParams } from '../types';
 import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, normalizePromptLibraryDirectorySelection, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
-import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
-import { PromptPurposeGroup } from './PromptPurposeGroup';
+import { LibraryDialog, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
+import { ToolbarPopover } from './ToolbarPopover';
+import { InfoPopover } from './InfoPopover';
+import './ContentRollWorkspace.css';
 
 interface ContentRollWorkspaceProps extends PromptLibraryReadState {
   directories?: PromptLibraryTreeState;
+  /** 仅实验室入口限制用途；省略时保留提示词库自由搭配。 */
+  allowedPurposes?: readonly PromptPurposeId[];
   editing?: boolean;
   categoryNames?: string[];
   categoryTree?: PromptLibraryCategoryTreeState;
@@ -36,7 +40,8 @@ interface ContentRollWorkspaceProps extends PromptLibraryReadState {
   /** 实验室当前参数（只读，用来显示「当前 → 将填入」） */
   playgroundParams?: NAIParams | null;
   /** 组好的应用计划交给 App 落盘（App 负责写 playground 参数）；返回是否成功 */
-  onApplyRoll?: (plan: ContentRollApplyPlan) => Promise<boolean>;
+  onApplyRoll?: (plan: ContentRollApplyPlan, picks: Record<string, RollRow>) => Promise<boolean>;
+  renderApplyPreview?: (picks: Record<string, RollRow>, target: ContentRollTarget) => React.ReactNode;
   onUseCombination?: (picks: Record<string, RollRow>) => void;
   /** 撤销上一次填入（App 用改动前的快照恢复） */
   onUndoApply?: () => Promise<boolean>;
@@ -62,6 +67,7 @@ interface ContentRollWorkspaceProps extends PromptLibraryReadState {
   }) => Promise<string | undefined>;
   embedded?: boolean;
   toolbarSlot?: HTMLElement | null;
+  notice?: string;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -111,7 +117,7 @@ const restoreDirectoryPicks = (picks: Record<string, RollRow>, directories?: Pro
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ directories, editing = false, active, chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, categoryNames = [], categoryTree, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ directories, allowedPurposes, editing = false, active, chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, categoryNames = [], categoryTree, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, renderApplyPreview, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain, notice = '' }) => {
   useLanguage();
   const library = usePromptLibrary();
   const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
@@ -133,7 +139,6 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [locked, setLocked] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [showEvidence, setShowEvidence] = useState(false);
   const [targetId, setTargetId] = useState<string>('new');
   const [range, setRange] = useState<ContentRollScope>(() => {
     /* 本机默认「仅角色」；用户改过就记住，下次直接沿用 */
@@ -153,7 +158,15 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   const [saving, setSaving] = useState(false);
   const [sourceText, setSourceText] = useState('');
 
-  const current = cursor >= 0 ? history[cursor] : null;
+  const purposeMode = !!directories || allowedPurposes !== undefined;
+  const storedCurrent = cursor >= 0 ? history[cursor] : null;
+  const current = useMemo(() => !storedCurrent || allowedPurposes === undefined ? storedCurrent : {
+    ...storedCurrent, picks: Object.fromEntries(Object.entries(storedCurrent.picks).filter(([kind, row]) => {
+      const key = rollSectionKey(kind);
+      return isPurposeSectionKey(key) && allowedPurposes.includes(key.slice(8) as PromptPurposeId)
+        && (!entryTarget || !row.scope || row.scope === (entryTarget.mode === 'global' ? 'global' : 'character'));
+    })),
+  }, [storedCurrent, allowedPurposes, entryTarget]);
   const selectedDirectoryIds = directories ? normalizePromptLibraryDirectorySelection(directories, directoryIds) : [];
   const sourceEntries = directories && directoryIds !== null ? selectPromptLibraryDirectoryEntries(chains, directories, selectedDirectoryIds) : chains;
   const excludedCandidates = sourceEntries.reduce<Partial<Record<PromptPurposeCandidateReason, number>>>((counts, entry) => {
@@ -163,7 +176,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     return counts;
   }, {});
   const excludedCount = Object.values(excludedCandidates).reduce((sum, count) => sum + count, 0);
-  const directoryUnits = directories ? PROMPT_PURPOSES.flatMap(item => {
+  const directoryUnits = purposeMode ? PROMPT_PURPOSES.filter(item => allowedPurposes === undefined || allowedPurposes.includes(item.id)).flatMap(item => {
     const key = purposeSectionKey(item.id);
     const unit = { id: key as string, purposeId: item.id, directoryId: '', name: item.label, path: [item.label], scope: entryTarget ? entryTarget.mode === 'global' ? 'global' as const : 'character' as const : META[key].scope };
     const scoped = Object.entries(current?.picks || {}).filter(([id, row]) => id !== key && rollSectionKey(id) === key
@@ -189,7 +202,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
       : { ...current?.picks[kind], kind: section, ...(unit ? { directoryId: unit.directoryId, directoryName: unit.name, directoryPath: unit.path, scope: unit.scope } : {}), id: `manual-${kind}`, name: t('手写片段'), text, negative, filled: !!(text.trim() || negative.trim()) };
     setConfirming(false);
     if (current) setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, picks: { ...record.picks, [kind]: row } } : record));
-    else { setHistory(previous => [...previous, { seed: 'manual', seeds: {}, picks: { [kind]: row }, locked: {}, checks: {}, directoryIds: directories ? directoryIds ?? undefined : undefined, scope: range, at: Date.now() }]); setCursor(history.length); }
+    else { setHistory(previous => [...previous, { seed: 'manual', seeds: {}, picks: { [kind]: row }, locked: {}, checks: { ...checks }, directoryIds: directories ? directoryIds ?? undefined : undefined, scope: range, at: Date.now() }]); setCursor(history.length); }
   };
   const rollChains = [...sourceEntries, ...Object.entries(current?.picks || {}).filter(([kind, row]) => locked[kind] && row.id?.startsWith('manual-')).map(([kind, row]) => ({ id: row.id!, type: kind, basePrompt: row.text || '', negativePrompt: row.negative || '', name: row.name || '' } as PromptChain))];
 
@@ -210,7 +223,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
 
   /* 范围决定哪些分类参与抽取与应用（角色四类 / 场景镜头 / 全部） */
   const scopeChecks = useMemo(() => {
-    if (directories) return Object.fromEntries(units.map(unit => [unit.id, true]));
+    if (purposeMode) return Object.fromEntries(units.map(unit => [unit.id, true]));
     if (entryTarget) return Object.fromEntries(KINDS.map(kind => [kind,
       entryTarget.mode === 'global' ? GLOBAL_ROLL_KINDS.includes(kind) : META[kind].scope === 'character',
     ]));
@@ -218,10 +231,10 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     const out: Record<string, boolean> = {};
     for (const kind of KINDS) out[kind] = range === 'global' ? META[kind].scope === 'global' : META[kind].scope !== 'global';
     return out;
-  }, [range, entryTarget, directories, units]);
-  const effectiveChecks = useMemo(() => directories ? Object.fromEntries([...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {})])].map(kind => [kind,
+  }, [range, entryTarget, purposeMode, units]);
+  const effectiveChecks = useMemo(() => purposeMode ? Object.fromEntries([...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {})])].map(kind => [kind,
     units.some(unit => unit.id === kind) && checks[kind] !== false || !isPurposeSectionKey(rollSectionKey(kind)) && !!current?.picks[kind]?.filled && checks[kind] !== false && (entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range),
-  ])) : Object.fromEntries(KINDS.map(kind => [kind, scopeChecks[kind] !== false && checks[kind] !== false])), [scopeChecks, checks, directories, units, current, entryTarget, range]);
+  ])) : Object.fromEntries(KINDS.map(kind => [kind, scopeChecks[kind] !== false && checks[kind] !== false])), [scopeChecks, checks, purposeMode, units, current, entryTarget, range]);
 
   /* 会话草稿只留在本机：刷新后仍能看到上次这一组，但不会写库 */
   useEffect(() => {
@@ -273,23 +286,23 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     setHistory(previous => {
       const kept = previous.slice(0, cursor + 1);
       const scope: ContentRollScope = entryTarget ? entryTarget.mode === 'global' ? 'all' : 'character' : range;
-      const next = [...kept, { ...record, directoryIds: directories ? selectedDirectoryIds : undefined, scope, checks: entryTarget ? { ...effectiveChecks } : record.checks }].slice(-HISTORY_LIMIT);
+      const next = [...kept, { ...record, directoryIds: directories ? directoryIds ?? undefined : undefined, scope, checks: entryTarget ? { ...effectiveChecks } : record.checks }].slice(-HISTORY_LIMIT);
       setCursor(next.length - 1);
       return next;
     });
-  }, [cursor, range, entryTarget, effectiveChecks, directories, selectedDirectoryIds]);
+  }, [cursor, range, entryTarget, effectiveChecks, directories, directoryIds]);
 
   const rollOnce = useCallback(() => {
     setBusy(true);
     try {
-      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked, ...(directories ? { units, directories, picks: current?.picks } : {}) });
+      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked, ...(purposeMode ? { units, directories, picks: current?.picks } : {}) });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: { ...checks }, at: Date.now() });
       const missing = result.notes.filter(note => note.code !== 'pool_empty').length;
       notify(missing ? t('已抽取；有 {0} 条说明需要看一眼', [String(missing)]) : t('已按所选分类抽取'));
     } finally {
       setBusy(false);
     }
-  }, [rollChains, checks, effectiveChecks, locked, commit, notify, directories, units, current]);
+  }, [rollChains, checks, effectiveChecks, locked, commit, notify, directories, purposeMode, units, current]);
 
   /* 「再抽未固定项」：只换没固定的栏，并排除当前条目（候选不足时核会如实保留并说明） */
   const rollAgain = useCallback(() => {
@@ -297,18 +310,18 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     setBusy(true);
     try {
       const avoid: Record<string, string | undefined> = {};
-      for (const kind of directories ? units.map(unit => unit.id) : KINDS) {
+      for (const kind of purposeMode ? units.map(unit => unit.id) : KINDS) {
         if (locked[kind]) continue;
         avoid[kind] = current.picks[kind]?.id || undefined;
       }
-      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked, avoid, ...(directories ? { units, directories, picks: current.picks } : {}) });
+      const result = draw({ chains: rollChains, seed: newSeed(), checks: effectiveChecks, locked, avoid, ...(purposeMode ? { units, directories, picks: current.picks } : {}) });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: { ...checks }, at: Date.now() });
       const kept = result.notes.filter(note => note.code === 'avoid_short').length;
       notify(kept ? t('已重抽；{0} 栏只有一条候选，已保留并说明', [String(kept)]) : t('已重新抽取未固定的栏'));
     } finally {
       setBusy(false);
     }
-  }, [rollChains, current, checks, effectiveChecks, locked, commit, notify, directories, units]);
+  }, [rollChains, current, checks, effectiveChecks, locked, commit, notify, directories, purposeMode, units]);
 
   const rerollKind = useCallback((kind: string) => {
     if (!current) return;
@@ -316,7 +329,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
       notify(t('来源目录已删除，当前内容仍可使用；无法重新抽取'), 'error');
       return;
     }
-    const result = rerollOne({ chains: sourceEntries, checks: effectiveChecks, picks: current.picks, locked, ...(directories ? { units, directories } : {}) }, kind, newSeed());
+    const result = rerollOne({ chains: sourceEntries, checks: effectiveChecks, picks: current.picks, locked, ...(purposeMode ? { units, directories } : {}) }, kind, newSeed());
     if (!result.ok) {
       notify(result.message, 'error');
       return;
@@ -327,7 +340,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     setHistory(swapped);
     const note = result.note === 'avoid_short' ? t('（只有这一条可换，已保留）') : '';
     notify(t('已为「{0}」换了一条', [titleFor(kind)]) + note);
-  }, [sourceEntries, effectiveChecks, locked, current, history, cursor, notify, directories, units]);
+  }, [sourceEntries, effectiveChecks, locked, current, history, cursor, notify, directories, purposeMode, units]);
 
   const toggleCheck = (kind: string) => {
     const next = { ...checks, [kind]: effectiveChecks[kind] === false };
@@ -349,9 +362,9 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
 
   const evidenceText = useMemo(() => {
     if (!current) return '';
-    const evidence = evidenceOf({ ...current, chains, ...(directories ? { units, directories } : {}) });
+    const evidence = evidenceOf({ ...current, chains, ...(purposeMode ? { units, directories } : {}) });
     return JSON.stringify(evidence, null, 2);
-  }, [current, chains]);
+  }, [current, chains, purposeMode, directories, units]);
 
   const copyEvidence = async () => {
     try {
@@ -373,10 +386,10 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget) : null;
 
   const doApply = async () => {
-    if (!current || !onApplyRoll || !plan || applying) return;
+    if (!current || !onApplyRoll || !plan || !canApply) return;
     setApplying(true);
     try {
-      const ok = await onApplyRoll(plan);
+      const ok = await onApplyRoll(plan, activePicks);
       if (ok) {
         setConfirming(false);
         notify(t('已填入实验室：角色 {0} 类、全局 {1} 类（可撤销）', [String(plan.roleWrites.length), String(Object.keys(plan.globalSections).length)]));
@@ -405,8 +418,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     }
   };
 
-  const rows = directories ? [...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {}).filter(kind => entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range)])].map(kind => ({ kind, meta: { short: titleFor(kind), title: titleFor(kind) }, row: current?.picks[kind] || null })) : KINDS.filter(kind => !entryTarget || scopeChecks[kind] !== false).map(kind => ({ kind, meta: { ...META[kind], short: FRAGMENT_LABELS[kind as PromptFragmentKind], title: FRAGMENT_LABELS[kind as PromptFragmentKind] }, row: current?.picks[kind] || null }));
-  const entryLabel = entryTarget?.mode === 'global' ? t('全局提示词') : entryTarget ? t('角色 {0}', [String((playgroundParams?.characters || []).findIndex(item => String(item.id) === entryTarget.id) + 1)]) : '';
+  const rows = purposeMode ? [...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {}).filter(kind => entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range)])].map(kind => ({ kind, meta: { short: titleFor(kind), title: titleFor(kind) }, row: current?.picks[kind] || null })) : KINDS.filter(kind => !entryTarget || scopeChecks[kind] !== false).map(kind => ({ kind, meta: { ...META[kind], short: FRAGMENT_LABELS[kind as PromptFragmentKind], title: FRAGMENT_LABELS[kind as PromptFragmentKind] }, row: current?.picks[kind] || null }));
   const missingTarget = entryTarget?.mode === 'existing' && !(playgroundParams?.characters || []).some(item => String(item.id) === entryTarget.id);
   /* ---------------- 写入风格串 ---------------- */
 
@@ -464,118 +476,113 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   };
 
 
-  const renderRow = ({ kind, meta, row }: typeof rows[number]) => {
-    const on = effectiveChecks[kind] !== false;
-    const isLocked = !!locked[kind];
-    const pool = poolFor(kind);
-    const poolSize = pool.filter(chain => chain.basePrompt?.trim()).length;
-    return <article key={kind} data-content-roll-row={kind} data-content-roll-on={String(on)}
-      className={`min-w-0 rounded-xl p-2 ${on ? '' : 'opacity-50'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <label className="mobile-touch flex select-none items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
-          <input type="checkbox" checked={on} disabled={scopeChecks[kind] === false || applying} onChange={() => { toggleCheck(kind); setConfirming(false); }} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} />
-          {t(meta.title)}
-        </label>
-        <span className="text-xs tabular-nums text-gray-400">{t('共 {0} 条', [countsPending && !poolSize ? '—' : poolSize])}</span>
-      </div>
-      <select aria-label={t('选择{0}片段', [t(meta.short)])} value={row?.id && chains.some(item => item.id === row.id) ? row.id : ''} disabled={!on || applying || isLocked} onChange={event => { const entry = chains.find(item => item.id === event.target.value); if (entry) editRow(kind, entry.basePrompt, entry.negativePrompt, entry); }} className="mt-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-700">
+  const [editingKind, setEditingKind] = useState<string | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const editingRow = rows.find(row => row.kind === editingKind);
+  const resultRows = rows.filter(({ kind, row }) => effectiveChecks[kind] !== false && row?.filled && !!(row.text?.trim() || row.negative?.trim()));
+  const preview = !missingTarget ? renderApplyPreview?.(activePicks, applyTarget) : null;
+  const canApply = !!plan?.written.length && !missingTarget && !busy && !applying && !saving && (!entryTarget || !renderApplyPreview || !!preview);
+  const selectedCount = rows.filter(({ kind }) => effectiveChecks[kind] !== false).length;
+  const lockedCount = rows.filter(({ kind }) => effectiveChecks[kind] !== false && !!locked[kind]).length;
+  const hasCandidates = rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim()));
+  const canDraw = rows.some(({ kind }) => effectiveChecks[kind] !== false && !locked[kind] && poolFor(kind).some(chain => chain.basePrompt?.trim()));
+  const renderEditor = ({ kind, meta, row }: typeof rows[number]) => {
+    const isLocked = !!locked[kind], pool = poolFor(kind);
+    return <div data-content-roll-editor={kind}>
+      <select aria-label={t('选择{0}片段', [t(meta.short)])} value={row?.id && chains.some(item => item.id === row.id) ? row.id : ''} disabled={applying || isLocked} onChange={event => { const entry = chains.find(item => item.id === event.target.value); if (entry) editRow(kind, entry.basePrompt, entry.negativePrompt, entry); }} className="mt-2 h-10 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-700">
         <option value="">{t('手写或选择片段')}</option>{pool.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
-      <textarea aria-label={t('{0}内容', [t(meta.short)])} value={row?.text || ''} disabled={!on || applying || isLocked} onChange={event => editRow(kind, event.target.value)} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-200 bg-transparent p-2 font-mono text-xs dark:border-gray-700" />
-      <details className="mt-1 text-xs text-gray-500"><summary>{t('分类负面')}</summary><textarea aria-label={t('{0}负面', [t(meta.short)])} value={row?.negative || ''} disabled={!on || applying || isLocked} onChange={event => editRow(kind, row?.text || '', event.target.value)} className="mt-1 w-full rounded border border-gray-200 bg-transparent p-2 dark:border-gray-700" /></details>
-      <div className="mt-2">
-        {row?.filled ? <>
-          <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
-          {(row.constraints?.notes || row.constraintNotes) && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints?.notes || row.constraintNotes}</p>}
-        </> : <p className="py-2 text-xs leading-5 text-gray-400" data-content-roll-note={kind}>
-          {!on ? t('本次不参与：不抽取、也不会填入实验室') : !poolSize && countsPending ? '—' : t(!poolSize ? '该库当前 0 条，该栏留空' : '还没有结果')}
-        </p>}
+      <textarea aria-label={t('{0}内容', [t(meta.short)])} value={row?.text || ''} disabled={applying || isLocked} onChange={event => editRow(kind, event.target.value)} className="mt-2 min-h-32 w-full resize-y rounded-lg border border-gray-200 bg-transparent p-2 font-mono text-xs dark:border-gray-700" />
+      <details className="mt-1 text-xs text-gray-500"><summary>{t('分类负面')}</summary><textarea aria-label={t('{0}负面', [t(meta.short)])} value={row?.negative || ''} disabled={applying || isLocked} onChange={event => editRow(kind, row?.text || '', event.target.value)} className="mt-1 w-full rounded border border-gray-200 bg-transparent p-2 dark:border-gray-700" /></details>
+    </div>;
+  };
+  const renderRow = ({ kind, meta, row }: typeof rows[number]) => {
+    const checked = effectiveChecks[kind] !== false, filled = !!row?.filled && !!(row.text?.trim() || row.negative?.trim());
+    const pool = poolFor(kind), count = countsPending && !pool.length ? '—' : pool.length;
+    const constraint = row?.constraints?.notes || row?.constraintNotes;
+    return <article key={kind} data-content-roll-row={kind} data-content-roll-on={checked} data-filled={filled} data-locked={!!locked[kind]} className="content-roll-row border-b border-gray-200 dark:border-gray-800">
+      <label className="content-roll-purpose mobile-touch flex min-w-0 items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" checked={checked} disabled={scopeChecks[kind] === false || applying || saving} onChange={() => { toggleCheck(kind); setConfirming(false); }} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} className="h-4 w-4 shrink-0 accent-indigo-500" /><span className="truncate" title={t(meta.title)}>{t(meta.title)}</span>
+      </label>
+      <span className="content-roll-count text-xs tabular-nums text-gray-500 dark:text-gray-400" title={t('共 {0} 条', [count])}>{count}</span>
+      <div className="content-roll-result min-w-0">
+        <div className="flex min-w-0 items-center gap-2"><p className={`truncate text-sm ${filled ? 'font-semibold' : 'text-gray-500 dark:text-gray-400'}`} data-content-roll-name={filled ? kind : undefined} title={filled ? row?.name || t('手写片段') : undefined}>{filled ? row?.name || t('手写片段') : countsPending && !pool.length ? t(chainsError ? '读取失败' : '加载中…') : pool.length ? t('等待抽取') : t('暂无可抽取片段')}</p>
+          {locked[kind] && <span className="shrink-0 text-xs text-indigo-600 dark:text-indigo-300">{t('已固定')}</span>}
+          {constraint && <span data-content-roll-constraint={kind}><InfoPopover label="说明" content={constraint} /></span>}
+        </div>
+        <p className="truncate font-mono text-xs leading-6 text-gray-500 dark:text-gray-400">{filled ? row?.text || row?.negative : t('可手写或选择片段')}</p>
       </div>
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <ToolbarButton active={isLocked} aria-pressed={isLocked} disabled={!row?.filled || !on || applying} onClick={() => toggleLock(kind)} title={t(isLocked ? '解除固定' : '固定这一条')}>
-          {isLocked ? <Lock /> : <LockOpen />}{t(isLocked ? '已固定' : '固定')}
-        </ToolbarButton>
-        <ToolbarButton disabled={!current || !on || isLocked || applying || countsPending && !poolSize} onClick={() => { rerollKind(kind); setConfirming(false); }}><RefreshCw />{t('换一个')}</ToolbarButton>
+      <div className="content-roll-row-actions flex items-center justify-end gap-1">
+        <IconButton label={locked[kind] ? '已固定' : '固定'} title={t(locked[kind] ? '解除固定' : '固定这一条')} aria-pressed={!!locked[kind]} disabled={!filled || !checked || applying || saving} onClick={() => toggleLock(kind)} className={locked[kind] ? 'text-indigo-600 dark:text-indigo-300' : ''}>{locked[kind] ? <Lock /> : <LockOpen />}<span className="sr-only">{t(locked[kind] ? '已固定' : '固定')}</span></IconButton>
+        <IconButton label="换一个" disabled={!current || !checked || !!locked[kind] || applying || saving || !pool.some(chain => chain.basePrompt?.trim())} onClick={() => { rerollKind(kind); setConfirming(false); }}><RefreshCw /><span className="sr-only">{t('换一个')}</span></IconButton>
+        <IconButton label={t('编辑{0}', [t(meta.title)])} disabled={applying || saving} onClick={event => { event.currentTarget.focus(); setEditingKind(kind); }}><Pencil /></IconButton>
       </div>
     </article>;
   };
 
   const toolbar = <>
-    {entryTarget ? <span className="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t('搭配')} · {missingTarget ? t('目标角色已不存在，请重新打开随机搭配') : entryLabel}</span> : <ToolbarSelect label="选择抽取范围" value={range} disabled={applying || saving} containerClassName="content-roll-scope min-w-0 flex-1" onChange={event => {
+    {!entryTarget && <ToolbarSelect label="选择抽取范围" value={range} disabled={applying || saving} containerClassName="content-roll-scope min-w-0" onChange={event => {
       const nextRange = event.target.value as ContentRollScope;
       setRange(nextRange); setConfirming(false);
       try { window.localStorage.setItem('nai-content-roll-range', nextRange); } catch { /* 存储不可用时仍可抽取。 */ }
-    }}>
-      <option value="character">{t('仅角色')}</option><option value="global">{t(directories ? '仅全局' : '仅场景与镜头')}</option><option value="all">{t(directories ? '全部内容' : '角色＋场景')}</option>
-    </ToolbarSelect>}
-    <div className="flex shrink-0 items-center gap-1">
-      <IconButton label="上一组" disabled={cursor <= 0 || applying} onClick={() => { setCursor(index => Math.max(0, index - 1)); setConfirming(false); }}><ChevronLeft /></IconButton>
-      <span className="min-w-8 text-center text-xs tabular-nums text-gray-400">{history.length ? `${cursor + 1}/${history.length}` : '0/0'}</span>
-      <IconButton label="下一组" disabled={cursor >= history.length - 1 || applying} onClick={() => { setCursor(index => Math.min(history.length - 1, index + 1)); setConfirming(false); }}><ChevronRight /></IconButton>
+    }}><option value="character">{t('仅角色')}</option><option value="global">{t(directories ? '仅全局' : '仅场景与镜头')}</option><option value="all">{t(directories ? '全部内容' : '角色＋场景')}</option></ToolbarSelect>}
+    {directories && <PromptLibraryDirectoryPicker popover state={directories} selectedIds={selectedDirectoryIds} allSelected={directoryIds === null} onAllChange={all => { if (all) { setDirectoryIds(null); setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, directoryIds: undefined } : record)); setConfirming(false); } }} onChange={ids => { setDirectoryIds(ids); setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, directoryIds: ids } : record)); setConfirming(false); }} disabled={applying || saving} includeAll />}
+    <span className="content-roll-participation text-xs tabular-nums text-gray-500 dark:text-gray-400">{t('参与 {0} / {1} 项', [selectedCount, rows.length])}</span>
+    <div className="content-roll-history ml-auto flex shrink-0 items-center gap-1">
+      <IconButton label="上一组" disabled={cursor <= 0 || applying || saving} onClick={() => { setCursor(index => Math.max(0, index - 1)); setConfirming(false); }}><ChevronLeft /></IconButton>
+      <span aria-label={t('抽取记录')} className="min-w-10 text-center text-xs tabular-nums text-gray-500 dark:text-gray-400">{history.length ? `${cursor + 1} / ${history.length}` : '—'}</span>
+      <IconButton label="下一组" disabled={cursor >= history.length - 1 || applying || saving} onClick={() => { setCursor(index => Math.min(history.length - 1, index + 1)); setConfirming(false); }}><ChevronRight /></IconButton>
     </div>
-    <ToolbarButton tone="primary" onClick={() => { setConfirming(false); (current ? rollAgain : rollOnce)(); }} disabled={busy || applying || saving || countsPending && !rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim())) || !Object.values(effectiveChecks).some(Boolean)}>
-      <Dice5 /><span>{t(current ? '再抽未固定项' : '抽一次')}</span>
-    </ToolbarButton>
+    <ToolbarButton className="content-roll-draw" onClick={() => { setConfirming(false); (current ? rollAgain : rollOnce)(); }} disabled={busy || applying || saving || !canDraw}><Dice5 /><span>{t(current ? '再抽未固定项' : '抽一次')}</span></ToolbarButton>
   </>;
 
-  return <div className={embedded ? 'flex min-h-0 flex-1 flex-col' : 'workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950'}>
-    {embedded ? toolbarSlot && createPortal(toolbar, toolbarSlot) : <WorkspaceChrome><WorkspaceToolbar>{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
-    <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
-      {directories && <div className="mb-3"><PromptLibraryDirectoryPicker state={directories} selectedIds={selectedDirectoryIds} allSelected={directoryIds === null} onAllChange={all => { if (all) setDirectoryIds(null); }} onChange={ids => { setDirectoryIds(ids); setChecks({}); setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, directoryIds: ids, checks: {} } : record)); setConfirming(false); }} disabled={applying || saving} includeAll /></div>}
-      <p className="mb-3 text-xs text-gray-500">{t('未标注或混合片段可手动取用；单用途随机搭配只抽取相应用途片段。')}</p>
-      {directories && !countsPending && excludedCount > 0 && <details className="mb-3 text-xs text-gray-500" data-content-roll-exclusions>
-        <summary className="cursor-pointer">{t('未入单用途池 {0} 条', [excludedCount])}</summary>
-        <p className="mt-1">{([
-          ['unmarked', '未标注'], ['mixed', '多用途混合'], ['negative_only', '负面专用'], ['empty_prompt', '空正文'], ['non_fragment', '非片段'],
-        ] as const).filter(([reason]) => excludedCandidates[reason]).map(([reason, label]) => t('{0} {1} 条', [t(label), excludedCandidates[reason]!])).join(' · ')}</p>
-        <p className="mt-1">{t('按已保存用途筛选，未自动核验正文。')}</p>
-      </details>}
-      {countsPending && !rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim())) && <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} />}
-      {sourceText && <details open className="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary>{t('来源原文')}</summary><pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs">{sourceText}</pre></details>}
-      <div className="content-library-roll-layout mx-auto w-full max-w-7xl items-start gap-4">
-        <section className={directories ? 'space-y-3' : 'content-library-roll-grid'}>
-          {directories ? <>{PROMPT_PURPOSE_GROUPS.map(group => {
+  return <div className={`content-roll-workspace flex min-h-0 flex-1 flex-col overflow-hidden ${embedded ? '' : 'workspace-canvas bg-gray-50 dark:bg-gray-950'}`}>
+    {embedded ? toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="content-roll-dialog-tools">{toolbar}</div> : <WorkspaceChrome><WorkspaceToolbar className="content-roll-dialog-tools">{toolbar}</WorkspaceToolbar></WorkspaceChrome>}
+    <div className="workspace-scroll-viewport content-roll-scroll min-h-0 flex-1 overflow-y-auto">
+      {sourceText && <details className="border-b border-gray-200 p-4 text-sm dark:border-gray-800"><summary>{t('来源原文')}</summary><pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs">{sourceText}</pre></details>}
+      <div data-content-roll-layout="vertical">
+        <section data-content-roll-choices="true" data-content-roll-results="true">
+          <div className="content-roll-columns text-xs text-gray-500 dark:text-gray-400" aria-hidden="true"><span>{t('参与用途')}</span><span>{t('可抽取')}</span><span>{t('本次结果')}</span><span className="content-roll-action-labels"><span>{t('固定')}</span><span>{t('换一个')}</span><span>{t('编辑')}</span></span></div>
+          {purposeMode ? <>{PROMPT_PURPOSE_GROUPS.map(group => {
             const grouped = group.purposes.flatMap(id => rows.filter(row => rollSectionKey(row.kind) === purposeSectionKey(id)));
-            return grouped.length > 0 && <PromptPurposeGroup key={group.id} id={group.id} label={group.label}
-              summary={grouped.filter(item => item.row?.filled && effectiveChecks[item.kind] !== false).map(item => t(item.meta.short)).join('、')}>
-              <div className="content-library-roll-grid">{grouped.map(renderRow)}</div>
-            </PromptPurposeGroup>;
-          })}{rows.some(row => !isPurposeSectionKey(rollSectionKey(row.kind))) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
-            <div className="content-library-roll-grid">{rows.filter(row => !isPurposeSectionKey(rollSectionKey(row.kind))).map(renderRow)}</div>
-          </PromptPurposeGroup>}</> : rows.map(renderRow)}
-
+            const purposes = [...new Set(grouped.map(row => rollSectionKey(row.kind)))];
+            const label = allowedPurposes === undefined ? group.label : purposes.length === 1 ? grouped[0].meta.title
+              : group.id === 'camera-light' && purposes.every(key => key === 'purpose:composition' || key === 'purpose:camera') ? '构图与镜头'
+                : group.id === 'action' && purposes.every(key => key === 'purpose:pose' || key === 'purpose:expression') ? '动作与表情' : group.label;
+            return grouped.length > 0 && <div key={group.id} data-prompt-purpose-group={group.id}><p className={entryTarget ? 'sr-only' : 'content-roll-group text-xs font-semibold text-gray-500 dark:text-gray-400'}>{t(label)}</p>{grouped.map(renderRow)}</div>;
+          })}{rows.some(row => !isPurposeSectionKey(rollSectionKey(row.kind))) && <div data-prompt-purpose-group="legacy">{rows.filter(row => !isPurposeSectionKey(rollSectionKey(row.kind))).map(renderRow)}</div>}</> : rows.map(renderRow)}
         </section>
-        <aside className="space-y-3">
-          {current ? <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
-            <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">{t('当前组合')}</h3>
-            {!entryTarget && !onUseCombination && range !== 'global' && <ToolbarSelect label="选择写入的目标角色" value={targetId} containerClassName="w-full" disabled={applying}
-              onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}>
-              {playgroundRoles.length > 0 && <option value="all-enabled">{t('所有启用角色')}</option>}
-              <option value="new">{t('新建角色')}</option>
-              {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
-            </ToolbarSelect>}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <ToolbarButton tone="primary" className="flex-1" disabled={(!onApplyRoll && !onUseCombination) || applying || missingTarget || !plan?.written.length} onClick={() => onUseCombination ? onUseCombination(activePicks) : setConfirming(true)}>{t(onUseCombination ? '送到实验室' : '使用')}</ToolbarButton>
-              {onSaveRoll && <ToolbarButton disabled={saving || !Object.keys(activePicks).length} onClick={() => { setSaveName(saveName || t('组合 {0}', [new Date().toLocaleString()])); setSaveOpen(value => !value); }}>{t('保存组合')}</ToolbarButton>}
-            </div>
-            {saveOpen && <div className="mt-3 space-y-2" data-content-roll-save="true">
-              <input autoFocus value={saveName} maxLength={80} disabled={saving} aria-label={t('给这条记录起名')}
-                onChange={event => setSaveName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSaveOpen(false); } }}
-                className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 dark:text-gray-100" />
-              <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('组合标签')} value={saveTags} suggestions={tagSuggestions} suggestionLabel={name => promptLibraryCategoryLabel(categoryTree, name)} onChange={event => setSaveTags(event.target.value)} onPick={setSaveTags} disabled={saving} placeholder={t('用逗号分隔')} className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700" /></label>
-              <div className="flex gap-2"><ToolbarButton tone="save" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : editing ? '保存修改' : '保存')}</ToolbarButton>{editing && <ToolbarButton tone="save" disabled={saving} onClick={() => void doSave(true)}>{t('另存为新组合')}</ToolbarButton>}<ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
-            </div>}
-            {confirming && plan && <div className="mt-4 space-y-3" data-content-roll-apply-preview="true">
-              {plan.rows.filter(item => item.action === 'replace').map(item => <div key={item.itemId || item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-item={item.itemId || item.kind} data-content-roll-apply-scope={item.targetScope} data-content-roll-apply-action={item.action} className="border-t border-gray-200 pt-2 dark:border-gray-800">
-                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
-                <p className="mt-1 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400">{plan.target.mode === 'all-enabled' && item.targetScope === 'character' ? t('所有启用角色') : item.current || t('空白')} → {item.next || t('空白')}</p>
-                {item.note && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{item.note}</p>}
-              </div>)}
-              <p className="text-xs leading-5 text-gray-400">{t('未列出的内容保持不变。')}</p>
-              <div className="flex gap-2"><ToolbarButton tone="primary" disabled={applying || missingTarget} onClick={() => void doApply()}>{t(applying ? '写入中…' : '确认填入')}</ToolbarButton><ToolbarButton disabled={applying} onClick={() => setConfirming(false)}>{t('取消')}</ToolbarButton></div>
-            </div>}
-            {canUndo && <button type="button" disabled={applying} onClick={() => void onUndoApply?.()} data-content-roll-undo="true" className="mobile-touch mt-3 text-xs font-semibold text-amber-600 dark:text-amber-400">{t('撤销上次填入')}</button>}
-          </section> : <p className="px-2 py-3 text-sm leading-6 text-gray-400">{t('选择范围，抽取一组内容。喜欢的条目可以固定。')}</p>}
+        <div className="content-roll-status flex flex-wrap items-center justify-between gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex min-w-0 flex-wrap items-center gap-2" role={chainsError && !chainsLoading ? 'alert' : 'status'}>
+            {countsPending ? <><span>{chainsLoading ? t('加载中…') : t(chainsError || '读取失败')}</span>{chainsError && !chainsLoading && onRetryChains && <button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={onRetryChains}>{t('重试')}</button>}</>
+              : !hasCandidates ? <span>{t('当前范围没有可随机抽取的片段，可更换目录或手写。')}</span> : !selectedCount ? <span>{t('请选择参与抽取的用途')}</span> : null}
+            {directories && !countsPending && excludedCount > 0 && <ToolbarPopover label={t('{0} 条未参与随机', [excludedCount])} title={t('查看原因')} icon={<Info />} width={360} zIndex={2100} className="content-roll-exclusions">
+              <div data-content-roll-exclusions><p className="text-sm">{t('未标注或混合片段可手动取用；单用途随机搭配只抽取相应用途片段。')}</p><p className="mt-2 text-xs">{([
+                ['unmarked', '未标注'], ['mixed', '多用途混合'], ['negative_only', '负面专用'], ['empty_prompt', '空正文'], ['non_fragment', '非片段'],
+              ] as const).filter(([reason]) => excludedCandidates[reason]).map(([reason, label]) => t('{0} {1} 条', [t(label), excludedCandidates[reason]!])).join(' · ')}</p><p className="mt-2 text-xs text-gray-500">{t('按已保存用途筛选，未自动核验正文。')}</p></div>
+            </ToolbarPopover>}
+            <ToolbarPopover label="抽取记录" title={t('抽取记录')} icon={<Copy />} disabled={!current} width={480} zIndex={2100} className="content-roll-exclusions">
+              <p className="break-all text-xs text-gray-500">{t('组合随机码 {0}', [current?.seed || '—'])}</p>
+              <p className="mt-1 text-xs text-gray-500">{t('组合随机码只用于复现这一组，不是生图 seed。')}</p>
+              <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制组合数据')}</ToolbarButton>
+              <pre data-content-roll-evidence="true" className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-gray-500">{evidenceText}</pre>
+            </ToolbarPopover>
+          </div><span className="shrink-0 tabular-nums">{t('已固定 {0} 项', [lockedCount])}</span>
+        </div>
+        <section className="content-roll-preview border-y border-gray-200 dark:border-gray-800" data-content-roll-apply="true">
+          <div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">{t(entryTarget ? '填入预览' : '当前组合')}</h3><button type="button" className="mobile-touch shrink-0 text-xs text-gray-500" onClick={() => setPreviewExpanded(value => !value)} aria-expanded={previewExpanded}>{t(previewExpanded ? '收起全文' : '展开全文')}</button></div>
+          {!entryTarget && !onUseCombination && range !== 'global' && <ToolbarSelect label="选择写入的目标角色" value={targetId} containerClassName="mb-3 w-full" disabled={applying} onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}>
+            {playgroundRoles.length > 0 && <option value="all-enabled">{t('所有启用角色')}</option>}<option value="new">{t('新建角色')}</option>{playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
+          </ToolbarSelect>}
+          <div className="content-roll-preview-text space-y-3" data-expanded={previewExpanded} data-content-roll-apply-preview="true">
+            {renderApplyPreview ? preview : !entryTarget && !confirming ? <>{(['global', 'character'] as const).filter(scope => range === 'all' || range === scope).map(scope => <div key={scope}><span className="text-xs text-gray-500">{t(scope === 'global' ? '全局提示词' : '角色提示词')}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm">{resultRows.filter(({ kind }) => scopeFor(kind) === scope).map(({ row }) => row?.text).filter(Boolean).join(', ') || t('空白')}</p><span className="text-xs text-gray-500">{t(scope === 'global' ? '全局负面提示词' : '角色负面提示词')}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm">{resultRows.filter(({ kind }) => scopeFor(kind) === scope).map(({ row }) => row?.negative).filter(Boolean).join(', ') || t('空白')}</p></div>)}</> : plan?.rows.filter(item => item.action === 'replace').map(item => <div key={item.itemId || item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-item={item.itemId || item.kind} data-content-roll-apply-scope={item.targetScope} data-content-roll-apply-action={item.action}>
+              <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span><p className="mt-1 break-words font-mono text-sm">{plan.target.mode === 'all-enabled' && item.targetScope === 'character' ? t('所有启用角色') : item.current || t('空白')} → {item.next || t('空白')}</p>{item.note && <span className="text-xs text-amber-600">{item.note}</span>}
+            </div>)}
+          </div>
+          {entryTarget && <p className="mt-3 text-xs text-gray-500">{missingTarget ? t('目标角色已不存在，请重新打开随机搭配') : t('保留原有画风与未参与内容')}</p>}
+          {!entryTarget && confirming && <div className="mt-3 flex gap-2"><ToolbarButton tone="primary" disabled={!canApply} onClick={() => void doApply()}>{t(applying ? '写入中…' : '确认填入')}</ToolbarButton><ToolbarButton disabled={applying} onClick={() => setConfirming(false)}>{t('取消')}</ToolbarButton></div>}
+        </section>
+        <section className="space-y-3">
         {current && onWriteRollToChain ? (
           <section className="appearance-group rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-chain="true">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -649,15 +656,30 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
             )}
           </section>
         ) : null}
-          {current && <details className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" open={showEvidence} onToggle={event => setShowEvidence(event.currentTarget.open)}>
-            <summary className="cursor-pointer text-xs font-semibold text-gray-500 dark:text-gray-400">{t('抽取记录')}</summary>
-            <p className="mt-3 break-all text-xs text-gray-400">{t('组合随机码 {0}', [current.seed])}</p>
-            <p className="mt-1 text-xs text-gray-400">{t('组合随机码只用于复现这一组，不是生图 seed。')}</p>
-            <ToolbarButton className="mt-3" onClick={() => void copyEvidence()}><Copy />{t('复制组合数据')}</ToolbarButton>
-            {showEvidence && <pre data-content-roll-evidence="true" className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-micro text-gray-500 dark:text-gray-400">{evidenceText}</pre>}
-          </details>}
-        </aside>
+        </section>
       </div>
     </div>
+    <footer className="content-roll-footer shrink-0 border-t border-gray-200 dark:border-gray-800">
+      <div className="flex items-center gap-2">
+        <ToolbarButton className="content-roll-undo" aria-label={t('撤销上次填入')} title={t('撤销上次填入')} disabled={!canUndo || applying || saving} onClick={() => void onUndoApply?.()} data-content-roll-undo="true"><RotateCcw /><span>{t('撤销上次填入')}</span></ToolbarButton>
+        <div className="ml-auto flex min-w-0 gap-2">
+          {onSaveRoll && <ToolbarButton disabled={saving || applying || !resultRows.length} onClick={event => { event.currentTarget.focus(); setSaveName(saveName || t('组合 {0}', [new Date().toLocaleString()])); setSaveOpen(true); }}>{t('保存组合')}</ToolbarButton>}
+          <ToolbarButton tone="primary" className="content-roll-apply-button" disabled={(!onApplyRoll && !onUseCombination) || !canApply} onClick={() => onUseCombination ? onUseCombination(activePicks) : entryTarget ? void doApply() : setConfirming(true)}>{t(applying ? '写入中…' : entryTarget ? entryTarget.mode === 'global' ? '填入全局' : '填入角色 {0}' : onUseCombination ? '送到实验室' : '使用', entryTarget?.mode === 'existing' ? [String((playgroundParams?.characters || []).findIndex(item => item.id === entryTarget.id) + 1)] : [])}<ArrowRight /></ToolbarButton>
+        </div>
+      </div>
+      <p role="status" className="content-roll-notice text-xs text-gray-500 dark:text-gray-400">{notice}</p>
+    </footer>
+    {active && editingRow && <LibraryDialog title={t('编辑{0}', [t(editingRow.meta.title)])} busy={applying || saving} onClose={() => setEditingKind(null)}>
+      {renderEditor(editingRow)}<div className="flex justify-end"><ToolbarButton onClick={() => setEditingKind(null)}>{t('完成')}</ToolbarButton></div>
+    </LibraryDialog>}
+    {active && saveOpen && <LibraryDialog title={t(editing ? '保存修改' : '保存组合')} busy={saving} onClose={() => setSaveOpen(false)}>
+            <div className="mt-3 space-y-2" data-content-roll-save="true">
+              <input autoFocus value={saveName} maxLength={80} disabled={saving} aria-label={t('给这条记录起名')}
+                onChange={event => setSaveName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSaveOpen(false); } }}
+                className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700 dark:text-gray-100" />
+              <label className="block text-sm">{t('自定义标签')}<CollectionTagInput inlineSuggestions aria-label={t('组合标签')} value={saveTags} suggestions={tagSuggestions} suggestionLabel={name => promptLibraryCategoryLabel(categoryTree, name)} onChange={event => setSaveTags(event.target.value)} onPick={setSaveTags} disabled={saving} placeholder={t('用逗号分隔')} className="h-10 w-full rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700" /></label>
+              <div className="flex gap-2"><ToolbarButton tone="save" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : editing ? '保存修改' : '保存')}</ToolbarButton>{editing && <ToolbarButton tone="save" disabled={saving} onClick={() => void doSave(true)}>{t('另存为新组合')}</ToolbarButton>}<ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
+            </div>
+    </LibraryDialog>}
   </div>;
 };

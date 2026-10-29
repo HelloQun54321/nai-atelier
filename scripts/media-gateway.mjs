@@ -1794,6 +1794,27 @@ const recoverPendingVibeEncodings = async workerPort => {
 };
 
 const generationTasks = new GenerationTasks();
+const safeGenerationQueueSnapshot = snapshot => ({
+  intervalSeconds: snapshot.intervalSeconds,
+  busy: snapshot.busy,
+  completed: snapshot.completed,
+  total: snapshot.total,
+  paused: snapshot.paused,
+  pausing: snapshot.pausing,
+  waiting: (snapshot.waiting || []).map((item, index) => ({ position: index + 1, total: item.total, completed: item.completed })),
+});
+export function runAgentGenerationQueue(action, keyHash, tasks, jobs) {
+  if (!keyHash) throw Object.assign(new Error('缺少 NovelAI API Key'), { status: 401, code: 'missing_key' });
+  if (!['read', 'pause', 'resume', 'cancel'].includes(action)) throw Object.assign(new Error('生成队列操作无效'), { status: 400, code: 'invalid_generation_queue' });
+  if (action === 'pause' || action === 'resume') return safeGenerationQueueSnapshot(tasks.pause(keyHash, action === 'pause'));
+  if (action === 'cancel') {
+    const token = tasks.currentToken(keyHash);
+    if (token && jobs?.has(keyHash, token)) jobs.cancel(keyHash, token);
+    const result = tasks.cancelAll(keyHash);
+    return { ...safeGenerationQueueSnapshot(result), cancelled: result.cancelled };
+  }
+  return safeGenerationQueueSnapshot(tasks.snapshot(keyHash));
+}
 export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = generationTasks, { preferences, saveInterval, jobs } = {}) => {
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const key = keyHashFromAuthorization(String(req.headers.authorization || ''));
@@ -3254,6 +3275,16 @@ const serveDistFile = async (req, res, url) => {
       return estimateNovelAiGenerationCost(priced, subscription.usage?.isNegative === true, subscription.active === true && subscription.tier >= 3);
     },
   });
+  const agentGenerationQueue = (keyHash, action) => runAgentGenerationQueue(action, keyHash, tasks, generationJobs);
+  const agentInspectImageTags = async (buffer, options = {}) => {
+    const status = await imageTagger.status();
+    if (!status.downloaded) throw new Error('反推模型尚未就绪；请先在设置中下载并选择模型');
+    return imageTagger.tag(buffer, {
+      ...(Number.isFinite(options.threshold) ? { threshold: options.threshold } : {}),
+      ...(Number.isFinite(options.characterThreshold) ? { characterThreshold: options.characterThreshold } : {}),
+      ...(typeof options.model === 'string' ? { model: options.model } : {}),
+    });
+  };
   const cache = new ThumbnailCache();
   // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
   const thumbnailPreWarmer = createThumbnailPreWarmer({
@@ -3720,6 +3751,16 @@ const serveDistFile = async (req, res, url) => {
           return sendJson(res, 201, await promptAgent.createSession(body));
         }
         if (url.pathname.startsWith('/api/prompt-agent/sessions/')) {
+          const versionRoute = url.pathname.match(/^\/api\/prompt-agent\/sessions\/([^/]+)\/prompt-versions(?:\/([^/]+))?$/);
+          if (versionRoute) {
+            const sessionId = decodeURIComponent(versionRoute[1]), versionId = versionRoute[2] ? decodeURIComponent(versionRoute[2]) : '';
+            if (req.method === 'GET') return sendJson(res, 200, versionId ? await promptAgent.readPromptVersion(sessionId, versionId, Object.fromEntries(url.searchParams)) : await promptAgent.listPromptVersions(sessionId, Object.fromEntries(url.searchParams)));
+            if (req.method === 'POST' && !versionId || req.method === 'PATCH' && versionId) {
+              const body = JSON.parse((await readRequestBody(req, 4 * 1024 * 1024)).toString('utf8') || '{}');
+              return sendJson(res, 200, versionId ? await promptAgent.finishPromptVersion(sessionId, versionId, body.afterDraft) : await promptAgent.savePromptVersion(sessionId, { ...body, source: 'page', scope: 'draft' }));
+            }
+            return sendJson(res, 405, { error: 'Method not allowed' });
+          }
           if (url.pathname.endsWith('/compact')) {
             if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
             const sessionId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/sessions/'.length, -'/compact'.length));
@@ -3741,7 +3782,7 @@ const serveDistFile = async (req, res, url) => {
           }
           const sessionId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/sessions/'.length));
           if (req.method === 'PATCH') {
-            const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+            const body = JSON.parse((await readRequestBody(req, 4 * 1024 * 1024)).toString('utf8') || '{}');
             return sendJson(res, 200, await promptAgent.updateSession(sessionId, body));
           }
           if (req.method === 'DELETE') {
@@ -3860,10 +3901,14 @@ const serveDistFile = async (req, res, url) => {
             const cloudQueueScope = await getCloudQueueScope(req);
             await promptAgent.run(body, emit, undefined, {
               keyHash: cloudQueueScope.keyHash,
+              generationQueue: action => agentGenerationQueue(cloudQueueScope.keyHash, action),
+              inspectImageTags: agentInspectImageTags,
               requestJson: (path, options) => requestWorkerJson(path, req, workerPort, options),
               getNaiRuntime,
               getQueuePreferences: () => ({ ...cloudQueueScope.preferences }),
               setQueuePreferences: setAgentQueuePreferences(cloudQueueScope),
+              getStyleCollectorState: () => styleCollector.state(),
+              controlStyleCollector: (action, id) => styleCollector.command(action, id),
               tagDictionary: method => requestTagDictionaryControl(method),
               requestBuffer: async (path, maxBytes, signal) => {
                 const result = await requestWorkerBuffer(path, req, workerPort, signal);

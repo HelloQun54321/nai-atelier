@@ -1,8 +1,33 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { formatModelOptionTitle, promptAgentService } from '../../services/promptAgent';
+import { formatModelOptionTitle, isAgentTaskRunning, promptAgentService } from '../../services/promptAgent';
 import * as i18n from '../../services/i18n';
+import type { PromptAgentDraft } from '../../types';
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('会话版本保存与完成只传提示词原稿及目标，不把图片Vibe和生成参数放入版本载荷', async () => {
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ id: 'v', versionId: 'v', fingerprint: 'hash' })); vi.stubGlobal('fetch', fetch);
+  const draft = { basePrompt: 'raw style', subjectPrompt: 'raw subject', negativePrompt: 'raw negative', modules: [], params: { width: 832, seed: 10, reference_image_multiple: ['private image bytes'], _promptSections: { scene: 'raw scene' } }, target: { chainId: 'target', mode: 'text-to-image', fingerprint: 'page' }, editContext: { baseImageAvailable: true } } as unknown as PromptAgentDraft;
+  await promptAgentService.savePromptVersion('chat/one', { draft, afterDraft: draft, source: 'page', reason: 'before_apply' });
+  await promptAgentService.finishPromptVersion('chat/one', 'v', draft);
+  await promptAgentService.updateSession('chat/one', { promptChange: { id: 'change', status: 'applied', beforeVersionId: 'v', rawAfter: draft, selectedAfter: draft } });
+  const bodies = fetch.mock.calls.map(call => JSON.parse(call[1]!.body as string));
+  expect(fetch.mock.calls[0][0]).toBe('/api/prompt-agent/sessions/chat%2Fone/prompt-versions');
+  expect(fetch.mock.calls[1][0]).toBe('/api/prompt-agent/sessions/chat%2Fone/prompt-versions/v');
+  for (const payload of [bodies[0].draft, bodies[0].afterDraft, bodies[1].afterDraft, bodies[2].promptChange.rawAfter, bodies[2].promptChange.selectedAfter]) {
+    expect(payload).toMatchObject({ basePrompt: 'raw style', subjectPrompt: 'raw subject', params: { _promptSections: { scene: 'raw scene' } }, target: draft.target });
+    expect(payload.editContext).toBeUndefined(); expect(payload.params.width).toBeUndefined(); expect(payload.params.reference_image_multiple).toBeUndefined();
+  }
+});
+
+it('问答等待仍属运行态，回答使用独立控制动作且不伪造批准', async () => {
+  expect(isAgentTaskRunning('waiting_user_input')).toBe(true);
+  expect(isAgentTaskRunning('aborted')).toBe(false);
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ ok: true })); vi.stubGlobal('fetch', fetch);
+  const answer = { runId: 'run', requestId: 'question', answers: [{ questionId: 'style', customText: '自己的选择' }] };
+  await promptAgentService.control('session', 'answer', undefined, answer);
+  expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ sessionId: 'session', action: 'answer', ...answer });
+});
 
 it('同名模型展示时标注服务来源', () => {
   const models = [

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
 import type { AgentPromptChange } from '../../services/agentPromptChanges.mjs';
+import type { AgentPromptApplied, AgentPromptBeforeApply } from '../../services/promptAgent';
 
 const PromptAgentPanel = React.lazy(() => import('../PromptAgentPanel').then(module => ({ default: module.PromptAgentPanel })));
 
@@ -43,8 +44,8 @@ interface PromptAgentOverlayControllerProps {
     draft: PromptAgentDraft;
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
-    onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: (before: PromptAgentDraft, after: PromptAgentDraft) => void) => void;
-    onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo') => void;
+    onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: AgentPromptApplied, beforeApply?: AgentPromptBeforeApply) => void | Promise<void>;
+    onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo', beforeApply?: AgentPromptBeforeApply) => void | Promise<void>;
     onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult>;
     onGenerationInterrupted?: () => void;
     tagAssistEnabled: boolean;

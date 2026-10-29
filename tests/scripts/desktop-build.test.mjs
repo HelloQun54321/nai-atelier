@@ -13,6 +13,9 @@ test('分发边界识别数据、缓存、词库、环境变量与测试资料�
   assert.deepEqual(builder.nsis.installerLanguages, ['zh_CN', 'zh_TW', 'en_US', 'ja_JP', 'ko_KR']);
   assert.ok(RUNTIME_FILES.includes('worker/naiBilling.mjs'), '安装版必须包含网关共用的计费模块');
   assert.ok(RUNTIME_FILES.includes('services/httpErrors.mjs'), '安装版必须包含生图错误解析共用模块');
+  assert.ok(RUNTIME_FILES.includes('scripts/agent-directories.mjs'), '安装版必须包含助手直接目录工具');
+  assert.ok(RUNTIME_FILES.includes('scripts/agent-creative-read.mjs'), '安装版必须包含助手创作资料读取工具');
+  assert.ok(RUNTIME_FILES.includes('services/directoryTree.mjs'), '安装版必须包含助手目录树依赖');
   for (const name of ['promptLibraryTree', 'promptExtraction']) assert.ok(RUNTIME_FILES.includes(`services/${name}.mjs`), '安装版必须包含助手的目录与提取共用模块');
   assert.ok(RUNTIME_FILES.includes('worker/cloudQueueTarget.mjs'), '安装版必须包含通用生图中转地址识别');
   assert.ok(RUNTIME_FILES.includes('worker/codexRemote.mjs'), '安装版必须包含法典远端读取模块');
@@ -55,7 +58,7 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
 });
 
 test('助手及提示词共用模块的相对依赖均进入安装包清单', async () => {
-  for (const file of ['scripts/prompt-agent.mjs', 'scripts/agent-prompt-library.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
+  for (const file of ['scripts/prompt-agent.mjs', 'scripts/agent-directories.mjs', 'scripts/agent-prompt-library.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
     const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');
     for (const match of source.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)) {
       if (!match[1].startsWith('.') || !match[1].endsWith('.mjs')) continue;

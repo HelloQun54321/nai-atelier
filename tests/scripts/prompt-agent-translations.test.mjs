@@ -226,3 +226,40 @@ test('词库不可用仍能补译长Tag，后续草稿修改清除已删除的�
     removeWorkspace(root);
   }
 });
+
+test('页面提交同步草稿后补齐完整提示词，纯浏览和未提交编辑不触发', async () => {
+  const root = createWorkspace('agent-translations-page-');
+  try {
+    const service = new PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+    await service.init();
+    let queries = 0;
+    service.searchTags = async () => { queries++; return []; };
+    const draft = { basePrompt: 'user original', negativePrompt: 'global negative', modules: [], target: { chainId: 'same', mode: 'text-to-image', fingerprint: 'before' }, params: { characters: [{ id: 'c', prompt: 'character original', negativePrompt: 'old negative' }] } };
+    const call = translationTools(service, draft, [], { requestUI: async operation => {
+      // 与协调器约定一致：页面提交先同步完整草稿，再交付页面回执。
+      if (operation.action === 'press' && operation.key === 'Enter') {
+        draft.basePrompt = 'user original, added tag';
+        draft.params.characters[0].negativePrompt = 'old negative, added negative';
+        draft.target.fingerprint = 'after-text-edit';
+      }
+      if (operation.action === 'click' && operation.controlId === 'other-work') { draft.target.chainId = 'other'; draft.basePrompt = 'other work tag'; }
+      if (operation.action === 'click' && operation.controlId === 'other-mode') { draft.target.mode = 'inpaint'; draft.basePrompt = 'other mode tag'; }
+      return { snapshotId: 'synthetic-page', view: 'playground', title: '实验室', capturedAt: 1, commands: [], controls: [], totalControls: 0, text: '', viewport: { width: 1200, height: 800 }, scroll: { top: 0, left: 0, height: 800, clientHeight: 800 } };
+    } });
+    for (const args of [{ action: 'double_click', controlId: 'tag' }, { action: 'fill', controlId: 'tag', value: 'added tag' }, { action: 'scroll', direction: 'down' }]) {
+      assert.equal(translationHint(await call('operate_current_page', { snapshotId: 'synthetic-page', ...args })), undefined);
+    }
+    assert.equal(queries, 0);
+    const receipt = await call('operate_current_page', { action: 'press', snapshotId: 'synthetic-page', controlId: 'tag', key: 'Enter' });
+    const hint = translationHint(receipt);
+    assert.deepEqual(hint.missingTags.sort(), ['user original', 'added tag', 'global negative', 'character original', 'old negative', 'added negative'].sort());
+    assert.equal(receipt.content.some(block => block.text?.includes('"staged":true')), false);
+    assert.equal(JSON.parse(receipt.content[0].text).snapshotId, 'synthetic-page');
+    const saved = translationHint(await call('save_tag_translations', { items: hint.missingTags.map(tag => ({ tag, chinese: `译文：${tag}` })) }));
+    assert.equal(saved.remaining, 0);
+    assert.equal(service.lookupTagTranslations(['added negative'])[0].chinese, '译文：added negative');
+    const queryCount = queries;
+    for (const controlId of ['other-work', 'other-mode']) assert.equal(translationHint(await call('operate_current_page', { action: 'click', snapshotId: 'synthetic-page', controlId })), undefined);
+    assert.equal(queries, queryCount, '切换作品或模式只同步现场，不把另一份正文当作本次编辑');
+  } finally { removeWorkspace(root); }
+});

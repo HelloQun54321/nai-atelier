@@ -17,6 +17,8 @@ import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { useAssetManagerLayer } from './useAssetManagerLayer';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
+import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
+import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
 
 interface VibeManagerProps {
   params: NAIParams;
@@ -37,7 +39,7 @@ const assertUnusedVibe = (params: NAIParams, asset: VibeAsset, encodingId?: stri
   const knownEncodings = new Set(asset.encodings.map(item => item.id));
   const check = (candidate: Partial<NAIParams> | undefined, source: string) => {
     if (Array.isArray(candidate?.vibes?.slots) && candidate.vibes.slots.some(slot => slot.vibeId === asset.id && (!encodingId || !knownEncodings.has(slot.encodingId) || slot.encodingId === encodingId))) {
-      throw new Error(t('{0}仍被{1}引用，请先移除对应参考后再永久删除', [encodingId ? t('这份 Vibe 编码') : t('这个 Vibe'), source]));
+      throw new Error(t('{0}仍被{1}引用，请先移除对应参考后再永久删除', [encodingId ? t('这份氛围参考编码') : t('这个氛围参考'), source]));
     }
   };
   check(params, t('当前实验室草稿'));
@@ -71,7 +73,7 @@ const assertUnusedVibe = (params: NAIParams, asset: VibeAsset, encodingId?: stri
         }
       }
     }
-  } catch { throw new Error(t('浏览器草稿无法读取，无法核对引用；已保留 Vibe，请先检查草稿后再删除')); }
+  } catch { throw new Error(t('浏览器草稿无法读取，无法核对引用；已保留氛围参考，请先检查草稿后再删除')); }
   references.forEach(reference => check(reference.params, reference.source));
 };
 
@@ -107,6 +109,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
   const latestDetailId = useRef(detail?.id);
   latestDetailId.current = detail?.id;
   const encodingLock = useRef(false);
+  const imageImportLock = useRef(false);
   const [archived, setArchived] = useState(false);
   const [pane, setPane] = useState<'library' | 'selection'>('library');
   const assets = allAssets.filter(asset => Boolean(asset.archived) === archived && asset.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
@@ -169,7 +172,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       if (!active || current?.embedded !== embedded) return;
       updateVibes({ ...current, embedded: undefined,
         slots: JSON.stringify(current.slots) === JSON.stringify(importedSlots) ? resolved.vibes!.slots : current.slots });
-    }).catch(error => { if (active) notify(error.message || 'Vibe 导入失败', 'error'); })
+    }).catch(error => { if (active) notify(error.message || '氛围参考导入失败', 'error'); })
       .finally(() => { if (active) setBusyId(''); });
     return () => { active = false; };
   }, [params.vibes?.embedded, metadataRetry]);
@@ -241,7 +244,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       return existing;
     }
     if (!asset.hasOriginal) {
-      notify('这个 Vibe 不含原图，无法追加新的提取量', 'error');
+      notify('这个氛围参考不含原图，无法追加新的提取量', 'error');
       return null;
     }
     if (!apiKey) {
@@ -249,13 +252,13 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       return null;
     }
     await refreshUsageIfStale();
-    if (session !== sessionRef.current || latestApiKey.current !== apiKey || encodingLock.current) return null;
+    if (session !== sessionRef.current || latestApiKey.current !== apiKey || encodingLock.current || !isTopmostModal(dialogRef.current)) return null;
     encodingLock.current = true;
     setBusyId(asset.id);
     try {
       const accepted = await confirmAction({
         rememberKey: 'vibe.encode', rememberScope: confirmationCostScope(apiKey, encodingCost, 1, anlasBudget.remaining, [model, fixed]),
-        title: '生成永久 Vibe',
+        title: '生成永久氛围参考',
         message: `模型：${modelLabel}\n信息提取量：${fixed.toFixed(2)}\n本次估算：${encodingCost} Anlas\n本地预算：${anlasBudget.remaining} → ${Math.max(0, anlasBudget.remaining - encodingCost)}\n\n编码永久复用。`,
         confirmLabel: `支付 ${encodingCost} Anlas 并生成`,
       });
@@ -264,10 +267,10 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       if (session !== sessionRef.current) return null;
       setAssets(items => items.map(item => item.id === asset.id ? result.item : item));
       setDetail(current => current?.id === asset.id ? result.item : current);
-      notify(result.duplicate ? '已有相同编码，未重复扣费' : '永久 Vibe 编码已保存');
+      notify(result.duplicate ? '已有相同编码，未重复扣费' : '永久氛围参考编码已保存');
       return result.item.encodings.find(item => item.model === model && item.informationKnown !== false && item.informationExtracted === fixed) || null;
     } catch (error: any) {
-      notify(error.message || 'Vibe 编码失败', 'error');
+      notify(error.message || '氛围参考编码失败', 'error');
       return null;
     } finally { encodingLock.current = false; setBusyId(''); }
   };
@@ -281,7 +284,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       return;
     }
     if (vibes.slots.length >= maxSlots) {
-      notify(`一次最多启用 ${maxSlots} 个 Vibe`, 'error');
+      notify(`一次最多启用 ${maxSlots} 个氛围参考`, 'error');
       return;
     }
     const usableEncodings = asset.encodings.filter(item => item.model === model);
@@ -289,7 +292,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     if (!encoding) encoding = await encode(asset, defaultInformation) || undefined;
     if (!encoding) return;
     if (session !== sessionRef.current || revision !== selectionRevision.current) {
-      notify('编码已保存，当前选择已变化，请重新选择该 Vibe');
+      notify('编码已保存，当前选择已变化，请重新选择该氛围参考');
       return;
     }
     const current = latestParams.current.vibes || emptyVibes();
@@ -309,20 +312,35 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     });
   };
 
-  const handleImage = async (file?: File) => {
-    if (!file) return;
+  const handleImage = async (source?: File | (() => Promise<File>)) => {
+    if (!source || imageImportLock.current || busyId || encodingLock.current || deleteLock.current || exportLock.current) return;
     const session = sessionRef.current;
-    setBusyId('upload');
+    const revision = selectionRevision.current;
+    const isCurrent = () => session === sessionRef.current && isTopmostModal(dialogRef.current);
+    imageImportLock.current = true;
+    setBusyId(typeof source === 'function' ? 'paste' : 'upload');
     try {
-      const name = file.name.replace(/\.[^.]+$/, '').slice(0, 100) || '未命名 Vibe';
+      const file = typeof source === 'function' ? await source() : source;
+      if (!isCurrent() || revision !== selectionRevision.current) return;
+      const name = file.name.replace(/\.[^.]+$/, '').slice(0, 100) || '未命名氛围参考';
       const result = await vibeService.create(file, name);
-      if (session !== sessionRef.current) return;
+      if (!isCurrent()) return;
       setAssets(items => [result.item, ...items.filter(item => item.id !== result.item.id)]);
+      if (revision !== selectionRevision.current) { notify('资料已导入，当前选择已变化，请从资料库取用'); return; }
       showDetail(result.item);
-      if (result.item.encodings.length) notify('已找到相同图片，直接打开现有 Vibe');
+      if (result.item.encodings.length) notify('已找到相同图片，直接打开现有氛围参考');
       else await encode(result.item, defaultInformation);
-    } catch (error: any) { notify(error.message || '上传失败', 'error'); }
-    finally { setBusyId(''); if (imageInputRef.current) imageInputRef.current.value = ''; }
+    } catch (error: any) { if (isCurrent()) notify(error.message || '图片导入失败', 'error'); }
+    finally { imageImportLock.current = false; setBusyId(''); if (imageInputRef.current) imageInputRef.current.value = ''; }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || isTextPasteTarget(event.target) || !isTopmostModal(dialogRef.current)) return;
+    const file = getPastedImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void handleImage(file);
   };
 
   const handleImport = async (file?: File) => {
@@ -373,7 +391,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       const group = await vibeService.createGroup(name, vibes.slots, vibes.normalizeStrengths);
       setGroups(items => [group.item || group, ...items]);
       setGroupName('');
-      notify('Vibe 组合已保存');
+      notify('氛围参考组合已保存');
     } catch (error: any) { notify(error.message || '组合保存失败', 'error'); }
   };
 
@@ -383,8 +401,8 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
     try {
       const receipt = await download();
       if (receipt.cancelled) return;
-      if (receipt.saved) notify(t('Vibe 文件已保存'), 'success');
-      else if (receipt.browserDownload) notify(t('已开始下载 Vibe 文件'));
+      if (receipt.saved) notify(t('氛围参考文件已保存'), 'success');
+      else if (receipt.browserDownload) notify(t('已开始下载氛围参考文件'));
       else throw new Error(t('导出文件未写入'));
     } catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) notify(error instanceof Error ? error.message : '导出失败', 'error'); }
     finally { exportLock.current = false; setExportingId(''); }
@@ -415,7 +433,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
         await vibeService.delete(asset.id);
         setAssets(items => items.filter(item => item.id !== asset.id));
         if (session === sessionRef.current && latestDetailId.current === asset.id) backToList();
-        notify(t('已永久删除 Vibe'));
+        notify(t('已永久删除氛围参考'));
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : t('删除失败'), 'error');
@@ -448,13 +466,13 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       await vibeService.updateGroup(next);
       setGroups(items => items.map(item => item.id === group.id ? next : item));
       setEditingGroupId('');
-      notify('Vibe 组合已更新');
+      notify('氛围参考组合已更新');
     } catch (error: any) { notify(error.message || '组合更新失败', 'error'); }
   };
 
   const archiveDetail = async () => {
     if (!detail) return;
-    const accepted = await confirmAction({ rememberKey: 'vibe.archive', title: '归档这个 Vibe？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。', confirmLabel: '归档', tone: 'danger' });
+    const accepted = await confirmAction({ rememberKey: 'vibe.archive', title: '归档这个氛围参考？', message: '它会从当前资料库隐藏，但编码和文件仍会保留，已有风格串与历史仍可复现。', confirmLabel: '归档', tone: 'danger' });
     if (!accepted) return;
     try { await vibeService.archive(detail.id); backToList(); await load(); notify('已归档'); }
     catch (error: any) { notify(error.message || '归档失败', 'error'); }
@@ -471,16 +489,15 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
 
   return (
     <>
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2"><span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Vibe Transfer</span>{vibes.enabled && vibes.slots.length > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{vibes.slots.length} / {maxSlots}</span>}</div>
-            {vibes.enabled && vibes.slots.length ? <><p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{vibes.slots.map(slot => slot.vibeName || '未知 Vibe').join(' · ')}</p><p className="mt-0.5 text-meta text-gray-500">{t("有效总强度 {0}{1}", [total.toFixed(2), vibes.sourceGroupName ? ` · ${vibes.sourceGroupName}` : ''])}</p></> : <p className="mt-1 text-xs text-gray-500">{t("未启用")}</p>}
-          </div>
-          {vibes.embedded && <button type="button" disabled={busyId === 'metadata'} onClick={() => setMetadataRetry(value => value + 1)} className="mobile-touch text-xs text-amber-600">{busyId === 'metadata' ? t('导入中…') : t('重试导入')}</button>}
-          <button type="button" onClick={() => setOpen(true)} className="appearance-group mobile-touch flex-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300">{t("管理")}</button>
-        </div>
-      </div>
+      <ReferenceSelectionPreview enabled={vibes.enabled} manageLabel={t('管理氛围参考')} onManage={() => setOpen(true)}
+        items={vibes.slots.map((slot, index) => {
+          const asset = allAssets.find(item => item.id === slot.vibeId);
+          return { id: `${slot.vibeId}:${index}`, name: slot.vibeName || asset?.name || t('未知氛围参考'),
+            imageUrl: asset?.thumbnailUrl || (asset?.hasOriginal === false ? undefined : `/api/vibes/${encodeURIComponent(slot.vibeId)}/thumbnail`) };
+        })}
+        summary={vibes.enabled && vibes.slots.length > 0 ? <span className="text-meta text-gray-500">{t('有效总强度 {0}{1}', [total.toFixed(2), vibes.sourceGroupName ? ` · ${vibes.sourceGroupName}` : ''])}</span> : undefined}
+        actions={vibes.embedded && <button type="button" disabled={busyId === 'metadata'} onClick={() => setMetadataRetry(value => value + 1)} className="mobile-touch text-xs text-amber-600">{busyId === 'metadata' ? t('导入中…') : t('重试导入')}</button>}
+      />
 
       {open && <ImagePreviewPortal><div
         className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-6"
@@ -488,9 +505,10 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
       >
         <div
           ref={dialogRef}
+          onPaste={handlePaste}
           role="dialog"
           aria-modal="true"
-          aria-label={detail ? detail.name : 'Vibe Transfer'}
+          aria-label={detail ? detail.name : t("氛围参考")}
           className="operation-dialog ui-modal-enter flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
           onClick={event => event.stopPropagation()}
         >
@@ -498,8 +516,8 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
             <div className="flex min-w-0 items-center gap-2">
               {detail && <BackButton onClick={backToList} className="mobile-touch" />}
               <div className="min-w-0">
-                <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("Vibe Transfer (氛围参考)")}</h2>
-                <p className="text-meta text-gray-500">{t("永久 Vibe 编码 · {0}", [modelLabel])}</p>
+                <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("氛围参考")}</h2>
+                <p className="text-meta text-gray-500">{t("永久氛围参考编码 · {0}", [modelLabel])}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -527,17 +545,18 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
                   <button type="button" disabled={Boolean(exportingId || deletingId)} onClick={() => void exportFile('asset:' + detail.id, () => vibeService.download(detail))} className="appearance-group mobile-touch rounded-xl border border-violet-300 bg-white text-sm font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300">{exportingId === 'asset:' + detail.id ? t("导出中…") : t("导出全部编码")}</button>
                   <button type="button" disabled={Boolean(deletingId)} onClick={() => archived ? void restoreDetail() : void archiveDetail()} className={`mobile-touch rounded-xl text-sm font-bold disabled:opacity-40 ${archived ? 'bg-emerald-700 text-white' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>{archived ? t("恢复") : t("归档")}</button>
                 </div>
-                {detail.archived && <button type="button" disabled={Boolean(deletingId || exportingId || busyId)} onClick={() => void deleteArchived(detail)} className="mobile-touch w-full rounded-xl border border-red-200 px-3 text-sm font-bold text-red-600 disabled:opacity-40 dark:border-red-900">{deletingId === detail.id ? t("删除中…") : t("永久删除 Vibe")}</button>}
+                {detail.archived && <button type="button" disabled={Boolean(deletingId || exportingId || busyId)} onClick={() => void deleteArchived(detail)} className="mobile-touch w-full rounded-xl border border-red-200 px-3 text-sm font-bold text-red-600 disabled:opacity-40 dark:border-red-900">{deletingId === detail.id ? t("删除中…") : t("永久删除氛围参考")}</button>}
               </div>
             </div>
           </main>}
           <div hidden={Boolean(detail)} data-pane={pane} className="manager-library">
             <div className="appearance-content operation-toolbar flex flex-none flex-wrap items-center gap-2 border-b border-gray-200 bg-gray-50/60 p-3 dark:border-gray-800 dark:bg-gray-950/60 md:px-5">
               <SegmentedControl value={archived ? 'archived' : 'active'} onChange={value => setArchived(value === 'archived')} options={[{ value: 'active', label: t("资料库") }, { value: 'archived', label: t("已归档") }]} size="sm" ariaLabel={t("资料库范围")} />
-              <div className="relative min-w-[180px] flex-1"><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索我的 Vibe…")} className="mobile-touch h-9 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-violet-500 dark:border-gray-800 dark:bg-gray-900" /></div>
-              <input aria-label={t("上传 Vibe 图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleImage(event.target.files?.[0])} />
-              <select aria-label={t("Vibe 导入方式")} value={importMode} onChange={event => setImportMode(event.target.value as 'append' | 'replace')} className="mobile-touch h-9 rounded-xl border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-800"><option value="append">{t("追加参考")}</option><option value="replace">{t("替换参考")}</option></select><input aria-label={t("导入 Vibe 编码文件")} ref={vibeInputRef} type="file" accept=".naiv4vibe,.naiv4vibeBundle,.png,application/json,image/png" className="hidden" onChange={event => void handleImport(event.target.files?.[0])} />
+              <div className="relative min-w-[180px] flex-1"><input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索我的氛围参考…")} className="mobile-touch h-9 w-full rounded-xl border border-gray-200 bg-white px-3 text-xs outline-none focus:border-violet-500 dark:border-gray-800 dark:bg-gray-900" /></div>
+              <input aria-label={t("上传氛围参考图片")} ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => void handleImage(event.target.files?.[0])} />
+              <select aria-label={t("氛围参考导入方式")} value={importMode} onChange={event => setImportMode(event.target.value as 'append' | 'replace')} className="mobile-touch h-9 rounded-xl border border-gray-200 bg-transparent px-2 text-xs dark:border-gray-800"><option value="append">{t("追加参考")}</option><option value="replace">{t("替换参考")}</option></select><input aria-label={t("导入氛围参考编码文件")} ref={vibeInputRef} type="file" accept=".naiv4vibe,.naiv4vibeBundle,.png,application/json,image/png" className="hidden" onChange={event => void handleImport(event.target.files?.[0])} />
               <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="mobile-touch h-9 rounded-xl bg-violet-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-violet-500 disabled:opacity-50">{busyId === 'upload' ? t("上传中…") : t("上传并编码")}</button>
+              <button type="button" disabled={Boolean(busyId || deletingId || exportingId)} onClick={() => void handleImage(() => readClipboardImage({ pasteHint: '在参考窗口按 Ctrl+V', imagePurpose: '氛围参考' }))} className="appearance-group mobile-touch h-9 rounded-xl border border-violet-300 bg-white px-3 text-xs font-bold text-violet-700 disabled:opacity-50 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300">{busyId === 'paste' ? t("粘贴中…") : t("粘贴图片")}</button>
               <button type="button" disabled={Boolean(busyId)} onClick={() => vibeInputRef.current?.click()} className="appearance-group mobile-touch h-9 rounded-xl border border-violet-300 bg-white px-3 text-xs font-bold text-violet-700 disabled:opacity-50 dark:border-violet-800 dark:bg-gray-900 dark:text-violet-300">{busyId === 'import' ? t("导入中…") : t("导入文件")}</button>
             </div>
             <div className="manager-mobile-tabs flex-none gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800"><SegmentedControl value={pane} onChange={value => setPane(value as 'library' | 'selection')} options={[{ value: 'library', label: t("资料库") }, { value: 'selection', label: t("当前选择 ({0})", [vibes.slots.length]) }]} size="sm" ariaLabel={t("查看区域")} /></div>
@@ -545,16 +564,16 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
               <section className="workspace-manager-list overflow-y-auto p-3 md:p-5">
 
                 {loadError && <p role="alert" className="mb-3 text-sm text-red-600">{t("资料库加载失败")} <button type="button" disabled={loading} onClick={() => void load()} className="mobile-touch rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button></p>}
-                {!loaded ? (loading ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : null) : loading && !allAssets.length ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : assets.length ? <div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = vibes.slots.some(slot => slot.vibeId === asset.id); const usableCount = asset.encodings.filter(item => item.model === model).length; return <article key={asset.id} className={`appearance-group group overflow-hidden rounded-2xl border bg-white shadow-sm transition dark:bg-gray-900 ${selected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-gray-800'}`}><button type="button" onClick={() => archived ? showDetail(asset) : void addAsset(asset)} className="block w-full text-left"><div className="appearance-media relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">{asset.thumbnailUrl ? <SmartImage src={asset.thumbnailUrl} alt={asset.name} className="appearance-media h-full w-full object-contain" /> : <div className="appearance-media flex h-full items-center justify-center p-4 text-center text-xs text-gray-500">{t("仅编码")}</div>}{selected && <span className="appearance-media absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-meta text-gray-500">{usableCount ? t("{0} 个当前模型编码", [usableCount]) : asset.hasOriginal ? t("待编码 · {0} Anlas", [encodingCost]) : t("暂不支持的模型")}</p></div></button><button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">{t("详情")}</button></article>; })}</div> : <div className="appearance-media flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="appearance-media font-bold">{archived ? t("没有已归档的 Vibe") : t("还没有永久 Vibe")}</p></div>}
+                {!loaded ? (loading ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : null) : loading && !allAssets.length ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : assets.length ? <div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = vibes.slots.some(slot => slot.vibeId === asset.id); const usableCount = asset.encodings.filter(item => item.model === model).length; return <article key={asset.id} className={`appearance-group group overflow-hidden rounded-2xl border bg-white shadow-sm transition dark:bg-gray-900 ${selected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-gray-800'}`}><button type="button" onClick={() => archived ? showDetail(asset) : void addAsset(asset)} className="block w-full text-left"><div className="appearance-media relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">{asset.thumbnailUrl ? <SmartImage src={asset.thumbnailUrl} alt={asset.name} className="appearance-media h-full w-full object-contain" /> : <div className="appearance-media flex h-full items-center justify-center p-4 text-center text-xs text-gray-500">{t("仅编码")}</div>}{selected && <span className="appearance-media absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-meta text-gray-500">{usableCount ? t("{0} 个当前模型编码", [usableCount]) : asset.hasOriginal ? t("待编码 · {0} Anlas", [encodingCost]) : t("暂不支持的模型")}</p></div></button><button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">{t("详情")}</button></article>; })}</div> : <div className="appearance-media flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="appearance-media font-bold">{archived ? t("没有已归档的氛围参考") : t("还没有永久氛围参考")}</p></div>}
               </section>
               <aside className="appearance-content workspace-manager-selection mobile-safe-bottom overflow-y-auto border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col">
                 <div>
                   <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900 dark:text-white">{t("当前组合")}</h3><span className="text-xs font-bold text-violet-600 dark:text-violet-400">{vibes.slots.length}/{maxSlots}</span></div>
-                  <div className="mt-3"><SegmentedControl value={selectionTab} onChange={value => setSelectionTab(value as 'current' | 'groups')} options={[{ value: 'current', label: t("当前参数") }, { value: 'groups', label: t("组合管理") }]} size="sm" ariaLabel={t("Vibe 选择管理")} /></div>
+                  <div className="mt-3"><SegmentedControl value={selectionTab} onChange={value => setSelectionTab(value as 'current' | 'groups')} options={[{ value: 'current', label: t("当前参数") }, { value: 'groups', label: t("组合管理") }]} size="sm" ariaLabel={t("氛围参考选择管理")} /></div>
                   <div hidden={selectionTab !== 'current'}>
                   {loaded && vibes.slots.some(slot => !allAssets.find(asset => asset.id === slot.vibeId)?.encodings.some(item => item.id === slot.encodingId && item.model === model)) && <p role="status" className="mt-3 text-xs text-amber-600">{t('当前组合有编码缺失或模型不匹配，不会自动付费补齐')}</p>}
                   <p className="mt-2 text-xs text-gray-500">{t('每张参考附加费：{0} Anlas', [Math.max(0, vibes.slots.length - runtime.billing.freeVibeCount) * runtime.billing.extraVibeCost || 0])}</p>
-                  <div className="mt-3 space-y-3">{vibes.slots.map((slot, index) => { const asset = allAssets.find(item => item.id === slot.vibeId); const usableEncodings = asset?.encodings.filter(item => item.model === model) || []; return <div key={`${slot.vibeId}-${index}`} data-agent-object={`Vibe ${index + 1}：${slot.vibeName || slot.vibeId}`} draggable onDragStart={() => setDragIndex(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragIndex !== null) moveSlot(dragIndex, index); setDragIndex(null); }} className={`rounded-xl border border-gray-200 p-3 dark:border-gray-800 ${dragIndex === index ? 'opacity-50' : ''}`}><div className="flex items-center gap-1"><span className="flex h-6 w-6 flex-none cursor-grab items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300" title={t("拖动排序")}>{index + 1}</span>{asset?.thumbnailUrl && <div className="h-8 w-7 flex-none"><SmartImage src={asset.thumbnailUrl} alt="" className="h-full w-full object-contain" /></div>}<p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.vibeName || asset?.name || (loaded ? t("资产缺失") : slot.vibeId)}</p><button type="button" disabled={index === 0} onClick={() => moveSlot(index, index - 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label={t("上移")}>↑</button><button type="button" disabled={index === vibes.slots.length - 1} onClick={() => moveSlot(index, index + 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label={t("下移")}>↓</button><button type="button" disabled={vibes.slots.length >= maxSlots} onClick={() => updateVibes({ ...vibes, slots: [...vibes.slots, { ...slot }], sourceGroupId: undefined, sourceGroupName: undefined })} className="mobile-touch h-9 w-9 text-gray-400 disabled:opacity-20" aria-label={t("添加副本")}>+</button><button type="button" onClick={() => removeSlot(index)} className="mobile-touch h-9 w-9 text-lg text-gray-400 hover:text-red-500" aria-label={t("移除")}>×</button></div><details className="mt-2"><summary className="cursor-pointer text-xs text-gray-500">{t("参数 · 强度 {0}", [slot.strength.toFixed(2)])}</summary><select disabled={!loaded} value={slot.encodingId} onChange={event => { const encoding = usableEncodings.find(item => item.id === event.target.value); if (encoding) updateSlot(index, { encodingId: encoding.id, informationExtracted: encoding.informationExtracted, informationKnown: encoding.informationKnown }); }} className="mt-2 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{!loaded && <option value={slot.encodingId}>{t(loading ? '加载中…' : '资料库加载失败')}</option>}{loaded && !usableEncodings.some(item => item.id === slot.encodingId) && <option value={slot.encodingId}>{t('当前模型缺少对应编码')}</option>}{loaded && (usableEncodings.length ? usableEncodings.map(encoding => <option key={encoding.id} value={encoding.id}>{t("提取量 {0}", [encoding.informationKnown === false ? t('未知') : encoding.informationExtracted.toFixed(2)])}</option>) : <option>{t("编码缺失或资产已归档")}</option>)}</select><div className="mt-2 flex items-center gap-2"><span className="text-meta text-gray-500">{t("强度")}</span><input type="range" min={Math.min(-1, slot.strength)} max={Math.max(1, slot.strength)} step="0.01" value={slot.strength} onChange={event => updateSlot(index, { strength: Number(event.target.value) })} className="min-w-0 flex-1 accent-violet-600" /><input type="number" step="0.01" value={slot.strength} onChange={event => updateSlot(index, { strength: vibeStrength(parseFloat(event.target.value), 0) })} className="w-16 rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>{vibes.normalizeStrengths && Math.abs(slot.strength - (normalized[index]?.effectiveStrength ?? slot.strength)) > 0.0001 && <p className="mt-1 text-right text-micro text-violet-600">{t("有效强度 {0}", [normalized[index].effectiveStrength?.toFixed(2)])}</p>}</details></div>; })}{!vibes.slots.length && <p className="appearance-group rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">{t("未选择 Vibe")}</p>}</div>
+                  <div className="mt-3 space-y-3">{vibes.slots.map((slot, index) => { const asset = allAssets.find(item => item.id === slot.vibeId); const usableEncodings = asset?.encodings.filter(item => item.model === model) || []; return <div key={`${slot.vibeId}-${index}`} data-agent-object={`氛围参考 ${index + 1}：${slot.vibeName || slot.vibeId}`} draggable onDragStart={() => setDragIndex(index)} onDragOver={event => event.preventDefault()} onDrop={() => { if (dragIndex !== null) moveSlot(dragIndex, index); setDragIndex(null); }} className={`rounded-xl border border-gray-200 p-3 dark:border-gray-800 ${dragIndex === index ? 'opacity-50' : ''}`}><div className="flex items-center gap-1"><span className="flex h-6 w-6 flex-none cursor-grab items-center justify-center rounded-full bg-violet-100 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-300" title={t("拖动排序")}>{index + 1}</span>{asset?.thumbnailUrl && <div className="h-8 w-7 flex-none"><SmartImage src={asset.thumbnailUrl} alt="" className="h-full w-full object-contain" /></div>}<p className="min-w-0 flex-1 truncate text-sm font-bold">{slot.vibeName || asset?.name || (loaded ? t("资产缺失") : slot.vibeId)}</p><button type="button" disabled={index === 0} onClick={() => moveSlot(index, index - 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label={t("上移")}>↑</button><button type="button" disabled={index === vibes.slots.length - 1} onClick={() => moveSlot(index, index + 1)} className="mobile-touch h-9 w-9 text-sm text-gray-400 disabled:opacity-20" aria-label={t("下移")}>↓</button><button type="button" disabled={vibes.slots.length >= maxSlots} onClick={() => updateVibes({ ...vibes, slots: [...vibes.slots, { ...slot }], sourceGroupId: undefined, sourceGroupName: undefined })} className="mobile-touch h-9 w-9 text-gray-400 disabled:opacity-20" aria-label={t("添加副本")}>+</button><button type="button" onClick={() => removeSlot(index)} className="mobile-touch h-9 w-9 text-lg text-gray-400 hover:text-red-500" aria-label={t("移除")}>×</button></div><details className="mt-2"><summary className="cursor-pointer text-xs text-gray-500">{t("参数 · 强度 {0}", [slot.strength.toFixed(2)])}</summary><select disabled={!loaded} value={slot.encodingId} onChange={event => { const encoding = usableEncodings.find(item => item.id === event.target.value); if (encoding) updateSlot(index, { encodingId: encoding.id, informationExtracted: encoding.informationExtracted, informationKnown: encoding.informationKnown }); }} className="mt-2 w-full rounded-lg border border-gray-200 bg-transparent px-2 py-2 text-xs dark:border-gray-800">{!loaded && <option value={slot.encodingId}>{t(loading ? '加载中…' : '资料库加载失败')}</option>}{loaded && !usableEncodings.some(item => item.id === slot.encodingId) && <option value={slot.encodingId}>{t('当前模型缺少对应编码')}</option>}{loaded && (usableEncodings.length ? usableEncodings.map(encoding => <option key={encoding.id} value={encoding.id}>{t("提取量 {0}", [encoding.informationKnown === false ? t('未知') : encoding.informationExtracted.toFixed(2)])}</option>) : <option>{t("编码缺失或资产已归档")}</option>)}</select><div className="mt-2 flex items-center gap-2"><span className="text-meta text-gray-500">{t("强度")}</span><input type="range" min={Math.min(-1, slot.strength)} max={Math.max(1, slot.strength)} step="0.01" value={slot.strength} onChange={event => updateSlot(index, { strength: Number(event.target.value) })} className="min-w-0 flex-1 accent-violet-600" /><input type="number" step="0.01" value={slot.strength} onChange={event => updateSlot(index, { strength: vibeStrength(parseFloat(event.target.value), 0) })} className="w-16 rounded-md border border-gray-200 bg-transparent px-1 py-1 text-right text-xs font-mono dark:border-gray-800" /></div>{vibes.normalizeStrengths && Math.abs(slot.strength - (normalized[index]?.effectiveStrength ?? slot.strength)) > 0.0001 && <p className="mt-1 text-right text-micro text-violet-600">{t("有效强度 {0}", [normalized[index].effectiveStrength?.toFixed(2)])}</p>}</details></div>; })}{!vibes.slots.length && <p className="appearance-group rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-950">{t("未选择氛围参考")}</p>}</div>
                   <label className="appearance-group mt-4 flex min-h-11 items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 text-sm dark:bg-gray-950"><span><b>{t("超限自动归一化")}</b><small className="block text-micro text-gray-500">{t("强度绝对值之和超过 1 时按比例缩放")}</small></span><input type="checkbox" checked={vibes.normalizeStrengths} onChange={event => updateVibes({ ...vibes, normalizeStrengths: event.target.checked })} className="h-5 w-5 accent-violet-600" /></label>
                   </div>
                   <div hidden={selectionTab !== 'groups'}>
@@ -562,7 +581,7 @@ export const VibeManager: React.FC<VibeManagerProps> = ({ params, setParams, mar
                   {groupsLoading && !groupsLoaded && <PageSpinner label={t("加载中…")} className="py-5" />}
                   {groupsLoaded && !groups.length && !groupsLoading && !groupsError && <p className="mt-3 text-xs text-gray-500">{t("还没有保存的组合")}</p>}
                   <div className="mt-4 flex gap-2"><input value={groupName} onChange={event => setGroupName(event.target.value)} placeholder={t("组合名称")} className="h-9 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-800" /><button type="button" disabled={!groupName.trim() || !vibes.slots.length} onClick={() => void saveGroup()} className="appearance-contrast mobile-touch rounded-xl bg-gray-900 px-3 text-xs font-bold text-white disabled:opacity-40 dark:bg-gray-100 dark:text-gray-900">{t("保存")}</button></div>
-                  <button type="button" disabled={!vibes.slots.length || Boolean(exportingId || deletingId)} onClick={() => void exportFile("current", () => vibeService.downloadGroup(groupName, vibes.slots, vibes.normalizeStrengths))} className="mobile-touch mt-2 w-full rounded-xl border border-violet-300 px-3 text-xs font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300">{exportingId === "current" ? t("导出中…") : t("导出当前组合")}</button>{groups.length > 0 && <div className="mt-5"><h4 className="mb-2 text-xs font-bold text-gray-500">{t("已保存组合")}</h4><div className="space-y-2">{groups.map(group => <div key={group.id} className="rounded-xl border border-gray-200 p-2 dark:border-gray-800">{editingGroupId === group.id ? <div className="flex gap-2"><input autoFocus value={editingGroupName} onChange={event => setEditingGroupName(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-800" /><button type="button" disabled={!editingGroupName.trim()} onClick={() => void updateGroup(group, { name: editingGroupName.trim() })} className="mobile-touch rounded-lg bg-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t("保存")}</button><button type="button" onClick={() => setEditingGroupId('')} className="mobile-touch h-11 w-11 text-gray-500">×</button></div> : <div className="flex items-center gap-1"><button type="button" onClick={() => loadGroup(group)} className="mobile-touch min-w-0 flex-1 text-left"><b className="block truncate text-sm">{group.name}</b><span className="text-micro text-gray-500">{t("{0} 个 Vibe", [group.slots.length])}</span></button><button type="button" onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500" aria-label={t("重命名 {0}", [group.name])}>✎</button><button type="button" disabled={Boolean(exportingId || deletingId)} onClick={() => void exportFile("group:" + group.id, () => vibeService.downloadGroup(group.name, group.slots, group.normalizeStrengths))} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-40" aria-label={exportingId === "group:" + group.id ? t("导出中…") : t("导出 {0}", [group.name])}>{exportingId === "group:" + group.id ? "…" : "↓"}</button><button type="button" disabled={!vibes.slots.length} onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.overwrite', title: `覆盖“${group.name}”？`, message: `将用当前 ${vibes.slots.length} 个 Vibe 和强度设置替换这个组合。`, confirmLabel: '覆盖组合' })) return; await updateGroup(group, { slots: vibes.slots.map(slot => ({ ...slot })), normalizeStrengths: vibes.normalizeStrengths }); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-20" aria-label={t("覆盖 {0}", [group.name])}>↻</button><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.delete', title: '删除这个组合？', message: '只删除组合配置，不会删除任何 Vibe 资产或编码。', confirmLabel: '删除', tone: 'danger' })) return; await vibeService.deleteGroup(group.id); setGroups(items => items.filter(item => item.id !== group.id)); }} className="mobile-touch h-10 w-10 text-gray-400 hover:text-red-500" aria-label={t("删除 {0}", [group.name])}>×</button></div>}</div>)}</div></div>}
+                  <button type="button" disabled={!vibes.slots.length || Boolean(exportingId || deletingId)} onClick={() => void exportFile("current", () => vibeService.downloadGroup(groupName, vibes.slots, vibes.normalizeStrengths))} className="mobile-touch mt-2 w-full rounded-xl border border-violet-300 px-3 text-xs font-bold text-violet-700 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300">{exportingId === "current" ? t("导出中…") : t("导出当前组合")}</button>{groups.length > 0 && <div className="mt-5"><h4 className="mb-2 text-xs font-bold text-gray-500">{t("已保存组合")}</h4><div className="space-y-2">{groups.map(group => <div key={group.id} className="rounded-xl border border-gray-200 p-2 dark:border-gray-800">{editingGroupId === group.id ? <div className="flex gap-2"><input autoFocus value={editingGroupName} onChange={event => setEditingGroupName(event.target.value)} className="mobile-touch min-w-0 flex-1 rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-800" /><button type="button" disabled={!editingGroupName.trim()} onClick={() => void updateGroup(group, { name: editingGroupName.trim() })} className="mobile-touch rounded-lg bg-violet-600 px-3 text-xs font-bold text-white disabled:opacity-40">{t("保存")}</button><button type="button" onClick={() => setEditingGroupId('')} className="mobile-touch h-11 w-11 text-gray-500">×</button></div> : <div className="flex items-center gap-1"><button type="button" onClick={() => loadGroup(group)} className="mobile-touch min-w-0 flex-1 text-left"><b className="block truncate text-sm">{group.name}</b><span className="text-micro text-gray-500">{t("{0} 个氛围参考", [group.slots.length])}</span></button><button type="button" onClick={() => { setEditingGroupId(group.id); setEditingGroupName(group.name); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500" aria-label={t("重命名 {0}", [group.name])}>✎</button><button type="button" disabled={Boolean(exportingId || deletingId)} onClick={() => void exportFile("group:" + group.id, () => vibeService.downloadGroup(group.name, group.slots, group.normalizeStrengths))} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-40" aria-label={exportingId === "group:" + group.id ? t("导出中…") : t("导出 {0}", [group.name])}>{exportingId === "group:" + group.id ? "…" : "↓"}</button><button type="button" disabled={!vibes.slots.length} onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.overwrite', title: `覆盖“${group.name}”？`, message: `将用当前 ${vibes.slots.length} 个氛围参考和强度设置替换这个组合。`, confirmLabel: '覆盖组合' })) return; await updateGroup(group, { slots: vibes.slots.map(slot => ({ ...slot })), normalizeStrengths: vibes.normalizeStrengths }); }} className="mobile-touch h-10 w-10 text-xs text-gray-400 hover:text-violet-500 disabled:opacity-20" aria-label={t("覆盖 {0}", [group.name])}>↻</button><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'vibe-group.delete', title: '删除这个组合？', message: '只删除组合配置，不会删除任何氛围参考资产或编码。', confirmLabel: '删除', tone: 'danger' })) return; await vibeService.deleteGroup(group.id); setGroups(items => items.filter(item => item.id !== group.id)); }} className="mobile-touch h-10 w-10 text-gray-400 hover:text-red-500" aria-label={t("删除 {0}", [group.name])}>×</button></div>}</div>)}</div></div>}
                   </div>
                 </div>
 

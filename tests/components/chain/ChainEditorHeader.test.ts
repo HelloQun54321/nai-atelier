@@ -88,41 +88,33 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 };
 
 describe('ChainEditorHeader 工具栏', () => {
-  it('右上角图标切换编辑方式，保持无文字并同步外部偏好，随机槽位紧邻', () => {
-    const change = vi.fn(), slot = vi.fn();
-    const view = renderHeader({ onPromptClassificationEnabledChange: change, onPromptToolbarSlotChange: slot });
+  it('桌面不再提供分类或整段切换，原提示词工具槽位及其他动作保留', () => {
+    const slot = vi.fn();
+    const view = renderHeader({ onPromptToolbarSlotChange: slot });
     expect(view.queryByRole('tablist', { name: '提示词编辑方式' })).toBeNull();
-    const toggle = view.getByRole('button', { name: '切换为分类编辑' });
-    expect(toggle.textContent).toBe('');
-    expect(toggle.querySelector('.lucide-text-align-start')).not.toBeNull();
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(toggle.closest('.chain-editor-actions')).not.toBeNull();
-    expect(slot.mock.lastCall?.[0]?.element).toBe(toggle.nextElementSibling);
-    fireEvent.click(toggle); expect(change).toHaveBeenLastCalledWith(true);
-    view.rerenderHeader({ promptClassificationEnabled: true });
-    const classified = view.getByRole('button', { name: '切换为整段编辑' });
-    expect(classified.querySelector('.lucide-list-tree')).not.toBeNull();
-    expect(classified.textContent).toBe('');
-    expect(classified.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(classified); expect(change).toHaveBeenLastCalledWith(false);
+    expect(view.queryByRole('button', { name: /切换为.*编辑/ })).toBeNull();
+    expect(view.container.querySelector('.lucide-list-tree, .lucide-text-align-start')).toBeNull();
+    expect(slot.mock.lastCall?.[0]?.variant).toBe('icon');
+    expect(slot.mock.lastCall?.[0]?.element.closest('.chain-editor-actions')).toBeTruthy();
+    expect(view.getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
+    expect(view.getByRole('button', { name: '翻译所有未翻译提示词' })).toBeTruthy();
   });
-  it('窄屏编辑方式沿用独占一行的文字操作，随机槽位也使用菜单行，关闭后释放槽位', () => {
+
+  it('窄屏没有编辑方式切换，更多菜单仍提供提示词工具槽位且关闭释放', () => {
     workWidth = 390; vi.stubGlobal('innerWidth', 390);
-    const slot = vi.fn(), change = vi.fn();
-    renderHeader({ promptClassificationEnabled: true, onPromptClassificationEnabledChange: change, onPromptToolbarSlotChange: slot });
-    expect(screen.queryByRole('button', { name: '切换为整段编辑' })).toBeNull();
+    const slot = vi.fn();
+    renderHeader({ onPromptToolbarSlotChange: slot });
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const dialog = screen.getByRole('dialog', { name: '更多操作' });
-    const toggle = within(dialog).getByRole('button', { name: /^切换为整段编辑/ });
-    expect(toggle.textContent).toContain('切换为整段编辑');
-    expect(toggle.classList.contains('w-full')).toBe(true);
+    expect(within(dialog).queryByRole('button', { name: /切换为.*编辑/ })).toBeNull();
     expect(slot.mock.lastCall?.[0]?.variant).toBe('menu');
-    expect(slot.mock.lastCall?.[0]?.element).toBe(toggle.nextElementSibling);
-    fireEvent.click(toggle); expect(change).toHaveBeenLastCalledWith(false);
+    expect(dialog.contains(slot.mock.lastCall?.[0]?.element)).toBe(true);
+    expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
     expect(screen.queryByRole('dialog', { name: '更多操作' })).toBeNull();
     expect(slot.mock.lastCall?.[0]).toBeNull();
   });
+
   it('桌面宽栏直接显示动作，手机收纳且模式导航与更多保持同一行', () => {
     const { container, getByRole } = renderHeader();
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
@@ -192,21 +184,22 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(onTranslateMissingPrompts).toHaveBeenCalledTimes(2);
   });
 
-  it.each([390, 1280])('保存菜单区分修改原串与另存新串，宽度=%s', width => {
+  it.each([[390, false], [1280, false], [390, true], [1280, true]] as const)('保存菜单沿用资料类型，宽度=%s，角色=%s', (width, isCharacterMode) => {
     workWidth = width;
     vi.stubGlobal('innerWidth', width);
     const handleSaveAll = vi.fn(); const handleFork = vi.fn();
-    renderHeader({ chainId: 'asset-1', hasChanges: true, handleSaveAll, handleFork });
-    const save = screen.getByRole('button', { name: '保存风格串' });
+    renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, handleSaveAll, handleFork });
+    const saveLabel = isCharacterMode ? '保存自定义角色' : '保存风格串';
+    const save = screen.getByRole('button', { name: saveLabel });
     fireEvent.click(save);
-    let dialog = screen.getByRole('dialog', { name: '保存风格串' });
+    let dialog = screen.getByRole('dialog', { name: saveLabel });
     fireEvent.click(within(dialog).getByRole('button', { name: '保存修改' }));
     expect(handleSaveAll).toHaveBeenCalledOnce();
     expect(handleFork).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(save);
-    dialog = screen.getByRole('dialog', { name: '保存风格串' });
-    fireEvent.click(within(dialog).getByRole('button', { name: '另存为新串' }));
+    dialog = screen.getByRole('dialog', { name: saveLabel });
+    fireEvent.click(within(dialog).getByRole('button', { name: isCharacterMode ? '另存为新角色' : '另存为新串' }));
     expect(handleFork).toHaveBeenCalledOnce();
     expect(handleSaveAll).toHaveBeenCalledOnce();
   });

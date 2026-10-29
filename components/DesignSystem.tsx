@@ -7,9 +7,9 @@ import { ArrowLeft, ChevronDown, Inbox, LoaderCircle, Search, X } from 'lucide-r
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 
 /** 弹层/面板右上角的关闭钮：复用 IconButton 的中性色阶与圆角。 */
-export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string; size?: 'sm' | 'md' }> = ({ onClick, label = '关闭', className = '', size = 'md' }) => (
+export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string; size?: 'sm' | 'md'; 'data-agent-action'?: 'browse' }> = ({ onClick, label = '关闭', className = '', size = 'md', 'data-agent-action': agentAction }) => (
   <button
-    data-appearance="control" data-control-kind="icon" data-tone="neutral"
+    data-agent-action={agentAction} data-appearance="control" data-control-kind="icon" data-tone="neutral"
     type="button"
     aria-label={t(label)}
     title={t(label)}
@@ -23,9 +23,9 @@ export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; lab
 );
 
 /** 返回钮：常用于移动端覆盖层标题行左侧。 */
-export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string }> = ({ onClick, label = '返回', className = '' }) => (
+export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string; 'data-agent-action'?: 'browse' }> = ({ onClick, label = '返回', className = '', 'data-agent-action': agentAction }) => (
   <button
-    data-appearance="control" data-control-kind="icon" data-tone="neutral"
+    data-agent-action={agentAction} data-appearance="control" data-control-kind="icon" data-tone="neutral"
     type="button"
     aria-label={t(label)}
     title={t(label)}

@@ -21,11 +21,12 @@ const visibleFields = (changes: AgentPromptFieldChange[]) => changes.flatMap(cha
   const before = change.before as Record<string, unknown> | undefined, after = change.after as Record<string, unknown> | undefined;
   const output: AgentPromptFieldChange[] = [];
   const visit = (a: unknown, b: unknown, path: string[]) => {
-    if (a === b) return;
+    if (a === b || path.includes('sectionMeta')) return;
     if (typeof a === 'string' || typeof b === 'string') output.push({ ...change, path, before: a, after: b });
     else if (a && typeof a === 'object' || b && typeof b === 'object') for (const key of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) visit((a as Record<string, unknown>)?.[key], (b as Record<string, unknown>)?.[key], [...path, key]);
   };
-  for (const key of ['prompt', 'negativePrompt', 'sections', 'sectionNegatives', 'content']) visit(before?.[key], after?.[key], [...change.path, key]);
+  if (change.path[0] === 'params' && (['_promptSections', '_characterSectionsNegatives'].includes(change.path[1]) || ['sections', 'sectionNegatives'].includes(change.path.at(-1)!))) visit(before, after, change.path);
+  else for (const key of ['prompt', 'negativePrompt', 'sections', 'sectionNegatives', 'content']) visit(before?.[key], after?.[key], [...change.path, key]);
   return output;
 });
 

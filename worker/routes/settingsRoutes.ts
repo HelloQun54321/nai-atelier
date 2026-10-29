@@ -867,9 +867,12 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = chainIdMatch[1];
     const updates = await request.json() as any;
-    const chain = await db.prepare('SELECT user_id, preview_image, name, type, params FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string, params: string}>();
+    const conditional = Object.prototype.hasOwnProperty.call(updates, 'expectedUpdatedAt');
+    if (conditional && updates.expectedUpdatedAt !== null && (!Number.isSafeInteger(updates.expectedUpdatedAt) || updates.expectedUpdatedAt < 0)) return error('expectedUpdatedAt 必须为非负安全整数或 null', 400);
+    const chain = await db.prepare('SELECT user_id, preview_image, name, type, params, updated_at FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string, params: string, updated_at: number | null}>();
     if (!chain) return error('Not Found', 404);
     if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
+    if (conditional && chain.updated_at !== updates.expectedUpdatedAt) return error('条目已更新，请重新读取后核对修改', 409);
     
     try {
       if (updates.params !== undefined) {
@@ -902,7 +905,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
          } catch (e: any) { return error(e.message, 422); }
     }
 
-    const fields = []; const values = [];
+    const fields: string[] = []; const values: (string | number | null)[] = [];
     if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
     if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
     if (updates.previewImage !== undefined) { fields.push('preview_image = ?'); values.push(updates.previewImage); }
@@ -913,20 +916,28 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (updates.variableValues !== undefined) { fields.push('variable_values = ?'); values.push(JSON.stringify(updates.variableValues)); }
     if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(normalizeChainTags(updates.tags))); }
     if (updates.guestHidden !== undefined) { fields.push('guest_hidden = ?'); values.push(updates.guestHidden ? 1 : 0); }
+    let savedUpdatedAt = chain.updated_at;
     if (fields.length > 0) {
       fields.push('updated_at = MAX(COALESCE(updated_at, 0) + 1, ?)');
-      values.push(Date.now());
+      const writeTime = Date.now();
+      values.push(writeTime);
       values.push(id);
+      if (conditional) values.push(updates.expectedUpdatedAt);
+      const save = () => db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?${conditional ? ' AND updated_at IS ?' : ''}`).bind(...values).run();
+      let result;
       try {
-        await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+        result = await save();
       } catch (e: any) {
         if (isMissingColumnError(e)) {
           await initDB();
-          await db.prepare(`UPDATE chains SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+          result = await save();
         } else {
           throw e;
         }
       }
+      if (conditional && Number(result.meta.changes) !== 1) return error('条目已更新，请重新读取后核对修改', 409);
+      savedUpdatedAt = conditional ? Math.max(Number(chain.updated_at || 0) + 1, writeTime)
+        : (await db.prepare('SELECT updated_at FROM chains WHERE id = ?').bind(id).first<{ updated_at: number }>())?.updated_at ?? null;
     }
     try { await syncArtistChainUsage(db, id, await loadArtistUsageDictionary(env)); }
     catch (cause) { console.error('画师收录统计更新失败，条目已保存', cause); }
@@ -949,7 +960,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
       }
       catch (cause) { console.error('提示词库归属重算失败，条目已保存', cause); }
     }
-    return json({ success: true });
+    return json({ success: true, updatedAt: savedUpdatedAt });
   }
   if (chainIdMatch && method === 'DELETE') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);

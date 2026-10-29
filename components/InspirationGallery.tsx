@@ -62,6 +62,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [boardsLoading, setBoardsLoading] = useState(true);
   const [boardsError, setBoardsError] = useState('');
+  const boardsLoadSequence = useRef(0);
   const [tagsLoading, setTagsLoading] = useState(true);
   const [tagsError, setTagsError] = useState('');
   const navigationId = useId();
@@ -116,12 +117,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     });
   }, [editableIds]);
 
-  const loadBoards = async () => {
+  const loadBoards = useCallback(async () => {
+    const sequence = ++boardsLoadSequence.current;
     setBoardsLoading(true); setBoardsError('');
-    try { setBoards(await db.getInspirationBoards()); }
-    catch (error: any) { setBoardsError(error.message || '收藏夹加载失败'); notify(error.message || '收藏夹加载失败', 'error'); }
-    finally { setBoardsLoading(false); }
-  };
+    try { const next = await db.getInspirationBoards(); if (sequence === boardsLoadSequence.current) setBoards(next); }
+    catch (error: any) { if (sequence === boardsLoadSequence.current) { setBoardsError(error.message || '收藏夹加载失败'); notify(error.message || '收藏夹加载失败', 'error'); } }
+    finally { if (sequence === boardsLoadSequence.current) setBoardsLoading(false); }
+  }, [notify]);
   const loadTagNames = async () => {
     setTagsLoading(true); setTagsError('');
     try { setTagNames(await db.getCollectionTagNames()); }
@@ -130,6 +132,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
   const saveTagNames = async (tags: string[]) => { setTagNames(await db.saveCollectionTagNames(tags)); };
   useEffect(() => { void loadBoards(); void loadTagNames(); }, []);
+  useEffect(() => {
+    const changed = (event: Event) => {
+      if ((event as CustomEvent<{ resource?: string }>).detail?.resource === 'inspiration_boards') void loadBoards();
+    };
+    window.addEventListener('nai-project-data-changed', changed);
+    return () => { window.removeEventListener('nai-project-data-changed', changed); };
+  }, [loadBoards]);
 
   const counts = useMemo(() => ({
     all: items.filter(item => !item.archived).length,
@@ -462,7 +471,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   return <div {...fileDropProps} data-collection-file-dropzone="true" className="workspace-canvas relative flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
     <WorkspaceChrome>
 <WorkspaceToolbar>
-      <ToolbarButton aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
+      <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起收藏分类' : '展开收藏分类')} aria-expanded={navigationExpanded} aria-controls={navigationId}
         title={[t(navigationExpanded ? '收起收藏分类' : '展开收藏分类'), boardId ? boards.find(board => board.id === boardId)?.name || t('收藏夹') : sourceFilter ? t(sourceLabel(sourceFilter)) : t(collection === 'unorganized' ? '未整理' : '全部')].join(' · ')}
         active={navigationExpanded || collection !== 'all' || Boolean(boardId) || Boolean(sourceFilter)} onClick={toggleNavigation} className="hidden md:inline-flex"><Folder /></ToolbarButton>
       {selectionMode ? <>

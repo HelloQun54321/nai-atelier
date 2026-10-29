@@ -19,6 +19,14 @@ declare module 'mobile:gateway' {
     update(keyHash: string, taskId: string, patch: Partial<CloudQueueTaskRecord>): CloudQueueTaskRecord;
     get(keyHash: string, taskId: string): CloudQueueTaskRecord | null;
   }
+  export type AgentGenerationQueueSnapshot = Omit<import('../worker/generationTasks.mjs').GenerationQueueSnapshot, 'waiting'> & {
+    waiting: Array<{ position: number; total: number; completed: number }>;
+  };
+  export interface AgentGenerationJobs {
+    has(keyHash: string, token: string): boolean;
+    cancel(keyHash: string, token: string): unknown;
+  }
+  export function runAgentGenerationQueue(action: 'read' | 'pause' | 'resume' | 'cancel', keyHash: string, tasks: Pick<import('../worker/generationTasks.mjs').GenerationTasks, 'pause' | 'currentToken' | 'cancelAll' | 'snapshot'>, jobs?: AgentGenerationJobs): AgentGenerationQueueSnapshot & { cancelled?: number };
   export const getNaiRuntime: any, applyNaiRuntimeOverride: any, computeNaiRuntimeSync: any, fetchNaiRuntimeText: any,
     sanitizeNovelAiSubscription: any, cacheNovelAiSubscription: any,
     normalizeCloudQueuePreferences: any, keyHashFromAuthorization: any, handleGenerateRequest: any,

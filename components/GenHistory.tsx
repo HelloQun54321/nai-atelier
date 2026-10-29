@@ -140,6 +140,7 @@ const HistoryCard = React.memo(function HistoryCard({
     return (
         <PressRevealSurface pressDisabled={selectionMode}
             data-history-id={item.id}
+            data-agent-action={selectionMode ? undefined : 'browse'}
             role="button"
             tabIndex={0}
             aria-label={t("查看生成于 {0} 的图片", [createdAt])}

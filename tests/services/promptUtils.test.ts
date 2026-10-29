@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compilePrompt, getEditableGlobalPrompt, mergePromptFields, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from '../../services/promptUtils';
+import { getEditableGlobalNegative, getGlobalPromptSectionKeys, compilePrompt, getEditableGlobalPrompt, mergePromptFields, NAI_QUALITY_TAGS, NAI_UC_PRESETS } from '../../services/promptUtils';
 
 const mod = (content: string, position: 'pre' | 'post', isActive = true) =>
   ({ content, position, isActive, id: content, name: content } as any);
@@ -75,4 +75,15 @@ describe('NAI 常量', () => {
       expect(preset.endsWith(', ')).toBe(true);
     }
   });
+});
+
+it('呈现形式在既有分类后编译，整段正负合并保留原画风与权重', async () => {
+  const { mergePromptSections } = await import('../../services/labWorkspace');
+  const sections = { scene: 'garden', extra: 'keep extra', 'purpose:camera': 'close up', presentation: '{comic panel, split screen}', sectionNegatives: { presentation: 'single panel' } };
+  expect(getGlobalPromptSectionKeys(sections).at(-1)).toBe('presentation');
+  const subject = mergePromptSections(sections);
+  expect(subject).toBe('garden, keep extra, close up, {comic panel, split screen}');
+  expect(getEditableGlobalPrompt('1.2::artist:name::', subject)).toBe('1.2::artist:name::, ' + subject);
+  expect(getEditableGlobalNegative('bad anatomy', sections)).toBe('bad anatomy, single panel');
+  expect(compilePrompt({ basePrompt: 'style', modules: [] }, subject)).toContain('{comic panel, split screen}');
 });

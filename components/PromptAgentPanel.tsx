@@ -8,14 +8,15 @@ import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
-import { applyAgentPromptChange, createAgentPromptChange, type AgentPromptChange } from '../services/agentPromptChanges.mjs';
+import { applyAgentPromptChange, createAppliedAgentPromptChange, type AgentPromptChange } from '../services/agentPromptChanges.mjs';
 import { AgentPromptChangeCard } from './AgentPromptDiff';
+import { AgentQuestionHistory, AgentUserQuestionCard, type AgentQuestionDraft } from './AgentUserQuestionCard';
 import { AgentChatDisplayOptions, AgentDisclosure, AgentLiveOutput, useAgentDisplayPreferences } from './AgentChatPreferences';
 import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { AgentModelControl } from './AgentModelControl';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
-import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
+import { isAgentTaskRunning, type AgentPromptApplied, type AgentPromptApplication, type AgentPromptBeforeApply, type AgentQuestionAnswer, type AgentQuestionRequest, type PromptAgentEvent, type PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { beginExportTarget } from '../services/exportLocation';
 import { isTopmostModal } from './useModalA11y';
@@ -36,8 +37,8 @@ interface PromptAgentPanelProps {
   draft: PromptAgentDraft;
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
-  onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: (before: PromptAgentDraft, after: PromptAgentDraft) => void) => void;
-  onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo') => void;
+  onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean, onApplied?: AgentPromptApplied, beforeApply?: AgentPromptBeforeApply) => void | Promise<void>;
+  onPromptChange: (change: AgentPromptChange, direction: 'undo' | 'redo', beforeApply?: AgentPromptBeforeApply) => void | Promise<void>;
   onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult> | void;
   onGenerationInterrupted?: () => void;
   tagAssistEnabled: boolean;
@@ -53,19 +54,20 @@ const RESUMABLE_STOPS = new Set(['turn_limit', 'output_limit', 'output_truncated
 const resumableStop = (status?: string, stopReason?: string) => status === 'interrupted' || RESUMABLE_STOPS.has(String(stopReason));
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
+  request_user_input: '向你提问',
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
   get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '查询工具分组', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
   search_novelai_docs: '检索 NovelAI 官方知识', read_novelai_doc: '读取 NovelAI 官方知识',
   web_search: '联网搜索', read_web_page: '读取网页',
-  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索 Vibe', search_character_references: '搜索精准参考',
+  get_lab_state: '读取实验室', search_tags: '搜索 Tag', search_character_catalog: '搜索角色 Tag', search_vibes: '搜索氛围参考', search_character_references: '搜索精准参考',
   update_prompts: '修改全局提示词', set_prompt_modules: '整理提示词模块', set_characters: '设置角色专属提示词',
-  set_generation_params: '调整参数', set_vibes: '设置 Vibe', set_character_references: '设置精准参考', request_generation: '准备生图',
+  set_generation_params: '调整参数', set_vibes: '设置氛围参考', set_character_references: '设置精准参考', request_generation: '准备生图',
   get_project_overview: '读取项目概况', search_project_library: '搜索项目资料', get_chain: '读取完整资料', list_generation_history: '读取生成历史',
   inspect_generation_image: '查看历史原图', reuse_generation_history: '复用历史生成配置', create_chain: '新建资料', update_chain: '更新资料',
-  create_inspiration: '保存收藏', update_inspiration: '更新收藏', list_vibe_groups: '读取 Vibe 组合', create_character_reference_from_history: '保存精准参考图', create_vibe_from_history: '从历史创建 Vibe', import_aitag_image: '导入 AITag 图片',
+  create_inspiration: '保存收藏', update_inspiration: '更新收藏', list_vibe_groups: '读取氛围参考组合', create_character_reference_from_history: '保存精准参考图', create_vibe_from_history: '从历史创建氛围参考', import_aitag_image: '导入 AITag 图片',
   request_delete_project_item: '准备删除', request_clear_history: '准备清空历史',
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品',
-  update_vibe: '更新 Vibe', update_character_reference: '更新精准参考', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',
+  update_vibe: '更新氛围参考', update_character_reference: '更新精准参考', save_vibe_group: '保存氛围参考组合', request_vibe_encoding: '准备氛围参考编码',
   get_project_settings: '读取项目设置', set_anlas_budget: '设置 Anlas 预算', set_cloud_queue: '设置拼车队列',
   update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', navigate_view: '切换页面', set_chain_cover_from_history: '设置风格串封面',
   // 仅供旧会话回执显示，运行时不再提供此工具。
@@ -181,6 +183,7 @@ const AgentMessageList = React.memo(({
         <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? t("处理中") : tool.state === 'error' ? t("失败") : tool.state === 'interrupted' ? t("未完成") : t("完成")} · {t(toolLabels[tool.name] || tool.name)}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label={t("工具回执")} className="appearance-group my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
+      {message.tools?.filter(tool => tool.name === 'request_user_input').map(tool => <AgentQuestionHistory key={tool.id} args={tool.args} result={tool.result} />)}
       {message.promptChange && <AgentPromptChangeCard change={message.promptChange} disabled={running} onAction={direction => onPromptChange(message.promptChange!, direction)} />}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
       {message.role === 'error' && message.detail && <details className="mt-2 text-xs font-normal"><summary className="cursor-pointer select-none opacity-80">{t('原始错误')}</summary><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/60 p-2 text-micro leading-5 dark:bg-black/20">{message.detail}</pre></details>}
@@ -205,7 +208,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const displayPreferences = useAgentDisplayPreferences();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<PanelMessage[]>([]);
-  const [running, setRunning] = useState(false);
+  const [streamRunning, setRunning] = useState(false);
+  const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
+  const running = streamRunning || isAgentTaskRunning(taskSnapshot.status);
   const [sessions, setSessions] = useState<PromptAgentSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -272,7 +277,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   });
   const confirmAction = useConfirmDialog();
   const taskCursorRef = useRef({ runId: '', cursor: 0, events: [] as PromptAgentEvent[] });
-  const [taskSnapshot, setTaskSnapshot] = useState<PromptAgentTask>({});
+  const answeredQuestionsRef = useRef(new Set<string>());
+  const questionDraftsRef = useRef(new Map<string, AgentQuestionDraft>());
+  const questionSessionRef = useRef(activeSessionId);
+  questionSessionRef.current = activeSessionId;
+  const questionKey = (request: AgentQuestionRequest) => `${request.runId}:${request.requestId}`;
+  const acceptTaskQuestions = (task: PromptAgentTask) => {
+    const pendingQuestions = task.pendingQuestions?.filter(request => !answeredQuestionsRef.current.has(questionKey(request)));
+    return { ...task, pendingQuestions, status: task.status === 'waiting_user_input' && task.pendingQuestions?.length && !pendingQuestions?.length ? 'running' : task.status };
+  };
   const [pageRead, setPageRead] = useState<Pick<AgentPageSnapshot, 'title' | 'capturedAt'> | null>(getLastAgentPageRead);
   const currentDraftRef = useRef(props.draft);
   currentDraftRef.current = props.draft;
@@ -289,12 +302,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }
     return { ...message, promptChange: receipt };
   };
-  const savePromptChange = async (change: AgentPromptChange, sessionId: string) => {
+  const savePromptChange = async (change: AgentPromptChange & { beforeVersionId?: string; rawAfter?: PromptAgentDraft; selectedAfter?: PromptAgentDraft }, sessionId: string) => {
     const pending = { ...change, savePending: true };
     promptChangeReceipts.current.set(change.id, pending);
     setMessages(previous => previous.map(message => withPromptReceipt(message)));
     try {
-      const saving = promptChangeSaveQueue.current.catch(() => {}).then(() => promptAgentService.updateSession(sessionId, { promptChange: { id: change.id, status: change.status, appliedChanges: change.appliedChanges } }));
+      const saving = promptChangeSaveQueue.current.catch(() => {}).then(() => promptAgentService.updateSession(sessionId, { promptChange: { id: change.id, status: change.status, appliedChanges: change.appliedChanges, ...(change.beforeVersionId ? { beforeVersionId: change.beforeVersionId, rawAfter: change.rawAfter, selectedAfter: change.selectedAfter } : {}) } }));
       promptChangeSaveQueue.current = saving;
       await saving;
       const saved = { ...change, savePending: false };
@@ -304,10 +317,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       }
     } catch { throw new Error('提示词操作已完成，但修改记录保存失败，请重试保存记录'); }
   };
-  const recordPromptApplication = (change: AgentPromptChange, sessionId: string) => (before: PromptAgentDraft, after: PromptAgentDraft) => {
-    const appliedChanges = createAgentPromptChange(before, after).changes.filter(item => change.changes.some(original => JSON.stringify(original.path) === JSON.stringify(item.path) && JSON.stringify(original.after) === JSON.stringify(item.after)));
-    if (!appliedChanges.length) return;
-    void savePromptChange({ ...change, status: 'applied', appliedChanges }, sessionId).catch(error => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error.message }]));
+  const recordPromptApplication = (change: AgentPromptChange, sessionId: string) => (before: PromptAgentDraft, after: PromptAgentDraft, application?: AgentPromptApplication) => {
+    const applied = createAppliedAgentPromptChange(change, before, after, application?.selectedAfter);
+    if (!applied.appliedChanges?.length) return;
+    void savePromptChange({ ...applied, ...(application?.beforeVersionId ? { beforeVersionId: application.beforeVersionId, rawAfter: after, selectedAfter: application.selectedAfter } : {}) }, sessionId).catch(error => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error.message }]));
+  };
+  const saveBeforePromptApplication = (sessionId: string, reason: 'before_apply' | 'before_restore', changeId?: string): AgentPromptBeforeApply => async (before, after) => {
+    const saved = await promptAgentService.savePromptVersion(sessionId, { draft: before, afterDraft: after, source: 'page', reason, ...(changeId ? { changeId } : {}) });
+    return { versionId: saved.versionId, finish: actual => promptAgentService.finishPromptVersion(sessionId, saved.versionId, actual) };
   };
   const generationInterruptRef = useRef<(() => void) | undefined>(undefined);
   const interruptGeneration = () => (generationInterruptRef.current || currentPropsRef.current.onGenerationInterrupted)?.();
@@ -499,10 +516,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     void Promise.all([promptAgentService.getSession(activeSessionId), promptAgentService.getTask(activeSessionId)]).then(([items, task]) => {
       if (loadSeq !== sessionLoadSeqRef.current) return;
       taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events: task.events || [] };
-      setTaskSnapshot(task);
+      setTaskSnapshot(acceptTaskQuestions(task));
       applyCompactionEvents(task.events || [], activeSessionId, true);
       const restored: PanelMessage[] = items.map(item => withPromptReceipt(item, true));
-      if ((['interrupted', 'preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status))) && task.events?.length) {
+      if ((task.status === 'interrupted' || isAgentTaskRunning(task.status)) && task.events?.length) {
         const replayText = task.events.map(event => {
           if (event.type === 'text_delta') return event.delta;
           if (event.type === 'tool_start') return `\n▸ 开始：${event.toolName}`;
@@ -530,15 +547,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       try {
         const prior = taskCursorRef.current;
         const task = await promptAgentService.getTask(activeSessionId, prior.cursor, prior.runId);
+        if (disposed) return;
         const incomingEvents = task.events || [];
         const events = task.reset || task.runId !== prior.runId ? task.events || [] : [...prior.events, ...(task.events || [])].slice(-500);
         task.events = events;
         taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events };
-        if (disposed) return;
         applyCompactionEvents(incomingEvents, activeSessionId, !prior.runId || task.reset || task.runId !== prior.runId);
         promptAgentCoordinator.resumePageRequests(activeSessionId, task, () => currentDraftRef.current);
-        setTaskSnapshot(task);
-        const isRunning = ['preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status));
+        setTaskSnapshot(acceptTaskQuestions(task));
+        const isRunning = isAgentTaskRunning(task.status);
         if (isRunning && !promptAgentCoordinator.running(activeSessionId)) {
           const replay = (task.events || []).map(event => event.type === 'text_delta' ? event.delta : event.type === 'tool_start' ? '\n▸ ' + event.toolName : '').join('');
           setMessages(previous => [...previous.filter(item => !item.id.startsWith('task-replay-')), { id: 'task-replay-' + activeSessionId, role: 'agent', text: replay || '电脑正在执行任务…' }]);
@@ -571,7 +588,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     && ('compact'.startsWith(slashQuery) || t('压缩上下文').toLocaleLowerCase().includes(slashQuery) || '压缩上下文'.includes(slashQuery));
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
   const executionStatus = compacting ? '正在压缩上下文…' : running
-    ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? t("正在{0}", [t(toolLabels[runningTool.name] || runningTool.name)]) : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
+    ? taskSnapshot.status === 'waiting_user_input' ? '等待你回答' : taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? t("正在{0}", [t(toolLabels[runningTool.name] || runningTool.name)]) : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
     : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
 
   useLayoutEffect(() => {
@@ -745,6 +762,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 assertApprovalTarget();
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: true });
                 approved = true;
+                let receipt: Awaited<ReturnType<typeof promptAgentService.executeProjectAction>> | undefined;
                 if (patch.action === 'encode_vibe') {
                   if (!props.apiKey) throw new Error('请先在全局设置中填写 NovelAI API Key');
                   await vibeService.encode(patch.resourceId || '', Number(patch.payload?.informationExtracted ?? 1), props.apiKey, typeof patch.payload?.model === 'string' ? patch.payload.model : undefined);
@@ -752,8 +770,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 } else if (patch.action === 'clear_mobile_cache') {
                   await clearMobileThumbnailCache();
                   await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: true, result: { action: patch.action } });
-                } else await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
+                } else receipt = await promptAgentService.executeProjectAction({ action: patch.action, resourceId: patch.resourceId, payload: patch.payload, sessionId: activeSessionId, confirmationRequestId: patch.requestId });
                 if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
+                if (patch.action !== 'encode_vibe' && patch.action !== 'clear_mobile_cache' && (receipt?.ok !== true || receipt.success === false || receipt.partial || receipt.outcome === 'partial' || receipt.outcome === 'failed')) {
+                  const partial = receipt?.partial || receipt?.outcome === 'partial';
+                  setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: partial ? `该项目操作仅部分完成：已完成 ${receipt?.completedCount ?? '未知'} 项，失败 ${receipt?.failedCount ?? '未知'} 项。` : receipt?.error || '该项目操作未完成，请核对实际结果。' }]);
+                  return;
+                }
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。` : '已在你确认后完成该项目操作。' }]);
               } catch (error) {
                 const result = agentGenerationFailure(error);
@@ -839,7 +862,17 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'error' || event.type === 'done' && event.status && event.status !== 'completed') interruptGeneration();
         if (!uiActiveRef.current) return;
         applyCompactionEvents([event], activeSessionId);
-        if (event.runId) setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
+        if (event.runId && event.type !== 'request_question') setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
+        if (event.type === 'request_question') setTaskSnapshot(previous => {
+          if (answeredQuestionsRef.current.has(questionKey(event.request)) || previous.runId && previous.runId !== event.request.runId
+            || ['completed', 'failed', 'aborted', 'interrupted'].includes(String(previous.status))) return previous;
+          return acceptTaskQuestions({ ...previous, status: 'waiting_user_input', runId: event.request.runId, pendingQuestions: [...(previous.pendingQuestions || []).filter(item => item.requestId !== event.request.requestId), event.request] });
+        });
+        if (event.type === 'question_answered') setTaskSnapshot(previous => {
+          answeredQuestionsRef.current.add(`${event.runId || previous.runId}:${event.requestId}`);
+          for (const item of previous.pendingQuestions || []) if (item.requestId === event.requestId) answeredQuestionsRef.current.add(questionKey(item));
+          return { ...previous, status: previous.status === 'waiting_user_input' ? 'running' : previous.status, pendingQuestions: previous.pendingQuestions?.filter(item => item.requestId !== event.requestId) };
+        });
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {
             const nextId = crypto.randomUUID();
@@ -885,11 +918,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (event.type === 'error') throw Object.assign(new Error(event.error), { detail: event.errorDetail });
         if (event.type === 'done') {
           const completed = !event.status || event.status === 'completed';
-          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, errorDetail: event.errorDetail, stopReason: event.stopReason }));
+          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', pendingQuestions: [], finalDraft: event.draft, error: event.error, errorDetail: event.errorDetail, stopReason: event.stopReason }));
           if (event.promptChange) setMessages(previous => previous.map(item => item.id === responseId ? { ...item, promptChange: event.promptChange } : item));
           if ((labChanged || event.draftChanged) && completed) {
-            if (event.promptChange) currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft, recordPromptApplication(event.promptChange, activeSessionId));
-            else currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
+            const applied = currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft, event.promptChange ? recordPromptApplication(event.promptChange, activeSessionId) : undefined, saveBeforePromptApplication(activeSessionId, 'before_apply', event.promptChange?.id));
+            void Promise.resolve(applied).catch(reportControlError);
           }
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
@@ -999,6 +1032,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
+  const answerQuestion = async (request: AgentQuestionRequest, answers: AgentQuestionAnswer[]) => {
+    const sessionId = activeSessionId;
+    await promptAgentService.control(sessionId, 'answer', undefined, { runId: request.runId, requestId: request.requestId, answers });
+    answeredQuestionsRef.current.add(questionKey(request));
+    questionDraftsRef.current.delete(questionKey(request));
+    if (questionSessionRef.current !== sessionId) return;
+    setTaskSnapshot(previous => previous.runId === request.runId ? { ...previous, status: previous.status === 'waiting_user_input' ? 'running' : previous.status, pendingQuestions: previous.pendingQuestions?.filter(item => item.requestId !== request.requestId) } : previous);
+  };
   const stopTask = async () => { if (running) interruptGeneration(); try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
   const openAgentSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } }));
   const loadEarlierMessages = () => {
@@ -1033,9 +1074,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (direction === 'save') { await savePromptChange(change, activeSessionId); return; }
       if (direction === 'apply') {
         const draft = applyAgentPromptChange(currentDraftRef.current, change, 'apply');
-        currentPropsRef.current.onFinalDraft(draft, true, recordPromptApplication(change, activeSessionId));
+        await currentPropsRef.current.onFinalDraft(draft, true, recordPromptApplication(change, activeSessionId), saveBeforePromptApplication(activeSessionId, 'before_apply', change.id));
       } else {
-        currentPropsRef.current.onPromptChange(change, direction);
+        await currentPropsRef.current.onPromptChange(change, direction, saveBeforePromptApplication(activeSessionId, 'before_restore', change.id));
         await savePromptChange({ ...change, status: direction === 'undo' ? 'undone' : 'applied' }, activeSessionId);
       }
     },
@@ -1190,6 +1231,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             onPromptChange={(change, direction) => messageActionsRef.current.promptChange(change, direction)}
             onMediaReady={() => { if (followBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' }); }}
           />
+          {isAgentTaskRunning(taskSnapshot.status) && taskSnapshot.pendingQuestions?.map(request => <AgentUserQuestionCard key={`${activeSessionId}:${questionKey(request)}`} request={request} initialDraft={questionDraftsRef.current.get(questionKey(request))} onDraftChange={draft => questionDraftsRef.current.set(questionKey(request), draft)} onAnswer={answers => answerQuestion(request, answers)} />)}
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}
         </div>
           <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface relative mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>

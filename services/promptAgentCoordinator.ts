@@ -1,7 +1,8 @@
-import { promptAgentService, type AgentPageRequest, type PromptAgentEvent, type PromptAgentTask, type PromptAgentSession } from './promptAgent';
+import { isAgentTaskRunning, promptAgentService, type AgentPageRequest, type PromptAgentEvent, type PromptAgentTask, type PromptAgentSession } from './promptAgent';
 import type { PromptAgentDraft } from '../types';
 import { clearAgentPageHover, getAgentPageClientId, observeAgentPage, operateAgentPage, readAgentPage, type AgentPageSnapshot } from './agentWorkspace';
 import { diffAgentClientDraft } from './agentLabSync.mjs';
+import { executeAgentCommand, getAgentCommands } from './agentCommands';
 
 type RunInput = Parameters<typeof promptAgentService.run>[0];
 const active = new Map<string, Promise<void>>();
@@ -52,7 +53,26 @@ const handlePageRequest = async (sessionId: string, request: AgentPageRequest) =
         receipt = { claimId: claimed.claimId }; saveReceipt(request.requestId, receipt);
         try {
           await syncPage(sessionId); controller.signal.throwIfAborted();
-          receipt.result = await operateAgentPage(request.operation, controller.signal);
+          const app = document.querySelector<HTMLElement>('[data-agent-view]');
+          const commands = getAgentCommands(app);
+          const rawCommand = commands.some(command => command.name === 'get_prompt_version_state');
+          const mutates = !['read', 'hover', 'wait', 'image', 'copy_image', 'scroll', 'export', 'navigate'].includes(request.operation.action)
+            && !(request.operation.action === 'command' && commands.find(command => command.name === request.operation.command)?.readOnly);
+          const readRaw = async () => (await executeAgentCommand(app, 'get_prompt_version_state', {}, true, controller.signal) as { draft: PromptAgentDraft }).draft;
+          let checkpoint: { versionId: string } | undefined, rawBefore: PromptAgentDraft | undefined;
+          if (rawCommand && mutates && request.operation.command !== 'restore_prompt_version') {
+            rawBefore = await readRaw();
+            checkpoint = await promptAgentService.savePromptVersion(sessionId, { draft: rawBefore, source: 'page', reason: 'before_page_edit', changeId: request.requestId });
+            if (JSON.stringify(await readRaw()) !== JSON.stringify(rawBefore)) throw new Error('保存旧稿期间内容已变化，未执行页面操作');
+          }
+          const operation = { ...request.operation, agentSessionId: sessionId };
+          receipt.result = await operateAgentPage(operation, controller.signal);
+          if (checkpoint && rawBefore) {
+            try {
+              const after = await readRaw();
+              if (after.target?.chainId === rawBefore.target?.chainId && after.target?.mode === rawBefore.target?.mode) await promptAgentService.finishPromptVersion(sessionId, checkpoint.versionId, after);
+            } catch { receipt.result = { ...receipt.result, result: { operationResult: receipt.result.result, versionSaved: true, warning: '页面操作已执行，版本应用记录尚未保存；请重新读取核对，不重复执行操作' } }; }
+          }
           await syncPage(sessionId);
         } catch (error) { receipt.error = error instanceof Error ? error.message : '页面操作失败'; }
         saveReceipt(request.requestId, receipt);
@@ -99,7 +119,7 @@ export const promptAgentCoordinator = {
     return task;
   },
   resumePageRequests(sessionId: string, task: PromptAgentTask, getDraft: () => PromptAgentDraft) {
-    if (!['preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status))) { if (!active.has(sessionId)) stopClient(sessionId); return; }
+    if (!isAgentTaskRunning(task.status)) { if (!active.has(sessionId)) stopClient(sessionId); return; }
     if (task.clientDraft) attachClient(sessionId, task.clientDraft, getDraft);
     for (const request of task.pendingUI || []) void handlePageRequest(sessionId, request).catch(() => { /* 下一次轮询恢复仅剩的实时请求。 */ });
   },

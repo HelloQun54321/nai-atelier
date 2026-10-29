@@ -10,6 +10,8 @@ import { promptAgentService, type PromptAgentEvent, type PromptAgentCompactionRe
 import { promptAgentCoordinator } from '../../services/promptAgentCoordinator';
 import { createAgentPromptChange, type AgentPromptChange } from '../../services/agentPromptChanges.mjs';
 import type { PromptAgentDraft } from '../../types';
+import { normalizeAgentLabDraft, restoreUnchangedAgentLabFields } from '../../services/agentLabSync.mjs';
+import type { AgentPromptApplied, AgentPromptBeforeApply } from '../../services/promptAgent';
 
 vi.mock('../../components/MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
@@ -118,6 +120,103 @@ const panelElement = (_canUndo = false, overrides = {}) => {
 const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
+
+  it('重连恢复待回答问题、原任务保持忙碌，提交失败保留选择，成功不另开任务', async () => {
+    stubServices();
+    const request = { requestId: 'question-one', runId: 'question-run', questions: [{ id: 'q', prompt: '想用哪一种构图？', options: [{ id: 'wide', label: '远景' }, { id: 'close', label: '特写' }] }] };
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    const task = vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ runId: request.runId, status: 'waiting_user_input', pendingQuestions: [request] });
+    const control = vi.spyOn(promptAgentService, 'control').mockRejectedValueOnce(new Error('回答连接中断')).mockResolvedValue(undefined);
+    const run = vi.spyOn(promptAgentService, 'run');
+    const view = renderPanel();
+    await screen.findByText('想用哪一种构图？');
+    expect(screen.getByRole('button', { name: '助手权限' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '执行' })).toBeNull();
+    expect(screen.getAllByRole('radio').every(item => !(item as HTMLInputElement).checked)).toBe(true);
+    fireEvent.click(screen.getByLabelText('远景'));
+    fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
+    expect(await screen.findByText('回答连接中断')).toBeTruthy();
+    expect(screen.getByLabelText('远景')).toHaveProperty('checked', true);
+    view.rerender(panelElement(false, { open: false }));
+    view.rerender(panelElement(false, { open: true }));
+    await screen.findByText('想用哪一种构图？');
+    expect(screen.getByLabelText('远景')).toHaveProperty('checked', true);
+    fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull());
+    expect(control).toHaveBeenLastCalledWith('session-1', 'answer', undefined, { runId: request.runId, requestId: request.requestId, answers: [{ questionId: 'q', optionId: 'wide' }] });
+    expect(run).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+    const reads = task.mock.calls.length;
+    await waitFor(() => expect(task.mock.calls.length).toBeGreaterThan(reads), { timeout: 3000 });
+    expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull();
+  });
+
+  it('历史问题和完整答案直接可见，不受工具过程折叠影响', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ status: 'completed' });
+    const longAnswer = '完整自定义回答'.repeat(650);
+    const questions = [{ id: 'normalized', prompt: '规范化后实际问题', options: [] }];
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'answer', role: 'agent', text: '已继续完成任务', tools: [{ id: 'input', name: 'request_user_input', state: 'done', args: { questions: [{ prompt: '原始输入问题' }] }, result: [{ type: 'text', text: JSON.stringify({ answered: true, questions, answers: [{ questionId: 'normalized', customText: longAnswer }] }) }] }] }]);
+    renderPanel();
+    await screen.findByText('规范化后实际问题');
+    const card = screen.getByRole('region', { name: '问题与回答' });
+    expect(card.closest('details')).toBeNull();
+    expect(card.textContent).toContain(longAnswer);
+    expect(card.textContent).not.toContain('原始输入问题');
+  });
+
+  it('流式提问重复事件保留同一卡片填写；取消后隐藏且不会作为批准', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    const request = { requestId: 'stream-question', runId: 'stream-run', questions: [{ id: 'q', prompt: '作品的主题？', options: [] }] };
+    let emit!: (event: PromptAgentEvent) => void, finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { emit = onEvent; await new Promise<void>(resolve => { finish = resolve; }); });
+    const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    renderPanel();
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    fireEvent.change(input, { target: { value: '制作一张作品' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    act(() => emit({ type: 'request_question', request }));
+    fireEvent.change(screen.getByRole('textbox', { name: '自定义回答内容' }), { target: { value: '未提交的主题' } });
+    act(() => emit({ type: 'request_question', request }));
+    expect(screen.getAllByRole('region', { name: '助手提问' })).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: '自定义回答内容' })).toHaveProperty('value', '未提交的主题');
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(control).toHaveBeenCalledWith('session-1', 'abort');
+    await act(async () => { emit({ type: 'question_answered', requestId: request.requestId, answered: false, outcome: 'cancelled' }); emit({ type: 'done', status: 'aborted', message: '', provider: '', model: '', draft: {} as PromptAgentDraft }); finish(); });
+    expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull();
+    expect(control.mock.calls.some(([, action]) => action === 'confirm' || action === 'answer')).toBe(false);
+  });
+
+  it('轮询先恢复并回答后迟到SSE不复活问题，停止后的新问题帧也不能恢复任务', async () => {
+    stubServices(); const task = vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    const request = { requestId: 'poll-first-question', runId: 'poll-first-run', questions: [{ id: 'q', prompt: '先由轮询读到的问题', options: [] }] };
+    let emit!: (event: PromptAgentEvent) => void, finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => { emit = onEvent; await new Promise<void>(resolve => { finish = resolve; }); });
+    const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    const view = renderPanel();
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    fireEvent.change(input, { target: { value: '继续这个任务' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(emit).toBeTypeOf('function'));
+    task.mockResolvedValue({ runId: request.runId, status: 'waiting_user_input', pendingQuestions: [request] });
+    view.rerender(panelElement(false, { open: false })); view.rerender(panelElement(false, { open: true }));
+    await screen.findByText('先由轮询读到的问题');
+    fireEvent.change(screen.getByRole('textbox', { name: '自定义回答内容' }), { target: { value: '真实回答' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交回答并继续' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull());
+    act(() => emit({ type: 'request_question', runId: request.runId, request }));
+    expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull();
+    expect(control).toHaveBeenCalledExactlyOnceWith('session-1', 'answer', undefined, { runId: request.runId, requestId: request.requestId, answers: [{ questionId: 'q', customText: '真实回答' }] });
+    task.mockResolvedValue({ runId: request.runId, status: 'aborted', pendingQuestions: [] });
+    await act(async () => { emit({ type: 'done', runId: request.runId, status: 'aborted', message: '', provider: '', model: '', draft: {} as PromptAgentDraft }); finish(); });
+    act(() => emit({ type: 'request_question', runId: request.runId, request: { ...request, requestId: 'late-after-abort' } }));
+    expect(screen.queryByRole('region', { name: '助手提问' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull();
+    expect(screen.getByRole('button', { name: '执行' })).toBeTruthy();
+  });
 
   it.each([{ width: 320, dark: false }, { width: 1280, dark: true }])('斜杠建议贴近输入框且不占历史空间，$width宽度明暗主题可点击执行并保留后来输入', async ({ width, dark }) => {
     vi.stubGlobal('innerWidth', width); stubServices();
@@ -365,13 +464,38 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: '撤回本次提示词修改' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '撤回本次提示词修改' }));
     expect(await screen.findByText('已撤回')).toBeTruthy();
-    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ id: 'diff-run' }), 'undo');
+    expect(undo).toHaveBeenCalledWith(expect.objectContaining({ id: 'diff-run' }), 'undo', expect.any(Function));
     await waitFor(() => expect((screen.getByRole('button', { name: '重做本次提示词修改' }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole('button', { name: '重做本次提示词修改' }));
     expect(await screen.findByText('已应用')).toBeTruthy();
-    expect(undo).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'diff-run' }), 'redo');
+    expect(undo).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'diff-run' }), 'redo', expect.any(Function));
     expect(runner).toHaveBeenCalledOnce();
     expect(save.mock.calls.map(call => call[1].promptChange?.status)).toEqual(['applied', 'undone', 'applied']);
+  });
+
+  it('真实raw版本先保存，实际清理旧分栏的完整回执绑定原对话和版本，完成后才补写after', async () => {
+    stubServices();
+    const raw = { basePrompt: 'style', subjectPrompt: '', negativePrompt: 'blur', modules: [], params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler', _promptSections: { scene: 'tree', sectionNegatives: { scene: 'legacy negative' }, sectionMeta: { scene: { source: 'library', entryId: 'raw-source' } } } }, target: { chainId: 'raw-work', mode: 'text-to-image', fingerprint: 'raw-target' } } as unknown as PromptAgentDraft;
+    const visible = normalizeAgentLabDraft(raw);
+    const version = vi.spyOn(promptAgentService, 'savePromptVersion').mockResolvedValue({ id: 'raw-old', versionId: 'raw-old', fingerprint: 'hash' });
+    const finish = vi.spyOn(promptAgentService, 'finishPromptVersion').mockResolvedValue(undefined);
+    const save = vi.spyOn(promptAgentService, 'updateSession').mockResolvedValue(mockSession);
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, emit) => {
+      const after = { ...visible, negativePrompt: 'blur' };
+      emit({ type: 'done', status: 'completed', draftChanged: true, draft: after, message: '完成', provider: 'synthetic', model: 'synthetic', promptChange: createAgentPromptChange(visible, after, 'raw-round') });
+    });
+    const apply = vi.fn(async (selected: PromptAgentDraft, _review: boolean, applied?: AgentPromptApplied, beforeApply?: AgentPromptBeforeApply) => {
+      const actual = restoreUnchangedAgentLabFields(raw, selected);
+      const saved = await beforeApply!(raw, actual);
+      applied?.(raw, actual, { beforeVersionId: saved ? saved.versionId : undefined, selectedAfter: selected });
+      if (saved && saved.finish) await saved.finish(actual);
+    });
+    renderPanel(false, { draft: visible, onFinalDraft: apply });
+    const input = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    fireEvent.change(input, { target: { value: '删除旧负面' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith('session-1', { promptChange: expect.objectContaining({ beforeVersionId: 'raw-old', rawAfter: expect.anything(), selectedAfter: expect.anything(), appliedChanges: expect.arrayContaining([expect.objectContaining({ path: ['params', '_promptSections', 'sectionNegatives'], before: { scene: 'legacy negative' } })]) }) }));
+    expect(version).toHaveBeenCalledWith('session-1', expect.objectContaining({ source: 'page', reason: 'before_apply', draft: raw, changeId: 'raw-round' }));
+    expect(finish).toHaveBeenCalledWith('session-1', 'raw-old', expect.objectContaining({ negativePrompt: 'blur' }));
   });
 
   it('重新打开会话保留红绿差异与重做状态，旧消息不补造差异', async () => {
@@ -657,6 +781,30 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
       expect(controlRect).not.toHaveBeenCalled();
     } finally { workspace.remove(); }
   });
+  it.each([
+    { receipt: { ok: false, success: false, partial: true, outcome: 'partial', completedCount: 2, failedCount: 1, resultId: 'directory-result' }, text: '该项目操作仅部分完成：已完成 2 项，失败 1 项。' },
+    { receipt: { ok: false, success: false, outcome: 'failed', completedCount: 0, failedCount: 1, resultId: 'failed-result' }, text: '该项目操作未完成，请核对实际结果。' },
+    { receipt: { ok: false, accepted: true, outcome: 'unconfirmed' }, text: '该项目操作未完成，请核对实际结果。' },
+    { receipt: { ok: true, success: true, outcome: 'succeeded' }, text: '已在你确认后完成该项目操作。' },
+  ])('项目确认accepted与真实业务回执分开，不因HTTP200报全部成功：$receipt.outcome', async ({ receipt, text }) => {
+    stubServices();
+    const control = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+    const execute = vi.spyOn(promptAgentService, 'executeProjectAction').mockResolvedValue({ action: 'delete_directory', ...receipt });
+    vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+      onEvent({ type: 'action', action: { kind: 'request_project_action', patch: { action: 'delete_directory', requestId: 'directory-delete', title: '删除目录', consequence: '只删除目录关系' } } });
+    });
+    renderPanel();
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '删除指定目录' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认执行' }));
+    await screen.findByText(text);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(control).toHaveBeenCalledWith('session-1', 'confirm', 'directory-delete', { requestId: 'directory-delete', accepted: true });
+    expect(control.mock.calls.some(call => call[1] === 'finalize')).toBe(false);
+    if (!receipt.ok) expect(screen.queryByText('已在你确认后完成该项目操作。')).toBeNull();
+  });
+
   it.each([true, false])('实际面板生成回调批准 %s 时发送正确确认与完成顺序', async accepted => {
     stubServices(); const controls: Array<{ action: string; accepted?: boolean; success?: boolean }> = [];
     vi.spyOn(promptAgentService, 'control').mockImplementation(async (_session, action, _message, payload) => { controls.push({ action, ...payload }); });
@@ -681,7 +829,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     renderPanel(false, { onFinalDraft: apply });
     const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
     fireEvent.change(box, { target: { value: '调整提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
-    await waitFor(() => expect(apply).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'new prompt' }), true));
+    await waitFor(() => expect(apply).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'new prompt' }), true, undefined, expect.any(Function)));
     expect(run.mock.calls[0][0].context.clientSettings?.autoShowGenerated).toBe(false);
   });
   it('助手运行不读取或注入旧画师收藏名册，保留旧存储内容', async () => {
@@ -735,7 +883,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'latest', expect.objectContaining({ success: true })));
     expect(latestGenerate).toHaveBeenCalledWith(draft, undefined, expect.any(Function), undefined, undefined); expect(oldGenerate).not.toHaveBeenCalled();
     await act(async () => { emit({ type: 'done', draft, draftChanged: true, status: 'completed', message: '完成', provider: 'deepseek', model: 'deepseek-chat' }); finish(); });
-    expect(latestApply).toHaveBeenCalledWith(draft, false); expect(oldApply).not.toHaveBeenCalled();
+    expect(latestApply).toHaveBeenCalledWith(draft, false, undefined, expect.any(Function)); expect(oldApply).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('批准=%s 的实际生成失败将具体回执传给后端并显示原因', async approved => {

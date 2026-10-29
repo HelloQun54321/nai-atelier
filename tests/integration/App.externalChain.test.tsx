@@ -52,10 +52,11 @@ vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onCreate, o
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
-vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork, saveRef, setIsDirty, onContentRollForGlobal, onContentRollForRole }: any) => {
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork: fork, saveRef, setIsDirty, onContentRollForGlobal, onContentRollForRole }: any) => {
   mocks.editorDraft = chain;
   mocks.updatePlayground = onUpdateChain;
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
+  const onFork = (draft: PromptChain, type: 'style' | 'character') => fork(draft, type).catch(() => {});
   return <PromptLibraryWorkspace register state={{ params: chain.params, base: chain.basePrompt || '', subject: chain.variableValues?.subject || '', negative: chain.negativePrompt || '', classified: true }} onChange={next => onUpdateChain(chain.id, { params: next.params, basePrompt: next.base, negativePrompt: next.negative, variableValues: { ...chain.variableValues, subject: next.subject } })}><PromptLibraryRandomButton /><PromptLibraryFieldActions value={chain.variableValues?.subject || ''} onText={text => onUpdateChain(chain.id, { variableValues: { ...chain.variableValues, subject: text } })} field={{ purposeId: 'place' }} /><div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onContentRollForGlobal}>全局随机搭配</button><button onClick={() => onContentRollForRole(1)}>角色二随机搭配</button><button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div></PromptLibraryWorkspace>;
 } }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
@@ -253,6 +254,25 @@ it('文件夹内新建通过真实App回调广播保存回执，返回时保留�
   }
 });
 
+it('助手直接改组合目录时同步回读名称，保留页面与搜索，迟到旧名称不复活分类', async () => {
+  mocks.getPromptLibraryTagNames.mockResolvedValue(['旧分类']);
+  await setup('prompts'); selectPromptScope('saved');
+  if (screen.queryByRole('button', { name: '展开目录' })) fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  await screen.findByRole('button', { name: '分类「旧分类」' });
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: '保持现场' } });
+  let finishOld!: (value: string[]) => void;
+  mocks.getPromptLibraryTagNames.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  mocks.getPromptLibraryTagNames.mockResolvedValue(['新分类']);
+  act(() => window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'prompt_library_directories' } })));
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'prompt_library_directories' } })); });
+  await screen.findByRole('button', { name: '分类「新分类」' });
+  expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
+  await act(async () => { finishOld(['旧分类']); });
+  expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
+  expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('保持现场');
+  expect(screen.getByRole('combobox', { name: '提示词库范围' })).toHaveProperty('value', 'saved');
+});
+
 it('零条组合也能预建分类，冷回读后保存与详情均可选用', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
   let directory: string[] = [];
@@ -279,9 +299,11 @@ it('零条组合也能预建分类，冷回读后保存与详情均可选用', a
   const roll = await screen.findByRole('dialog', { name: '搭配' });
   await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night'));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
-  fireEvent.click(within(roll).getByRole('button', { name: '选择已有标签' }));
-  fireEvent.click(await screen.findByRole('button', { name: '#未来项目' }));
-  expect((within(roll).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('未来项目');
+  const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '选择已有标签' }));
+  fireEvent.click(await within(saveDialog).findByRole('button', { name: '#未来项目' }));
+  expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('未来项目');
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '取消' }));
   fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
   fireEvent.click(screen.getByRole('button', { name: '查看准备分类的组合' }));
   const detail = await screen.findByLabelText('准备分类的组合', { selector: 'aside' });
@@ -966,8 +988,9 @@ it('旧多人组合编辑先选择角色，所选角色另存新组合不覆盖�
   expect(roll.querySelector('[data-content-roll-row="directory:person-appearance"]')?.textContent).not.toContain('silver_hair');
   expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night');
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
-  expect((within(roll).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('旧组合标签');
-  fireEvent.click(within(roll).getByRole('button', { name: '保存' }));
+  const saveDialog = await screen.findByRole('dialog', { name: '保存组合' });
+  expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('旧组合标签');
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledOnce());
   expect(mocks.createChainWithData.mock.calls[0][2]).toMatchObject({ tags: ['旧组合标签'] });
   expect(mocks.updateChain).not.toHaveBeenCalled();
@@ -985,9 +1008,10 @@ it.each([[' 夜景，常用,夜景 ', ['夜景', '常用']], ['', []]] as const)
   fireEvent.change(within(roll).getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
   fireEvent.click(within(roll).getByRole('button', { name: '抽一次' }));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
-  fireEvent.change(within(roll).getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '带标签组合' } });
-  fireEvent.change(within(roll).getByRole('textbox', { name: '组合标签' }), { target: { value: text } });
-  fireEvent.click(within(roll).getByRole('button', { name: '保存' }));
+  const saveDialog = await screen.findByRole('dialog', { name: '保存组合' });
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '带标签组合' } });
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '组合标签' }), { target: { value: text } });
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('带标签组合', expect.any(String), expect.objectContaining({ tags: [...tags] }), 'preset'));
   expect(mocks.updateChain).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
@@ -1012,8 +1036,9 @@ it.each([false, true])('编辑已有组合保存时继承标签，另存=%s', as
   const roll = await screen.findByRole('dialog', { name: '搭配' });
   await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night'));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
-  expect((within(roll).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('夜景, 保留');
-  fireEvent.click(within(roll).getByRole('button', { name: copy ? '另存为新组合' : '保存修改' }));
+  const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
+  expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('夜景, 保留');
+  fireEvent.click(within(saveDialog).getByRole('button', { name: copy ? '另存为新组合' : '保存修改' }));
   if (copy) {
     await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('有标签旧组合', expect.any(String), expect.objectContaining({ tags: ['夜景', '保留'] }), 'preset'));
     expect(mocks.updateChain).not.toHaveBeenCalled();
@@ -1084,7 +1109,7 @@ it('组合详情清空自定义标签仍保留内部状态且不改创作内容'
   expect(mocks.createChainWithData).not.toHaveBeenCalled();
 });
 
-it.each(['global', 'character'] as const)('实验室 %s 按五组用途填入当前目标，保留其它内容并可撤销', async entry => {
+it.each(['global', 'character'] as const)('实验室 %s 按用途行直接填入当前目标，保留其它内容并可撤销', async entry => {
   const directoryId = 'custom-clothing';
   const key = 'purpose:clothing' as const;
   mocks.loadDirectories.mockResolvedValue({ revision: 4, nodes: [{ id: directoryId, parentId: null, name: '本次自选服装', target: entry }, { id: 'custom-scene', parentId: null, name: '当前背景', target: 'global' }] });
@@ -1103,14 +1128,12 @@ it.each(['global', 'character'] as const)('实验室 %s 按五组用途填入当
   await act(async () => { await mocks.updatePlayground!('playground', { basePrompt: 'keep_artist', negativePrompt: 'keep_negative', variableValues: { subject: originalSubject }, params }); });
   fireEvent.click(screen.getByRole('button', { name: entry === 'global' ? '全局随机搭配' : '角色二随机搭配' }));
   const roll = await screen.findByRole('dialog', { name: '随机搭配' });
-  for (const label of ['主体与外观', '动作与关系', '场景与环境', '镜头与光影', '画风与表现']) openPurposeGroup(label, roll);
   const participation = within(roll).getAllByRole('checkbox', { name: /^参与「/ });
   expect(participation.some(check => check.getAttribute('aria-label')?.includes('服饰与配件'))).toBe(true);
   for (const check of participation) if (!check.getAttribute('aria-label')?.includes('服饰与配件')) fireEvent.click(check);
   fireEvent.click(within(roll).getByRole('button', { name: '抽一次' }));
-  fireEvent.click(within(roll).getByRole('button', { name: '使用' }));
   expect(within(roll).getByText((entry === 'global' ? 'old_dress' : 'role_dress') + ' → new_dress')).toBeTruthy();
-  fireEvent.click(within(roll).getByRole('button', { name: '确认填入' }));
+  fireEvent.click(within(roll).getByRole('button', { name: entry === 'global' ? '填入全局' : '填入角色 2' }));
   await waitFor(() => expect(entry === 'global' ? mocks.editorDraft?.params._promptSections?.[key] : mocks.editorDraft?.params.characters?.[1].sections?.[key]).toBe('new_dress'));
   expect(mocks.editorDraft?.basePrompt).toBe('keep_artist');
   expect(mocks.editorDraft?.negativePrompt).toBe('keep_negative');
@@ -1140,11 +1163,10 @@ it('内容 Roll 保留旧手写正文与参数，使用统一确认后可完整�
   await screen.findByTestId('editor');
   await act(async () => { await mocks.updatePlayground!('playground', { variableValues: { subject: 'legacy_subject' }, params: { ...source.params, seed: 42 } }); });
   fireEvent.click(screen.getByRole('button', { name: 'content-roll' }));
-  fireEvent.click(await screen.findByRole('button', { name: '抽一次' }));
-  expect(screen.getByRole('dialog', { name: '搭配' })).toBeTruthy();
+  const roll = await screen.findByRole('dialog', { name: '搭配' });
   fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
-  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('button', { name: '送到实验室' }));
+  fireEvent.click(within(roll).getByRole('button', { name: '抽一次' }));
+  fireEvent.click(within(roll).getByRole('button', { name: '送到实验室' }));
   const useDialog = await screen.findByRole('dialog', { name: '使用提示词' });
   expect(screen.getByTestId('view').textContent).toBe('content-library');
   expect(within(useDialog).queryByRole('searchbox')).toBeNull();
@@ -1327,16 +1349,48 @@ it('批量删除后的列表回读失败不能伪报成功或把旧列表当作�
 it.each([
   ['style', '另存为新串', '已保存到风格串'],
   ['character', '另存为角色', '已保存到角色库'],
-] as const)('另存为%s时提示目标库名称', async (targetType, action, message) => {
+] as const)('另存为%s成功后返回目标库，再切页不提示未保存', async (targetType, action, message) => {
   const chain = { ...source, id: 'source-style' };
   mocks.getAllChains.mockResolvedValue([chain]);
   await setup();
   fireEvent.click(screen.getByRole('button', { name: 'list' }));
   fireEvent.click(await screen.findByRole('button', { name: '编辑合成风格串' }));
   await screen.findByTestId('editor');
+  const key = `nai-lab-workspace-v1:${chain.id}`;
+  sessionStorage.setItem(key, '已另存的合成草稿');
+  fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
   fireEvent.click(await screen.findByRole('button', { name: action }));
   await waitFor(() => expect(screen.getByRole('status').textContent).toBe(message));
   expect(mocks.createChain).toHaveBeenCalledWith(`${chain.name} (Fork)`, chain.description, chain, targetType);
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe(targetType === 'character' ? 'characters' : 'list'));
+  expect(sessionStorage.getItem(key)).toBe('已另存的合成草稿');
+  expect(consumeEditorSessionDiscarded(chain.id)).toBe(false);
+  expect(mocks.updateChain).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'library' }));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('library'));
+  expect(mocks.confirm).not.toHaveBeenCalled();
+});
+
+it.each(['另存为新串', '另存为角色'])('%s失败后保留编辑草稿，再切页仍提醒未保存', async action => {
+  const chain = { ...source, id: 'source-style' };
+  mocks.getAllChains.mockResolvedValue([chain]);
+  mocks.createChain.mockRejectedValueOnce(new Error('合成另存失败'));
+  mocks.confirm.mockResolvedValue(false);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  fireEvent.click(await screen.findByRole('button', { name: '编辑合成风格串' }));
+  await screen.findByTestId('editor');
+  const key = `nai-lab-workspace-v1:${chain.id}`;
+  sessionStorage.setItem(key, '另存失败后保留的合成草稿');
+  fireEvent.click(screen.getByRole('button', { name: '修改合成草稿' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: action })); });
+  expect(mocks.createChain).toHaveBeenCalledOnce();
+  expect(screen.getByTestId('view').textContent).toBe('edit');
+  fireEvent.click(screen.getByRole('button', { name: 'library' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+  expect(screen.getByTestId('view').textContent).toBe('edit');
+  expect(sessionStorage.getItem(key)).toBe('另存失败后保留的合成草稿');
+  expect(consumeEditorSessionDiscarded(chain.id)).toBe(false);
 });
 
 it.each(['save', 'discard', 'cancel'] as const)('离开编辑页选择 %s：保存与放弃分开处理草稿，取消保持原页', async action => {
@@ -1625,6 +1679,7 @@ it('320px 已开关过搭配后，从单角色组合详情编辑仍打开搭配�
     await act(() => new Promise(resolve => setTimeout(resolve, 30)));
     expect(screen.queryByRole('dialog', { name: '搭配' })).not.toBeNull();
     fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
-    expect((within(roll).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('夜景, 手机');
+    const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
+    expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('夜景, 手机');
   } finally { back.mockImplementation(() => {}); cleanup(); back.mockRestore(); window.history.replaceState({}, ''); }
 });

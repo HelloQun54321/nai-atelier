@@ -65,13 +65,13 @@ function DirectoryNodeDialogContent({ title, nodes, name, parentId, editingId, b
   const locked = busy || disabled;
   return <div hidden={!active} className={active ? 'fixed inset-0 z-[2100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm' : 'hidden'} onMouseDown={event => { if (event.target === event.currentTarget && active && !busy && isTopmostModal(ref.current)) requestClose(); }}>
     <div ref={ref} role="dialog" aria-modal="true" aria-label={t(title)} aria-busy={busy} className="appearance-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
-      <div className="mb-4 flex items-center justify-between"><h2 className="font-bold">{t(title)}</h2><ToolbarButton aria-label={t('关闭')} disabled={busy} onClick={requestClose}><X /></ToolbarButton></div>
+      <div className="mb-4 flex items-center justify-between"><h2 className="font-bold">{t(title)}</h2><ToolbarButton data-agent-action="browse" aria-label={t('关闭')} disabled={busy} onClick={requestClose}><X /></ToolbarButton></div>
       <form onSubmit={event => { event.preventDefault(); if (active && !locked && name.trim() && isTopmostModal(ref.current)) void onSubmit(); }}>
         <label className="mb-3 block text-xs text-gray-500">{nameLabel ?? t('名称')}<input ref={nameRef} aria-label={nameLabel ?? t('名称')} placeholder={namePlaceholder} maxLength={maxLength} value={name} disabled={locked} onChange={event => onNameChange(event.target.value)} className={`${field} mt-2`} /></label>
         <label className="block text-xs text-gray-500">{parentLabel ?? t('上级目录')}<DirectoryTreeSelect nodes={nodes} rootLabel={rootLabel ?? t('顶层')} excludeIds={editingId ? [...getDirectoryDescendantIds(nodes, editingId)] : []} aria-label={parentLabel ?? t('上级目录')} value={parentId} disabled={locked} onChange={event => onParentChange(event.target.value)} className={`${field} mt-2`} /></label>
         {children}
         {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{t(error)}</p>}
-        <div className="mt-5 flex justify-end gap-2"><ToolbarButton disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton><ToolbarButton type="submit" disabled={locked || !name.trim()} tone="save">{t('保存')}</ToolbarButton></div>
+        <div className="mt-5 flex justify-end gap-2"><ToolbarButton data-agent-action="browse" disabled={busy} onClick={requestClose}>{t('取消')}</ToolbarButton><ToolbarButton type="submit" disabled={locked || !name.trim()} tone="save">{t('保存')}</ToolbarButton></div>
       </form>
     </div>
   </div>;

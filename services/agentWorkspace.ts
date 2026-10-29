@@ -36,6 +36,8 @@ export interface AgentPageOperation extends AgentPageReadOptions {
   files?: Array<{ path: string; name: string; relativePath?: string }>;
   delta?: { x: number; y: number };
   exportId?: string; sessionId?: string;
+  /** 由任务持有层覆盖，不能从模型 command.args 取会话身份。 */
+  agentSessionId?: string;
 }
 const pages: Record<string, string> = { list: '风格串', characters: '角色库', 'content-library': '提示词库', prompts: '提示词库', 'content-roll': '提示词库 · 随机搭配', 'content-roll-library': '提示词库 · 组合库', library: '画师库', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', codex: '法典', inspiration: '收藏库', history: '生成历史', footprint: '创作足迹', playground: '生图实验室', roll: 'Roll 串', edit: '风格串编辑器' };
 const privateSelector = '[data-agent-private],.agent-overlay,[data-agent-surface],script,style,[type="password"],[type="hidden"]';
@@ -133,7 +135,7 @@ const capture = () => {
     const isSelect = element instanceof HTMLSelectElement, checkable = ['checkbox', 'radio', 'switch'].includes(role) || element.hasAttribute('aria-pressed');
     const editable = (field(element) && !['file', 'checkbox', 'radio', 'submit', 'button'].includes((element as HTMLInputElement).type) || element.isContentEditable) && !readOnly;
     const fileInput = element instanceof HTMLInputElement && element.type === 'file';
-    const actions = isDisabled ? [] : fileInput ? ['attach_files', 'paste_image'] : [...(!box.inViewport ? ['scroll'] : []), ...(box.inViewport && !box.blocked ? [...(editable ? [isSelect ? 'select' : 'fill'] : []), ...(checkable && safeClick(element) ? ['check'] : []), ...(safeClick(element) ? ['click', 'hover'] : []), ...(editable || safeClick(element) ? ['press'] : []), ...(element instanceof HTMLImageElement ? ['image', 'copy_image'] : []), ...(element.dataset.agentInteraction ? ['drag', 'double_click'] : [])] : [])];
+    const actions = isDisabled ? [] : fileInput ? ['attach_files', 'paste_image'] : [...(!box.inViewport ? ['scroll'] : []), ...(box.inViewport && !box.blocked ? [...(editable ? [isSelect ? 'select' : 'fill'] : []), ...(checkable && safeClick(element) ? ['check'] : []), ...(safeClick(element) ? ['click', 'hover'] : []), ...(editable || safeClick(element) ? ['press'] : []), ...(element instanceof HTMLImageElement ? ['image', 'copy_image'] : []), ...(element.dataset.agentInteraction ? element.dataset.agentInteraction === 'double_click' ? ['double_click'] : ['drag', 'double_click'] : [])] : [])];
     const owner = element.closest<HTMLElement>('[data-agent-object],article,fieldset');
     const context = owner?.dataset.agentObject || owner?.querySelector('legend,h2,h3,h4')?.textContent?.trim();
     const image = element instanceof HTMLImageElement && element.getAttribute('src') && !/api.?key|token|secret|password/i.test(element.src) ? { src: element.src.startsWith(location.origin + '/') ? element.src.slice(location.origin.length) : element.src, width: element.naturalWidth, height: element.naturalHeight } : undefined;
@@ -310,7 +312,8 @@ export const operateAgentPage = async (operation: AgentPageOperation, signal?: A
     result = await promptAgentService.uploadExport(operation.sessionId, item.name, item.blob, signal);
   } else if (operation.action === 'command') {
     if (!operation.command) throw new Error('请指定当前工作区提供的操作');
-    result = await executeAgentCommand(before.app, operation.command, operation.args || {}, operation.permissionMode === 'read_only', signal, before.foreground ? before.scope : undefined);
+    // 权限只取后端操作信封，不能由模型填写的命令参数扩权。
+    result = await executeAgentCommand(before.app, operation.command, { ...operation.args, agentPermissionMode: operation.permissionMode || 'standard', agentSessionId: operation.agentSessionId }, operation.permissionMode === 'read_only', signal, before.foreground ? before.scope : undefined);
   } else if (operation.action === 'navigate') {
     if (!operation.view || !pages[operation.view] || operation.view === 'edit') throw new Error('请选择支持的项目页面');
     await new Promise<void>((resolve, reject) => {
@@ -328,7 +331,7 @@ export const operateAgentPage = async (operation: AgentPageOperation, signal?: A
     const element = controls.get(operation.controlId || ''), descriptor = before.descriptors.find(item => item.id === operation.controlId);
     const action = operation.action === 'fill' && element instanceof HTMLSelectElement ? 'select' : operation.action;
     if (!element?.isConnected || !descriptor?.actions.includes(action)) throw new Error('该控件不可操作、被遮挡或需使用业务工具；请重新读取');
-    if (operation.permissionMode === 'read_only' && !['scroll', 'hover', 'image', 'copy_image'].includes(action) && !(action === 'click' && (['img', 'summary', 'tab'].includes(descriptor.role) || element.hasAttribute('aria-haspopup') || /打开|返回|查看|关闭|预览/.test(descriptor.label))) && !(action === 'press' && ['Escape', 'Tab', 'Shift+Tab', 'PageDown', 'PageUp'].includes(operation.key || ''))) throw new Error('当前为只读权限，不能填写或改变项目控件');
+    if (operation.permissionMode === 'read_only' && !['scroll', 'hover', 'image', 'copy_image'].includes(action) && !(['click', 'select'].includes(action) && element.dataset.agentAction === 'browse' && safeClick(element)) && !(action === 'press' && ['Escape', 'Tab', 'Shift+Tab', 'PageDown', 'PageUp'].includes(operation.key || ''))) throw new Error('当前为只读权限，不能填写或改变项目控件');
     if (action === 'scroll') element.scrollIntoView({ block: 'center', behavior: 'auto' });
     else if (action === 'attach_files') {
       if (!(element instanceof HTMLInputElement) || element.type !== 'file') throw new Error('目标不是文件上传入口');
@@ -376,7 +379,15 @@ export const operateAgentPage = async (operation: AgentPageOperation, signal?: A
       element.focus(); const event = new KeyboardEvent('keydown', { key: key === 'Shift+Tab' ? 'Tab' : key, shiftKey: key === 'Shift+Tab', bubbles: true, cancelable: true }); element.dispatchEvent(event);
       if (!event.defaultPrevented) {
         if (key === 'Tab' || key === 'Shift+Tab') { const list = before.descriptors.filter(item => !item.disabled && item.inViewport && !item.blocked).map(item => controls.get(item.id)!); const index = list.indexOf(element); (list[(index + (key === 'Tab' ? 1 : list.length - 1)) % list.length] || element).focus(); }
-        else if (key === 'Enter') { if (!field(element) && !element.isContentEditable && safeClick(element)) element.click(); else element.blur(); } // 不模拟表单提交，生图等操作只能走专用工具。
+        else if (key === 'Enter') {
+          if (!field(element) && !element.isContentEditable && safeClick(element)) element.click();
+          else {
+            const form = element instanceof HTMLInputElement && element.type === 'search' ? element.form : null;
+            // 仅补原生单字段搜索的隐式提交，不扩大到生成、授权或其它业务表单。
+            if (form && !form.closest('[data-agent-action="business"],[role="alertdialog"]') && Array.from(form.elements).filter(item => item instanceof HTMLInputElement || item instanceof HTMLTextAreaElement || item instanceof HTMLSelectElement || item instanceof HTMLButtonElement && item.type === 'submit').length === 1) form.requestSubmit();
+            else element.blur();
+          }
+        }
         else if (element instanceof HTMLSelectElement && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(key)) {
           const options = Array.from(element.options).filter(option => !option.disabled), index = options.findIndex(option => option.selected), next = key === 'Home' ? 0 : key === 'End' ? options.length - 1 : Math.max(0, Math.min(options.length - 1, index + (key === 'ArrowDown' ? 1 : -1)));
           if (options[next]) { element.value = options[next].value; element.dispatchEvent(new Event('change', { bubbles: true })); }

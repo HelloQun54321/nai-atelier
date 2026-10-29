@@ -5,14 +5,17 @@ import type { D1Database, D1PreparedStatement, RouteContext } from '../../../wor
 
 let sqlite: DatabaseSync;
 let db: D1Database;
+let beforeRun: ((sql: string) => void) | undefined;
 beforeEach(() => {
   sqlite = new DatabaseSync(':memory:');
+  beforeRun = undefined;
   sqlite.exec("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT); INSERT INTO settings VALUES ('unrelated','keep'); CREATE TABLE chains(id TEXT PRIMARY KEY,tags TEXT,params TEXT); INSERT INTO chains VALUES ('asset','[\"旧组合分类\"]','{\"unchanged\":true}')");
+  sqlite.exec('ALTER TABLE chains ADD COLUMN user_id TEXT; ALTER TABLE chains ADD COLUMN updated_at INTEGER');
   const prepare = (sql: string, values: SQLInputValue[] = []): D1PreparedStatement => ({
     bind: (...next) => prepare(sql, next),
     first: async <T>() => (sqlite.prepare(sql).get(...values) ?? null) as T | null,
     all: async <T>() => ({ results: sqlite.prepare(sql).all(...values) as T[], success: true, meta: {} }),
-    run: async <T>() => ({ results: [] as T[], success: true, meta: sqlite.prepare(sql).run(...values) }),
+    run: async <T>() => { beforeRun?.(sql); return { results: [] as T[], success: true, meta: sqlite.prepare(sql).run(...values) }; },
     raw: async <T>() => [] as T[],
   });
   db = { prepare } as D1Database;
@@ -23,6 +26,84 @@ const invoke = async (method: string, body?: unknown, owner = 'owner', role = 'a
   db, currentUser: { id: owner, role }, path: '/api/prompt-library-category-tree', method,
   request: new Request('http://localhost/api/prompt-library-category-tree', { method, ...(body === undefined && raw === undefined ? {} : { body: raw ?? JSON.stringify(body) }) }),
 } as RouteContext))!;
+const action = async (body?: unknown, role = 'admin') => (await handlePromptLibraryCategoryTreeRoute({
+  db, currentUser: { id: 'owner', role }, path: '/api/prompt-library-category-tree/actions', method: body ? 'POST' : 'GET',
+  request: new Request('http://localhost/api/prompt-library-category-tree/actions', { method: body ? 'POST' : 'GET', ...(body ? { body: JSON.stringify(body) } : {}) }),
+} as RouteContext))!;
+const insert = (id: string, tags: string[], combination = true, owner = 'owner') => sqlite.prepare('INSERT INTO chains(id,user_id,tags,params) VALUES (?,?,?,?)').run(id, owner, JSON.stringify(tags), JSON.stringify(combination ? { _rollContentSnapshot: { format: 'nai-roll-content', original: true }, keep: 28 } : { _promptLibraryOriginal: true }));
+
+it('组合目录只读投影旧标签、名单和空侧树，不借用原文或他人同名标签', async () => {
+  insert('combo', ['旧分类']); insert('original', ['原文专有'], false); insert('other', ['他人'], true, 'other');
+  sqlite.prepare('INSERT INTO settings VALUES (?,?)').run('prompt_library_tags_v1:owner', '["空候选"]');
+  await invoke('PUT', { revision: 0, nodes: [{ id: '空侧树', name: '空侧树', parentId: null }] });
+  const response = await action();
+  expect(await response.json()).toMatchObject({ tree: { nodes: [{ id: '空侧树' }, { id: '空候选' }, { id: '旧分类' }] } });
+  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM settings').get()!.n).toBe(3);
+});
+
+it('创建幂等、改名移动和删除提升子目录，只改组合同名归属并保留无关标签和参数', async () => {
+  insert('combo', ['旧分类', '保留', '__internal__']); insert('original', ['旧分类'], false);
+  const original = sqlite.prepare('SELECT params FROM chains WHERE id=?').get('combo')!.params;
+  expect(await (await action({ action: 'create', name: '父目录' })).json()).toMatchObject({ ok: true });
+  expect(await (await action({ action: 'create', name: '父目录' })).json()).toMatchObject({ ok: true });
+  expect(await (await action({ action: 'update', id: '旧分类', name: '新分类', parentId: '父目录' })).json()).toMatchObject({ ok: true, completedIds: ['combo'] });
+  expect(JSON.parse(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags as string)).toEqual(['新分类', '保留', '__internal__']);
+  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('original')!.tags).toBe('["旧分类"]');
+  expect(sqlite.prepare('SELECT params FROM chains WHERE id=?').get('combo')!.params).toBe(original);
+  expect(await (await action({ action: 'delete', id: '父目录' })).json()).toMatchObject({ ok: true, tree: { nodes: expect.arrayContaining([{ id: '新分类', name: '新分类', parentId: null }]) } });
+  expect(await (await action({ action: 'delete', id: '新分类' })).json()).toMatchObject({ ok: true, completedIds: ['combo'] });
+  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM chains').get()!.n).toBe(3);
+});
+
+it('组合增减归属验证范围，逐项回执且并发手改不丢失', async () => {
+  insert('combo', ['旧分类', '保留']); insert('race', ['旧分类']); insert('original', ['旧分类'], false); insert('other', ['旧分类'], true, 'other');
+  await action({ action: 'create', name: '目标' });
+  expect((await action({ action: 'memberships', itemIds: ['combo'], addDirectoryIds: ['未知'] })).status).toBe(400);
+  expect((await action({ action: 'delete', id: '旧分类' }, 'guest')).status).toBe(403);
+  beforeRun = sql => { if (sql.startsWith('UPDATE chains')) sqlite.prepare('UPDATE chains SET tags=? WHERE id=?').run('["手改"]', 'race'); };
+  const response = await action({ action: 'memberships', itemIds: ['combo', 'race', 'original', 'other'], addDirectoryIds: ['目标'], removeDirectoryIds: ['旧分类'] });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ ok: false, completedIds: ['combo'], failedItems: expect.arrayContaining([{ id: 'race', status: 409, error: expect.any(String) }, { id: 'original', status: 400, error: expect.any(String) }, { id: 'other', status: 404, error: expect.any(String) }]) });
+  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags).toBe('["保留","目标"]');
+  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('race')!.tags).toBe('["手改"]');
+});
+
+it('分类删除部分冲突不提交整树，重读重试保留已经成功的组合及后来的参数', async () => {
+  insert('combo', ['旧分类']); insert('race', ['旧分类']);
+  beforeRun = sql => { if (sql.startsWith('UPDATE chains')) sqlite.prepare('UPDATE chains SET params=? WHERE id=?').run('{"_rollContentSnapshot":{"format":"nai-roll-content"},"manual":true}', 'race'); };
+  expect(await (await action({ action: 'delete', id: '旧分类' })).json()).toMatchObject({ ok: false, completedIds: ['combo'], failedItems: [{ id: 'race', status: 409 }] });
+  beforeRun = undefined;
+  expect(await (await action({ action: 'delete', id: '旧分类' })).json()).toMatchObject({ ok: true, completedIds: ['race'] });
+  expect(JSON.parse(sqlite.prepare('SELECT params FROM chains WHERE id=?').get('race')!.params as string).manual).toBe(true);
+});
+
+it('落树前新增的旧归属阻止虚报整批完成；循环移动和候选并发不覆盖', async () => {
+  insert('combo', ['旧分类']);
+  beforeRun = sql => { if (sql.startsWith('INSERT OR IGNORE INTO settings(key,value) SELECT')) insert('late', ['旧分类']); };
+  expect(await (await action({ action: 'update', id: '旧分类', name: '新分类' })).json()).toMatchObject({ ok: false, completedIds: ['combo'], failedItems: [{ id: '旧分类', status: 409 }] });
+  beforeRun = undefined;
+  expect(await (await action({ action: 'update', id: '旧分类', name: '新分类' })).status).toBe(400);
+  expect(await (await action({ action: 'delete', id: '旧分类' })).json()).toMatchObject({ ok: true, completedIds: ['late'] });
+  await action({ action: 'create', name: '子目录', parentId: '新分类' });
+  expect((await action({ action: 'update', id: '新分类', parentId: '子目录' })).status).toBe(400);
+  beforeRun = sql => { if (sql.startsWith('UPDATE settings SET value = ? WHERE key = ? AND value = ? AND (SELECT value')) sqlite.prepare('UPDATE settings SET value=? WHERE key=?').run('["手改候选"]', 'prompt_library_tags_v1:owner'); };
+  expect(await (await action({ action: 'create', name: '并发目录' })).json()).toMatchObject({ ok: false, failedItems: [{ id: '并发目录', status: 409 }] });
+  expect(sqlite.prepare('SELECT value FROM settings WHERE key=?').get('prompt_library_tags_v1:owner')!.value).toBe('["手改候选"]');
+});
+
+it('普通改名拒绝已有分类，整树和成员保持原样；关系更新时间严格递增', async () => {
+  insert('combo', ['原分类', '目标分类']);
+  await action({ action: 'create', name: '空分类' });
+  const before = sqlite.prepare('SELECT key,value FROM settings ORDER BY key').all();
+  const tags = sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags;
+  expect((await action({ action: 'update', id: '原分类', name: '目标分类' })).status).toBe(400);
+  expect(sqlite.prepare('SELECT key,value FROM settings ORDER BY key').all()).toEqual(before);
+  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags).toBe(tags);
+  const later = Date.now() + 100_000;
+  sqlite.prepare('UPDATE chains SET updated_at=? WHERE id=?').run(later, 'combo');
+  expect(await (await action({ action: 'memberships', itemIds: ['combo'], addDirectoryIds: ['空分类'] })).json()).toMatchObject({ ok: true });
+  expect(sqlite.prepare('SELECT updated_at FROM chains WHERE id=?').get('combo')!.updated_at).toBe(later + 1);
+});
 
 it('首次GET返回空树且绝不写入，PUT仅保存层级不改组合标签或旧分类名单', async () => {
   sqlite.prepare('INSERT INTO settings VALUES (?,?)').run('prompt_library_tags_v1:owner', '["旧组合分类"]');

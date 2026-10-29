@@ -1,12 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { AgentLocalImages } from '../../scripts/agent-local-images.mjs';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
 const scope = { sessionId: 'synthetic', keyHash: 'synthetic-key' };
+const naia = () => {
+  const bytes = Buffer.alloc(52); bytes.set([78,65,73,65,13,10,26,10]); bytes.writeUInt32BE(1, 8); bytes.writeUInt32BE(4, 12); return bytes;
+};
+const encoding = Buffer.alloc(64, 1).toString('base64');
+const vibeBundle = Buffer.from(JSON.stringify({ identifier: 'novelai-vibe-transfer-bundle', version: 1, vibes: [{ identifier: 'novelai-vibe-transfer', version: 1, type: 'encoding', id: createHash('sha256').update(encoding).digest('hex'), encodings: { v5full: { synthetic: { encoding, params: { information_extracted: 1 } } } } }] }));
 const fixture = async fn => {
   const root = await mkdtemp(join(tmpdir(), 'nai-local-image-test-'));
   const read = join(root, 'read'), write = join(root, 'write'), protectedRoot = join(root, 'local-data');
@@ -105,4 +111,45 @@ test('实际导出支持 JSON、Vibe 和 ZIP，隔离归属与写权限且同名
   assert.throws(() => store.registerExport(scope, 'arbitrary.txt', bytes), /仅支持/);
   assert.throws(() => store.registerExport(scope, 'broken.zip', bytes), /仅支持/);
   setMode('read_only'); await assert.rejects(store.saveExport(scope, item.exportId, write), /只读/);
+}));
+
+test('分享包与 Vibe 组合贯通列出、文件引用、目录导入及原字节导出，不覆盖同名文件', () => fixture(async ({ read, write, store, setMode }) => {
+  const cases = [['recipe.naia', naia(), 'application/x-nai-atelier-style-bundle'], ['references.naiv4vibeBundle', vibeBundle, 'application/json']];
+  for (const [name, bytes] of cases) await writeFile(join(read, name), bytes);
+  const listing = await store.list(scope, read, 0, 50, true);
+  for (const [name] of cases) assert.equal(listing.items.find(item => item.name === name)?.kind, 'creative-file');
+  assert.equal((await store.list(scope, read)).items.length, 1);
+  const files = await store.directoryFiles(scope, read);
+  setMode('full');
+  for (const [name, bytes, mimeType] of cases) {
+    const file = files.find(item => item.name === name); assert.ok(file); assert.equal(file.relativePath, 'read/' + name);
+    const id = new URL(file.path, 'http://localhost').searchParams.get('id');
+    const asset = await store.asset(scope, id); assert.deepEqual(asset.buffer, bytes); assert.equal(asset.mimeType, mimeType);
+    await assert.rejects(store.asset({ ...scope, keyHash: 'other' }, id), /不属于/);
+    const exported = store.registerExport(scope, name, asset.buffer);
+    const first = await store.saveExport(scope, exported.exportId, write);
+    assert.equal(first.filename, name); assert.deepEqual(await readFile(first.path), bytes);
+    const second = await store.saveExport(scope, exported.exportId, write);
+    assert.equal(second.overwritten, false); assert.notEqual(second.path, first.path); assert.deepEqual(await readFile(second.path), bytes);
+  }
+}));
+
+test('新格式拒绝损坏头部、错误组合形态、保护区及超过单文件上限的包', () => fixture(async ({ read, protectedRoot, store }) => {
+  const unsupported = naia(); unsupported.writeUInt32BE(2, 8);
+  const length = naia(); length.writeUInt32BE(100, 12);
+  for (const [name, bytes] of [['short.naia', Buffer.from('NAIA')], ['version.naia', unsupported], ['length.naia', length], ['array.naiv4vibeBundle', Buffer.from('[]')], ['empty.naiv4vibeBundle', Buffer.from('{"identifier":"novelai-vibe-transfer-bundle","version":1,"vibes":[]}')], ['bad.naiv4vibeBundle', Buffer.from('{"identifier":"novelai-vibe-transfer-bundle","version":1,"vibes":[{}]}')]]) {
+    await writeFile(join(read, name), bytes);
+    await assert.rejects(store.registerFile(scope, join(read, name)));
+    assert.throws(() => store.registerExport(scope, name, bytes));
+  }
+  await writeFile(join(protectedRoot, 'private.naia'), naia());
+  await assert.rejects(store.registerFile(scope, join(protectedRoot, 'private.naia')), /保护区/);
+  await writeFile(join(read, 'large.naia'), naia()); await truncate(join(read, 'large.naia'), 30 * 1024 * 1024 + 1);
+  await assert.rejects(store.registerFile(scope, join(read, 'large.naia')), /30 MB/);
+  assert.throws(() => store.registerExport(scope, 'large.naia', Buffer.alloc(30 * 1024 * 1024 + 1)), /30 MB/);
+}));
+
+test('目录导入在 128 MB 总量处明确拒绝，不返回成功文件清单', () => fixture(async ({ read, store }) => {
+  for (let index = 0; index < 5; index++) { const path = join(read, `large-${index}.png`); await writeFile(path, png); await truncate(path, 27 * 1024 * 1024); }
+  await assert.rejects(store.directoryFiles(scope, read), /128 MB/);
 }));

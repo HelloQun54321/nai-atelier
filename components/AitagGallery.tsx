@@ -569,7 +569,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         aria-pressed={isSelected}
         aria-label={t("查看作品 {0}", [work.title || `#${work.id}`])}
         tabIndex={0}
-        onClick={() => loadDetail(work)}
+        data-agent-action="browse" onClick={() => loadDetail(work)}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();

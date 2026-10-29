@@ -156,7 +156,7 @@ it('统一浏览替换原分区，收录成功通过临时查看回调定位新�
   await waitFor(() => expect(saved).toHaveBeenCalledWith('new-entry'));
   fireEvent.click(screen.getByRole('button', { name: '查看' }));
   expect(view).toHaveBeenCalledWith('new-entry');
-  expect(save).toHaveBeenCalledWith('new prompt', '', '', []);
+  expect(save).toHaveBeenCalledWith('new prompt', '', '', [], undefined, []);
 });
 
 it('统一浏览普通入口称搭配，固定目标沿用随机搭配，旧分区默认名称保持兼容', () => {

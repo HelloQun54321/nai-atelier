@@ -19,7 +19,7 @@ vi.mock('../../services/imageEdit', async importOriginal => ({
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
 vi.mock('../../components/VibeManager', () => ({ VibeManager: () => null }));
 vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => null }));
-vi.mock('../../components/chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => null }));
+vi.mock('../../components/chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => <div data-testid="image-edit-subject" /> }));
 vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
 vi.mock('../../components/ImageEditPreview', () => ({ ImageEditPreview: (props: { canGenerate: boolean; unavailableLabel?: string; generationCostLabel: string; onGenerate: () => void }) => <>
   <output data-testid="desktop-status">{props.unavailableLabel || '生成'}</output>
@@ -36,11 +36,11 @@ const onCanvasChange = vi.fn();
 const onGenerateBar = vi.fn();
 const onAgentGenerateReady = vi.fn();
 const drawImage = vi.fn();
-const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel, classified = false }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string; classified?: boolean }) => {
+const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string }) => {
   const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'scene', 'negative', params, patch));
   const [bar, setBar] = useState({ costLabel: '', unavailableLabel: '' });
   return <><output data-testid="mobile-cost">{bar.costLabel}</output><output data-testid="mobile-status">{bar.unavailableLabel || '生成'}</output>
-    <output data-testid="prompt-draft">{JSON.stringify(draft)}</output><ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft} promptClassificationEnabled={classified}
+    <output data-testid="prompt-draft">{JSON.stringify(draft)}</output><ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft}
       generationUnavailableLabel={generationUnavailableLabel}
       layout={DEFAULT_LAB_PAGE_LAYOUTS[operation]} tagAssistEnabled={false} apiKey="" notify={vi.fn()}
       generationCostLabel={(_operation, _focused, context) => `${context?.width}×${context?.height}`}
@@ -74,48 +74,66 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('图生图输出尺寸与提交副本', () => {
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 动态目录正负词可编辑，整段转换只保留一份内容', async operation => {
-    const patch = { prompt: 'artist:test, manual, 1.2::forest, mist::', negativePrompt: 'lowres', params: { ...params,
-      _promptSections: { extra: 'manual', 'directory:scene': '1.2::forest, mist::', sectionNegatives: { 'directory:scene': 'city' },
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 旧分栏整段显示，编辑正向保留一次完整负面与角色参数', async operation => {
+    const patch = { prompt: 'artist:test, manual, 1.2::forest, mist::, comic panel', negativePrompt: 'lowres', params: { ...params,
+      _promptSections: { extra: 'manual', 'directory:scene': '1.2::forest, mist::', presentation: 'comic panel',
+        sectionNegatives: { 'directory:scene': 'city', presentation: 'multiple panels' },
         sectionMeta: { 'directory:scene': { directoryName: '场景', directoryPath: ['环境', '场景'] } } } } };
-    const view = render(<Harness classified operation={operation} patch={patch} />);
-    const positive = screen.getByRole('textbox', { name: '环境 / 场景' }) as HTMLTextAreaElement;
+    render(<Harness operation={operation} patch={patch} />);
+    fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+    const positive = screen.getByDisplayValue(patch.prompt) as HTMLTextAreaElement;
     await waitFor(() => expect(positive.disabled).toBe(false));
-    fireEvent.change(positive, { target: { value: '1.2::forest, rain::' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '环境 / 场景 · 内容负面' }), { target: { value: 'desert' } });
-    view.rerender(<Harness operation={operation} />);
-    const full = screen.getByDisplayValue('artist:test, manual, 1.2::forest, rain::') as HTMLTextAreaElement;
-    expect((screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement).value).toBe('lowres, desert');
-    fireEvent.change(full, { target: { value: `${full.value}, birds` } });
-    const draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
-    expect(draft.prompt).toBe('artist:test, manual, 1.2::forest, rain::, birds');
-    expect(draft.negativePrompt).toBe('lowres, desert'); expect(draft.params._promptSections).toBeUndefined();
-  });
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 动态全局分类负面继承Medium锁定', async operation => {
-    render(<Harness classified operation={operation} patch={{ prompt: 'artist:test, forest', params: { ...params, model: 'nai-diffusion-5-full-medium',
-      _promptSections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } } } }} />);
-    const positive = screen.getByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement;
-    await waitFor(() => expect(positive.disabled).toBe(false));
-    const negative = screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement;
-    expect(negative.disabled).toBe(true); expect(negative.value).toBe('city');
-  });
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 分类编辑与整段编辑共享正文，编辑某栏保留其他词、分类负面和参数', async operation => {
-    const view = render(<Harness classified operation={operation} patch={{ prompt: 'artist:test, red dress, forest', negativePrompt: 'lowres', params: { ...params, _promptSections: { wardrobe: 'red dress', scene: 'forest', sectionNegatives: { scene: 'city' } } } }} />);
-    await waitFor(() => expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).disabled).toBe(false));
-    expect((screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement).value).toBe('artist:test');
-    fireEvent.change(screen.getByRole('textbox', { name: '服饰' }), { target: { value: 'blue dress' } });
+    const before = screen.getByTestId('prompt-draft').textContent;
+    expect(screen.queryByRole('tab', { name: '画面' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '其他画面补充' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: '环境 / 场景' })).toBeNull();
+    expect((screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement).value).toBe('lowres, city, multiple panels');
+    fireEvent.click(screen.getByRole('tab', { name: operation === 'image-to-image' ? '底图' : operation === 'inpaint' ? '画板' : '画布' }));
+    fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+    expect(screen.getByTestId('prompt-draft').textContent).toBe(before);
+    fireEvent.change(positive, { target: { value: patch.prompt + ', birds' } });
     let draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
-    expect(draft.prompt).toBe('artist:test, blue dress, forest');
-    expect(draft.params._promptSections?.wardrobe).toBe('blue dress');
-    expect(draft.params.seed).toBe(123);
-    view.rerender(<Harness operation={operation} />);
-    const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
-    expect(negative.value).toBe('lowres, city');
-    fireEvent.change(screen.getByDisplayValue('artist:test, blue dress, forest'), { target: { value: 'new full prompt, ' } });
-    draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
-    expect(draft.prompt).toBe('new full prompt, ');
-    expect(draft.negativePrompt).toBe('lowres, city');
+    expect(draft.prompt).toBe(patch.prompt + ', birds');
+    expect(draft.negativePrompt).toBe('lowres, city, multiple panels');
     expect(draft.params._promptSections).toBeUndefined();
+    expect(draft.params.characters).toEqual(params.characters);
+    expect(draft.params.seed).toBe(123);
+    fireEvent.change(positive, { target: { value: patch.prompt + ', birds, ' } });
+    draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe(patch.prompt + ', birds, ');
+    expect(draft.negativePrompt).toBe('lowres, city, multiple panels');
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 先编辑整段负面仍保留旧正向分栏，后续编辑不重复拼接', async operation => {
+    const patch = { prompt: 'artist:test, red dress, forest', negativePrompt: 'lowres', params: { ...params,
+      _promptSections: { wardrobe: 'red dress', scene: 'forest', sectionNegatives: { scene: 'city' } } } };
+    render(<Harness operation={operation} patch={patch} />);
+    fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+    const positive = screen.getByDisplayValue(patch.prompt) as HTMLTextAreaElement;
+    await waitFor(() => expect(positive.disabled).toBe(false));
+    fireEvent.change(screen.getByPlaceholderText('输入本次负面提示词'), { target: { value: 'lowres, city, blurry' } });
+    let draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe(patch.prompt);
+    expect(draft.negativePrompt).toBe('lowres, city, blurry');
+    expect(draft.params._promptSections).toMatchObject({ wardrobe: 'red dress', scene: 'forest' });
+    expect(draft.params._promptSections?.sectionNegatives).toBeUndefined();
+    fireEvent.change(positive, { target: { value: patch.prompt + ', birds' } });
+    draft = JSON.parse(screen.getByTestId('prompt-draft').textContent!) as LabImageEditDraft;
+    expect(draft.prompt).toBe(patch.prompt + ', birds');
+    expect(draft.negativePrompt).toBe('lowres, city, blurry');
+    expect(draft.params._promptSections).toBeUndefined();
+    expect(draft.params.characters).toEqual(params.characters);
+  });
+
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s Medium 整段合并旧负面仍锁定，正向可编辑', async operation => {
+    render(<Harness operation={operation} patch={{ prompt: 'artist:test, forest', negativePrompt: 'lowres', params: { ...params,
+      model: 'nai-diffusion-5-full-medium', _promptSections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' } } } }} />);
+    const positive = screen.getByDisplayValue('artist:test, forest') as HTMLTextAreaElement;
+    await waitFor(() => expect(positive.disabled).toBe(false));
+    const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true);
+    expect(negative.value).toBe('lowres, city');
+    expect(negative.closest('.nai-model-locked')).not.toBeNull();
   });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 的 Medium 全局负面词保持原文且灰白禁用，正向词仍可用', async operation => {
     render(<Harness operation={operation} patch={{ params: { ...params, model: 'nai-diffusion-5-full-medium' } }} />);
@@ -179,6 +197,17 @@ describe('图生图输出尺寸与提交副本', () => {
     expect(screen.getByText(/宽高必须是 64/)).toBeTruthy();
     fireEvent.change(screen.getByRole('spinbutton', { name: '图生图输出宽度' }), { target: { value: '768' } });
     await ready(); expectSize('768×1024');
+  });
+
+  it('Agent 实际编辑请求按基础、前置模块、主体、后置模块顺序编译且不改模块', async () => {
+    render(<Harness />); await ready();
+    const generate = onAgentGenerateReady.mock.calls.at(-1)![0];
+    const draft = { basePrompt: 'base', subjectPrompt: 'subject', negativePrompt: 'negative', params,
+      modules: [{ id: 'post', name: 'post', content: 'post', isActive: true }, { id: 'pre', name: 'pre', content: 'pre', isActive: true, position: 'pre' }, { id: 'off', name: 'off', content: 'unused', isActive: false }] } as PromptAgentDraft;
+    const before = structuredClone(draft);
+    await act(async () => { await generate(draft); });
+    expect(onGenerate.mock.calls[0][0].prompt).toBe('base, pre, subject, post');
+    expect(draft).toEqual(before);
   });
 
   it('Agent 覆盖参数仍遵循当前尺寸模式，角色转换与手动生成一致', async () => {

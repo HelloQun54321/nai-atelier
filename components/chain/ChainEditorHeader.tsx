@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { AlignLeft, Copy, FileDown, Languages, ListTree, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
+import { Copy, FileDown, Languages, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
@@ -21,8 +21,6 @@ export interface ChainEditorHeaderProps {
     hasChanges: boolean;
     hasPendingPreviewCover: boolean;
     tagAssistEnabled: boolean;
-    promptClassificationEnabled?: boolean;
-    onPromptClassificationEnabledChange?: (enabled: boolean) => void;
     onPromptToolbarSlotChange?: (slot: PromptToolbarSlot | null) => void;
     onTagAssistEnabledChange: (enabled: boolean) => void;
     activeGenerationMode: GenerationMode;
@@ -51,8 +49,6 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     hasChanges,
     hasPendingPreviewCover,
     tagAssistEnabled,
-    promptClassificationEnabled = false,
-    onPromptClassificationEnabledChange,
     onPromptToolbarSlotChange,
     onTagAssistEnabledChange,
     activeGenerationMode,
@@ -84,13 +80,14 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
     const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
     const saveLabel = isUploading ? '正在保存' : `保存${entityLabel}`;
+    const forkLabel = isCharacterMode ? t("另存为新角色") : t("另存为新串");
     const saveDetail = hasPendingPreviewCover ? '保存并将当前图片设为封面' : hasChanges ? '保存修改' : '已保存';
     const saveClass = canSaveCurrentChain && !isUploading
         ? '!border-emerald-300 !bg-emerald-50 !text-emerald-700 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300'
         : '';
     const renderSaveOptions = () => <div className="space-y-1">
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeSaveActions(); handleSaveAll(); }}><Save />{saveDetail}</button>
-        <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />{t("另存为新串")}</button>
+        <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />{forkLabel}</button>
     </div>;
     // 顶栏与编辑／预览共用 Layout 的分栏状态，不能单独提前展开成整行。
     useLayoutEffect(() => {
@@ -133,7 +130,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     onBack={onBack}
                 />
                 {compact && !isPlayground && canSaveActiveModeToLibrary && isOwner && <div ref={saveAnchorRef} className="flex-none"><IconButton label={t(saveLabel)} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className={`mobile-touch ${saveClass}`}><Save /></IconButton></div>}
-                {compact && !isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <IconButton label={t("另存为新串")} disabled={isUploading} onClick={handleFork} className="mobile-touch"><Save /></IconButton>}
+                {compact && !isPlayground && canSaveActiveModeToLibrary && !isOwner && !isGuest && <IconButton label={forkLabel} disabled={isUploading} onClick={handleFork} className="mobile-touch"><Save /></IconButton>}
                 {compact && <div ref={moreAnchorRef} className="ml-auto flex-none"><IconButton
                     label={t("更多操作")}
                     aria-haspopup="dialog"
@@ -164,7 +161,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     <span className="relative block"><Tags /><span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-mini font-black leading-none">{tagAssistEnabled ? 'o' : '−'}</span></span>
                 </IconButton>
                 {canEdit && <IconButton label={t("重置当前模式")} tone="danger" onClick={handleReset}><RotateCcw /></IconButton>}
-                {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : t("另存为新串")} disabled={isUploading} onClick={handleFork} className="!border-emerald-300 !bg-emerald-50 !text-emerald-700 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"><Save /></IconButton>}
+                {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : forkLabel} disabled={isUploading} onClick={handleFork} className="!border-emerald-300 !bg-emerald-50 !text-emerald-700 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"><Save /></IconButton>}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && <div ref={saveAnchorRef} className="flex-none">
                     <IconButton label={t(saveLabel)} title={saveDetail} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className={saveClass}><Save /></IconButton>
                 </div>}
@@ -204,20 +201,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     }
 
     function renderPromptTools() {
-        const label = t(promptClassificationEnabled ? '切换为整段编辑' : '切换为分类编辑');
-        return <>
-            {onPromptClassificationEnabledChange && (compact ? <ActionRow
-                icon={promptClassificationEnabled ? <ListTree className="h-4 w-4" /> : <AlignLeft className="h-4 w-4" />}
-                label={label} detail={t(promptClassificationEnabled ? '分类' : '整段')}
-                onClick={() => onPromptClassificationEnabledChange(!promptClassificationEnabled)} /> : <IconButton label={label}
-                title={`${t('提示词编辑方式')}：${t(promptClassificationEnabled ? '分类' : '整段')} · ${label}`}
-                aria-pressed={promptClassificationEnabled}
-                onClick={() => onPromptClassificationEnabledChange(!promptClassificationEnabled)}
-                className={promptClassificationEnabled ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}>
-                {promptClassificationEnabled ? <ListTree /> : <AlignLeft />}
-            </IconButton>)}
-            <div ref={setPromptToolbarSlot} className={compact ? "flex flex-col gap-1" : "flex items-center gap-2"} />
-        </>;
+        return <div ref={setPromptToolbarSlot} className={compact ? "flex flex-col gap-1" : "flex items-center gap-2"} />;
     }
 
 };

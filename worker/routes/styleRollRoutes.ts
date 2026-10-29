@@ -1,4 +1,4 @@
-import { validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
+import { rollPrompt, rollSourceId, rollCandidateModuleId, validateRollBlocklist, validateRollExperiment, validateRollPreset, type RollExperiment, type RollPreset } from '../../services/styleRoll';
 import { error, json, type RouteContext } from './types';
 
 const blocklistKey = (userId: string) => `style_roll_blocklist_v1:${userId}`;
@@ -75,6 +75,31 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
   }
 
   const prefix = `style_roll_v1:${currentUser.id}:`;
+  if (method === 'GET' && new URL(request.url).searchParams.get('agentRead') === '1') {
+    const query = new URL(request.url).searchParams;
+    const experimentId = query.get('experimentId');
+    const section = query.get('section') || 'candidates';
+    const offset = Number(query.get('offset') || 0), limit = Number(query.get('limit') || 20);
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 30 || !['candidates', 'rounds'].includes(section)) return error('Roll 读取分页无效', 400);
+    if (experimentId && !/^[a-zA-Z0-9_-]{1,100}$/.test(experimentId)) return error('Roll 记录 ID 无效', 400);
+    const page = <T,>(items: T[]) => ({ items: items.slice(offset, offset + limit), total: items.length, offset, limit, nextOffset: offset + limit < items.length ? offset + limit : null });
+    try {
+      if (!experimentId) {
+        const rows = await db.prepare('SELECT value FROM settings WHERE key >= ? AND key < ?').bind(prefix, prefix + '\uffff').all<{ value: string }>();
+        const experiments = rows.results.map(row => { const value: unknown = JSON.parse(row.value); validateRollExperiment(value); return value; });
+        return json({ kind: 'experiments', ...page(experiments.sort((a, b) => b.updatedAt - a.updatedAt).map(item => ({ id: item.id, name: item.name, revision: item.revision, archived: item.archived === true, rounds: item.rounds.length, candidates: item.candidates.length, updatedAt: item.updatedAt }))) });
+      }
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(prefix + experimentId).first<{ value: string }>();
+      if (!row) return error('Roll 记录不存在', 404);
+      const value: unknown = JSON.parse(row.value); validateRollExperiment(value);
+      const experiment = value;
+      const summary = { id: experiment.id, name: experiment.name, revision: experiment.revision, archived: experiment.archived === true, template: experiment.template, rules: experiment.rules, rounds: experiment.rounds.length, candidates: experiment.candidates.length };
+      const itemId = query.get('itemId');
+      const select = <T extends { id: string },>(items: T[]) => itemId ? { items: items.filter(item => item.id === itemId), total: items.some(item => item.id === itemId) ? 1 : 0, offset: 0, limit: 1, nextOffset: null } : page(items);
+      if (section === 'rounds') return json({ kind: 'rounds', experiment: summary, ...select(experiment.rounds) });
+      return json({ kind: 'candidates', experiment: summary, ...select(experiment.candidates.map(candidate => ({ ...candidate, expectedHistory: { sourceChainId: rollSourceId(experiment.id), moduleId: rollCandidateModuleId(candidate.id), prompt: rollPrompt(experiment.template, candidate.tags), seed: experiment.template.params.seed } }))) });
+    } catch { return error('Roll 串资料读取失败，请保留资料并检查备份', 500); }
+  }
   if (method === 'GET') {
     const rows = await db.prepare('SELECT value FROM settings WHERE key >= ? AND key < ?').bind(prefix, prefix + '\uffff').all<{ value: string }>();
     try {

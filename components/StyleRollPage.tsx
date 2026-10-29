@@ -570,7 +570,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     }),
   });
   useAgentCommand({
-    name: 'run_roll_round', label: '发起 Roll 一轮', description: '按当前规则抽取候选并保存；generate 为真时按权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { count: { type: 'number' }, generate: { type: 'boolean' }, sampledOnly: { type: 'boolean' }, agentPermissionMode: { type: 'string' } } }, scope: () => rootRef.current,
+    name: 'run_roll_round', label: '发起 Roll 一轮', description: '按当前规则抽取候选并保存；generate 为真时按权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { count: { type: 'number' }, generate: { type: 'boolean' }, sampledOnly: { type: 'boolean' } } }, scope: () => rootRef.current,
     execute: async args => {
       if (session || generatingRef.current) throw new Error('已有图片正在生成，请先等待或取消');
       if (args.generate !== false && !readRollApiKey()) throw new Error('请先在全局设置中配置 NovelAI API Key');
@@ -593,11 +593,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     },
   });
   useAgentCommand({
-    name: 'generate_roll_pending', label: '补齐 Roll 候选', description: '为当前轮未出图的候选发起生成，最多 24 张。', parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, agentPermissionMode: { type: 'string' } } }, scope: () => rootRef.current,
+    name: 'generate_roll_pending', label: '补齐 Roll 候选', description: '为当前轮未出图的候选发起生成，最多 24 张。', parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } } } }, scope: () => rootRef.current,
     execute: async args => {
       if (!experiment || !historyReady || historyLoading || session || generatingRef.current) throw new Error('当前不能发起生成，请先读取状态');
       const ids = Array.isArray(args.ids) ? args.ids.map(value => String(value)).slice(0, 24) : undefined;
-      const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
+      const pending = rollPendingCandidates(experiment, images, ids).slice(0, 24);
+      if (!continuousGenerationEnabled && pending.length > 1) throw new Error('连续生成已关闭，本次只能生成 1 张');
       if (!pending.length) return { generationStarted: false, ids: [], note: '没有待生成候选。' };
       let source = experiment;
       if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });

@@ -108,7 +108,7 @@ export const ImagePreviewActions: React.FC<Props> = ({
   }, []);
   return <div ref={actionsRef} className="contents">
     {(onBack || (imageUrl && canManageHistoryGroup)) && <div data-card-action="true" className="image-preview-action-group pointer-events-none absolute top-4 left-4 z-30 gap-2" onClick={event => event.stopPropagation()}>
-      {onBack && <button ref={backButtonRef} type="button" onClick={onBack} aria-label={t("返回小图")} title={t("返回小图")} className={`${IMAGE_PREVIEW_BUTTON_CLASS} pointer-events-auto !h-12 !w-12`}>
+      {onBack && <button data-agent-action="browse" ref={backButtonRef} type="button" onClick={onBack} aria-label={t("返回小图")} title={t("返回小图")} className={`${IMAGE_PREVIEW_BUTTON_CLASS} pointer-events-auto !h-12 !w-12`}>
         <ArrowLeft className="h-7 w-7" aria-hidden="true" />
       </button>}
       {imageUrl && canManageHistoryGroup && <>

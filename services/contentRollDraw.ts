@@ -306,7 +306,7 @@ export const toSections = (picks: RollPicks) => {
   return { global, character, written, rows };
 };
 /* 可读的一行摘要（给 toast / 证据用） */
-export const describe = (record: RollRecordLike | null | undefined) => (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).map((kind: string) => {
+export const describe = (record: RollRecordLike | null | undefined) => (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key) || key === 'presentation') ? Object.keys(record?.picks || {}) : KINDS).map((kind: string) => {
   const row = record && record.picks && record.picks[kind];
   if (!row) return (META[kind]?.short || record?.picks?.[kind]?.directoryName || kind) + '：—';
   return (META[kind]?.short || row.directoryName || kind) + '：' + (row.filled ? row.name + '「' + clip(row.summary || row.text, 40) + '」' : '（' + row.reasonText + '）');
@@ -316,7 +316,7 @@ export const samePicks = (a: RollPicks, b: RollPicks) =>
   [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].every((kind: string) => {
     const left = a[kind] as RollRow | undefined;
     const right = b[kind] as RollRow | undefined;
-    return String(left?.id || '') === String(right?.id || '') && (!isRollSectionKey(kind) || left?.text === right?.text && left?.negative === right?.negative);
+    return String(left?.id || '') === String(right?.id || '') && (!(isRollSectionKey(kind) || kind === 'presentation') || left?.text === right?.text && left?.negative === right?.negative);
   });
 /* 技术证据：算法版本 + 随机码 + 每栏随机流 + 参与 + 固定 + 每栏条目 id/池指纹（需求 §7 的「证据」） */
 export const evidenceOf = (record: RollRecordLike | null | undefined) => {
@@ -328,14 +328,14 @@ export const evidenceOf = (record: RollRecordLike | null | undefined) => {
     at: Number((record && record.at) || 0) || null,
     checks: Object.assign({}, (record && record.checks) || {}),
     locked: Object.assign({}, (record && (record.locked || record.locks)) || {}),
-    pools: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
+    pools: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key) || key === 'presentation') ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
       const unit = record?.units?.find((item: RollUnit) => item.id === kind);
       const pool = chains ? unit ? directoryPoolOf({ chains, directories: record?.directories }, unit) : isRollSectionKey(kind) ? null : poolOf(chains, kind) : null;
       const fallback = record?.picks?.[kind]?.['poolSize'];
       acc[kind] = { size: pool ? pool.length : Number(fallback) || 0, fingerprint: pool ? poolFingerprint(pool) : '' };
       return acc;
     }, {} as Record<string, Json>),
-    picks: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
+    picks: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key) || key === 'presentation') ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
       const row = record && record.picks && record.picks[kind];
       acc[kind] = row ? {
         id: row.id, name: row.name, reason: row.reason, locked: !!row.locked,

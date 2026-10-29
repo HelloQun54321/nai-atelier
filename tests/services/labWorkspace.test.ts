@@ -480,3 +480,13 @@ describe('lab workspace session', () => {
     expect(getLabModeLabel('outpaint')).toBe('扩图');
   });
 });
+
+it('呈现形式正负与来源随草稿保存恢复，旧字段未提供时不添加占位', () => {
+  const sections = { presentation: '{two panels}', sectionNegatives: { presentation: 'single panel' }, sectionMeta: { presentation: { source: 'manual', entryName: '双格' } } };
+  const session = createLabWorkspaceSession('style', '{two panels}', 'style negative', { ...LAB_DEFAULT_PARAMS, _promptSections: sections }, {});
+  saveLabWorkspaceSession('presentation-synthetic', session, true);
+  const restored = loadLabWorkspaceSession('presentation-synthetic', createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {}));
+  expect(restored.textToImage.params._promptSections).toMatchObject(sections);
+  expect(restored.textToImage.negativePrompt).toBe('style negative');
+  expect(normalizeParams({ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'garden' } })._promptSections).not.toHaveProperty('presentation');
+});

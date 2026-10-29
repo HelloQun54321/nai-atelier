@@ -119,7 +119,8 @@ export const META: Record<string, { short: string; title: string; scope: 'global
   pose: { short: '动作', title: '动作互动', scope: 'character' },
   expression: { short: '表情', title: '表情状态', scope: 'character' },
   scene: { short: '场景', title: '场景环境', scope: 'global' },
-  camera: { short: '镜头', title: '镜头画面', scope: 'global' }
+  camera: { short: '镜头', title: '镜头画面', scope: 'global' },
+  presentation: { short: '呈现形式', title: '呈现形式', scope: 'global' }
 };
 export const REASON: Record<string, string> = {
   ok: '抽中',
@@ -307,7 +308,7 @@ export const CONTENT_FORMAT = 'nai-roll-content';
 export const CONTENT_VERSION = 2;
 export const isDirectorySectionKey = (key: string): boolean => key.startsWith('directory:') && key.length > 10;
 export const ROLE_KEYS = ['appearance', 'wardrobe', 'pose', 'expression'];
-export const GLOBAL_KEYS = ['scene', 'camera'];
+export const GLOBAL_KEYS = ['scene', 'camera', 'presentation'];
 /* 每个分类的「内容负面」白名单：只留文本/备注/来源/模式，不留任何参数 */
 export const contentNegOf = (neg: Record<string, unknown> | null | undefined) => {
   if (!neg || typeof neg !== 'object') return null;
@@ -371,6 +372,7 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
   }
   if (any) roles.push({ key: 'role-1', name: '角色 1', provided, sections, negatives, meta });
   for (const kind of GLOBAL_KEYS) {
+    if (kind === 'presentation' && !picks[kind]) continue;
     const row = picks[kind];
     const on = checks[kind] !== false;
     if (!on || !row || !row.filled) { global[kind] = { provided: false }; continue; }
@@ -445,13 +447,14 @@ export const contentRead = (raw: Json): ContentRead => {
   }).filter((r: Json) => ROLE_KEYS.some((k: string) => r.provided[k]));
   const global: Record<string, Json> = {};
   for (const kind of GLOBAL_KEYS) {
+    if (kind === 'presentation' && !raw.global?.[kind]) continue;
     const g = raw.global && raw.global[kind];
     const text = String((g && g.text) || '').trim();
     const ok = !!(g && g.provided === true && text);
     global[kind] = ok ? { provided: true, text, negative: contentNegOf(g && g.negative), meta: contentMetaOf(g && g.meta) } : { provided: false };
   }
   const anyRole = roles.length > 0 || items.some(item => item.scope === 'character');
-  const anyGlobal = items.some(item => item.scope === 'global') || GLOBAL_KEYS.some((k: string) => global[k]['provided'] as boolean);
+  const anyGlobal = items.some(item => item.scope === 'global') || GLOBAL_KEYS.some((k: string) => global[k]?.['provided'] as boolean);
   if (!anyRole && !anyGlobal) return { ok: false, reason: 'no_content', warnings: warnings.concat(['这条记录里没有可载入的内容']), items: [], roles: [], global, anyRole, anyGlobal };
   return {
     ok: true,
@@ -488,7 +491,7 @@ export const contentScopeOf = (readData: ContentRead | null | undefined) => {
   if (!readData || !readData.ok) return out;
   out.roleCount = readData.roles.length || (readData.items?.some(item => item.scope === 'character') ? 1 : 0);
   if (readData.roles[0]) out.roleKinds = ROLE_KEYS.filter((k: string) => readData.roles[0].provided[k]);
-  out.globalKinds = GLOBAL_KEYS.filter((k: string) => readData.global[k] && readData.global[k].provided);
+  out.globalKinds = GLOBAL_KEYS.filter((k: string) => readData.global[k] && readData.global[k]?.provided);
   out.roleKinds.push(...(readData.items || []).filter(item => item.scope === 'character').map(item => item.unitId));
   out.globalKinds.push(...(readData.items || []).filter(item => item.scope === 'global').map(item => item.unitId));
   const labelOf = (k: string) => (META[k] ? META[k].short : readData.items?.find(item => item.unitId === k)?.directoryName || k);
@@ -531,10 +534,11 @@ export const contentFromPresetSnapshot = (snap: Record<string, unknown> | null |
   }
   const global: Record<string, Json> = {};
   for (const kind of GLOBAL_KEYS) {
+    if (kind === 'presentation' && !sec[kind]) continue;
     const text = String(sec[kind] == null ? (kind === 'scene' ? (sec.extra || '') : '') : sec[kind]).trim();
     global[kind] = text ? { provided: true, text, negative: contentNegOf(secNeg[kind]), meta: null } : { provided: false };
   }
-  const anyGlobal = GLOBAL_KEYS.some(k => global[k].provided);
+  const anyGlobal = GLOBAL_KEYS.some(k => global[k]?.provided);
   if (!roles.length && !anyGlobal) return null;
   return {
     format: CONTENT_FORMAT, version: CONTENT_VERSION, savedAt: String(savedAt || ''), algo: ALGO,

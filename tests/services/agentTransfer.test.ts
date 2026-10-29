@@ -32,3 +32,24 @@ it('原生导出可提供实际副本，普通操作不捕获，同一产物不�
   finally {stop();}
   expect(getAgentExport(getAgentExports().at(-1)!.id).blob).toBe(blob);
 });
+
+it('分享包与 Vibe 组合保留原始 Blob、文件名和 MIME，超限导出返回不可另存的明确回执', () => {
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic-' + Math.random()); });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const stop = captureAgentExports();
+  try {
+    for (const [name, type] of [['recipe.naia', 'application/x-nai-atelier-style-bundle'], ['references.naiv4vibeBundle', 'application/json']]) {
+      const blob = new Blob(['synthetic-original-bytes'], { type });
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = name; link.click();
+      const receipt = getAgentExports().at(-1)!;
+      expect(receipt).toMatchObject({ name, mimeType: type, bytes: blob.size, available: true });
+      expect(getAgentExport(receipt.id).blob).toBe(blob);
+    }
+    const large = new Blob([new Uint8Array(30 * 1024 * 1024 + 1)], { type: 'application/x-nai-atelier-style-bundle' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(large); link.download = 'large.naia'; link.click();
+    const receipt = getAgentExports().at(-1)!;
+    expect(receipt).toMatchObject({ name: 'large.naia', bytes: large.size, available: false });
+    expect(() => getAgentExport(receipt.id)).toThrow('30 MB');
+    expect(click).toHaveBeenCalledTimes(3);
+  } finally { stop(); }
+});

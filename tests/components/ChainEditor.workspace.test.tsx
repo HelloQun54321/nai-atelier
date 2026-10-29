@@ -19,6 +19,7 @@ import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../servi
 import type { GenerationJobDescriptorInput } from '../../services/naiService';
 import { prepareImageEdit, type PreparedImageEdit } from '../../services/imageEdit';
 import { api } from '../../services/api';
+import { executeAgentCommand } from '../../services/agentCommands';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
 
 // Node 22 的 Response.blob() 返回原生 Blob，jsdom FileReader 只接受同一环境的 Blob。
@@ -43,6 +44,8 @@ const state = vi.hoisted(() => ({
   confirm: vi.fn(async (_options?: unknown) => true),
   agentConfig: vi.fn<() => Promise<{ permissionMode: 'read_only' | 'standard' | 'full' }>>(),
   classify: vi.fn<typeof import('../../services/promptAgent').promptAgentService.classifyPrompts>(),
+  savePromptVersion: vi.fn<typeof import('../../services/promptAgent').promptAgentService.savePromptVersion>(),
+  finishPromptVersion: vi.fn<typeof import('../../services/promptAgent').promptAgentService.finishPromptVersion>(),
   budget: 1666,
   buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput, preparedEdit?: PreparedImageEdit) => Promise<GenerationJobDescriptor>>(),
   startJob: vi.fn<(key: string, token: string, descriptor: GenerationJobDescriptor, count: number, placement?: GenerationPlacement) => Promise<GenerationJobSnapshot>>(),
@@ -68,7 +71,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../services/promptAgent', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/promptAgent')>(),
-  promptAgentService: { getConfig: state.agentConfig, classifyPrompts: state.classify },
+  promptAgentService: { getConfig: state.agentConfig, classifyPrompts: state.classify, savePromptVersion: state.savePromptVersion, finishPromptVersion: state.finishPromptVersion },
 }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), saveArtistOwnSample: state.saveArtistSample }));
 vi.mock('../../services/generationJob', async importOriginal => {
@@ -235,10 +238,31 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   state.scopes.add(entry.id);
   const props = { chain: entry, allChains: [entry], onUpdateChain: vi.fn(async () => {}), onFork: vi.fn(async () => {}), setIsDirty: vi.fn(), notify: vi.fn(),
     saveRef: React.createRef<ChainEditorSaveHandle>(),
-    promptClassificationEnabled: true, tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
+    tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
   return { ...render(<ChainEditor {...props} />), props };
 };
-const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
+const textPrompt = () => screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement;
+
+it('统一整段编辑，旧场景与呈现形式完整显示，切页不改原资料', async () => {
+  const base = '1.3::artist:test::, soft lighting, high quality';
+  const entry = { ...chain, basePrompt: base, negativePrompt: 'style negative', variableValues: { subject: 'city street, poster layout' },
+    params: { ...chain.params, _promptSections: { 'purpose:place': 'city street', presentation: 'poster layout' } } };
+  setup(entry);
+  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['全局', '角色', '参考', '参数']);
+  expect(textPrompt().value).toBe(base + ', city street, poster layout');
+  expect(screen.queryByRole('button', { name: /切换为分类编辑|切换为整段编辑/ })).toBeNull();
+  const before = structuredClone(state.agent!.draft);
+  fireEvent.click(screen.getByRole('tab', { name: '角色' }));
+  expect(screen.queryByRole('textbox', { name: '呈现形式' })).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: '全局' }));
+  expect(textPrompt().value).toBe(base + ', city street, poster layout');
+  expect(state.agent!.draft).toEqual(before);
+  fireEvent.change(textPrompt(), { target: { value: base + ', city street, polaroid frame' } });
+  await waitFor(() => expect(state.agent?.draft.basePrompt).toBe(base + ', city street, polaroid frame'));
+  expect(state.agent?.draft.negativePrompt).toBe('style negative');
+  expect(state.agent?.draft.subjectPrompt).toBe('');
+  expect(state.agent?.draft.params._promptSections).toBeUndefined();
+});
 
 describe('实验室参考分区', () => {
   it('V4.5 将两种参考移入独立分区，切换保留全局负面词和参考控件', () => {
@@ -285,18 +309,19 @@ describe('实验室参考分区', () => {
   });
 });
 
-describe('元数据导入后自动分类', () => {
-  it('文生图动态目录正负词可编辑，Medium保持分类负面锁定', async () => {
+describe('整段编辑与旧分类兼容', () => {
+  it('旧目录正负词合入大块，Medium保持负面锁定，正面手改保留负面', async () => {
     const sectioned = { ...chain, variableValues: { subject: 'forest' }, params: { ...chain.params, model: 'nai-diffusion-5-full-medium',
       _promptSections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } } } };
     setup(sectioned);
-    const positive = await screen.findByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement;
-    expect(positive.value).toBe('forest'); expect(positive.disabled).toBe(false);
-    const negative = screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement;
-    expect(negative.disabled).toBe(true); expect(negative.value).toBe('city');
-    fireEvent.change(positive, { target: { value: 'rainy forest' } });
-    await waitFor(() => expect(state.agent?.draft.subjectPrompt).toBe('rainy forest'));
-    expect(state.agent?.draft.params._promptSections?.['directory:scene']).toBe('rainy forest');
+    expect(textPrompt().value).toBe('saved style, forest');
+    const negative = screen.getByDisplayValue('saved negative, city') as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true);
+    fireEvent.change(textPrompt(), { target: { value: 'saved style, rainy forest' } });
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style, rainy forest'));
+    expect(state.agent?.draft.subjectPrompt).toBe('');
+    expect(state.agent?.draft.params._promptSections).toBeUndefined();
+    expect(state.agent?.draft.negativePrompt).toBe('saved negative, city');
   });
   it('整段编辑的复制与一键翻译包含分类正负词和角色内容', async () => {
     const resolve = vi.spyOn(promptTranslations, 'resolvePromptTranslations').mockResolvedValue([]);
@@ -304,8 +329,7 @@ describe('元数据导入后自动分类', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     const sectioned = { ...chain, variableValues: { subject: 'forest' }, params: { ...chain.params, _promptSections: { scene: 'forest', sectionNegatives: { scene: 'city' } },
       characters: [{ id: 'role', prompt: 'smile', x: 0.2, y: 0.8, sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }] } };
-    const view = setup(sectioned);
-    view.rerender(<ChainEditor {...view.props} promptClassificationEnabled={false} />);
+    setup(sectioned);
     await waitFor(() => expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('saved style, forest'));
     fireEvent.click(screen.getByTitle('复制全局负面提示词'));
     expect(writeText).toHaveBeenCalledWith('saved negative, city');
@@ -313,74 +337,55 @@ describe('元数据导入后自动分类', () => {
     await waitFor(() => expect(resolve).toHaveBeenCalled());
     expect(resolve.mock.calls.at(-1)![0].map(token => token.displayTag)).toEqual(expect.arrayContaining(['saved style', 'forest', 'city', 'blue dress', 'red dress', 'smile']));
   });
-  const result = { items: [{ id: 'global', kind: 'global' as const, sections: { style: 'artist:test', wardrobe: 'red dress' } }] };
-  const sendImport = (view: ReturnType<typeof setup>, token: number, auto = true, classified = true) => {
-    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', fullMetadata: true, targetMode: 'text-to-image', replace: true,
-      prompt: 'artist:test, red dress', negativePrompt: 'imported negative', params: { ...chain.params, seed: 42 }, importSettings: true }));
-    view.rerender(<ChainEditor {...view.props} promptClassificationEnabled={classified} autoClassifyMetadata={auto} externalImportToken={token} />);
-  };
-  it.each([[false, true], [true, false]])('自动分类=%s，分类编辑=%s 时不隐式调用模型', async (auto, classified) => {
+  it('旧分类偏好不会恢复自动分类，导入保留原文与参数且不调用模型', async () => {
+    localStorage.setItem('nai-appearance-preferences', JSON.stringify({ promptClassificationEnabled: true, autoClassifyMetadata: true }));
     const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
-    sendImport(view, 1, auto, classified);
-    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress'));
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image',
+      basePrompt: 'artist:test', subjectPrompt: 'red dress', modules: [], negativePrompt: 'imported negative', params: { ...chain.params, seed: 42 } }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('artist:test'));
+    expect(textPrompt().value).toBe('artist:test, red dress');
+    expect(state.agent?.draft).toMatchObject({ subjectPrompt: 'red dress', negativePrompt: 'imported negative', params: { seed: 42 } });
+    expect(state.classify).not.toHaveBeenCalled();
+    expect(state.agent?.draft.params._promptSections).toBeUndefined();
+    expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '撤销分类' })).toBeNull();
+  });
+  it('结构化导入显式空主体时不从旧分栏复活场景正文', async () => {
+    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image',
+      basePrompt: 'imported full prompt', subjectPrompt: '', modules: [], negativePrompt: 'imported negative',
+      params: { ...chain.params, _promptSections: { scene: 'stale legacy scene' } } }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(textPrompt().value).toBe('imported full prompt'));
+    expect(state.agent?.draft.subjectPrompt).toBe('');
+    expect(state.agent?.draft.negativePrompt).toBe('imported negative');
+    expect(state.agent?.draft.params._promptSections).toBeUndefined();
+    expect(loadLabWorkspaceSession(chain.id, fallback()).textToImage.params._promptSections?.scene).toBe('stale legacy scene');
     expect(state.classify).not.toHaveBeenCalled();
   });
-  it('正常导入自动填栏，不弹确认；可撤销且保留导入参数和负面', async () => {
-    state.classify.mockResolvedValue(result);
-    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
-    sendImport(view, 1);
-    await waitFor(() => expect(state.agent?.draft.params._promptSections?.wardrobe).toBe('red dress'));
-    expect(state.classify).toHaveBeenCalledTimes(1);
-    expect(state.classify).toHaveBeenCalledWith([{ id: 'global', kind: 'global', prompt: 'artist:test, red dress' }]);
-    expect(state.agent?.draft).toMatchObject({ basePrompt: 'artist:test', subjectPrompt: 'red dress', negativePrompt: 'imported negative', params: { seed: 42 } });
-    expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '撤销分类' }));
-    await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress'));
-    expect(state.agent?.draft.params._promptSections).toBeUndefined();
-    expect(state.agent?.draft.negativePrompt).toBe('imported negative');
-  });
-  it('失败保留原文，不自动重试；再次导入才发起新调用', async () => {
-    state.classify.mockRejectedValue(new Error('synthetic failure'));
-    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
-    sendImport(view, 1);
-    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('自动分类失败，已保留导入原文：synthetic failure', 'error'));
-    expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress');
-    expect(state.classify).toHaveBeenCalledTimes(1);
-  });
-  it('等待期间手改不被覆盖，结果留在就地入口，不自动打开差异窗口', async () => {
-    let finish!: (value: typeof result) => void;
-    state.classify.mockReturnValue(new Promise(resolve => { finish = resolve; }));
-    const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
-    sendImport(view, 1); await waitFor(() => expect(state.classify).toHaveBeenCalledTimes(1));
-    fireEvent.change(textPrompt(), { target: { value: 'manual edit' } });
-    await act(async () => finish(result));
-    await screen.findByRole('button', { name: '查看分类结果' });
-    expect(state.agent?.draft.basePrompt).toBe('manual edit');
-    expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
-  });
-  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 完整配置导入使用同一自动分类链，纯换底图不触发', async mode => {
-    state.classify.mockResolvedValue(result);
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 导入完整全局串不拆画风，纯换底图也不触发分类', async mode => {
     const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
     sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: mode, baseImageUrl: 'data:image/png;base64,AQID', prompt: 'artist:test, red dress', negativePrompt: 'imported negative', params: chain.params }));
-    view.rerender(<ChainEditor {...view.props} autoClassifyMetadata externalImportToken={1} />);
-    await waitFor(() => expect(state.agent?.draft.params._promptSections?.wardrobe).toBe('red dress'));
-    expect(state.agent?.draft.target?.mode).toBe(mode); expect(state.classify).toHaveBeenCalledTimes(1);
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+    expect(state.agent?.draft.params._promptSections?.wardrobe).toBeUndefined();
+    expect(state.classify).not.toHaveBeenCalled();
     expect(state.agent?.draft.basePrompt).toBe('artist:test, red dress');
     fireEvent.click(screen.getByText('粘贴合成底图'));
     await waitFor(() => expect(screen.getByLabelText('编辑底图').textContent).toContain('cGFzdGVk'));
-    expect(state.classify).toHaveBeenCalledTimes(1);
+    expect(state.classify).not.toHaveBeenCalled();
   });
 });
 
 it('Roll 填入后编辑器重新挂载，外部内容优先于旧会话草稿', async () => {
   const initial = { ...chain, id: 'playground', variableValues: { subject: 'old_subject' } };
   const view = setup(initial);
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('old_subject'));
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, old_subject'));
   view.unmount();
   const applied = { ...initial, variableValues: { subject: 'new_scene' }, params: { ...initial.params, _promptSections: { scene: 'new_scene' } } };
   render(<ChainEditor {...view.props} chain={applied} sectionsRevision={1} />);
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('new_scene'));
-  expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('');
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, new_scene'));
   expect(loadLabWorkspaceSession('playground', fallback()).textToImage.subjectPrompt).toBe('new_scene');
 });
 
@@ -394,13 +399,12 @@ it.each([
   const view = setup(initial);
   const applied = { ...initial, variableValues: { subject: 'new_scene' }, params: { ...initial.params, _promptSections: { scene: 'new_scene' } } };
   view.rerender(<ChainEditor {...view.props} chain={applied} sectionsRevision={1} />);
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('new_scene'));
+  await waitFor(() => expect(textPrompt().value).toBe('saved style, new_scene'));
 
   view.props.onUpdateChain.mockClear();
   const restored: PromptChain = { ...initial, variableValues: subject === undefined ? {} : { subject }, params: { ...initial.params, _promptSections: sections } };
   view.rerender(<ChainEditor {...view.props} chain={restored} sectionsRevision={2} />);
-  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe(sections.scene || ''));
-  expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe(subject === 'legacy_subject' ? subject : '');
+  await waitFor(() => expect(textPrompt().value).toBe(['saved style', expected].filter(Boolean).join(', ')));
   await waitFor(() => expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ variableValues: { subject: expected } })));
   expect(loadLabWorkspaceSession('playground', fallback()).textToImage.subjectPrompt).toBe(expected);
 
@@ -498,6 +502,8 @@ const switchTo = async (label: string) => {
 beforeEach(() => {
   state.delayedMaskSave = null;
   state.classify.mockReset().mockResolvedValue({ items: [] });
+  state.savePromptVersion.mockReset().mockResolvedValue({ id: 'old-page', versionId: 'old-page', fingerprint: 'synthetic' });
+  state.finishPromptVersion.mockReset().mockResolvedValue(undefined);
   vi.mocked(getGenerationQueue).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
   vi.mocked(setGenerationQueuePaused).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
   vi.mocked(setGenerationInterval).mockReset().mockRejectedValue(new Error('synthetic-status-unavailable'));
@@ -638,7 +644,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('�
   }
   saveLabWorkspaceSession(chain.id, session); sessionStorage.clear();
   const view = setup();
-  if (mode === 'text-to-image') expect(textPrompt().value).toBe('重启后的文生图草稿');
+  if (mode === 'text-to-image') expect(textPrompt().value).toBe('重启后的文生图草稿, subject');
   else {
     expect((await screen.findByLabelText('编辑提示词') as HTMLInputElement).value).toBe(`${mode} 重启草稿`);
     expect(screen.getByLabelText('编辑强度').textContent).toBe('0.42');
@@ -653,7 +659,7 @@ it('关闭记忆的新启动使用预设，但本会话编辑、模式切换和�
   saveLabWorkspaceSession(chain.id, remembered); sessionStorage.clear();
   const oldMemory = localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`);
   const view = setup(chain, false);
-  expect(textPrompt().value).toBe('saved style');
+  expect(textPrompt().value).toBe('saved style, subject');
   fireEvent.change(textPrompt(), { target: { value: '本次新输入' } });
   await switchTo('局部重绘');
   fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: '本次编辑输入' } });
@@ -727,7 +733,7 @@ it('改变记忆范围立即收窄持久副本，四模式当前输入、参数�
   const current = loadLabWorkspaceSession(chain.id, fallback());
   const onlyParams: GenerationMemoryPreferences = { parameters: true, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: false };
   view.rerender(<ChainEditor {...view.props} generationMemory={onlyParams} />);
-  expect(textPrompt().value).toBe('private-current-global');
+  expect(textPrompt().value).toBe('private-current-global, private-current-subject');
   expect(localStorage.getItem(`nai-lab-workspace-v1:${chain.id}`)).not.toContain('private-');
   expect(loadLabWorkspaceSession(chain.id, fallback()).textToImage).toEqual(current.textToImage);
   for (const [index, label] of ['图生图', '局部重绘', '扩图'].entries()) {
@@ -1138,7 +1144,7 @@ describe('历史明确指定实验室导入模式', () => {
     sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image', prompt: 'imported complete', basePrompt: 'imported base', subjectPrompt: 'imported subject',
       modules: [{ id: 'imported-module', name: '合成模块', content: 'imported content', isActive: true, position: 'post' }], negativePrompt: '', params: chain.params }));
     setup();
-    await waitFor(() => expect(textPrompt().value).toBe('imported base'));
+    await waitFor(() => expect(textPrompt().value).toBe('imported base, imported subject'));
     const saved = loadLabWorkspaceSession(chain.id, fallback());
     expect(saved.activeMode).toBe('text-to-image');
     expect(saved.textToImage).toMatchObject({ basePrompt: 'imported base', subjectPrompt: 'imported subject', negativePrompt: '' });
@@ -1152,7 +1158,7 @@ describe('历史明确指定实验室导入模式', () => {
         appearance: '1girl', wardrobe: 'blue dress', pose: '', scene: '', camera: '', extra: '',
       } } }));
     setup();
-    await waitFor(() => expect(textPrompt().value).toBe('imported base'));
+    await waitFor(() => expect(textPrompt().value).toBe('imported base, 1girl, blue dress'));
     const saved = loadLabWorkspaceSession(chain.id, fallback());
     expect(saved.activeMode).toBe('text-to-image');
     expect(saved.textToImage).toMatchObject({ basePrompt: 'imported base', subjectPrompt: '1girl, blue dress', negativePrompt: 'imported negative' });
@@ -1288,7 +1294,7 @@ describe('自由实验室图片只保留本次打开', () => {
       expect(screen.getByLabelText('文生图结果').textContent).toBe('');
       expect(screen.getByLabelText('预览历史编号').textContent).toBe('');
       expect(screen.queryByRole('button', { name: '浏览下一张' })).toBeNull();
-      expect(textPrompt().value).toBe('saved style');
+      expect(textPrompt().value).toBe('saved style, subject');
     }
     for (const [operation, label] of [['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const) {
       await switchTo(label);
@@ -1306,7 +1312,7 @@ describe('自由实验室图片只保留本次打开', () => {
     scriptJobs([backgroundResult('new-1')], [backgroundResult('new-2', 1, { lastSavedItem: savedItem('new-2', { edit: { operation } }) })]);
     state.history.mockResolvedValue(oldHistory);
     const view = setup(lab);
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
     await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png'));
     await switchTo(label);
@@ -1333,7 +1339,7 @@ describe('自由实验室图片只保留本次打开', () => {
     const lateHistory = Promise.withResolvers<LocalGenItem[]>();
     state.history.mockReturnValueOnce(lateHistory.promise);
     setup({ ...chain, id, previewImage: '/synthetic/saved-cover.png' });
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
     await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/job-1.png'));
     await act(async () => lateHistory.resolve(oldHistory));
@@ -1346,7 +1352,7 @@ describe('自由实验室图片只保留本次打开', () => {
     scriptJobs([backgroundResult('new-1')], [backgroundResult('new-2', 1, { lastSavedItem: savedItem('new-2', { edit: { operation: 'inpaint' } }) })]);
     state.history.mockResolvedValue(oldHistory);
     const view = setup(lab);
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' })));
     await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/new-1.png'));
     await switchTo('局部重绘');
@@ -1492,7 +1498,7 @@ describe('统一工作台真实状态链路', () => {
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     state.startJob.mockRejectedValue(new Error('合成测试主动终止'));
     setup();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     await switchTo('扩图');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴分角色底图' })));
     await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('copied scene'));
@@ -1520,7 +1526,7 @@ describe('统一工作台真实状态链路', () => {
     // 请求入口捕获后主动失败，不执行任何真实后台任务或结算。
     state.startJob.mockRejectedValueOnce(new Error('合成测试主动终止'));
     setup(entry);
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     await switchTo(label);
     expect(loadLabWorkspaceSession(chain.id, fallback()).edits[operation].params.characters).toEqual([character]);
     await act(async () => fireEvent.click(screen.getByRole('button', { name: '上传分角色底图' })));
@@ -1588,7 +1594,7 @@ describe('统一工作台真实状态链路', () => {
 
   it('卡片改名后保存既有草稿使用最新信息，同时保留未保存提示词', async () => {
     const view = setup();
-    await waitFor(() => expect(textPrompt().value).toBe(chain.basePrompt));
+    await waitFor(() => expect(textPrompt().value).toBe(`${chain.basePrompt}, subject`));
     fireEvent.change(textPrompt(), { target: { value: '未保存的提示词草稿' } });
     const renamed = { ...chain, name: '卡片新名称', description: '卡片新描述', tags: ['新标签'] };
     view.rerender(<ChainEditor {...view.props} chain={renamed} allChains={[renamed]} />);
@@ -1603,7 +1609,7 @@ describe('统一工作台真实状态链路', () => {
   it.each(['style', 'character'] as const)('%s 入口的四模式草稿独立，返回后可恢复', async type => {
     const entry = { ...chain, type };
     const view = setup(entry);
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     expect(screen.getAllByRole('button', { name: /^(文生图|图生图|局部重绘|扩图)$/ })).toHaveLength(4);
     await switchTo('图生图');
     expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('saved style, subject, soft light');
@@ -1614,7 +1620,7 @@ describe('统一工作台真实状态链路', () => {
     await switchTo('扩图');
     fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: 'outpaint draft' } });
     await switchTo('文生图');
-    expect(textPrompt().value).toBe('saved style');
+    expect(textPrompt().value).toBe('saved style, subject');
     await switchTo('图生图');
     expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('img2img draft');
     expect(screen.getByLabelText('编辑强度').textContent).toBe('0.42');
@@ -1626,17 +1632,42 @@ describe('统一工作台真实状态链路', () => {
     expect(loadLabWorkspaceSession(chain.id, fallback()).edits.outpaint.prompt).toBe('outpaint draft');
   });
 
+  it.each([
+    [1280, 'playground'], [390, 'playground'],
+    [1280, 'style'], [390, 'style'],
+    [1280, 'character'], [390, 'character'],
+  ] as const)('宽度 %s 的 %s 保存直接使用目标类型，不再选择保存类型', async (width, source) => {
+    vi.stubGlobal('innerWidth', width);
+    const targetType = source === 'character' ? 'character' : 'style';
+    const view = setup({ ...chain, id: source === 'playground' ? 'playground' : chain.id, type: targetType });
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
+    fireEvent.change(textPrompt(), { target: { value: 'direct save draft' } });
+    if (source === 'playground') {
+      if (width === 390) fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+      await act(async () => { fireEvent.click(screen.getByRole('button', { name: '保存到库' })); });
+    } else {
+      const saveLabel = source === 'character' ? '保存自定义角色' : '保存风格串';
+      fireEvent.click(screen.getByRole('button', { name: saveLabel }));
+      await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: saveLabel })).getByRole('button', { name: source === 'character' ? '另存为新角色' : '另存为新串' })); });
+      expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+    }
+    expect(view.props.onFork).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      basePrompt: 'direct save draft', negativePrompt: chain.negativePrompt, modules: chain.modules,
+      params: expect.objectContaining({ model: chain.params.model, width: chain.params.width }),
+    }), targetType);
+    expect(screen.queryByRole('dialog', { name: '选择保存类型' })).toBeNull();
+  });
+
   it('修改与另存使用文生图配置，编辑模式不出现保存且不改写原串', async () => {
     const view = setup();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(textPrompt(), { target: { value: 'new style' } });
     const actions = view.container.querySelector('.chain-editor-actions') as HTMLElement;
     fireEvent.click(within(actions).getByRole('button', { name: '保存风格串' }));
     await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '保存修改' })); });
     expect(view.props.onUpdateChain).toHaveBeenCalledWith(chain.id, expect.objectContaining({ basePrompt: 'new style', negativePrompt: 'saved negative', modules: chain.modules }));
     fireEvent.click(within(actions).getByRole('button', { name: '保存风格串' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '另存为新串' }));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '风格串' })); });
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '另存为新串' })); });
     expect(view.props.onFork).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'new style' }), 'style');
     await switchTo('局部重绘');
     fireEvent.change(screen.getByLabelText('编辑提示词'), { target: { value: 'edit only' } });
@@ -1654,8 +1685,7 @@ describe('统一工作台真实状态链路', () => {
     await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('replacement recipe'));
     const actions = view.container.querySelector('.chain-editor-actions') as HTMLElement;
     fireEvent.click(within(actions).getByRole('button', { name: '保存风格串' }));
-    fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '另存为新串' }));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '风格串' })); });
+    await act(async () => { fireEvent.click(within(screen.getByRole('dialog', { name: '保存风格串' })).getByRole('button', { name: '另存为新串' })); });
     expect(view.props.onFork).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'replacement recipe', params: expect.objectContaining({ seed: 42, _styleBundleSources: [source] }) }), 'style');
     expect(view.props.onUpdateChain).not.toHaveBeenCalled();
   });
@@ -1663,10 +1693,10 @@ describe('统一工作台真实状态链路', () => {
   it('自由实验室草稿不受风格串编辑影响，文生图重置恢复已保存预设', async () => {
     saveLabWorkspaceSession('playground', { ...fallback(), textToImage: { ...fallback().textToImage, basePrompt: 'private playground draft' } });
     const view = setup();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(textPrompt(), { target: { value: 'temporary change' } });
     await act(async () => { fireEvent.click(within(view.container.querySelector('.chain-editor-actions') as HTMLElement).getByRole('button', { name: '重置当前模式' })); });
-    expect(textPrompt().value).toBe('saved style');
+    expect(textPrompt().value).toBe('saved style, subject');
     expect(loadLabWorkspaceSession('playground', fallback()).textToImage.basePrompt).toBe('private playground draft');
     expect(view.props.onUpdateChain).not.toHaveBeenCalled();
     expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('合成风格串') }));
@@ -1692,6 +1722,123 @@ describe('统一工作台真实状态链路', () => {
   });
 });
 
+it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('图片模式原稿 %s 撤回重做保留空白重复逗号与来源参数', async mode => {
+  const session = fallback(); session.activeMode = mode;
+  const edit = session.edits[mode];
+  edit.prompt = '  old,, tag, \n'; edit.negativePrompt = '  bad,, blur, \n';
+  edit.params = { ...edit.params, seed: 123, width: 1040, _promptSections: { 'purpose:place': 'old place', sectionMeta: { 'purpose:place': { source: 'library', entryId: 'raw-source' } } } };
+  saveLabWorkspaceSession(chain.id, session); const view = setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const receipt = vi.fn();
+  await act(async () => state.agent!.onFinalDraft({ ...state.agent!.draft, basePrompt: 'new prompt' }, false, receipt));
+  const [before, after] = receipt.mock.calls[0];
+  expect(before.basePrompt).toBe('  old,, tag, \n');
+  const change = createAgentPromptChange(before, after, 'raw-punctuation');
+  const readRaw = async () => (await executeAgentCommand(view.container, 'get_prompt_version_state', {}, true) as { draft: import('../../types').PromptAgentDraft }).draft;
+  await act(async () => state.agent!.onPromptChange(change, 'undo'));
+  const undone = await readRaw();
+  expect(undone.basePrompt).toBe(before.basePrompt); expect(undone.negativePrompt).toBe(before.negativePrompt);
+  expect(undone.params._promptSections).toEqual(before.params._promptSections);
+  await act(async () => state.agent!.onPromptChange(change, 'redo'));
+  const redone = await readRaw();
+  expect(redone.basePrompt).toBe(after.basePrompt); expect(redone.params._promptSections).toEqual(after.params._promptSections);
+  expect(state.agent!.draft.params.seed).toBe(123); expect(state.agent!.draft.params.width).toBe(1040);
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent版本门禁 %s 保存失败不应用，成功才写入且保存真实旧分栏', async mode => {
+  const session = fallback(); session.activeMode = mode;
+  const content = mode === 'text-to-image' ? session.textToImage : session.edits[mode];
+  content.params._promptSections = { 'purpose:place': 'old place', sectionMeta: { 'purpose:place': { source: 'library', entryId: 'source' } } };
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const proposed = { ...state.agent!.draft, basePrompt: 'new prompt' }, receipt = vi.fn();
+  const save = vi.fn().mockRejectedValueOnce(new Error('旧稿保存失败')).mockResolvedValue({ versionId: 'before-one', finish: vi.fn(async () => {}) });
+  const unchanged = mode === 'text-to-image' ? textPrompt().value : (screen.getByLabelText('编辑提示词') as HTMLInputElement).value;
+  await act(async () => { await expect(state.agent!.onFinalDraft(proposed, false, receipt, save)).rejects.toThrow('旧稿保存失败'); });
+  expect(mode === 'text-to-image' ? textPrompt().value : (screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe(unchanged);
+  expect(receipt).not.toHaveBeenCalled();
+  expect(save.mock.calls[0][0].params._promptSections.sectionMeta['purpose:place'].entryId).toBe('source');
+  await act(async () => state.agent!.onFinalDraft(proposed, false, receipt, save));
+  expect(receipt).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ basePrompt: 'new prompt' }), expect.objectContaining({ beforeVersionId: 'before-one', selectedAfter: proposed }));
+});
+
+it('Agent版本门禁保存期间手改与卸载拒绝覆盖，不把迟到保存当实际应用', async () => {
+  const view = setup(); await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  const proposed = { ...state.agent!.draft, basePrompt: 'late agent content' }, receipt = vi.fn();
+  let release!: () => void;
+  const gate = () => new Promise<void>(resolve => { release = resolve; });
+  const pending = state.agent!.onFinalDraft(proposed, false, receipt, gate);
+  fireEvent.change(textPrompt(), { target: { value: 'later manual content' } });
+  await act(async () => { release(); await expect(pending).rejects.toThrow('未覆盖'); });
+  expect(textPrompt().value).toBe('later manual content'); expect(receipt).not.toHaveBeenCalled();
+  const after = { ...state.agent!.draft, basePrompt: 'unmounted edit' };
+  const unmounted = state.agent!.onFinalDraft(after, false, receipt, gate);
+  view.unmount();
+  await act(async () => { release(); await expect(unmounted).rejects.toThrow('未覆盖'); });
+  expect(receipt).not.toHaveBeenCalled();
+});
+
+it('Agent版本命令精确恢复旧分栏，先存当前稿，缺可信会话及目标变化均拒绝', async () => {
+  const view = setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const read = () => executeAgentCommand(view.container, 'get_prompt_version_state', {}, true) as Promise<{ draft: import('../../types').PromptAgentDraft }>;
+  const current = (await read()).draft;
+  const content = { ...current, basePrompt: 'old raw base', subjectPrompt: 'old raw subject', params: { ...current.params, _promptSections: { 'purpose:place': 'old raw place' } } };
+  const args = { content, expectedContent: current, versionId: 'restore-me' };
+  await expect(executeAgentCommand(view.container, 'restore_prompt_version', { ...args, sessionId: 'forged' }, false)).rejects.toThrow('缺少版本所属对话');
+  state.savePromptVersion.mockRejectedValueOnce(new Error('版本不能写入'));
+  await expect(executeAgentCommand(view.container, 'restore_prompt_version', { ...args, agentSessionId: 'original-session' }, false)).rejects.toThrow('版本不能写入');
+  expect((await read()).draft.basePrompt).toBe(current.basePrompt);
+  await act(async () => { await executeAgentCommand(view.container, 'restore_prompt_version', { ...args, agentSessionId: 'original-session' }, false); });
+  const restored = (await read()).draft;
+  expect(restored.basePrompt).toBe('old raw base'); expect(restored.subjectPrompt).toBe('old raw subject');
+  expect(restored.params._promptSections?.['purpose:place']).toBe('old raw place');
+  expect(state.savePromptVersion).toHaveBeenLastCalledWith('original-session', expect.objectContaining({ reason: 'before_restore', draft: expect.objectContaining({ basePrompt: current.basePrompt }) }));
+  expect(state.finishPromptVersion).toHaveBeenLastCalledWith('original-session', 'old-page', expect.objectContaining({ basePrompt: 'old raw base' }));
+  await switchTo('图生图');
+  await expect(executeAgentCommand(view.container, 'restore_prompt_version', { ...args, agentSessionId: 'original-session' }, false)).rejects.toThrow('目标已变化');
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent %s 读取完整旧负面并准确删除，撤回重做保留原来源', async mode => {
+  const session = fallback(); session.activeMode = mode;
+  const content = mode === 'text-to-image' ? session.textToImage : session.edits[mode];
+  content.params = { ...content.params, _promptSections: { 'purpose:place': 'city', presentation: 'frame', sectionNegatives: { 'purpose:place': 'old city', presentation: 'old frame' }, sectionMeta: { 'purpose:place': { source: 'library', entryId: 'source' } } } };
+  content.negativePrompt = 'blur';
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  expect(state.agent!.draft.negativePrompt).toBe('blur, old city, old frame');
+  const snapshot = structuredClone(state.agent!.draft), receipt = vi.fn();
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, negativePrompt: 'blur' }, false, receipt));
+  expect(state.agent!.draft.negativePrompt).toBe('blur');
+  const [before, after] = receipt.mock.calls[0];
+  expect(before.params._promptSections.sectionMeta['purpose:place'].entryId).toBe('source');
+  const change = createAgentPromptChange(before, after, 'negative-round');
+  await act(async () => state.agent!.onPromptChange(change, 'undo'));
+  expect(state.agent!.draft.negativePrompt).toBe('blur, old city, old frame');
+  await act(async () => state.agent!.onPromptChange(change, 'redo'));
+  expect(state.agent!.draft.negativePrompt).toBe('blur');
+  expect(state.agent!.draft.basePrompt).toBe(snapshot.basePrompt);
+  expect(state.agent!.draft.modules).toEqual(snapshot.modules);
+  expect(state.startJob).not.toHaveBeenCalled();
+});
+
+it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('Agent %s 应用整段保留前后置模块原顺序', async mode => {
+  const session = fallback(); session.activeMode = mode; saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const draft = { ...state.agent!.draft, basePrompt: 'base', subjectPrompt: 'subject', modules: [
+    { id: 'post', name: 'post', content: 'post', isActive: true }, { id: 'pre', name: 'pre', content: 'pre', isActive: true, position: 'pre' as const },
+    { id: 'off', name: 'off', content: 'unused', isActive: false },
+  ] };
+  const receipt = vi.fn();
+  await act(async () => state.agent!.onFinalDraft(draft, false, receipt));
+  expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('base, pre, subject, post');
+  const [before, after] = receipt.mock.calls[0];
+  const change = createAgentPromptChange(before, after, 'ordered-edit');
+  await act(async () => state.agent!.onPromptChange(change, 'undo'));
+  expect(state.agent!.draft.basePrompt).toBe(before.basePrompt);
+  await act(async () => state.agent!.onPromptChange(change, 'redo'));
+  expect(state.agent!.draft.basePrompt).toBe('base, pre, subject, post');
+});
+
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 绑定 %s 草稿，不改写其他模式', async mode => {
   const session = fallback(); session.activeMode = mode;
   for (const edit of ['image-to-image', 'inpaint', 'outpaint'] as const) session.edits[edit].prompt = 'draft-' + edit;
@@ -1699,13 +1846,13 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Ag
   await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
   const snapshot = state.agent!.draft;
   expect(state.agent!.splitPromptFields).toBe(false);
-  expect(state.agent!.promptClassificationEnabled).toBe(true);
+  expect(state.agent!.promptClassificationEnabled).toBe(false);
   expect(snapshot.basePrompt).toBe(mode === 'text-to-image' ? 'saved style' : 'draft-' + mode);
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent changed' }));
-  if (mode === 'text-to-image') expect(textPrompt().value).toBe('Agent changed');
+  if (mode === 'text-to-image') expect(textPrompt().value).toBe('Agent changed, subject');
   else {
     await waitFor(() => expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).toBe('Agent changed'));
-    await switchTo('文生图'); expect(textPrompt().value).toBe('saved style');
+    await switchTo('文生图'); expect(textPrompt().value).toBe('saved style, subject');
   }
 });
 it('手动修改冲突保留两份，选择字段后才应用', async () => {
@@ -1717,7 +1864,9 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   const dialog = screen.getByRole('dialog', { name: '查看助手草稿差异' });
   // 差异默认只显示改动：删除的 manual 与新增的 Agent 分别标出，共用词按需展开。
   expect(dialog.textContent).toContain('−manual'); expect(dialog.textContent).toContain('+Agent');
-  fireEvent.click(within(dialog).getByText('应用选中修改'));
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: '主体提示词' }));
+  expect((within(dialog).getByRole('checkbox', { name: '主体提示词' }) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(within(dialog).getByRole('button', { name: '应用选中修改' }));
   expect(textPrompt().value).toBe('Agent edit');
 });
 
@@ -1744,12 +1893,26 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Ag
 it('Agent 审阅仅回传用户实际选择的提示词修改', async () => {
   setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
   const before = structuredClone(state.agent!.draft), receipt = vi.fn();
-  await act(async () => state.agent!.onFinalDraft({ ...before, basePrompt: 'chosen', negativePrompt: 'not chosen' }, true, receipt));
+  const gate = vi.fn(async () => ({ versionId: 'review-before' }));
+  await act(async () => state.agent!.onFinalDraft({ ...before, basePrompt: 'chosen', negativePrompt: 'not chosen' }, true, receipt, gate));
   expect(receipt).not.toHaveBeenCalled();
+  expect(gate).not.toHaveBeenCalled();
   const dialog = screen.getByRole('dialog', { name: '查看助手草稿差异' });
   fireEvent.click(within(dialog).getByRole('checkbox', { name: '负面提示词' }));
   fireEvent.click(within(dialog).getByRole('button', { name: '应用选中修改' }));
-  expect(receipt).toHaveBeenCalledWith(before, expect.objectContaining({ basePrompt: 'chosen', negativePrompt: before.negativePrompt }));
+  await waitFor(() => expect(receipt).toHaveBeenCalledWith(before, expect.objectContaining({ basePrompt: 'chosen', negativePrompt: before.negativePrompt }), expect.objectContaining({ beforeVersionId: 'review-before' })));
+  expect(gate).toHaveBeenCalledExactlyOnceWith(before, expect.objectContaining({ basePrompt: 'chosen', negativePrompt: before.negativePrompt }));
+});
+
+it('Agent版本已应用但finish失败只报告记录错误，不重放页面修改', async () => {
+  const view = setup(); await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const after = { ...state.agent!.draft, basePrompt: 'already applied' }, receipt = vi.fn();
+  const finish = vi.fn(async () => { throw new Error('记录落盘失败'); });
+  const gate = vi.fn(async () => ({ versionId: 'finish-before', finish }));
+  await act(async () => state.agent!.onFinalDraft(after, false, receipt, gate));
+  expect(state.agent!.draft.basePrompt).toBe('already applied');
+  expect(gate).toHaveBeenCalledOnce(); expect(finish).toHaveBeenCalledOnce(); expect(receipt).toHaveBeenCalledOnce();
+  expect(view.props.notify).toHaveBeenCalledWith('修改已应用，但版本记录保存失败，请勿重复应用', 'error');
 });
 
 it.each([false, true])('其他模式的助手草稿不会进入当前模式，审阅=%s', async reviewOnly => {
@@ -1759,7 +1922,7 @@ it.each([false, true])('其他模式的助手草稿不会进入当前模式，�
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'old target edit' }, reviewOnly));
   expect(screen.queryByRole('dialog', { name: '查看助手草稿差异' })).toBeNull();
   expect((screen.getByLabelText('编辑提示词') as HTMLInputElement).value).not.toBe('old target edit');
-  await switchTo('文生图'); expect(textPrompt().value).toBe('saved style');
+  await switchTo('文生图'); expect(textPrompt().value).toBe('saved style, subject');
 });
 
 it('助手审阅只在原目标展示，切模式保留提议与人工内容', async () => {
@@ -2169,7 +2332,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       backgroundResult('job-2', 2, { historyIds: ['job-1', 'job-2'] }),
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
@@ -2194,7 +2357,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'cancelled', completedCount: 0, requestedCount: 2, historyIds: [] },
     ]);
     setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     const preview = within(screen.getByRole('region', { name: '文生图预览' }));
     fireEvent.keyDown(preview.getByRole('button', { name: /^(生成|加入队列).*张/ }), { key: 'ArrowDown', altKey: true });
@@ -2220,7 +2383,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       [{ state: 'waiting', completedCount: 0, requestedCount: 1, historyIds: [], position: 1 }, backgroundResult('job-2')],
     );
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     fireEvent.change(textPrompt(), { target: { value: 'later draft' } });
@@ -2246,7 +2409,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'cancelled', completedCount: 1, requestedCount: 3, historyIds: ['job-1'], lastSavedItem: savedItem('job-1') },
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '3' } });
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
@@ -2267,7 +2430,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'cancelled', completedCount: 0, requestedCount: 2, historyIds: [] },
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
@@ -2286,7 +2449,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       backgroundResult('job-2', 2, { historyIds: ['job-1', 'job-2'] }),
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.confirm).toHaveBeenCalledTimes(2), { timeout: 4000 });
@@ -2306,7 +2469,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'cancelled', completedCount: 1, requestedCount: 2, historyIds: ['job-1'], lastSavedItem: savedItem('job-1') },
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '2' } });
     state.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     fireEvent.click(screen.getByText('生成合成文生图'));
@@ -2327,7 +2490,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'failed', code: 'history_save_failed', completedCount: 0, requestedCount: 1, historyIds: [], error: '保存历史失败', preview: { image: unsaved } },
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('data:image/png;base64,UFJPQ0VTUw=='));
@@ -2380,7 +2543,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       { state: 'cancelled', completedCount: 0, requestedCount: 1, historyIds: [] },
     ]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     const token = state.started[0].token;
@@ -2515,7 +2678,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
   it('一连串生成只确认一次，随机种子交给后端逐张抽取', async () => {
     prepare();
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '3' } });
     scriptJobs([
       { state: 'generating', completedCount: 0, requestedCount: 3, historyIds: [] },
@@ -2569,7 +2732,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     ]);
     const lab = { ...chain, id: 'playground' };
     const view = setupSeries(lab);
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.change(countInput(), { target: { value: '3' } });
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
@@ -2598,7 +2761,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     prepare();
     scriptJobs([{ state: 'failed', code: 'quota_exhausted', completedCount: 0, requestedCount: 1, historyIds: [], error: '账号额度不足', accountingFailed: true, accountingError }]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('账号额度不足（已保存 0/1 张）', 'error'));
     expect(view.props.notify).toHaveBeenCalledWith('图片已保存，但本地记账异常，请核对额度后再继续' + (accountingError ? `：${accountingError}` : ''), 'error');
@@ -2613,7 +2776,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     scriptJobs([{ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: [item.id], lastSavedItem: item,
       accountingFailed: true, accountingError: '合成记账异常', cleanupError: '合成清理异常' }]);
     const view = setupSeries();
-    await waitFor(() => expect(textPrompt().value).toBe('saved style'));
+    await waitFor(() => expect(textPrompt().value).toBe('saved style, subject'));
     fireEvent.click(screen.getByText('生成合成文生图'));
     const warning = '图片已保存，但本地记账异常，请核对额度后再继续：合成记账异常\n后台任务清理异常：合成清理异常';
     await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith(warning, 'error'));

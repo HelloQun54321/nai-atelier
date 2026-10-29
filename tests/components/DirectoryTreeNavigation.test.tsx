@@ -1,15 +1,34 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'postcss';
 import { DIRECTORY_FAVORITES_ID, DirectoryTreeNavigation } from '../../components/DirectoryTreeNavigation';
 import { applyThemeDetails } from '../../services/themeDetails';
+import { readAgentPage, operateAgentPage } from '../../services/agentWorkspace';
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 const nodes = [{ id: 'root', name: '根' }, { id: 'child', parentId: 'root', name: '子项' }, { id: 'leaf', parentId: 'child', name: '末层' }, { id: 'other', name: '另一根' }];
 const props = () => ({ nodes, label: '业务文件夹', title: '文件夹', selectedId: '*', onSelect: vi.fn(), expanded: true, preferenceKey: 'first-business', totalCount: 5, unclassifiedCount: 1, counts: new Map([['root', 3], ['child', 2]]) });
+
+it('只读助手能展开真实共用目录并用手机目录选择浏览，不开放新建或编辑动作', async () => {
+  const p = props(), create = vi.fn();
+  const Browser = () => {
+    const [selectedId, setSelectedId] = React.useState('*');
+    return <main data-agent-view="list"><DirectoryTreeNavigation {...p} selectedId={selectedId} onSelect={id => { p.onSelect(id); setSelectedId(id); }} onCreate={create} /></main>;
+  };
+  render(<Browser />);
+  let page = readAgentPage({ query: '展开目录' });
+  await act(async () => { await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' }); });
+  expect(screen.getByRole('button', { name: '根 / 子项 / 末层' })).toBeTruthy(); expect(p.onSelect).not.toHaveBeenCalled();
+  page = readAgentPage({ query: '选择目录' });
+  await act(async () => { await operateAgentPage({ action: 'select', snapshotId: page.snapshotId, controlId: page.controls[0].id, value: 'leaf', permissionMode: 'read_only' }); });
+  expect(p.onSelect).toHaveBeenCalledWith('leaf');
+  page = readAgentPage({ query: '新建目录' });
+  await expect(operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' })).rejects.toThrow('只读');
+  expect(create).not.toHaveBeenCalled();
+});
 
 it('使用统一侧栏与手机完整路径选择，折叠箭头不选择且按业务分别记忆', () => {
   const p = props(); const view = render(<DirectoryTreeNavigation {...p} />);

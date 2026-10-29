@@ -156,3 +156,21 @@ it('拒绝覆盖手改时原位报错，保存回执重试不再次撤回', asyn
   fireEvent.click(screen.getByRole('button', { name: '重试保存记录' }));
   await waitFor(() => expect(onAction).toHaveBeenLastCalledWith('save'));
 });
+
+it('整块旧分类撤销信息展示正文与负面，隐藏来源元信息', () => {
+  const { container } = render(<AgentPromptDiff changes={[{ path: ['params', '_promptSections'], before: {
+    'purpose:place': 'old city', presentation: 'polaroid frame', sectionNegatives: { 'purpose:place': 'old forest' }, sectionMeta: { 'purpose:place': { source: 'library', entryId: 'private-source' } },
+  } }]} />);
+  const removed = [...container.querySelectorAll('del')].map(node => node.textContent).join(' ');
+  expect(removed).toContain('old city'); expect(removed).toContain('polaroid frame'); expect(removed).toContain('old forest');
+  expect(container.textContent).not.toContain('private-source'); expect(container.textContent).not.toContain('library');
+});
+
+it('整块角色旧分栏仍展示原正负正文', () => {
+  const { container } = render(<AgentPromptDiff changes={[
+    { path: ['params', 'characters', 'id:alice', 'sections'], before: { appearance: 'blue eyes', 'directory:test': 'white dress' } },
+    { path: ['params', 'characters', 'id:alice', 'sectionNegatives'], before: { appearance: 'red eyes' } },
+  ]} />);
+  const removed = [...container.querySelectorAll('del')].map(node => node.textContent).join(' ');
+  expect(removed).toContain('blue eyes'); expect(removed).toContain('white dress'); expect(removed).toContain('red eyes');
+});

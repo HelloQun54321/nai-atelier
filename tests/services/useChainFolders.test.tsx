@@ -14,6 +14,23 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it('助手直接保存后同步所有保活目录，忽略无关资源且不丢失读取中的刷新', async () => {
+  let finish!: (state: ChainFolderState) => void;
+  get.mockImplementationOnce(() => new Promise<ChainFolderState>(resolve => { finish = resolve; }));
+  const slow = renderHook(() => useChainFolders(true));
+  const second = renderHook(() => useChainFolders(true));
+  const disabled = renderHook(() => useChainFolders(false));
+  await waitFor(() => expect(second.result.current.ready).toBe(true));
+  get.mockResolvedValue(saved);
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'catalog_groups' } })); });
+  expect(get).toHaveBeenCalledTimes(2);
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'chain_folders' } })); });
+  expect(slow.result.current.state).toEqual(saved); expect(second.result.current.state).toEqual(saved);
+  expect(disabled.result.current.ready).toBe(false); expect(get).toHaveBeenCalledTimes(4);
+  await act(async () => { finish(initial); });
+  expect(slow.result.current.state).toEqual(saved); expect(put).not.toHaveBeenCalled();
+});
+
 it('App独立保存归属后，保活列表立即接收真实回执，不必切窗或重新GET', async () => {
   const first = renderHook(() => useChainFolders(true));
   const second = renderHook(() => useChainFolders(true));

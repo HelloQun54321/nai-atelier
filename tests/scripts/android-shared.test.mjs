@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { extractAndroidShared } from '../../scripts/android-shared.mjs';
 import { androidDictionaryGenerator } from '../../scripts/android-dictionary.mjs';
 import { projectRoot } from '../support/workspace.mjs';
@@ -101,6 +102,138 @@ test('手机助手单编码删除核对现有兄弟编码，运行或读取失�
   assert.equal(mobile.agent.checks.length, 2);
 });
 
+test('Android Agent 自报 Android 运行平台并保留 /documents 文件边界', async () => {
+  const source = await (await import('node:fs/promises')).readFile(join(projectRoot, 'mobile/agent.ts'), 'utf8');
+  assert.match(source, /new PromptAgentService\(\{[^}]*runtimePlatform:\s*'android'/s);
+  assert.match(source, /path !== '\/documents' && !path\.startsWith\('\/documents\/'\)/);
+});
+
+test('Android直接队列与图片反推适配复用本地服务实例，不暴露Key或任务令牌', async () => {
+  const { transform } = await import('esbuild');
+  const inferred = { tags: [{ name: 'synthetic_tag' }] };
+  const source = extractAndroidShared(join(projectRoot, 'mobile/gateway.ts'), ['agentGenerationQueue', 'agentInspectImageTags'], `
+    const calls = [], inferred = ${JSON.stringify(inferred)};
+    const runAgentGenerationQueue = (...args) => { calls.push(['queue', ...args]); return { busy: false, paused: false, waiting: [] }; };
+    const native = { tagger: async options => { calls.push(['tagger', options]); return options.action === 'status' ? { model: 'synthetic-model', models: [{ id: 'synthetic-model', downloaded: true }] } : inferred; } };
+    const bytesToBase64 = bytes => Buffer.from(bytes).toString('base64');
+  `, {
+    tasks: "const tasks = { instance: 'same-tasks' };",
+    generationJobs: "const generationJobs = { jobs: { instance: 'same-jobs' } };",
+  });
+  const transformed = await transform(source + '\nexport { calls };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  assert.deepEqual(mobile.agentGenerationQueue('synthetic-key-hash', 'read'), { busy: false, paused: false, waiting: [] });
+  assert.deepEqual(await mobile.agentInspectImageTags(new Uint8Array([1, 2, 3]), { threshold: 0.4, characterThreshold: 0.7 }), inferred);
+  assert.deepEqual(mobile.calls, [
+    ['queue', 'read', 'synthetic-key-hash', { instance: 'same-tasks' }, { instance: 'same-jobs' }],
+    ['tagger', { action: 'status' }],
+    ['tagger', { action: 'infer', model: 'synthetic-model', data: 'AQID', threshold: 0.4, characterThreshold: 0.7 }],
+  ]);
+});
+
+test('Android 生成路由给电脑 Collector 工具提供明确不可用实现', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { transform } = await import('esbuild');
+  const [build, gateway] = await Promise.all([
+    readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8'),
+    readFile(join(projectRoot, 'scripts/media-gateway.mjs'), 'utf8'),
+  ]);
+  const tree = ts.createSourceFile('gateway.mjs', gateway, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let agentBranch = '';
+  const findAgent = node => {
+    if (ts.isIfStatement(node) && node.expression.getText(tree) === "url.pathname.startsWith('/api/prompt-agent/')") agentBranch = node.getText(tree);
+    ts.forEachChild(node, findAgent);
+  };
+  findAgent(tree);
+  assert.ok(agentBranch, '应提取电脑端实际 Agent 路由');
+  const template = build.match(/const agentRoutes=`([\s\S]*?)`;\r?\nconst remote/)[1];
+  const source = `
+    const sendJson=()=>{},hasValidLanCookie=()=>true,getNaiRuntime=()=>({}),normalizeCloudQueuePreferences=()=>({});
+    const readRequestBody=async()=>Buffer.from('{"message":"synthetic"}'),requestWorkerJson=()=>{},requestWorkerBuffer=()=>{};
+    const readSetting=async()=>{},writeSetting=async()=>{},queuePreferences=async()=>({});
+    const serviceCalls=[];
+    const agentGenerationQueue=(keyHash,action)=>{serviceCalls.push(['queue',keyHash,action]);return {busy:false,paused:false,waiting:[]};};
+    const agentInspectImageTags=async(buffer,options)=>{serviceCalls.push(['tags',[...buffer],options]);return {tags:[{name:'synthetic_tag',confidence:0.9}]};};
+  ` + template.replace(/^import .*;\r?\n/gm, '').replace('${agentBranch}', agentBranch);
+  const transformed = await transform(source + '\nexport { serviceCalls };', { loader: 'js', format: 'esm' });
+  const route = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  let collector, generation, inspected;
+  const response = { destroyed: false, writableEnded: false, writeHead() {}, write() {}, end() { this.writableEnded = true; } };
+  await route.handleAgent({ method: 'POST' }, response, { pathname: '/api/prompt-agent/run' }, {
+    async run(_body, _emit, _signal, project) {
+      let state, stateError, error;
+      try { state = project.getStyleCollectorState(); } catch (cause) { stateError = cause.message; }
+      try { project.controlStyleCollector('start'); } catch (cause) { error = cause.message; }
+      collector = { state, stateError, error };
+      generation = await project.generationQueue('read');
+      inspected = await project.inspectImageTags(new Uint8Array([1, 2]), { threshold: 0.5, model: 'synthetic-model' });
+    },
+  }, async () => ({ keyHash: 'synthetic', preferences: {} }));
+  assert.deepEqual(collector.state, { available: false, reason: '独立 Android 不支持电脑收集浮窗' }, collector.stateError);
+  assert.equal(collector.error, 'Android 不支持电脑本机收集浮窗');
+  assert.deepEqual(generation, { busy: false, paused: false, waiting: [] });
+  assert.deepEqual(inspected, { tags: [{ name: 'synthetic_tag', confidence: 0.9 }] });
+  assert.deepEqual(route.serviceCalls, [
+    ['queue', 'synthetic', 'read'],
+    ['tags', [1, 2], { threshold: 0.5, model: 'synthetic-model' }],
+  ]);
+});
+
+test('Android 提取后的真实会话路由支持提示词版本读写 API', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { transform } = await import('esbuild');
+  const [build, gateway] = await Promise.all([
+    readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8'),
+    readFile(join(projectRoot, 'scripts/media-gateway.mjs'), 'utf8'),
+  ]);
+  const tree = ts.createSourceFile('gateway.mjs', gateway, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  let agentBranch = '';
+  const findAgent = node => {
+    if (ts.isIfStatement(node) && node.expression.getText(tree) === "url.pathname.startsWith('/api/prompt-agent/')") agentBranch = node.getText(tree);
+    ts.forEachChild(node, findAgent);
+  };
+  findAgent(tree);
+  assert.match(agentBranch, /prompt-versions/, 'Android 应从电脑 Agent 路由提取提示词版本端点');
+  const template = build.match(/const agentRoutes=`([\s\S]*?)`;\r?\nconst remote/)[1];
+  const source = `
+    const sendJson=(_res,status,payload)=>({status,payload}),hasValidLanCookie=()=>true,getNaiRuntime=()=>({}),normalizeCloudQueuePreferences=()=>({});
+    const readRequestBody=async req=>req.body,requestWorkerJson=()=>{},requestWorkerBuffer=()=>{};
+    const readSetting=async()=>{},writeSetting=async()=>{},queuePreferences=async()=>{};
+    const agentGenerationQueue=()=>{},agentInspectImageTags=()=>{};
+  ` + template.replace(/^import .*;\r?\n/gm, '').replace('${agentBranch}', agentBranch);
+  const transformed = await transform(source, { loader: 'js', format: 'esm' });
+  const route = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  const calls = [];
+  const promptAgent = {
+    async listPromptVersions(sessionId, query) { calls.push(['list', sessionId, query]); return { items: [{ id: 'v1' }], nextOffset: null }; },
+    async readPromptVersion(sessionId, versionId, query) { calls.push(['read', sessionId, versionId, query]); return { id: versionId, text: 'synthetic' }; },
+    async savePromptVersion(sessionId, input) { calls.push(['save', sessionId, input]); return { id: 'v2' }; },
+    async finishPromptVersion(sessionId, versionId, afterDraft) { calls.push(['finish', sessionId, versionId, afterDraft]); return { ok: true }; },
+  };
+  const run = (method, path, body = {}) => route.handleAgent(
+    { method, body: Buffer.from(JSON.stringify(body)), headers: {}, socket: { remoteAddress: '127.0.0.1' } }, {},
+    new URL(`http://atelier.local${path}`), promptAgent, async () => ({ keyHash: 'synthetic-key-hash', preferences: {} }),
+  );
+  assert.deepEqual(await run('GET', '/api/prompt-agent/sessions/synthetic-session/prompt-versions?scope=draft&offset=2'), {
+    status: 200, payload: { items: [{ id: 'v1' }], nextOffset: null },
+  });
+  assert.deepEqual(await run('POST', '/api/prompt-agent/sessions/synthetic-session/prompt-versions', { draft: { target: { chainId: 'synthetic-chain' } }, reason: 'before_apply' }), {
+    status: 200, payload: { id: 'v2' },
+  });
+  assert.deepEqual(await run('GET', '/api/prompt-agent/sessions/synthetic-session/prompt-versions/synthetic-version?offset=3'), {
+    status: 200, payload: { id: 'synthetic-version', text: 'synthetic' },
+  });
+  assert.deepEqual(await run('PATCH', '/api/prompt-agent/sessions/synthetic-session/prompt-versions/synthetic-version', { afterDraft: { basePrompt: 'after' } }), {
+    status: 200, payload: { ok: true },
+  });
+  assert.deepEqual(calls, [
+    ['list', 'synthetic-session', { scope: 'draft', offset: '2' }],
+    ['save', 'synthetic-session', { draft: { target: { chainId: 'synthetic-chain' } }, reason: 'before_apply', source: 'page', scope: 'draft' }],
+    ['read', 'synthetic-session', 'synthetic-version', { offset: '3' }],
+    ['finish', 'synthetic-session', 'synthetic-version', { basePrompt: 'after' }],
+  ]);
+});
+
 test('Android 打包源码覆盖助手启动签名全部文件，文件系统 shim 可以实际读取', async () => {
   const { readFile } = await import('node:fs/promises');
   const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
@@ -111,6 +244,12 @@ test('Android 打包源码覆盖助手启动签名全部文件，文件系统 sh
   assert.ok(packaged.includes('scripts/agent-compaction.mjs'), 'Android 必须打包 Pi 摘要模块');
   assert.ok(required.includes('agent-prompt-library.mjs'), '助手启动签名必须包含提示词资料分页与续读模块');
   assert.ok(packaged.includes('scripts/agent-prompt-library.mjs'), 'Android 必须打包提示词资料分页与续读模块');
+  assert.ok(required.includes('agent-directories.mjs'), '助手启动签名必须包含直接目录工具');
+  assert.ok(required.includes('agent-creative-read.mjs'), '助手启动签名必须包含创作资料读取工具');
+  assert.ok(required.includes('../services/directoryTree.mjs'), '助手启动签名必须包含目录树依赖');
+  assert.ok(packaged.includes('scripts/agent-directories.mjs'), 'Android 必须打包直接目录工具');
+  assert.ok(packaged.includes('scripts/agent-creative-read.mjs'), 'Android 必须打包创作资料读取工具');
+  assert.ok(packaged.includes('services/directoryTree.mjs'), 'Android 必须打包目录树依赖');
   for (const file of required) {
     assert.ok(packaged.includes(new URL(file, 'file:///scripts/prompt-agent.mjs').pathname.slice(1)), `启动签名文件未打包：${file}`);
   }

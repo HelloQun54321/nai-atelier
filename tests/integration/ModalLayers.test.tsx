@@ -8,7 +8,6 @@ import { CharacterReferenceManager } from '../../components/CharacterReferenceMa
 import { ImageTaggerPanel } from '../../components/ImageTaggerPanel';
 import { HistoryImagePicker } from '../../components/HistoryImagePicker';
 import { InspirationImagePicker } from '../../components/InspirationImagePicker';
-import { ChainEditorForkModal } from '../../components/chain/ChainEditorForkModal';
 
 // 只读合成资料，不接触本地图片、编码或生成接口。
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
@@ -27,10 +26,9 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
 const actions = { setParams: vi.fn(), markChange: vi.fn(), notify: vi.fn() };
 const cases: Array<[string, () => React.ReactElement, string?]> = [
-  ['Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" />, '管理'],
-  ['图生图 Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" operation="image-to-image" />, '管理'],
+  ['氛围参考管理', () => <VibeManager params={params} {...actions} apiKey="" />, '管理氛围参考'],
+  ['图生图氛围参考管理', () => <VibeManager params={params} {...actions} apiKey="" operation="image-to-image" />, '管理氛围参考'],
   ['精准参考', () => <CharacterReferenceManager params={params} {...actions} />, '精准参考'],
-  ['保存到库', () => <ChainEditorForkModal showForkModal setShowForkModal={vi.fn()} confirmFork={vi.fn()} isUploading={false} currentPreviewCover={{ source: null, needsUpload: false }} />],
   ['自由实验室反推', () => <ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],
   ['预设工作台反推', () => <ImageTaggerPanel contextual open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],
   ['历史图片选择器', () => <HistoryImagePicker open onClose={vi.fn()} onSelect={vi.fn()} />],

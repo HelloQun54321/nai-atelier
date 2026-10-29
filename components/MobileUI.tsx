@@ -102,7 +102,7 @@ export const MobileBottomSheet: React.FC<{
         <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-gray-300 dark:bg-gray-600" />
         <header className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <h2 className="font-bold text-gray-900 dark:text-white">{title}</h2>
-          <MobileIconButton label={t("关闭")} onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
+          <MobileIconButton data-agent-action="browse" label={t("关闭")} onClick={requestClose} className="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"><X className="h-5 w-5" /></MobileIconButton>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
         {footer && <footer className="appearance-surface mobile-safe-bottom border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">{footer}</footer>}
@@ -138,7 +138,7 @@ export const MobileDetailView: React.FC<{
       data-safe-mode-work={sensitiveTitle ? 'true' : undefined}
     >
       <header className="mobile-detail-header">
-        <MobileIconButton label={t("返回")} onClick={requestClose} className="text-gray-600 dark:text-gray-300">
+        <MobileIconButton data-agent-action="browse" label={t("返回")} onClick={requestClose} className="text-gray-600 dark:text-gray-300">
           <ArrowLeft className="h-6 w-6" />
         </MobileIconButton>
         <div className="min-w-0 flex-1">

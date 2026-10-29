@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorCharacters, type ChainEditorCharactersProps } from '../../../components/chain/ChainEditorCharacters';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../../services/appearancePreferences';
 import type { NAIParams, PromptChain } from '../../../types';
+import * as PromptLibraryAccess from '../../../components/PromptLibraryAccess';
 
 vi.mock('../../../components/chain/CharacterTaggerReference', () => ({ CharacterTaggerReference: () => null }));
 
@@ -14,10 +15,10 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
 ] };
 const mark = vi.fn();
 type LibraryProps = Pick<ChainEditorCharactersProps, 'allChains' | 'chainsLoading' | 'chainsError' | 'onRetryChains' | 'showCharacterReference'>;
-const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial, onContentRollForRole, library = {} }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void; library?: LibraryProps }) => {
+const Harness = ({ freeform = false, canEdit = true, model, initialParams = initial, onContentRollForRole, library = {}, tagAssistEnabled = false }: { freeform?: boolean; canEdit?: boolean; model?: string; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void; library?: LibraryProps; tagAssistEnabled?: boolean }) => {
   const [params, setParams] = useState(initialParams);
-  return <><ChainEditorCharacters promptClassificationEnabled={classified} params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
-    canEdit={canEdit} onContentRollForRole={onContentRollForRole} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
+  return <><ChainEditorCharacters params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
+    canEdit={canEdit} onContentRollForRole={onContentRollForRole} tagAssistEnabled={tagAssistEnabled} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
     addCharacter={vi.fn()} removeCharacter={index => setParams(current => ({ ...current, characters: current.characters?.filter((_, i) => i !== index) }))}
     updateCharacter={(index, patch, useCoords) => { setParams(current => ({ ...current, ...(useCoords === undefined ? {} : { useCoords }), characters: current.characters?.map((character, i) => i === index ? { ...character, ...patch } : character) })); mark(); }}
     activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']} mobileEditorTab="character" freeformPosition={freeform} {...library} />
@@ -30,6 +31,44 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('只有完整角色正负大块，旧用途与目录原文编译显示但打开不改写数据', () => {
+    const role = { ...initial.characters![0], prompt: '1.3::blue hair::',
+      sections: { wardrobe: 'blue dress', 'purpose:lighting': 'rim light', 'directory:old': 'tree' },
+      sectionNegatives: { wardrobe: 'coat', 'purpose:lighting': 'dark', 'directory:old': 'bare' },
+      sectionMeta: { 'directory:old': { directoryPath: ['旧目录', '原位置'], entryName: '旧条目' } } };
+    const params = { ...initial, characters: [role, initial.characters![1]] };
+    render(<Harness initialParams={params} />);
+    expect(screen.getByText('角色专属提示词')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '+ 添加角色' })).toBeTruthy();
+    const positive = screen.getAllByPlaceholderText('角色提示词')[0];
+    const negative = screen.getAllByPlaceholderText('选填')[0];
+    expect(positive).toHaveProperty('value', 'blue dress, rim light, tree, 1.3::blue hair::');
+    expect(negative).toHaveProperty('value', 'coat, dark, bare, red hair');
+    expect(positive.compareDocumentPosition(negative) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.querySelector('[data-prompt-purpose-group], [data-character-summary]')).toBeNull();
+    expect(screen.getAllByRole('textbox')).toHaveLength(4);
+    expect(draft()).toEqual(params); expect(mark).not.toHaveBeenCalled();
+    fireEvent.change(positive, { target: { value: 'changed whole role' } });
+    expect(draft().characters?.[0]).toMatchObject({ id: 'a', prompt: 'changed whole role', negativePrompt: 'coat, dark, bare, red hair', x: role.x, y: role.y });
+    expect(draft().characters?.[0].sections).toBeUndefined();
+    expect(draft().characters?.[0].sectionNegatives).toBeUndefined();
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]);
+  });
+
+  it('角色骰子始终使用八个主体用途和稳定ID，排序后整段编辑仍对应原角色', () => {
+    const random = vi.spyOn(PromptLibraryAccess, 'PromptLibraryRandomButton').mockImplementation(({ roleId }) => <button type="button" aria-label={`random-${roleId}`} />);
+    render(<Harness />);
+    const purposes = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
+    for (const id of ['a', 'b']) {
+      expect(random.mock.calls.some(([props]) => props.roleId === id && props.variant === 'icon' && JSON.stringify(props.purposes) === JSON.stringify(purposes))).toBe(true);
+      expect(screen.getByRole('button', { name: `random-${id}` }).closest('.character-tools')).toBeTruthy();
+    }
+    fireEvent.click(screen.getByRole('button', { name: '上移角色 2' }));
+    fireEvent.change(screen.getAllByPlaceholderText('角色提示词')[1], { target: { value: 'edited role a' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: '启用角色 2' }));
+    expect(draft().characters).toEqual([initial.characters![1], { ...initial.characters![0], prompt: 'edited role a', enabled: false }]);
+    expect(screen.getByRole('button', { name: 'random-a' }).closest('.lab-character')).toBe(screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.lab-character'));
+  });
   it('角色库首读等待与失败不冒充空库，重试成功为空后才显示空态', async () => {
     let resolve!: (chains: PromptChain[]) => void;
     let reject!: (error: Error) => void;
@@ -77,15 +116,13 @@ describe('共用角色编辑器', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it.each([false, true])('分类=%s 时所有角色原文框均可拉伸，包含动态目录正负词', classified => {
+  it('完整角色原文框均可拉伸，动态目录正负词合并显示', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
-    render(<Harness classified={classified} initialParams={{ ...initial, characters: [role] }} />);
+    render(<Harness initialParams={{ ...initial, characters: [role] }} />);
     const fields = Array.from(document.querySelectorAll('textarea'));
-    expect(fields.length).toBeGreaterThanOrEqual(classified ? 4 : 2);
-    if (classified) {
-      expect(screen.getByLabelText('服装', { selector: 'textarea' })).toHaveProperty('value', 'dress');
-      expect(screen.getByRole('textbox', { name: '角色 1 · 服装 · 内容负面' })).toHaveProperty('value', 'coat');
-    }
+    expect(fields).toHaveLength(2);
+    expect(screen.getByPlaceholderText('角色提示词')).toHaveProperty('value', 'dress, blue hair');
+    expect(screen.getByPlaceholderText('选填')).toHaveProperty('value', 'coat, red hair');
     for (const field of fields) {
       expect(field.classList.contains('resize-y')).toBe(true);
       expect(field.classList.contains('resize-none')).toBe(false);
@@ -93,23 +130,23 @@ describe('共用角色编辑器', () => {
     expect(screen.getAllByRole('button', { name: '调整输入框高度' })).toHaveLength(fields.length);
     expect(mark).not.toHaveBeenCalled();
   });
-  it('动态目录正负词可编辑，摘要及来源使用保存的目录路径', () => {
+  it('动态目录正负词整段编辑清栏后不重复编译，其他角色仍保持不变', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': '1.2::white dress, ribbon::' }, sectionNegatives: { 'directory:dress': 'coat' },
       sectionMeta: { 'directory:dress': { directoryName: '服装', directoryPath: ['人物', '服装'], entryName: '白裙' } } };
     render(<Harness initialParams={{ ...initial, characters: [role, initial.characters![1]] }} />);
-    const positive = screen.getByLabelText('人物 / 服装', { selector: 'textarea' }) as HTMLTextAreaElement;
-    const negative = screen.getByRole('textbox', { name: '角色 1 · 人物 / 服装 · 内容负面' }) as HTMLTextAreaElement;
-    expect(positive.value).toBe('1.2::white dress, ribbon::'); expect(negative.value).toBe('coat');
+    const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
+    const negative = screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement;
+    expect(positive.value).toBe('1.2::white dress, ribbon::, blue hair'); expect(negative.value).toBe('coat, red hair');
     fireEvent.change(positive, { target: { value: '1.2::blue dress, ribbon::' } });
     fireEvent.change(negative, { target: { value: 'red dress' } });
-    expect(draft().characters?.[0]).toMatchObject({ sections: { 'directory:dress': '1.2::blue dress, ribbon::' }, sectionNegatives: { 'directory:dress': 'red dress' }, sectionMeta: role.sectionMeta });
+    expect(draft().characters?.[0]).toMatchObject({ prompt: '1.2::blue dress, ribbon::', negativePrompt: 'red dress' });
+    expect(draft().characters?.[0].sections).toBeUndefined();
+    expect(draft().characters?.[0].sectionNegatives).toBeUndefined();
     expect(draft().characters?.[1]).toEqual(initial.characters![1]);
-    expect(document.querySelector('[data-character-summary-chip="directory:dress"]')?.textContent).toBe('人物 / 服装');
-    fireEvent.click(screen.getAllByRole('button', { name: '展开来源' })[0]);
-    expect(screen.getByText('来源：白裙')).toBeTruthy();
+    expect(document.querySelector('[data-character-summary]')).toBeNull();
   });
   it('整段角色完整展示动态分栏，编辑负面后清分类且正文不重复', () => {
-    render(<Harness classified={false} initialParams={{ ...initial, characters: [{ ...initial.characters![0], sections: { 'directory:custom': '1.2::dress, bow::' }, sectionNegatives: { 'directory:custom': 'coat' } }] }} />);
+    render(<Harness initialParams={{ ...initial, characters: [{ ...initial.characters![0], sections: { 'directory:custom': '1.2::dress, bow::' }, sectionNegatives: { 'directory:custom': 'coat' } }] }} />);
     const positive = screen.getByPlaceholderText('角色提示词') as HTMLTextAreaElement;
     const negative = screen.getByPlaceholderText('选填') as HTMLTextAreaElement;
     expect(positive.value).toBe('1.2::dress, bow::, blue hair'); expect(negative.value).toBe('coat, red hair');
@@ -118,23 +155,29 @@ describe('共用角色编辑器', () => {
     expect(draft().characters?.[0]).toMatchObject({ prompt: '1.2::dress, bow::, blue hair', negativePrompt: 'red dress' });
     expect(draft().characters?.[0].sections).toBeUndefined(); expect(draft().characters?.[0].sectionNegatives).toBeUndefined();
   });
-  it('Medium 动态角色分类负面禁用且保留正词与负词原文', () => {
+  it('Medium 合并后的动态角色负面禁用且完整保留原正负词', () => {
     render(<Harness model="nai-diffusion-5-full-medium" initialParams={{ ...initial, characters: [{ ...initial.characters![0], sections: { 'directory:custom': 'dress' }, sectionNegatives: { 'directory:custom': 'coat' }, sectionMeta: { 'directory:custom': { directoryName: '服装快照' } } }] }} />);
-    expect((screen.getByLabelText('服装快照', { selector: 'textarea' }) as HTMLTextAreaElement).disabled).toBe(false);
-    const negative = screen.getByRole('textbox', { name: '角色 1 · 服装快照 · 内容负面' }) as HTMLTextAreaElement;
-    expect(negative.disabled).toBe(true); expect(negative.value).toBe('coat');
+    expect((screen.getByPlaceholderText('角色提示词') as HTMLTextAreaElement).disabled).toBe(false);
+    const negative = screen.getByPlaceholderText('选填') as HTMLTextAreaElement;
+    expect(negative.disabled).toBe(true); expect(negative.value).toBe('coat, red hair');
   });
-  it.each([[false, true, 0], [true, false, 0], [true, true, 2]] as const)('分类=%s、可编辑=%s 时只显示对应角色的随机搭配入口', (classified, canEdit, count) => {
+  it.each([[false, 0], [true, 2]] as const)('可编辑=%s 时显示对应角色工具组的随机搭配入口，数量=%s', (canEdit, count) => {
     const onContentRollForRole = vi.fn();
-    render(<Harness classified={classified} canEdit={canEdit} onContentRollForRole={onContentRollForRole} />);
+    render(<Harness canEdit={canEdit} onContentRollForRole={onContentRollForRole} />);
     const buttons = screen.queryAllByRole('button', { name: '随机搭配' });
     expect(buttons).toHaveLength(count);
-    if (count) { fireEvent.click(buttons[1]); expect(onContentRollForRole).toHaveBeenCalledWith(1); }
+    if (count) {
+      for (const button of buttons) {
+        expect(button.closest('.character-tools')).toBeTruthy();
+        expect(button.textContent).toBe('');
+      }
+      fireEvent.click(buttons[1]); expect(onContentRollForRole).toHaveBeenCalledWith(1);
+    }
     expect(draft()).toEqual(initial);
     expect(mark).not.toHaveBeenCalled();
   });
   it('整段显示完整角色正负词，编辑后分类词不重复参与请求，坐标与其他角色保留', () => {
-    render(<Harness classified={false} initialParams={{ ...initial, characters: [{ ...initial.characters![0], prompt: 'smile', sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }, initial.characters![1]] }} />);
+    render(<Harness initialParams={{ ...initial, characters: [{ ...initial.characters![0], prompt: 'smile', sections: { wardrobe: 'blue dress' }, sectionNegatives: { wardrobe: 'red dress' } }, initial.characters![1]] }} />);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
     expect(positive.value).toBe('blue dress, smile');
     expect((screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement).value).toBe('red dress, red hair');

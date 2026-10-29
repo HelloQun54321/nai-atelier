@@ -679,7 +679,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                 {stats.characters.length ? <div className="space-y-0.5">{stats.characters.slice(0, 8).map(character => <RankingRow key={character.id} name={character.name || t('未命名角色')} images={character.images} lastAt={character.lastAt} onClick={() => onOpenHistory({ search: character.name, sort: 'newest' })} accent="rose" />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('带角色 {0} 张 · {1} 个槽', [formatNumber(stats.characterUsage.images), formatNumber(stats.characterUsage.slots)])}</span>
-                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('Vibe {0} 张 · {1} 个槽', [formatNumber(stats.vibeUsage.images), formatNumber(stats.vibeUsage.slots)])}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('氛围参考 {0} 张 · {1} 个槽', [formatNumber(stats.vibeUsage.images), formatNumber(stats.vibeUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('精准参考 {0} 张 · {1} 个槽', [formatNumber(stats.referenceUsage.images), formatNumber(stats.referenceUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {(chainsLoading || chainsError ? '—' : formatNumber(chainStats.character))}</span>
                 </div>
@@ -701,8 +701,8 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
                 <SmallMetric label={t('风格串')} value={(chainsLoading || chainsError ? '—' : formatNumber(chainStats.style))} />
                 <SmallMetric label={t('角色库')} value={(chainsLoading || chainsError ? '—' : formatNumber(chainStats.character))} />
-                <SmallMetric label={t('Vibe 资产')} value={assets.vibes ? formatNumber(vibeStats.assets) : '—'} detail={assets.vibes ? t('编码 {0}', [formatNumber(vibeStats.encodings)]) : undefined} />
-                <SmallMetric label={t('Vibe 分组')} value={assets.vibeGroups ? formatNumber(vibeStats.groups) : '—'} />
+                <SmallMetric label={t('氛围参考资产')} value={assets.vibes ? formatNumber(vibeStats.assets) : '—'} detail={assets.vibes ? t('编码 {0}', [formatNumber(vibeStats.encodings)]) : undefined} />
+                <SmallMetric label={t('氛围参考分组')} value={assets.vibeGroups ? formatNumber(vibeStats.groups) : '—'} />
                 <SmallMetric label={t('Roll 实验')} value={assets.roll ? formatNumber(rollStats.experiments) : '—'} />
                 <SmallMetric label={t('Roll 候选')} value={assets.roll ? formatNumber(rollStats.candidates) : '—'} />
                 <SmallMetric label={t('已保存组合')} value={assets.roll ? formatNumber(rollStats.saved) : '—'} />

@@ -46,22 +46,22 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
       <OriginalImage key={`${src}:${retry}`} src={src} alt={alt} draggable={false} style={{...view.imageStyle,visibility:failed?'hidden':undefined}} onLoad={event=>{view.onLoad(event);setFailedSrc(null);}} onError={()=>setFailedSrc(src)} data-safe-mode-ignore="true" />
       {failed&&<button type="button" data-card-action="true" className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-black/75 px-4 py-3 text-sm text-white" onClick={()=>{setFailedSrc(null);setRetry(value=>value+1);}}>{t('原图加载失败 · 重试')}</button>}
       {!customActions&&<>
-        <button type="button" data-card-action="true" aria-label={t("返回图片详情")} className={`${IMAGE_CARD_ACTION_CLASS} absolute left-4 top-4 z-30 flex items-center justify-center`} onClick={close}><ArrowLeft className="h-5 w-5" /></button>
+        <button data-agent-action="browse" type="button" data-card-action="true" aria-label={t("返回图片详情")} className={`${IMAGE_CARD_ACTION_CLASS} absolute left-4 top-4 z-30 flex items-center justify-center`} onClick={close}><ArrowLeft className="h-5 w-5" /></button>
         {!hideShareActions&&<ImageShareOverlay imageUrl={src} filename={filename} generationData={generationData} favorite={favorite} notify={notify} className="!top-4 !right-4" />}
       </>}
       {children}
     </PressRevealSurface>
     <div data-card-action="true" data-image-preview-footer className="absolute inset-x-0 bottom-3 z-40 flex flex-col items-center justify-center gap-2 text-white" onPointerDown={event=>event.stopPropagation()}>
       {pager&&pager.count>1&&<div className="flex items-center gap-3">
-        <button type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t('上一张图片')} disabled={pager.index<=0} onClick={()=>navigate(-1)}><ChevronLeft className="mx-auto h-4 w-4" /></button>
+        <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t('上一张图片')} disabled={pager.index<=0} onClick={()=>navigate(-1)}><ChevronLeft className="mx-auto h-4 w-4" /></button>
         <span aria-live="polite" className="min-w-16 rounded-full bg-black/60 px-3 py-1 text-center text-xs tabular-nums">{pager.index+1} / {pager.count}</span>
-        <button type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t('下一张图片')} disabled={pager.index>=pager.count-1} onClick={()=>navigate(1)}><ChevronRight className="mx-auto h-4 w-4" /></button>
+        <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t('下一张图片')} disabled={pager.index>=pager.count-1} onClick={()=>navigate(1)}><ChevronRight className="mx-auto h-4 w-4" /></button>
       </div>}
       <div className="flex items-center gap-2">
-      <button type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("缩小图片")} disabled={view.zoom<=1} onClick={()=>view.zoomAt(view.zoom/1.25)}><Minus className="mx-auto h-4 w-4" /></button>
+      <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("缩小图片")} disabled={view.zoom<=1} onClick={()=>view.zoomAt(view.zoom/1.25)}><Minus className="mx-auto h-4 w-4" /></button>
       <span className="w-12 text-center text-xs tabular-nums" aria-label={t("图片缩放比例")}>{Math.round(view.fit*view.zoom*100)}%</span>
-      <button type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("放大图片")} disabled={view.zoom>=view.maxZoom} onClick={()=>view.zoomAt(view.zoom*1.25)}><Plus className="mx-auto h-4 w-4" /></button>
-      <button type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("适应窗口")} onClick={view.reset}><Maximize className="mx-auto h-4 w-4" /></button>
+      <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("放大图片")} disabled={view.zoom>=view.maxZoom} onClick={()=>view.zoomAt(view.zoom*1.25)}><Plus className="mx-auto h-4 w-4" /></button>
+      <button data-agent-action="browse" type="button" className={IMAGE_CARD_ACTION_CLASS} aria-label={t("适应窗口")} onClick={view.reset}><Maximize className="mx-auto h-4 w-4" /></button>
       </div>
     </div>
   </div></ImagePreviewPortal>;
@@ -72,6 +72,6 @@ export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{s
   useLanguage();
   const [open,setOpen]=useState(false);
   const previewSrc=previewTransform?buildMediaUrl(props.src,'thumb-960',previewTransform):props.src;
-  return <><button type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} src={previewSrc} {...(previewTransform?{"data-agent-original-src":props.src}:{})} draggable={false} onClick={onClick} /></button>
+  return <><button data-agent-action="browse" type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} src={previewSrc} {...(previewTransform?{"data-agent-original-src":props.src}:{})} draggable={false} onClick={onClick} /></button>
     {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} favorite={favorite} notify={notify} onClose={()=>setOpen(false)} />}</>;
 };

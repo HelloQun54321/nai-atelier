@@ -153,7 +153,7 @@ export const planContentRollApply = (
   const written: string[] = [];
   const kept: string[] = [];
 
-  const legacyKeys = target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS;
+  const legacyKeys = [...(target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS), ...(picks.presentation ? ['presentation'] : [])];
   const keys = Object.keys(picks).some(isRollSectionKey)
     ? Object.keys(picks).filter(key => isRollSectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
   for (const itemId of keys) {
@@ -162,7 +162,7 @@ export const planContentRollApply = (
     const meta = META[kind] || { title: row?.directoryName || row?.title || kind, scope: row?.scope || 'global' };
     const next = textOfRow(row);
     const negative = negativeOfRow(row);
-    const isGlobal = target.mode === 'global' || (row?.scope || meta.scope) === 'global';
+    const isGlobal = kind === 'presentation' || target.mode === 'global' || (row?.scope || meta.scope) === 'global';
     const current = isGlobal
       ? String(globalSectionsMap[kind] || '')
       : String(sections[kind] || '');

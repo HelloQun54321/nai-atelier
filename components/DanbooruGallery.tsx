@@ -401,7 +401,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
         }`}
       >
-        <button type="button" onClick={() => { selectionAnchor.prepareSelection(post.id); setSelectedId(post.id); }} className="gallery-card-visual block w-full text-left">
+        <button data-agent-action="browse" type="button" onClick={() => { selectionAnchor.prepareSelection(post.id); setSelectedId(post.id); }} className="gallery-card-visual block w-full text-left">
           <div
             className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"
             style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}

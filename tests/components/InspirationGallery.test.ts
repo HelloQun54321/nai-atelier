@@ -98,6 +98,30 @@ const directoryDragData = () => {
   return { setData: vi.fn((type: string, value: string) => values.set(type, value)), getData: (type: string) => values.get(type) || '', get types() { return [...values.keys()]; }, effectAllowed: 'all', dropEffect: 'none' } as unknown as DataTransfer;
 };
 
+it('助手直接更新目录时所有保活收藏页刷新名称，保留各页选择与搜索并拒绝迟到旧目录', async () => {
+  const first = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  const second = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
+  const firstPage = within(first.container), secondPage = within(second.container);
+  fireEvent.click(await firstPage.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  await secondPage.findByRole('button', { name: '选择收藏夹：角色设计' });
+  fireEvent.change(firstPage.getByRole('searchbox'), { target: { value: '本页搜索' } });
+  const before = vi.mocked(db.getInspirationBoards).mock.calls.length;
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'chains' } })); });
+  expect(db.getInspirationBoards).toHaveBeenCalledTimes(before);
+  let finishOld!: (value: Awaited<ReturnType<typeof db.getInspirationBoards>>) => void;
+  vi.mocked(db.getInspirationBoards).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  vi.mocked(db.getInspirationBoards).mockResolvedValue([{ ...nestedBoards()[0], id: 'board-1', name: '助手新名称' }]);
+  act(() => window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'inspiration_boards' } })));
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'inspiration_boards' } })); });
+  expect(firstPage.getByRole('button', { name: '选择收藏夹：助手新名称' }).getAttribute('aria-pressed')).toBe('true');
+  expect(secondPage.getByRole('button', { name: '选择收藏夹：助手新名称' }).getAttribute('aria-pressed')).toBe('false');
+  expect((firstPage.getByRole('searchbox') as HTMLInputElement).value).toBe('本页搜索');
+  expect((secondPage.getByRole('searchbox') as HTMLInputElement).value).toBe('');
+  await act(async () => { finishOld(nestedBoards()); });
+  expect(firstPage.queryByRole('button', { name: '选择收藏夹：根夹' })).toBeNull();
+  expect(firstPage.getByRole('button', { name: '选择收藏夹：助手新名称' }).getAttribute('aria-pressed')).toBe('true');
+});
+
 it('拖动收藏夹移动整棵子树，保留选中、颜色与图片归属，图片拖入仍只追加直接目标', async () => {
   let stored = nestedBoards();
   vi.mocked(db.getInspirationBoards).mockImplementation(async () => stored);

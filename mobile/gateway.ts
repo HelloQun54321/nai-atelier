@@ -11,7 +11,7 @@ import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
   getNaiRuntime, applyNaiRuntimeOverride, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths, fetchNaiRuntimeText,
   sanitizeNovelAiSubscription, CloudQueueCoordinator,
-  normalizeCloudQueuePreferences, keyHashFromAuthorization,
+  normalizeCloudQueuePreferences, keyHashFromAuthorization, runAgentGenerationQueue,
   handleGenerateRequest, handleGenerateStreamRequest, handleGenerationTaskRequest, handleVibeEncodeRequest,
   recoverPendingVibeEncodings,
   assertVibeEncodingIdle,
@@ -21,6 +21,13 @@ const tasks = new GenerationTasks();
 const queue = new CloudQueueCoordinator((...args: any[]) => fetch(args[0], args[1]));
 // 后台有限任务与手动／助手入口共用同一份单并发、暂停与间隔状态；这里只持有任务，不建持久表。
 const generationJobs = createMobileGenerationJobs({ tasks, queue, readGatewayUrl: authorization => mobileNaiGatewayUrl(authorization) });
+export const agentGenerationQueue = (keyHash: string, action: 'read' | 'pause' | 'resume' | 'cancel') => runAgentGenerationQueue(action, keyHash, tasks, generationJobs.jobs);
+export async function agentInspectImageTags(buffer: Uint8Array, options: { model?: string; threshold?: number; characterThreshold?: number } = {}) {
+  const status = await native.tagger({ action: 'status' });
+  const model = typeof options.model === 'string' ? options.model : status.model;
+  if (!status.models?.some((item: any) => item.id === model && item.downloaded)) throw new Error('反推模型尚未就绪；请先在设置中下载并选择模型');
+  return native.tagger({ action: 'infer', model, data: bytesToBase64(buffer), ...(Number.isFinite(options.threshold) ? { threshold: options.threshold } : {}), ...(Number.isFinite(options.characterThreshold) ? { characterThreshold: options.characterThreshold } : {}) });
+}
 export function assertMobileVibeNotBusy(vibeId: string) {
   if (tasks.size || [...generationJobs.jobs.jobs.values()].some(job => !['succeeded', 'failed', 'cancelled'].includes(job.state))) {
     throw Object.assign(new Error('请先完成或取消生成任务，再删除 Vibe'), { status: 409 });

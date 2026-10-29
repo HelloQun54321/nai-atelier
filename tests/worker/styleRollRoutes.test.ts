@@ -232,3 +232,25 @@ it('旧模式记录可追加统一 Roll，历史快照及原配方不变，新�
   expect((await f.invoke({ ...restored, pinnedArtists: ['alpha', 'beta', 'gamma', 'delta', 'epsilon'] }))!.status).toBe(400);
   expect((await f.invoke({ ...restored, pinnedArtists: ['alpha', 'ALPHA'] }))!.status).toBe(400);
 });
+
+it('助手直接读取分页记录、轮次和候选精确历史条件，原接口与跨用户隔离保持', async () => {
+  const f = fixture(), experiment = { ...rollFixture(), revision: 0, candidates: [candidateFixture('first', 'alpha'), candidateFixture('second', 'beta')], rounds: [{ id: 'round-one', candidateIds: ['first', 'second'], createdAt: 1 }] };
+  expect((await f.invoke(experiment))!.status).toBe(200);
+  const read = async (query: string, owner = 'owner') => (await f.invoke(undefined, owner, 'admin', 'GET', '/api/style-roll?agentRead=1&' + query))!;
+  const list = await (await read('limit=1')).json() as any;
+  expect(list.kind).toBe('experiments'); expect(list.items[0]).toMatchObject({ id: experiment.id, candidates: 2, rounds: 1 });
+  expect(list.items[0].template).toBeUndefined();
+  const first = await (await read('experimentId=' + experiment.id + '&limit=1')).json() as any;
+  expect(first.nextOffset).toBe(1); expect(first.total).toBe(2);
+  expect(first.items[0].expectedHistory).toEqual({ sourceChainId: 'style-roll:' + experiment.id, moduleId: 'style-roll:first', prompt: '1.0::artist:alpha ::, synthetic subject', seed: 0 });
+  const second = await (await read('experimentId=' + experiment.id + '&offset=1&limit=1')).json() as any;
+  expect(second.items[0].id).toBe('second'); expect(second.nextOffset).toBeNull();
+  const byId = await (await read('experimentId=' + experiment.id + '&itemId=second')).json() as any;
+  expect(byId.items).toHaveLength(1); expect(byId.items[0].id).toBe('second');
+  const rounds = await (await read('experimentId=' + experiment.id + '&section=rounds')).json() as any;
+  expect(rounds.items[0].candidateIds).toEqual(['first', 'second']);
+  expect((await read('experimentId=' + experiment.id, 'other')).status).toBe(404);
+  expect((await read('limit=31')).status).toBe(400); expect((await read('offset=-1')).status).toBe(400);
+  const original = await (await f.invoke())!.json() as any;
+  expect(original.experiments[0].candidates[0]).toEqual(experiment.candidates[0]);
+});

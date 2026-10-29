@@ -202,6 +202,8 @@ export interface PromptSections {
   /** 镜头画面（独立栏位；早期版本并进 extra） */
   camera?: string;
   extra?: string;
+  /** 全局画面呈现形式，独立于画风与固定用途。 */
+  presentation?: string;
   /** 每栏的来源快照，键与上面各栏一致；只用于界面追溯 */
   sectionMeta?: Record<string, PromptSectionSource>;
   /** 每栏的内容负面（与上面各栏同名键）；只属于这一栏的内容，不混进风格全局负面 */

@@ -271,9 +271,10 @@ const App = () => {
   const reloadLibraryDirectories = React.useCallback(async () => {
     if (!currentUser) return;
     const revision = ++directoryLoadRevision.current;
+    const categoryRevision = categoryRevisionRef.current;
     try {
-      const [state, categoryTree] = await Promise.all([loadPromptLibraryDirectories(), loadPromptLibraryCategoryTree()]);
-      if (revision === directoryLoadRevision.current) { setLibraryDirectories(state); setLibraryCategoryTree(categoryTree); setLibraryDirectoriesError(''); }
+      const [state, categoryTree, names] = await Promise.all([loadPromptLibraryDirectories(), loadPromptLibraryCategoryTree(), db.getPromptLibraryTagNames()]);
+      if (revision === directoryLoadRevision.current) { setLibraryDirectories(state); setLibraryCategoryTree(categoryTree); if (categoryRevision === categoryRevisionRef.current) setLibraryCategoryNames(names); setLibraryDirectoriesError(''); }
     } catch (error) {
       if (revision === directoryLoadRevision.current) setLibraryDirectoriesError(error instanceof Error ? error.message : String(error));
       throw error;
@@ -296,13 +297,6 @@ const App = () => {
       window.removeEventListener('nai-project-data-changed', refresh);
     };
   }, [currentUser?.id, reloadLibraryDirectories]);
-  useEffect(() => {
-    if (!currentUser) return;
-    let cancelled = false;
-    const revision = categoryRevisionRef.current;
-    void db.getPromptLibraryTagNames().then(names => { if (!cancelled && revision === categoryRevisionRef.current) setLibraryCategoryNames(names); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [currentUser?.id]);
 
   // 设计主题、明暗模式和个性化覆盖统一由外观偏好管理。
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(loadAppearancePreferences);
@@ -984,6 +978,7 @@ const App = () => {
       await refreshData(true);
       // Return to appropriate list based on type
       const targetView = finalType === 'character' ? 'characters' : 'list';
+      setIsEditorDirty(false);
       setView(targetView);
       keepViewMounted(targetView);
     } catch (e) {
@@ -1191,9 +1186,6 @@ const App = () => {
           notify={notify}
           agentOpenToken={editorAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
-          promptClassificationEnabled={appearancePreferences.promptClassificationEnabled}
-          onPromptClassificationEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, promptClassificationEnabled: enabled }))}
-          autoClassifyMetadata={appearancePreferences.autoClassifyMetadata}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}
@@ -1317,9 +1309,6 @@ const App = () => {
           onContentRollForGlobal={handleContentRollForGlobal}
           agentOpenToken={playgroundAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
-          promptClassificationEnabled={appearancePreferences.promptClassificationEnabled}
-          onPromptClassificationEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, promptClassificationEnabled: enabled }))}
-          autoClassifyMetadata={appearancePreferences.autoClassifyMetadata}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}

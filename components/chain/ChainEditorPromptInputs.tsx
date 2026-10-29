@@ -1,28 +1,14 @@
-import { PROMPT_PURPOSE_GROUPS, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type CreativeSectionKey, type PromptPurposeId } from '../../services/promptPurposes.mjs';
+import { type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useId, useRef } from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
-import { mergePromptSections, resolvePromptSections } from '../../services/labWorkspace';
+import { mergePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
-import { PromptPurposeGroup } from '../PromptPurposeGroup';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { PromptLibraryRandomButton, type PromptToolbarSlot } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptFragmentKind } from '../../services/promptLibraryEntries';
 import type { PromptSectionSource, PromptSections } from '../../types';
-import { getEditableGlobalPrompt, getGlobalPromptSectionKeys } from '../../services/promptUtils';
-
-/** 文本型栏位（排除只用于追溯的 sectionMeta） */
-type SectionKey = Exclude<keyof PromptSections, 'sectionMeta' | 'sectionNegatives'>;
-
-const SECTION_FIELDS: { key: SectionKey; label: string; library: PromptFragmentKind; placeholder: string }[] = [
-    { key: 'appearance', label: '外貌', library: 'appearance', placeholder: '外貌特征，如发色、瞳色与体型' },
-    { key: 'wardrobe', label: '服饰', library: 'wardrobe', placeholder: '服装、鞋袜与配饰' },
-    { key: 'pose', label: '动作', library: 'pose', placeholder: '身体姿态、动作与互动' },
-    { key: 'scene', label: '场景', library: 'scene', placeholder: '地点、时间、天气与氛围' },
-    { key: 'camera', label: '镜头', library: 'camera', placeholder: '景别、视角、构图与成像效果' },
-    { key: 'extra', label: '补充', library: 'general', placeholder: '人数、道具与其他补充' },
-];
+import { getEditableGlobalPrompt } from '../../services/promptUtils';
 
 interface PromptFieldProps {
     label: string;
@@ -44,6 +30,12 @@ interface PromptFieldProps {
 export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
+    const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
+        <label htmlFor={`${id}-negative`} className="mb-1 block text-micro font-semibold text-gray-500">{t('内容负面')}</label>
+        <TagAutocompleteTextarea id={`${id}-negative`} aria-label={negativeLabel || `${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, purposeId, roleId, negative: true }}
+            tagAssistEnabled={tagAssistEnabled && !negativeLocked} showTranslations={!!negative?.trim()} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
+            className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+    </div>;
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-center justify-between gap-2">
             <label htmlFor={id} className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
@@ -62,12 +54,7 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
             className={`min-h-20 w-full rounded-lg border p-3 font-mono text-sm font-normal leading-relaxed outline-none ${disabled
                 ? 'cursor-not-allowed bg-gray-100 text-gray-500 dark:bg-gray-800'
                 : 'border-gray-200 bg-gray-50 text-gray-900 focus:ring-1 focus:ring-indigo-500 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-200'}`} />
-        {onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
-            <label htmlFor={`${id}-negative`} className="mb-1 block text-micro font-semibold text-gray-500">{t('内容负面')}</label>
-            <TagAutocompleteTextarea id={`${id}-negative`} aria-label={negativeLabel || `${t(label)} · ${t('内容负面')}`} libraryField={{ kind: library, directoryId, purposeId, roleId, negative: true }}
-                tagAssistEnabled={tagAssistEnabled && !negativeLocked} showTranslations={!!negative?.trim()} disabled={disabled || negativeLocked} value={negative || ''} onValueChange={onNegativeChange}
-                className="min-h-10 w-full rounded border border-gray-200 bg-gray-50 p-2 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
-        </div>}
+        {negativeContent}
     </div>;
 };
 
@@ -75,17 +62,12 @@ export interface ChainEditorPromptInputsProps {
     prompt: string;
     setPrompt: (value: string) => void;
     sections?: PromptSections | null;
-    /** 就地发起「随机搭配」 */
-    onContentRollForGlobal?: () => void;
-    toolbarSlot?: PromptToolbarSlot | null;
     setSections?: (sections: PromptSections) => void;
     supplementPrompt?: string;
     setSupplementPrompt?: (value: string) => void;
     presetSources: Partial<Record<PresetSection, PresetSource>>;
     tagAssistEnabled: boolean;
     canEdit: boolean;
-    promptClassificationEnabled?: boolean;
-    negativeLocked?: boolean;
     onPlainPromptChange?: (value: string) => void;
     embedded?: boolean;
     copyPromptToClipboard: (value: string, label: string) => void;
@@ -96,87 +78,24 @@ export interface ChainEditorPromptInputsProps {
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal, toolbarSlot,
+    prompt, setPrompt, sections, setSections, supplementPrompt = mergePromptSections(sections), setSupplementPrompt,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
-    promptClassificationEnabled = false, negativeLocked = false, onPlainPromptChange, embedded = false,
+    onPlainPromptChange, embedded = false,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
 }) => {
     useLanguage();
-    const current = resolvePromptSections(sections, supplementPrompt);
-    const dynamicKeys = getGlobalPromptSectionKeys(current).filter((key): key is CreativeSectionKey => isCreativeSectionKey(key));
-    for (const key of dynamicKeys) {
-        const meta = sections?.sectionMeta?.[key];
-        if (meta && !current.sectionMeta?.[key]) current.sectionMeta = { ...current.sectionMeta, [key]: meta };
-    }
-    const legacyFields = useRef(new Set<SectionKey>());
-    for (const field of SECTION_FIELDS) if (field.key !== 'extra' && (current[field.key] || current.sectionNegatives?.[field.key])) legacyFields.current.add(field.key);
-    const showBase = useRef(!!prompt);
-    if (prompt) showBase.current = true;
-    const writeSection = (key: SectionKey, value: string, source?: PromptSectionSource) => {
-        const meta = { ...(current.sectionMeta || {}) } as Record<string, PromptSectionSource>;
-        if (source) meta[key] = source;
-        else if (isCreativeSectionKey(key)) meta[key] = { ...meta[key], entryId: undefined, entryName: undefined, source: 'manual' };
-        else if (String(value || '').trim()) meta[key] = { source: 'manual' };
-        else delete meta[key];
-        const next = { ...current, [key]: value, sectionMeta: meta } as PromptSections;
-        setSections?.(next);
-        setSupplementPrompt?.(mergePromptSections(next));
-        markPresetSectionModified('subject');
-        markChange();
-    };
-    const writeNegative = (key: SectionKey, value: string) => {
-        setSections?.({ ...current, sectionNegatives: { ...current.sectionNegatives, [key]: value } });
-        markPresetSectionModified('negative'); markChange();
-    };
-    const content = <section className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
+    const content = <section hidden={mobileEditorTab !== 'global'} className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
                 <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject })
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
-                {promptClassificationEnabled && <PromptLibraryRandomButton toolbarSlot={toolbarSlot ?? null} disabled={!canEdit} fallback={canEdit ? onContentRollForGlobal : undefined} />}
-                {!promptClassificationEnabled ? <PromptField label="全局正面提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
+                <PromptField label="全局正面提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }
                         markPresetSectionModified('base'); markPresetSectionModified('subject'); markChange();
-                    }} /> : <>
-                {PROMPT_PURPOSE_GROUPS.map(group => <PromptPurposeGroup key={group.id} id={group.id} label={group.label}
-                    summary={group.purposes.filter(id => current[purposeSectionKey(id)]).map(id => t(promptPurposeLabel(id))).join('、')}>
-                    {group.purposes.map(id => {
-                        const key = purposeSectionKey(id), label = promptPurposeLabel(id);
-                        return <PromptField key={key} label={label} purposeId={id} value={current[key] || ''} placeholder={label} disabled={!canEdit}
-                            sourceName={current.sectionMeta?.[key]?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
-                            onNegativeChange={current[key] || current.sectionNegatives?.[key] ? value => writeNegative(key, value) : undefined}
-                            tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={(value, source) => writeSection(key, value, source)} />;
-                    })}
-                </PromptPurposeGroup>)}
-                <PromptField label="补充" library="general" value={current.extra || ''} placeholder="人数、道具与其他补充" disabled={!canEdit}
-                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={(value, source) => writeSection('extra', value, source)}
-                    negative={current.sectionNegatives?.extra} negativeLocked={negativeLocked}
-                    onNegativeChange={current.sectionNegatives?.extra ? value => writeNegative('extra', value) : undefined} />
-                {(showBase.current || legacyFields.current.size > 0 || dynamicKeys.some(key => !isPurposeSectionKey(key))) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
-                    {showBase.current && <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
-                        tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
-                            setPrompt(value); markPresetSectionModified('base'); markChange();
-                        }} />}
-                    {SECTION_FIELDS.filter(field => legacyFields.current.has(field.key)).map(field => <PromptField key={field.key} label={field.label} library={field.library}
-                        value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
-                        sourceName={current.sectionMeta?.[field.key]?.entryName}
-                        negative={current.sectionNegatives?.[field.key]} negativeLocked={negativeLocked}
-                        onNegativeChange={current.sectionNegatives?.[field.key] ? value => writeNegative(field.key, value) : undefined}
-                        tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                        onChange={(value, source) => writeSection(field.key, value, source)} />)}
-                    {dynamicKeys.filter(key => !isPurposeSectionKey(key)).map(key => {
-                        const meta = current.sectionMeta?.[key];
-                        const label = meta?.directoryPath?.length ? meta.directoryPath.join(' / ') : meta?.directoryName || key.slice(10);
-                        return <PromptField key={key} label={label} directoryId={key.slice(10)} value={current[key] || ''} placeholder={label} disabled={!canEdit}
-                            sourceName={meta?.entryName} negative={current.sectionNegatives?.[key]} negativeLocked={negativeLocked}
-                            onNegativeChange={value => writeNegative(key, value)} tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                            onChange={(value, source) => writeSection(key, value, source)} />;
-                    })}
-                </PromptPurposeGroup>}
-                </>}
+                    }} />
             </div>
         </section>;
     return embedded ? content : <LabModuleSection moduleId="prompt" label={t('全局正面提示词')}

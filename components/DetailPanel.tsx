@@ -44,7 +44,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
   >
     <header className="flex h-14 flex-none items-center justify-between gap-2 border-b border-gray-200 px-4 dark:border-gray-800">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {onBack && <BackButton onClick={onBack} className="mobile-touch aitag-detail-back lg:hidden" />}
+        {onBack && <BackButton data-agent-action="browse" onClick={onBack} className="mobile-touch aitag-detail-back lg:hidden" />}
         <div className="min-w-0">
           <p data-safe-mode-title={sensitiveTitle ? 'true' : undefined} className="truncate text-sm font-bold">{title}</p>
           {subInfo && <p className="truncate text-micro text-gray-500 dark:text-gray-400">{subInfo}</p>}
@@ -53,7 +53,7 @@ export const DetailSidePanel: React.FC<DetailSidePanelProps> = ({ open, title, s
       <div className="flex flex-none items-center gap-2">
         {sourceUrl && <IconLink label={t("查看原帖")} href={sourceUrl} target="_blank" rel="noreferrer"><ExternalLink /></IconLink>}
         {headerActions}
-        <CloseButton onClick={onClose} className="hidden lg:inline-flex" />
+        <CloseButton data-agent-action="browse" onClick={onClose} className="hidden lg:inline-flex" />
       </div>
     </header>
     <div ref={bodyRef} onScroll={onBodyScroll} className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
@@ -77,9 +77,9 @@ export const DetailImageStage: React.FC<DetailImageStageProps> = ({ pager, child
     <PressRevealSurface pressResetKey={pressResetKey} className="group relative overflow-hidden rounded-2xl bg-black/5 dark:bg-black/30">{children}</PressRevealSurface>
     {pager && pager.count > 1 && (
       <div className="flex items-center justify-center gap-3">
-        <IconButton label={t("上一页")} disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>
+        <IconButton data-agent-action="browse" label={t("上一页")} disabled={pager.page <= 0} onClick={pager.onPrev}><ChevronLeft /></IconButton>
         <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{pager.page + 1} / {pager.count}</span>
-        <IconButton label={t("下一页")} disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><ChevronRight /></IconButton>
+        <IconButton data-agent-action="browse" label={t("下一页")} disabled={pager.page >= pager.count - 1} onClick={pager.onNext}><ChevronRight /></IconButton>
       </div>
     )}
   </div>

@@ -11,6 +11,8 @@ import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { useAssetManagerLayer } from './useAssetManagerLayer';
 import { AssetDefaultsForm } from './AssetDefaultsForm';
+import { getPastedImageFile, isTextPasteTarget, readClipboardImage } from '../services/imageClipboard';
+import { ReferenceSelectionPreview } from './ReferenceSelectionPreview';
 
 interface Props {
   params: NAIParams;
@@ -47,6 +49,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const imageImportLock = useRef(false);
   const references = params.characterReferences || emptyReferences();
   const enabledCount = references.enabled ? references.slots.length : 0;
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
@@ -137,20 +140,33 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     updateReferences({ enabled: slots.length > 0, slots });
   };
 
-  const handleUpload = async (file?: File) => {
-    if (!file) return;
+  const handleUpload = async (source?: File | (() => Promise<File>)) => {
+    if (!source || imageImportLock.current || busyId) return;
     const session = sessionRef.current;
     const revision = selectionRevision.current;
-    setBusyId('upload');
+    const isCurrent = () => session === sessionRef.current && isTopmostModal(dialogRef.current);
+    imageImportLock.current = true;
+    setBusyId(typeof source === 'function' ? 'paste' : 'upload');
     try {
+      const file = typeof source === 'function' ? await source() : source;
+      if (!isCurrent() || revision !== selectionRevision.current) return;
       const result = await characterReferenceService.create(file, file.name.replace(/\.[^.]+$/, '') || '精准参考');
-      if (session !== sessionRef.current) return;
+      if (!isCurrent()) return;
       notify(result.duplicate ? '已找到相同的精准参考图' : '精准参考图已保存');
       await load();
-      if (session !== sessionRef.current || revision !== selectionRevision.current) return;
+      if (!isCurrent() || revision !== selectionRevision.current) return;
       if (!latestParams.current.characterReferences?.slots.some(slot => slot.assetId === result.item.id)) addAsset(result.item);
-    } catch (error: any) { notify(error.message || '上传失败', 'error'); }
-    finally { setBusyId(''); if (imageInputRef.current) imageInputRef.current.value = ''; }
+    } catch (error: any) { if (isCurrent()) notify(error.message || '图片导入失败', 'error'); }
+    finally { imageImportLock.current = false; setBusyId(''); if (imageInputRef.current) imageInputRef.current.value = ''; }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || isTextPasteTarget(event.target) || !isTopmostModal(dialogRef.current)) return;
+    const file = getPastedImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void handleUpload(file);
   };
 
   const archiveDetail = async () => {
@@ -178,21 +194,15 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
   if (!supportsReferences) return null;
 
   return <>
-    <div>
-      <button type="button" onClick={() => setOpen(true)} className="mobile-touch flex w-full items-center justify-between gap-3 text-left">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{t("精准参考")}</span>
-            {enabledCount > 0 && <span className="rounded-full bg-indigo-600 px-2 py-0.5 text-micro font-bold text-white">{enabledCount} / 4</span>}
-          </div>
-          {enabledCount ? <>
-            <p className="mt-1 truncate text-xs text-gray-700 dark:text-gray-300">{references.slots.map(slot => slot.assetName || '未知参考').join(' · ')}</p>
-            <p className="mt-0.5 text-meta font-medium text-amber-600 dark:text-amber-400">{t("本次生成额外消耗 {0} × {1} = {2} Anlas", [enabledCount, referenceCost, enabledCount * referenceCost])}</p>
-          </> : <p className="mt-1 text-xs text-gray-500">{t("未启用 · {0} Anlas／张／次", [referenceCost])}</p>}
-        </div>
-        <span className="flex-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-indigo-600 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300">{t("管理")}</span>
-      </button>
-    </div>
+    <ReferenceSelectionPreview enabled={references.enabled} manageLabel={t('管理精准参考')} onManage={() => setOpen(true)}
+      items={references.slots.map((slot, index) => {
+        const asset = allAssets.find(item => item.id === slot.assetId);
+        return { id: `${slot.assetId}:${index}`, name: slot.assetName || asset?.name || t('未知参考'),
+          imageUrl: asset?.thumbnailUrl || asset?.originalImageUrl || `/api/character-references/${encodeURIComponent(slot.assetId)}/thumbnail`,
+          description: t(referenceTypes.find(item => item.value === slot.type)?.label) };
+      })}
+      summary={enabledCount > 0 ? <span className="text-meta font-medium text-amber-600 dark:text-amber-400">{t('本次生成额外消耗 {0} × {1} = {2} Anlas', [enabledCount, referenceCost, enabledCount * referenceCost])}</span> : undefined}
+    />
 
     {open && <ImagePreviewPortal><div
       className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/60 p-0 backdrop-blur-sm md:p-6"
@@ -200,6 +210,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
     >
       <div
         ref={dialogRef}
+        onPaste={handlePaste}
         role="dialog"
         aria-modal="true"
         aria-label={detail ? detail.name : t("精准参考")}
@@ -210,8 +221,8 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
           <div className="flex min-w-0 items-center gap-2">
             {detail && <BackButton onClick={backToList} className="mobile-touch" />}
             <div className="min-w-0">
-              <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("精准参考 (Precise Reference)")}</h2>
-              <p className="text-meta text-gray-500">{t("与 Vibe 互斥 · {0} Anlas／张／次", [referenceCost])}</p>
+              <h2 className="truncate text-base font-bold text-gray-900 dark:text-white">{detail ? detail.name : t("精准参考")}</h2>
+              <p className="text-meta text-gray-500">{t("与氛围参考互斥 · {0} Anlas／张／次", [referenceCost])}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -252,6 +263,7 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
             <button type="button" disabled={Boolean(busyId)} onClick={() => imageInputRef.current?.click()} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50 transition-colors">
               {busyId ? t("保存中…") : t("上传并选用")}
             </button>
+            <button type="button" disabled={Boolean(busyId)} onClick={() => void handleUpload(() => readClipboardImage({ pasteHint: '在参考窗口按 Ctrl+V', imagePurpose: '精准参考' }))} className="appearance-group mobile-touch inline-flex h-9 items-center gap-1.5 rounded-xl border border-indigo-300 bg-white px-3.5 text-xs font-bold text-indigo-700 disabled:opacity-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">{busyId === 'paste' ? t("粘贴中…") : t("粘贴图片")}</button>
           </div>
           <div className="manager-mobile-tabs flex-none gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800"><SegmentedControl value={pane} onChange={value => setPane(value as 'library' | 'selection')} options={[{ value: 'library', label: t("资料库") }, { value: 'selection', label: t("当前选择 ({0})", [references.slots.length]) }]} size="sm" ariaLabel={t("查看区域")} /></div>
             <main className="workspace-manager-split grid min-h-0 flex-1 ">

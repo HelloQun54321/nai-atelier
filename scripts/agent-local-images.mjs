@@ -3,6 +3,23 @@ import { isAbsolute, resolve, relative, dirname, basename, extname, sep, join } 
 import { randomBytes, createHash } from 'node:crypto';
 
 const MAX_BYTES = 30 * 1024 * 1024;
+const creativeFile = name => /\.(json|naiv4vibe|naiv4vibebundle|naia)$/i.test(name);
+const creativeMime = (filename, buffer) => {
+  if (/\.naia$/i.test(filename)) {
+    // 这里只校验分享包头；清单哈希、解压和素材由原有导入器完整核验。
+    if (buffer.length < 48 || !buffer.subarray(0, 8).equals(Buffer.from([78,65,73,65,13,10,26,10]))) throw new Error('不是 Atelier .naia 风格串分享包');
+    if (buffer.readUInt32BE(8) !== 1) throw new Error('分享包版本不受支持，请更新 Atelier');
+    const length = buffer.readUInt32BE(12);
+    if (!length || length > 16 * 1024 * 1024 || 48 + length > buffer.length) throw new Error('分享包清单长度无效');
+    return 'application/x-nai-atelier-style-bundle';
+  }
+  const document = JSON.parse(buffer.toString('utf8'));
+  if (/\.naiv4vibebundle$/i.test(filename)) {
+    if (document?.identifier !== 'novelai-vibe-transfer-bundle' || document.version !== 1 || !Array.isArray(document.vibes) || !document.vibes.length || document.vibes.length > 16) throw new Error('Vibe 组合必须包含 1 到 16 项');
+    if (document.vibes.some(item => item?.identifier !== 'novelai-vibe-transfer' || item.version !== 1 || !item.encodings || typeof item.encodings !== 'object' || Array.isArray(item.encodings) || !['image', 'encoding', undefined].includes(item.type))) throw new Error('Vibe 组合包含无效的 .naiv4vibe 文件');
+  }
+  return 'application/json';
+};
 const inside = (root, target) => { const rel = relative(root, target); return !rel || !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep); };
 export const imageMime = buffer => buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png'
   : buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 ? 'image/jpeg'
@@ -63,14 +80,14 @@ export class AgentLocalImages {
   }
   async list(scope, directory, offset = 0, limit = 30, creativeFiles = false) {
     const path = await this.authorized(scope, directory, 'read');
-    const supported = name => /\.(png|jpe?g|webp|gif)$/i.test(name) || creativeFiles && /\.(json|naiv4vibe)$/i.test(name);
+    const supported = name => /\.(png|jpe?g|webp|gif)$/i.test(name) || creativeFiles && creativeFile(name);
     const entries = (await readdir(path, { withFileTypes: true })).filter(item => item.isDirectory() || item.isSymbolicLink() || supported(item.name)).sort((a,b) => a.name.localeCompare(b.name));
     offset = Math.max(0, Math.floor(Number(offset) || 0)); limit = Math.min(50, Math.max(1, Math.floor(Number(limit) || 30)));
     const items = [];
     for (const entry of entries.slice(offset, offset + limit)) {
       try {
         const actual = await this.authorized(scope, join(path, entry.name), 'read'); const info = await stat(actual);
-        if (info.isDirectory() || supported(entry.name)) items.push({ name: entry.name, path: join(path, entry.name), kind: info.isDirectory() ? 'directory' : /\.(json|naiv4vibe)$/i.test(entry.name) ? 'creative-file' : 'image', bytes: info.size, modifiedAt: info.mtime.toISOString() });
+        if (info.isDirectory() || supported(entry.name)) items.push({ name: entry.name, path: join(path, entry.name), kind: info.isDirectory() ? 'directory' : creativeFile(entry.name) ? 'creative-file' : 'image', bytes: info.size, modifiedAt: info.mtime.toISOString() });
       } catch { /* 越界软链接和不可访问项不向模型开放。 */ }
     }
     return { directory: path, items, total: entries.length, nextOffset: offset + limit < entries.length ? offset + limit : null, recursive: false };
@@ -98,15 +115,15 @@ export class AgentLocalImages {
   async readFile(scope, path) {
     const actual = await this.authorized(scope, path, 'read');
     if (/\.(?:png|jpe?g|webp|gif)$/i.test(actual)) return this.read(scope, actual);
-    if (!/\.(?:json|naiv4vibe)$/i.test(actual)) throw new Error('只接受图片、JSON 创作配置或 naiv4vibe 文件');
+    if (!creativeFile(actual)) throw new Error('只接受图片、JSON 创作配置、naiv4vibe、naiv4vibeBundle 或 .naia 分享包');
     const file = await open(actual, 'r');
     try {
       const info = await file.stat(); if (!info.isFile() || info.size > MAX_BYTES) throw new Error('文件必须在 30 MB 以内');
       const buffer = Buffer.alloc(info.size + 1); let bytesRead = 0;
       while (bytesRead < buffer.length) { const chunk = await file.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead); if (!chunk.bytesRead) break; bytesRead += chunk.bytesRead; }
       if (bytesRead > info.size) throw new Error('文件正在修改，请稍后重试');
-      const bytes = buffer.subarray(0, bytesRead); JSON.parse(bytes.toString('utf8'));
-      return { buffer: bytes, mimeType: 'application/json', name: basename(actual), path: actual };
+      const bytes = buffer.subarray(0, bytesRead), mimeType = creativeMime(actual, bytes);
+      return { buffer: bytes, mimeType, name: basename(actual), path: actual };
     } finally { await file.close(); }
   }
   async registerFile(scope, path, relativePath) {
@@ -115,7 +132,7 @@ export class AgentLocalImages {
     return { path: '/api/prompt-agent/local-file?sessionId=' + encodeURIComponent(scope.sessionId) + '&id=' + id, name: file.name, ...(relativePath ? { relativePath } : {}) };
   }
   async directoryFiles(scope, directory) {
-    const root = await this.folder(directory), result = [];
+    const root = await this.folder(directory), result = []; let total = 0;
     const walk = async (path, depth) => {
       if (depth > 8) throw new Error('文件夹层级超过 8 层，请选择更具体的目录');
       for (const entry of await readdir(path, { withFileTypes: true })) {
@@ -124,8 +141,10 @@ export class AgentLocalImages {
         if (entry.isSymbolicLink()) continue;
         await this.checkProtected(candidate);
         if (entry.isDirectory()) await walk(candidate, depth + 1);
-        else if (/\.(png|jpe?g|webp|gif|json|naiv4vibe)$/i.test(entry.name)) {
+        else if (/\.(png|jpe?g|webp|gif)$/i.test(entry.name) || creativeFile(entry.name)) {
           if (result.length >= 200) throw new Error('单次最多 200 个创作文件，请选择更小的目录');
+          total += (await stat(candidate)).size;
+          if (total > 128 * 1024 * 1024) throw new Error('本次导入总量超过 128 MB，请选择更小的目录');
           result.push(await this.registerFile(scope, candidate, relative(dirname(root), candidate).split(sep).join('/')));
         }
       }
@@ -147,8 +166,8 @@ export class AgentLocalImages {
   exportMime(filename, buffer) {
     const image = imageMime(buffer); if (image) return image;
     if (/\.zip$/i.test(filename) && buffer.subarray(0, 2).toString() === 'PK') return 'application/zip';
-    if (/\.(json|naiv4vibe)$/i.test(filename)) { JSON.parse(buffer.toString('utf8')); return 'application/json'; }
-    throw new Error('仅支持图片、JSON、Vibe 或 ZIP 创作导出');
+    if (creativeFile(filename)) return creativeMime(filename, buffer);
+    throw new Error('仅支持图片、JSON、Vibe、.naia 分享包或 ZIP 创作导出');
   }
   async saveExport(scope, id, directory, filename, operationId) {
     const item = this.exports.get(id);
@@ -158,7 +177,7 @@ export class AgentLocalImages {
   async save(scope, directory, filename, buffer, operationId = '', exportMime = '') {
     const path = await this.authorized(scope, directory, 'write'); const mime = exportMime || imageMime(buffer);
     if (!mime || buffer.length > MAX_BYTES) throw new Error('只允许保存 30 MB 以内的 PNG、JPEG、WebP 或 GIF 图片');
-    const suffix = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif', 'application/json': /\.naiv4vibe$/i.test(filename || '') ? '.naiv4vibe' : '.json', 'application/zip': '.zip' }[mime];
+    const suffix = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif', 'application/json': /\.naiv4vibebundle$/i.test(filename || '') ? '.naiv4vibebundle' : /\.naiv4vibe$/i.test(filename || '') ? '.naiv4vibe' : '.json', 'application/zip': '.zip', 'application/x-nai-atelier-style-bundle': '.naia' }[mime];
     if (!suffix || exportMime && this.exportMime(filename || suffix, buffer) !== exportMime) throw new Error('导出格式无效');
     filename = String(filename || 'nai-image' + suffix).trim();
     if (filename.length > 180 || /[\\/:*?"<>|\u0000-\u001f]/.test(filename) || /[. ]$/.test(filename) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(filename) || filename.startsWith('.')) throw new Error('请使用普通图片文件名，不能包含目录、系统保留名称或特殊字符');

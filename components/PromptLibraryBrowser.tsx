@@ -244,7 +244,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   };
   const toolbar = <>
     <div className={!mobile && wide ? "prompt-library-navigation-tools flex shrink-0 items-center gap-1" : "contents"}>
-    <ToolbarButton aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
+    <ToolbarButton data-agent-action="browse" aria-label={t(navigationExpanded ? '收起目录' : '展开目录')} title={[t(navigationExpanded ? '收起目录' : '展开目录'), selectedDirectoryPath].filter(Boolean).join(' · ')} aria-expanded={navigationExpanded} aria-controls={navigationId} active={navigationExpanded || favoritesSelected || (directoryScope ? !memory.allDirectories || memory.unclassified : memory.combinationCategory !== null || memory.combinationUnclassified)} onClick={toggleDirectories} className="!h-11 !w-11 md:!h-10 md:!w-10"><Folder className="h-4 w-4" /></ToolbarButton>
     {!mobile && wide && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 min-w-0 flex-1 gap-0.5 rounded-xl p-0.5 md:h-10">
       {SCOPES.map(([scope, label], index) => <button key={scope} type="button" role="tab" aria-selected={memory.scope === scope} tabIndex={memory.scope === scope ? 0 : -1}
         onClick={() => setScope(scope)} onKeyDown={event => {

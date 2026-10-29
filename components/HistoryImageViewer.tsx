@@ -70,10 +70,10 @@ export const HistoryImageViewer: React.FC<Props> = props => {
     <div className="history-viewer-layer" onClick={onClose}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("历史图片查看器")} className={`history-viewer appearance-panel ${props.detailsOpen ? 'history-viewer--details' : ''}`} onClick={event => event.stopPropagation()}>
         <header className="history-viewer-header">
-          <button type="button" className="history-viewer-button history-viewer-return" aria-label={t("返回历史列表")} onClick={onClose}><ArrowLeft /></button>
+          <button data-agent-action="browse" type="button" className="history-viewer-button history-viewer-return" aria-label={t("返回历史列表")} onClick={onClose}><ArrowLeft /></button>
           <div className="history-viewer-caption"><span>{new Date(item.createdAt).toLocaleString(getLanguage())}</span><small>{getNaiModelDisplayLabel(item.params?.model)} · {natural.width} × {natural.height}{item.sourceChainName ? ` · ${item.sourceChainName}` : ''}</small></div>
           <span className="history-viewer-counter" aria-live="polite">{index + 1} / {total}</span>
-          <button type="button" className="history-viewer-button" title={t("查看提示词与参数")} aria-label={t("图片详情")} aria-expanded={props.detailsOpen} onClick={() => props.onDetailsChange(!props.detailsOpen)}><Info /></button>
+          <button data-agent-action="browse" type="button" className="history-viewer-button" title={t("查看提示词与参数")} aria-label={t("图片详情")} aria-expanded={props.detailsOpen} onClick={() => props.onDetailsChange(!props.detailsOpen)}><Info /></button>
         </header>
         <div className="history-viewer-content">
           <div className="history-viewer-image-column">
@@ -84,19 +84,19 @@ export const HistoryImageViewer: React.FC<Props> = props => {
                 <button className="history-viewer-button history-viewer-delete" aria-label={t("删除这张历史图片")} onClick={props.onDelete}><Trash2 /></button>
               </div>
               <ImageShareActions key={item.id} imageUrl={item.imageUrl} filename={props.filename} generationData={{ prompt: item.prompt, negativePrompt: item.negativePrompt, params: item.params }} notify={props.notify} variant="card" className="history-viewer-share" favorite={favoriteTarget} favoriteActive={Boolean(item.isFavorite)} favoritePending={props.favoritePending} onToggleFavorite={props.onFavorite} />
-              <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label={t("上一张图片")} disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
-              <button data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label={t("下一张图片")} disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
+              <button data-agent-action="browse" data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-previous" aria-label={t("上一张图片")} disabled={index <= 0 || navigating} onClick={() => onNavigate(-1)}><ChevronLeft /></button>
+              <button data-agent-action="browse" data-card-action="true" className="hover-reveal-touch history-viewer-button history-viewer-next" aria-label={t("下一张图片")} disabled={index >= total - 1 || navigating} onClick={() => onNavigate(1)}><ChevronRight /></button>
               {navigating && <span role="status" className="history-viewer-loading"><LoaderCircle className="animate-spin" />{t("正在加载图片")}</span>}
             </PressRevealSurface>
             <footer className="history-viewer-zoom">
-              <button className="history-viewer-button" aria-label={t("缩小图片")} disabled={zoom <= 1} onClick={() => zoomAt(zoom / 1.25)}><Minus /></button>
+              <button data-agent-action="browse" className="history-viewer-button" aria-label={t("缩小图片")} disabled={zoom <= 1} onClick={() => zoomAt(zoom / 1.25)}><Minus /></button>
               <span aria-label={t("图片缩放比例")}>{Math.round(fit * zoom * 100)}%</span>
-              <button className="history-viewer-button" aria-label={t("放大图片")} disabled={zoom >= maxZoom} onClick={() => zoomAt(zoom * 1.25)}><Plus /></button>
-              <button className="history-viewer-button" onClick={reset} title={t("快捷键 0")}><Maximize />{t("适应窗口")}</button>
-              <button className="history-viewer-button" onClick={() => zoomAt(1 / fit)} title={t("快捷键 1")}>100%</button>
+              <button data-agent-action="browse" className="history-viewer-button" aria-label={t("放大图片")} disabled={zoom >= maxZoom} onClick={() => zoomAt(zoom * 1.25)}><Plus /></button>
+              <button data-agent-action="browse" className="history-viewer-button" onClick={reset} title={t("快捷键 0")}><Maximize />{t("适应窗口")}</button>
+              <button data-agent-action="browse" className="history-viewer-button" onClick={() => zoomAt(1 / fit)} title={t("快捷键 1")}>100%</button>
             </footer>
           </div>
-          {props.detailsOpen && <aside ref={detailsRef} className="history-viewer-details appearance-group" aria-label={t("图片详情面板")}><div className="history-viewer-details-heading"><strong>{t("图片详情")}</strong><button className="history-viewer-button" aria-label={t("收起图片详情")} onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
+          {props.detailsOpen && <aside ref={detailsRef} className="history-viewer-details appearance-group" aria-label={t("图片详情面板")}><div className="history-viewer-details-heading"><strong>{t("图片详情")}</strong><button data-agent-action="browse" className="history-viewer-button" aria-label={t("收起图片详情")} onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
         </div>
       </div>
     </div>

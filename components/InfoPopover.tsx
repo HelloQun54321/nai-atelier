@@ -17,13 +17,13 @@ export const InfoPopover: React.FC<{
   const anchor = useRef<HTMLButtonElement>(null);
   const id = useId();
   return <>
-    <button ref={anchor} type="button" aria-label={t(label)} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} title={typeof content === 'string' ? content : t(label)}
+    <button data-agent-action="browse" ref={anchor} type="button" aria-label={t(label)} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} title={typeof content === 'string' ? content : t(label)}
       onMouseDown={event => { if (preserveSelection) event.preventDefault(); }} onClick={event => { event.stopPropagation(); setOpen(value => !value); }}
       className={`focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 ${children ? '' : 'mobile-touch inline-flex h-7 w-7 flex-none items-center justify-center rounded-full text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'} ${className}`}>
       {children ?? <Info className="h-3.5 w-3.5" />}
     </button>
     {open && <ImagePreviewPortal><InteractionPopover id={id} label={t(label)} anchorRef={anchor} onClose={() => setOpen(false)} className="p-3 text-sm text-gray-700 dark:text-gray-200">
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t(label)}</span><button type="button" onClick={() => setOpen(false)} aria-label={t("关闭说明")} className="mobile-touch inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t(label)}</span><button data-agent-action="browse" type="button" onClick={() => setOpen(false)} aria-label={t("关闭说明")} className="mobile-touch inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button></div>
       <div className="whitespace-pre-wrap break-words leading-relaxed select-text">{content}</div>
     </InteractionPopover></ImagePreviewPortal>}
   </>;

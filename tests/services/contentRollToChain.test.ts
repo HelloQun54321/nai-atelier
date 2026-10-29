@@ -131,7 +131,7 @@ describe('planRollToChain', () => {
       _promptSections: { [kind]: 'old text', extra: 'keep extra', sectionNegatives: { [kind]: 'new text', extra: 'keep negative' } },
       characters: [{ id: 'c1', prompt: 'handwritten', negativePrompt: 'manual negative', x: 0.3, y: 0.7,
         sections: { [kind]: 'old text' }, sectionNegatives: { [kind]: 'new text' } }],
-    }, { subject: kind === 'expression' ? 'keep extra' : 'old text, keep extra' });
+    }, { subject: kind === 'expression' ? 'keep extra' : kind === 'presentation' ? 'keep extra, old text' : 'old text, keep extra' });
     const before = JSON.stringify(original);
     for (const negative of ['', 'new negative']) {
       const plan = planRollToChain(original, [{ kind, text: 'new text', negative }]);

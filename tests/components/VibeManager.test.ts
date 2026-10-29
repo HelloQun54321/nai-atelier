@@ -28,7 +28,7 @@ const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingI
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
 const openDetail = async () => {
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
   if (fixtures.archived) fireEvent.click(screen.getByRole('tab', { name: '已归档' }));
   fireEvent.click((await screen.findAllByRole('button', { name: '详情' }))[0]);
 };
@@ -62,7 +62,7 @@ describe('Vibe 复用与编码入口', () => {
     await act(async () => pending.resolve({ ...initial, vibes: { enabled: true, normalizeStrengths: true, slots } }));
     expect(setParams).not.toHaveBeenCalled();
     if (action === 'clear') {
-      fireEvent.click(screen.getByRole('button', { name: '管理' }));
+      fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
       expect(screen.getByRole('button', { name: '上传并编码' })).toHaveProperty('disabled', false);
       expect(screen.getByRole('button', { name: '导入文件' })).toHaveProperty('disabled', false);
     }
@@ -80,10 +80,10 @@ describe('Vibe 复用与编码入口', () => {
       view.rerender(React.createElement(VibeManager, { ...props, params: { ...initial, vibes: { ...initial.vibes, enabled: false },
         characterReferences: { enabled: true, slots: [{ assetId: 'role', type: 'character', strength: 1, fidelity: 0.6 }] } } }));
     } else {
-      fireEvent.click(screen.getByRole('button', { name: '管理' }));
-      await screen.findByRole('button', { name: /新 Vibe/ });
+      fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+      await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
       if (action === 'normalization') fireEvent.click(screen.getByRole('checkbox', { name: /超限自动归一化/ }));
-      else fireEvent.click(screen.getByRole('button', { name: /新 Vibe/ }));
+      else fireEvent.click(screen.getByRole('button', { name: /^(?!查看参考：).*新 Vibe/ }));
     }
     const selected = setParams.mock.lastCall?.[0].vibes.slots;
     await act(async () => pending.resolve({ ...initial, vibes: { enabled: true, normalizeStrengths: true, slots } }));
@@ -104,7 +104,7 @@ describe('Vibe 复用与编码入口', () => {
     const initial = { ...params, vibes: { enabled: true, normalizeStrengths: true, slots: [-0.6, 0.6].map(strength => ({ vibeId: 'new', encodingId: 'new-encoded', informationExtracted: 1, informationKnown: false, strength })) } };
     render(React.createElement(VibeManager, { params: initial, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
     expect(screen.getByText('有效总强度 1.00')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '管理' })); await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' })); await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(screen.getByText('参数 · 强度 -0.60'));
     expect(screen.getAllByRole('option', { name: '提取量 未知', hidden: true })).toHaveLength(2);
     expect(screen.queryByRole('option', { name: '提取量 1.00', hidden: true })).toBeNull();
@@ -126,7 +126,7 @@ describe('Vibe 复用与编码入口', () => {
     const setParams = vi.fn();
     const initial = { ...params, vibes: { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'new', encodingId: 'new-encoded', informationExtracted: 1, strength: 1.5 }] } };
     render(React.createElement(VibeManager, { params: initial, setParams, notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' })); await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' })); await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(screen.getByText('参数 · 强度 1.50'));
     fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '-2.5' } });
     expect(setParams.mock.lastCall?.[0].vibes.slots[0].strength).toBe(-2.5);
@@ -143,9 +143,9 @@ describe('Vibe 复用与编码入口', () => {
     fixtures.importFile.mockResolvedValue({ item: { id: 'imported', name: '导入素材' }, slots: incoming, bundle: true, imported: 1, normalizeStrengths: false });
     const setParams = vi.fn();
     render(React.createElement(VibeManager, { params, setParams, notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' })); await screen.findByRole('button', { name: /新 Vibe/ });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Vibe 导入方式' }), { target: { value: mode } });
-    fireEvent.change(screen.getByLabelText('导入 Vibe 编码文件'), { target: { files: [new File(['{}'], '组合.naiv4vibeBundle', { type: 'application/json' })] } });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' })); await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
+    fireEvent.change(screen.getByRole('combobox', { name: '氛围参考导入方式' }), { target: { value: mode } });
+    fireEvent.change(screen.getByLabelText('导入氛围参考编码文件'), { target: { files: [new File(['{}'], '组合.naiv4vibeBundle', { type: 'application/json' })] } });
     await waitFor(() => expect(setParams).toHaveBeenCalled());
     expect(setParams.mock.lastCall?.[0].vibes.slots).toEqual(mode === 'append' ? [...slots, ...incoming] : incoming);
     expect(fixtures.encode).not.toHaveBeenCalled(); expect(fixtures.confirm).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe('Vibe 复用与编码入口', () => {
     fixtures.download.mockRejectedValue(new Error('导出目录权限已失效，请重新选择目录'));
     const notify = vi.fn();
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
     fireEvent.click(await screen.findByRole('button', { name: '详情' }));
     fireEvent.click(screen.getByRole('button', { name: '导出全部编码' }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith('导出目录权限已失效，请重新选择目录', 'error'));
@@ -163,8 +163,8 @@ describe('Vibe 复用与编码入口', () => {
   it('新编码确认与预算预测跟随官方动态单价', async () => {
     fixtures.encodingCost = 6; fixtures.needsEncoding = true; fixtures.confirm.mockResolvedValueOnce(false);
     render(React.createElement(VibeManager, { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    fireEvent.click(await screen.findByRole('button', { name: /新 Vibe/ }));
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ }));
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({
       confirmLabel: '支付 6 Anlas 并生成', message: expect.stringContaining('1666 → 1660'),
     })));
@@ -176,8 +176,8 @@ describe('Vibe 复用与编码入口', () => {
     fixtures.confirm.mockImplementationOnce(() => new Promise<boolean>(resolve => { confirm = resolve; }));
     const props = { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'first-synthetic-key' };
     const view = render(React.createElement(VibeManager, props));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    fireEvent.click(await screen.findByRole('button', { name: /新 Vibe/ }));
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ }));
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
     view.rerender(React.createElement(VibeManager, { ...props, apiKey: 'second-synthetic-key' }));
     confirm(true);
@@ -190,8 +190,8 @@ describe('Vibe 复用与编码入口', () => {
     fixtures.encode.mockResolvedValue({ item: { id: 'new', name: '新 Vibe', encodings: [{ id: 'paid-encoded', model: 'nai-diffusion-4-5-full', informationExtracted: 0.7 }] } });
     const setParams = vi.fn(), notify = vi.fn();
     render(React.createElement(VibeManager, { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams, notify, markChange: vi.fn(), apiKey: 'test-key' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    const add = await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    const add = await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(add);
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledTimes(1));
     expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: '支付 2 Anlas 并生成', message: expect.stringContaining('本次估算：2 Anlas') }));
@@ -206,11 +206,11 @@ describe('Vibe 复用与编码入口', () => {
   it('保留十六个选择上限，五图组合可直接复用已有编码', async () => {
     const setParams = vi.fn(), notify = vi.fn();
     render(React.createElement(VibeManager, { params, setParams, notify, markChange: vi.fn(), apiKey: 'test-key' }));
-    expect(screen.getByText('4 / 16')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    await screen.findByRole('button', { name: /新 Vibe/ });
+    expect(screen.getByText('已选 4 张')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
-    fireEvent.click(screen.getByRole('button', { name: /五图组合 5 个 Vibe/ }));
+    fireEvent.click(screen.getByRole('button', { name: /五图组合 5 个氛围参考/ }));
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: expect.arrayContaining([expect.objectContaining({ vibeId: 'v-4' })]) }) }));
     expect(fixtures.encode).not.toHaveBeenCalled();
     expect(params.vibes?.slots).toBe(slots);
@@ -228,8 +228,8 @@ describe('Vibe 导出回执与永久删除', () => {
     let button: HTMLElement;
     if (entry === 'detail') { await openDetail(); button = screen.getByRole('button', { name: '导出全部编码' }); }
     else {
-      fireEvent.click(screen.getByRole('button', { name: '管理' }));
-      await screen.findByRole('button', { name: /新 Vibe/ });
+      fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+      await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
       fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
       button = screen.getByRole('button', { name: entry === 'current' ? '导出当前组合' : '导出 五图组合' });
     }
@@ -240,7 +240,7 @@ describe('Vibe 导出回执与永久删除', () => {
     if (entry === 'detail') expect(fixtures.download.mock.calls[0][0].encodings).toHaveLength(4);
     await act(async () => pending.resolve(entry === 'detail' ? { saved: true, cancelled: false } : { saved: false, cancelled: false, browserDownload: true }));
     expect(button).toHaveProperty('disabled', false);
-    expect(notify).toHaveBeenCalledWith(entry === 'detail' ? 'Vibe 文件已保存' : '已开始下载 Vibe 文件', ...(entry === 'detail' ? ['success'] : []));
+    expect(notify).toHaveBeenCalledWith(entry === 'detail' ? '氛围参考文件已保存' : '已开始下载氛围参考文件', ...(entry === 'detail' ? ['success'] : []));
   });
 
   it.each(['detail', 'current', 'saved'])('%s 导出失败或取消都恢复操作，取消不报错', async entry => {
@@ -250,7 +250,7 @@ describe('Vibe 导出回执与永久删除', () => {
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
     if (entry === 'detail') await openDetail();
     else {
-      fireEvent.click(screen.getByRole('button', { name: '管理' })); await screen.findByRole('button', { name: /新 Vibe/ });
+      fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' })); await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
       fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
     }
     const name = entry === 'detail' ? '导出全部编码' : entry === 'current' ? '导出当前组合' : '导出 五图组合';
@@ -267,17 +267,17 @@ describe('Vibe 导出回执与永久删除', () => {
     const props = { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' };
     const view = render(React.createElement(VibeManager, props));
     await openDetail();
-    expect(screen.queryByRole('button', { name: '永久删除 Vibe' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '永久删除氛围参考' })).toBeNull();
     expect(screen.queryByRole('button', { name: /永久删除编码/ })).toBeNull();
     view.unmount();
     fixtures.archived = true; fixtures.confirm.mockResolvedValue(false);
     render(React.createElement(VibeManager, props));
     await openDetail();
-    fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    fireEvent.click(screen.getByRole('button', { name: '永久删除氛围参考' }));
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
     expect(fixtures.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'vibe.delete', tone: 'danger' }));
     expect(fixtures.confirm.mock.calls[0][0]).not.toHaveProperty('rememberScope');
-    await waitFor(() => expect(screen.getByRole('button', { name: '永久删除 Vibe' })).toHaveProperty('disabled', false));
+    await waitFor(() => expect(screen.getByRole('button', { name: '永久删除氛围参考' })).toHaveProperty('disabled', false));
     expect(fixtures.delete).not.toHaveBeenCalled();
   });
 
@@ -287,7 +287,7 @@ describe('Vibe 导出回执与永久删除', () => {
     const setParams = vi.fn(), notify = vi.fn();
     render(React.createElement(VibeManager, { params: { ...params, vibes: { enabled: false, normalizeStrengths: true, slots: [slot] } }, setParams, notify, markChange: vi.fn(), apiKey: 'synthetic' }));
     await openDetail();
-    fireEvent.click(screen.getByRole('button', { name: entry === 'asset' ? '永久删除 Vibe' : /永久删除编码/ }));
+    fireEvent.click(screen.getByRole('button', { name: entry === 'asset' ? '永久删除氛围参考' : /永久删除编码/ }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringContaining('当前实验室草稿'), 'error'));
     expect(fixtures.confirm).not.toHaveBeenCalled(); expect(fixtures.delete).not.toHaveBeenCalled(); expect(fixtures.deleteEncoding).not.toHaveBeenCalled(); expect(setParams).not.toHaveBeenCalled();
   });
@@ -308,7 +308,7 @@ describe('Vibe 导出回执与永久删除', () => {
     }
     const notify = vi.fn();
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
-    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除氛围参考' }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.stringMatching(/引用|无法核对/), 'error'));
     expect(fixtures.delete).not.toHaveBeenCalled(); expect(fixtures.confirm).not.toHaveBeenCalled();
   });
@@ -347,7 +347,7 @@ describe('Vibe 导出回执与永久删除', () => {
     const notify = vi.fn();
     const props = { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' };
     const view = render(React.createElement(VibeManager, props));
-    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除氛围参考' }));
     await waitFor(() => expect(fixtures.confirm).toHaveBeenCalledOnce());
     if (action === 'new-reference') view.rerender(React.createElement(VibeManager, { ...props, params: { ...params, vibes: { enabled: false, normalizeStrengths: true, slots: [{ vibeId: 'new', encodingId: 'new-encoded', informationExtracted: 1, strength: 0.6 }] } } }));
     else fireEvent.click(screen.getByRole('button', { name: '关闭' }));
@@ -361,7 +361,7 @@ describe('Vibe 导出回执与永久删除', () => {
     const pending = Promise.withResolvers<{ success: true; id: string }>(); fixtures.delete.mockReturnValue(pending.promise);
     const notify = vi.fn();
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
-    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除 Vibe' }));
+    await openDetail(); fireEvent.click(screen.getByRole('button', { name: '永久删除氛围参考' }));
     await waitFor(() => expect(fixtures.delete).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     await openDetail();
@@ -371,7 +371,7 @@ describe('Vibe 导出回执与永久删除', () => {
     expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
     await act(async () => pending.resolve({ success: true, id: 'new' }));
     expect(screen.getByRole('heading', { name: '另一 Vibe' })).toBeTruthy();
-    expect(notify).toHaveBeenCalledWith('已永久删除 Vibe');
+    expect(notify).toHaveBeenCalledWith('已永久删除氛围参考');
   });
 
   it.each([['asset', false], ['encoding', false], ['asset', true], ['encoding', true]] as const)('%s 删除503刷新实际资料，新详情=%s时不回写旧详情', async (target, changeDetail) => {
@@ -385,7 +385,7 @@ describe('Vibe 导出回执与永久删除', () => {
     const notify = vi.fn(), setParams = vi.fn();
     render(React.createElement(VibeManager, { params, setParams, notify, markChange: vi.fn(), apiKey: 'synthetic' }));
     await openDetail();
-    fireEvent.click(screen.getByRole('button', { name: target === 'asset' ? '永久删除 Vibe' : /永久删除编码/ }));
+    fireEvent.click(screen.getByRole('button', { name: target === 'asset' ? '永久删除氛围参考' : /永久删除编码/ }));
     await waitFor(() => expect(notify).toHaveBeenCalledWith('记录已删除，但文件清理失败', 'error'));
     if (changeDetail) {
       fireEvent.click(screen.getByRole('button', { name: '返回' }));
@@ -413,31 +413,31 @@ describe('Vibe 读取状态', () => {
     const pending = Promise.withResolvers<VibeAsset[]>();
     fixtures.listOverride = () => pending.promise;
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    expect(screen.queryByText('还没有永久 Vibe')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    expect(screen.queryByText('还没有永久氛围参考')).toBeNull();
     expect(screen.queryByText('资产缺失')).toBeNull();
     expect(screen.queryByText('当前组合有编码缺失或模型不匹配，不会自动付费补齐')).toBeNull();
     expect(screen.queryByText('当前模型缺少对应编码')).toBeNull();
     await act(async () => pending.reject(new Error('synthetic')));
     expect(screen.getByRole('alert').textContent).toContain('资料库加载失败');
-    expect(screen.queryByText('还没有永久 Vibe')).toBeNull();
+    expect(screen.queryByText('还没有永久氛围参考')).toBeNull();
     fixtures.listOverride = async () => [];
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
-    expect(await screen.findByText('还没有永久 Vibe')).toBeTruthy();
+    expect(await screen.findByText('还没有永久氛围参考')).toBeTruthy();
   });
 
   it('组合延迟与失败独立于资料库，重试空组合有明确反馈', async () => {
     const pending = Promise.withResolvers<unknown[]>();
     fixtures.groupsOverride = () => pending.promise;
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
     expect(screen.getByText('加载中…')).toBeTruthy();
     expect(screen.queryByText('还没有保存的组合')).toBeNull();
     await act(async () => pending.reject(new Error('synthetic')));
     expect(screen.getByRole('alert').textContent).toContain('组合加载失败');
-    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^(?!查看参考：).*新 Vibe/ })).toBeTruthy();
     fixtures.groupsOverride = async () => [];
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(await screen.findByText('还没有保存的组合')).toBeTruthy();
@@ -445,15 +445,15 @@ describe('Vibe 读取状态', () => {
 
   it('重新打开刷新等待和失败均保留缓存资料', async () => {
     render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    await screen.findByRole('button', { name: /^(?!查看参考：).*新 Vibe/ });
     fireEvent.click(screen.getByRole('button', { name: '完成' }));
     const pending = Promise.withResolvers<VibeAsset[]>();
     fixtures.listOverride = () => pending.promise;
-    fireEvent.click(screen.getByRole('button', { name: '管理' }));
-    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '管理氛围参考' }));
+    expect(screen.getByRole('button', { name: /^(?!查看参考：).*新 Vibe/ })).toBeTruthy();
     await act(async () => pending.reject(new Error('synthetic')));
-    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^(?!查看参考：).*新 Vibe/ })).toBeTruthy();
     expect(screen.getByRole('alert')).toBeTruthy();
   });
 });

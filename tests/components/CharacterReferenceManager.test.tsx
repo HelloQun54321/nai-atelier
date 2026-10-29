@@ -29,10 +29,10 @@ it('精准参考保持三种类型及原值，已有资产名称不随通用名�
     characterReferences: { enabled: true, slots: [{ assetId: 'ref', assetName: '已有角色参考名字', type: 'character', strength: 1, fidelity: 1 }] } };
   const setParams = vi.fn();
   render(<CharacterReferenceManager params={params} setParams={setParams} markChange={vi.fn()} notify={vi.fn()} />);
-  expect(screen.getByText('精准参考')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '管理精准参考' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
   expect(screen.getByRole('dialog', { name: '精准参考' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: '精准参考 (Precise Reference)' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: '精准参考' })).toBeTruthy();
   expect(screen.getByPlaceholderText('搜索精准参考…')).toBeTruthy();
   expect(screen.getByLabelText('上传精准参考图片')).toBeTruthy();
   fireEvent.click(screen.getByText('参数 · 角色 · 强度 1.00'));

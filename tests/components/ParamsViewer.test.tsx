@@ -40,7 +40,7 @@ it('收藏详情可分别展示角色、参数及参考信息，历史默认仍�
     vibes: { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'vibe', encodingId: 'encoding', informationExtracted: 1, strength: 1 }] },
   };
   const original = JSON.stringify(params), view = render(<ParamsViewer params={params} />);
-  const labels = ['生成参数', '多角色定义 (1)', '精准参考 (1)', 'Vibe Transfer (1)'];
+  const labels = ['生成参数', '多角色定义 (1)', '精准参考 (1)', '氛围参考 (1)'];
   labels.forEach(label => expect(screen.getByText(label)).toBeTruthy());
   const sections = ['params', 'characters', 'characterReference', 'vibe'] as const;
   sections.forEach((section, index) => {

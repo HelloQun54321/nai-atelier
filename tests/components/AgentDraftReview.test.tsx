@@ -27,3 +27,16 @@ it('只改角色坐标时仍可审阅原有参数差异，不显示空的提示�
   expect(screen.queryByText('提示词来源已更新')).toBeNull();
   expect(document.body.textContent).toContain('0.8');
 });
+
+it('应用期间锁定选择，旧稿保存失败保留审阅和所选字段供重试', async () => {
+  let reject!: (error: Error) => void;
+  const apply = vi.fn().mockImplementation(() => new Promise((_resolve, rejected) => { reject = rejected; }));
+  render(<AgentDraftReview current={current} proposed={{ ...current, negativePrompt: 'new negative' }} onApply={apply} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole('button', { name: '应用选中修改' }));
+  expect(screen.getByRole('checkbox', { name: '负面提示词' })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: '应用选中修改' })).toHaveProperty('disabled', true);
+  reject(new Error('旧稿保存失败'));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '旧稿保存失败');
+  expect(screen.getByRole('checkbox', { name: '负面提示词' })).toHaveProperty('checked', true);
+  expect(screen.getByRole('button', { name: '应用选中修改' })).toHaveProperty('disabled', false);
+});

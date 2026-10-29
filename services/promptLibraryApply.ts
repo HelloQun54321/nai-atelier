@@ -4,7 +4,7 @@ import { applyContentRollToParams, planContentRollApply, type ContentRollTarget 
 import { combinationPicks, applyLibraryText, fragmentKindOf, type PromptLibraryField } from './promptLibraryEntries';
 import { mergePromptSections, resolvePromptSections } from './labWorkspace';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from './characterPrompts';
-import { getEditableGlobalPrompt, mergePromptFields } from './promptUtils';
+import { getEditableGlobalNegative, getEditableGlobalPrompt, mergePromptFields } from './promptUtils';
 import type { PromptApplyMode } from './promptApply';
 import { rollSectionKey, META, type RollRow } from './contentRoll';
 import { createUuid } from './id';
@@ -115,4 +115,87 @@ export function applyLibrarySelection(selection: ReturnType<typeof planLibrarySe
     }) };
   }
   return next;
+}
+
+/** 仅当前工作区会话使用；不从正文猜测来源，不持久化到配方。 */
+export interface RollApplyReceipt {
+  newRoleId?: string;
+  fields: Record<string, { before: string; after: string; parts: Record<string, string> }>;
+}
+
+/** 纯规划也用于预览；调用方成功应用state后才接受receipt，撤销时一并恢复。 */
+export function applyRollSelection(
+  state: PromptLibraryWorkspaceState,
+  picks: Record<string, RollRow>,
+  target: ContentRollTarget,
+  previousReceipt?: RollApplyReceipt,
+): { state: PromptLibraryWorkspaceState; receipt: RollApplyReceipt; conflicts: string[] } {
+  const roles = state.params.characters || [];
+  if (target.mode === 'existing' && !roles.some(role => role.id === target.id)) throw new Error('目标角色已不存在，请重新打开随机搭配');
+  const hasRoleContent = Object.entries(picks).some(([key, row]) => row.filled && (row.text?.trim() || row.negative?.trim()) && (row.scope || META[rollSectionKey(key)]?.scope) !== 'global' && rollSectionKey(key) !== 'presentation');
+  const newId = target.mode === 'new' && hasRoleContent ? previousReceipt?.newRoleId && roles.some(role => role.id === previousReceipt.newRoleId) ? previousReceipt.newRoleId : createUuid() : '';
+  const creatingRole = !!newId && !roles.some(role => role.id === newId);
+  if (creatingRole && roles.length >= (state.maxCharacters ?? getRuntimeNaiModelInfo(state.params.model).maxCharacters)) throw new Error('当前模型的角色数量已达上限');
+  const targetIds = target.mode === 'existing' ? [target.id] : target.mode === 'all-enabled' ? roles.filter(role => role.enabled !== false).map(role => role.id) : newId ? [newId] : [];
+  const incoming = new Map<string, { roleId?: string; negative: boolean; parts: Record<string, string> }>();
+  const add = (roleId: string | undefined, negative: boolean, kind: string, text: string) => {
+    const field = (roleId ? 'character:' + roleId : 'global') + (negative ? ':negative' : ':positive');
+    const data = incoming.get(field) || { roleId, negative, parts: {} };
+    data.parts[kind] = [data.parts[kind], text].filter(Boolean).join(', ');
+    incoming.set(field, data);
+  };
+  for (const [key, row] of Object.entries(picks)) {
+    if (!row.filled) continue;
+    const kind = rollSectionKey(key);
+    const ids = target.mode === 'global' || kind === 'presentation' || (row.scope || META[kind]?.scope) === 'global' ? [undefined] : targetIds;
+    for (const id of ids) {
+      add(id, false, kind, row.text || '');
+      add(id, true, kind, row.negative || '');
+    }
+  }
+  const next = { ...state, classified: false, params: { ...state.params } };
+  let characters = roles.map(role => ({ ...role }));
+  if (creatingRole) characters.push({ id: newId, prompt: '', x: 0.5, y: 0.5 });
+  const receipt: RollApplyReceipt = { ...(newId || previousReceipt?.newRoleId ? { newRoleId: newId || previousReceipt?.newRoleId } : {}), fields: { ...previousReceipt?.fields } };
+  const conflicts: string[] = [];
+  const changedRoles = new Set<string>();
+  let globalPositive = false, globalNegative = false;
+  const legacyNegatives = (state.params as NAIParams & { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives;
+  for (const [field, data] of incoming) {
+    const role = data.roleId ? characters.find(role => role.id === data.roleId) : undefined;
+    const compiled = role ? compileCharacterContent(roles.find(original => original.id === role.id) || role, legacyNegatives) : undefined;
+    const current = role ? data.negative ? compiled?.negativePrompt || '' : compiled?.prompt || ''
+      : data.negative ? getEditableGlobalNegative(state.negative, state.params._promptSections) : getEditableGlobalPrompt(state.base, state.subject);
+    const previous = previousReceipt?.fields[field];
+    if (previous && current !== previous.after) { conflicts.push(field); continue; }
+    const before = previous ? previous.before : current;
+    const parts = { ...previous?.parts, ...data.parts };
+    const after = [before, ...Object.values(parts)].filter(value => value.trim()).join(', ');
+    receipt.fields[field] = { before, after, parts };
+    if (role) {
+      if (data.negative) role.negativePrompt = after; else role.prompt = after;
+      changedRoles.add(role.id);
+    } else if (data.negative) { next.negative = after; globalNegative = true; }
+    else { next.base = after; next.subject = ''; globalPositive = true; }
+  }
+  // 两个方向独立处理；未改方向先合并旧分类，防止清分栏时丢失旧词。
+  if (globalPositive || globalNegative) {
+    if (!globalPositive) { next.base = getEditableGlobalPrompt(state.base, state.subject); next.subject = ''; }
+    if (!globalNegative) next.negative = getEditableGlobalNegative(state.negative, state.params._promptSections);
+    next.params._promptSections = undefined;
+  }
+  if (changedRoles.size) {
+    characters = characters.map(role => {
+      if (!changedRoles.has(role.id)) return role;
+      const original = roles.find(item => item.id === role.id);
+      const compiled = original ? compileCharacterContent(original, legacyNegatives) : undefined;
+      const positiveUpdated = incoming.has('character:' + role.id + ':positive') && !conflicts.includes('character:' + role.id + ':positive');
+      const negativeUpdated = incoming.has('character:' + role.id + ':negative') && !conflicts.includes('character:' + role.id + ':negative');
+      return { ...role, prompt: positiveUpdated ? role.prompt : compiled?.prompt || role.prompt,
+        negativePrompt: negativeUpdated ? role.negativePrompt : compiled?.negativePrompt || role.negativePrompt,
+        sections: undefined, sectionNegatives: undefined };
+    });
+    next.params.characters = characters;
+  }
+  return { state: next, receipt, conflicts };
 }

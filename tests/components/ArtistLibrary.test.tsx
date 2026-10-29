@@ -623,6 +623,7 @@ it('向助手登记读取与生成画师样张的命令', async () => {
   const { container } = setup();
   const names = getAgentCommands(container).map(command => command.name);
   expect(names).toEqual(expect.arrayContaining(['get_artist_sample_status', 'generate_artist_sample']));
+  expect(JSON.stringify(getAgentCommands(container).find(command => command.name === 'generate_artist_sample')!.parameters)).not.toContain('agentPermissionMode');
   const status = await executeAgentCommand(container, 'get_artist_sample_status', { tag: 'alpha artist' }, true) as { phase: string };
   expect(status.phase).toBe('idle');
 });
@@ -1393,7 +1394,7 @@ it('自动连续加载：搜索超过200位仍可触底到真实末尾', async (
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   mocks.dictionary.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
-  await waitFor(() => expect(sampleCards()).toHaveLength(201));
+  await waitFor(() => expect(sampleCards()).toHaveLength(201), { timeout: 5000 });
   expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
 });
 

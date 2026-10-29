@@ -21,6 +21,24 @@ const isolated = async (t, fn) => {
 };
 const content = result => JSON.parse(result.content[0].text);
 
+test('Agent独立呈现形式读写保持风格、主负面与动态用途顺序', t => isolated(t, async service => {
+  for (const mode of ['text-to-image', 'image-to-image']) {
+    const style = 'artist:original, watercolor, warm light';
+    const subject = 'rain, close-up, split panel';
+    const draft = { target: { mode }, basePrompt: mode === 'text-to-image' ? style : `${style}, ${subject}`, subjectPrompt: subject, negativePrompt: 'lowres, bad anatomy', params: { _promptSections: { scene: 'rain', presentation: 'split panel', 'purpose:camera': 'close-up', sectionNegatives: { presentation: 'single panel' } } } };
+    const tools = service.createTools(draft, { clientSettings: { promptClassificationEnabled: true } }, () => {}, {});
+    const before = content(await tools.find(tool => tool.name === 'get_lab_state').execute('t', {}));
+    assert.equal(before.promptSections.presentation, 'split panel');
+    const update = tools.find(tool => tool.name === 'update_prompts');
+    await update.execute('t', { sections: { presentation: 'comic layout' } });
+    assert.equal(draft.negativePrompt, 'lowres, bad anatomy');
+    assert.equal(draft.params._promptSections.presentation, 'comic layout');
+    assert.equal(draft.params._promptSections.sectionNegatives.presentation, 'single panel');
+    assert.equal(mode === 'text-to-image' ? draft.subjectPrompt : draft.basePrompt, mode === 'text-to-image' ? 'rain, close-up, comic layout' : `${style}, rain, close-up, comic layout`);
+    if (mode === 'text-to-image') assert.equal(draft.basePrompt, style);
+  }
+}));
+
 test('只读工具实时读取完整自定义树和父目录实际候选，不写入或补造固定类', t => isolated(t, async service => {
   service.config.permissionMode = 'read_only';
   const requests = [];

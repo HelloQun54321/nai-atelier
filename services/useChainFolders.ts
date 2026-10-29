@@ -21,26 +21,34 @@ export function useChainFolders(enabled: boolean) {
     setState(current => next.revision >= current.revision ? next : current);
     setReady(true); setError('');
   }, []);
+  const refresh = useCallback(async () => {
+    if (!enabled) return;
+    try { accept(readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }))); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : '文件夹加载失败'); }
+  }, [enabled, accept]);
   const reload = useCallback(async () => {
     if (!enabled || locked.current) return;
     locked.current = true;
-    try { accept(readChainFolders(await api.get('/chain-folders', { cache: 'no-store' }))); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '文件夹加载失败'); }
-    finally { locked.current = false; }
-  }, [enabled, accept]);
+    try { await refresh(); } finally { locked.current = false; }
+  }, [enabled, refresh]);
   useEffect(() => {
     void reload();
     const focus = () => void reload();
     const updated = (event: Event) => accept((event as CustomEvent<ChainFolderState>).detail);
+    const projectChanged = (event: Event) => {
+      if ((event as CustomEvent<{ resource?: string }>).detail?.resource === 'chain_folders') void refresh();
+    };
     if (enabled) {
       window.addEventListener('focus', focus);
       window.addEventListener(CHAIN_FOLDERS_UPDATED, updated);
+      window.addEventListener('nai-project-data-changed', projectChanged);
     }
     return () => {
       window.removeEventListener('focus', focus);
       window.removeEventListener(CHAIN_FOLDERS_UPDATED, updated);
+      window.removeEventListener('nai-project-data-changed', projectChanged);
     };
-  }, [enabled, reload, accept]);
+  }, [enabled, reload, refresh, accept]);
   const save = async (next: ChainFolderState) => {
     if (!ready || error || locked.current) throw Error('文件夹尚未就绪，请重新加载后再试');
     locked.current = true; setBusy(true);

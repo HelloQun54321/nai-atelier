@@ -44,6 +44,7 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
+    if (typeof sections.presentation === 'string') next.presentation = sections.presentation;
     for (const key of getGlobalPromptSectionKeys(sections)) {
         if (isCreativeSectionKey(key) && typeof sections[key] === 'string') next[key] = sections[key];
     }

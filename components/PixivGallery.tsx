@@ -588,7 +588,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
     return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectionFocusEnabled && selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
-      <button type="button" onClick={() => openDetail(illust)} className="gallery-card-visual block w-full text-left">
+      <button data-agent-action="browse" type="button" onClick={() => openDetail(illust)} className="gallery-card-visual block w-full text-left">
         <div className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
             src={previewSrc}

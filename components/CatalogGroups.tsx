@@ -123,7 +123,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
   return {
     ...data, activeGroup, selectGroup, expanded,
     matches, cardDragProps,
-    toolbar: <><ToolbarButton aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
+    toolbar: <><ToolbarButton data-agent-action="browse" aria-label={t('分组导航')} title={[t(expanded ? '收起分类' : '展开分类'), label, navigationOptions?.activeFilterLabel].filter(Boolean).join(' · ')} aria-controls={navigationId} aria-expanded={expanded} active={expanded || activeGroup !== '*' || Boolean(navigationOptions?.activeFilterLabel)} onClick={() => update({ expanded: !expanded })}><Folder /></ToolbarButton>
       {selectedKeys.length > 0 && <ToolbarButton aria-label={t('设置分组')} title={t('设置分组')} disabled={!data.ready || data.busy || Boolean(data.error)} onClick={() => setDialog({ scope, keys: [...new Set(selectedKeys)] })}><FolderPlus /></ToolbarButton>}
       {dialog?.scope === scope && <GroupDialog key={dialog.editing ?? 'members'} keys={dialog.keys} resolveMembershipKeys={navigationOptions?.resolveMembershipKeys} editing={dialog.editing} parentId={dialog.parentId} state={data.state} save={data.save} busy={data.busy} onClose={() => setDialog(null)} onSaved={selectGroup} notify={notify} />}</>,
     navigation: <DirectoryTreeNavigation id={navigationId} label={t('分组导航')} title={t('分组')} nodes={data.state.groups} selectedId={activeGroup} onSelect={selectGroup} expanded={expanded}

@@ -864,7 +864,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   const selected = selectedTagIds.has(item.id);
                   nodes.push(
                     <div
-                      role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
+                      role="button" tabIndex={0} data-agent-interaction="double_click" onKeyDown={selectUnitWithKeyboard}
                       onDoubleClick={() => editTag(item)}
                       onClick={() => setSelectedTagIds(current => {
                         const next = new Set(current);
@@ -923,7 +923,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {openSyntax && <span className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => <React.Fragment key={member.id}>
                       {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
-                      <span onDoubleClick={event => { event.stopPropagation(); editTag(member); }} className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
+                      <span data-agent-interaction="double_click" aria-label={member.displayTag} onDoubleClick={event => { event.stopPropagation(); editTag(member); }} className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
                         <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${groupTextTone}`} title={member.displayTag}>
                           {editingTag?.id === member.id ? tagInputField : member.displayTag}
                         </span>

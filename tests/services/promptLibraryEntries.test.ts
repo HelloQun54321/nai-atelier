@@ -178,3 +178,18 @@ it('压到单目标时按原顺序保留权重组与重复原词，不擅自拆�
   expect((after.params._promptSections as any)['purpose:clothing']).toBe('{red, cape}, red, red, 1.2::dress::');
   expect((after.params._promptSections?.sectionNegatives as any)['purpose:clothing']).toBe('[blue, coat], blue, coat');
 });
+
+it('呈现形式通过v2组合保存读回并始终写全局，不改原画风和角色', () => {
+  const params = { ...state().params, characters: [], _promptSections: { presentation: '{two panels}', sectionNegatives: { presentation: 'single panel' }, sectionMeta: { presentation: { source: 'manual', entryName: '双格' } } } } as NAIParams;
+  const saved = chain(createCombinationData('呈现', workspacePicks(params, 'two')));
+  const snapshot = (saved.params as any)._rollContentSnapshot;
+  expect(snapshot.version).toBe(2);
+  expect(snapshot.global.presentation).toMatchObject({ provided: true, text: '{two panels}', negative: { text: 'single panel' }, meta: { entryName: '双格' } });
+  expect(combinationPicks(saved).presentation).toMatchObject({ kind: 'presentation', text: '{two panels}' });
+  const before = state();
+  const after = applyLibrarySelection(planLibrarySelection(before, saved, { mode: 'existing', id: 'two' }, 'replace'));
+  expect(after.params._promptSections?.presentation).toBe('{two panels}');
+  expect(after.params._promptSections?.sectionNegatives?.presentation).toBe('single panel');
+  expect(after.params.characters).toEqual(before.params.characters);
+  expect(after.base).toBe(before.base); expect(after.negative).toBe(before.negative);
+});

@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const open = async (kind: 'vibe' | 'reference') => {
-  fireEvent.click(screen.getByRole('button', { name: kind === 'vibe' ? '管理' : /精准参考/ }));
+  fireEvent.click(screen.getByRole('button', { name: kind === 'vibe' ? '管理氛围参考' : '管理精准参考' }));
   await screen.findByRole('button', { name: kind === 'vibe' ? /测试 Vibe/ : /测试参考/ });
 };
 
@@ -55,8 +55,9 @@ it('搜索或切换归档不把已选编码误报为缺失，也不重载资料'
   render(<Harness kind="vibe" />); await open('vibe');
   fireEvent.click(screen.getByRole('button', { name: /测试 Vibe/ }));
   fireEvent.click(screen.getByText('参数 · 强度 0.00'));
-  fireEvent.change(screen.getByPlaceholderText('搜索我的 Vibe…'), { target: { value: '无匹配' } });
-  expect(screen.queryByRole('button', { name: /测试 Vibe/ })).toBeNull();
+  fireEvent.change(screen.getByPlaceholderText('搜索我的氛围参考…'), { target: { value: '无匹配' } });
+  expect(within(screen.getByRole('dialog')).queryByRole('button', { name: /测试 Vibe/ })).toBeNull();
+  expect(screen.getByRole('button', { name: '查看参考：测试 Vibe' })).toBeTruthy();
   expect(screen.getByRole('option', { name: '提取量 1.00' })).toBeTruthy();
   fireEvent.click(within(screen.getByRole('tablist', { name: '资料库范围' })).getByRole('tab', { name: '已归档' }));
   expect(screen.getByRole('option', { name: '提取量 1.00' })).toBeTruthy();
@@ -67,7 +68,7 @@ it.each(['vibe', 'reference'] as const)('%s 详情返回保留列表节点、滚
   const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
   const go = vi.spyOn(window.history, 'go').mockImplementation(() => {});
   render(<Harness kind={kind} />); await open(kind);
-  const search = screen.getByPlaceholderText(kind === 'vibe' ? '搜索我的 Vibe…' : '搜索精准参考…');
+  const search = screen.getByPlaceholderText(kind === 'vibe' ? '搜索我的氛围参考…' : '搜索精准参考…');
   fireEvent.change(search, { target: { value: '测试' } });
   const list = document.querySelector<HTMLElement>('.workspace-manager-list')!; list.scrollTop = 128;
   fireEvent.click(screen.getByRole('button', { name: '详情' }));
@@ -139,7 +140,7 @@ it('编码完成不会覆盖等待期间移除的选择，永久编码仍保存�
   await waitFor(() => expect(fixtures.encode).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole('button', { name: '移除' }));
   resolve({ item: { ...vibe, encodings: vibe.encodings.map(encoding => ({ ...encoding, informationExtracted: 0.7 })) } });
-  await waitFor(() => expect(notify).toHaveBeenCalledWith('编码已保存，当前选择已变化，请重新选择该 Vibe'));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('编码已保存，当前选择已变化，请重新选择该氛围参考'));
   expect(changed).toHaveBeenCalledTimes(1);
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ vibes: expect.objectContaining({ slots: [] }) }));
   fireEvent.click(screen.getByRole('button', { name: /测试 Vibe/ }));

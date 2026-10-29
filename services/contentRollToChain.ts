@@ -15,7 +15,7 @@ import { createUuid } from './id';
 import type { NAIParams, PromptChain } from '../types';
 
 export const ROLL_TO_CHAIN_ROLE_KINDS = ['appearance', 'wardrobe', 'pose', 'expression'] as const;
-export const ROLL_TO_CHAIN_GLOBAL_KINDS = ['scene', 'camera'] as const;
+export const ROLL_TO_CHAIN_GLOBAL_KINDS = ['scene', 'camera', 'presentation'] as const;
 
 /** Roll 结果的一栏：正负词与条目名一起写入。 */
 export interface RollToChainSourceRow {

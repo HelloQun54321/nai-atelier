@@ -1,25 +1,24 @@
-import { PROMPT_PURPOSE_GROUPS, purposeSectionKey, promptPurposeLabel, isPurposeSectionKey, type PromptPurposeId } from '../../services/promptPurposes.mjs';
+import { type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, MapPin, Save, Trash2, UserRound } from 'lucide-react';
 import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
-import { PromptPurposeGroup } from '../PromptPurposeGroup';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
 import { compileCharacterContent, getCharacterSectionKeys, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
-import { CharacterSectionSummary, getCharacterSectionLabel } from './CharacterSectionSummary';
-import { PromptField } from './ChainEditorPromptInputs';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { SmartImage } from '../SmartImage';
 import { ToolbarPopover } from '../ToolbarPopover';
+
+const SUBJECT_PURPOSES: readonly PromptPurposeId[] = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
 
 const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: boolean; label: string; onCommit: (value: number) => void }> = ({ value, freeform, disabled, label, onCommit }) => {
   useLanguage();
@@ -44,7 +43,6 @@ export interface ChainEditorCharactersProps {
     characters: CharacterParams[];
     canEdit: boolean;
     tagAssistEnabled: boolean;
-    promptClassificationEnabled?: boolean;
     characterPresetSources: Record<string, PresetSource>;
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
@@ -77,7 +75,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     canEdit,
     tagAssistEnabled,
     onContentRollForRole,
-    promptClassificationEnabled = false,
     characterPresetSources,
     markPresetSectionModified,
     markChange,
@@ -135,16 +132,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         }
     };
     const negativeLocked = isNaiMediumModel(params.model);
-    const renderSection = (char: CharacterParams, idx: number, key: ReturnType<typeof getCharacterSectionKeys>[number]) => <PromptField key={key}
-        label={getCharacterSectionLabel(char, key)} placeholder="留空则不参与" roleId={char.id}
-        purposeId={isPurposeSectionKey(key) ? key.slice(8) as PromptPurposeId : undefined}
-        directoryId={key.startsWith('directory:') ? key.slice(10) : undefined}
-        library={!isPurposeSectionKey(key) && !key.startsWith('directory:') ? key as 'appearance' | 'wardrobe' | 'pose' | 'expression' : undefined}
-        tagAssistEnabled={tagAssistEnabled} disabled={!canEdit} value={char.sections?.[key] || ''}
-        onChange={value => updateCharacter(idx, { sections: { ...char.sections, [key]: value } })}
-        negative={char.sectionNegatives?.[key]} negativeLocked={negativeLocked}
-        negativeLabel={t('角色 {0}', [idx + 1]) + ' · ' + t(getCharacterSectionLabel(char, key)) + ' · ' + t('内容负面')}
-        onNegativeChange={char.sections?.[key] || char.sectionNegatives?.[key] ? value => updateCharacter(idx, { sectionNegatives: { ...char.sectionNegatives, [key]: value } }) : undefined} />;
     const reorder = (index: number, direction: -1 | 1) => {
         if (!canEdit) return;
         setParams({ ...params, characters: moveCharacter(characters, index, direction) });
@@ -153,7 +140,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     return (<>
     <LabModuleSection
         moduleId="characters"
-        label={t("角色专属提示词")}
+        label={t('角色专属提示词')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
         className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
@@ -165,7 +152,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                     <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
                         className="appearance-group flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
-                        <MapPin className="h-3.5 w-3.5" />{t("角色定位")}</button>
+                        <MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>
                     <label className="appearance-group flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
                         <input
                             type="checkbox"
@@ -183,7 +170,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
 
                     {canEdit && (
                         <button onClick={addCharacter} className="appearance-group text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
-                            {t("+ 添加角色")}</button>
+                            {t('+ 添加角色')}</button>
                     )}
                 </div>
             </div>
@@ -198,21 +185,39 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 }} />}
             <div className="space-y-3 divide-y divide-gray-200 dark:divide-gray-700">
                 {(characters || []).length === 0 && (
-                    <div className="text-xs text-gray-400 text-center py-2">{t("暂无角色，点击上方添加")}</div>
+                    <div className="text-xs text-gray-400 text-center py-2">{t('暂无角色，点击上方添加')}</div>
                 )}
                 {(characters || []).map((char, idx) => {
                     const positiveSlotRef = actionSlot(`${scopeKey}:${char.id}:positive`);
                     const negativeSlotRef = actionSlot(`${scopeKey}:${char.id}:negative`);
                     const taggerSlotRef = actionSlot(`${scopeKey}:${char.id}:tagger`);
+                    const compiled = compileCharacterContent(char, legacyNegatives);
+                    const negativeField = <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
+                        <div className="mb-1 flex items-center justify-between gap-2"><label className="text-micro text-gray-500 font-bold">{t('角色负面提示词')}</label><span ref={negativeSlotRef} /></div>
+                        <TagAutocompleteTextarea
+                            clearActionSlotRef={negativeSlotRef}
+                            libraryField={{ roleId: char.id, negative: true }}
+                            tagAssistEnabled={tagAssistEnabled && !negativeLocked}
+                            disabled={!canEdit || negativeLocked}
+                            value={compiled.negativePrompt || ''}
+                            onValueChange={(nextValue) => updateCharacter(idx, {
+                                prompt: compiled.prompt, negativePrompt: nextValue,
+                                sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
+                            })}
+                            className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
+                            placeholder={t('选填')}
+                        />
+                    </div>;
                     return (
                     <div key={`${scopeKey}:${char.id}`} className="lab-character relative min-w-0 py-3">
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                                <input type="checkbox" aria-label={t("启用角色 {0}", [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
+                                <input type="checkbox" aria-label={t('启用角色 {0}', [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
                                     onChange={event => updateCharacter(idx, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
-                                {t("角色 ")}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
+                                {t('角色 ')}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </label>
                             <div className="character-tools ml-auto flex flex-wrap items-center justify-end gap-1">
+                                <PromptLibraryRandomButton roleId={char.id} purposes={SUBJECT_PURPOSES} variant="icon" disabled={!canEdit} fallback={canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} />
                                 <ToolbarPopover label="坐标" title={t("角色 {0} 坐标", [idx + 1])} icon={<MapPin />} iconOnly width={240}>
                                     <div className="grid grid-cols-2 gap-3">
                                         <label className="text-micro font-bold text-gray-500 dark:text-gray-400">
@@ -238,49 +243,23 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                         </div>
                         <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
                         <div className="min-w-0 space-y-2">
-                                {promptClassificationEnabled && <div className="flex justify-end"><PromptLibraryRandomButton roleId={char.id} disabled={!canEdit} fallback={canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} /></div>}
                                 <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
+                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t('角色提示词')}</label>
                                     <TagAutocompleteTextarea
                                         clearActionSlotRef={positiveSlotRef}
                                         libraryField={{ roleId: char.id }}
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
-                                        value={promptClassificationEnabled ? char.prompt : compileCharacterContent(char, legacyNegatives).prompt}
-                                        onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { prompt: nextValue } : {
-                                            prompt: nextValue, negativePrompt: compileCharacterContent(char, legacyNegatives).negativePrompt,
+                                        value={compiled.prompt}
+                                        onValueChange={(nextValue) => updateCharacter(idx, {
+                                            prompt: nextValue, negativePrompt: compiled.negativePrompt,
                                             sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
                                         })}
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-16 focus:ring-1 focus:ring-indigo-500 outline-none"
-                                        placeholder={t("角色提示词")}
+                                        placeholder={t('角色提示词')}
                                     />
                                 </div>
-                                <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
-                                    <div className="mb-1 flex items-center justify-between gap-2"><label className="text-micro text-gray-500 font-bold">{t("角色负面提示词")}</label><span ref={negativeSlotRef} /></div>
-                                    <TagAutocompleteTextarea
-                                        clearActionSlotRef={negativeSlotRef}
-                                        libraryField={{ roleId: char.id, negative: true }}
-                                        tagAssistEnabled={tagAssistEnabled && !negativeLocked}
-                                        disabled={!canEdit || negativeLocked}
-                                        value={(promptClassificationEnabled ? char : compileCharacterContent(char, legacyNegatives)).negativePrompt || ''}
-                                        onValueChange={(nextValue) => updateCharacter(idx, promptClassificationEnabled ? { negativePrompt: nextValue } : {
-                                            prompt: compileCharacterContent(char, legacyNegatives).prompt, negativePrompt: nextValue,
-                                            sections: undefined, sectionNegatives: undefined, sectionMeta: legacyNegatives || hasCharacterSections(char) ? Object.fromEntries(getCharacterSectionKeys(char).map(key => [key, { source: 'manual' }])) : char.sectionMeta,
-                                        })}
-                                        className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
-                                        placeholder={t("选填")}
-                                    />
-                                </div>
-                                {promptClassificationEnabled && <div className="space-y-2">
-                                    {PROMPT_PURPOSE_GROUPS.map(group => <PromptPurposeGroup key={group.id} id={group.id} label={group.label}
-                                        summary={group.purposes.filter(id => char.sections?.[purposeSectionKey(id)]).map(id => t(promptPurposeLabel(id))).join('、')}>
-                                        {group.purposes.map(id => renderSection(char, idx, purposeSectionKey(id)))}
-                                    </PromptPurposeGroup>)}
-                                    {getCharacterSectionKeys(char).some(key => !isPurposeSectionKey(key) && (key in (char.sections || {}) || char.sectionNegatives?.[key])) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
-                                        {getCharacterSectionKeys(char).filter(key => !isPurposeSectionKey(key) && (key in (char.sections || {}) || char.sectionNegatives?.[key])).map(key => renderSection(char, idx, key))}
-                                    </PromptPurposeGroup>}
-                                </div>}
-                                {promptClassificationEnabled && <CharacterSectionSummary character={char} />}
+                                {negativeField}
                         </div>
                     </div>
                     );

@@ -26,7 +26,7 @@ export function PromptLibraryCard({ chain, label, title, summary, tagContent, op
   const name = chain.name?.trim() || t('未命名');
   const section = librarySectionOf(chain);
   const combination = section === 'saved';
-  return <PressRevealSurface as="article" role="button" tabIndex={0} aria-label={openLabel || t('查看{0}', [name])} aria-pressed={selected} aria-busy={busy} aria-disabled={busy} pressDisabled={busy}
+  return <PressRevealSurface as="article" data-agent-action="browse" role="button" tabIndex={0} aria-label={openLabel || t('查看{0}', [name])} aria-pressed={selected} aria-busy={busy} aria-disabled={busy} pressDisabled={busy}
     data-prompt-library-entry={chain.id} data-prompt-library-id={chain.id} data-return-item-id={chain.id} data-gallery-work-id={chain.id} data-safe-mode-work="true"
     className={`appearance-group gallery-image-card gallery-card-visual group relative flex flex-col overflow-hidden rounded-2xl border bg-white text-left transition-[filter,border-color] focus-visible:outline-2 focus-visible:outline-indigo-500 dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'} ${dimmed ? 'brightness-[.7]' : ''}`}
     style={{ display: frosted ? 'grid' : undefined }} onClick={() => { if (!busy) onOpen(); }} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); if (!busy) onOpen(); } }}>

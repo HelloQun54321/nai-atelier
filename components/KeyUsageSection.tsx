@@ -73,7 +73,7 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
         <div>
           <h3 className="mb-2 font-medium text-gray-500 dark:text-gray-400">{t('新记录费用 · 估算')}</h3>
           <div className="flex justify-between gap-3 py-1"><span className="text-gray-600 dark:text-gray-300">{t('生图')}</span><span className="tabular-nums">{resource(row.generationAnlas)} Anlas</span></div>
-          <div className="flex justify-between gap-3 py-1"><span className="text-gray-600 dark:text-gray-300">{t('Vibe 编码')}</span><span className="tabular-nums">{hasRecords ? number(row.encodingAnlas) : '—'} Anlas</span></div>
+          <div className="flex justify-between gap-3 py-1"><span className="text-gray-600 dark:text-gray-300">{t('氛围参考编码')}</span><span className="tabular-nums">{hasRecords ? number(row.encodingAnlas) : '—'} Anlas</span></div>
         </div>
         {row.unknownBillingImages > 0 && <p className="key-usage__detail-wide text-amber-600 dark:text-amber-400">{t('{0} 张图片缺少计费快照，点数与额度未计入已知用量。', [number(row.unknownBillingImages)])}</p>}
         {row.lifetime && <div className="key-usage__detail-wide border-t border-gray-200 pt-2 text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('本地累计（含旧版）：{0} Anlas · {1} 张 Opus，不受所选周期限制。', [number(row.lifetime.anlasSpent), number(row.lifetime.opusImages)])}</div>}

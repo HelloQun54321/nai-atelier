@@ -10,6 +10,24 @@ const saved: CatalogGroupState = { ...initial, revision: 2, memberships: { 'arti
 beforeEach(() => { get.mockReset().mockResolvedValue(initial); put.mockReset().mockResolvedValue(saved); });
 afterEach(cleanup);
 
+it('助手直接写入广播回读画师与角色各自目录，保活实例同步且迟到旧读取不回退', async () => {
+  let finish!: (value: CatalogGroupState) => void;
+  get.mockImplementationOnce(() => new Promise<CatalogGroupState>(resolve => { finish = resolve; }));
+  const slow = renderHook(() => useCatalogGroups('artist'));
+  const second = renderHook(() => useCatalogGroups('artist'));
+  const character = renderHook(() => useCatalogGroups('character'));
+  await waitFor(() => expect(second.result.current.ready && character.result.current.ready).toBe(true));
+  const characterSaved = { ...saved, memberships: { 'catalog:角色': ['g1'] } };
+  get.mockImplementation(async path => path.endsWith('/artist') ? saved : characterSaved);
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'chains' } })); });
+  expect(get).toHaveBeenCalledTimes(3);
+  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'catalog_groups' } })); });
+  expect(slow.result.current.state).toEqual(saved); expect(second.result.current.state).toEqual(saved);
+  expect(character.result.current.state).toEqual(characterSaved); expect(get).toHaveBeenCalledTimes(6);
+  await act(async () => { finish(initial); });
+  expect(slow.result.current.state).toEqual(saved); expect(put).not.toHaveBeenCalled();
+});
+
 it('焦点回读相同版本保留状态引用，避免保活列表误判为分组变化', async () => {
   get.mockImplementation(async () => structuredClone(initial));
   const hook = renderHook(() => useCatalogGroups('artist'));

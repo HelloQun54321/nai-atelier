@@ -689,7 +689,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         },
     });
     useAgentCommand({
-        name: 'generate_artist_sample', label: '生成或补充画师样张', description: '为指定画师生成样张并归档；按当前权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { tag: { type: 'string' }, pack: { enum: ['v45', 'v5'] }, regenerate: { type: 'boolean' }, agentPermissionMode: { type: 'string' } }, required: ['tag'] }, scope: () => agentRootRef.current,
+        name: 'generate_artist_sample', label: '生成或补充画师样张', description: '为指定画师生成样张并归档；按当前权限直接生成或等待页面费用确认。', parameters: { type: 'object', properties: { tag: { type: 'string' }, pack: { enum: ['v45', 'v5'] }, regenerate: { type: 'boolean' } }, required: ['tag'] }, scope: () => agentRootRef.current,
         execute: args => {
             const tag = String(args.tag || '').trim();
             const pack: ArtistSamplePack = args.pack === 'v5' ? 'v5' : 'v45';

@@ -1,248 +1,123 @@
-import { openPurposeGroup } from '../../support/promptPurposeGroups';
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ChainEditorPromptInputs, ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
-import { PromptLibraryContext, PromptLibraryWorkspace } from '../../../components/PromptLibraryAccess';
-import { LAB_DEFAULT_PARAMS } from '../../../services/labWorkspace';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { ChainEditorPromptInputs, type ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
+import { getEditableGlobalNegative } from '../../../services/promptUtils';
+import type { PromptSections } from '../../../types';
 
 afterEach(cleanup);
+const defaults = (): ChainEditorPromptInputsProps => ({
+  prompt: 'original prompt', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
+  copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
+  activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global',
+});
 
-const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
-  const props: ChainEditorPromptInputsProps = {
-    prompt: 'original prompt', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
-    promptClassificationEnabled: true,
-    copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
-    activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global', ...overrides,
+it('只保留完整全局正面输入，原字和权重保留且没有分类或正文骰子', () => {
+  const props = { ...defaults(), prompt: 'artist:test, {{style}},\n1.2::blue dress::, ' };
+  render(<ChainEditorPromptInputs {...props} />);
+  expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe(props.prompt);
+  expect(screen.getAllByRole('textbox')).toHaveLength(1);
+  expect(screen.queryByText('已有画风分栏')).toBeNull();
+  expect(screen.queryByText('原有分类')).toBeNull();
+  expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
+  expect(props.setPrompt).not.toHaveBeenCalled(); expect(props.markChange).not.toHaveBeenCalled();
+});
+
+it('未传旧主体时完整显示旧全局用途目录与呈现形式，不在读取时写回', () => {
+  const props = { ...defaults(), prompt: 'artist:test', sections: { wardrobe: '{{blue dress}}', extra: 'manual\nwords',
+    'purpose:lighting': 'backlight', 'directory:scene': '1.2::forest, mist::', presentation: 'comic panel' }, setSections: vi.fn() };
+  render(<ChainEditorPromptInputs {...props} />);
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('artist:test, {{blue dress}}, manual\nwords, backlight, 1.2::forest, mist::, comic panel');
+  expect(props.setSections).not.toHaveBeenCalled(); expect(props.setPrompt).not.toHaveBeenCalled();
+});
+
+it.each(['blue dress', ''])('明确传入主体%s时不恢复可能已过时的旧分栏', supplementPrompt => {
+  render(<ChainEditorPromptInputs {...defaults()} sections={{ wardrobe: 'red dress' }} supplementPrompt={supplementPrompt} />);
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(supplementPrompt ? 'original prompt, blue dress' : 'original prompt');
+});
+
+it('原整段默认编辑合并一次后清旧分栏，末尾逗号和换行不丢', () => {
+  const Harness = () => {
+    const [prompt, setPrompt] = useState('artist:test'), [subject, setSubject] = useState('manual, forest');
+    const [sections, setSections] = useState<PromptSections>({ extra: 'manual', 'directory:scene': 'forest' });
+    return <><ChainEditorPromptInputs {...defaults()} prompt={prompt} setPrompt={setPrompt}
+      supplementPrompt={subject} setSupplementPrompt={setSubject} sections={sections} setSections={setSections} />
+      <output>{JSON.stringify({ subject, sections })}</output></>;
   };
-  const slot = document.createElement('div');
-  props.toolbarSlot = { element: slot, variant: 'icon' };
-  render(<><div data-testid="prompt-tools" ref={element => { element?.appendChild(slot); }} /><ChainEditorPromptInputs {...props} /></>);
-  return props;
-};
+  render(<Harness />);
+  const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+  expect(input.value).toBe('artist:test, manual, forest');
+  fireEvent.change(input, { target: { value: 'new prompt, \n' } });
+  expect(input.value).toBe('new prompt, \n');
+  expect(JSON.parse(screen.getByRole('status').textContent!)).toEqual({ subject: '', sections: {} });
+});
 
-describe('提示词上下文工具隔离', () => {
-  it('动态目录使用来源路径显示，正负词可就地修改并保留其他内容与目录标签', () => {
-    const Harness = () => {
-      const [sections, setSections] = useState<import('../../../types').PromptSections>({ extra: 'manual', 'directory:scene': '1.2::forest, mist::',
-        sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景', directoryPath: ['环境', '场景'], entryName: '森林' } } });
-      const [subject, setSubject] = useState('manual, 1.2::forest, mist::');
-      return <><ChainEditorPromptInputs promptClassificationEnabled prompt="artist:test" setPrompt={vi.fn()} sections={sections} setSections={setSections}
-        supplementPrompt={subject} setSupplementPrompt={setSubject} presetSources={{}} tagAssistEnabled={false} canEdit
-        copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()} activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
-        <output data-testid="dynamic">{JSON.stringify({ subject, sections })}</output></>;
-    };
-    render(<Harness />);
-    const positive = screen.getByRole('textbox', { name: '环境 / 场景' }) as HTMLTextAreaElement;
-    const negative = screen.getByRole('textbox', { name: '环境 / 场景 · 内容负面' }) as HTMLTextAreaElement;
-    expect(positive.value).toBe('1.2::forest, mist::'); expect(negative.value).toBe('city');
-    fireEvent.change(positive, { target: { value: '1.2::forest, rain::' } });
-    fireEvent.change(negative, { target: { value: 'desert' } });
-    const result = JSON.parse(screen.getByTestId('dynamic').textContent!);
-    expect(result.subject).toBe('manual, 1.2::forest, rain::');
-    expect(result.sections.sectionNegatives).toEqual({ 'directory:scene': 'desert' });
-    expect(result.sections.sectionMeta['directory:scene']).toMatchObject({ directoryName: '场景', directoryPath: ['环境', '场景'], source: 'manual' });
-    fireEvent.click(within(screen.getByRole('group', { name: '环境 / 场景' })).getAllByRole('button', { name: '清空当前提示词' })[0]);
-    expect(screen.getByRole('textbox', { name: '环境 / 场景' })).toBe(positive);
-    expect(positive.value).toBe('');
-  });
-  it.each([false, true])('动态目录的分类负面继承Medium锁定=%s，正词仍可编辑', negativeLocked => {
-    setup({ negativeLocked, sections: { 'directory:scene': 'forest', sectionNegatives: { 'directory:scene': 'city' }, sectionMeta: { 'directory:scene': { directoryName: '场景快照' } } }, supplementPrompt: 'forest' });
-    expect((screen.getByRole('textbox', { name: '场景快照 · 内容负面' }) as HTMLTextAreaElement).disabled).toBe(negativeLocked);
-    expect((screen.getByRole('textbox', { name: '场景快照' }) as HTMLTextAreaElement).disabled).toBe(false);
-  });
-  it('动态全局内容整段显示一次，编辑整段后分类清空且不丢手写内容', () => {
-    const Harness = () => {
-      const [prompt, setPrompt] = useState('artist:test');
-      const [subject, setSubject] = useState('manual, 1.2::forest, mist::');
-      const [sections, setSections] = useState<import('../../../types').PromptSections>({ extra: 'manual', 'directory:scene': '1.2::forest, mist::' });
-      return <><ChainEditorPromptInputs prompt={prompt} setPrompt={setPrompt} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject}
-        presetSources={{}} tagAssistEnabled={false} canEdit copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()} activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
-        <output data-testid="dynamic">{JSON.stringify({ subject, sections })}</output></>;
-    };
-    render(<Harness />);
-    const positive = screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement;
-    expect(positive.value).toBe('artist:test, manual, 1.2::forest, mist::');
-    fireEvent.change(positive, { target: { value: `${positive.value}, rain, ` } });
-    expect(positive.value).toBe('artist:test, manual, 1.2::forest, mist::, rain, ');
-    expect(JSON.parse(screen.getByTestId('dynamic').textContent!)).toEqual({ subject: '', sections: {} });
-  });
-  it('顶栏槽位替换或临时移除不丢失随机搭配的真实候选编辑', async () => {
-    const first = document.createElement('div'), second = document.createElement('div');
-    document.body.append(first, second);
-    const changed = vi.fn();
-    const content = (element: HTMLDivElement | null) => <PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}>
-      <PromptLibraryWorkspace state={{ params: LAB_DEFAULT_PARAMS, base: 'artist', subject: '', negative: '', classified: true }} onChange={changed}>
-        <ChainEditorPromptInputs promptClassificationEnabled prompt="artist" setPrompt={changed} presetSources={{}} tagAssistEnabled={false} canEdit
-          toolbarSlot={element ? { element, variant: element === first ? 'icon' : 'menu' } : null}
-          copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
-          activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />
-      </PromptLibraryWorkspace>
-    </PromptLibraryContext.Provider>;
-    const view = render(content(first));
-    try {
-      fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
-      const dialog = await screen.findByRole('dialog', { name: '搭配' });
-      const candidate = within(dialog).getByRole('textbox', { name: '场景内容' }) as HTMLTextAreaElement;
-      fireEvent.change(candidate, { target: { value: '保留这次候选 night forest' } });
-      const participate = within(dialog).getByRole('checkbox', { name: '参与「场景」的抽取' }) as HTMLInputElement;
-      fireEvent.click(participate);
-      expect(participate.checked).toBe(false);
-      view.rerender(content(second));
-      expect(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
-      expect(candidate.value).toBe('保留这次候选 night forest');
-      expect(participate.checked).toBe(false);
-      expect(second.contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(true);
-      view.rerender(content(null));
-      expect(screen.getByRole('dialog', { name: '搭配' })).toBe(dialog);
-      expect(candidate.value).toBe('保留这次候选 night forest');
-      expect(participate.checked).toBe(false);
-      expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
-      view.rerender(content(first));
-      expect(within(screen.getByRole('dialog', { name: '搭配' })).getByRole('textbox', { name: '场景内容' })).toBe(candidate);
-      expect(candidate.value).toBe('保留这次候选 night forest');
-      expect(changed).not.toHaveBeenCalled();
-    } finally { view.unmount(); first.remove(); second.remove(); }
-  });
-  it('有真实词库上下文时整段也不显示随机入口，分类按钮移入顶栏且不改提示词', () => {
-    const slot = document.createElement('div'), changed = vi.fn();
-    const props: ChainEditorPromptInputsProps = { prompt: '保留原文', setPrompt: changed, presetSources: {}, tagAssistEnabled: false, canEdit: true,
-      toolbarSlot: { element: slot, variant: 'icon' }, copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(), activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global' };
-    const content = (classified: boolean, canEdit = true) => <PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}>
-      <PromptLibraryWorkspace state={{ params: LAB_DEFAULT_PARAMS, base: props.prompt, subject: '', negative: '', classified }} onChange={changed}>
-        <div data-testid="topbar" ref={element => { element?.appendChild(slot); }} />
-        <ChainEditorPromptInputs {...props} canEdit={canEdit} promptClassificationEnabled={classified} />
-      </PromptLibraryWorkspace></PromptLibraryContext.Provider>;
-    const view = render(content(false));
-    expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
-    expect(screen.getByPlaceholderText('全局正面提示词')).toBeTruthy();
-    expect(screen.getByLabelText('全局正面提示词', { selector: 'textarea' })).toBe(screen.getByPlaceholderText('全局正面提示词'));
-    view.rerender(content(true));
-    expect(screen.getByTestId('topbar').contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(true);
-    expect(screen.getByRole('button', { name: '随机搭配' }).textContent).toBe('');
-    expect(screen.getByRole('button', { name: '随机搭配' }).querySelector('.lucide-dice-5')).not.toBeNull();
-    expect(document.querySelector('.lab-module-section')?.contains(screen.getByRole('button', { name: '随机搭配' }))).toBe(false);
-    props.toolbarSlot = { element: slot, variant: 'menu' };
-    view.rerender(content(true));
-    const menuButton = screen.getByRole('button', { name: '随机搭配' });
-    expect(menuButton.textContent).toBe('随机搭配');
-    expect(menuButton.classList.contains('w-full')).toBe(true);
-    expect(menuButton.classList.contains('text-left')).toBe(true);
-    view.rerender(content(true, false));
-    expect((screen.getByRole('button', { name: '随机搭配' }) as HTMLButtonElement).disabled).toBe(true);
-    view.rerender(content(false)); expect(screen.queryByRole('button', { name: '随机搭配' })).toBeNull();
-    expect((screen.getByPlaceholderText('全局正面提示词') as HTMLTextAreaElement).value).toBe(props.prompt);
-    expect(changed).not.toHaveBeenCalled();
-  });
-  it.each([false, true])('全局提示词沿用模块默认收起=%s，编辑内容保持挂载', collapsed => {
-    setup({ activeLabLayout: { collapsed: { prompt: collapsed } } });
-    expect(document.querySelector('details')?.open).toBe(!collapsed);
-    expect(screen.getByDisplayValue('original prompt')).toBeTruthy();
-  });
-  it.each([[false, true, false], [true, true, true], [true, false, false]])('分类编辑=%s、可编辑=%s 时场景镜头 Roll 入口显示=%s', (promptClassificationEnabled, canEdit, visible) => {
-    const onContentRollForGlobal = vi.fn();
-    const props = setup({ promptClassificationEnabled, canEdit, onContentRollForGlobal });
-    const button = screen.queryByRole('button', { name: '随机搭配' });
-    expect(Boolean(button)).toBe(visible);
-    if (button) { expect(screen.getByTestId('prompt-tools').contains(button)).toBe(true); fireEvent.click(button); expect(onContentRollForGlobal).toHaveBeenCalledOnce(); }
-    else expect(onContentRollForGlobal).not.toHaveBeenCalled();
-    expect(props.setPrompt).not.toHaveBeenCalled();
-    expect(props.markChange).not.toHaveBeenCalled();
-  });
-  it('整段与分类切换只改变展示，编辑整段后清除旧分栏，不丢逗号与换行', () => {
-    const Harness = () => {
-      const [classified, setClassified] = useState(false);
-      const [prompt, setPrompt] = useState('artist:test');
-      const [subject, setSubject] = useState('blue dress');
-      const [sections, setSections] = useState<import('../../../types').PromptSections>({ wardrobe: 'blue dress' });
-      return <><button onClick={() => setClassified(value => !value)}>切换</button><ChainEditorPromptInputs
-        prompt={prompt} setPrompt={setPrompt} supplementPrompt={subject} setSupplementPrompt={setSubject}
-        sections={sections} setSections={setSections} promptClassificationEnabled={classified} presetSources={{}} tagAssistEnabled={false} canEdit
-        copyPromptToClipboard={vi.fn()} markPresetSectionModified={vi.fn()} markChange={vi.fn()}
-        activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" /></>;
-    };
-    render(<Harness />);
-    expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('artist:test, blue dress');
-    fireEvent.click(screen.getByText('切换'));
-    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('blue dress');
-    fireEvent.click(screen.getByText('切换'));
-    fireEvent.change(screen.getByRole('textbox', { name: '全局正面提示词' }), { target: { value: 'red dress, \n' } });
-    expect((screen.getByRole('textbox', { name: '全局正面提示词' }) as HTMLTextAreaElement).value).toBe('red dress, \n');
-    fireEvent.click(screen.getByText('切换'));
-    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
-  });
-  it('清空和撤销位于既有复制旁，仅更新当前全局文本并恢复焦点', () => {
-    const mark = vi.fn(), preset = vi.fn();
-    const Harness = () => {
-      const [prompt, setPrompt] = useState('global prompt');
-      return <ChainEditorPromptInputs promptClassificationEnabled prompt={prompt} setPrompt={setPrompt} presetSources={{}} tagAssistEnabled={false} canEdit
-        copyPromptToClipboard={vi.fn()} markPresetSectionModified={preset} markChange={mark}
-        activeLabLayout={{ collapsed: {} }} mobileEditorTab="global" />;
-    };
-    render(<Harness />);
-    const group = within(screen.getByRole('group', { name: '画师串' }));
-    const textarea = group.getByRole('textbox') as HTMLTextAreaElement;
-    const clear = group.getByRole('button', { name: '清空当前提示词' });
-    expect(clear.parentElement!.parentElement!.contains(screen.getByTitle('复制画师串'))).toBe(true);
-    expect(textarea.parentElement!.contains(clear)).toBe(false);
-    fireEvent.click(clear); expect(textarea.value).toBe(''); expect(document.activeElement).toBe(textarea);
-    expect(preset).toHaveBeenLastCalledWith('base'); expect(mark).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: '撤销清空' })); expect(textarea.value).toBe('global prompt');
-  });
-  it('实验室未传入资料工具时维持复制按钮，输入及复制行为不变', () => {
-    const props = setup();
-    expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    fireEvent.click(screen.getByTitle('复制画师串'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
-    fireEvent.change(screen.getByRole('textbox', { name: '画师串' }), { target: { value: 'updated prompt' } });
-    expect(props.setPrompt).toHaveBeenCalledWith('updated prompt');
-    expect(props.markPresetSectionModified).toHaveBeenCalledWith('base');
-    expect(props.markChange).toHaveBeenCalledOnce();
-  });
+it('生产整段回调先保留全局与旧分类负面，再清旧结构，原正词仍完整', () => {
+  const Harness = () => {
+    const [prompt, setPrompt] = useState('artist:test'), [subject, setSubject] = useState('{{white dress}}, forest');
+    const [negative, setNegative] = useState('global bad');
+    const [sections, setSections] = useState<PromptSections>({ wardrobe: '{{white dress}}', 'directory:scene': 'forest',
+      sectionNegatives: { wardrobe: 'coat', 'directory:scene': 'city' } });
+    return <><ChainEditorPromptInputs {...defaults()} prompt={prompt} setPrompt={setPrompt} supplementPrompt={subject}
+      sections={sections} setSections={setSections} setSupplementPrompt={setSubject}
+      onPlainPromptChange={value => {
+        setNegative(getEditableGlobalNegative(negative, sections)); setPrompt(value); setSubject(''); setSections({});
+      }} /><output>{JSON.stringify({ negative, subject, sections })}</output></>;
+  };
+  render(<Harness />);
+  const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+  expect(input.value).toBe('artist:test, {{white dress}}, forest');
+  fireEvent.change(input, { target: { value: input.value + ', rain,\n' } });
+  expect(input.value).toBe('artist:test, {{white dress}}, forest, rain,\n');
+  expect(JSON.parse(screen.getByRole('status').textContent!)).toEqual({ negative: 'global bad, coat, city', subject: '', sections: {} });
+  fireEvent.change(input, { target: { value: input.value + 'night' } });
+  expect(JSON.parse(screen.getByRole('status').textContent!).negative).toBe('global bad, coat, city');
+});
 
-  it('提示词区不重复顶栏的识别和辅助入口，只读时仍可复制', () => {
-    const props = setup({ canEdit: false });
-    expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    expect(screen.getAllByRole('textbox').every(input => (input as HTMLTextAreaElement).disabled)).toBe(true);
-    expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
-    expect(screen.queryByRole('button', { name: '库导入' })).toBeNull();
-    fireEvent.click(screen.getByTitle('复制画师串'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
-  });
+it('显式整段回调保持原样，组件不另行清分栏或修改独立主体', () => {
+  const props = { ...defaults(), onPlainPromptChange: vi.fn(), setSections: vi.fn(), setSupplementPrompt: vi.fn() };
+  render(<ChainEditorPromptInputs {...props} />);
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'plain edit,\n' } });
+  expect(props.onPlainPromptChange).toHaveBeenCalledWith('plain edit,\n');
+  expect(props.setPrompt).not.toHaveBeenCalled(); expect(props.setSections).not.toHaveBeenCalled(); expect(props.setSupplementPrompt).not.toHaveBeenCalled();
+  expect(props.markPresetSectionModified).toHaveBeenCalledWith('base');
+  expect(props.markPresetSectionModified).toHaveBeenCalledWith('subject');
+});
 
-  it('旧主体首次编辑保留在补充栏，各分栏清空与撤销只改变本栏', () => {
-    const Harness = () => {
-      const [subject, setSubject] = useState('legacy subject');
-      const [sections, setSections] = useState<import('../../../types').PromptSections>();
-      return <><ChainEditorPromptInputs {...{
-        prompt: 'artist', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
-        promptClassificationEnabled: true,
-        copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
-        activeLabLayout: { collapsed: {} }, mobileEditorTab: 'global' as const,
-      }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} />
-      <output>{subject}</output></>;
-    };
-    render(<Harness />);
-    expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('legacy subject');
-    openPurposeGroup('主体与外观');
-    fireEvent.change(screen.getByRole('textbox', { name: '外貌与身体' }), { target: { value: 'silver_hair' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '服饰与配件' }), { target: { value: 'blue_dress' } });
-    expect(screen.getByRole('status').textContent).toBe('legacy subject, silver_hair, blue_dress');
-    const group = within(screen.getByRole('group', { name: '外貌与身体' }));
-    fireEvent.click(group.getAllByRole('button', { name: '清空当前提示词' })[0]);
-    expect(screen.getByRole('status').textContent).toBe('legacy subject, blue_dress');
-    fireEvent.click(group.getByRole('button', { name: '撤销清空' }));
-    expect(screen.getByRole('status').textContent).toBe('legacy subject, silver_hair, blue_dress');
-  });
+it.each([false, true])('全局提示词沿用模块默认收起=%s，编辑内容保持挂载', collapsed => {
+  render(<ChainEditorPromptInputs {...defaults()} activeLabLayout={{ collapsed: { prompt: collapsed } }} />);
+  expect(document.querySelector('details')?.open).toBe(!collapsed);
+  expect(screen.getByDisplayValue('original prompt')).toBeTruthy();
+});
 
-  it('助手只改合并文本后，不显示旧分栏；继续编辑也不覆盖助手的新内容', () => {
-    const setSubject = vi.fn();
-    setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject });
-    expect(screen.queryByRole('textbox', { name: '服饰' })).toBeNull();
-    expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('blue_dress');
-    openPurposeGroup('动作与关系');
-    fireEvent.change(screen.getByRole('textbox', { name: '动作与姿态' }), { target: { value: 'sitting' } });
-    expect(setSubject).toHaveBeenCalledWith('blue_dress, sitting');
-  });
+it('切页仅隐藏不卸载完整输入，不调用保存或合并', () => {
+  const props = defaults();
+  const view = render(<ChainEditorPromptInputs {...props} />);
+  const input = screen.getByRole('textbox');
+  view.rerender(<ChainEditorPromptInputs {...props} mobileEditorTab="character" />);
+  expect(screen.queryByRole('textbox')).toBeNull(); expect(document.body.contains(input)).toBe(true);
+  view.rerender(<ChainEditorPromptInputs {...props} />);
+  expect(screen.getByRole('textbox')).toBe(input);
+  expect(props.setPrompt).not.toHaveBeenCalled(); expect(props.markChange).not.toHaveBeenCalled();
+});
+
+it('完整主输入清空撤销与复制沿用既有操作，复制在只读时仍可用', () => {
+  const props = defaults();
+  const Harness = () => {
+    const [prompt, setPrompt] = useState('global prompt');
+    return <ChainEditorPromptInputs {...props} prompt={prompt} setPrompt={setPrompt} />;
+  };
+  const view = render(<Harness />);
+  const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+  const clear = screen.getByRole('button', { name: '清空当前提示词' });
+  expect(clear.parentElement!.parentElement!.contains(screen.getByTitle('复制全局正面提示词'))).toBe(true);
+  fireEvent.click(clear); expect(input.value).toBe(''); expect(document.activeElement).toBe(input);
+  fireEvent.click(screen.getByRole('button', { name: '撤销清空' })); expect(input.value).toBe('global prompt');
+  view.rerender(<ChainEditorPromptInputs {...props} canEdit={false} />);
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: '清空当前提示词' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: /识别|辅助|库导入/ })).toBeNull();
+  fireEvent.click(screen.getByTitle('复制全局正面提示词'));
+  expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局正面提示词');
 });

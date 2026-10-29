@@ -7,9 +7,9 @@ import { createPortal } from 'react-dom';
 import { BookOpen, BookmarkPlus, Dice5, RotateCcw, X } from 'lucide-react';
 import type { NAIParams, PromptChain } from '../types';
 import { t } from '../services/i18n';
-import { contentRead, isContentRecord } from '../services/contentRoll';
+import { contentRead, isContentRecord, type RollRow } from '../services/contentRoll';
 import { parsePromptLibraryTags, applyLibraryText, createCombinationData, createFragmentData, fragmentKindOf, FRAGMENT_LABELS, libraryEntryText, librarySectionOf, workspacePicks, type PromptFragmentKind, type PromptLibraryField, type PromptLibrarySection } from '../services/promptLibraryEntries';
-import { applyLibrarySelection, planLibrarySelection, type LibraryCompletionEdit, type PromptLibraryWorkspaceState } from '../services/promptLibraryApply';
+import { applyLibrarySelection, applyRollSelection, planLibrarySelection, type LibraryCompletionEdit, type PromptLibraryWorkspaceState, type RollApplyReceipt } from '../services/promptLibraryApply';
 import { prepareCollectedPrompt } from '../services/collectedPrompt';
 import type { PromptApplyMode } from '../services/promptApply';
 import type { ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
@@ -25,12 +25,14 @@ import { CollectionTagInput } from './inspiration/CollectionControls';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
 import { resolvePromptSections } from '../services/labWorkspace';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from '../services/characterPrompts';
-import { getEditableGlobalPrompt, mergePromptFields } from '../services/promptUtils';
+import { getEditableGlobalPrompt, getEditableGlobalNegative, mergePromptFields } from '../services/promptUtils';
 import { createUuid } from '../services/id';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
 import { getPromptLibraryEntryDirectoryIds, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
+import { LAB_PICTURE_PURPOSES, LAB_SUBJECT_PURPOSES } from '../services/labPromptLayout';
+import { diffPromptText } from '../services/agentPromptChanges.mjs';
 
 export interface PromptLibraryReadState {
   chainsLoading?: boolean;
@@ -70,7 +72,9 @@ function DirectoryStatus() {
   if (!library?.reloadDirectories || library.directories && !library.directoriesError) return null;
   return <p role={library.directoriesError ? 'alert' : 'status'} className="text-sm text-gray-500">{library.directoriesError || t('正在读取目录…')}{library.directoriesError && <ToolbarButton onClick={() => void library.reloadDirectories?.().catch(() => {})}>{t('重试')}</ToolbarButton>}</p>;
 }
-export interface WorkspaceAccess { state: PromptLibraryWorkspaceState; change: (next: PromptLibraryWorkspaceState) => void | Promise<void>; canUndo: boolean; undo: () => void; }
+export interface WorkspaceAccess { state: PromptLibraryWorkspaceState; change: (next: PromptLibraryWorkspaceState) => void | Promise<void>; canUndo: boolean; undo: () => void;
+  rollReceipt?: RollApplyReceipt; applyRoll?: (picks: Record<string, RollRow>, target: ContentRollTarget) => Promise<string[]>;
+}
 const WorkspaceContext = createContext<WorkspaceAccess | null>(null);
 
 export function PromptLibraryWorkspace({ state, onChange, active = true, register = false, onExternalChange, children }: {
@@ -80,27 +84,38 @@ export function PromptLibraryWorkspace({ state, onChange, active = true, registe
   const requestEnabled = useContext(PromptLibraryRequestEnabledContext);
   const runtime = useNaiRuntime();
   const [requested, setRequested] = useState<PromptChain | null>(null);
-  const [lastChange, setLastChange] = useState<{ before: PromptLibraryWorkspaceState; after: PromptLibraryWorkspaceState } | null>(null);
+  const [rollReceipt, setRollReceipt] = useState<RollApplyReceipt>();
+  const [lastChange, setLastChange] = useState<{ before: PromptLibraryWorkspaceState; after: PromptLibraryWorkspaceState; receiptBefore?: RollApplyReceipt } | null>(null);
   const canUndo = !!lastChange && state.params === lastChange.after.params && state.base === lastChange.after.base && state.subject === lastChange.after.subject && state.negative === lastChange.after.negative && state.classified === lastChange.after.classified;
-  const latest = useRef({ state, onChange, onExternalChange, canUndo, lastChange });
-  latest.current = { state, onChange, onExternalChange, canUndo, lastChange };
+  const latest = useRef({ state, onChange, onExternalChange, canUndo, lastChange, rollReceipt });
+  latest.current = { state, onChange, onExternalChange, canUndo, lastChange, rollReceipt };
   const change = useCallback(async (next: PromptLibraryWorkspaceState) => {
     const current = latest.current;
     await current.onChange(next);
-    setLastChange({ before: current.state, after: next });
+    setLastChange({ before: current.state, after: next, receiptBefore: current.rollReceipt });
   }, []);
+  const applyRoll = useCallback(async (picks: Record<string, RollRow>, target: ContentRollTarget) => {
+    const current = latest.current;
+    const result = applyRollSelection(current.state, picks, target, current.rollReceipt);
+    await change(result.state);
+    setRollReceipt(result.receipt);
+    return result.conflicts;
+  }, [change]);
   const externalChange = useCallback(async (next: PromptLibraryWorkspaceState) => {
     await latest.current.onExternalChange?.();
     await change(next);
   }, [change]);
   const undo = useCallback(() => {
     const current = latest.current;
-    if (current.canUndo && current.lastChange) void current.onChange(current.lastChange.before);
+    if (current.canUndo && current.lastChange) {
+      void current.onChange(current.lastChange.before);
+      setRollReceipt(current.lastChange.receiptBefore);
+    }
     setLastChange(null);
   }, []);
   const maxCharacters = getRuntimeNaiModelInfo(state.params.model, runtime).maxCharacters;
   const workspaceState = useMemo(() => ({ params: state.params, base: state.base, subject: state.subject, negative: state.negative, classified: state.classified, maxCharacters }), [state.params, state.base, state.subject, state.negative, state.classified, maxCharacters]);
-  const access = useMemo(() => ({ state: workspaceState, change, canUndo, undo }), [workspaceState, change, canUndo, undo]);
+  const access = useMemo(() => ({ state: workspaceState, change, canUndo, undo, rollReceipt, applyRoll }), [workspaceState, change, canUndo, undo, rollReceipt, applyRoll]);
   const registeredAccess = useMemo(() => ({ ...access, change: externalChange }), [access, externalChange]);
   const registerWorkspace = library?.registerWorkspace;
   useEffect(() => {
@@ -145,7 +160,7 @@ export function LibraryDialog({ title, onClose, children, busy = false, wide = f
   }, [active, busy, onClose, ref]);
   return <ImagePreviewPortal><div hidden={!active} className={active ? 'fixed inset-0 z-[1900] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm' : 'hidden'}>
     <div ref={ref} role="dialog" aria-modal="true" aria-label={t(title)} className={`content-library appearance-panel flex max-h-[90dvh] w-full ${wide ? 'max-w-[1400px]' : 'max-w-2xl'} flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900 ${className}`}>
-      <header data-toolbar-caption-host={caption ? 'true' : undefined} className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700 ${caption ? 'relative' : ''}`}><h2 className="min-w-0 flex-1 truncate font-semibold">{t(title)}</h2>{caption}{headerActions}<IconButton label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
+      <header data-toolbar-caption-host={caption ? 'true' : undefined} className={`flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-700 ${caption ? 'relative' : ''}`}><h2 className="min-w-0 flex-1 truncate font-semibold">{t(title)}</h2>{caption}{headerActions}<IconButton data-agent-action="browse" label="关闭" disabled={busy} onClick={onClose}><X /></IconButton></header>
       <div className={`min-h-0 ${bodyClassName}`}>{children}</div>
     </div>
   </div></ImagePreviewPortal>;
@@ -244,7 +259,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     <DirectoryStatus />
     {!onApplied && <><div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setTag(key === 'saved' ? '' : field.purposeId || ''); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
-    <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={setAllDirectories} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
+    <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={value => { setAllDirectories(value); setUnclassified(false); }} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
       <select aria-label={t(section === 'saved' ? '文件夹' : '用途 Tag')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{section === 'saved' ? tags.map(value => <option key={value} value={value}>{promptLibraryCategoryLabel(library?.categoryTree, value)}</option>) : PROMPT_PURPOSE_GROUPS.map(group => <optgroup key={group.id} label={t(group.label)}>{group.purposes.map(id => <option key={id} value={id}>{t(promptPurposeLabel(id))}</option>)}</optgroup>)}</select></div>
     <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && (library?.chainsLoading || library?.chainsError ? <PromptLibraryReadStatus {...library} /> : <p className="text-sm text-gray-500">{t('没有匹配的条目')}</p>)}</div></>}
     {onApplied && entry && <p className="text-sm font-semibold">{entry.name}</p>}
@@ -328,15 +343,15 @@ export function PromptLibraryFieldActions({ value, onText, field, disabled }: { 
 
 export interface PromptToolbarSlot { element: HTMLDivElement; variant: 'icon' | 'menu' }
 
-export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant = 'toolbar', toolbarSlot: triggerSlot }: { roleId?: string; disabled?: boolean; fallback?: () => void; variant?: 'toolbar' | 'icon' | 'menu'; toolbarSlot?: PromptToolbarSlot | null }) {
+export function PromptLibraryRandomButton({ roleId, purposes, disabled, fallback, variant = 'toolbar', toolbarSlot: triggerSlot }: { roleId?: string; purposes?: readonly PromptPurposeId[]; disabled?: boolean; fallback?: () => void; variant?: 'toolbar' | 'icon' | 'menu'; toolbarSlot?: PromptToolbarSlot | null }) {
   const library = usePromptLibrary();
   const workspace = useContext(WorkspaceContext);
   const active = useContext(ImageActivityContext);
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [rollConflict, setRollConflict] = useState(false);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const entryTarget = useMemo<ContentRollEntryTarget>(() => roleId ? { mode: 'existing', id: roleId } : { mode: 'global' }, [roleId]);
-  if (workspace && !workspace.state.classified) return null;
   if ((!library || !workspace) && !fallback) return null;
   variant = triggerSlot?.variant || variant;
   const onClick = () => { if (library && workspace) setOpen(true); else fallback?.(); };
@@ -349,11 +364,27 @@ export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant 
   return <>{placeTrigger(<>{!roleId && workspace.canUndo && (variant === 'menu'
     ? <ToolbarActionRow icon={<RotateCcw className="h-4 w-4" />} label="撤销上次填入" onClick={workspace.undo} />
     : <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>)}{trigger}</>)}
-    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><DirectoryStatus /><div ref={setToolbarSlot} className="flex items-center gap-2" />{!library.directoriesError && (!library.reloadDirectories || library.directories) && <ContentRollWorkspace active={active} chains={library.chains} chainsLoading={library.chainsLoading} chainsError={library.chainsError} onRetryChains={library.onRetryChains} categoryNames={library.categoryNames} categoryTree={library.categoryTree} directories={library.directories} embedded toolbarSlot={toolbarSlot} notify={setNotice}
-      playgroundParams={params} entryTarget={entryTarget}
-      onApplyRoll={async plan => { workspace.change(applyLibrarySelection({ before: workspace.state, params, plan })); return true; }}
+    {open && <LibraryDialog wide title="提示词搭配" className="content-roll-dialog" bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden" headerActions={<span className="content-roll-target truncate rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{roleId ? t('角色 {0}', [String((params.characters || []).findIndex(role => role.id === roleId) + 1)]) : t('全局提示词')}</span>} onClose={() => setOpen(false)}><DirectoryStatus /><div ref={setToolbarSlot} className="content-roll-dialog-tools border-b border-gray-200 dark:border-gray-800" />{!library.directoriesError && (!library.reloadDirectories || library.directories) && <ContentRollWorkspace active={active} chains={library.chains} chainsLoading={library.chainsLoading} chainsError={library.chainsError} onRetryChains={library.onRetryChains} categoryNames={library.categoryNames} categoryTree={library.categoryTree} directories={library.directories} embedded toolbarSlot={toolbarSlot} notify={setNotice} notice={rollConflict ? t('已保留手动修改的内容') : notice}
+      playgroundParams={params} entryTarget={entryTarget} allowedPurposes={purposes ?? (roleId ? LAB_SUBJECT_PURPOSES : LAB_PICTURE_PURPOSES)}
+      renderApplyPreview={(picks, target) => {
+        const result = applyRollSelection(workspace.state, picks, target, workspace.rollReceipt);
+        const blocks = roleId ? workspace.state.params.characters?.filter(role => role.id === roleId).flatMap(role => {
+          const next = result.state.params.characters?.find(item => item.id === role.id);
+          const before = compileCharacterContent(role);
+          return [{ key: `${role.id}:positive`, label: t('角色提示词'), before: before.prompt ?? '', after: next?.prompt || '' },
+            { key: `${role.id}:negative`, label: t('角色负面提示词'), before: before.negativePrompt ?? '', after: next?.negativePrompt || '' }];
+        }) || [] : [{ key: 'global:positive', label: t('全局正面提示词'), before: getEditableGlobalPrompt(workspace.state.base, workspace.state.subject), after: getEditableGlobalPrompt(result.state.base, result.state.subject) },
+          { key: 'global:negative', label: t('全局负面提示词'), before: getEditableGlobalNegative(workspace.state.negative, workspace.state.params._promptSections), after: result.state.negative }];
+        return <>{blocks.map(block => <div key={block.key} data-content-roll-apply-row={block.key} className="min-w-0"><span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{block.label}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800 dark:text-gray-100">{block.after ? diffPromptText(block.before, block.after).filter(part => part.kind !== 'delete').map((part, index) => <span key={index} data-roll-insert={part.kind === 'insert' || undefined} className={part.kind === 'insert' ? 'text-indigo-600 dark:text-indigo-300' : undefined}>{part.text}</span>) : t('空白')}</p></div>)}{result.conflicts.length > 0 && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t('已保留手动修改的内容')}</p>}</>;
+      }}
+      onApplyRoll={async (_plan, picks) => {
+        if (!workspace.applyRoll) return false;
+        const conflicts = await workspace.applyRoll(picks, entryTarget);
+        setRollConflict(conflicts.length > 0);
+        return true;
+      }}
       canUndo={workspace.canUndo} onUndoApply={async () => { workspace.undo(); return true; }}
       onSaveRoll={async (name, picks, _seed, _seeds, _copy, tags) => { await library.save(createCombinationData(name, picks, tags)); return name; }} />}
-      {notice && <p role="status" className="text-xs text-gray-500">{notice}</p>}</LibraryDialog>}
+      </LibraryDialog>}
   </>;
 }

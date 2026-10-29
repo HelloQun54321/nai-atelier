@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PromptLibraryCard } from '../../components/PromptLibraryCard';
 import { ToolbarButton } from '../../components/DesignSystem';
 import { createCombinationData, promptLibraryEntryLabel } from '../../services/promptLibraryEntries';
 import type { PromptChain } from '../../types';
+import { readAgentPage, operateAgentPage } from '../../services/agentWorkspace';
 
 vi.mock('../../components/SmartImage', () => ({ SmartImage: (props: React.ImgHTMLAttributes<HTMLImageElement> & { containerClassName?: string; thumbnailVariant?: string }) => {
   const { containerClassName, thumbnailVariant: _variant, ...image } = props;
@@ -14,6 +15,20 @@ vi.mock('../../components/SmartImage', () => ({ SmartImage: (props: React.ImgHTM
 vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'image-action', ImageShareActions: () => <button data-card-action>收藏</button> }));
 afterEach(cleanup);
 const chain = { id: 'fragment', name: '柔光', type: 'preset', basePrompt: 'soft light', previewImage: '/synthetic/landscape.png', tags: [], params: { _promptLibraryDirectoryIds: ['light'] } } as unknown as PromptChain;
+
+it('只读助手可打开真实资料卡片，但编辑与删除按钮不继承卡片browse', async () => {
+  const open = vi.fn(), edit = vi.fn(), remove = vi.fn();
+  render(<main data-agent-view="content-library"><PromptLibraryCard chain={chain} label="光照" onOpen={open} onEdit={edit} onDelete={remove} notify={vi.fn()} /></main>);
+  const page = readAgentPage();
+  const card = page.controls.find(control => control.label === '查看柔光')!;
+  await act(async () => { await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: card.id, permissionMode: 'read_only', timeoutMs: 200 }); });
+  expect(open).toHaveBeenCalledOnce();
+  for (const label of ['编辑柔光', '删除「柔光」']) {
+    const current = readAgentPage(), target = current.controls.find(control => control.label === label)!;
+    await expect(operateAgentPage({ action: 'click', snapshotId: current.snapshotId, controlId: target.id, permissionMode: 'read_only' })).rejects.toThrow('只读');
+  }
+  expect(edit).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+});
 
 it('按封面真实比例显示，换图不会沿用旧图片比例', () => {
   const props = { chain, label: '光照', onOpen: vi.fn(), notify: vi.fn() };

@@ -6,6 +6,53 @@ import { createDefaultPromptLibraryTree } from '../../services/promptLibraryTree
 import { PromptLibraryDirectoryPicker } from '../../components/PromptLibraryDirectoryPicker';
 afterEach(cleanup);
 
+it('手机浮层按需挂载目录且只保留一处标题，勾选仍使用完整目录语义', () => {
+  const width = window.innerWidth;
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+  try {
+    const change = vi.fn();
+    render(<PromptLibraryDirectoryPicker popover state={createDefaultPromptLibraryTree()} selectedIds={[]} allSelected onChange={change} onAllChange={vi.fn()} />);
+    expect(screen.queryByRole('checkbox', { name: '人物' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '全部目录' }));
+    expect(screen.getByRole('dialog', { name: '选择目录' })).toBeTruthy();
+    expect(screen.getAllByText('选择目录')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
+    expect(change).toHaveBeenCalledWith(['person']);
+  } finally {
+    cleanup();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  }
+});
+
+it('范围筛选选中所有根不代表全部，切回全部只调用范围回调，取消全部清选择', () => {
+  const state = createDefaultPromptLibraryTree(), change = vi.fn(), allChange = vi.fn();
+  const roots = state.nodes.filter(node => node.parentId === null).map(node => node.id);
+  function Harness() {
+    const [selectedIds, setSelectedIds] = useState(roots), [allSelected, setAllSelected] = useState(false);
+    return <PromptLibraryDirectoryPicker state={state} selectedIds={selectedIds} allSelected={allSelected} onAllChange={value => { allChange(value); setAllSelected(value); }} onChange={ids => { change(ids); setSelectedIds(ids); }} />;
+  }
+  render(<Harness />);
+  const all = screen.getByRole('checkbox', { name: '全部目录' }) as HTMLInputElement;
+  expect(all.checked).toBe(false);
+  fireEvent.click(all); expect(all.checked).toBe(true);
+  expect(allChange).toHaveBeenLastCalledWith(true); expect(change).not.toHaveBeenCalled();
+  fireEvent.click(all); expect(all.checked).toBe(false);
+  expect(allChange).toHaveBeenLastCalledWith(false); expect(change).toHaveBeenLastCalledWith([]);
+});
+
+it('归属编辑没有范围回调时，全选仍选择全部根节点并可取消', () => {
+  const state = createDefaultPromptLibraryTree(), change = vi.fn();
+  function Harness() {
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    return <PromptLibraryDirectoryPicker state={state} selectedIds={selectedIds} onChange={ids => { change(ids); setSelectedIds(ids); }} />;
+  }
+  render(<Harness />);
+  const all = screen.getByRole('checkbox', { name: '全部目录' }) as HTMLInputElement;
+  fireEvent.click(all); expect(all.checked).toBe(true);
+  expect(change).toHaveBeenLastCalledWith(state.nodes.filter(node => node.parentId === null).map(node => node.id));
+  fireEvent.click(all); expect(all.checked).toBe(false); expect(change).toHaveBeenLastCalledWith([]);
+});
+
 it('默认收起目录，摘要保留选中路径；展开与收起分支不修改归属', () => {
   const change = vi.fn();
   const view = render(<PromptLibraryDirectoryPicker state={createDefaultPromptLibraryTree()} selectedIds={['person-appearance']} onChange={change} />);

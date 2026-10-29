@@ -78,14 +78,11 @@ html:root[data-design-theme='nai-atelier'] .content-library [data-appearance='co
   color: var(--nai-on-action);
 }
 .content-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
-.content-library-roll-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: .75rem; }
-.content-library-roll-layout { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; }
 @container content-library (max-width: 850px) {
   .content-library-toolbar.workspace-command-bar { height: auto; flex-wrap: wrap; padding-block: .75rem; gap: .5rem; }
   .content-library-toolbar > [role='tablist'] { flex: 1; }
   .content-library-toolbar > [role='tablist'] > button { flex: 1; }
   .content-library-toolbar .content-library-tools { order: 3; flex-basis: 100%; }
-  .content-library-roll-layout { grid-template-columns: minmax(0, 1fr); }
 }
 @container content-library (max-width: 620px) {
   .prompt-library-hub { flex-direction: column; }

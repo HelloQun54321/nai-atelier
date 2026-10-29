@@ -1,5 +1,5 @@
 import type { PromptPurposeId } from './promptPurposes.mjs';
-import type { AgentPromptChange } from './agentPromptChanges.mjs';
+import { pickPromptVersionContent, type AgentPromptChange } from './agentPromptChanges.mjs';
 import { PromptAgentAction, PromptAgentDraft } from '../types';
 import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
@@ -15,6 +15,7 @@ const agentAuthHeaders = (): Record<string, string> => {
   const key = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '' : '';
   return key ? { Authorization: 'Bearer ' + key } : {};
 };
+const promptVersionPayload = (draft: PromptAgentDraft) => ({ ...pickPromptVersionContent(draft), ...(draft.target ? { target: draft.target } : {}) });
 
 export type AgentPermissionMode = 'read_only' | 'standard' | 'full';
 
@@ -220,7 +221,17 @@ export interface PromptAgentHistoryMessage {
 }
 
 export interface AgentPageRequest { requestId: string; operation: AgentPageOperation; clientId?: string; expiresAt?: number; claimId?: string }
+export interface AgentUserQuestion { id: string; prompt: string; options: Array<{ id: string; label: string; description?: string }> }
+export interface AgentQuestionRequest { requestId: string; runId: string; questions: AgentUserQuestion[] }
+export interface AgentQuestionAnswer { questionId: string; optionId?: string; customText?: string; label?: string }
+export interface AgentPromptApplication { beforeVersionId?: string; selectedAfter?: PromptAgentDraft }
+export type AgentPromptApplied = (before: PromptAgentDraft, after: PromptAgentDraft, application?: AgentPromptApplication) => void;
+export interface AgentPromptCheckpoint { versionId?: string; finish?: (after: PromptAgentDraft) => Promise<void> }
+export type AgentPromptBeforeApply = (before: PromptAgentDraft, after: PromptAgentDraft) => Promise<void | AgentPromptCheckpoint>;
+export const isAgentTaskRunning = (status?: string) => ['preparing', 'running', 'waiting_confirmation', 'waiting_user_input', 'executing'].includes(String(status));
 export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
+  | { type: 'request_question'; request: AgentQuestionRequest }
+  | { type: 'question_answered'; requestId: string; answered?: boolean; outcome?: string }
   | ({ type: 'ui_request' } & AgentPageRequest)
   | { type: 'ui_cancel'; requestId: string; clientId?: string }
   | { type: 'response_start'; id: string }
@@ -250,6 +261,7 @@ export interface PromptAgentTask {
   events?: PromptAgentEvent[];
   pending?: Array<{ requestId: string; approved: boolean; expiresAt: number; operation: { action: string; resourceId: string; payload: Record<string, unknown> } }>;
   pendingUI?: AgentPageRequest[];
+  pendingQuestions?: AgentQuestionRequest[];
   clientDraft?: PromptAgentDraft;
 }
 
@@ -625,12 +637,14 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>> & { promptChange?: Pick<AgentPromptChange, 'id' | 'status' | 'appliedChanges'> }): Promise<PromptAgentSession> => {
+  updateSession: async (sessionId: string, patch: Partial<Pick<PromptAgentSession, 'title' | 'provider' | 'model' | 'thinkingLevel'>> & { promptChange?: Pick<AgentPromptChange, 'id' | 'status' | 'appliedChanges'> & { beforeVersionId?: string; rawAfter?: PromptAgentDraft; selectedAfter?: PromptAgentDraft } }): Promise<PromptAgentSession> => {
     // 本地设置也可能遇到后台暂停，不能让发送与模型入口永久停留在保存状态。
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch), signal: controller.signal });
+      const change = patch.promptChange;
+      const payload = change ? { ...patch, promptChange: { ...change, ...(change.rawAfter ? { rawAfter: promptVersionPayload(change.rawAfter) } : {}), ...(change.selectedAfter ? { selectedAfter: promptVersionPayload(change.selectedAfter) } : {}) } } : patch;
+      const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
       if (!response.ok) return await readError(response) as never;
       return await response.json();
     } catch (reason) {
@@ -647,8 +661,17 @@ export const promptAgentService = {
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
-  control: async (sessionId: string, action: 'abort' | 'confirm' | 'finalize' | 'ui_result', message?: string, payload?: Record<string, unknown>) => {
+  control: async (sessionId: string, action: 'abort' | 'confirm' | 'finalize' | 'ui_result' | 'answer', message?: string, payload?: Record<string, unknown>) => {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });
+    if (!response.ok) return readError(response);
+  },
+  savePromptVersion: async (sessionId: string, input: { draft: PromptAgentDraft; afterDraft?: PromptAgentDraft; source: 'page'; reason: 'before_apply' | 'before_restore' | 'before_page_edit'; runId?: string; changeId?: string }): Promise<{ id: string; versionId: string; fingerprint: string }> => {
+    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}/prompt-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ ...input, draft: promptVersionPayload(input.draft), ...(input.afterDraft ? { afterDraft: promptVersionPayload(input.afterDraft) } : {}) }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  finishPromptVersion: async (sessionId: string, versionId: string, afterDraft: PromptAgentDraft): Promise<void> => {
+    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}/prompt-versions/${encodeURIComponent(versionId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ afterDraft: promptVersionPayload(afterDraft) }) });
     if (!response.ok) return readError(response);
   },
   pageControl: async (sessionId: string, action: 'ui_claim' | 'ui_context' | 'ui_result', payload: Record<string, unknown>): Promise<{ ok?: boolean; execute?: boolean; claimId?: string }> => {
@@ -668,7 +691,7 @@ export const promptAgentService = {
   executeProjectAction: async (action: { action: string; resourceId?: string; payload?: Record<string, unknown>; sessionId?: string; confirmationRequestId?: string }) => {
     const response = await fetch('/api/prompt-agent/project-action', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify(action) });
     if (!response.ok) return readError(response) as never;
-    return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string }>;
+    return response.json() as Promise<{ ok: boolean; action: string; resourceId?: string; success?: boolean; outcome?: string; partial?: boolean; completedCount?: number; failedCount?: number; resultId?: string; error?: string }>;
   },
   getSession: async (sessionId: string): Promise<PromptAgentHistoryMessage[]> => {
     const response = await fetch(`/api/prompt-agent/session?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });

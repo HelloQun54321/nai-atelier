@@ -190,13 +190,13 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
             {(!section || section === 'vibe') && params.vibes?.enabled && params.vibes.slots.length > 0 && (
                 <div>
                     <label className="mb-2 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-violet-500">
-                        Vibe Transfer ({params.vibes.slots.length})
+                        {t('氛围参考 ({0})', [params.vibes.slots.length])}
                     </label>
                     <div className="space-y-2">
                         {params.vibes.slots.map((slot, index) => (
                             <div key={`${slot.vibeId}-${slot.encodingId}-${index}`} className="rounded-lg border border-violet-100 bg-violet-50/60 p-2.5 dark:border-violet-900/60 dark:bg-violet-950/20">
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className="truncate text-xs font-bold text-violet-700 dark:text-violet-300">{slot.vibeName || `Vibe ${index + 1}`}</span>
+                                    <span className="truncate text-xs font-bold text-violet-700 dark:text-violet-300">{slot.vibeName || t('氛围参考 {0}', [index + 1])}</span>
                                     <span className="flex-none text-micro font-mono text-gray-500">{t("提取量 {0}", [slot.informationKnown === false ? t('未知') : slot.informationExtracted.toFixed(2)])}</span>
                                 </div>
                                 <p className="mt-1 text-micro text-gray-500">{t("原始强度 {0} · 有效强度 {1}", [slot.strength.toFixed(2), (slot.effectiveStrength ?? slot.strength).toFixed(2)])}</p>

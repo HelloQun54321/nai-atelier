@@ -8,6 +8,7 @@ import { DEFAULT_ROLL_CHARACTER_PROMPT, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_NEGATI
 import type { PromptChain } from '../../types';
 import { StyleRollPage } from '../../components/StyleRollPage';
 import { executeAgentCommand, getAgentCommands } from '../../services/agentCommands';
+import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { setLanguage } from '../../services/i18n';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), sampled: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false, setupHistory: false, ensureCollection: vi.fn(), favorites: new Set<string>(), collectionRevision: 0, collectionListeners: new Set<() => void>() }));
@@ -296,6 +297,28 @@ it('助手发起 Roll 时保存候选；generate=false 不投递收费生成', a
   expect(result.generationStarted).toBe(false);
   expect(mocks.save.mock.calls.length).toBeGreaterThan(before);
   expect(mocks.generate).not.toHaveBeenCalled();
+});
+it.each([{ ids: undefined }, { ids: ['a', 'b'] }])('助手补齐多项在连续生成关闭时明确拒绝且不创建部分轮次：%j', async ({ ids }) => {
+  experiment.rounds = [{ id: 'pending-round', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  const { container } = await setup({ continuousGenerationEnabled: false });
+  const before = mocks.save.mock.calls.length;
+  await expect(executeAgentCommand(container, 'generate_roll_pending', { ids }, false)).rejects.toThrow('连续生成已关闭，本次只能生成 1 张');
+  expect(mocks.save.mock.calls).toHaveLength(before); expect(mocks.generate).not.toHaveBeenCalled();
+  await act(async () => { await executeAgentCommand(container, 'generate_roll_pending', { ids: ['a'] }, false); });
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.generate.mock.calls[0][1].id).toBe('a');
+  expect(getAgentCommands(container).filter(command => ['run_roll_round', 'generate_roll_pending'].includes(command.name)).every(command => !JSON.stringify(command.parameters).includes('agentPermissionMode'))).toBe(true);
+});
+it.each(['standard', 'full', 'read_only'] as const)('通用Roll命令不能通过模型参数改变真实费用授权：%s', async permissionMode => {
+  mocks.cost = 5; mocks.confirm.mockResolvedValue(false); mocks.history.mockResolvedValue([]);
+  const { container } = await setup(); container.dataset.agentView = 'roll';
+  const page = readAgentPage();
+  const operation = { action: 'command' as const, command: 'generate_roll_pending', args: { ids: ['a'], agentPermissionMode: permissionMode === 'full' ? 'standard' : 'full' }, permissionMode, snapshotId: page.snapshotId };
+  if (permissionMode === 'read_only') await expect(operateAgentPage(operation)).rejects.toThrow('只读');
+  else await act(async () => { await operateAgentPage(operation); });
+  expect(mocks.confirm).toHaveBeenCalledTimes(permissionMode === 'standard' ? 1 : 0);
+  expect(mocks.generate).toHaveBeenCalledTimes(permissionMode === 'full' ? 1 : 0);
 });
 
 it('手机390px工具栏可横向滚动，主操作固定在滚动区外并保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
@@ -1088,7 +1111,7 @@ it('图包广播刷新完整目录，迟到旧响应不覆盖新目录，失败�
   expect(screen.getByRole('searchbox', { name: '搜索画师' })).toHaveProperty('value', 'pack');
   mocks.dictionary.mockRejectedValueOnce(new Error('图包目录读取失败'));
   act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
-  await screen.findByText('图包目录读取失败');
+  await within(screen.getByRole('dialog', { name: 'Roll 画师' })).findByText('图包目录读取失败');
   expect(screen.getByRole('button', { name: '锁定画师：pack_new' })).toBeTruthy();
   expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });

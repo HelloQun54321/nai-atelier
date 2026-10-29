@@ -1,3 +1,4 @@
+import { compilePrompt, getGlobalPromptSectionKeys, normalizeAgentLabDraft, restoreUnchangedAgentLabFields } from './agentLabSync.mjs';
 // 差异只保存提示词及其来源；恢复时按字段核对，不覆盖生成参数与后来手改。
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -12,7 +13,7 @@ export function createAgentPromptChange(before, after, id = '') {
   const changes = [];
   const visit = (a, b, path, index) => {
     if (same(a, b)) return;
-    if (object(a) || object(b)) {
+    if (object(a) && object(b)) {
       for (const key of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) {
         if (!reserved.has(key)) visit(a?.[key], b?.[key], [...path, key]);
       }
@@ -33,7 +34,7 @@ export function createAgentPromptChange(before, after, id = '') {
   }
   const sectionText = draft => {
     const sections = draft.params?._promptSections || {};
-    return [...['appearance', 'wardrobe', 'pose', 'scene', 'camera', 'extra'], ...Object.keys(sections).filter(key => /^(directory|purpose):/.test(key))].map(key => sections[key]?.trim()).filter(Boolean).join(', ');
+    return getGlobalPromptSectionKeys(sections).map(key => sections[key]?.trim()).filter(Boolean).join(', ');
   };
   for (const change of changes) {
     const { path } = change;
@@ -62,7 +63,7 @@ export function validateAgentPromptChanges(changes) {
   for (const { path, index } of changes) {
     if (!Array.isArray(path) || !path.length || path.length > 9 || path.some(key => typeof key !== 'string' || reserved.has(key))) throw new Error('无效的提示词差异');
     const global = ['basePrompt', 'subjectPrompt', 'negativePrompt'].includes(path[0]) && path.length === 1;
-    const section = path[0] === 'params' && ['_promptSections', '_characterSectionsNegatives'].includes(path[1]) && path.length > 2;
+    const section = path[0] === 'params' && ['_promptSections', '_characterSectionsNegatives'].includes(path[1]) && path.length >= 2;
     const offset = path[0] === 'modules' ? 1 : path[0] === 'params' && path[1] === 'characters' ? 2 : 0;
     const item = offset && /^(id:.+|index:\d+)$/.test(path[offset] || '') && (path.length === offset + 1 || (offset === 1 ? moduleFields : characterFields).includes(path[offset + 1]));
     if (!global && !section && !item || index !== undefined && (!Number.isInteger(index) || index < 0)) throw new Error('无效的提示词差异');
@@ -101,6 +102,104 @@ export function applyAgentPromptChange(current, change, direction) {
   // 数组删除先从末尾开始；新增按原位置恢复，角色重排仍按 ID 找到原对象。
   for (const item of [...changes].sort((a, b) => a[to] === undefined && b[to] === undefined ? (b.index ?? 0) - (a.index ?? 0) : (a.index ?? 0) - (b.index ?? 0))) write(result, item, item[to]);
   return result;
+}
+
+const versionCharacterFields = ['id', 'name', 'enabled', ...characterFields];
+const versionModuleFields = ['id', 'name', 'content', 'isActive', 'position', 'group'];
+const versionParamFields = ['_promptSections', '_characterSectionsNegatives', '_styleBundleSources'];
+const selectFields = (value, fields) => Object.fromEntries(fields.filter(key => value?.[key] !== undefined).map(key => [key, structuredClone(value[key])]));
+const assertVersionValue = value => {
+  const serialized = JSON.stringify(value);
+  if (!serialized || serialized.length > 500_000) throw new Error('提示词版本过大或无效');
+  const visit = (item, depth = 0) => {
+    if (depth > 20) throw new Error('提示词版本嵌套过深');
+    if (item && typeof item === 'object') for (const key of Object.keys(item)) {
+      if (reserved.has(key)) throw new Error('无效的提示词版本字段');
+      visit(item[key], depth + 1);
+    }
+  };
+  visit(value);
+};
+
+/** 仅存创作正文及来源，角色坐标、生成参数与图片仍由当前工作区持有。 */
+export function pickPromptVersionContent(input) {
+  if (!object(input)) throw new Error('提示词版本无效');
+  const modules = input.modules ?? [], characters = input.params?.characters ?? [];
+  if (!Array.isArray(modules) || !Array.isArray(characters) || [...modules, ...characters].some(item => !object(item))) throw new Error('提示词版本的模块或角色无效');
+  const content = {
+    basePrompt: input.basePrompt ?? '',
+    subjectPrompt: input.subjectPrompt ?? input.variableValues?.subject ?? '',
+    negativePrompt: input.negativePrompt ?? '',
+    modules: modules.map(item => selectFields(item, versionModuleFields)),
+    params: { ...selectFields(input.params, versionParamFields), characters: characters.map(item => selectFields(item, versionCharacterFields)) },
+    ...(input.variableValues !== undefined ? { variableValues: structuredClone(input.variableValues) } : {}),
+  };
+  if (['basePrompt', 'subjectPrompt', 'negativePrompt'].some(key => typeof content[key] !== 'string')) throw new Error('提示词版本正文无效');
+  assertVersionValue(content);
+  return content;
+}
+
+const sortVersionKeys = value => Array.isArray(value) ? value.map(sortVersionKeys) : object(value)
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sortVersionKeys(value[key])])) : value;
+
+/** raw旧分栏与模型整段稿按同一可见内容核对；数组顺序仍属于版本事实。 */
+export function canonicalPromptVersionContent(input) {
+  return sortVersionKeys(pickPromptVersionContent(normalizeAgentLabDraft(pickPromptVersionContent(input))));
+}
+
+/** 恢复前核对完整提示词投影，任何手改冲突都只报告、不覆盖。 */
+export function restorePromptVersion(current, snapshot, expected) {
+  const before = pickPromptVersionContent(current), desired = pickPromptVersionContent(snapshot), baseline = pickPromptVersionContent(expected);
+  if (same(sortVersionKeys(before), sortVersionKeys(desired))) return { ok: true, draft: structuredClone(current) };
+  const conflicts = [];
+  const inspect = (a, b, path) => {
+    if (same(a, b)) return;
+    if (object(a) && object(b)) for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) inspect(a[key], b[key], [...path, key]);
+    else conflicts.push(path.join('.'));
+  };
+  inspect(canonicalPromptVersionContent(before), canonicalPromptVersionContent(baseline), []);
+  if (conflicts.length) return { ok: false, conflicts };
+  const draft = structuredClone(current);
+  draft.basePrompt = desired.basePrompt; draft.negativePrompt = desired.negativePrompt;
+  if ('subjectPrompt' in current || !('variableValues' in current)) draft.subjectPrompt = desired.subjectPrompt;
+  if ('variableValues' in current || 'variableValues' in desired) draft.variableValues = { ...(desired.variableValues || {}), subject: desired.subjectPrompt };
+  draft.modules = desired.modules.map((module, index) => {
+    const previous = current.modules?.find((item, offset) => itemKey(item, offset) === itemKey(module, index));
+    return { ...selectFields(previous, Object.keys(previous || {}).filter(key => !versionModuleFields.includes(key))), ...module };
+  });
+  draft.params = { ...(draft.params || {}) };
+  for (const key of versionParamFields) {
+    if (desired.params[key] === undefined) delete draft.params[key]; else draft.params[key] = structuredClone(desired.params[key]);
+  }
+  draft.params.characters = desired.params.characters.map((character, index) => {
+    const previous = current.params?.characters?.find((item, offset) => itemKey(item, offset) === itemKey(character, index));
+    return { ...(previous ? selectFields(previous, Object.keys(previous).filter(key => !versionCharacterFields.includes(key))) : { x: 0.5, y: 0.5 }), ...character };
+  });
+  return { ok: true, draft };
+}
+
+/** 核验声明修改在模型视图中的实际子集，再保留整段应用伴随的旧分栏清理。 */
+export function createAppliedAgentPromptChange(declared, rawBefore, rawAfter, selectedAfter = rawAfter) {
+  validateAgentPromptChanges(declared.changes);
+  if (declared.target && [rawBefore, rawAfter].some(draft => draft.target?.chainId !== declared.target.chainId || draft.target?.mode !== declared.target.mode)) throw new Error('实际提示词修改不属于本次作品与模式');
+  const before = pickPromptVersionContent(rawBefore), after = pickPromptVersionContent(rawAfter);
+  const visibleBefore = normalizeAgentLabDraft(before), visibleAfter = normalizeAgentLabDraft(pickPromptVersionContent(selectedAfter));
+  const visibleChanges = createAgentPromptChange(visibleBefore, visibleAfter).changes;
+  const declaredValue = change => change.after === undefined ? undefined
+    : change.path[0] === 'params' && change.path[1] === 'characters' && change.path.length === 3 ? selectFields(change.after, versionCharacterFields)
+      : change.path[0] === 'modules' && change.path.length === 2 ? selectFields(change.after, versionModuleFields) : change.after;
+  if (visibleChanges.some(item => !declared.changes.some(original => same(original.path, item.path) && same(declaredValue(original), item.after)))) throw new Error('实际提示词修改超出本次声明范围');
+  const permitted = restoreUnchangedAgentLabFields(before, visibleAfter);
+  if (declared.target?.mode && declared.target.mode !== 'text-to-image') {
+    permitted.basePrompt = compilePrompt(permitted, permitted.subjectPrompt);
+    permitted.subjectPrompt = ''; permitted.modules = [];
+  }
+  if (!same(pickPromptVersionContent(permitted), after)) throw new Error('实际提示词来源或分栏与本次修改不匹配');
+  const changeDraft = (raw, projected) => ({ ...projected, target: raw.target, params: { ...projected.params,
+    characters: (projected.params.characters || []).map((character, index) => ({ ...character, ...selectFields(raw.params?.characters?.[index], ['x', 'y']) })),
+  } });
+  const applied = createAgentPromptChange(changeDraft(rawBefore, before), changeDraft(rawAfter, after), declared.id);
+  return { ...declared, status: 'applied', appliedChanges: applied.changes };
 }
 
 // 英文按词、其他文字按字符匹配，保留权重、重复词和换行；共同部分只在展示时折叠。

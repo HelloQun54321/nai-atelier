@@ -68,3 +68,14 @@ it('固定用途的名称与含义均具有四语翻译', () => {
 it('大区与原有分类名称使用四语翻译', () => {
   for (const key of [...PROMPT_PURPOSE_GROUPS.map(group => group.label), '原有分类']) expect((dictionary as Record<string, string[]>)[key], key).toHaveLength(4);
 });
+
+it('搭配工作台状态与操作文案具有完整四语译文和一致变量', () => {
+  for (const key of ["提示词搭配", "参与 {0} / {1} 项", "参与用途", "可抽取", "本次结果", "等待抽取", "暂无可抽取片段", "可手写或选择片段", "当前范围没有可随机抽取的片段，可更换目录或手写。", "请选择参与抽取的用途", "{0} 条未参与随机", "查看原因", "已固定 {0} 项", "填入预览", "收起全文", "展开全文", "保留原有画风与未参与内容", "读取失败"]) {
+    const values = (dictionary as Record<string, string[]>)[key];
+    expect(values, key).toHaveLength(4);
+    for (const value of values) {
+      expect(value.trim(), key).not.toBe('');
+      expect(value.match(/\{\d+\}/g) || [], key).toEqual(key.match(/\{\d+\}/g) || []);
+    }
+  }
+});

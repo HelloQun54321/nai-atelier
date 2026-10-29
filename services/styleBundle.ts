@@ -71,7 +71,7 @@ const sources = (value: unknown) => {
   return normalized;
 };
 const stringMap = (value: unknown, max = 100): Record<string, string> => Object.fromEntries(Object.entries(object(value)).map(([key, value]) => [text(key, max), text(value)]));
-const creativeSnapshotKeys = new Set(['format', 'version', 'savedAt', 'algo', 'roles', 'global', 'key', 'name', 'provided', 'sections', 'negatives', 'meta', 'text', 'note', 'source', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryTags', 'needsReview', 'negative', 'roll', 'seed', 'seeds', 'checks', 'locks', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra', 'items', 'unitId', 'directoryId', 'directoryName', 'directoryPath', 'scope', 'constraintNotes']);
+const creativeSnapshotKeys = new Set(['format', 'version', 'savedAt', 'algo', 'roles', 'global', 'key', 'name', 'provided', 'sections', 'negatives', 'meta', 'text', 'note', 'source', 'entryType', 'entryName', 'entryBasePrompt', 'entryBilingual', 'entryDescription', 'entryTags', 'needsReview', 'negative', 'roll', 'seed', 'seeds', 'checks', 'locks', 'appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra', 'presentation', 'items', 'unitId', 'directoryId', 'directoryName', 'directoryPath', 'scope', 'constraintNotes']);
 const creativeSnapshot = (value: unknown, depth = 0): unknown => {
   if (depth > 12) return fail('内容快照层级过深');
   if (value === null || typeof value === 'boolean') return value;
@@ -82,7 +82,7 @@ const creativeSnapshot = (value: unknown, depth = 0): unknown => {
 };
 const sections = (value: unknown) => {
   const item = object(value), result: Record<string, unknown> = {};
-  for (const key of Object.keys(item).filter(key => ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra'].includes(key) || isCreativeSectionKey(key))) result[key] = text(item[key]);
+  for (const key of Object.keys(item).filter(key => ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera', 'extra', 'presentation'].includes(key) || isCreativeSectionKey(key))) result[key] = text(item[key]);
   if (item.sectionNegatives !== undefined) result.sectionNegatives = stringMap(item.sectionNegatives);
   if (item.sectionMeta !== undefined) result.sectionMeta = Object.fromEntries(Object.entries(object(item.sectionMeta)).map(([key, value]) => {
     const meta = object(value); return [text(key, 100), {

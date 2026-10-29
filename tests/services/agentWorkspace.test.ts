@@ -191,6 +191,85 @@ it('横向滚动作用于实际滚动容器，原生按钮按回车只执行一�
   const click = vi.fn(); document.querySelector('button')!.onclick = click;
   const page = readAgentPage(); await operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' }); expect(click).toHaveBeenCalledOnce();
 });
+it.each([false, true])('单字段搜索回车提交一次，已处理按键不重复提交：%s', async handled => {
+  document.body.innerHTML = '<main data-agent-view="pixiv"><form><input type="search" aria-label="搜索 Pixiv" value="sky"></form></main>';
+  const form = document.querySelector('form')!, input = document.querySelector('input')!;
+  const submit = vi.fn((event: Event) => event.preventDefault()); form.addEventListener('submit', submit);
+  if (handled) input.addEventListener('keydown', event => { event.preventDefault(); form.requestSubmit(); });
+  const page = readAgentPage();
+  await operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' });
+  expect(submit).toHaveBeenCalledOnce();
+});
+it.each([
+  '<form><input aria-label="Prompt"><button type="submit" data-agent-action="business">生成图片</button></form>',
+  '<form><input type="search" aria-label="搜索"><button type="submit" data-agent-action="business">确认</button></form>',
+  '<form data-agent-action="business"><input type="search" aria-label="搜索"></form>',
+  '<form><input type="search" aria-label="搜索"><input type="password"></form>',
+])('回车不隐式提交业务确认、私密或普通文本表单：%s', async content => {
+  document.body.innerHTML = `<main data-agent-view="playground">${content}</main>`;
+  const submit = vi.fn((event: Event) => event.preventDefault()); document.querySelector('form')!.addEventListener('submit', submit);
+  const page = readAgentPage();
+  await operateAgentPage({ action: 'press', snapshotId: page.snapshotId, controlId: page.controls[0].id, key: 'Enter' });
+  expect(submit).not.toHaveBeenCalled();
+});
+it.each(['full', 'standard', 'read_only', undefined] as const)('页面命令授权由可信操作注入，模型不能扩权：%s', async permissionMode => {
+  document.body.innerHTML = '<main data-agent-view="roll"><section id="scope"></section></main>';
+  const execute = vi.fn(() => ({ ok: true }));
+  const release = registerAgentCommand({ name: 'permission_test', label: '状态', description: '', parameters: {}, readOnly: true, scope: () => document.getElementById('scope'), execute });
+  try {
+    const page = readAgentPage();
+    await operateAgentPage({ action: 'command', command: 'permission_test', args: { agentPermissionMode: 'full', tag: 'alpha' }, permissionMode, snapshotId: page.snapshotId });
+    expect(execute).toHaveBeenCalledWith({ tag: 'alpha', agentPermissionMode: permissionMode || 'standard' }, undefined);
+  } finally { release(); }
+});
+it.each(['read_only', 'standard', 'full'] as const)('缓存容量零档“关闭”是设置写入，不因名称放行只读：%s', async permissionMode => {
+  document.body.innerHTML = '<main data-agent-view="history"><button>关闭</button></main>';
+  const write = vi.fn(() => { document.querySelector('button')!.textContent = '已关闭缓存'; });
+  document.querySelector('button')!.onclick = write;
+  const page = readAgentPage();
+  const operation = { action: 'click' as const, snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode };
+  if (permissionMode === 'read_only') await expect(operateAgentPage(operation)).rejects.toThrow('只读');
+  else await operateAgentPage(operation);
+  expect(write).toHaveBeenCalledTimes(permissionMode === 'read_only' ? 0 : 1);
+});
+it.each([
+  '<button>打开设置并保存</button>', '<button>Close</button>',
+  '<button role="tab">选中并保存</button>', '<button aria-haspopup="dialog">写入</button>',
+  '<details><summary>查看并写入</summary></details>', '<img alt="查看图片" src="/synthetic.png">',
+  '<div data-agent-action="browse"><button>子控件写入</button></div>',
+])('名称、角色、弹出属性与祖先browse不能赋予只读点击权限：%s', async content => {
+  document.body.innerHTML = `<main data-agent-view="history">${content}</main>`;
+  const target = document.querySelector<HTMLElement>('button,summary,img')!;
+  const write = vi.fn(); target.onclick = write;
+  const page = readAgentPage();
+  await expect(operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' })).rejects.toThrow('只读');
+  expect(write).not.toHaveBeenCalled();
+});
+it.each(['展开目录', 'Close', '戻る', '뒤로', '返回圖片'])('显式browse浏览与关闭不依赖界面语言：%s', async label => {
+  document.body.innerHTML = `<main data-agent-view="history"><button data-agent-action="browse">${label}</button></main>`;
+  const browse = vi.fn(() => { document.querySelector('button')!.textContent = 'done'; }); document.querySelector('button')!.onclick = browse;
+  const page = readAgentPage();
+  await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' });
+  expect(browse).toHaveBeenCalledOnce();
+});
+it('只读可选择显式browse手机目录，但不能修改上级目录或归属', async () => {
+  document.body.innerHTML = '<main data-agent-view="history"><select data-agent-action="browse" aria-label="浏览目录"><option value="a">A</option><option value="b">B</option></select><select aria-label="上级目录"><option value="a">A</option><option value="b">B</option></select><input type="checkbox" aria-label="资料归属"></main>';
+  const page = readAgentPage();
+  await operateAgentPage({ action: 'select', snapshotId: page.snapshotId, controlId: page.controls[0].id, value: 'b', permissionMode: 'read_only' });
+  const next = readAgentPage();
+  expect(next.controls[0].value).toBe('b');
+  await expect(operateAgentPage({ action: 'select', snapshotId: next.snapshotId, controlId: next.controls[1].id, value: 'b', permissionMode: 'read_only' })).rejects.toThrow('只读');
+  await expect(operateAgentPage({ action: 'check', snapshotId: next.snapshotId, controlId: next.controls[2].id, checked: true, permissionMode: 'read_only' })).rejects.toThrow('只读');
+});
+it.each(['business', 'private', 'surface'])('browse不能越过业务确认或私密边界：%s', async kind => {
+  const attribute = kind === 'business' ? 'data-agent-action="business"' : `data-agent-${kind}="true"`;
+  document.body.innerHTML = `<main data-agent-view="history"><div ${attribute}><button data-agent-action="browse">Close</button></div></main>`;
+  const write = vi.fn(); document.querySelector('button')!.onclick = write;
+  const page = readAgentPage();
+  if (kind === 'business') await expect(operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id, permissionMode: 'read_only' })).rejects.toThrow('不可操作');
+  else expect(page.controls).toEqual([]);
+  expect(write).not.toHaveBeenCalled();
+});
 it('查看生成历史和打开保存菜单不误当执行生图，普通保存有真实点击回执', async () => {
   document.body.innerHTML = '<main data-agent-view="history"><button>查看生成于昨天的图片</button><button aria-haspopup="dialog">保存风格串</button><button>保存</button><button data-agent-action="business">生成</button></main>';
   const page = readAgentPage();
@@ -199,6 +278,16 @@ it('查看生成历史和打开保存菜单不误当执行生图，普通保存�
   const button = document.querySelectorAll('button')[2]; button.onclick = () => { button.textContent = '已保存'; };
   const receipt = await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[2].id });
   expect(receipt.controls[2].label).toBe('已保存');
+});
+it.each(['AI看图提取', '按文字分类', 'AI生成片段', 'AI生成搭配', '保存组合'])('普通创作入口可点击而实际生图仍由业务工具执行：%s', async label => {
+  document.body.innerHTML = `<main data-agent-view="content-library"><button>${label}</button><button data-agent-action="business">生成图片</button></main>`;
+  const click = vi.fn(() => { document.querySelector('button')!.textContent = '已打开'; }); document.querySelector('button')!.addEventListener('click', click);
+  const page = readAgentPage();
+  expect(page.controls[0].actions).toContain('click'); expect(page.controls[1].actions).not.toContain('click');
+  await operateAgentPage({ action: 'click', snapshotId: page.snapshotId, controlId: page.controls[0].id });
+  expect(click).toHaveBeenCalledOnce();
+  const next = readAgentPage();
+  await expect(operateAgentPage({ action: 'click', snapshotId: next.snapshotId, controlId: next.controls[1].id })).rejects.toThrow('需使用业务工具');
 });
 it('泛称确认也不能代替用户批准，取消始终可以操作', () => {
   document.body.innerHTML = '<div role="alertdialog" aria-label="费用确认"><button>继续</button><button data-agent-action="browse">取消</button></div>';
@@ -234,6 +323,18 @@ it('登记的操作只属于可见工作区，隐藏目标与只读修改均拒�
     document.getElementById('canvas-scope')!.hidden = true;
     expect(readAgentPage().commands).toEqual([]);
     await expect(operateAgentPage({ action: 'command', command: 'edit_test_canvas', snapshotId: readAgentPage().snapshotId })).rejects.toThrow('没有这个操作');
+  } finally { release(); }
+});
+
+it('版本命令会话身份取可信operation上下文，模型args伪造的会话无效', async () => {
+  document.body.innerHTML = '<main data-agent-view="playground"><div id="version-scope"></div></main>';
+  const execute = vi.fn(async (args: Record<string, unknown>) => args);
+  const release = registerAgentCommand({ name: 'restore_prompt_version', label: '恢复版本', description: '', parameters: {}, scope: () => document.getElementById('version-scope'), execute });
+  try {
+    await operateAgentPage({ action: 'command', command: 'restore_prompt_version', snapshotId: readAgentPage().snapshotId, agentSessionId: 'trusted-session', args: { sessionId: 'forged-session', agentSessionId: 'forged-trusted' } });
+    expect(execute.mock.calls[0][0]).toMatchObject({ agentSessionId: 'trusted-session' });
+    await operateAgentPage({ action: 'command', command: 'restore_prompt_version', snapshotId: readAgentPage().snapshotId, args: { agentSessionId: 'forged-trusted' } });
+    expect(execute.mock.calls[1][0].agentSessionId).toBeUndefined();
   } finally { release(); }
 });
 

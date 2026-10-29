@@ -112,7 +112,7 @@ export const ToolbarPopover: React.FC<{
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    {iconOnly ? <IconButton label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
+    {iconOnly ? <IconButton data-agent-action="browse" label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton data-agent-action="browse" disabled={disabled} active={active ?? countValue > 0} onClick={() => setOpen(!open)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className="mobile-touch !px-2.5 md:!px-3">
       {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
     </ToolbarButton>}
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} zIndex={zIndex} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} zIndex={zIndex} onClose={close}>{content}</AnchoredToolbarPopover>)}
