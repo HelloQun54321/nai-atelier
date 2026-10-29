@@ -1,6 +1,6 @@
 import { isCreativeSectionKey, type PurposeSectionKey } from './promptPurposes.mjs';
 ﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
-import { KINDS, META } from './contentRoll';
+import { KINDS, META, rollSectionKey, isRollSectionKey } from './contentRoll';
 import type { RollRow } from './contentRoll';
 import { CHARACTER_SECTION_KEYS } from './characterPrompts';
 
@@ -52,6 +52,8 @@ export const enabledCharactersOf = (params: NAIParams | null | undefined): Chara
   charactersOf((params || {}) as NAIParams).filter(item => item.enabled !== false);
 
 export interface ContentRollApplyRow {
+  itemId?: string;
+  targetScope?: 'global' | 'character';
   kind: string;
   title: string;
   /** 目标该栏当前值（角色分栏或全局栏位） */
@@ -152,11 +154,12 @@ export const planContentRollApply = (
   const kept: string[] = [];
 
   const legacyKeys = target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS;
-  const keys = Object.keys(picks).some(isCreativeSectionKey)
-    ? Object.keys(picks).filter(key => isCreativeSectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
-  for (const kind of keys) {
-    const meta = META[kind] || { title: picks[kind]?.directoryName || picks[kind]?.title || kind, scope: picks[kind]?.scope || 'global' };
-    const row = picks[kind];
+  const keys = Object.keys(picks).some(isRollSectionKey)
+    ? Object.keys(picks).filter(key => isRollSectionKey(key) || legacyKeys.includes(key)) : legacyKeys;
+  for (const itemId of keys) {
+    const kind = rollSectionKey(itemId);
+    const row = picks[itemId];
+    const meta = META[kind] || { title: row?.directoryName || row?.title || kind, scope: row?.scope || 'global' };
     const next = textOfRow(row);
     const negative = negativeOfRow(row);
     const isGlobal = target.mode === 'global' || (row?.scope || meta.scope) === 'global';
@@ -165,15 +168,19 @@ export const planContentRollApply = (
       : String(sections[kind] || '');
     const action: 'replace' | 'keep' = next ? 'replace' : 'keep';
     if (next) {
-      written.push(kind);
+      written.push(itemId);
       if (isGlobal) {
         globalParts.push(next);
-        globalSections[kind] = next;
-        if (negative) globalNegatives[kind] = negative;
+        globalSections[kind] = [globalSections[kind], next].filter(Boolean).join(', ');
+        if (negative) globalNegatives[kind] = [globalNegatives[kind], negative].filter(Boolean).join(', ');
         globalMeta[kind] = { source: 'roll', entryId: row?.id, entryName: row?.name, notes: row?.constraintNotes || row?.constraints?.notes || undefined, ...(isCreativeSectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}) };
       } else {
         characterParts.push(next);
-        roleWrites.push({
+        const existingWrite = roleWrites.find(write => write.kind === kind);
+        if (existingWrite) {
+          existingWrite.text = [existingWrite.text, next].filter(Boolean).join(', ');
+          existingWrite.negative = [existingWrite.negative, negative].filter(Boolean).join(', ');
+        } else roleWrites.push({
           kind: kind as keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey,
           text: next,
           negative,
@@ -187,14 +194,18 @@ export const planContentRollApply = (
         });
       }
     } else {
-      kept.push(kind);
+      kept.push(itemId);
     }
     const extraNote = !isGlobal && !next && promptText.trim() && !String(sections[kind] || '').trim()
       ? '该角色目前只有整段正文，本栏保持不动'
       : '';
-    rows.push({ kind, title: meta.title, current, next, action, note: [noteOfRow(row), extraNote].filter(Boolean).join('；') });
+    rows.push({ itemId, targetScope: isGlobal ? 'global' : 'character', kind, title: meta.title, current, next, action, note: [noteOfRow(row), extraNote].filter(Boolean).join('；') });
   }
 
+  for (const row of rows) {
+    if (row.action !== 'replace') continue;
+    row.next = row.targetScope === 'global' ? globalSections[row.kind] : roleWrites.find(write => write.kind === row.kind)?.text || row.next;
+  }
   return {
     target,
     roleId: existing ? String(existing.id) : '',

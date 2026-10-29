@@ -171,3 +171,15 @@ it('动态目录依scope写入风格串，未知目录不丢失且不覆盖画�
   expect(result.variableValues.subject).toContain('backlight');
   expect(result.skipped).toEqual([]);
 });
+
+it('同用途scoped项目编译写canonical栏位，保留选中身份与角色目标', () => {
+  const result = planRollToChain(chain({ characters: [{ id: 'one', prompt: 'keep one' }, { id: 'two', prompt: 'keep two' }] }), [
+    { kind: 'global:purpose:clothing', scope: 'global', text: '{global, cape}', negative: 'global negative' },
+    { kind: 'character:purpose:clothing', scope: 'character', text: 'role dress', negative: 'role negative' },
+  ], { targetRoleId: 'two' });
+  expect((result.params._promptSections as any)['purpose:clothing']).toBe('{global, cape}');
+  expect((result.params.characters![1].sections as any)['purpose:clothing']).toBe('role dress');
+  expect(result.params.characters![0].prompt).toBe('keep one');
+  expect(result.writes.map(write => write.kind)).toEqual(['global:purpose:clothing', 'character:purpose:clothing']);
+  expect(result.params._promptSections).not.toHaveProperty('global:purpose:clothing');
+});

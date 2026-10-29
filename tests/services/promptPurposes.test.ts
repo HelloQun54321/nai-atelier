@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey } from '../../services/promptPurposes.mjs';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, getPromptPurposeCandidateStatus, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey } from '../../services/promptPurposes.mjs';
 import { draw } from '../../services/contentRollDraw';
 import { contentRead, contentSnapshotOf } from '../../services/contentRoll';
 import { planContentRollApply, applyContentRollToParams } from '../../services/contentRollApply';
@@ -11,6 +11,28 @@ import { normalizeExtractDraft, createEmptyExtractDraft } from '../../services/p
 import type { PromptChain } from '../../types';
 
 const entry = (id: string, purposes?: string[]) => ({ id, type: 'preset', name: id, basePrompt: '{{white dress}}', negativePrompt: 'hat', params: { _promptLibraryDirectoryIds: ['anything'], ...(purposes ? { _promptLibraryPurposes: purposes } : {}) } }) as unknown as PromptChain;
+
+it('单用途候选状态区分真实排除原因，纯池与状态一致且不改正文或标注', () => {
+  const entries = [
+    entry('pure', ['clothing']), entry('unmarked'), entry('mixed', ['clothing', 'expression']),
+    { ...entry('negative', ['clothing']), params: { ...entry('negative', ['clothing']).params, _promptLibraryPolarity: 'negative' } },
+    { ...entry('empty', ['clothing']), basePrompt: ' \n ' },
+    { ...entry('original', ['clothing']), params: { _collectedPrompt: 1, _promptLibraryPurposes: ['clothing'] } },
+    entry('other', ['pose']),
+  ] as PromptChain[];
+  const before = JSON.stringify(entries);
+  expect(entries.map(item => getPromptPurposeCandidateStatus(item, 'clothing').reason)).toEqual([
+    'eligible', 'unmarked', 'mixed', 'negative_only', 'empty_prompt', 'non_fragment', 'purpose_mismatch',
+  ]);
+  expect(selectPurposeEntries(entries, 'clothing', true).map(item => item.id)).toEqual(['pure']);
+  expect(selectPurposeEntries(entries, 'clothing').map(item => item.id)).toEqual(['pure', 'mixed', 'negative', 'empty', 'original']);
+  expect(getPromptPurposeCandidateStatus(entries[6]).eligible).toBe(true);
+  expect(getPromptPurposeCandidateStatus({ ...entries[0], params: JSON.stringify(entries[0].params) }).reason).toBe('eligible');
+  expect(getPromptPurposeCandidateStatus(null).reason).toBe('non_fragment');
+  // 单一标注可抽并不等于程序核验了语义纯度，不能擅自拆掉正文里的其他内容。
+  expect(getPromptPurposeCandidateStatus({ ...entries[0], basePrompt: 'dress, smiling' }).eligible).toBe(true);
+  expect(JSON.stringify(entries)).toBe(before);
+});
 
 it('22 个稳定用途拒绝自定义值，不从目录、旧类型和自由标签猜用途', () => {
   expect(new Set(PROMPT_PURPOSES.map(item => item.id)).size).toBe(22);

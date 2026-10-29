@@ -55,7 +55,7 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
 });
 
 test('助手及提示词共用模块的相对依赖均进入安装包清单', async () => {
-  for (const file of ['scripts/prompt-agent.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
+  for (const file of ['scripts/prompt-agent.mjs', 'scripts/agent-prompt-library.mjs', 'services/promptPurposes.mjs', 'services/promptClassification.mjs', 'services/promptExtraction.mjs', 'services/agentPromptChanges.mjs']) {
     const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');
     for (const match of source.matchAll(/(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g)) {
       if (!match[1].startsWith('.') || !match[1].endsWith('.mjs')) continue;

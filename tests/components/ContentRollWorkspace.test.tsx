@@ -1,11 +1,13 @@
 import { openPurposeGroup } from '../support/promptPurposeGroups';
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ContentRollWorkspace } from '../../components/ContentRollWorkspace';
 import { KINDS } from '../../services/contentRoll';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
+import { combinationPicks, createCombinationData, workspacePicks } from '../../services/promptLibraryEntries';
+import { PROMPT_PURPOSE_GROUPS } from '../../services/promptPurposes.mjs';
 import type { ContentRollApplyPlan } from '../../services/contentRollApply';
 import type { PromptChain } from '../../types';
 import type { PromptLibraryTreeState } from '../../services/promptLibraryDirectories';
@@ -253,6 +255,126 @@ it('混合与未标注片段不进入纯用途候选池', () => {
   const select = screen.getByRole('combobox', { name: '选择服饰与配件片段' });
   expect(select.querySelectorAll('option')).toHaveLength(2);
   expect(select.textContent).toContain('衬衫');
+});
+
+it('真实片段输入只抽单用途非空正词，排除原因计数忽略普通风格串和角色', () => {
+  const pure = directoryChains[0];
+  const entries = [pure,
+    { ...pure, id: 'unmarked', name: '未标片段', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [] } },
+    { ...pure, id: 'mixed', name: '混合片段', basePrompt: '{{dress, smiling}}', params: { ...pure.params, _promptLibraryPurposes: ['clothing', 'expression'] } },
+    { ...pure, id: 'negative', name: '负面片段', params: { ...pure.params, _promptLibraryPolarity: 'negative' } },
+    { ...pure, id: 'empty', name: '空片段', basePrompt: ' \n ' },
+    { ...pure, id: 'original', name: '原文', type: 'preset', params: { ...LAB_DEFAULT_PARAMS, _collectedPrompt: 1, _promptLibraryPurposes: ['clothing'] } },
+    { ...pure, id: 'style', name: '普通风格串', type: 'style', params: LAB_DEFAULT_PARAMS },
+    { ...pure, id: 'character', name: '普通角色', type: 'character', params: LAB_DEFAULT_PARAMS },
+  ] as PromptChain[];
+  const before = JSON.stringify(entries);
+  const props = { active: true, directories, chains: entries, notify: vi.fn() };
+  const view = render(<ContentRollWorkspace {...props} chainsLoading />);
+  expect(document.querySelector('[data-content-roll-exclusions]')).toBeNull();
+  view.rerender(<ContentRollWorkspace {...props} chainsError="读取失败" />);
+  expect(document.querySelector('[data-content-roll-exclusions]')).toBeNull();
+  view.rerender(<ContentRollWorkspace {...props} />);
+  fireEvent.click(screen.getByText('未入单用途池 5 条'));
+  const explanation = document.querySelector('[data-content-roll-exclusions]')!;
+  expect(explanation.hasAttribute('open')).toBe(true);
+  expect(explanation.textContent).toContain('未标注 1 条 · 多用途混合 1 条 · 负面专用 1 条 · 空正文 1 条 · 非片段 1 条');
+  expect(screen.queryByText('未入单用途池 7 条')).toBeNull();
+  expect(explanation.textContent).toContain('按已保存用途筛选，未自动核验正文。');
+  openPurposeGroup('主体与外观');
+  const select = screen.getByRole('combobox', { name: '选择服饰与配件片段' });
+  expect(within(select).getAllByRole('option').map(option => option.textContent)).toEqual(['手写或选择片段', '衬衫']);
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
+  expect(JSON.stringify(entries)).toBe(before);
+});
+
+it('真实组合恢复同用途全局和角色项目，独立编辑固定和重抽仍保留两个身份', () => {
+  const params = { ...LAB_DEFAULT_PARAMS, _promptSections: { 'purpose:clothing': '{{global robe}}' },
+    characters: [{ id: 'role', prompt: '', x: .5, y: .5, sections: { 'purpose:clothing': 'character dress' } }] };
+  const saved = createCombinationData('两种服饰', workspacePicks(params, 'role', directories)) as PromptChain;
+  const picks = combinationPicks(saved);
+  const use = vi.fn();
+  render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()} onUseCombination={use}
+    seedRecord={{ picks, seed: '两种服饰', seeds: {} }} />);
+  openPurposeGroup('主体与外观');
+  expect(document.querySelector('[data-content-roll-row="purpose:clothing"]')).toBeNull();
+  const global = screen.getByRole('textbox', { name: '服饰与配件 · 全局内容' }) as HTMLTextAreaElement;
+  const character = screen.getByRole('textbox', { name: '服饰与配件 · 角色内容' }) as HTMLTextAreaElement;
+  expect(global.value).toBe('{{global robe}}'); expect(character.value).toBe('character dress');
+  const characterCard = document.querySelector('[data-content-roll-row="character:purpose:clothing"]')!;
+  fireEvent.click(within(characterCard as HTMLElement).getByRole('button', { name: '换一个' }));
+  expect(global.value).toBe('{{global robe}}'); expect(character.value).toBe('white shirt');
+  fireEvent.change(global, { target: { value: '{{edited global robe}}' } });
+  const card = document.querySelector('[data-content-roll-row="global:purpose:clothing"]')!;
+  fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '固定' }));
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  expect(global.value).toBe('{{edited global robe}}'); expect(character.value).toBe('white shirt');
+  fireEvent.click(screen.getByRole('button', { name: '送到实验室' }));
+  expect(use.mock.calls[0][0]).toMatchObject({
+    'global:purpose:clothing': { kind: 'purpose:clothing', scope: 'global', text: '{{edited global robe}}' },
+    'character:purpose:clothing': { kind: 'purpose:clothing', scope: 'character', text: 'white shirt' },
+  });
+});
+
+it('固定全局入口恢复角色用途历史仍保留全部用途空栏，不改原角色内容', () => {
+  const params = { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'role', prompt: '', x: .5, y: .5,
+    sections: { 'purpose:clothing': '{{role dress}}' } }] };
+  const saved = createCombinationData('角色组合', workspacePicks(params, 'role', directories)) as PromptChain;
+  const picks = combinationPicks(saved);
+  render(<ContentRollWorkspace active entryTarget={{ mode: 'global' }} directories={directories} chains={directoryChains}
+    notify={vi.fn()} seedRecord={{ picks, seed: '角色组合', seeds: {} }} />);
+  for (const group of PROMPT_PURPOSE_GROUPS) openPurposeGroup(group.label);
+  expect(document.querySelectorAll('[data-content-roll-row]')).toHaveLength(22);
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('');
+  expect(screen.queryByRole('textbox', { name: '服饰与配件 · 角色内容' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
+  expect(picks['character:purpose:clothing'].text).toBe('{{role dress}}');
+});
+
+it('固定角色入口恢复全局用途历史仍保留全部用途空栏，不改原全局内容', () => {
+  const source = { ...LAB_DEFAULT_PARAMS, _promptSections: { 'purpose:clothing': '{{global robe}}' } };
+  const saved = createCombinationData('全局组合', workspacePicks(source, undefined, directories)) as PromptChain;
+  const picks = combinationPicks(saved);
+  const target = { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'target', prompt: '', x: .5, y: .5 }] };
+  render(<ContentRollWorkspace active entryTarget={{ mode: 'existing', id: 'target' }} playgroundParams={target}
+    directories={directories} chains={directoryChains} notify={vi.fn()} seedRecord={{ picks, seed: '全局组合', seeds: {} }} />);
+  for (const group of PROMPT_PURPOSE_GROUPS) openPurposeGroup(group.label);
+  expect(document.querySelectorAll('[data-content-roll-row]')).toHaveLength(22);
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('');
+  expect(screen.queryByRole('textbox', { name: '服饰与配件 · 全局内容' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '再抽未固定项' }));
+  expect((screen.getByRole('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('white shirt');
+  expect(picks['global:purpose:clothing'].text).toBe('{{global robe}}');
+});
+
+it('双scope同用途应用预览使用独立项目身份，全局不误显所有启用角色', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const source = { ...LAB_DEFAULT_PARAMS, _promptSections: { 'purpose:clothing': '{{global robe}}' },
+    characters: [{ id: 'source', prompt: '', x: .5, y: .5, sections: { 'purpose:clothing': 'character dress' } }] };
+  const saved = createCombinationData('双范围组合', workspacePicks(source, 'source', directories)) as PromptChain;
+  const target = { ...LAB_DEFAULT_PARAMS, _promptSections: { 'purpose:clothing': 'current global outfit' },
+    characters: [{ id: 'one', prompt: '', x: .5, y: .5 }, { id: 'two', prompt: '', x: .5, y: .5 }] };
+  const apply = vi.fn().mockResolvedValue(true);
+  render(<ContentRollWorkspace active directories={directories} chains={directoryChains} notify={vi.fn()}
+    playgroundParams={target} playgroundRoles={[{ id: 'one', label: '角色一' }, { id: 'two', label: '角色二' }]}
+    onApplyRoll={apply} seedRecord={{ picks: combinationPicks(saved), seed: '双范围组合', seeds: {} }} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的目标角色' }), { target: { value: 'all-enabled' } });
+  fireEvent.click(screen.getByRole('button', { name: '使用' }));
+  const global = document.querySelector('[data-content-roll-apply-item="global:purpose:clothing"]')!;
+  const character = document.querySelector('[data-content-roll-apply-item="character:purpose:clothing"]')!;
+  expect(global.getAttribute('data-content-roll-apply-scope')).toBe('global');
+  expect(character.getAttribute('data-content-roll-apply-scope')).toBe('character');
+  expect(global.textContent).toContain('current global outfit → {{global robe}}');
+  expect(global.textContent).not.toContain('所有启用角色');
+  expect(character.textContent).toContain('所有启用角色 → character dress');
+  expect(document.querySelectorAll('[data-content-roll-apply-row="purpose:clothing"]')).toHaveLength(2);
+  expect(consoleError).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
+  await waitFor(() => expect(apply).toHaveBeenCalledOnce());
+  expect(apply.mock.calls[0][0]).toMatchObject({ target: { mode: 'all-enabled' },
+    globalSections: { 'purpose:clothing': '{{global robe}}' }, roleWrites: [{ kind: 'purpose:clothing', text: 'character dress' }] });
 });
 
 it('旧草稿兼容目录键且保留参与状态，刷新不会自动加入后来新增的目录', () => {

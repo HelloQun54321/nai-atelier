@@ -12,4 +12,6 @@ export function isPurposeSectionKey(key: unknown): key is PurposeSectionKey;
 export function isCreativeSectionKey(key: unknown): key is CreativeSectionKey;
 export function readPromptPurposes(value: unknown): PromptPurposeId[];
 export function getEntryPurposes(entry: { params?: unknown } | null | undefined): PromptPurposeId[];
+export type PromptPurposeCandidateReason = 'eligible' | 'non_fragment' | 'empty_prompt' | 'negative_only' | 'unmarked' | 'mixed' | 'purpose_mismatch';
+export function getPromptPurposeCandidateStatus(entry: { params?: unknown; type?: unknown; basePrompt?: unknown } | null | undefined, purposeId?: PromptPurposeId): { eligible: boolean; reason: PromptPurposeCandidateReason; purposes: PromptPurposeId[] };
 export function selectPurposeEntries<T extends { params?: unknown }>(entries: readonly T[], purposeId: PromptPurposeId, pure?: boolean): T[];

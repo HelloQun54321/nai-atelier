@@ -304,3 +304,18 @@ describe('动态目录写入', () => {
     expect(plan.roleWrites).toHaveLength(0);
   });
 });
+
+it('scoped目录预览从项目身份读取标题与作用范围，不回退为内部目录ID', () => {
+  const scoped = {
+    'global:directory:shared': { ...row('directory:shared', 'global prop'), scope: 'global' as const, directoryName: '全局道具' },
+    'character:directory:shared': { ...row('directory:shared', 'character prop'), scope: 'character' as const, title: '角色道具' },
+  };
+  const params = { characters: [{ id: 'selected', prompt: 'keep', x: 0.5, y: 0.5 }] } as NAIParams;
+  const plan = planContentRollApply(scoped, params, { mode: 'existing', id: 'selected' });
+  expect(plan.rows.map(item => ({ itemId: item.itemId, kind: item.kind, title: item.title, scope: item.targetScope }))).toEqual([
+    { itemId: 'global:directory:shared', kind: 'directory:shared', title: '全局道具', scope: 'global' },
+    { itemId: 'character:directory:shared', kind: 'directory:shared', title: '角色道具', scope: 'character' },
+  ]);
+  expect(plan.globalSections['directory:shared']).toBe('global prop');
+  expect(plan.roleWrites).toEqual([expect.objectContaining({ kind: 'directory:shared', text: 'character prop' })]);
+});

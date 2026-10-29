@@ -197,3 +197,21 @@ describe('动态目录抽取', () => {
     expect(skipped.picks[unit.id]).toBe(first.picks[unit.id]);
   });
 });
+
+it('同用途不同scope重抽保留两个身份，单栏重抽不动另一项且canonical编译', () => {
+  const chains = ['first', 'second'].map(id => ({ id, type: 'preset', basePrompt: id + ' dress', params: { _collectedCategory: 'general', _promptLibraryPurposes: ['clothing'] } }));
+  const units = (['global', 'character'] as const).map(scope => ({ id: scope + ':purpose:clothing', purposeId: 'clothing' as const, directoryId: '', name: '衣服', path: ['衣服'], scope }));
+  const input = { chains, units, seed: 'scope-test' };
+  const result = draw(input);
+  expect(Object.keys(result.picks)).toEqual(['global:purpose:clothing', 'character:purpose:clothing']);
+  expect(Object.values(result.picks).map(row => row.kind)).toEqual(['purpose:clothing', 'purpose:clothing']);
+  const previous = JSON.stringify(result.picks['character:purpose:clothing']);
+  const changed = rerollOne({ ...input, picks: result.picks }, 'global:purpose:clothing', 'next');
+  expect(changed.ok).toBe(true);
+  expect(changed.row?.scope).toBe('global');
+  expect(changed.row?.kind).toBe('purpose:clothing');
+  expect(JSON.stringify(result.picks['character:purpose:clothing'])).toBe(previous);
+  const sections = toSections(result.picks);
+  expect(sections.global).toHaveProperty('purpose:clothing');
+  expect(sections.character).toHaveProperty('purpose:clothing');
+});

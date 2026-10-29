@@ -1,14 +1,14 @@
-import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, purposeSectionKey, selectPurposeEntries, isPurposeSectionKey, type PromptPurposeId } from '../services/promptPurposes.mjs';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, purposeSectionKey, selectPurposeEntries, getPromptPurposeCandidateStatus, isPurposeSectionKey, type PromptPurposeId, type PromptPurposeCandidateReason } from '../services/promptPurposes.mjs';
 import { promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
 import { promptLibraryCategoryNames } from '../services/promptLibraryCategories';
-import { parsePromptLibraryTags, FRAGMENT_LABELS, type PromptFragmentKind } from '../services/promptLibraryEntries';
+import { parsePromptLibraryTags, FRAGMENT_LABELS, librarySectionOf, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { CollectionTagInput } from './inspiration/CollectionControls';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { PromptChain } from '../types';
-import { KINDS, META } from '../services/contentRoll';
+import { KINDS, META, rollSectionKey } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
 import { draw, evidenceOf, rerollOne, rowOf } from '../services/contentRollDraw';
 import type { ContentRollApplyPlan, ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
@@ -124,7 +124,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     return { ...saved, history: saved.history.map(record => {
       const picks = restoreDirectoryPicks(record.picks, directories);
       const keyFor = (key: string) => Object.entries(picks).find(([, row]) => row.directoryId && getPromptLibraryDirectoryLegacyKind(directories, row.directoryId) === key)?.[0] || key;
-      return { ...record, picks, checks: Object.fromEntries(Object.entries(record.checks || {}).map(([key, checked]) => [keyFor(key), checked])), locked: Object.fromEntries(Object.entries(record.locked || {}).map(([key, id]) => [keyFor(key), id])), directoryIds: record.directoryIds ?? (Object.keys(picks).some(isPurposeSectionKey) ? undefined : Object.values(picks).flatMap(row => row.directoryId ? [row.directoryId] : [])) };
+      return { ...record, picks, checks: Object.fromEntries(Object.entries(record.checks || {}).map(([key, checked]) => [keyFor(key), checked])), locked: Object.fromEntries(Object.entries(record.locked || {}).map(([key, id]) => [keyFor(key), id])), directoryIds: record.directoryIds ?? (Object.keys(picks).some(key => isPurposeSectionKey(rollSectionKey(key))) ? undefined : Object.values(picks).flatMap(row => row.directoryId ? [row.directoryId] : [])) };
     }) };
   });
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
@@ -156,17 +156,37 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   const current = cursor >= 0 ? history[cursor] : null;
   const selectedDirectoryIds = directories ? normalizePromptLibraryDirectorySelection(directories, directoryIds) : [];
   const sourceEntries = directories && directoryIds !== null ? selectPromptLibraryDirectoryEntries(chains, directories, selectedDirectoryIds) : chains;
-  const directoryUnits = directories ? PROMPT_PURPOSES.map(item => ({ id: purposeSectionKey(item.id), purposeId: item.id, directoryId: '', name: item.label, path: [item.label], scope: entryTarget ? entryTarget.mode === 'global' ? 'global' as const : 'character' as const : META[purposeSectionKey(item.id)].scope })) : [];
+  const excludedCandidates = sourceEntries.reduce<Partial<Record<PromptPurposeCandidateReason, number>>>((counts, entry) => {
+    if (!librarySectionOf(entry)) return counts;
+    const status = getPromptPurposeCandidateStatus(entry);
+    if (!status.eligible) counts[status.reason] = (counts[status.reason] || 0) + 1;
+    return counts;
+  }, {});
+  const excludedCount = Object.values(excludedCandidates).reduce((sum, count) => sum + count, 0);
+  const directoryUnits = directories ? PROMPT_PURPOSES.flatMap(item => {
+    const key = purposeSectionKey(item.id);
+    const unit = { id: key as string, purposeId: item.id, directoryId: '', name: item.label, path: [item.label], scope: entryTarget ? entryTarget.mode === 'global' ? 'global' as const : 'character' as const : META[key].scope };
+    const scoped = Object.entries(current?.picks || {}).filter(([id, row]) => id !== key && rollSectionKey(id) === key
+      && (!entryTarget || (row.scope || unit.scope) === unit.scope));
+    return scoped.length ? scoped.map(([id, row]) => ({ ...unit, id, scope: row.scope || unit.scope })) : [unit];
+  }) : [];
   const units = directoryUnits.filter(unit => entryTarget ? unit.scope === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || unit.scope === range);
   const unitFor = (kind: string) => units.find(unit => unit.id === kind);
-  const titleFor = (kind: string) => unitFor(kind)?.path.join(' / ') || current?.picks[kind]?.directoryPath?.join(' / ') || current?.picks[kind]?.directoryName || META[kind]?.title || kind;
-  const scopeFor = (kind: string) => unitFor(kind)?.scope || current?.picks[kind]?.scope || META[kind]?.scope;
-  const poolFor = (kind: string) => isPurposeSectionKey(kind) ? selectPurposeEntries(sourceEntries, kind.slice(8) as PromptPurposeId, true) : directories && kind.startsWith('directory:') ? selectPromptLibraryDirectoryEntries(chains, directories, [kind.slice(10)]) : chains.filter(item => item.type === kind);
+  const scopeFor = (kind: string) => current?.picks[kind]?.scope || unitFor(kind)?.scope || META[rollSectionKey(kind)]?.scope;
+  const titleFor = (kind: string) => {
+    const title = unitFor(kind)?.path.join(' / ') || current?.picks[kind]?.directoryPath?.join(' / ') || current?.picks[kind]?.directoryName || META[rollSectionKey(kind)]?.title || kind;
+    return kind !== rollSectionKey(kind) ? `${title} · ${t(scopeFor(kind) === 'character' ? '角色' : '全局')}` : title;
+  };
+  const poolFor = (kind: string) => {
+    const section = rollSectionKey(kind);
+    return isPurposeSectionKey(section) ? selectPurposeEntries(sourceEntries, section.slice(8) as PromptPurposeId, true) : directories && section.startsWith('directory:') ? selectPromptLibraryDirectoryEntries(chains, directories, [section.slice(10)]) : chains.filter(item => item.type === section);
+  };
 
   const editRow = (kind: string, text: string, negative = current?.picks[kind]?.negative || '', entry?: PromptChain) => {
     const unit = unitFor(kind);
-    const row = entry ? rowOf(entry, kind, 'manual', false, poolFor(kind).length, unit)
-      : { ...current?.picks[kind], kind, ...(unit ? { directoryId: unit.directoryId, directoryName: unit.name, directoryPath: unit.path, scope: unit.scope } : {}), id: `manual-${kind}`, name: t('手写片段'), text, negative, filled: !!(text.trim() || negative.trim()) };
+    const section = rollSectionKey(kind);
+    const row = entry ? rowOf(entry, section, 'manual', false, poolFor(kind).length, unit)
+      : { ...current?.picks[kind], kind: section, ...(unit ? { directoryId: unit.directoryId, directoryName: unit.name, directoryPath: unit.path, scope: unit.scope } : {}), id: `manual-${kind}`, name: t('手写片段'), text, negative, filled: !!(text.trim() || negative.trim()) };
     setConfirming(false);
     if (current) setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, picks: { ...record.picks, [kind]: row } } : record));
     else { setHistory(previous => [...previous, { seed: 'manual', seeds: {}, picks: { [kind]: row }, locked: {}, checks: {}, directoryIds: directories ? directoryIds ?? undefined : undefined, scope: range, at: Date.now() }]); setCursor(history.length); }
@@ -200,7 +220,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     return out;
   }, [range, entryTarget, directories, units]);
   const effectiveChecks = useMemo(() => directories ? Object.fromEntries([...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {})])].map(kind => [kind,
-    units.some(unit => unit.id === kind) && checks[kind] !== false || !isPurposeSectionKey(kind) && !!current?.picks[kind]?.filled && checks[kind] !== false && (entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range),
+    units.some(unit => unit.id === kind) && checks[kind] !== false || !isPurposeSectionKey(rollSectionKey(kind)) && !!current?.picks[kind]?.filled && checks[kind] !== false && (entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range),
   ])) : Object.fromEntries(KINDS.map(kind => [kind, scopeChecks[kind] !== false && checks[kind] !== false])), [scopeChecks, checks, directories, units, current, entryTarget, range]);
 
   /* 会话草稿只留在本机：刷新后仍能看到上次这一组，但不会写库 */
@@ -218,13 +238,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     if (!seedRecord) return;
     const picks = restoreDirectoryPicks(seedRecord.picks as Record<string, RollRow>, directories);
     const ids = directories ? Object.values(picks).flatMap(row => row.directoryId ? [row.directoryId] : []) : undefined;
-    const hasRoles = Object.entries(picks).some(([kind, row]) => (row.scope || META[kind]?.scope) === 'character');
-    const hasGlobal = Object.entries(picks).some(([kind, row]) => (row.scope || META[kind]?.scope) === 'global');
+    const hasRoles = Object.entries(picks).some(([kind, row]) => (row.scope || META[rollSectionKey(kind)]?.scope) === 'character');
+    const hasGlobal = Object.entries(picks).some(([kind, row]) => (row.scope || META[rollSectionKey(kind)]?.scope) === 'global');
     const scope = hasRoles && hasGlobal || !hasRoles && !hasGlobal ? 'all' : hasGlobal ? 'global' : 'character';
     setSourceText(seedRecord.sourceText || '');
     setRange(scope);
     setHistory(previous => {
-      const next = [...previous, { seed: seedRecord.seed, seeds: seedRecord.seeds || {}, picks, locked: {}, checks: {}, directoryIds: ids, scope: scope as ContentRollScope, at: Date.now() }].slice(-HISTORY_LIMIT);
+      const next = [...previous, { seed: seedRecord.seed, seeds: seedRecord.seeds || {}, picks, locked: {}, checks: {}, directoryIds: ids?.length ? ids : undefined, scope: scope as ContentRollScope, at: Date.now() }].slice(-HISTORY_LIMIT);
       setCursor(next.length - 1);
       return next;
     });
@@ -292,7 +312,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
 
   const rerollKind = useCallback((kind: string) => {
     if (!current) return;
-    if (directories && !isPurposeSectionKey(kind) && !directories.nodes.some(node => `directory:${node.id}` === kind)) {
+    if (directories && !isPurposeSectionKey(rollSectionKey(kind)) && !directories.nodes.some(node => `directory:${node.id}` === rollSectionKey(kind))) {
       notify(t('来源目录已删除，当前内容仍可使用；无法重新抽取'), 'error');
       return;
     }
@@ -503,18 +523,25 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
       {directories && <div className="mb-3"><PromptLibraryDirectoryPicker state={directories} selectedIds={selectedDirectoryIds} allSelected={directoryIds === null} onAllChange={all => { if (all) setDirectoryIds(null); }} onChange={ids => { setDirectoryIds(ids); setChecks({}); setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, directoryIds: ids, checks: {} } : record)); setConfirming(false); }} disabled={applying || saving} includeAll /></div>}
       <p className="mb-3 text-xs text-gray-500">{t('未标注或混合片段可手动取用；单用途随机搭配只抽取相应用途片段。')}</p>
+      {directories && !countsPending && excludedCount > 0 && <details className="mb-3 text-xs text-gray-500" data-content-roll-exclusions>
+        <summary className="cursor-pointer">{t('未入单用途池 {0} 条', [excludedCount])}</summary>
+        <p className="mt-1">{([
+          ['unmarked', '未标注'], ['mixed', '多用途混合'], ['negative_only', '负面专用'], ['empty_prompt', '空正文'], ['non_fragment', '非片段'],
+        ] as const).filter(([reason]) => excludedCandidates[reason]).map(([reason, label]) => t('{0} {1} 条', [t(label), excludedCandidates[reason]!])).join(' · ')}</p>
+        <p className="mt-1">{t('按已保存用途筛选，未自动核验正文。')}</p>
+      </details>}
       {countsPending && !rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim())) && <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} />}
       {sourceText && <details open className="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary>{t('来源原文')}</summary><pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs">{sourceText}</pre></details>}
       <div className="content-library-roll-layout mx-auto w-full max-w-7xl items-start gap-4">
         <section className={directories ? 'space-y-3' : 'content-library-roll-grid'}>
           {directories ? <>{PROMPT_PURPOSE_GROUPS.map(group => {
-            const grouped = group.purposes.flatMap(id => rows.filter(row => row.kind === purposeSectionKey(id)));
+            const grouped = group.purposes.flatMap(id => rows.filter(row => rollSectionKey(row.kind) === purposeSectionKey(id)));
             return grouped.length > 0 && <PromptPurposeGroup key={group.id} id={group.id} label={group.label}
               summary={grouped.filter(item => item.row?.filled && effectiveChecks[item.kind] !== false).map(item => t(item.meta.short)).join('、')}>
               <div className="content-library-roll-grid">{grouped.map(renderRow)}</div>
             </PromptPurposeGroup>;
-          })}{rows.some(row => !isPurposeSectionKey(row.kind)) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
-            <div className="content-library-roll-grid">{rows.filter(row => !isPurposeSectionKey(row.kind)).map(renderRow)}</div>
+          })}{rows.some(row => !isPurposeSectionKey(rollSectionKey(row.kind))) && <PromptPurposeGroup id="legacy" label="原有分类" defaultOpen>
+            <div className="content-library-roll-grid">{rows.filter(row => !isPurposeSectionKey(rollSectionKey(row.kind))).map(renderRow)}</div>
           </PromptPurposeGroup>}</> : rows.map(renderRow)}
 
         </section>
@@ -539,9 +566,9 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
               <div className="flex gap-2"><ToolbarButton tone="save" disabled={saving} onClick={() => void doSave()}>{t(saving ? '保存中…' : editing ? '保存修改' : '保存')}</ToolbarButton>{editing && <ToolbarButton tone="save" disabled={saving} onClick={() => void doSave(true)}>{t('另存为新组合')}</ToolbarButton>}<ToolbarButton disabled={saving} onClick={() => setSaveOpen(false)}>{t('取消')}</ToolbarButton></div>
             </div>}
             {confirming && plan && <div className="mt-4 space-y-3" data-content-roll-apply-preview="true">
-              {plan.rows.filter(item => item.action === 'replace').map(item => <div key={item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action} className="border-t border-gray-200 pt-2 dark:border-gray-800">
+              {plan.rows.filter(item => item.action === 'replace').map(item => <div key={item.itemId || item.kind} data-content-roll-apply-row={item.kind} data-content-roll-apply-item={item.itemId || item.kind} data-content-roll-apply-scope={item.targetScope} data-content-roll-apply-action={item.action} className="border-t border-gray-200 pt-2 dark:border-gray-800">
                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
-                <p className="mt-1 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400">{plan.target.mode === 'all-enabled' && scopeFor(item.kind) === 'character' ? t('所有启用角色') : item.current || t('空白')} → {item.next || t('空白')}</p>
+                <p className="mt-1 break-words font-mono text-xs leading-5 text-gray-500 dark:text-gray-400">{plan.target.mode === 'all-enabled' && item.targetScope === 'character' ? t('所有启用角色') : item.current || t('空白')} → {item.next || t('空白')}</p>
                 {item.note && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{item.note}</p>}
               </div>)}
               <p className="text-xs leading-5 text-gray-400">{t('未列出的内容保持不变。')}</p>

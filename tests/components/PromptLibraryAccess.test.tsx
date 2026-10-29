@@ -269,3 +269,21 @@ it('混合片段整段取用保留正负词，不写入任何纯用途栏位', a
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(changed.mock.calls[0][0]).toMatchObject({ base: 'artist:test, 1.3::dress, smiling::', negative: 'lowres, hat', params: { _promptSections: {} } });
 });
+
+it('组合收录保存全局与所选角色同用途的两份正文和负面', async () => {
+  const save = vi.fn().mockResolvedValue(undefined);
+  const params = { ...LAB_DEFAULT_PARAMS, _promptSections: { 'purpose:clothing': 'global cape', sectionNegatives: { 'purpose:clothing': 'global negative' } }, characters: [
+    { id: 'one', prompt: 'keep', x: 0.5, y: 0.5, sections: { 'purpose:clothing': 'first dress' } },
+    { id: 'two', prompt: '', x: 0.5, y: 0.5, sections: { 'purpose:clothing': 'selected dress' }, sectionNegatives: { 'purpose:clothing': 'selected negative' } },
+  ] };
+  render(<PromptLibraryContext.Provider value={{ chains: [], save }}><PromptLibrarySaveDialog text="global cape" initialParams={params} field={{ roleId: 'two' }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  const items = save.mock.calls[0][0].params._rollContentSnapshot.items;
+  expect(items).toEqual([
+    expect.objectContaining({ itemId: 'global:purpose:clothing', unitId: 'purpose:clothing', scope: 'global', text: 'global cape', negative: 'global negative' }),
+    expect.objectContaining({ itemId: 'character:purpose:clothing', unitId: 'purpose:clothing', scope: 'character', text: 'selected dress', negative: 'selected negative' }),
+  ]);
+  expect(JSON.stringify(items)).not.toContain('first dress');
+});

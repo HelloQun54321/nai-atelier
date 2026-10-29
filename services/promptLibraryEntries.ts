@@ -1,7 +1,7 @@
 import { getEntryPurposes, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { t } from './i18n';
 import type { NAIParams, PromptChain } from '../types';
-import { contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
+import { rollItemKey, rollSectionKey, contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
 import { collectedPromptText, prepareCollectedPrompt } from './collectedPrompt';
 import type { PromptLibraryKind } from './promptAgent';
 import { applyPromptText, type PromptApplyMode } from './promptApply';
@@ -48,7 +48,9 @@ export function librarySectionOf(chain: PromptChain): PromptLibrarySection | nul
 export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<string, RollRow> {
   const read = contentRead((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   if (!read.ok) return {};
-  const directoryPicks: Record<string, RollRow> = Object.fromEntries(read.items.map(item => [item.unitId, {
+  const itemCounts = new Map<string, number>();
+  for (const item of read.items) itemCounts.set(item.unitId, (itemCounts.get(item.unitId) || 0) + 1);
+  const directoryPicks: Record<string, RollRow> = Object.fromEntries(read.items.map(item => [item.itemId || ((itemCounts.get(item.unitId) || 0) > 1 ? rollItemKey(item.unitId, item.scope) : item.unitId), {
     kind: item.unitId, directoryId: item.directoryId, directoryName: item.directoryName, directoryPath: item.directoryPath,
     scope: item.scope, filled: true, text: item.text, negative: item.negative, constraintNotes: item.constraintNotes,
     id: String(item.meta?.entryId || ''), name: String(item.meta?.entryName || item.directoryName || chain.name), meta: item.meta,
@@ -70,7 +72,7 @@ export function libraryEntryText(chain: PromptChain, field: PromptLibraryField =
   if ((chain.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') return field.negative ? chain.basePrompt || '' : '';
   if (!isContentRecord(chain)) return field.negative ? chain.negativePrompt || '' : chain.basePrompt || '';
   const picks = combinationPicks(chain);
-  return Object.entries(picks).filter(([kind, row]) => field.purposeId ? kind === purposeSectionKey(field.purposeId) : field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
+  return Object.entries(picks).filter(([kind, row]) => field.purposeId ? rollSectionKey(kind) === purposeSectionKey(field.purposeId) : field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
     .map(([, row]) => field.negative ? row.negative : row.text).filter(Boolean).join(', ');
 }
 
@@ -119,9 +121,9 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
   ] as const) for (const [kind, text] of Object.entries(sections || {})) {
     if (!isCreativeSectionKey(kind) || typeof text !== 'string' || !text.trim()) continue;
     const directoryId = isPurposeSectionKey(kind) ? '' : kind.slice('directory:'.length);
-    if (picks[kind]) throw new Error('同一目录同时包含全局和角色内容，请先调整归属后保存组合');
+
     const path = isPurposeSectionKey(kind) ? [promptPurposeLabel(kind.slice(8))] : directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
-    picks[kind] = { kind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
+    picks[rollItemKey(kind, scope)] = { kind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
       scope,
       filled: true, text, negative: String((negatives as Record<string, unknown> | undefined)?.[kind] || '') };
   }

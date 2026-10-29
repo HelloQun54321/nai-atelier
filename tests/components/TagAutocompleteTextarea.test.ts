@@ -42,6 +42,13 @@ const openSuggestions = async (textarea: HTMLTextAreaElement, value: string, car
   return (await screen.findAllByRole('option'))[0];
 };
 
+const openTagInput = () => {
+  fireEvent.click(screen.getByRole('button', { name: '在末尾插入提示词' }));
+  const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+  act(() => input.focus());
+  return input;
+};
+
 describe('提示词单元目录信息', () => {
   beforeEach(() => {
     resetTagDictionaryCache();
@@ -258,7 +265,7 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
 
     const clear = screen.getByRole('button', { name: '清空当前提示词' });
-    expect(clear.parentElement!.nextElementSibling).toBe(textarea);
+    expect(clear.parentElement!.nextElementSibling).toBe(textarea.parentElement);
     expect(clear.classList.contains('absolute')).toBe(false);
     expect(clear.classList.contains('mobile-touch')).toBe(true);
     expect(textarea.className).not.toMatch(/pr-14|md:pr-9/);
@@ -502,7 +509,7 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
   it('Tag 输入复用候选与方向键，补全保留权重包装，确认后才追加且可以撤销', async () => {
     render(React.createElement(Harness, { initial: '1girl', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    const input = openTagInput();
     fireEvent.change(input, { target: { value: '1.2::masteroldpiece::, next' } });
     input.setSelectionRange(8, 8);
     fireEvent.click(input);
@@ -517,15 +524,157 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(textarea.value).toBe('1girl, 1.2::masterpiece::, next');
-    expect(input.value).toBe('');
+    expect(screen.queryByRole('combobox', { name: '添加提示词' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '撤销' }));
     expect(textarea.value).toBe('1girl');
+  });
+
+  it.each([
+    ['alpha, beta', 1, 'gamma, alpha, beta'],
+    ['alpha, beta', 2, 'alpha, gamma, beta'],
+    ['2::alpha, beta::, delta', 2, '2::alpha, gamma, beta::, delta'],
+    ['{{alpha, beta}}, delta', 2, '{{alpha, gamma, beta}}, delta'],
+    ['alpha, 2::beta, delta::', 2, 'alpha, gamma, 2::beta, delta::'],
+    ['alpha，\nbeta|delta', 2, 'alpha，\ngamma, beta|delta'],
+  ] as const)('在 %s 的位置 %s 就地插入，保留其他原文和权重，支持撤销', async (initial, position, expected) => {
+    render(React.createElement(Harness, { initial, showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    const marker = screen.getByRole('button', { name: `插入提示词：位置 ${position}` });
+    fireEvent.click(marker);
+    const input = screen.getByRole('combobox', { name: '插入提示词' }) as HTMLInputElement;
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    fireEvent.click(input);
+    expect(screen.getByLabelText('提示词中文翻译').querySelector('[role="button"][aria-pressed="true"]')).toBeNull();
+    fireEvent.change(input, { target: { value: 'gamma' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(textarea.value).toBe(expected);
+    expect(screen.queryByRole('combobox', { name: '插入提示词' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    expect(textarea.value).toBe(initial);
+    expect(screen.getByRole('button', { name: '在末尾插入提示词' })).toBeTruthy();
+  });
+
+  it('插入位置复用词库补全、输入法保护和失焦提交，之后仍可移回末尾', async () => {
+    render(React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '插入提示词：位置 2' }));
+    let input = screen.getByRole('combobox', { name: '插入提示词' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'ma' } });
+    await screen.findAllByRole('option');
+    fireEvent.click(screen.getAllByRole('option')[0]);
+    expect(input.value).toBe('masterpiece');
+    expect(textarea.value).toBe('alpha, beta');
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(textarea.value).toBe('alpha, beta');
+    fireEvent.compositionEnd(input);
+    fireEvent.blur(input);
+    expect(textarea.value).toBe('alpha, masterpiece, beta');
+    fireEvent.click(screen.getByRole('button', { name: '在末尾插入提示词' }));
+    input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'delta' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(textarea.value).toBe('alpha, masterpiece, beta, delta');
+  });
+
+  it.each([1, 2])('位置 %s 默认只留空白，空输入失焦后收回，不保留加号、占位文字或大输入框', position => {
+    render(React.createElement(Harness, { initial: '2::alpha, beta::, gamma', showTranslations: true }));
+    const zone = screen.getByLabelText('提示词中文翻译');
+    const marker = screen.getByRole('button', { name: `插入提示词：位置 ${position}` });
+    expect(marker.textContent).toBe(''); expect(marker.querySelector('svg')).toBeNull(); expect(marker.getAttribute('title')).toBeNull();
+    expect(within(zone).queryByRole('combobox')).toBeNull();
+    fireEvent.click(marker);
+    const input = within(zone).getByRole('combobox') as HTMLInputElement;
+    expect(input.getAttribute('placeholder')).toBeNull(); expect(input.classList.contains('flex-1')).toBe(false);
+    fireEvent.blur(input);
+    expect(within(zone).queryByRole('combobox')).toBeNull();
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('2::alpha, beta::, gamma');
+  });
+
+  it('取消插入或空回车会收起输入框，再点空白仍能输入，末尾也不常驻输入框', () => {
+    render(React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }));
+    const zone = screen.getByLabelText('提示词中文翻译');
+    let input = openTagInput();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(within(zone).queryByRole('combobox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '插入提示词：位置 2' }));
+    input = within(zone).getByRole('combobox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'cancelled' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(within(zone).queryByRole('combobox')).toBeNull();
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('alpha, beta');
+    input = openTagInput();
+    expect(input.value).toBe('');
+  });
+
+  it('译文按位置高亮对应原文，重复词、多选、整组与删除选择互不误定位', () => {
+    const initial = 'alpha, beta, alpha, 2::gamma, delta::';
+    render(React.createElement(Harness, { initial, showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    const highlights = () => [...document.querySelectorAll('[data-prompt-highlight]')].map(node => node.textContent);
+    const alphas = screen.getAllByRole('button', { name: /^alpha\s/ });
+    fireEvent.click(alphas[1]);
+    expect(highlights()).toEqual(['alpha']);
+    const text = document.querySelector('[data-prompt-highlight-layer]')!.firstElementChild!;
+    expect(text.firstChild?.textContent).toBe('alpha, beta, ');
+    expect(textarea.style.webkitTextFillColor).toBe('transparent');
+    expect(document.querySelector('[data-prompt-highlight]')!.className).toContain('text-[var(--nai-accent)]');
+    fireEvent.click(screen.getByRole('button', { name: /^beta\s/ }));
+    expect(highlights()).toEqual(['beta', 'alpha']);
+    fireEvent.click(screen.getByRole('button', { name: /gamma.*delta/ }));
+    expect(highlights()).toEqual(['beta', 'alpha', '2::gamma, delta::']);
+    expect(textarea.value).toBe(initial);
+    fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
+    fireEvent.click(screen.getByRole('button', { name: /^gamma\s/ }));
+    expect(highlights()).toEqual(['gamma']);
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    expect(highlights()).toEqual([]);
+    expect(textarea.style.webkitTextFillColor).toBe('');
+    fireEvent.click(screen.getAllByRole('button', { name: /^alpha\s/ })[0]);
+    fireEvent.change(textarea, { target: { value: 'new prompt' } });
+    expect(highlights()).toEqual([]);
+  });
+
+  it('外部换内容清除旧插入位置与草稿，锁定后不保留可写入入口', () => {
+    const onValueChange = vi.fn();
+    const view = render(React.createElement(TagAutocompleteTextarea, { value: 'alpha, beta', onValueChange, 'aria-label': 'Prompt' }));
+    fireEvent.click(screen.getByRole('button', { name: '插入提示词：位置 2' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '插入提示词' }), { target: { value: 'draft' } });
+    view.rerender(React.createElement(TagAutocompleteTextarea, { value: 'new, words', onValueChange, 'aria-label': 'Prompt' }));
+    expect(screen.queryByRole('combobox', { name: '插入提示词' })).toBeNull();
+    expect(openTagInput().value).toBe('');
+    expect(onValueChange).not.toHaveBeenCalled();
+    view.rerender(React.createElement(TagAutocompleteTextarea, { value: 'new, words', onValueChange, disabled: true, 'aria-label': 'Prompt' }));
+    expect(screen.queryByRole('combobox', { name: '添加提示词' })).toBeNull();
+    expect(screen.queryAllByRole('button', { name: /^插入提示词：位置/ })).toHaveLength(0);
+  });
+
+  it('原文高亮跟随输入框滚动、实际内容宽度与样式变化，另一输入框不受影响', async () => {
+    render(React.createElement(React.Fragment, null,
+      React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }),
+      React.createElement(Harness, { initial: 'other', showTranslations: true })));
+    const textarea = screen.getAllByRole('combobox', { name: 'Prompt' })[0] as HTMLTextAreaElement;
+    Object.defineProperties(textarea, { clientWidth: { configurable: true, value: 280 }, clientHeight: { configurable: true, value: 96 } });
+    Object.assign(textarea.style, { paddingLeft: '12px', borderWidth: '2px', fontSize: '16px', lineHeight: '24px', letterSpacing: '1px', color: 'rgb(30, 40, 50)' });
+    fireEvent.click(screen.getByRole('button', { name: /^beta\s/ }));
+    const layer = document.querySelector('[data-prompt-highlight-layer]') as HTMLElement;
+    const text = layer.firstElementChild as HTMLElement;
+    expect(layer.style.width).toBe('280px'); expect(layer.style.height).toBe('96px');
+    expect(layer.style.left).toBe('2px'); expect(text.style.paddingLeft).toBe('12px');
+    expect(text.style.fontSize).toBe('16px'); expect(text.style.lineHeight).toBe('24px'); expect(text.style.letterSpacing).toBe('1px');
+    textarea.scrollTop = 48; textarea.scrollLeft = 6; fireEvent.scroll(textarea);
+    expect(text.style.transform).toBe('translate(-6px, -48px)');
+    textarea.style.color = 'rgb(200, 210, 220)'; fireEvent.resize(window);
+    expect(layer.style.color).toBe('rgb(200, 210, 220)');
+    expect((screen.getAllByRole('combobox', { name: 'Prompt' })[1] as HTMLTextAreaElement).style.webkitTextFillColor).toBe('');
+    expect(screen.queryAllByRole('combobox', { name: '插入提示词' })).toHaveLength(0);
   });
 
   it('鼠标或焦点进入候选时不提前追加半截词，选中候选后仍可继续输入', async () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    const input = openTagInput();
     fireEvent.change(input, { target: { value: '{mas}' } });
     input.setSelectionRange(4, 4); fireEvent.click(input);
     const option = (await screen.findAllByRole('option'))[0];
@@ -542,14 +691,41 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
   });
 
+  it('焦点从输入框进入候选时保留草稿，真正离开候选区后提交并收起', async () => {
+    render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
+    const input = openTagInput();
+    fireEvent.change(input, { target: { value: 'mas' } });
+    const option = (await screen.findAllByRole('option'))[0];
+    act(() => option.focus());
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('alpha');
+    expect(screen.getByRole('combobox', { name: '添加提示词' })).toBe(input);
+    act(() => textarea.focus());
+    expect(textarea.value).toBe('alpha, mas');
+    expect(within(screen.getByLabelText('提示词中文翻译')).queryByRole('combobox')).toBeNull();
+  });
+
+  it('输入法组合期间失焦不提前提交，组合结束后写入并收起', () => {
+    render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
+    const input = openTagInput();
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: '新词' } });
+    act(() => input.blur());
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('alpha');
+    fireEvent.compositionEnd(input);
+    expect(textarea.value).toBe('alpha, 新词');
+    expect(within(screen.getByLabelText('提示词中文翻译')).queryByRole('combobox')).toBeNull();
+  });
+
   it('候选跟随当前输入框，切换输入与滚动后重新定位，并只关联当前字段', async () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
     vi.spyOn(textarea, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 150, left: 32, width: 600 } as DOMRect);
-    const tagRect = vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ top: 300, bottom: 340, left: 900, width: 160 } as DOMRect);
     await openSuggestions(textarea, 'mas');
     expect(screen.getByRole('listbox').style.top).toBe('154px');
+    const input = openTagInput();
+    const tagRect = vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ top: 300, bottom: 340, left: 900, width: 160 } as DOMRect);
     fireEvent.focus(input); fireEvent.change(input, { target: { value: 'mas' } });
     await screen.findAllByRole('option');
     expect(screen.getByRole('listbox').style.top).toBe('344px');
@@ -570,7 +746,8 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
   it('Tag 输入法确认不提交，组合期间取消查询，结束后可补全，Escape 只关闭候选', async () => {
     render(React.createElement(Harness, { showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    const input = openTagInput();
+    vi.mocked(fetch).mockClear();
     fireEvent.change(input, { target: { value: 'mas' } });
     fireEvent.compositionStart(input);
     expect(fireEvent.keyDown(input, { key: 'Enter', isComposing: true })).toBe(true);
@@ -597,7 +774,7 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
       disconnect = disconnect;
     });
     render(React.createElement(Harness, { showTranslations: true }));
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    const input = openTagInput();
     const list = input.parentElement!;
     const rect = vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 140, left: 20, width: 500 } as DOMRect);
     fireEvent.change(input, { target: { value: 'mas' } });
@@ -628,7 +805,7 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     const onValueChange = vi.fn();
     const props = { value: '', onValueChange, showTranslations: true, 'aria-label': 'Prompt' };
     const view = render(React.createElement(TagAutocompleteTextarea, props));
-    const input = screen.getByRole('combobox', { name: '添加提示词' });
+    const input = openTagInput();
     fireEvent.change(input, { target: { value: 'mas' } });
     await waitFor(() => expect(resolveShard).toBeTypeOf('function'));
     if (change === 'focus') fireEvent.focus(screen.getByRole('combobox', { name: 'Prompt' }));
@@ -1080,27 +1257,28 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     fireEvent.keyDown(zone, { key: 'z', ctrlKey: true }); expect(textarea.value).toBe(initial);
     expect(fireEvent.paste(zone, { clipboardData: { getData: () => '[delta, epsilon]' } })).toBe(false);
     expect(textarea.value).toBe(`${initial}, [delta, epsilon]`);
-    const input = screen.getByRole('combobox', { name: '添加提示词' });
+    const input = openTagInput();
     expect(fireEvent.copy(input, { clipboardData: { setData } })).toBe(true);
     expect(fireEvent.cut(input, { clipboardData: { setData } })).toBe(true);
     expect(fireEvent.paste(input, { clipboardData: { getData: () => 'zeta' } })).toBe(true);
     expect(fireEvent.keyDown(input, { key: 'z', ctrlKey: true })).toBe(true);
   });
 
-  it('空提示词也可在翻译区直接输入，回车或失焦追加，输入法确认不提交，删除全部后输入入口仍在', () => {
+  it('空提示词点击空白后输入，回车或失焦后收起，输入法确认不提交，删除全部后保留空白入口', () => {
     render(React.createElement(Harness, { showTranslations: true }));
-    const input = screen.getByRole('combobox', { name: '添加提示词' }) as HTMLInputElement;
+    let input = openTagInput();
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: 'alpha, beta' } });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true }); expect(textarea.value).toBe('');
-    fireEvent.keyDown(input, { key: 'Enter' }); expect(textarea.value).toBe('alpha, beta'); expect(input.value).toBe('');
+    fireEvent.keyDown(input, { key: 'Enter' }); expect(textarea.value).toBe('alpha, beta'); expect(screen.queryByRole('combobox', { name: '添加提示词' })).toBeNull();
+    input = openTagInput();
     fireEvent.change(input, { target: { value: '2::gamma, delta::' } }); fireEvent.blur(input);
     expect(textarea.value).toBe('alpha, beta, 2::gamma, delta::');
     fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
     fireEvent.keyDown(screen.getByLabelText('提示词中文翻译'), { key: 'a', ctrlKey: true });
     fireEvent.click(screen.getByRole('button', { name: '删除 4 个 Tag' }));
     expect(textarea.value).toBe('');
-    expect(screen.getByRole('combobox', { name: '添加提示词' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '在末尾插入提示词' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '撤销' })); expect(textarea.value).toBe('alpha, beta, 2::gamma, delta::');
   });
 

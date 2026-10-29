@@ -1,4 +1,4 @@
-import { selectPurposeEntries, isCreativeSectionKey } from './promptPurposes.mjs';
+import { selectPurposeEntries } from './promptPurposes.mjs';
 /*
  * 一键 Roll · 六库抽取与随机流（纯逻辑核）
  * ---------------------------------------------------------------------------
@@ -11,7 +11,7 @@ import { selectPurposeEntries, isCreativeSectionKey } from './promptPurposes.mjs
 
 import { selectPromptLibraryDirectoryEntries, createDefaultPromptLibraryTree } from './promptLibraryTree.mjs';
 import type { RollUnit, Json, ChainLike, RollRecordLike, RollDrawInput, RollRow, RollPicks, RollRng } from './contentRoll';
-import { ALGO, LEGACY_ALGO, KINDS, META, REASON, clip, idOf, nameOf, textOf, negativeOf, bilingualOf, tagsOf, descriptionOf, previewOf, updatedAtOf, summaryOf, constraintsOf } from './contentRoll';
+import { rollSectionKey, isRollSectionKey, ALGO, LEGACY_ALGO, KINDS, META, REASON, clip, idOf, nameOf, textOf, negativeOf, bilingualOf, tagsOf, descriptionOf, previewOf, updatedAtOf, summaryOf, constraintsOf } from './contentRoll';
 
 export const poolOf = (chains: ChainLike[] | null | undefined, kind: string) => {
   const list = Array.isArray(chains) ? chains : [];
@@ -79,7 +79,7 @@ export const rowOf = (chain: ChainLike | null | undefined, kind: string, reason:
   const summary = chain ? summaryOf(chain) : { text: '', englishOnly: false };
   const constraints = chain ? constraintsOf(chain) : { facets: {}, absent: [], auto: [], values: [], unknown: [], notes: '', needsReview: false };
   return {
-    kind,
+    kind: rollSectionKey(kind),
     ...(unit ? { directoryId: unit.directoryId, directoryName: unit.name, directoryPath: unit.path.slice() } : {}),
     scope: unit?.scope || META[kind]?.scope || 'global',
     label: unit?.name || META[kind]?.short || kind,
@@ -207,7 +207,8 @@ export const draw = (input: RollDrawInput) => {
  */
 export const rerollOne = (input: RollDrawInput, kind: string, nextSeed: string) => {
   if (input.units !== undefined) {
-    const unit = input.units.find(item => item.id === kind);
+    const originalUnit = input.units.find(item => item.id === kind || item.id === rollSectionKey(kind));
+    const unit = originalUnit ? { ...originalUnit, id: kind, scope: kind.startsWith('global:') ? 'global' as const : kind.startsWith('character:') ? 'character' as const : originalUnit.scope } : undefined;
     if (!unit) return { ok: false, code: 'unknown_kind', message: '目录已不存在，请重新选择范围' };
     if (input.checks?.[kind] === false) return { ok: false, code: 'unchecked', message: '本次未参与，先勾选再换' };
     if ((input.locked || input.locks)?.[kind]) return { ok: false, code: 'locked', message: '已固定，先解除固定再换' };
@@ -296,15 +297,16 @@ export const toSections = (picks: RollPicks) => {
   for (const kind of Object.keys(picks || {})) {
     const row = picks && picks[kind];
     if (!row || !row.filled) continue;
-    if ((row.scope || META[kind]?.scope) === 'global') global[kind] = row.text;
-    else character[kind] = row.text;
+    const section = rollSectionKey(kind);
+    if ((row.scope || META[section]?.scope) === 'global') global[section] = row.text;
+    else character[section] = row.text;
     written.push(kind);
     rows.push(row);
   }
   return { global, character, written, rows };
 };
 /* 可读的一行摘要（给 toast / 证据用） */
-export const describe = (record: RollRecordLike | null | undefined) => (Object.keys(record?.picks || {}).some(key => isCreativeSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).map((kind: string) => {
+export const describe = (record: RollRecordLike | null | undefined) => (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).map((kind: string) => {
   const row = record && record.picks && record.picks[kind];
   if (!row) return (META[kind]?.short || record?.picks?.[kind]?.directoryName || kind) + '：—';
   return (META[kind]?.short || row.directoryName || kind) + '：' + (row.filled ? row.name + '「' + clip(row.summary || row.text, 40) + '」' : '（' + row.reasonText + '）');
@@ -314,7 +316,7 @@ export const samePicks = (a: RollPicks, b: RollPicks) =>
   [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].every((kind: string) => {
     const left = a[kind] as RollRow | undefined;
     const right = b[kind] as RollRow | undefined;
-    return String(left?.id || '') === String(right?.id || '') && (!isCreativeSectionKey(kind) || left?.text === right?.text && left?.negative === right?.negative);
+    return String(left?.id || '') === String(right?.id || '') && (!isRollSectionKey(kind) || left?.text === right?.text && left?.negative === right?.negative);
   });
 /* 技术证据：算法版本 + 随机码 + 每栏随机流 + 参与 + 固定 + 每栏条目 id/池指纹（需求 §7 的「证据」） */
 export const evidenceOf = (record: RollRecordLike | null | undefined) => {
@@ -326,14 +328,14 @@ export const evidenceOf = (record: RollRecordLike | null | undefined) => {
     at: Number((record && record.at) || 0) || null,
     checks: Object.assign({}, (record && record.checks) || {}),
     locked: Object.assign({}, (record && (record.locked || record.locks)) || {}),
-    pools: (Object.keys(record?.picks || {}).some(key => isCreativeSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
+    pools: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
       const unit = record?.units?.find((item: RollUnit) => item.id === kind);
-      const pool = chains ? unit ? directoryPoolOf({ chains, directories: record?.directories }, unit) : isCreativeSectionKey(kind) ? null : poolOf(chains, kind) : null;
+      const pool = chains ? unit ? directoryPoolOf({ chains, directories: record?.directories }, unit) : isRollSectionKey(kind) ? null : poolOf(chains, kind) : null;
       const fallback = record?.picks?.[kind]?.['poolSize'];
       acc[kind] = { size: pool ? pool.length : Number(fallback) || 0, fingerprint: pool ? poolFingerprint(pool) : '' };
       return acc;
     }, {} as Record<string, Json>),
-    picks: (Object.keys(record?.picks || {}).some(key => isCreativeSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
+    picks: (Object.keys(record?.picks || {}).some(key => isRollSectionKey(key)) ? Object.keys(record?.picks || {}) : KINDS).reduce((acc: Record<string, Json>, kind: string) => {
       const row = record && record.picks && record.picks[kind];
       acc[kind] = row ? {
         id: row.id, name: row.name, reason: row.reason, locked: !!row.locked,

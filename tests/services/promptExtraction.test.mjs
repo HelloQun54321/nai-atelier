@@ -495,3 +495,41 @@ test('固定用途提取保留完整混合权重组，目录名不参与分组',
   assert.deepEqual(result.items[0].directoryIds, []);
   assert.throws(() => parseVisionExtractionResponse(JSON.stringify({ items: [{ prompt: 'dress', purposes: ['custom'] }] }), context), /用途 Tag 无效/);
 });
+
+test('固定用途文本分类要求显式 purposes；明确空数组仍表示未标注', () => {
+  const chunks = prepareExtractionChunks('white dress').chunks;
+  const context = { semantic: true };
+  assert.throws(() => parseTextExtractionResponse(JSON.stringify({ assignments: [{ id: 's0' }] }), chunks, context),
+    error => error.status === 502 && /分类结果不完整/.test(error.message));
+
+  const parsed = parseTextExtractionResponse(JSON.stringify({ assignments: [{ id: 's0', purposes: [] }] }), chunks, context);
+  const result = assembleTextExtraction(chunks, parsed);
+  assert.equal(result.items[0].prompt, 'white dress');
+  assert.deepEqual(result.items[0].purposes, []);
+});
+
+test('固定用途自然语言扩写的每个部分必须显式 purposes', () => {
+  const chunks = prepareExtractionChunks('穿白裙站在海边。').chunks;
+  const context = { semantic: true };
+  const base = { assignments: [{ id: 's0', purposes: [] }] };
+  assert.throws(() => parseTextExtractionResponse(JSON.stringify({ ...base, expansions: [
+    { id: 's0', parts: [{ english: 'white dress' }] },
+  ] }), chunks, context), error => error.status === 502 && /分类结果不完整/.test(error.message));
+
+  const parsed = parseTextExtractionResponse(JSON.stringify({ ...base, expansions: [
+    { id: 's0', parts: [{ purposes: [], english: 'unclassified phrase' }] },
+  ] }), chunks, context);
+  assert.deepEqual(assembleTextExtraction(chunks, parsed).items[0].purposes, []);
+});
+
+test('固定用途看图提取要求显式 purposes；明确空数组可保留未标注视觉候选', () => {
+  const context = { semantic: true };
+  assert.throws(() => parseVisionExtractionResponse(JSON.stringify({ items: [
+    { name: '白裙', prompt: 'white dress' },
+  ] }), context), error => error.status === 502 && /分类结果不完整/.test(error.message));
+  const result = parseVisionExtractionResponse(JSON.stringify({ items: [
+    { name: '白裙', prompt: 'white dress', purposes: [] },
+  ] }), context);
+  assert.equal(result.items[0].prompt, 'white dress');
+  assert.deepEqual(result.items[0].purposes, []);
+});

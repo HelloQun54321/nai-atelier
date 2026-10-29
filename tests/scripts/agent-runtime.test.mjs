@@ -150,7 +150,7 @@ test('连续三轮工具调用全部失败时停止，中间有成功即重新�
 });
 
 test('只有不经页面、不导航工作区的查询可以并行，写操作与页面工具保持串行', () => {
-  for (const name of ['search_tags', 'get_lab_state', 'read_novelai_doc', 'web_search', 'list_generation_history']) assert.equal(isAgentParallelTool(name), true, name);
+  for (const name of ['search_tags', 'get_lab_state', 'read_novelai_doc', 'web_search', 'list_generation_history', 'get_prompt_library_directories', 'search_prompt_library_items']) assert.equal(isAgentParallelTool(name), true, name);
   for (const name of ['read_current_page', 'inspect_current_page_image', 'get_generation_status', 'get_roll_state', 'get_artist_sample_status', 'inspect_image_tags', 'get_agent_capabilities', 'operate_current_page', 'update_prompts', 'request_generation', 'navigate_view', 'unknown_future_tool']) assert.equal(isAgentParallelTool(name), false, name);
   assert.equal(isAgentReadTool('web_search'), true); assert.equal(isAgentReadTool('navigate_view'), false);
 });

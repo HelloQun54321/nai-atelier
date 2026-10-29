@@ -1,3 +1,4 @@
+import { rollSectionKey } from './contentRoll';
 /**
  * 一键 Roll 的内容 → 风格串。
  *
@@ -100,7 +101,7 @@ export const planRollToChain = (
     ? characters.findIndex(item => String(item.id) === options.targetRoleId) : 0;
   if (roleIndex < 0) throw new Error('目标角色已不存在，请重新选择');
 
-  const usable = rows.filter(row => trimmed(row.text) && (!include || include.has(row.kind)));
+  const usable = rows.map(row => ({ ...row, itemId: row.kind, kind: rollSectionKey(row.kind) })).filter(row => trimmed(row.text) && (!include || include.has(row.itemId)));
   const writes: RollToChainWrite[] = [];
   const skipped: string[] = [];
 
@@ -112,7 +113,7 @@ export const planRollToChain = (
     if (negative) sectionNegatives.extra = negative;
     sectionMeta.extra = mergeMeta(sectionMeta.extra, '一键 Roll 合并');
     writes.push({ kind: 'extra', target: 'extra', text: merged, previous });
-    for (const row of usable) writes.push({ kind: row.kind, target: 'extra', text: trimmed(row.text), previous: '' });
+    for (const row of usable) writes.push({ kind: row.itemId, target: 'extra', text: trimmed(row.text), previous: '' });
   } else {
     for (const row of usable) {
       const value = trimmed(row.text);
@@ -132,14 +133,14 @@ export const planRollToChain = (
           delete sectionMeta[row.kind];
           delete sectionNegatives[row.kind];
         }
-        writes.push({ kind: row.kind, target: 'character', text: value, previous });
+        writes.push({ kind: row.itemId, target: 'character', text: value, previous });
       } else if (isGlobalKind(row.kind) || isCreativeSectionKey(row.kind)) {
         const previous = trimmed(sections[row.kind]);
         sections[row.kind] = value;
         if (trimmed(row.negative)) sectionNegatives[row.kind] = trimmed(row.negative);
         else delete sectionNegatives[row.kind];
         sectionMeta[row.kind] = { ...mergeMeta(sectionMeta[row.kind], row.name || ''), ...(isCreativeSectionKey(row.kind) ? { directoryName: row.directoryName, directoryPath: row.directoryPath } : {}) };
-        writes.push({ kind: row.kind, target: 'global', text: value, previous });
+        writes.push({ kind: row.itemId, target: 'global', text: value, previous });
       } else {
         skipped.push(row.kind);
       }

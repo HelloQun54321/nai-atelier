@@ -57,11 +57,24 @@ export function getEntryPurposes(entry) {
   return Array.isArray(value) ? PROMPT_PURPOSE_IDS.filter(id => value.includes(id)) : [];
 }
 
+/** 只判断已保存标注能否进入单用途池，不把标注视为正文语义已经核验。 */
+export function getPromptPurposeCandidateStatus(entry, purposeId) {
+  const purposes = getEntryPurposes(entry);
+  let reason = 'eligible';
+  if (!entry || !isPromptLibraryFragmentEntry(entry)) reason = 'non_fragment';
+  else if (entryParams(entry)?._promptLibraryPolarity === 'negative') reason = 'negative_only';
+  else if (typeof entry?.basePrompt !== 'string' || !entry.basePrompt.trim()) reason = 'empty_prompt';
+  else if (!purposes.length) reason = 'unmarked';
+  else if (purposes.length > 1) reason = 'mixed';
+  else if (purposeId !== undefined && !purposes.includes(purposeId)) reason = 'purpose_mismatch';
+  return { eligible: reason === 'eligible', reason, purposes };
+}
+
 export function selectPurposeEntries(entries, purposeId, pure = false) {
   return entries.filter(entry => {
-    if (pure && (!isPromptLibraryFragmentEntry(entry) || entryParams(entry)._promptLibraryPolarity === 'negative')) return false;
+    if (pure) return getPromptPurposeCandidateStatus(entry, purposeId).eligible;
     const purposes = getEntryPurposes(entry);
-    return purposes.includes(purposeId) && (!pure || purposes.length === 1);
+    return purposes.includes(purposeId);
   });
 }
 

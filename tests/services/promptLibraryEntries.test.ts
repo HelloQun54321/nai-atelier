@@ -89,18 +89,92 @@ it('自定义目录片段与组合保留正文、目录路径和真实存储范�
   expect((entry.params as unknown as Record<string, unknown>)._promptLibraryDirectoryIds).toEqual(['custom']);
   const params = { _promptSections: { 'directory:custom': 'sword', sectionNegatives: { 'directory:custom': 'axe' } }, characters: [{ id: 'one', sections: { 'directory:costume': 'cape' } }] } as unknown as NAIParams;
   const picks = workspacePicks(params, 'one', directories);
-  expect(picks['directory:custom']).toMatchObject({ scope: 'global', directoryName: '道具', text: 'sword', negative: 'axe' });
-  expect(picks['directory:costume']).toMatchObject({ scope: 'character', text: 'cape' });
+  expect(picks['global:directory:custom']).toMatchObject({ scope: 'global', directoryName: '道具', text: 'sword', negative: 'axe' });
+  expect(picks['character:directory:costume']).toMatchObject({ scope: 'character', text: 'cape' });
   const saved = chain(createCombinationData('道具组合', picks));
   expect(libraryEntryText(saved)).toBe('sword, cape');
   expect(libraryEntryText(saved, { directoryId: 'custom', negative: true })).toBe('axe');
-  expect(combinationPicks(saved)['directory:custom']).toMatchObject({ directoryId: 'custom', directoryPath: ['道具'] });
+  expect(combinationPicks(saved)['global:directory:custom']).toMatchObject({ directoryId: 'custom', directoryPath: ['道具'] });
 });
 
-it('同一目录同时存于全局和所选角色时明确拒绝保存，保留两份输入', () => {
+it('同一目录同时存于全局和所选角色时分别保存，保留两份输入', () => {
   const params = { _promptSections: { 'directory:shared': 'global sword' }, characters: [{ id: 'one', sections: { 'directory:shared': 'character sword' } }] } as unknown as NAIParams;
   const before = JSON.stringify(params);
-  expect(() => workspacePicks(params, 'one')).toThrow('同一目录同时包含全局和角色内容');
+  expect(Object.keys(workspacePicks(params, 'one'))).toEqual(['global:directory:shared', 'character:directory:shared']);
   expect(JSON.stringify(params)).toBe(before);
-  expect(workspacePicks(params)['directory:shared'].text).toBe('global sword');
+  expect(workspacePicks(params)['global:directory:shared'].text).toBe('global sword');
+});
+
+const scopedCombination = () => {
+  const params = { _promptSections: { 'purpose:clothing': 'global cape', sectionNegatives: { 'purpose:clothing': 'global negative' } }, characters: [
+    { id: 'one', prompt: 'keep one', sections: { 'purpose:clothing': 'one dress' } },
+    { id: 'two', prompt: 'keep two', sections: { 'purpose:clothing': 'two dress' }, sectionNegatives: { 'purpose:clothing': 'two negative' } },
+  ] } as unknown as NAIParams;
+  return chain(createCombinationData('同用途两个落点', workspacePicks(params, 'two')));
+};
+it('同用途两落点组合以独立身份保存读回，正文负面与canonical用途完整保留', () => {
+  const saved = scopedCombination();
+  const snapshot = (saved.params as any)._rollContentSnapshot;
+  expect(snapshot.version).toBe(2);
+  expect(snapshot.items.map((item: any) => [item.itemId, item.unitId, item.scope, item.text, item.negative])).toEqual([
+    ['global:purpose:clothing', 'purpose:clothing', 'global', 'global cape', 'global negative'],
+    ['character:purpose:clothing', 'purpose:clothing', 'character', 'two dress', 'two negative'],
+  ]);
+  const picks = combinationPicks(saved);
+  expect(Object.keys(picks)).toEqual(['global:purpose:clothing', 'character:purpose:clothing']);
+  expect(Object.values(picks).map(row => row.kind)).toEqual(['purpose:clothing', 'purpose:clothing']);
+  expect(libraryEntryText(saved, { purposeId: 'clothing' })).toBe('global cape, two dress');
+  expect(libraryEntryText(saved, { purposeId: 'clothing', negative: true })).toBe('global negative, two negative');
+  expect(combinationPicks(chain(createCombinationData('再次保存', picks)))).toEqual(picks);
+});
+it.each(['replace', 'append', 'fill-missing'] as const)('整组合%s按分项scope写回全局与指定角色，不互相覆盖', mode => {
+  const before = state();
+  const after = applyLibrarySelection(planLibrarySelection(before, scopedCombination(), { mode: 'existing', id: 'two' }, mode));
+  expect((after.params._promptSections as any)['purpose:clothing']).toBe('global cape');
+  expect((after.params._promptSections?.sectionNegatives as any)['purpose:clothing']).toBe('global negative');
+  expect((after.params.characters![1].sections as any)['purpose:clothing']).toBe('two dress');
+  expect((after.params.characters![1].sectionNegatives as any)['purpose:clothing']).toBe('two negative');
+  expect(after.params.characters![0]).toEqual(before.params.characters![0]);
+  expect(after.params.seed).toBe(123);
+});
+it('明确全局或角色用途入口合入两份同用途正文和负面，不静默覆盖', () => {
+  const saved = scopedCombination();
+  const global = applyLibrarySelection(planLibrarySelection(state(), saved, { mode: 'global' }, 'replace'));
+  expect((global.params._promptSections as any)['purpose:clothing']).toBe('global cape, two dress');
+  expect((global.params._promptSections?.sectionNegatives as any)['purpose:clothing']).toBe('global negative, two negative');
+  const role = applyLibrarySelection(planLibrarySelection(state(), saved, { mode: 'existing', id: 'two' }, 'replace', { purposeId: 'clothing', roleId: 'two' }));
+  expect((role.params.characters![1].sections as any)['purpose:clothing']).toBe('global cape, two dress');
+  expect((role.params.characters![1].sectionNegatives as any)['purpose:clothing']).toBe('global negative, two negative');
+});
+it('旧v2同用途不同scope未含itemId仍独立读回；旧多人组合依roleIndex选择', () => {
+  const saved = scopedCombination();
+  const snapshot = (saved.params as any)._rollContentSnapshot;
+  snapshot.items.forEach((item: any) => delete item.itemId);
+  expect(Object.keys(combinationPicks(saved))).toEqual(['global:purpose:clothing', 'character:purpose:clothing']);
+  const legacy = chain({ params: { _rollContentSnapshot: { format: 'nai-roll-content', version: 1, roles: [
+    { key: 'one', provided: { wardrobe: true }, sections: { wardrobe: 'first dress' } },
+    { key: 'two', provided: { wardrobe: true }, sections: { wardrobe: 'second dress' } },
+  ], global: {} } } as any });
+  expect(combinationPicks(legacy, 1).wardrobe.text).toBe('second dress');
+});
+
+it('仅填空白按目标落点独立处理，不因另一落点已填而丢掉待填项目', () => {
+  const before = state();
+  before.params._promptSections = { 'purpose:clothing': 'keep global' } as any;
+  before.subject = 'keep global';
+  const selection = planLibrarySelection(before, scopedCombination(), { mode: 'existing', id: 'two' }, 'fill-missing');
+  expect(selection.plan.written).toContain('character:purpose:clothing');
+  const after = applyLibrarySelection(selection);
+  expect((after.params._promptSections as any)['purpose:clothing']).toBe('keep global');
+  expect((after.params.characters![1].sections as any)['purpose:clothing']).toBe('two dress');
+});
+it('压到单目标时按原顺序保留权重组与重复原词，不擅自拆删', () => {
+  const picks = {
+    'global:purpose:clothing': { kind: 'purpose:clothing', scope: 'global' as const, filled: true, text: '{red, cape}, red', negative: '[blue, coat]' },
+    'character:purpose:clothing': { kind: 'purpose:clothing', scope: 'character' as const, filled: true, text: 'red, 1.2::dress::', negative: 'blue, coat' },
+  };
+  const saved = chain(createCombinationData('weighted', picks));
+  const after = applyLibrarySelection(planLibrarySelection(state(), saved, { mode: 'global' }, 'replace'));
+  expect((after.params._promptSections as any)['purpose:clothing']).toBe('{red, cape}, red, red, 1.2::dress::');
+  expect((after.params._promptSections?.sectionNegatives as any)['purpose:clothing']).toBe('[blue, coat], blue, coat');
 });

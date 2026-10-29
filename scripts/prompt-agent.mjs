@@ -1,7 +1,8 @@
-import { PROMPT_PURPOSES, PROMPT_PURPOSE_IDS, PROMPT_PURPOSE_INSTRUCTION, readPromptPurposes, getEntryPurposes, selectPurposeEntries, isCreativeSectionKey } from '../services/promptPurposes.mjs';
+import { PROMPT_PURPOSES, PROMPT_PURPOSE_IDS, PROMPT_PURPOSE_INSTRUCTION, readPromptPurposes, isCreativeSectionKey } from '../services/promptPurposes.mjs';
 import { vibeBaseModel, vibeStrength } from '../services/vibeProtocol.mjs';
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentLoopGuard, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isAgentParallelTool, isProjectImagePath, localTimeInfo, publicAgentToolContent, streamModelWithGuards } from './agent-runtime.mjs';
 import { humanizeAgentError } from './agent-errors.mjs';
+import { readPromptLibraryDirectories, readPromptLibraryChain, searchPromptLibrary } from './agent-prompt-library.mjs';
 import { normalizeAgentGenerationResult, agentOperationError, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
 import { AgentUiBridge } from './agent-ui-bridge.mjs';
@@ -30,10 +31,10 @@ import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLe
 import { agentLanguagePolicy } from '../locales/index.mjs';
 import { preparePromptClassification, parsePromptClassification } from '../services/promptClassification.mjs';
 import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, assembleTextExtraction, parseTextExtractionResponse, parseVisionExtractionResponse, prepareExtractionChunks } from '../services/promptExtraction.mjs';
-import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry, selectPromptLibraryDirectoryEntries, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
+import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, isPromptLibraryFragmentEntry, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['agent-prompt-library.mjs', 'prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -76,7 +77,6 @@ const PREFERRED_MODELS = {
   deepseek: 'deepseek-v4-flash',
 };
 const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5: '元数据', 6: 'NovelAI' };
-const MAX_PROJECT_LIST_ITEMS = 100;
 const MAX_AGENT_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_WEB_PAGE_CHARS = 24_000;
 const MAX_TASK_EVENTS = 500;
@@ -349,10 +349,20 @@ export const foldAgentToolResults = (messages, count) => {
     const original = toolResultText(message);
     const images = message.content.filter(part => part?.type === 'image').length;
     const ids = toolResultIdHints(original);
+    let libraryRead;
+    if (['get_prompt_library_directories', 'search_prompt_library_items', 'get_chain'].includes(message.toolName)) {
+      try {
+        const data = JSON.parse(original);
+        libraryRead = { ...Object.fromEntries(['id', 'directoryId', 'field', 'offset', 'nextOffset', 'limit', 'section', 'purposeMatch']
+          .filter(key => Object.hasOwn(data, key) && (data[key] === null || typeof data[key] === 'number' || typeof data[key] === 'string' && data[key].length <= 200))
+          .map(key => [key, data[key]])), note: '对应工具调用仍保留原参数；需要原页可重读。全文用 get_chain(id,field,offset)，目录用 directoryId/field；按 nextOffset 续读，JSON片段拼接后解析。' };
+      } catch { /* 旧非 JSON 回执仍按资料 ID 和原调用参数重读。 */ }
+    }
     return { ...message, details: undefined, content: [{ type: 'text', text: JSON.stringify({
       _agentFolded: '早先的工具结果已折叠以节省上下文；需要其中内容时按 ID、参数或分页重新读取，不要凭记忆补写。',
       tool: message.toolName, status: message.isError ? 'error' : 'ok', originalChars: original.length,
       ...(images ? { images } : {}), ...(ids.length ? { ids } : {}),
+      ...(libraryRead ? { libraryRead } : {}),
     }) }] };
   });
   return { messages: result, folded };
@@ -1388,7 +1398,7 @@ export const buildLibrarySystemPrompt = (kind, overrides = {}) => {
   return head.length ? `${head.join('\n\n')}\n\n${spec.systemPrompt}` : spec.systemPrompt;
 };
 
-export const parseLibraryResponse = (raw, limit = 2000) => {
+export const parseLibraryResponse = (raw, limit = 2000, { requirePurposes = false } = {}) => {
   const cleaned = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   let parsed;
   try { parsed = JSON.parse(cleaned); } catch {
@@ -1399,19 +1409,21 @@ export const parseLibraryResponse = (raw, limit = 2000) => {
   const candidates = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : [];
   const items = [];
   for (const item of candidates) {
-    const prompt = text(item?.prompt).replace(/\s+/g, ' ').trim().slice(0, 4000);
+    if (requirePurposes && (!item || !Object.hasOwn(item, 'purposes') || !Array.isArray(item.purposes))) throw Object.assign(new Error('模型响应缺少明确的用途 Tag 数组；无法判断时也必须返回 purposes: []'), { status: 502 });
+    const purposes = readPromptPurposes(item?.purposes);
+    const prompt = text(item?.prompt).replace(/\s+/g, ' ').trim();
     if (!prompt) continue;
     const name = text(item?.name).replace(/\s+/g, ' ').trim().slice(0, 60);
     const tags = [...new Set((Array.isArray(item?.tags) ? item.tags : [])
       .map(tag => text(tag).replace(/\s+/g, ' ').trim().slice(0, 20))
       .filter(Boolean))].slice(0, 6);
     items.push({
-      purposes: readPromptPurposes(item?.purposes),
+      purposes,
       name: name || `提示词方案 ${items.length + 1}`,
       prompt,
       // 中英对照版本：与 prompt 的 Tag 一一对应，供用户核对与复制。
       bilingual: text(item?.bilingual).replace(/\s+/g, ' ').trim().slice(0, 8000),
-      negativePrompt: text(item?.negativePrompt).replace(/\s+/g, ' ').trim().slice(0, 2000),
+      negativePrompt: text(item?.negativePrompt).replace(/\s+/g, ' ').trim(),
       tags,
       note: text(item?.note).replace(/\s+/g, ' ').trim().slice(0, 200),
     });
@@ -1956,7 +1968,7 @@ export class PromptAgentService {
       }));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       // 生成后做一次越界词校验：剔除不属于本领域的 Tag（见 filterLibraryItems）。
-      const parsedItems = directoryContext ? parseDirectoryLibraryResponse(extractAssistantText(agent.state.messages), directoryContext, count) : parseLibraryResponse(extractAssistantText(agent.state.messages), count);
+      const parsedItems = directoryContext ? parseDirectoryLibraryResponse(extractAssistantText(agent.state.messages), directoryContext, count) : parseLibraryResponse(extractAssistantText(agent.state.messages), count, { requirePurposes: purposes !== null });
       const { items, filteredCount } = purposes ? { items: parsedItems, filteredCount: 0 } : filterLibraryItems(parsedItems, spec);
       if (!items.length) throw Object.assign(new Error(`模型没有返回可用的${spec.label}提示词，请重试`), { status: 502 });
       return { items, provider, model: modelId, count, ...(directoryContext ? directoryContext.directories[0] : { kind }), filteredCount };
@@ -2030,7 +2042,7 @@ export class PromptAgentService {
       }));
       if (agent.state.errorMessage) throw Object.assign(new Error(agent.state.errorMessage), { status: 502 });
       if (purposes) {
-        const items = parseLibraryResponse(extractAssistantText(agent.state.messages));
+        const items = parseLibraryResponse(extractAssistantText(agent.state.messages), 2000, { requirePurposes: true });
         if (!items.length) throw Object.assign(new Error('模型没有返回可用的提示词，请重试'), { status: 502 });
         return { items, missing: purposes.filter(id => !items.some(item => item.purposes.length === 1 && item.purposes[0] === id)), provider, model: modelId, count: items.length, filteredCount: 0, dryRun: false };
       }
@@ -3775,28 +3787,20 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'get_prompt_library_directories', label: '读取当前提示词目录', description: '读取用户当前完整目录树、真实 ID、路径和默认取用目标。整理、生成或选择提示词范围前先读取；预设可任意改名和删改，不能假设固定六类。读取不会保存或修改目录。',
-        parameters: Type.Object({}),
-        execute: async () => {
-          const tree = await readDirectories();
-          const result = { ...tree, purposes: PROMPT_PURPOSES, purposeRule: "目录仅供整理；固定 purposes 按实际正文标记，多用途不可当单用途 Roll 候选；标签 ID 不允许自定义。", directories: tree.nodes.map(node => directoryDetails(tree, node.id)) };
+        name: 'get_prompt_library_directories', label: '读取当前提示词目录', description: '分页读取真实目录树、名称路径和固定用途。用 nextOffset 继续，直到 null；nodes/directories 仅为本页。directoryId 可读取一个目录，field=directoryPath 可按 offset/limit 分段读取极长路径（JSON文本，拼接后解析）。目录可辅助理解，不能代替正文或用途标注。',
+        parameters: Type.Object({ offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()), directoryId: Type.Optional(Type.String()), field: Type.Optional(Type.String()) }),
+        execute: async (_id, args) => {
+          const result = readPromptLibraryDirectories(await readDirectories(), PROMPT_PURPOSES, args);
           return { content: jsonText(result), details: result };
         },
       },
       {
-        name: 'search_prompt_library_items', label: '读取提示词目录候选', description: '按当前真实目录 ID 读取片段的实际正负词、备注、来源与路径；选择父目录包含子树，同条片段不重复。省略 directoryIds 读取全部片段；显式空数组只读取未归类片段。先读取当前目录，再结合实际内容、本轮选择和目标理解意图。',
-        parameters: Type.Object({ pure: Type.Optional(Type.Boolean()), purposes: Type.Optional(Type.Array(Type.Union(PROMPT_PURPOSE_IDS.map(id => Type.Literal(id))))), directoryIds: Type.Optional(Type.Array(Type.String(), { maxItems: 2000 })), query: Type.Optional(Type.String()), page: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
+        name: 'search_prompt_library_items', label: '读取提示词目录候选', description: '按名称、正文、负面、备注、自由标签、实际目录路径与组合内部快照搜索。section=items片段(默认)/originals原文/saved组合/all；purposes默认any，可选purposeMatch=all。pure=true仅过滤单用途合格片段；不传则可读取混合、未标注和负面片段，pureEligibility明确原因。摘要不冒充全文；全文/快照用get_chain按字段续读。必须按实际nextOffset翻页，直到null，不能仅page++。目录父节点含后代，directoryIds=[]只未归类。',
+        parameters: Type.Object({ section: Type.Optional(Type.Union(['items', 'originals', 'saved', 'all'].map(value => Type.Literal(value)))), purposeMatch: Type.Optional(Type.Union([Type.Literal('any'), Type.Literal('all')])), pure: Type.Optional(Type.Boolean()), purposes: Type.Optional(Type.Array(Type.Union(PROMPT_PURPOSE_IDS.map(id => Type.Literal(id))))), directoryIds: Type.Optional(Type.Array(Type.String(), { maxItems: 2000 })), query: Type.Optional(Type.String()), page: Type.Optional(Type.Number()), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const tree = await readDirectories();
-          if (args.directoryIds !== undefined && (!Array.isArray(args.directoryIds) || args.directoryIds.some(id => !tree.nodes.some(node => node.id === id)))) throw new Error('提示词目录不存在，请重新读取目录');
-          const all = listItems(await readProject('/api/chains')).filter(isPromptLibraryFragmentEntry);
-          const query = text(args.query).trim().toLocaleLowerCase();
-          const purposes = readPromptPurposes(args.purposes);
-          const candidates = (args.directoryIds === undefined ? all : args.directoryIds.length ? selectPromptLibraryDirectoryEntries(all, tree, args.directoryIds) : all.filter(item => !getPromptLibraryEntryDirectoryIds(item, tree).length))
-            .filter(item => (!purposes.length || purposes.some(id => getEntryPurposes(item).includes(id))) && (!args.pure || selectPurposeEntries([item], getEntryPurposes(item)[0], true).length > 0))
-            .filter(item => !query || JSON.stringify([item.name, item.basePrompt, item.negativePrompt, item.description, item.tags, item.params?._promptLibrary]).toLocaleLowerCase().includes(query));
-          const page = Math.floor(clamp(args.page, 0, 100000, 0)), limit = Math.floor(clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 20));
-          const result = { revision: tree.revision, page, limit, total: candidates.length, items: candidates.slice(page * limit, (page + 1) * limit).map(item => ({ id: item.id, name: item.name, prompt: item.basePrompt, negativePrompt: item.negativePrompt, description: item.description, purposes: getEntryPurposes(item), tags: item.tags, meta: item.params?._promptLibrary, directories: getPromptLibraryEntryDirectoryIds(item, tree).map(id => directoryDetails(tree, id)) })) };
+          const all = listItems(await readProject('/api/chains'));
+          const result = searchPromptLibrary(all, tree, { ...args, purposes: readPromptPurposes(args.purposes) });
           return { content: jsonText(result), details: result };
         },
       },
@@ -3809,20 +3813,33 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'search_project_library', label: '搜索项目资料', description: '按关键词分页搜索风格串、自定义角色、收藏和画师摘要；需要完整内容时按返回 id 读取详情。page 从 0 开始。',
+        name: 'search_project_library', label: '搜索项目资料', description: '按关键词分页搜索风格串、自定义角色、收藏和画师短摘要；page从0开始，实际每类最多5项，以返回effectiveLimit/nextPage继续，不按请求limit推算偏移。完整资料按id读取；提示词片段、原文、组合及其正文/目录检索优先search_prompt_library_items。',
         parameters: Type.Object({ query: Type.Optional(Type.String()), kind: Type.Optional(Type.String()), limit: Type.Optional(Type.Number()), page: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
-          const params = new URLSearchParams({ q: text(args.query).trim().slice(0, 300), kind: ['chains', 'inspirations', 'artists'].includes(args.kind) ? args.kind : 'all', limit: String(Math.floor(clamp(args.limit, 1, MAX_PROJECT_LIST_ITEMS, 30))), page: String(Math.floor(clamp(args.page, 0, 100000, 0))) });
-          const output = await readProject(`/api/agent/library?${params}`);
+          const limit = Math.floor(clamp(args.limit, 1, 5, 5)), page = Math.floor(clamp(args.page, 0, 100000, 0));
+          const params = new URLSearchParams({ q: text(args.query).trim().slice(0, 300), kind: ['chains', 'inspirations', 'artists'].includes(args.kind) ? args.kind : 'all', limit: String(limit), page: String(page) });
+          const raw = await readProject(`/api/agent/library?${params}`);
+          const hasMore = Object.fromEntries(Object.entries(raw.hasMore || {}).filter(([kind]) => ['chains', 'inspirations', 'artists'].includes(kind)).map(([kind, value]) => [kind, value === true]));
+          const output = { page, limit, effectiveLimit: limit, hasMore, nextPage: Object.values(hasMore).some(Boolean) ? page + 1 : null };
+          for (const kind of ['chains', 'inspirations', 'artists']) if (Array.isArray(raw[kind])) output[kind] = raw[kind].map(item => ({
+            id: item.id, ...(item.type ? { type: item.type } : {}),
+            ...(item.name !== undefined ? { name: text(item.name).slice(0, 160) } : {}),
+            ...(item.title !== undefined ? { title: text(item.title).slice(0, 160) } : {}),
+            ...(item.description !== undefined ? { description: text(item.description).slice(0, 120) } : {}),
+            ...(item.notes !== undefined ? { notes: text(item.notes).slice(0, 120) } : {}),
+            ...(Array.isArray(item.tags) ? { tags: item.tags.slice(0, 4).map(tag => text(tag).slice(0, 60)), tagCount: item.tags.length } : {}),
+            ...Object.fromEntries(['rating', 'isPinned', 'archived'].filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]])),
+            ...(item.updatedAt !== undefined ? { updatedAt: item.updatedAt } : {}),
+          }));
           return { content: jsonText(output), details: output };
         },
       },
       {
-        name: 'get_chain', label: '读取完整风格串、角色或库条目', description: '按搜索结果中的 id 读取风格串、角色或提示词库条目的完整正负词、模块、参数和快照。组合的旧版与 v2 目录快照按原样读取，不能按当前目录重建。修改或复用前必须先读取。',
-        parameters: Type.Object({ id: Type.String() }),
+        name: 'get_chain', label: '读取完整风格串、角色或库条目', description: '按id读取真实资料。短资料直接返回；长资料返回partial及fields目录，不是全文。field指定读取到的点路径（如basePrompt、params._rollContentSnapshot、params._rollContentSnapshot.items.0.text），按offset/limit读取并用nextOffset续读至null；format=json需把content按顺序拼接后解析。旧版/v2组合快照保持原样，不按现目录重建，不用摘要覆盖原文。',
+        parameters: Type.Object({ id: Type.String(), field: Type.Optional(Type.String()), offset: Type.Optional(Type.Number()), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => {
           const value = await readProject(`/api/chains/${encodeURIComponent(text(args.id).slice(0, 200))}`);
-          const result = compactChain(value.item || value);
+          const result = readPromptLibraryChain(compactChain(value.item || value), args);
           return { content: jsonText(result), details: result };
         },
       },
@@ -4583,8 +4600,8 @@ export class PromptAgentService {
           if (!current?.id) throw new Error('找不到要更新的提示词库条目');
           if (!isPromptLibraryFragmentEntry(current)) throw new Error('这条记录不是提示词库条目');
           const body = {};
-          for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]).slice(0, key === 'description' ? 1000 : 4000);
-          if (typeof args.prompt === 'string') body.basePrompt = text(args.prompt).slice(0, 4000);
+          for (const key of ['name', 'description', 'basePrompt', 'negativePrompt']) if (typeof args[key] === 'string') body[key] = text(args[key]);
+          if (typeof args.prompt === 'string') body.basePrompt = text(args.prompt);
           if (Array.isArray(args.tags)) body.tags = args.tags.slice(0, 12).map(value => text(value).slice(0, 80));
           const params = { ...(current.params && typeof current.params === 'object' ? current.params : {}) };
           if (args.params && typeof args.params === 'object') Object.assign(params, sanitizeParams(args.params));

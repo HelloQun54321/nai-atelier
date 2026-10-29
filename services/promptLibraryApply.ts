@@ -6,7 +6,7 @@ import { mergePromptSections, resolvePromptSections } from './labWorkspace';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from './characterPrompts';
 import { getEditableGlobalPrompt, mergePromptFields } from './promptUtils';
 import type { PromptApplyMode } from './promptApply';
-import { META, type RollRow } from './contentRoll';
+import { rollSectionKey, META, type RollRow } from './contentRoll';
 import { createUuid } from './id';
 import { getRuntimeNaiModelInfo } from './naiModels';
 import { parsePromptTags } from './tagTranslations';
@@ -61,9 +61,9 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
     picks = { [key]: { kind: key, scope: target.mode === 'global' ? 'global' : 'character',
       filled: !!entry.basePrompt.trim(), text: entry.basePrompt, negative: entry.negativePrompt || '', id: entry.id, name: entry.name } };
   } else if (kind) picks = {};
-  if (field.purposeId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === purposeSectionKey(field.purposeId!))
+  if (field.purposeId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === purposeSectionKey(field.purposeId!))
     .map(([key, row]) => [key, { ...row, scope: target.mode === 'global' ? 'global' : 'character' }]));
-  else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === 'directory:' + field.directoryId));
+  else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === 'directory:' + field.directoryId));
   else if (field.kind) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === field.kind));
   else if (field.roleId && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[key]?.scope) === 'character'));
   const params = { ...before.params, _promptSections: resolvePromptSections(before.params._promptSections, before.subject) };
@@ -71,13 +71,14 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
   for (const row of plan.rows) {
     if (row.action !== 'replace') continue;
     if (mode === 'fill-missing' && row.current.trim()) {
-      row.action = 'keep'; delete plan.globalSections[row.kind]; delete plan.globalNegatives[row.kind];
-      plan.roleWrites = plan.roleWrites.filter(write => write.kind !== row.kind);
-      plan.written = plan.written.filter(key => key !== row.kind);
+      row.action = 'keep';
+      if (row.targetScope === 'global') { delete plan.globalSections[row.kind]; delete plan.globalNegatives[row.kind]; }
+      else plan.roleWrites = plan.roleWrites.filter(write => write.kind !== row.kind);
+      plan.written = plan.written.filter(key => key !== (row.itemId || row.kind));
       continue;
     }
     row.next = applyLibraryText(row.current, row.next, mode);
-    const roleWrite = plan.roleWrites.find(write => write.kind === row.kind);
+    const roleWrite = row.targetScope === 'global' ? undefined : plan.roleWrites.find(write => write.kind === row.kind);
     if (roleWrite) {
       roleWrite.text = row.next;
       const old = params.characters?.find(role => role.id === plan.roleId)?.sectionNegatives?.[roleWrite.kind] || '';

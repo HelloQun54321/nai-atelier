@@ -63,6 +63,7 @@ export interface RollUnit {
   id: string; directoryId: string; name: string; path: string[]; scope: 'global' | 'character'; purposeId?: PromptPurposeId;
 }
 export interface ContentItem {
+  itemId?: string;
   unitId: string; directoryId: string; directoryName: string; directoryPath: string[]; scope: 'global' | 'character';
   text: string; negative: string; constraintNotes: string; meta: Record<string, unknown> | null;
 }
@@ -298,6 +299,10 @@ export const constraintsOf = (chain: ChainLike | null | undefined) => {
 /* 按 type 取池；按 id 排序 → 抽取结果与接口返回顺序无关（可复现的前提）。 */
 
 /* ---- 纯内容快照（白名单构造 / 读取 / 摘要 / 从完整搭配提取） ---- */
+/** 项目身份包含落点，编译仍使用原用途／目录键。 */
+export const rollSectionKey = (key: string): string => key.replace(/^(global|character):(?=(purpose|directory):)/, '');
+export const rollItemKey = (key: string, scope: 'global' | 'character'): string => scope + ':' + rollSectionKey(key);
+export const isRollSectionKey = (key: string): boolean => isCreativeSectionKey(rollSectionKey(key));
 export const CONTENT_FORMAT = 'nai-roll-content';
 export const CONTENT_VERSION = 2;
 export const isDirectorySectionKey = (key: string): boolean => key.startsWith('directory:') && key.length > 10;
@@ -331,9 +336,10 @@ export const contentMetaOf = (meta: Record<string, unknown> | null | undefined) 
 export const contentSnapshotOf = (record: RollRecordLike | null | undefined, savedAt: string | undefined) => {
   const picks = (record && record.picks) || {};
   const checks = (record && record.checks) || {};
-  const items: ContentItem[] = Object.entries(picks).flatMap(([key, row]) => {
-    if (!isCreativeSectionKey(key) || checks[key] === false || !row?.filled || !String(row.text || '').trim()) return [];
-    return [{ unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(row.directoryName || row.title || row.label || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
+  const items: ContentItem[] = Object.entries(picks).flatMap(([itemKey, row]) => {
+    const key = rollSectionKey(itemKey);
+    if (!isCreativeSectionKey(key) || checks[itemKey] === false || !row?.filled || !String(row.text || '').trim()) return [];
+    return [{ ...(itemKey !== key ? { itemId: itemKey } : {}), unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(row.directoryName || row.title || row.label || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
       directoryPath: Array.isArray(row.directoryPath) ? row.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
       scope: row.scope === 'character' ? 'character' as const : 'global' as const, text: String(row.text).trim(), negative: String(row.negative || '').trim(),
       constraintNotes: String(row.constraintNotes || row.constraints?.notes || ''), meta: contentMetaOf(row.meta || { entryId: row.id, entryName: row.name }) }];
@@ -414,7 +420,7 @@ export const contentRead = (raw: Json): ContentRead => {
   const items: ContentItem[] = (Array.isArray(raw.items) ? raw.items : []).flatMap((item: Json) => {
     const key = String(item?.unitId || '');
     if (!isCreativeSectionKey(key) || !String(item?.text || '').trim()) return [];
-    return [{ unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(item.directoryName || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
+    return [{ ...(typeof item.itemId === 'string' && rollSectionKey(item.itemId) === key ? { itemId: rollItemKey(key, item.scope === 'character' ? 'character' : 'global') } : {}), unitId: key, directoryId: isPurposeSectionKey(key) ? '' : key.slice(10), directoryName: String(item.directoryName || (isPurposeSectionKey(key) ? promptPurposeLabel(key.slice(8)) : key.slice(10))),
       directoryPath: Array.isArray(item.directoryPath) ? item.directoryPath.filter((part: unknown) => typeof part === 'string') : [],
       scope: item.scope === 'character' ? 'character' as const : 'global' as const, text: String(item.text).trim(), negative: String(item.negative || '').trim(),
       constraintNotes: String(item.constraintNotes || ''), meta: contentMetaOf(item.meta) }];
