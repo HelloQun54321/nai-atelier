@@ -128,6 +128,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedRelated, setSelectedRelated] = useState<PixivIllust | null>(null);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { skipRestore: selectionAnchor.hasAnchor });
   const [selectedPage, setSelectedPage] = useState(0);
@@ -139,6 +140,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const [bookmarking, setBookmarking] = useState(false);
   const [relatedItems, setRelatedItems] = useState<PixivIllust[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
+  const [relatedCursor, setRelatedCursor] = useState<string | null>(null);
+  const [relatedError, setRelatedError] = useState('');
+  const detailScrollRef = useRef<HTMLDivElement>(null);
+  const relatedSentinelRef = useRef<HTMLDivElement>(null);
+  const relatedInFlightRef = useRef(false);
   // "看了又看"加载代际：丢弃快速切换作品后晚到的旧响应
   const relatedLoadSeqRef = useRef(0);
   // 登录轮询的在途守卫与连续失败计数
@@ -155,7 +161,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const loginSessionRef = useRef<PixivLoginStatus | null>(null);
   const loginPollRef = useRef<number | null>(null);
 
-  const selected = useMemo(() => items.find(item => item.id === selectedId) || null, [items, selectedId]);
+  const selected = useMemo(() => items.find(item => item.id === selectedId) || (selectedRelated?.id === selectedId ? selectedRelated : null), [items, selectedId, selectedRelated]);
   const closeMobileDetail = useMobileHistoryLayer(Boolean(selected), () => { selectionAnchor.preserveOnClose(); setSelectedId(null); }, 'pixiv-detail');
   const connected = Boolean(status?.connected);
 
@@ -359,6 +365,25 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     return prefetch.promise;
   };
 
+  const loadRelated = async (id: string, cursor?: string) => {
+    if (cursor && relatedInFlightRef.current) return;
+    const sequence = cursor ? relatedLoadSeqRef.current : ++relatedLoadSeqRef.current;
+    relatedInFlightRef.current = true;
+    setLoadingRelated(true);
+    setRelatedError('');
+    if (!cursor) { setRelatedItems([]); setRelatedCursor(null); }
+    try {
+      const result = await pixivService.feed('related', { cursor, params: { illust_id: id } });
+      if (sequence !== relatedLoadSeqRef.current) return;
+      setRelatedItems(previous => [...new Map((cursor ? [...previous, ...result.items] : result.items).map(item => [item.id, item])).values()]);
+      setRelatedCursor(result.nextCursor);
+    } catch (cause) {
+      if (sequence === relatedLoadSeqRef.current) setRelatedError(cause instanceof Error ? cause.message : t('Pixiv 加载失败'));
+    } finally {
+      if (sequence === relatedLoadSeqRef.current) { relatedInFlightRef.current = false; setLoadingRelated(false); }
+    }
+  };
+
   // 记录足迹与加载相关作品
   useEffect(() => {
     if (selected) {
@@ -378,23 +403,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         pageCount: pixivPageCount(selected),
       });
 
-      setLoadingRelated(true);
-      // 竞态守卫：快速连点两幅作品时，先点作品的慢响应不得覆盖新选中作品的"看了又看"
-      const relatedSeq = ++relatedLoadSeqRef.current;
-      pixivService.getRelated(selected.id)
-        .then(res => {
-          if (relatedSeq !== relatedLoadSeqRef.current) return;
-          setRelatedItems(res);
-        })
-        .catch(() => {
-          if (relatedSeq !== relatedLoadSeqRef.current) return;
-          setRelatedItems([]);
-        })
-        .finally(() => {
-          if (relatedSeq === relatedLoadSeqRef.current) setLoadingRelated(false);
-        });
+      void loadRelated(selected.id);
     } else {
+      ++relatedLoadSeqRef.current;
+      relatedInFlightRef.current = false;
       setRelatedItems([]);
+      setRelatedCursor(null);
+      setRelatedError('');
+      setLoadingRelated(false);
     }
   }, [selected]);
 
@@ -531,7 +547,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
   // 滚动接近列表底部时自动加载下一页（追加模式无限滚动）；按钮保留作兜底。
   const autoLoadSentinelRef = useRef<HTMLDivElement>(null);
-  useGalleryLoadMore(scrollRef, autoLoadSentinelRef, Boolean(nextCursor) && !loadingMore, loadMore, '1200px 0px');
+  useGalleryLoadMore(scrollRef, autoLoadSentinelRef, active && !showHistory && !loading && !loadingMore && !error && Boolean(nextCursor), loadMore, '1200px 0px', nextCursor || '');
+  useGalleryLoadMore(detailScrollRef, relatedSentinelRef, active && Boolean(selected && relatedCursor) && !loadingRelated && !relatedError,
+    () => { if (selected && relatedCursor) void loadRelated(selected.id, relatedCursor); }, '400px 0px', relatedCursor || '');
 
   const openAuthorWorks = (userId: string, userName: string) => {
     if (!userId) {
@@ -543,6 +561,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
   const openDetail = (illust: PixivIllust) => {
     selectionAnchor.prepareSelection(illust.id);
+    setSelectedRelated(illust);
     setSelectedId(illust.id);
     setSelectedPage(0);
   };
@@ -1076,6 +1095,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
         <DetailSidePanel
           open={Boolean(selected)}
+          bodyRef={detailScrollRef}
           title={selected ? selected.title : t("作品详情")}
           sensitiveTitle
           subInfo={selected ? t("Pixiv #{0} · {1}×{2} · {3}页", [selected.id, selected.width, selected.height, currentPageCount]) : undefined}
@@ -1147,8 +1167,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                   {loadingRelated && <span className="text-micro text-gray-400">{t("正在寻找相似作品…")}</span>}
                 </div>
                 {relatedItems.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {relatedItems.slice(0, 9).map(rel => (
+                  <div className="workspace-card-grid grid grid-cols-3 gap-2">
+                    {relatedItems.map(rel => (
                       <PressRevealSurface
                         key={rel.id}
                         className="appearance-media group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
@@ -1167,9 +1187,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                       </PressRevealSurface>
                     ))}
                   </div>
-                ) : !loadingRelated && (
+                ) : !loadingRelated && !relatedError && (
                   <p className="text-center text-meta text-gray-400">{t("暂无相关推荐")}</p>
                 )}
+                {relatedError && <p role="alert" className="py-2 text-xs text-red-500">{relatedError} <ToolbarButton onClick={() => { if (selected) void loadRelated(selected.id, relatedCursor || undefined); }}>{t('重试')}</ToolbarButton></p>}
+                {relatedCursor && <div ref={relatedSentinelRef} className="h-4" aria-hidden="true" />}
               </section>
             </div>
           ) : (

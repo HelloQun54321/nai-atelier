@@ -59,7 +59,7 @@ type ArtistLibrarySort = ArtistBrowseSort;
 type ArtistUsageState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; index: ArtistUsageIndex };
 const dictionarySort = (sort: ArtistLibrarySort): ArtistDictionarySort => isArtistUsageSort(sort) ? 'popular' : sort;
 const SAMPLE_PACKS = ['v45', 'v5'] as const;
-const SEARCH_RESULT_LIMIT = 200;
+
 const ONLY_SAMPLES_KEY = 'nai_artist_only_samples';
 const EXCLUDE_FAVORITES_KEY = 'nai_artist_gacha_exclude_favorites';
 const EXCLUDE_BLOCKED_KEY = 'nai_artist_gacha_exclude_blocked';
@@ -524,7 +524,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             getArtistSampleDictionary()
                 .then(entries => {
                     if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults([...new Map(entries.filter(entry => matchesArtistSearch(entry, terms)).map(entry => [entry.name, entry])).values()]
-                        .sort((left, right) => compareLibraryTags(left, right, serverArtistSort)).slice(0, SEARCH_RESULT_LIMIT + 1));
+                        .sort((left, right) => compareLibraryTags(left, right, serverArtistSort)));
                 })
                 .catch(error => {
                     if (requestId === catalogSearchRequestRef.current) {
@@ -545,12 +545,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const catalogDisplayLimit = Math.max(sampleLimit, loadedCatalogArtists.length);
     const visibleCatalogArtists = catalogWithPackArtists.slice(0, catalogDisplayLimit);
     const hasMoreUnionCatalog = hasMoreCatalog || catalogWithPackArtists.length > catalogDisplayLimit;
-    const hasMoreSamples = sampledArtists.length > sampleLimit;
-    const hasMoreVisible = localCatalogBrowse
-        ? !hasSearch && (usageSortedArtists?.length || 0) > sampleLimit
-        : onlySamples ? hasMoreSamples : hasMoreUnionCatalog;
-    const loadMore = () => { if (localCatalogBrowse || onlySamples) setSampleLimit(current => current + 100); else if (hasMoreCatalog) void loadNextCatalogPage(); else setSampleLimit(current => Math.max(current, loadedCatalogArtists.length) + 100); };
-    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !hasSearch && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px', onlySamples || localCatalogBrowse ? sampleLimit : `${nextCatalogPageRef.current}:${catalogDisplayLimit}`);
 
     useEffect(() => {
         let cancelled = false;
@@ -602,15 +596,13 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         if (gachaArtists) return gachaArtists.slice().sort((left, right) => usageIndex
             ? compareArtistUsage(left, right, artistSort, usageIndex)
             : compareLibraryTags(left, right, dictionarySort(artistSort)));
-        if (groupBrowse) return (usageSortedArtists || []).slice(0, hasSearch ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
-        if (usageSortedArtists) return usageSortedArtists.slice(0, hasSearch ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
+        if (groupBrowse) return (usageSortedArtists || []);
+        if (usageSortedArtists) return usageSortedArtists;
         if (onlySamples) return sampledArtists
             .filter(entry => matchesArtistSearch(entry, searchTerms))
-            .slice().sort((left, right) => compareLibraryTags(left, right, dictionarySort(artistSort)))
-            .slice(0, hasSearch ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
+            .slice().sort((left, right) => compareLibraryTags(left, right, dictionarySort(artistSort)));
         return hasSearch ? [...new Map([...catalogSearchResults, ...packOnlyArtists.filter(entry => matchesArtistSearch(entry, searchTerms))].map(entry => [entry.name, entry])).values()]
             .sort((left, right) => compareLibraryTags(left, right, dictionarySort(artistSort)))
-            .slice(0, SEARCH_RESULT_LIMIT + 1)
             : visibleCatalogArtists;
     }, [catalogSearchResults, gachaArtists, visibleCatalogArtists, searchTerms, hasSearch, onlySamples, sampledArtists, packOnlyArtists, artistSort, sampleLimit, usageSortedArtists, usageIndex, groupBrowse]);
 
@@ -618,9 +610,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         if (groupBrowse && (!groups.ready || groups.error || !groups.matches('artist:' + artist.name))) return false;
         return matchesStatus(artist.name) && matchesArtistSearch(artist, searchTerms);
     }), [availableArtists, matchesStatus, searchTerms, groupBrowse, groups.ready, groups.error, groups.matches]);
-    // 目录搜索与样张搜索都只取前 201 条，足以判断是否还有更多；展示上限保持 200。
-    const filteredArtists = useMemo(() => !statusReady ? [] : hasSearch ? matchedArtists.slice(0, SEARCH_RESULT_LIMIT) : matchedArtists, [matchedArtists, hasSearch, statusReady]);
-    const searchTruncated = statusReady && hasSearch && matchedArtists.length > SEARCH_RESULT_LIMIT;
+    const localPagination = localCatalogBrowse || onlySamples || hasSearch;
+    const filteredArtists = useMemo(() => !statusReady ? [] : !gachaArtists && localPagination ? matchedArtists.slice(0, sampleLimit) : matchedArtists, [matchedArtists, statusReady, gachaArtists, localPagination, sampleLimit]);
+    const hasMoreVisible = localPagination ? matchedArtists.length > sampleLimit : hasMoreUnionCatalog;
+    const loadMore = () => { if (localPagination) setSampleLimit(current => current + 100); else if (hasMoreCatalog) void loadNextCatalogPage(); else setSampleLimit(current => Math.max(current, loadedCatalogArtists.length) + 100); };
+    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !gachaArtists && statusReady && hasMoreVisible && !loadMoreError && !isCatalogLoading && !searchError, loadMore, '800px 0px', localPagination ? sampleLimit : nextCatalogPageRef.current + ':' + catalogDisplayLimit);
+    useEffect(() => { setSampleLimit(100); }, [searchTerm]);
 
     // 抽卡只读取本地 Tag 目录，不触发生图。
 
@@ -762,12 +757,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 </div>
             </WorkspaceToolbar>
             {statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (!groupBrowse || groups.ready && !groups.error) && !isCatalogLoading && !catalogError && !searchError && !(onlySamples && currentSampleError) && ((!onlySamples && !gachaArtists) || !sampleLoading) && <ToolbarCountCaption>{hasSearch
-                ? t(searchTruncated ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
+                ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
                 : gachaArtists ? t('本次抽取 {0} 位', [filteredArtists.length])
                 : localCatalogBrowse ? groupBrowse || usageFiltersActive || statusBrowse
                     ? t(hasMoreVisible ? '已加载中匹配 {0} 位' : '匹配 {0} 位', [filteredArtists.length])
                     : t(hasMoreVisible ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
-                : onlySamples ? t(hasMoreSamples ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
+                : onlySamples ? t(hasMoreVisible ? '已加载 {0} 位' : '共 {0} 位', [filteredArtists.length])
                 : hasMoreUnionCatalog ? t('已加载 {0} 位', [visibleCatalogArtists.length])
                 : t('共 {0} 位', [artistCatalogCount + packOnlyArtists.length])}
             </ToolbarCountCaption>}
@@ -835,9 +830,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     </div>
                 )}
 
-                {searchTruncated && <p role="status" className="py-4 text-center text-xs text-gray-400">{t('仅显示前 200 条结果，请缩小搜索范围')}</p>}
 
-                {!hasSearch && !gachaArtists && statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (
+                {!gachaArtists && statusReady && (!localCatalogBrowse || !sampleLoading && !sampleError) && (
                     <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
                         {isLoadingMoreCatalog ? (
                             <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在加载更多画师…")}</span>

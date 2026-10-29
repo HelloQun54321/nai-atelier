@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useGalleryLoadMore } from '../../components/useGalleryLoadMore';
@@ -34,6 +34,26 @@ const List = ({ loadMore, enabled = true, grid = false, pendingWidth = false, gr
 
 beforeEach(() => { EndObserver.instances = []; vi.stubGlobal('IntersectionObserver', EndObserver); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it.each([false, true])('哨兵持续可见时连续追加超过三十批，空结果页也按成功进度续读（grid=%s）', async grid => {
+  class VisibleObserver extends EndObserver {
+    observe(target: Element) {
+      super.observe(target);
+      queueMicrotask(() => { if (this.targets.includes(target)) this.intersect(this.targets.map(() => true)); });
+    }
+  }
+  vi.stubGlobal('IntersectionObserver', VisibleObserver);
+  const loaded = vi.fn();
+  const Continuous = () => {
+    const [batch, setBatch] = useState(0);
+    return <List grid={grid} count={grid ? 0 : batch + 1} progress={batch} enabled={batch < 35} loadMore={() => { loaded(); setBatch(value => value + 1); }} />;
+  };
+  render(<Continuous />);
+  await waitFor(() => expect(loaded).toHaveBeenCalledTimes(35));
+  await act(async () => {});
+  expect(loaded).toHaveBeenCalledTimes(35);
+  expect(EndObserver.instances.at(-1)!.disconnected).toBe(true);
+});
 
 it('最短列先到预取区域时追加，不等待最长列；同一轮多个列与DOM变化只请求一次', async () => {
   const loadMore = vi.fn();

@@ -8,6 +8,7 @@ import { SmartImage } from './SmartImage';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 
 interface HistoryImagePickerProps {
   zIndex?: number;
@@ -51,6 +52,12 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
   const [loaded, setLoaded] = useState(false);
   const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const loadingRef = useRef(false);
+  const appendCursorRef = useRef({ page: 0, hasMore: false });
+  const lastRequestRef = useRef({ page: 1, append: false });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
   const pending = loading || !loaded || (!error && loadedScope !== scopeChainId);
   const matchingScope = loadedScope === scopeChainId;
@@ -58,9 +65,12 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
   const pageSize = PAGINATION_CONFIG.PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  const loadPage = useCallback(async (targetPage: number) => {
+  const loadPage = useCallback(async (targetPage: number, append = false) => {
+    if (append && (loadingRef.current || !appendCursorRef.current.hasMore || targetPage <= appendCursorRef.current.page)) return;
     const request = ++requestRef.current;
     const nextPage = Math.max(1, targetPage);
+    lastRequestRef.current = { page: nextPage, append };
+    loadingRef.current = true;
     setLoading(true);
     setError('');
     try {
@@ -82,39 +92,46 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
         }
         if (request !== requestRef.current) return;
         setLoadedScope(scopeChainId);
-        setItems((data.items || []).map(row => ({
+        const incoming = (data.items || []).map(row => ({
           id: String(row.id),
           imageUrl: String(row.imageUrl || `/api/local-history/${row.id}/image`),
           createdAt: Number(row.createdAt || 0),
           prompt: String(row.prompt || ''),
           params: {},
-        } as unknown as LocalGenItem)));
+        } as unknown as LocalGenItem));
+        setItems(previous => append ? [...previous, ...incoming.filter(item => !previous.some(current => current.id === item.id))] : incoming);
         setTotalCount(count);
         setPage(target);
+        appendCursorRef.current = { page: target, hasMore: incoming.length > 0 && target < maxPage };
+        setHasMore(appendCursorRef.current.hasMore);
         return;
       }
       const result = await localHistory.getPage(nextPage - 1, pageSize, undefined, true);
       if (request !== requestRef.current) return;
-      setLoadedScope(scopeChainId);
       const count = Number(result.count || 0);
       const maxPage = Math.max(1, Math.ceil(count / pageSize));
       if (nextPage > maxPage) {
         setPage(maxPage);
         const lastPage = await localHistory.getPage(maxPage - 1, pageSize, undefined, true);
         if (request !== requestRef.current) return;
-        setItems(lastPage.items);
+        setItems(previous => append ? [...previous, ...lastPage.items.filter(item => !previous.some(current => current.id === item.id))] : lastPage.items);
         setTotalCount(Number(lastPage.count || count));
+        appendCursorRef.current = { page: maxPage, hasMore: false };
+        setHasMore(false);
       } else {
-        setItems(result.items);
+        setItems(previous => append ? [...previous, ...result.items.filter(item => !previous.some(current => current.id === item.id))] : result.items);
         setTotalCount(count);
         setPage(nextPage);
+        appendCursorRef.current = { page: nextPage, hasMore: result.items.length > 0 && nextPage < maxPage };
+        setHasMore(appendCursorRef.current.hasMore);
       }
+      setLoadedScope(scopeChainId);
     } catch (loadError) {
       console.error('读取历史图片失败:', loadError);
       if (request !== requestRef.current) return;
       setError('历史图片读取失败，请重试。');
     } finally {
-      if (request === requestRef.current) { setLoading(false); setLoaded(true); }
+      if (request === requestRef.current) { loadingRef.current = false; setLoading(false); setLoaded(true); }
     }
   }, [pageSize, scopeChainId]);
 
@@ -122,7 +139,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
     if (!open) { setLoaded(false); return; }
     void loadPage(1);
     const unsubscribe = scopeChainId ? undefined : localHistory.subscribe(() => { void loadPage(1); });
-    return () => { requestRef.current++; unsubscribe?.(); };
+    return () => { requestRef.current++; loadingRef.current = false; unsubscribe?.(); };
   }, [loadPage, open, scopeChainId]);
 
   useEffect(() => {
@@ -133,6 +150,9 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
+
+  const retry = () => { const last = lastRequestRef.current; void loadPage(last.page, last.append); };
+  useGalleryLoadMore(scrollRef, loadMoreRef, open && !pending && !error && matchingScope && hasMore, () => { void loadPage(page + 1, true); }, '600px 0px', `${scopeChainId}:${page}:${items.length}`);
 
   if (!open) return null;
 
@@ -165,19 +185,17 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           <ToolbarCountCaption>{t(scopeChainId ? '当前 {0} 张' : '共 {0} 张', [pending || error ? '—' : totalCount])}</ToolbarCountCaption>
         </header>
 
-        <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
-          {pending && matchingScope && items.length > 0 && <p role="status" className="mb-3 text-sm text-gray-500">{t('正在读取历史图片…')}</p>}
-          {error && matchingScope && items.length > 0 && <p role="alert" className="mb-3 text-sm text-red-500">{t(error)} <button type="button" onClick={() => void loadPage(page)} className="underline">{t('重新读取')}</button></p>}
+        <div ref={scrollRef} className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {pending && (!matchingScope || items.length === 0) ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取历史图片…")}</div>
           ) : error && (!matchingScope || items.length === 0) ? (
-            <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={() => void loadPage(page)} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
+            <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={retry} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
           ) : items.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
               {scopeChainId ? t("这条提示词还没有生成过的图") : t("历史页面中还没有生成图片")}
             </div>
           ) : (
-            <div className="operation-card-grid grid items-start gap-3">
+            <div className="operation-card-grid workspace-card-grid grid items-start gap-3">
               {items.map(item => (
                 <button
                   key={item.id}
@@ -194,6 +212,9 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
               ))}
             </div>
           )}
+          {pending && matchingScope && items.length > 0 && <p role="status" className="mt-3 text-sm text-gray-500">{t('正在读取历史图片…')}</p>}
+          {error && matchingScope && items.length > 0 && <p role="alert" className="mt-3 text-sm text-red-500">{t(error)} <button type="button" onClick={retry} className="underline">{t('重新读取')}</button></p>}
+          {matchingScope && items.length > 0 && hasMore && <div ref={loadMoreRef} data-history-picker-load-more="true" aria-hidden="true" className="h-4" />}
         </div>
 
         <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-3 dark:border-gray-800">

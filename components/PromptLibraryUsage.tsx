@@ -6,7 +6,7 @@
  * 关联来自提示词文本匹配推断（见 docs/PRODUCT_DECISIONS.md），文案保持中性，
  * 不写「精确来源」「官方记录」。点缩略图复用现成的大图查看器 ImageLightbox。
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, LoaderCircle, RotateCcw } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import {
@@ -51,7 +51,7 @@ export interface PromptLibraryUsageSectionProps {
 }
 
 /**
- * 详情页「生成记录」：首屏拉一页，总数用后端 count，「加载更多」按同一页大小追加。
+ * 详情页「生成记录」：首屏拉一页，接近底部自动续页，保留手动更多／失败重试。
  * 加载中 / 失败（可重试）/ 空态 / 有图四态都要有明确落点。
  */
 export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps> = ({ chainId, preview = false, notify, zIndex }) => {
@@ -62,13 +62,25 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadSequence = useRef(0);
+  const morePending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    const sequence = ++loadSequence.current;
+    morePending.current = false;
     setLoading(true);
     setFailed(false);
+    setLoadingMore(false);
+    setMoreFailed(false);
+    setNextOffset(0);
+    setHasMore(false);
     setItems([]);
     setTotal(0);
     setViewerIndex(null);
@@ -78,6 +90,8 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
         if (cancelled) return;
         setItems(page.items);
         setTotal(page.count);
+        setNextOffset(page.items.length);
+        setHasMore(page.items.length > 0 && page.items.length < page.count);
       } catch (error) {
         console.warn('Prompt library usage load failed:', error);
         if (cancelled) return;
@@ -86,26 +100,50 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (loadSequence.current === sequence) loadSequence.current++; };
   }, [chainId, pageSize, reloadKey]);
 
   const loadMore = useCallback(async () => {
-    if (loading || loadingMore) return;
+    if (loading || loadingMore || morePending.current || !hasMore) return;
+    const sequence = loadSequence.current;
+    morePending.current = true;
     setLoadingMore(true);
+    setMoreFailed(false);
     try {
-      const page = await fetchPromptLibraryUsageImages(chainId, { limit: pageSize, offset: items.length });
+      const page = await fetchPromptLibraryUsageImages(chainId, { limit: pageSize, offset: nextOffset });
+      if (sequence !== loadSequence.current) return;
       setItems(previous => {
         const seen = new Set(previous.map(row => row.id));
         return [...previous, ...page.items.filter(row => !seen.has(row.id))];
       });
       setTotal(page.count);
+      // 游标按服务实际返回条数前进；重复记录不应让下一页卡在同一个 offset。
+      const offset = nextOffset + page.items.length;
+      setNextOffset(offset);
+      setHasMore(page.items.length > 0 && offset < page.count);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
       console.warn('Prompt library usage load more failed:', error);
+      setMoreFailed(true);
       notify?.(t('读取失败，请重试'), 'error');
     } finally {
-      setLoadingMore(false);
+      if (sequence === loadSequence.current) { morePending.current = false; setLoadingMore(false); }
     }
-  }, [chainId, items.length, loading, loadingMore, notify, pageSize]);
+  }, [chainId, nextOffset, hasMore, loading, loadingMore, notify, pageSize]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (preview || loading || loadingMore || moreFailed || !hasMore || !sentinel || typeof IntersectionObserver === 'undefined') return;
+    let root = sentinel.parentElement;
+    while (root && !/auto|scroll|overlay/.test(getComputedStyle(root).overflowY)) root = root.parentElement;
+    let disposed = false;
+    // 仅观察本区末尾，沿用详情真实滚动容器；独立挂载时使用浏览器视口。
+    const observer = new IntersectionObserver(entries => {
+      if (!disposed && entries.some(entry => entry.target === sentinel && entry.isIntersecting)) void loadMore();
+    }, { root, rootMargin: '600px 0px' });
+    observer.observe(sentinel);
+    return () => { disposed = true; observer.disconnect(); };
+  }, [preview, loading, loadingMore, moreFailed, hasMore, nextOffset, loadMore]);
 
   const header = (
     <div className="flex items-center justify-between gap-2">
@@ -177,10 +215,12 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
             </button>
           ))}
         </div>
-        {!preview && items.length < total && (
+        {moreFailed && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{t('读取失败，请重试')}</p>}
+        {!preview && hasMore && <div ref={sentinelRef} data-prompt-library-usage-more className="h-px" aria-hidden="true" />}
+        {!preview && hasMore && (
           <ToolbarButton onClick={() => void loadMore()} disabled={loadingMore} className="mobile-touch mt-2 w-full">
             {loadingMore ? <LoaderCircle className="animate-spin" /> : <ChevronDown />}
-            <span>{loadingMore ? t('加载中…') : t('加载更多')}</span>
+            <span>{loadingMore ? t('加载中…') : moreFailed ? t('重试') : t('加载更多')}</span>
           </ToolbarButton>
         )}
       </div>

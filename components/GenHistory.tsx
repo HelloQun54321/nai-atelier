@@ -485,9 +485,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             const beforePage = currentPageRef.current;
             const queryKey = getHistoryQueryKey();
             const next = Math.floor((lastIndex + 1) / PAGE_SIZE) + 1;
-            const { items: data } = await getPageData(next);
+            const { items: data } = await getPageData(next, appendFailed);
             // 加载期间用户跳页/筛选：丢弃本次结果，避免拼接到错误列表上。
             if (currentPageRef.current !== beforePage || getHistoryQueryKey() !== queryKey) return;
+            // 索引仍有图片却读到空页时保留现场并等待重试，不循环命中空的预取缓存。
+            if (!data.length) throw new Error('历史分页未返回图片');
             const targetPage = Math.min(next, totalPages);
             if (targetPage !== next) return;
             currentPageRef.current = targetPage;
@@ -639,7 +641,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const showNewImages = () => {
         applyBrowseQuery({ ...browseQuery, sort: 'newest', seed: undefined });
     };
-    useGalleryLoadMore(historyScrollRef, historyPageSentinelRef, !isLoading && !isAppending && !appendFailed && items.length > 0 && items.at(-1)?.id !== dateRangeRef.current.orderIds?.at(-1), () => { void appendNextPage(); }, '1200px 0px');
+    useGalleryLoadMore(historyScrollRef, historyPageSentinelRef, !isLoading && !isAppending && !appendFailed && items.length > 0 && items.at(-1)?.id !== dateRangeRef.current.orderIds?.at(-1), () => { void appendNextPage(); }, '1200px 0px', `${currentPage}:${items.length}`);
 
     const applyBrowseQuery = (query: HistoryBrowseQuery) => {
         navigationRequestRef.current++;

@@ -748,3 +748,11 @@ it('Roll目录或样张读取中及真实目录读取失败时分组计数未知
   view.rerender(<StyleRollArtistDialog {...props} />);
   expect(screen.getByRole('option', { name: '未知组 (1)' })).toBeTruthy();
 });
+
+it('自动连续加载：Roll画师无需滚动事件或按钮继续到真实末尾', async () => {
+  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { queueMicrotask(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)); } disconnect() {} });
+  const library = Array.from({ length: 125 }, (_, i) => ({ name: 'auto artist ' + i, chinese: '', postCount: 1 }));
+  render(<Fixture library={library} />);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: /^锁定画师：/ })).toHaveLength(125));
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+});

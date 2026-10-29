@@ -287,6 +287,46 @@ it('筛选后的空页仍可继续读取后续页，不因条目数量未变而�
   expect(search).toHaveBeenCalledWith(expect.objectContaining({ query: 'order:rank', page: 3, limit: 40 }));
 });
 
+it('超过 800 条后仍由底部哨兵自动追加，直到服务端报告末页', async () => {
+  const firstPage = Array.from({ length: 800 }, (_, index) => ({ ...post, id: index + 1, postUrl: `https://danbooru.donmai.us/posts/${index + 1}` }));
+  const lastPost = { ...post, id: 801, postUrl: 'https://danbooru.donmai.us/posts/801' };
+  search.mockImplementation(async options => options?.page === 1
+    ? result(options?.query, firstPage, 1, true)
+    : result(options?.query, [lastPost], 2, false));
+  const { container } = await setup();
+  await waitFor(() => expect(search).toHaveBeenCalledWith(expect.objectContaining({ page: 2, limit: 40 })));
+  expect(container.querySelector('[data-gallery-work-id="801"]')).toBeNull();
+  act(() => observers.at(-1)?.([{ isIntersecting: true }]));
+  await waitFor(() => expect(container.querySelector('[data-gallery-work-id="801"]')).toBeTruthy());
+  expect(container.querySelector('[data-gallery-work-id="800"]')).toBeTruthy();
+  expect(container.querySelector('[data-gallery-work-id="801"]')).toBeTruthy();
+  expect(search).not.toHaveBeenCalledWith(expect.objectContaining({ page: 3 }));
+});
+
+it('追加请求失败后停止自动重试，用户点重试后继续加载', async () => {
+  let pageTwoAttempts = 0;
+  search.mockImplementation(async options => {
+    if (options?.page === 1) return result(options?.query, [post], 1, true);
+    pageTwoAttempts += 1;
+    if (pageTwoAttempts <= 2) throw new Error('429 合成限流');
+    return result(options?.query, [{ ...post, id: 2 }], 2, false);
+  });
+  const { notify } = await setup();
+  await waitFor(() => expect(pageTwoAttempts).toBe(1)); // 首屏后的预取失败
+  act(() => observers.at(-1)?.([{ isIntersecting: true }]));
+  await screen.findByRole('alert');
+  expect(screen.getByText('429 合成限流')).toBeTruthy();
+  expect(pageTwoAttempts).toBe(2);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(pageTwoAttempts).toBe(2);
+
+  fireEvent.click(screen.getByRole('button', { name: '重试加载' }));
+  await waitFor(() => expect(pageTwoAttempts).toBe(3));
+  await waitFor(() => expect(document.querySelector('[data-gallery-work-id="2"]')).toBeTruthy());
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(notify).toHaveBeenCalledWith('429 合成限流', 'error');
+});
+
 // 收藏服务的持久化与并发在 services 定向测试中验证，这里隔离页面副作用。
 vi.mock('../../services/collectionFavorites', async original => ({
   ...await original<typeof import('../../services/collectionFavorites')>(),

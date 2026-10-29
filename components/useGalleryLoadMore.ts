@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useRef } from 'react';
+import { RefObject, useLayoutEffect, useRef } from 'react';
 
 /** 瀑布流按任一列的实际末尾追加；普通网格继续使用原列表底部哨兵。 */
 export const useGalleryLoadMore = (
@@ -11,8 +11,9 @@ export const useGalleryLoadMore = (
   progress?: number | string,
 ) => {
   const latestLoadMore = useRef(loadMore);
-  useEffect(() => { latestLoadMore.current = loadMore; }, [loadMore]);
-  useEffect(() => {
+  useLayoutEffect(() => { latestLoadMore.current = loadMore; }, [loadMore]);
+  // DOM 更新时即解绑旧观察器，避免列尾变化与旧回调同时追加。
+  useLayoutEffect(() => {
     const root = rootRef.current;
     const sentinel = sentinelRef.current;
     if (!enabled || !root || !sentinel || !('IntersectionObserver' in window)) return;

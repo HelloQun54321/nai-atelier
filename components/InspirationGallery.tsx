@@ -199,7 +199,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [visibleCount, setVisibleCount] = useState(COLLECTION_RENDER_BATCH);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => { setVisibleCount(COLLECTION_RENDER_BATCH); }, [resultKey]);
-  useGalleryLoadMore(mainScrollRef, loadMoreSentinelRef, visibleCount < groups.length, () => setVisibleCount(count => count + COLLECTION_RENDER_BATCH), '600px 0px');
+  useGalleryLoadMore(mainScrollRef, loadMoreSentinelRef, visibleCount < groups.length, () => setVisibleCount(count => count + COLLECTION_RENDER_BATCH), '600px 0px', visibleCount);
   const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   const openedGroup = workGroup ? allGroups.get(workGroup) : undefined;
   useEffect(() => {

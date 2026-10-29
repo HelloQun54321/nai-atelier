@@ -47,8 +47,6 @@ interface DanbooruGalleryProps {
 }
 
 const PAGE_SIZE = 40;
-/** 追加式自动加载的软上限：超过后停止自动追加，按钮可继续手动加载。 */
-const DANBOORU_APPEND_LIMIT = 800;
 const defaultParams: NAIParams = {
   width: 832,
   height: 1216,
@@ -102,6 +100,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(active);
   const [error, setError] = useState('');
+  const [appendError, setAppendError] = useState('');
   const [pageInput, setPageInput] = useState('');
   const loadedRef = useRef(false);
   // 追加模式状态：当前查询/页码的同步镜像（防并发与跳页竞态）。
@@ -198,6 +197,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     requestController.current = new AbortController();
     setLoading(true);
     setError('');
+    setAppendError('');
     return seq;
   };
 
@@ -276,15 +276,14 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     if (showHistory) return items;
     return items.filter(post => matchesDanbooruImageFilters(post, { rating, ratio, subject: soloOnly ? 'solo' : 'all' }));
   }, [items, rating, ratio, showHistory, soloOnly]);
-  // 自动加载：把下一页内容追加到当前列表下方（连续滚动、无切页感）。
-  // 与 Pixiv/历史页一致；软上限后停止自动追加，按钮可继续手动加载。
-  const appendNextPage = async (force = false) => {
+  // 自动加载：把下一页内容追加到当前列表下方，失败后等待用户显式重试。
+  const appendNextPage = async () => {
     if (appendingRef.current || loading) return;
-    if (!force && items.length >= DANBOORU_APPEND_LIMIT) return;
     const beforePage = pageRef.current;
     const beforeQuery = queryRef.current;
     const beforeSeq = loadSeqRef.current;
     appendingRef.current = true;
+    setAppendError('');
     try {
       // 优先消费投机预取的下一页（预取失败则回退正常请求）
       const prefetched = await consumeNextPagePrefetch(beforeQuery, beforePage + 1);
@@ -304,6 +303,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
     } catch (appendError) {
       if (!loadGuard.isCurrent(beforeSeq)) return;
       const message = appendError instanceof Error ? appendError.message : 'Danbooru 加载失败';
+      setAppendError(message);
       notify(message, 'error');
     } finally {
       appendingRef.current = false;
@@ -327,7 +327,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
   // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
   const appendSentinelRef = useRef<HTMLDivElement>(null);
-  useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && items.length < DANBOORU_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px', page);
+  useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && !appendError, () => { void appendNextPage(); }, '1200px 0px', page);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
@@ -594,9 +594,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
           {!showHistory && (
             <div className="mt-5 flex flex-col items-center gap-3 pb-4">
               <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
-              {items.length >= DANBOORU_APPEND_LIMIT && hasMore && (
-                <ToolbarButton onClick={() => void appendNextPage(true)}><RefreshCw className={appendingRef.current ? 'animate-spin' : ''} />{t("已加载 ")}{DANBOORU_APPEND_LIMIT} {t(" 件 · 继续加载更多")}</ToolbarButton>
-              )}
+              {appendError && <div role="alert" className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{appendError}</span><ToolbarButton onClick={() => void appendNextPage()}>{t('重试加载')}</ToolbarButton></div>}
               <form onSubmit={submitPageJump} className="flex items-center gap-2 text-xs text-gray-500">
                 <span>{t("滚动浏览 · 跳到第")}</span>
                 <input

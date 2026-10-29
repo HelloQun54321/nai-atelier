@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
@@ -67,6 +67,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串卡片的待实测状态', () => {
+  it('触底后无需点击便逐批展示全部风格串，超过首批和后续批次仍继续', async () => {
+    class VisibleObserver {
+      private targets = new Set<Element>();
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        this.targets.add(target);
+        queueMicrotask(() => { if (this.targets.has(target)) this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); });
+      }
+      unobserve(target: Element) { this.targets.delete(target); }
+      disconnect() { this.targets.clear(); }
+    }
+    vi.stubGlobal('IntersectionObserver', VisibleObserver);
+    const view = render(<ChainList {...props(Array.from({ length: 181 }, (_, index) => chain(String(index), `自动风格 ${index}`, false)))} />);
+    const first = view.container.querySelector('[data-return-item-id="0"]');
+    await waitFor(() => expect(view.container.querySelector('[data-return-item-id="180"]')?.getAttribute('aria-label')).toBe('打开风格串：自动风格 180'));
+    expect(screen.queryByRole('button', { name: /加载更多/ })).toBeNull();
+    expect(view.container.querySelector('[data-return-item-id="0"]')).toBe(first);
+  });
+
   it('首读等待和失败不冒充空列表，重试成功后才显示真正空态', () => {
     const callbacks = props([]);
     const view = render(<ChainList {...callbacks} isLoading />);

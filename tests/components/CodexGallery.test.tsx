@@ -371,3 +371,30 @@ it('部分原图元数据仍一键取用所有已知字段，并标明未提供�
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, partialMetadata: true, params: partial.params, importSettings: true, importSeed: true, importModel: false });
 });
+
+it.each(['books', 'community'] as const)('%s 列表经过首批120条后触底连续追加直至真实末尾，不靠按钮', async mode => {
+  const observers: { callback: IntersectionObserverCallback; targets: Set<Element> }[] = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    state: typeof observers[number];
+    constructor(callback: IntersectionObserverCallback) { this.state = { callback, targets: new Set() }; observers.push(this.state); }
+    observe(target: Element) { this.state.targets.add(target); }
+    disconnect() { this.state.targets.clear(); }
+  });
+  const entries = Array.from({ length: 241 }, (_, index) => ({ ...entry, key: 'entry-' + index, id: String(index), title: '连续词条 ' + index }));
+  mocks.book.mockResolvedValue({ entries }); mocks.community.mockResolvedValue({ entries });
+  const view = setup();
+  await screen.findByText('连续词条 0');
+  if (mode === 'community') { chooseSource('共创广场'); await waitFor(() => expect(mocks.community).toHaveBeenCalled()); }
+  const cards = () => view.container.querySelectorAll('[data-gallery-work-id]');
+  await waitFor(() => expect(cards()).toHaveLength(120));
+  const next = async () => {
+    const observer = observers.find(value => [...value.targets].some(target => target.closest('.workspace-scroll-viewport')))!;
+    expect(observer).toBeTruthy();
+    await act(async () => observer.callback([...observer.targets].map(target => ({ target, isIntersecting: true }) as IntersectionObserverEntry), {} as IntersectionObserver));
+  };
+  const first = cards()[0];
+  await next(); expect(cards()).toHaveLength(240); expect(cards()[0]).toBe(first);
+  await next(); expect(cards()).toHaveLength(241); expect(cards()[0]).toBe(first);
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  expect(mocks.book).toHaveBeenCalledTimes(1);
+});

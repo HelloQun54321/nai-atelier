@@ -468,6 +468,33 @@ describe('历史连续浏览会话', () => {
         expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
     });
 
+    it('底部持续可见时自动连续追加超过三页，直到真实末尾且不读取越界页', async () => {
+        browseFixture(85);
+        let active = false;
+        const checks = new Set<() => void>();
+        vi.stubGlobal('IntersectionObserver', class {
+            private targets = new Set<Element>();
+            constructor(private callback: IntersectionObserverCallback) {}
+            check = () => { for (const target of this.targets) this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); };
+            observe(target: Element) {
+                this.targets.add(target); checks.add(this.check);
+                if (active) queueMicrotask(() => { if (this.targets.has(target)) this.check(); });
+            }
+            unobserve(target: Element) { this.targets.delete(target); }
+            disconnect() { this.targets.clear(); checks.delete(this.check); }
+        });
+        const { container } = await setup(1280, 20);
+        active = true;
+        await act(async () => [...checks].forEach(check => check()));
+        await waitFor(() => expect(container.querySelectorAll('[data-history-id]')).toHaveLength(85));
+        expect(screen.getByText('当前显示第 1 - 85 张')).toBeTruthy();
+        expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
+        const requested = vi.mocked(localHistory.getPage).mock.calls.map(([page]) => page);
+        expect([...new Set(requested)]).toEqual([0, 1, 2, 3, 4]);
+        await act(async () => [...checks].forEach(check => check()));
+        expect(vi.mocked(localHistory.getPage).mock.calls.map(([page]) => page)).toEqual(requested);
+    });
+
     it('浏览旧图时新增图片只提醒，点击提醒后才切换到最新结果', async () => {
         const data = browseFixture(25); const { container } = await setup(1280, 20);
         fireEvent.click(cardById(container, data[5].id));
@@ -594,6 +621,26 @@ describe('历史连续浏览会话', () => {
         expect(screen.queryByRole('button', { name: '加载更多失败 · 重试' })).toBeNull();
         expect(localHistory.getBrowseOrder).toHaveBeenCalledOnce();
         warn.mockRestore(); error.mockRestore();
+    });
+
+    it('索引尚有图片却预取到空页时停止自动追加，原位重试重新读取而非复用空缓存', async () => {
+        const data = browseFixture(45);
+        let empty = true;
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.mocked(localHistory.getPage).mockImplementation(async (page, size, range, includeCount) => ({
+            items: page === 1 && empty ? [] : data.slice(page * size, (page + 1) * size),
+            ...(includeCount ? { count: range?.orderIds?.length } : {}),
+        }));
+        const { container } = await setup(1280, 20);
+        await act(async () => loadMore?.());
+        const retry = await screen.findByRole('button', { name: '加载更多失败 · 重试' });
+        expect(container.querySelectorAll('[data-history-id]')).toHaveLength(20);
+        const beforeRetry = vi.mocked(localHistory.getPage).mock.calls.filter(([page]) => page === 1).length;
+        empty = false;
+        fireEvent.click(retry);
+        await waitFor(() => expect(container.querySelectorAll('[data-history-id]')).toHaveLength(40));
+        expect(vi.mocked(localHistory.getPage).mock.calls.filter(([page]) => page === 1)).toHaveLength(beforeRetry + 1);
+        expect(screen.queryByRole('button', { name: '加载更多失败 · 重试' })).toBeNull();
     });
 });
 

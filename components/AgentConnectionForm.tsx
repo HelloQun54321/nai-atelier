@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { AGENT_THINKING_LEVELS, AGENT_THINKING_LABELS, createAgentThinkingMap } from '../services/agentThinking.mjs';
 import { previewPromptAgentEndpoint, type PromptAgentCustomProvider, type PromptAgentProbeResult } from '../services/promptAgent';
@@ -19,6 +19,8 @@ export const AgentConnectionForm: React.FC<{
 }> = ({ value, onChange, busy, onTest, onFetch, onSave, result, discovered = [], presets = AGENT_PROVIDER_PRESETS, onSavePreset }) => {
   useLanguage();
   const [search, setSearch] = useState(''), [showKey, setShowKey] = useState(false);
+  const [visibleDiscoveredCount, setVisibleDiscoveredCount] = useState(100);
+  useEffect(() => { setVisibleDiscoveredCount(100); }, [search, discovered]);
   const presetEnabled = Boolean(onSavePreset) && presets.length > 0;
   const [tab, setTab] = useState<'preset' | 'custom'>(presetEnabled && !value.id ? 'preset' : 'custom');
   const [presetId, setPresetId] = useState(presets[0]?.id || '');
@@ -67,10 +69,15 @@ export const AgentConnectionForm: React.FC<{
           <div className="flex items-center justify-between gap-2"><span className="text-sm text-gray-700 dark:text-gray-200">{t("模型{0}", [value.models.filter(model => model.id).length ? t(" · 已选 {0}", [value.models.filter(model => model.id).length]) : ''])}</span><button type="button" disabled={value.models.length >= 50} onClick={() => onChange({ ...value, models: [...value.models, emptyModel()] })} className="mobile-touch inline-flex items-center gap-1 rounded-lg px-2 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"><Plus className="h-3.5 w-3.5" />{t("手动添加")}</button></div>
           {!!discovered.length && <div className="rounded-xl border border-gray-200 dark:border-gray-700">
             <input aria-label={t("搜索发现的模型")} value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索模型")} className={`border-0 ${inputStyle}`} />
-            <div className="max-h-48 overflow-y-auto border-t border-gray-200 dark:border-gray-700">{matched.slice(0, 100).map(model => {
+            <div className="max-h-48 overflow-y-auto border-t border-gray-200 dark:border-gray-700" onScroll={event => {
+              const element = event.currentTarget;
+              if (visibleDiscoveredCount < matched.length && element.scrollHeight - element.scrollTop - element.clientHeight < 48) {
+                setVisibleDiscoveredCount(count => Math.min(matched.length, count + 100));
+              }
+            }}>{matched.slice(0, visibleDiscoveredCount).map(model => {
               const selected = value.models.some(item => item.id.toLowerCase() === model.id.toLowerCase());
               return <label key={model.id} className="mobile-touch flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800"><input type="checkbox" checked={selected} disabled={!selected && value.models.length >= 50} onChange={() => choose(model)} aria-label={t("选择模型 {0}", [model.id])} /><span className="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-100">{model.id}</span><span className="shrink-0 text-micro text-gray-500 dark:text-gray-400">{model.imageInput ? t("图片") : model.capabilityDetection?.imageInput === 'unknown' ? t("图片未知") : t("文本")}{model.reasoning ? t(" · 推理") : ''}</span></label>;
-            })}{matched.length > 100 && <p className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{t("还有 {0} 个模型，请搜索筛选。", [matched.length - 100])}</p>}{!matched.length && <p className="p-3 text-xs text-gray-500 dark:text-gray-400">{t("没有匹配模型")}</p>}</div>
+            })}{!matched.length && <p className="p-3 text-xs text-gray-500 dark:text-gray-400">{t("没有匹配模型")}</p>}</div>
           </div>}
           {value.models.map((model, index) => <div key={index} className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
             <div className="flex items-center gap-2"><input value={model.id} onChange={event => updateId(index, event.target.value)} placeholder={t("手动输入模型 ID")} aria-label={t("模型 ID {0}", [index + 1])} className={`min-w-0 flex-1 font-mono ${inputStyle}`} /><button type="button" onClick={() => onChange({ ...value, models: value.models.filter((_, i) => i !== index) })} aria-label={t("移除模型 {0}", [model.id || index + 1])} className="mobile-touch rounded-lg px-2 text-gray-400 hover:text-rose-600 dark:text-gray-500 dark:hover:text-rose-400"><Trash2 className="h-4 w-4" /></button></div>

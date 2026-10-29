@@ -243,15 +243,13 @@ it('目录分页按族而非变体张数决定继续加载，展开不膨胀真�
 });
 
 
-it('全局完整目录搜索按60组分页，继续加载显示第61个匹配而不吞结果', async () => {
+it('自动连续加载：全局完整目录搜索按60组触底显示第61个匹配', async () => {
+  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { queueMicrotask(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)); } unobserve() {} disconnect() {} });
   const matches = Array.from({ length: 61 }, (_, index) => ({ name: `common_role_${index}`, chinese: `共同角色${index}`, postCount: 100 - index }));
   mocks.all.mockResolvedValue(matches);
   setup(); await waitFor(() => expect(mocks.all).toHaveBeenCalledOnce());
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'common' } });
-  await waitFor(() => expect(screen.getAllByRole('button', { name: /^选择角色：共同角色/ })).toHaveLength(60));
-  expect(screen.queryByRole('button', { name: '选择角色：共同角色60' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
-  expect(screen.getAllByRole('button', { name: /^选择角色：共同角色/ })).toHaveLength(61);
+  await waitFor(() => expect(screen.getAllByRole('button', { name: /^选择角色：共同角色/ })).toHaveLength(61));
   expect(screen.getByRole('button', { name: '选择角色：共同角色60' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
 });
@@ -321,7 +319,7 @@ it('词库失败时族成员设组明确报错且不部分保存，自定义角�
   fireEvent.click(screen.getByRole('button', { name: '设置分组' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '甲组' }));
   fireEvent.click(screen.getByRole('button', { name: '保存分组' }));
-  expect((await screen.findByRole('alert')).textContent).toContain('角色 Tag 目录加载失败，请重试');
+  expect((await screen.findAllByRole('alert')).some(node => node.textContent?.includes('角色 Tag 目录加载失败，请重试'))).toBe(true);
   expect(mocks.save).not.toHaveBeenCalled();
   expect(mocks.state.memberships).toEqual({});
 
@@ -336,4 +334,21 @@ it('词库失败时族成员设组明确报错且不部分保存，自定义角�
   await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
   expect(mocks.save.mock.calls[0][0].memberships['custom:synthetic-custom']).toEqual(['one']);
   expect(mocks.save.mock.calls[0][0].memberships['custom:custom-outside']).toBeUndefined();
+});
+
+it('自动连续加载：角色分页失败停住，明确重试成功后才继续', async () => {
+  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { queueMicrotask(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)); } unobserve() {} disconnect() {} });
+  mocks.page.mockImplementation(async (page: number) => {
+    if (page === 1) throw new Error('合成分页失败');
+    return { entries: characterEntries.slice(0, 1), page, pageCount: 2, total: 4, pageSize: 1 };
+  });
+  setup();
+  await screen.findByText('加载更多角色失败，请稍后重试');
+  const calls = mocks.page.mock.calls.length;
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(mocks.page).toHaveBeenCalledTimes(calls);
+  mocks.page.mockResolvedValue({ entries: characterEntries.slice(1), page: 1, pageCount: 2, total: 4, pageSize: 1 });
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(screen.queryByText('加载更多角色失败，请稍后重试')).toBeNull());
+  expect(mocks.page).toHaveBeenCalledTimes(calls + 1);
 });

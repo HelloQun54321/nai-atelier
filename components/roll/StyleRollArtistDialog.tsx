@@ -28,6 +28,7 @@ import { PressRevealSurface } from '../PressRevealSurface';
 import { StyleRollArtistInput } from './StyleRollArtistInput';
 import { useCatalogGroupBrowser } from '../CatalogGroups';
 import { DIRECTORY_FAVORITES_ID } from '../DirectoryTreeNavigation';
+import { useGalleryLoadMore } from '../useGalleryLoadMore';
 import { ToolbarCountCaption } from '../ToolbarCountCaption';
 
 interface Props {
@@ -86,6 +87,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   useEffect(() => localHistory.subscribe(() => setUsageRetry(value => value + 1)), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const gallery = useRef<HTMLDivElement>(null);
+  const sentinel = useRef<HTMLDivElement>(null);
   const imageDisplay = useMobileImageDisplayPreferences('artists');
   const columns = useMasonryColumnCount(imageDisplay, undefined, gallery);
   const [artistRatios, updateImageRatio] = useImageRatios();
@@ -178,6 +180,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
     else onPinnedChange(pinned.filter(value => normalizeRollArtistKey(value) !== key));
   });
   const visibleArtists = useMemo(() => artists.slice(0, limit), [artists, limit]);
+  useGalleryLoadMore(gallery, sentinel, !loading && !sampleLoading && !favoritesPending && artists.length > limit, () => setLimit(current => current + 60), '500px', limit);
   const resultKey = JSON.stringify([query, filter, sort, chainsFilter, imagesFilter, groups.activeGroup]);
   const estimateCardHeight = React.useCallback((artist: ArtistDictionaryEntry, width: number) => {
     const pack = cardPacks[artist.name] || defaultPack;
@@ -263,7 +266,9 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
         {(loading || sampleLoading || groups.activeGroup !== '*' && !groups.ready && !groups.error || favoritesPending && collectionStatus === 'loading') && <p role="status" className="mb-3 text-xs text-gray-500">{t(favoritesPending ? '加载中…' : '正在读取画师样张…')}</p>}
         {favoritesPending && collectionStatus === 'error' && <button type="button" className="mobile-touch text-xs underline" onClick={() => { setError(''); setCollectionRetry(value => value + 1); }}>{t('重新加载')}</button>}
         {!favoritesPending && (imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>)}
+        <div ref={sentinel}>
         {artists.length > limit && <ToolbarButton className="mt-5 w-full" onClick={() => setLimit(current => current + 60)}>{t('加载更多')}</ToolbarButton>}
+        </div>
         {!loading && !sampleLoading && !sampleError && !libraryError && !error && !groups.error && (groups.activeGroup === '*' || groups.ready) && !favoritesPending && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
       </div>
       </div>

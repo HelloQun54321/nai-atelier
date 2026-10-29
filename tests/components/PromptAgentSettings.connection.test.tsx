@@ -90,6 +90,30 @@ it('保存默认不选用，测试模型和图片用途显式选择，发现列�
   expect(screen.getByText('图片能力未知，请手动确认。')).toBeTruthy();
 });
 
+it('发现模型列表滚动到末尾会自动连续载入后续模型', () => {
+  const discovered: PromptAgentCustomModel[] = Array.from({ length: 230 }, (_, index) => ({
+    id: `model-${String(index).padStart(3, '0')}`, reasoning: false, imageInput: false,
+    contextWindow: 8192, maxTokens: 1024,
+    capabilityDetection: { imageInput: 'unknown', reasoning: 'unknown' },
+  }));
+  render(<CustomProviderForm value={{ name: 'synthetic', baseUrl: 'https://models.example/v1', api: 'openai-completions', models: [] }} onChange={() => {}} discovered={discovered} busy={false} onTest={() => {}} onFetch={() => {}} onSave={() => {}} />);
+  const list = screen.getByLabelText('搜索发现的模型').parentElement!.querySelector('.max-h-48') as HTMLDivElement;
+  expect(screen.getByLabelText('选择模型 model-099')).toBeTruthy();
+  expect(screen.queryByLabelText('选择模型 model-100')).toBeNull();
+
+  Object.defineProperties(list, { scrollTop: { value: 1000, writable: true, configurable: true }, clientHeight: { value: 192, configurable: true }, scrollHeight: { value: 1050, configurable: true } });
+  fireEvent.scroll(list);
+  expect(screen.getByLabelText('选择模型 model-100')).toBeTruthy();
+  expect(screen.getByLabelText('选择模型 model-199')).toBeTruthy();
+  expect(screen.queryByLabelText('选择模型 model-200')).toBeNull();
+
+  Object.defineProperty(list, 'scrollTop', { value: 2050, writable: true, configurable: true });
+  Object.defineProperty(list, 'scrollHeight', { value: 2100, configurable: true });
+  fireEvent.scroll(list);
+  expect(screen.getByLabelText('选择模型 model-200')).toBeTruthy();
+  expect(screen.getByLabelText('选择模型 model-229')).toBeTruthy();
+});
+
 it('第三方提供商标签选择预设、填入密钥后交给保存流程，自定义标签保留原表单', () => {
   const onSavePreset = vi.fn();
   render(<CustomProviderForm value={{ name: '', baseUrl: '', api: 'openai-completions', models: [] }} onChange={() => {}} discovered={[]} busy={false} onTest={() => {}} onFetch={() => {}} onSave={() => {}} presets={[{ id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' }]} onSavePreset={onSavePreset} />);

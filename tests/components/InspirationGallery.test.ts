@@ -387,6 +387,27 @@ it.each([390, 1280])('宽度 %s：一次显示超过 100 条独立收藏，末�
   expect(screen.getByText('最后一条专属收藏')).toBeTruthy();
 });
 
+it.each([390, 1280])('宽度 %s：接近底部自动连续展开超过三批收藏，真实末尾停止且末项可选择', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.stubGlobal('IntersectionObserver', class {
+    private targets = new Set<Element>();
+    constructor(private callback: IntersectionObserverCallback) {}
+    observe(target: Element) {
+      this.targets.add(target);
+      queueMicrotask(() => { if (this.targets.has(target)) this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); });
+    }
+    unobserve(target: Element) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+  });
+  const data: Inspiration[] = Array.from({ length: 185 }, (_, index) => ({ id: `continuous-${index}`, userId: mockUser.id, title: `连续收藏 ${index}`, imageUrl: `/continuous-${index}.png`, prompt: '', createdAt: index }));
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: data, onRefresh: vi.fn(), notify: vi.fn() }));
+  await waitFor(() => expect(view.container.querySelectorAll('article')).toHaveLength(185));
+  expect(screen.queryByRole('button', { name: /^加载更多/ })).toBeNull();
+  fireEvent.click(screen.getByRole('img', { name: '连续收藏 184' }));
+  expect(view.container.querySelector('[data-agent-page-scope="detail"]')).toBeTruthy();
+  expect(db.getAllInspirations).not.toHaveBeenCalled();
+});
+
 it('收藏夹数量排除归档条目，并随数据更新', async () => {
   const data: Inspiration[] = [
     { id: 'count-live-1', userId: mockUser.id, title: '活动收藏', imageUrl: '/live.png', prompt: '', boardId: 'board-1', createdAt: 2 },

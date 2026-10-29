@@ -21,6 +21,7 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './Toolb
 import { useMobileHistoryLayer } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { CodexPromptTools } from './CodexPromptTools';
 import { buildPromptFragmentPatch } from '../services/labModeTools';
 import { DEFAULT_PARAMS } from './inspiration/InspirationShared';
@@ -77,6 +78,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   const originalRevision = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const display = useMobileImageDisplayPreferences('codex');
   const columns = useMasonryColumnCount(display, undefined, galleryRef);
   const filter = filters[mode];
@@ -178,6 +180,8 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
     return matched;
   }, [entries, filter, updates, favoritesVersion, mode]);
   const filterCount = [filter.category, filter.update, filter.favorite, filter.rating !== 'all', filter.images !== 'all', filter.sort !== 'default'].filter(Boolean).length;
+  useGalleryLoadMore(scrollRef, loadMoreRef, active && !loading && filtered.length > visibleLimit,
+    () => setVisibleLimit(value => value + 120), '600px 0px', visibleLimit);
   const hasFilters = Boolean(filter.query || filter.path || filterCount);
   const clearFilters = () => changeFilter({ ...defaults(), scope: filter.scope });
   const sourceLabel = mode === 'community' ? t('共创广场') : filter.scope === 'all' ? t('全部书目') : boot?.books.find(book => book.id === bookId)?.title || t('选择书目');
@@ -296,8 +300,8 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">
         <div ref={galleryRef}>
           {loading && !result ? <PageSpinner className="min-h-60" /> : !filtered.length ? <EmptyState className="min-h-60" icon={<BookOpen />} title={t(error ? '法典读取失败' : '没有符合条件的内容')} action={error ? <ToolbarButton onClick={() => setReload(value => value + 1)}>{t('重试')}</ToolbarButton> : hasFilters ? <ToolbarButton onClick={clearFilters}>{t('清除筛选')}</ToolbarButton> : undefined} /> : <>
-            {display.layout === 'masonry' ? <ShortestColumnMasonry items={filtered.slice(0, visibleLimit)} columns={columns} getItemKey={entry => entry.key} estimateItemHeight={estimateHeight} renderItem={renderCard} stableColumns /> : <div className={mobileGalleryClassName(display)} style={mobileGalleryStyle(display, columns)}>{filtered.slice(0, visibleLimit).map(renderCard)}</div>}
-            {filtered.length > visibleLimit && <div className="flex justify-center py-4"><ToolbarButton onClick={() => setVisibleLimit(value => value + 120)}>{t('加载更多')}</ToolbarButton></div>}
+            {display.layout === 'masonry' ? <ShortestColumnMasonry items={filtered.slice(0, visibleLimit)} columns={columns} getItemKey={entry => entry.key} estimateItemHeight={estimateHeight} renderItem={renderCard} stableColumns /> : <div className={`${mobileGalleryClassName(display)} workspace-card-grid`} style={mobileGalleryStyle(display, columns)}>{filtered.slice(0, visibleLimit).map(renderCard)}</div>}
+            {filtered.length > visibleLimit && <div ref={loadMoreRef} className="flex justify-center py-4"><ToolbarButton onClick={() => setVisibleLimit(value => value + 120)}>{t('加载更多')}</ToolbarButton></div>}
           </>}
         </div>
       </div>

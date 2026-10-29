@@ -209,7 +209,7 @@ it.each([false, true])('足迹=%s：卡片取首图且不打开详情，详情�
 });
 it('相关推荐沿用首图取用，复制图片不切换当前详情', async () => {
   const related = { ...illust, id: '102', title: 'related synthetic', metaPages: ['https://i.pximg.net/related.png'] };
-  vi.mocked(pixivService.getRelated).mockResolvedValueOnce([related]);
+  vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: mode === 'related' ? [related] : [illust], nextCursor: null, nextUrl: null, fetchedAt: Date.now() }));
   render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
   fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
   const open = await screen.findByRole('button', { name: '查看相关作品 related synthetic' });
@@ -313,3 +313,67 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+it('主列表触底失败保留旧卡并停止自动请求，主动重试继续相同游标到末尾', async () => {
+  const observers: { callback: IntersectionObserverCallback; targets: Set<Element>; root: Element | Document | null | undefined }[] = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    state: typeof observers[number];
+    constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) { this.state = { callback, targets: new Set(), root: options?.root }; observers.push(this.state); }
+    observe(target: Element) { this.state.targets.add(target); }
+    disconnect() { this.state.targets.clear(); }
+  });
+  let fail = true;
+  vi.mocked(pixivService.feed).mockImplementation(async (mode, options) => {
+    if (options?.cursor && fail) throw new Error('分页连接失败');
+    return { mode, items: options?.cursor ? [{ ...illust, id: '101', title: '后续作品' }] : [illust], nextCursor: options?.cursor ? null : 'cursor-2', nextUrl: null, fetchedAt: 1 };
+  });
+  const notify = vi.fn();
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  await waitFor(() => expect(pixivService.feed).toHaveBeenCalledTimes(2)); // 首屏只预取下一页。
+  const observer = observers.find(value => value.targets.size && value.root instanceof HTMLElement && value.root.tagName === 'MAIN')!;
+  expect(observer).toBeTruthy();
+  await act(async () => observer.callback([...observer.targets].map(target => ({ target, isIntersecting: true }) as IntersectionObserverEntry), {} as IntersectionObserver));
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('分页连接失败', 'error'));
+  expect(pixivService.feed).toHaveBeenCalledTimes(3);
+  expect(observers.filter(value => value.targets.size && value.root === observer.root)).toHaveLength(0);
+  expect(screen.getByRole('button', { name: /synthetic artwork.*artist/ })).toBeTruthy();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  await screen.findByRole('button', { name: /后续作品.*artist/ });
+  expect(pixivService.feed).toHaveBeenLastCalledWith('recommended', expect.objectContaining({ cursor: 'cursor-2' }));
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+});
+
+it('相关推荐完整显示超过9项，详情触底按游标追加、失败停止且相关卡可继续打开', async () => {
+  const observers: { callback: IntersectionObserverCallback; targets: Set<Element>; root: Element | Document | null | undefined }[] = [];
+  vi.stubGlobal('IntersectionObserver', class {
+    state: typeof observers[number];
+    constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) { this.state = { callback, targets: new Set(), root: options?.root }; observers.push(this.state); }
+    observe(target: Element) { this.state.targets.add(target); }
+    disconnect() { this.state.targets.clear(); }
+  });
+  const related = Array.from({ length: 12 }, (_, index) => ({ ...illust, id: String(200 + index), title: '推荐作品 ' + index }));
+  let fail = true;
+  vi.mocked(pixivService.feed).mockImplementation(async (mode, options) => {
+    if (mode === 'related' && options?.cursor && fail) throw new Error('推荐分页失败');
+    return { mode, items: mode !== 'related' ? [illust] : options?.cursor ? [related[0], { ...illust, id: '300', title: '追加推荐' }] : related,
+      nextCursor: mode === 'related' && !options?.cursor ? 'related-2' : null, nextUrl: null, fetchedAt: 1 };
+  });
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+  await screen.findByRole('button', { name: '查看相关作品 推荐作品 11' });
+  expect(screen.getAllByRole('button', { name: /^查看相关作品/ })).toHaveLength(12);
+  const observer = observers.find(value => value.targets.size && value.root instanceof HTMLElement && value.root.closest('aside'))!;
+  expect(observer).toBeTruthy();
+  await act(async () => observer.callback([...observer.targets].map(target => ({ target, isIntersecting: true }) as IntersectionObserverEntry), {} as IntersectionObserver));
+  await screen.findByText('推荐分页失败');
+  expect(observers.filter(value => value.targets.size && value.root === observer.root)).toHaveLength(0);
+  expect(screen.getAllByRole('button', { name: /^查看相关作品/ })).toHaveLength(12);
+  fail = false; fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await screen.findByRole('button', { name: '查看相关作品 追加推荐' });
+  expect(screen.getAllByRole('button', { name: /^查看相关作品/ })).toHaveLength(13);
+  expect(pixivService.feed).toHaveBeenLastCalledWith('related', { cursor: 'related-2', params: { illust_id: '100' } });
+  fireEvent.click(screen.getByRole('button', { name: '查看相关作品 追加推荐' }));
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/300'));
+});

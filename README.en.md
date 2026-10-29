@@ -141,6 +141,8 @@ The lab offers recommended steps and an optional free-step lock. You retain cont
 
 ### History, libraries and sharing
 
+Browsable lists automatically append the next batch as you approach the bottom, continuing to the real end without a fixed display limit or repeated clicks. Failed requests keep the loaded content and offer an in-place retry. Lists already shown in full, statistical summaries and finite draw batches keep their existing scope.
+
 On desktop, **Browse resources** groups AITag, Codex, Danbooru and Pixiv. Expand or collapse the group inside the full sidebar; your choice is remembered on this browser, and the current source remains visible when the group is closed. In the icon-only sidebar, click it to open a menu on the right with the current source highlighted. Artist, character and collection libraries remain directly accessible. Mobile keeps its existing **Resources** panel.
 
 - Generation history stores original images and actual prompts, seeds and parameters locally. Reuse a result by importing it back into the lab. Browse full images, favorites and randomized results without changing the originals.

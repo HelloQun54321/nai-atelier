@@ -16,10 +16,10 @@ import {
   normalizeTagQuery,
   CharacterDictionarySort,
   getCharacterDictionaryEntriesAt,
+  searchCharacterDictionary,
   getCharacterDictionaryEntries,
   filterCharacterDictionaryEntries,
   getCharacterDictionaryPage,
-  searchCharacterDictionary,
 } from '../services/tagDictionary';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ImageActivityContext, SmartImage } from './SmartImage';
@@ -329,8 +329,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return () => { current = false; };
   }, [groupCatalogReady, groupRetry, notify]);
   useEffect(() => { setGroupLimit(60); }, [searchTerm, tab, showFavOnly, sort, groups.state]);
-  // 无限加载失败的时间戳：失败后 300ms 内挡住哨兵的立即重触发，避免静默失败循环。
-  const lastLoadMoreErrorAtRef = useRef(0);
+  const [loadMoreError, setLoadMoreError] = useState('');
 
   // 新建角色 / 图片灯箱等模态：Esc 关闭。新建表单内没有依赖 Esc 取消的中间状态，
   // 直接关闭即可；灯箱同理。
@@ -449,7 +448,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     setSearchLoading(true);
     setSearchError('');
     const timer = window.setTimeout(() => {
-      searchCharacterDictionary(query, 300, sort)
+      getCharacterDictionaryEntries().then(entries => filterCharacterDictionaryEntries(entries, query, sort))
         .then(results => generation === searchGenerationRef.current && setSearchResults(results))
         .catch(error => { if (generation === searchGenerationRef.current) setSearchError('角色 Tag 目录加载失败'); console.warn('Character tag search failed:', error); })
         .finally(() => generation === searchGenerationRef.current && setSearchLoading(false));
@@ -458,10 +457,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   }, [grouped, searchTerm, sort, catalogRetry]);
 
   const loadMore = useCallback(async () => {
-    if (grouped) { setGroupLimit(value => value + 60); return; }
+    if (grouped || searchTerm.trim()) { setGroupLimit(value => value + 60); return; }
     if (isLoadingMore || nextPage >= pageCount || searchTerm.trim() || gachaCards) return;
-    // 失败后 300ms 内防抖：哨兵仍在视口内会立即再次触发，失败静默会变成无限重试循环。
-    if (Date.now() - lastLoadMoreErrorAtRef.current < 300) return;
+    setLoadMoreError('');
     const generation = catalogGenerationRef.current;
     setIsLoadingMore(true);
     try {
@@ -470,8 +468,9 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       setLoadedCatalog(previous => [...previous, ...result.entries]);
       setNextPage(result.page + 1);
     } catch (error) {
+      if (generation !== catalogGenerationRef.current) return;
       // 失败也要对用户可见，而不是由哨兵在后台静默反复重试。
-      lastLoadMoreErrorAtRef.current = Date.now();
+      setLoadMoreError('加载更多角色失败，请稍后重试');
       notify('加载更多角色失败，请稍后重试', 'error');
       console.warn('Character tag catalog loadMore failed:', error);
     } finally {
@@ -479,7 +478,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     }
   }, [grouped, gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
 
-  useGalleryLoadMore(scrollRef, sentinelRef, !searchTerm.trim() && !gachaCards && nextPage < pageCount, () => { void loadMore(); }, '800px', nextPage);
 
   const catalogToCard = useCallback((entry: CharacterDictionaryEntry): CharacterCard => {
     const chain = persistedCatalog.get(entry.name.toLowerCase());
@@ -581,6 +579,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     }));
   }, [gachaCards, tab, groups.matches, searchTerm, sort, catalogToCard, groupCards, variantIndex]);
   const visibleGroups = (grouped || Boolean(searchTerm.trim())) && !gachaCards ? cardGroups.slice(0, groupLimit) : cardGroups;
+  const localPagination = grouped || Boolean(searchTerm.trim());
+  const hasMoreVisible = localPagination ? cardGroups.length > groupLimit : nextPage < pageCount;
+  useGalleryLoadMore(scrollRef, sentinelRef, !gachaCards && hasMoreVisible && !loadMoreError && !isLoading && !resultError, () => { void loadMore(); }, '800px', localPagination ? groupLimit : nextPage);
+  useEffect(() => { setLoadMoreError(''); }, [sort, groups.activeGroup, searchTerm]);
   const visibleCards = visibleGroups.flatMap(group => expandedFamilies.has(group.id) ? group.members : [group.representative]);
   const renderCharacterGroup = (group: CharacterCardGroup) => group.members.length < 2 ? renderCharacterCard(group.representative) : <div key={group.id} data-character-family={group.id} role="group" aria-label={t('角色变体：{0}', [group.representative.name])} className="flex min-w-0 flex-col gap-4">
     {renderCharacterCard(group.representative, group)}
@@ -887,12 +889,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         </div>
         )}
 
-        {!grouped && !searchTerm.trim() && !gachaCards && tab !== 'custom' && !showFavOnly && (
+        {!gachaCards && (
           <div ref={sentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
-            {isLoadingMore ? t("正在加载更多角色…") : nextPage < pageCount ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
+            {isLoadingMore ? t("正在加载更多角色…") : loadMoreError ? <span role="alert">{t(loadMoreError)}<button type="button" onClick={() => void loadMore()}>{t("重试")}</button></span> : hasMoreVisible ? <button onClick={() => void loadMore()} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button> : catalogTotal ? t("已加载完整角色目录") : null}
           </div>
         )}
-        {(grouped || Boolean(searchTerm.trim())) && !gachaCards && cardGroups.length > groupLimit && <button type="button" className="mobile-touch mx-auto block py-6 text-sm" onClick={() => setGroupLimit(value => value + 60)}>{t("继续向下滚动加载更多")}</button>}
         {showFavOnly && !collectionReady && (variantBackfillError
           ? <p role="alert" className="text-sm text-red-500">{t(variantBackfillError)}<button type="button" onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></p>
           : <p role="status" className="text-sm text-gray-500">{t('加载中…')}</p>)}

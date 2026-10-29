@@ -24,6 +24,19 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+const automaticBottom = () => {
+  vi.stubGlobal('IntersectionObserver', class {
+    private targets = new Set<Element>();
+    constructor(private callback: IntersectionObserverCallback) {}
+    observe(target: Element) {
+      this.targets.add(target);
+      queueMicrotask(() => { if (this.targets.has(target)) this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); });
+    }
+    disconnect() { this.targets.clear(); }
+    unobserve(target: Element) { this.targets.delete(target); }
+  });
+};
+
 it('首次读取期间和失败后不显示无图，重试成功空结果才显示空态', async () => {
   const pending = deferred<never>();
   mocks.getPage.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ items: [], count: 0 });
@@ -70,4 +83,45 @@ it('同作用域重开刷新期间和失败后保留缓存，切换作用域立�
   expect(props.onSelect).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'scope-b-image', imageUrl: '/scope-b-image.png' }), false);
   expect(mocks.fetch).toHaveBeenLastCalledWith(expect.stringContaining('chainId=scope-b&'));
   expect(mocks.getPage).not.toHaveBeenCalled();
+});
+
+it('接近底部连续追加所有历史页，失败保留旧图且停住，主动重试同页后直到真实末尾', async () => {
+  automaticBottom();
+  const images = Array.from({ length: 45 }, (_, index) => ({ id: `history-${index}`, imageUrl: `/history-${index}.png`, prompt: '', params: {}, createdAt: index + 1 }));
+  let fail = true;
+  mocks.getPage.mockImplementation(async (page: number, size: number) => {
+    if (page === 1 && fail) throw new Error('合成追加失败');
+    return { items: images.slice(page * size, (page + 1) * size), count: images.length };
+  });
+  const select = vi.fn();
+  render(<HistoryImagePicker open onClose={vi.fn()} onSelect={select} />);
+  await screen.findByRole('alert');
+  expect(screen.getAllByRole('img')).toHaveLength(20);
+  expect(mocks.getPage.mock.calls.map(([page]) => page)).toEqual([0, 1]);
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+  await screen.findByText('全部 45 张');
+  await act(async () => {});
+  expect(screen.getAllByRole('img')).toHaveLength(45);
+  expect(mocks.getPage.mock.calls.map(([page]) => page)).toEqual([0, 1, 1, 2]);
+  const last = screen.getAllByRole('button', { name: /^选择历史生成图片/ }).at(-1)!;
+  fireEvent.click(last);
+  expect(select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'history-44' }), false);
+  expect(screen.getByRole('button', { name: '下一页历史图片' }).matches(':disabled')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '上一页历史图片' }));
+  await act(async () => {});
+  expect(mocks.getPage).toHaveBeenCalledWith(1, expect.any(Number), undefined, true);
+});
+
+it('指定条目也按页自动追加，末页只读取一次且跨页重复图片不重复展示', async () => {
+  automaticBottom();
+  mocks.fetch.mockImplementation(async (url: string) => {
+    const offset = Number(new URL(url, 'http://synthetic.local').searchParams.get('offset'));
+    return { ok: true, json: async () => ({ items: offset === 0 ? [{ id: 'one', imageUrl: '/one.png', createdAt: 1 }] : [{ id: 'one', imageUrl: '/one.png', createdAt: 1 }, { id: 'last', imageUrl: '/last.png', createdAt: 2 }], count: 21 }) };
+  });
+  render(<HistoryImagePicker open scopeChainId="scoped" onClose={vi.fn()} onSelect={vi.fn()} />);
+  await screen.findByText('第 2 / 2 页 · 每页 20 张');
+  expect(screen.getAllByRole('img')).toHaveLength(2);
+  expect(mocks.fetch).toHaveBeenCalledTimes(2);
+  expect(mocks.fetch).toHaveBeenLastCalledWith('/api/prompt-library-links/images?chainId=scoped&limit=20&offset=20');
 });

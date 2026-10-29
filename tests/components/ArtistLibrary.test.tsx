@@ -1302,16 +1302,19 @@ it('逗号OR搜索忽略迟到的旧整组响应，只有逗号空项时回普�
   expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull();
 });
 
-it('逗号OR结果全局去重排序后仍只展示200位并提示截断', async () => {
+it('自动连续加载：逗号OR结果去重排序后遍历全部250位', async () => {
   const pool = Array.from({ length: 250 }, (_, index) => ({ name: `multi artist ${String(index).padStart(3, '0')}`, chinese: '', postCount: index + 1 }));
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   mocks.dictionary.mockResolvedValue([...pool, ...pool.slice(100, 150)]);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'multi，artist,multi,unknown' } });
-  expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
+  await waitFor(() => expect(sampleCards()).toHaveLength(100));
+  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
   expect(sampleCards()).toHaveLength(200);
-  expect(new Set(sampleCards().map(card => card.getAttribute('aria-label'))).size).toBe(200);
+  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  expect(sampleCards()).toHaveLength(250);
+  expect(new Set(sampleCards().map(card => card.getAttribute('aria-label'))).size).toBe(250);
   expect(sampleCards()[0].getAttribute('aria-label')).toBe('选择画师：multi artist 249');
-  expect(sampleCards()[199].getAttribute('aria-label')).toBe('选择画师：multi artist 050');
+  expect(sampleCards()[249].getAttribute('aria-label')).toBe('选择画师：multi artist 000');
 });
 
 it('逗号空项在有图池按普通目录分页，清空和随机后不会残留搜索语义', async () => {
@@ -1385,12 +1388,13 @@ it('画师卡片名称保留完整 title，长名称可悬浮查看', async () =
   expect(within(card).getByText('alpha artist').getAttribute('title')).toBe('alpha artist');
 });
 
-it('搜索结果超过展示上限时明确提示，不静默截断', async () => {
+it('自动连续加载：搜索超过200位仍可触底到真实末尾', async () => {
+  vi.stubGlobal('IntersectionObserver', class { constructor(private callback: IntersectionObserverCallback) {} observe(target: Element) { queueMicrotask(() => this.callback([{ target, isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)); } disconnect() {} });
   setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   mocks.dictionary.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
-  expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
-  expect(sampleCards()).toHaveLength(200);
+  await waitFor(() => expect(sampleCards()).toHaveLength(201));
+  expect(screen.queryByRole('button', { name: '继续向下滚动加载更多' })).toBeNull();
 });
 
 it('当前样张包未配置时默认展示完整目录，用户关闭样张筛选后记住选择', async () => {

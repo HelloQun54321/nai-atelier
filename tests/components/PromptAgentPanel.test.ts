@@ -463,6 +463,26 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(within(drawer).queryByRole('alert')).toBeNull();
   });
 
+  it('聊天向上滚动时自动追加更早消息，不再要求点击显示更多', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue(Array.from({ length: 125 }, (_, index) => ({ id: `message-${index}`, role: 'user' as const, text: `历史消息 ${index}` })));
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    renderPanel();
+    expect(await screen.findByText('历史消息 124')).toBeTruthy();
+    expect(screen.getByText('历史消息 65')).toBeTruthy();
+    expect(screen.queryByText('历史消息 64')).toBeNull();
+    expect(screen.queryByRole('button', { name: /再显示前面的/ })).toBeNull();
+
+    const scroll = screen.getByRole('main').querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperties(scroll, { scrollTop: { value: 0, writable: true, configurable: true }, clientHeight: { value: 300, configurable: true }, scrollHeight: { value: 1200, configurable: true } });
+    fireEvent.scroll(scroll);
+    expect(screen.getByText('历史消息 5')).toBeTruthy();
+    expect(screen.queryByText('历史消息 4')).toBeNull();
+
+    fireEvent.scroll(scroll);
+    expect(screen.getByText('历史消息 0')).toBeTruthy();
+  });
+
   it('新会话创建失败不退回旧历史，重试成功后进入新会话', async () => {
     const old = { ...mockSession, id: 'old-session', title: '不能自动恢复' };
     const fresh = { ...mockSession, id: 'fresh-session', title: '恢复后的新会话' };

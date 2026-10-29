@@ -363,7 +363,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
   useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`, resultKey);
   const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list', { resetKey: resultKey });
-  useGalleryLoadMore(chainScrollRef, chainLoadSentinelRef, visibleCount < filteredChains.length, () => setVisibleCount(count => count + RENDER_BATCH_SIZE), '600px 0px');
+  useGalleryLoadMore(chainScrollRef, chainLoadSentinelRef, visibleCount < filteredChains.length, () => setVisibleCount(count => count + RENDER_BATCH_SIZE), '600px 0px', visibleCount);
 
   // 卡片预计高度用于新卡分列；尺寸返回只修正高度，旧卡保留原列。
   const frostedCaption = useGalleryFrostedCaption();

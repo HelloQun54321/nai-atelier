@@ -153,7 +153,6 @@ const AgentMessageList = React.memo(({
   running,
   copiedMessageId,
   displayPreferences,
-  onLoadEarlier,
   onCopy,
   onEdit,
   onRetry,
@@ -166,7 +165,6 @@ const AgentMessageList = React.memo(({
   running: boolean;
   copiedMessageId: string;
   displayPreferences: AgentDisplayPreferences;
-  onLoadEarlier: () => void;
   onCopy: (message: PanelMessage) => void;
   onEdit: (message: PanelMessage) => void;
   onRetry: () => void;
@@ -175,9 +173,7 @@ const AgentMessageList = React.memo(({
   onMediaReady: () => void;
 }) => {
   const visibleMessages = messages.slice(-visibleMessageCount);
-  const hiddenMessageCount = Math.max(0, messages.length - visibleMessages.length);
   return <>
-    {hiddenMessageCount > 0 && <button type="button" onClick={onLoadEarlier} className="appearance-group mx-auto flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-meta font-bold text-gray-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">{t("再显示前面的 {0} 条消息", [Math.min(60, hiddenMessageCount)])}</button>}
     {visibleMessages.map((message, index) => <article key={message.id} className={`group min-w-0 text-sm leading-7 text-gray-800 [overflow-wrap:anywhere] dark:text-gray-100 ${message.role === 'user' ? 'ml-auto flex max-w-[90%] flex-col items-end' : ''}`}>
       <div className={message.role === 'user' ? 'appearance-group w-fit max-w-full whitespace-pre-wrap rounded-2xl bg-gray-100 px-4 py-2.5 dark:bg-gray-800' : message.role === 'error' ? 'whitespace-pre-wrap rounded-xl bg-red-50 px-3 py-2 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'min-w-0'}>
       {!!message.thinking && <AgentDisclosure title={t("思考过程")} label={t("思考过程")} defaultExpanded={displayPreferences.thinkingExpanded}><AgentLiveOutput text={message.thinking} live={running && index === visibleMessages.length - 1} label={t("思考输出")} className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-6 text-gray-500 dark:text-gray-400" /></AgentDisclosure>}
@@ -254,6 +250,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const responseStartedRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const earlierMessageScrollRef = useRef<{ height: number; top: number } | null>(null);
   const followBottomRef = useRef(true);
   const forceBottomAfterLoadRef = useRef(false);
   const loadedSessionIdRef = useRef('');
@@ -495,6 +492,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (switchingSession) {
       setMessages([]);
       setVisibleMessageCount(60);
+      earlierMessageScrollRef.current = null;
     }
     // 会话加载序号守卫：快速切换会话时，先发出的慢响应不得覆盖新会话的消息
     const loadSeq = ++sessionLoadSeqRef.current;
@@ -575,6 +573,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const executionStatus = compacting ? '正在压缩上下文…' : running
     ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? t("正在{0}", [t(toolLabels[runningTool.name] || runningTool.name)]) : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
     : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
+
+  useLayoutEffect(() => {
+    const anchor = earlierMessageScrollRef.current;
+    const element = scrollRef.current;
+    if (!anchor || !element) return;
+    earlierMessageScrollRef.current = null;
+    element.scrollTop = anchor.top + element.scrollHeight - anchor.height;
+  }, [visibleMessageCount]);
 
   useLayoutEffect(() => {
     if (!props.open) return;
@@ -995,6 +1001,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
   const stopTask = async () => { if (running) interruptGeneration(); try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
   const openAgentSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } }));
+  const loadEarlierMessages = () => {
+    const element = scrollRef.current;
+    if (!element || visibleMessageCount >= messages.length || earlierMessageScrollRef.current) return;
+    earlierMessageScrollRef.current = { height: element.scrollHeight, top: element.scrollTop };
+    followBottomRef.current = false;
+    setFollowingBottom(false);
+    setVisibleMessageCount(count => Math.min(messages.length, count + 60));
+  };
   const addAttachments = async (files: FileList | readonly File[] | null) => {
     if (!files || attachmentLoadingRef.current || !sessionReady || running || !supportsImages) return;
     const session = activeSessionId; const next = [...attachments]; const errors: string[] = [];
@@ -1009,7 +1023,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     } finally { attachmentLoadingRef.current = false; setAttachmentBusy(false); }
   };
   messageActionsRef.current = {
-    loadEarlier: () => setVisibleMessageCount(count => count + 60),
+    loadEarlier: loadEarlierMessages,
     copy: message => { void copyMessage(message.id, message.text).catch(reportControlError); },
     edit: message => { setEditingMessageId(message.id); setInput(message.text); },
     retry: () => { void run('', 'retry'); },
@@ -1161,7 +1175,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       {(compacting || compactionNotice) && <div role="status" className={`absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg px-2 py-1 text-micro font-bold shadow ${compactionNotice?.error ? 'bg-red-50 text-red-600 dark:bg-red-950/80 dark:text-red-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>{t(compacting ? '正在压缩上下文…' : compactionNotice!.text)}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
-        <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
+        <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); if (!forceBottomAfterLoadRef.current && element.scrollTop <= 48 && visibleMessageCount < messages.length) messageActionsRef.current.loadEarlier(); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
           {messages.length === 0 && <div className="my-8 text-center"><div className="appearance-group mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"><Bot className="h-7 w-7" /></div><h3 className="mt-4 text-lg font-black dark:text-white">{t("告诉我你想在项目里做什么")}</h3>{!sessionReady && <p className="mt-1 text-sm text-gray-500">{sessionInitError || (modelsLoaded && !activeModel ? t("请接入模型") : t("正在加载对话…"))}</p>}{!sessionReady && sessionInitError && <button type="button" onClick={() => { setSessionInitError(''); void Promise.all([refreshSessions(), promptAgentService.getAvailableModels().then(items => { setModels(items); setModelsLoaded(true); })]).catch(() => setSessionInitError('无法连接助手服务，请确认本地服务正在运行')); }} className="appearance-group mobile-touch mt-3 rounded-xl border border-indigo-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-gray-900 dark:text-indigo-300">{t("重试")}</button>}<div className="mx-auto mt-5 grid max-w-lg gap-2 sm:grid-cols-2">{['查看最后一张图并改进动作', '检查整个项目的资料情况', '设计角色并调整实验室', '看看我的本地图片目录'].map(value => <button key={value} type="button" disabled={!sessionReady} onClick={() => void run(value)} className="mobile-touch rounded-xl border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900">{value}</button>)}</div></div>}
           <AgentMessageList
             messages={messages}
@@ -1169,7 +1183,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             running={running}
             copiedMessageId={copiedMessageId}
             displayPreferences={displayPreferences}
-            onLoadEarlier={() => messageActionsRef.current.loadEarlier()}
             onCopy={message => messageActionsRef.current.copy(message)}
             onEdit={message => messageActionsRef.current.edit(message)}
             onRetry={() => messageActionsRef.current.retry()}
