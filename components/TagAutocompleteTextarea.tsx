@@ -119,7 +119,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const tagListRef = useRef<HTMLDivElement>(null);
   const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => { setClearActionTarget(clearActionSlotRef?.current || null); }, [clearActionSlotRef]);
-  const tagInputRef = useRef<HTMLInputElement>(null);
+  const tagInputRef = useRef<HTMLTextAreaElement>(null);
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
   const blurTimerRef = useRef<number | null>(null);
@@ -142,6 +142,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [deleteMode, setDeleteMode] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [insertionIndex, setInsertionIndex] = useState<number | null>(null);
+  const [editingTag, setEditingTag] = useState<{ id: string; start: number; end: number } | null>(null);
   const [clearActionState, setClearActionState] = useState<'cleared' | 'undone' | null>(null);
   const historyRef = useRef({ value, past: [] as string[], future: [] as string[], typedAt: 0 });
   const neutralGroupsRef = useRef({ value, groups: [] as Array<{ start: number; end: number }> });
@@ -199,6 +200,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       title={t('查看{0}资料：{1}', [t(entry.category === 1 ? '画师' : '角色'), item.displayTag])}
       className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-[var(--nai-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nai-accent)] dark:hover:bg-gray-800"
       onPointerDown={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
       onKeyDown={event => event.stopPropagation()} draggable={false} onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}
       onClick={event => { event.stopPropagation(); setLibraryInfo({ kind: entry.category === 1 ? 'artist' : 'character', name: entry.name, chinese: entry.chinese, postCount: entry.postCount }); }}>
       <Info aria-hidden="true" className="h-3.5 w-3.5" />
@@ -219,6 +221,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setDeleteMode(false);
     setTagInput('');
     setInsertionIndex(null);
+    setEditingTag(null);
     closeSuggestions();
     refreshHistory(revision => revision + 1);
   }, [value, closeSuggestions]);
@@ -226,6 +229,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const commitValue = (next: string, typing = false) => {
     if (!editable || next === value) return;
     setInsertionIndex(null);
+    setEditingTag(null);
     setClearActionState(null);
     if (neutralGroupsRef.current.value !== next) neutralGroupsRef.current = { value: next, groups: [] };
     const history = historyRef.current;
@@ -255,6 +259,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setDeleteMode(false);
     setTagInput('');
     setInsertionIndex(null);
+    setEditingTag(null);
     onValueChange(next);
     refreshHistory(revision => revision + 1);
     return true;
@@ -363,10 +368,28 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setDeleteMode(false);
   };
   const finishTagInput = (text: string) => {
-    insertTags(text);
+    if (editingTag) {
+      const replacement = text.trim();
+      if (replacement) commitValue(value.slice(0, editingTag.start) + replacement + value.slice(editingTag.end));
+    } else insertTags(text);
     setTagInput('');
     setInsertionIndex(null);
+    setEditingTag(null);
     closeSuggestions();
+  };
+  const editTag = (item: PromptTagToken) => {
+    if (!editable || deleteMode || item.start === undefined || item.end === undefined) return;
+    const raw = value.slice(item.start, item.end);
+    // 正文可能与 artist: 或数值权重前缀重名，只替换真正的词。
+    const prefix = raw.match(/^[{\[\s]*(?:[+-]?(?:\d+(?:\.\d+)?|\.\d+)::\s*)?(?:\(?artists?\s*:\s*)?/i)?.[0] || '';
+    const contentOffset = raw.indexOf(item.displayTag, prefix.length);
+    if (contentOffset < 0) return;
+    closeSuggestions();
+    clearSelection();
+    setInsertionIndex(null);
+    setTagInput(item.displayTag);
+    setEditingTag({ id: item.id, start: item.start + contentOffset, end: item.start + contentOffset + item.displayTag.length });
+    requestAnimationFrame(() => { tagInputRef.current?.focus(); tagInputRef.current?.select(); });
   };
   const copySelection = (event: React.ClipboardEvent, cut = false) => {
     if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') || window.getSelection()?.toString() || !selectedTokens.length || cut && !editable) return;
@@ -480,8 +503,13 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   }, [tagAssistEnabled, closeSuggestions]);
 
   useEffect(() => {
-    if (!editable || completionSource === 'tag' && (!showTranslations || deleteMode)) closeSuggestions();
-  }, [editable, completionSource, showTranslations, deleteMode, closeSuggestions]);
+    if (!editable || !tagAssistEnabled || !showTranslations || deleteMode) {
+      setEditingTag(null);
+      setTagInput('');
+      setInsertionIndex(null);
+      if (!editable || completionSource === 'tag') closeSuggestions();
+    }
+  }, [editable, completionSource, tagAssistEnabled, showTranslations, deleteMode, closeSuggestions]);
 
   const refreshSuggestions = useCallback((nextValue = value, caret = textareaRef.current?.selectionStart ?? 0, source: 'prompt' | 'tag' = 'prompt') => {
     if (!completionEnabled || !editable || composingRef.current) return;
@@ -633,7 +661,9 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     className="mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200">
     {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
   </button>;
-  const tagInputField = <input key="tag-input" ref={tagInputRef} role="combobox" aria-label={t(insertionIndex === currentTranslations.length ? '添加提示词' : '插入提示词')} value={tagInput}
+  const tagInputField = <span key="tag-input" className="inline-grid min-w-[4ch] max-w-full grid-cols-[minmax(0,1fr)] rounded-md border border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_8%,transparent)] font-mono text-micro leading-tight ring-1 ring-[var(--nai-accent)]">
+    <span aria-hidden="true" className="invisible min-w-0 whitespace-pre-wrap px-1 py-0.5 [grid-area:1/1] [overflow-wrap:anywhere]">{tagInput + '\u200b'}</span>
+    <textarea ref={tagInputRef} rows={1} cols={1} role="combobox" aria-label={t(editingTag ? '修改提示词' : insertionIndex === currentTranslations.length ? '添加提示词' : '插入提示词')} value={tagInput}
     aria-autocomplete="list" aria-expanded={isOpen && completionSource === 'tag'}
     aria-controls={isOpen && completionSource === 'tag' ? listboxId : undefined}
     aria-activedescendant={isOpen && completionSource === 'tag' && suggestions[activeIndex] ? `${listboxId}-${activeIndex}` : undefined}
@@ -647,14 +677,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? 0, 'tag');
     }}
     onClick={event => { event.stopPropagation(); refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? 0, 'tag'); }}
+    onDoubleClick={event => event.stopPropagation()}
     onBlur={event => {
       if (composingRef.current || listboxRef.current?.contains(event.relatedTarget as Node)) return;
       finishTagInput(event.currentTarget.value);
     }}
     onKeyDown={event => {
-      if (handleCompletionKeyDown(event) || composingRef.current || event.nativeEvent.isComposing) return;
+      if (composingRef.current || event.nativeEvent.isComposing) return;
+      if (!(editingTag && event.key === 'Escape') && handleCompletionKeyDown(event)) return;
       if (event.key === 'Enter') { event.preventDefault(); finishTagInput(tagInput); }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setTagInput(''); setInsertionIndex(null); closeSuggestions(); }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setTagInput(''); setInsertionIndex(null); setEditingTag(null); closeSuggestions(); }
     }}
     onCompositionStart={() => { composingRef.current = true; closeSuggestions(); }}
     onCompositionEnd={event => {
@@ -662,14 +694,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       if (document.activeElement !== event.currentTarget) finishTagInput(event.currentTarget.value);
       else refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, 'tag');
     }}
-    className="min-h-10 w-32 min-w-0 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200" />;
+    style={{ font: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', color: 'inherit', minHeight: 0, height: '100%', width: '100%', padding: '0.125rem 0.25rem', border: 0, borderRadius: 'inherit', background: 'transparent', boxShadow: 'none' }}
+    className="min-w-0 resize-none overflow-hidden whitespace-pre-wrap outline-none [grid-area:1/1] [overflow-wrap:anywhere]" />
+  </span>;
   const insertionAt = (index: number) => {
     if (deleteMode || !editable) return null;
     if (insertionIndex === index) return tagInputField;
     return <button key={`insert:${index}`} type="button" aria-label={index < currentTranslations.length ? t('插入提示词：位置 {0}', [index + 1]) : t('在末尾插入提示词')}
-      onMouseDown={event => { event.preventDefault(); event.stopPropagation(); }}
+      onMouseDown={event => { if (!editingTag) event.preventDefault(); event.stopPropagation(); }}
       onClick={event => {
         event.stopPropagation(); closeSuggestions();
+        setEditingTag(null);
         setInsertionIndex(index);
         requestAnimationFrame(() => tagInputRef.current?.focus());
       }}
@@ -798,19 +833,22 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                   nodes.push(
                     <div
                       role="button" tabIndex={0} onKeyDown={selectUnitWithKeyboard}
+                      onDoubleClick={() => editTag(item)}
                       onClick={() => setSelectedTagIds(current => {
                         const next = new Set(current);
                         if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
                         return next;
                       })}
                       key={item.id}
-                      className={`relative inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
+                      className={`relative inline-flex min-w-0 max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${catalogEntries.has(item.lookupTag) ? 'pr-7' : ''} ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
                         : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
-                      <span className={`max-w-52 truncate font-mono text-micro ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
-                      <span className={`max-w-48 truncate text-xs font-medium ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>
+                        {editingTag?.id === item.id ? tagInputField : item.displayTag}
+                      </span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${editingTag?.id === item.id ? 'invisible' : ''} ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -853,9 +891,11 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     {openSyntax && <span className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
                     {members.map((member, memberIndex) => <React.Fragment key={member.id}>
                       {memberIndex > 0 && insertionAt(groupIndex + memberIndex)}
-                      <span className={`relative flex min-w-0 flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
-                        <span className={`max-w-52 truncate font-mono text-micro ${groupTextTone}`} title={member.displayTag}>{member.displayTag}</span>
-                        <span className={`max-w-48 truncate text-xs font-medium ${groupTextTone}`} title={member.chinese || t("词库暂无翻译")}>{member.chinese || t("待翻译")}</span>
+                      <span onDoubleClick={event => { event.stopPropagation(); editTag(member); }} className={`relative flex min-w-0 max-w-full flex-col px-2 py-1 ${catalogEntries.has(member.lookupTag) ? 'pr-7' : ''} ${memberIndex > 0 ? (groupSelected ? 'border-l border-[color-mix(in_srgb,var(--nai-accent)_25%,transparent)]' : 'border-l border-gray-200 dark:border-gray-700') : ''}`}>
+                        <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${groupTextTone}`} title={member.displayTag}>
+                          {editingTag?.id === member.id ? tagInputField : member.displayTag}
+                        </span>
+                        <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${editingTag?.id === member.id ? 'invisible' : ''} ${groupTextTone}`} title={member.chinese || t("词库暂无翻译")}>{member.chinese || t("待翻译")}</span>
                         {infoButton(member)}
                       </span>
                     </React.Fragment>)}
