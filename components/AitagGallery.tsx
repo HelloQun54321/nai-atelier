@@ -390,7 +390,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const [page, setPage] = useState(() => aitagPageCache.page);
   const [total, setTotal] = useState(() => aitagPageCache.total);
   const [cacheStatus, setCacheStatus] = useState<AitagCacheStatus | null>(() => aitagPageCache.cacheStatus);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => !aitagPageCache.hasLoaded);
   const [isAppending, setIsAppending] = useState(false);
   const [appendError, setAppendError] = useState<string | null>(null);
   const appendRun = useRef(0);
@@ -1630,13 +1630,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           )}
 
           <div ref={galleryContentRef} className={isLoading || visibleItems.length === 0 ? 'h-full' : undefined}>
-          {isLoading ? (
+          {isLoading && visibleItems.length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-400">
               <div className="text-sm">{t("加载 aitag 数据中...")}</div>
             </div>
           ) : visibleItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : pendingMetadataItems.length > 0 ? t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length]) : t("没有匹配结果")}</div>
+              {!error && <div className="text-sm">{cacheNeedsMoreData ? t("本地没有这一页，且当前无法联网获取") : pendingMetadataItems.length > 0 ? t("正在读取 {0} 个作品的元数据", [pendingMetadataItems.length]) : t("没有匹配结果")}</div>}
               {filterChips.length > 0 && <ToolbarButton onClick={resetFilters} className="mt-3">{t("清除筛选")}</ToolbarButton>}
             </div>
           ) : (

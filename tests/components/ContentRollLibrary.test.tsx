@@ -16,6 +16,21 @@ const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', filled: tr
 const record = { id: 'saved', type: 'style', name: '夜游', tags: [], params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: snapshot }, updatedAt: 1 } as unknown as PromptChain;
 const props = () => ({ active: true, chains: [record], notify: vi.fn(), onLoad: vi.fn(), onRename: vi.fn(async () => {}), onDelete: vi.fn(async () => {}), onSetCover: vi.fn(async () => {}) });
 
+it.each(['saved', 'originals'] as const)('条目读取状态：%s列表区分延迟失败真空并保留缓存', section => {
+  const retry = vi.fn();
+  const page = (items: PromptChain[], chainsLoading = false, chainsError = '') => <ContentRollLibrary {...props()} chains={items} section={section} chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={retry} />;
+  const empty = section === 'saved' ? '组合库还是空的' : '原文还是空的';
+  const view = render(page([], true));
+  expect(screen.getByText('加载中…')).toBeTruthy(); expect(screen.queryByText(empty)).toBeNull();
+  view.rerender(page([], false, '读取提示词库失败')); expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(page([])); expect(screen.getByText(empty)).toBeTruthy();
+  if (section === 'saved') {
+    view.rerender(page([record], true)); expect(screen.getByRole('button', { name: '查看夜游' })).toBeTruthy();
+    view.rerender(page([record], false, '读取提示词库失败')); expect(screen.getByRole('button', { name: '查看夜游' })).toBeTruthy();
+  }
+});
+
 it('在顶栏下沿显示当前组合分区条目数', async () => {
   render(<ContentRollLibrary {...props()} />);
   const caption = await screen.findByText('共 1 条');

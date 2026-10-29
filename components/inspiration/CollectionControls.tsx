@@ -43,7 +43,8 @@ export const CollectionFolderPicker: React.FC<{
   boards: InspirationBoard[]; value: string[]; mixedIds?: string[];
   onToggle: (id: string, checked: boolean) => void;
   disabled?: boolean; iconOnly?: boolean; label?: string; className?: string;
-}> = ({ boards, value, mixedIds = [], onToggle, disabled, iconOnly, label = '管理收藏夹', className = 'mobile-touch h-10 max-w-44 rounded-xl border border-gray-200 px-3 text-xs font-semibold dark:border-gray-800' }) => {
+  loading?: boolean; error?: string; onRetry?: () => void;
+}> = ({ boards, value, mixedIds = [], onToggle, disabled, loading, error, onRetry, iconOnly, label = '管理收藏夹', className = 'mobile-touch h-10 max-w-44 rounded-xl border border-gray-200 px-3 text-xs font-semibold dark:border-gray-800' }) => {
   const anchorRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
@@ -55,8 +56,10 @@ export const CollectionFolderPicker: React.FC<{
   }, [close]);
   const content = <div className="space-y-3">
     <div className="max-h-72 space-y-1 overflow-y-auto">
-      <DirectoryTreeChecklist nodes={boards} selectedIds={value} mixedIds={mixedIds} onToggle={onToggle} disabled={disabled} label={t(label)} />
-      {!boards.length && <p className="py-3 text-sm text-gray-400">{t('暂无收藏夹')}</p>}
+      {loading && <p role="status" className="py-3 text-sm text-gray-400">{t('正在读取…')}</p>}
+      {error && <p role="alert" className="py-3 text-sm text-red-500">{t(error)} {onRetry && <button type="button" disabled={loading} onClick={onRetry} className="underline">{t('重试')}</button>}</p>}
+      <DirectoryTreeChecklist nodes={boards} selectedIds={value} mixedIds={mixedIds} onToggle={onToggle} disabled={disabled || loading || Boolean(error)} label={t(label)} />
+      {!loading && !error && !boards.length && <p className="py-3 text-sm text-gray-400">{t('暂无收藏夹')}</p>}
     </div>
     <button type="button" onClick={close} className="mobile-touch w-full rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white">{t('完成')}</button>
   </div>;

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VibeManager } from '../../components/VibeManager';
 import type { NAIParams, VibeAsset, VibeSelection } from '../../types';
 import type { ExportReceipt } from '../../services/exportLocation';
-const fixtures = vi.hoisted(() => ({ listOverride: undefined as ((archived: boolean) => Promise<VibeAsset[]>) | undefined, encodingCost: 2, needsEncoding: false, multipleModels: false, multipleVariants: false, secondAsset: false, archived: false, unknownInformation: false, encode: vi.fn(), download: vi.fn<(asset: VibeAsset) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), downloadGroup: vi.fn<(name: string, slots: VibeSelection[], normalize: boolean) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), delete: vi.fn(), deleteEncoding: vi.fn(), importFile: vi.fn(), resolveParams: vi.fn(), confirm: vi.fn(async (_options?: unknown) => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
+const fixtures = vi.hoisted(() => ({ groupsOverride: undefined as (() => Promise<unknown[]>) | undefined, listOverride: undefined as ((archived: boolean) => Promise<VibeAsset[]>) | undefined, encodingCost: 2, needsEncoding: false, multipleModels: false, multipleVariants: false, secondAsset: false, archived: false, unknownInformation: false, encode: vi.fn(), download: vi.fn<(asset: VibeAsset) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), downloadGroup: vi.fn<(name: string, slots: VibeSelection[], normalize: boolean) => Promise<ExportReceipt>>(async () => ({ saved: true, cancelled: false })), delete: vi.fn(), deleteEncoding: vi.fn(), importFile: vi.fn(), resolveParams: vi.fn(), confirm: vi.fn(async (_options?: unknown) => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
 
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: fixtures.encodingCost, freeVibeCount: 4, extraVibeCost: 2 } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true }) }));
@@ -14,7 +14,7 @@ vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ refreshIfS
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => fixtures.confirm }));
 vi.mock('../../services/vibeService', () => ({ vibeService: {
   list: async (_query: string, archived: boolean) => { if (fixtures.listOverride) return fixtures.listOverride(archived); return archived !== fixtures.archived ? [] : [{ id: 'new', name: '新 Vibe', hasOriginal: true, defaultStrength: 0.6, archived: fixtures.archived, encodings: fixtures.needsEncoding ? [] : [{ id: 'new-encoded', model: 'nai-diffusion-4-5-full', informationExtracted: 1, informationKnown: !fixtures.unknownInformation }, ...(fixtures.multipleModels ? [{ id: 'curated-encoded', model: 'nai-diffusion-4-5-curated', informationExtracted: 1 }] : []), ...(fixtures.multipleVariants ? [0.6, 0.5, 0.4].map(informationExtracted => ({ id: `encoding-${informationExtracted}`, model: 'nai-diffusion-4-5-full', informationExtracted })) : [])] }, ...(fixtures.secondAsset ? [{ id: 'other', name: '另一 Vibe', hasOriginal: true, defaultStrength: 0.6, archived: fixtures.archived, encodings: [] }] : [])]; },
-  listGroups: async () => [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
+  listGroups: async () => fixtures.groupsOverride ? fixtures.groupsOverride() : [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
   encode: fixtures.encode,
   download: fixtures.download,
   downloadGroup: fixtures.downloadGroup,
@@ -23,7 +23,7 @@ vi.mock('../../services/vibeService', () => ({ vibeService: {
   delete: fixtures.delete,
   deleteEncoding: fixtures.deleteEncoding,
 } }));
-afterEach(() => { cleanup(); fixtures.listOverride = undefined; localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.multipleModels = false; fixtures.multipleVariants = false; fixtures.secondAsset = false; fixtures.archived = false; fixtures.unknownInformation = false; fixtures.encode.mockReset(); fixtures.download.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.downloadGroup.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.delete.mockReset(); fixtures.deleteEncoding.mockReset(); fixtures.importFile.mockReset(); fixtures.resolveParams.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
+afterEach(() => { cleanup(); fixtures.groupsOverride = undefined; fixtures.listOverride = undefined; window.history.replaceState({}, ""); localStorage.clear(); sessionStorage.clear(); vi.restoreAllMocks(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.multipleModels = false; fixtures.multipleVariants = false; fixtures.secondAsset = false; fixtures.archived = false; fixtures.unknownInformation = false; fixtures.encode.mockReset(); fixtures.download.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.downloadGroup.mockReset().mockResolvedValue({ saved: true, cancelled: false }); fixtures.delete.mockReset(); fixtures.deleteEncoding.mockReset(); fixtures.importFile.mockReset(); fixtures.resolveParams.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
 const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
@@ -405,5 +405,55 @@ describe('Vibe 导出回执与永久删除', () => {
     expect(remove).toHaveBeenCalledOnce();
     expect(notify).toHaveBeenCalledTimes(1);
     expect(setParams).not.toHaveBeenCalled();
+  });
+});
+
+describe('Vibe 读取状态', () => {
+  it('首载未知不报资产或编码缺失，失败可重试且成功空库才显示空态', async () => {
+    const pending = Promise.withResolvers<VibeAsset[]>();
+    fixtures.listOverride = () => pending.promise;
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    expect(screen.queryByText('还没有永久 Vibe')).toBeNull();
+    expect(screen.queryByText('资产缺失')).toBeNull();
+    expect(screen.queryByText('当前组合有编码缺失或模型不匹配，不会自动付费补齐')).toBeNull();
+    expect(screen.queryByText('当前模型缺少对应编码')).toBeNull();
+    await act(async () => pending.reject(new Error('synthetic')));
+    expect(screen.getByRole('alert').textContent).toContain('资料库加载失败');
+    expect(screen.queryByText('还没有永久 Vibe')).toBeNull();
+    fixtures.listOverride = async () => [];
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('还没有永久 Vibe')).toBeTruthy();
+  });
+
+  it('组合延迟与失败独立于资料库，重试空组合有明确反馈', async () => {
+    const pending = Promise.withResolvers<unknown[]>();
+    fixtures.groupsOverride = () => pending.promise;
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('tab', { name: '组合管理' }));
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    expect(screen.queryByText('还没有保存的组合')).toBeNull();
+    await act(async () => pending.reject(new Error('synthetic')));
+    expect(screen.getByRole('alert').textContent).toContain('组合加载失败');
+    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    fixtures.groupsOverride = async () => [];
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('还没有保存的组合')).toBeTruthy();
+  });
+
+  it('重新打开刷新等待和失败均保留缓存资料', async () => {
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    await screen.findByRole('button', { name: /新 Vibe/ });
+    fireEvent.click(screen.getByRole('button', { name: '完成' }));
+    const pending = Promise.withResolvers<VibeAsset[]>();
+    fixtures.listOverride = () => pending.promise;
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    await act(async () => pending.reject(new Error('synthetic')));
+    expect(screen.getByRole('button', { name: /新 Vibe/ })).toBeTruthy();
+    expect(screen.getByRole('alert')).toBeTruthy();
   });
 });

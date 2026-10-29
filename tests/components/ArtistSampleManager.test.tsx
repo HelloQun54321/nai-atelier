@@ -47,6 +47,20 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
+it('加载状态：图包状态未读完不报未下载，首次失败保持未知并可重试', async () => {
+  let fail!: (error: Error) => void;
+  mocks.status.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  render(<ArtistSampleManager />);
+  expect(screen.queryByText('未下载')).toBeNull();
+  expect(screen.getAllByText('加载中…')).toHaveLength(2);
+  await act(async () => fail(new Error('合成状态失败')));
+  expect(screen.getByRole('alert').textContent).toContain('合成状态失败');
+  expect(screen.queryByText('未下载')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '重试读取状态' }));
+  expect(await screen.findByText('可用 · 31000 个画师 Tag')).toBeTruthy();
+  expect(screen.getByText('未下载')).toBeTruthy();
+});
+
 it.each([undefined, 'nai-diffusion-5-curated'])('旧V5来源%s不会显示Full可用或禁用新Full下载', async model => {
   const legacy = makeStatus(); legacy.packs[1] = { ...legacy.packs[1], model, phase: 'ready', filename: 'NAID5-33000-55000-Curated', managed: true, count: 22000, revision: 'legacy', download: { stage: 'missing', receivedBytes: 0, totalBytes: 16_507_137_927 } };
   mocks.status.mockResolvedValue(legacy); render(<ArtistSampleManager />);

@@ -8,6 +8,7 @@ import { t, useLanguage } from '../services/i18n';
 import { FRAGMENT_LABELS, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, promptBrowseSummary, type PromptBrowseScope } from '../services/promptLibraryBrowse';
 import { EmptyState, ToolbarButton, ToolbarSearch } from './DesignSystem';
+import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
@@ -51,7 +52,7 @@ const readMemory = (directories: PromptLibraryTreeState): { scope: PromptBrowseS
   } catch { return { scope: 'items', favorites: false, combinationFavorites: false, combinationCategory: null, combinationUnclassified: false, directoryIds: [], allDirectories: true, unclassified: false, sort: 'updated' }; }
 };
 
-export interface PromptLibraryBrowserProps {
+export interface PromptLibraryBrowserProps extends PromptLibraryReadState {
   chains: PromptChain[];
   renderEntryEditor?: (entry: PromptChain, controls: { onClose: () => void; actionsRef: React.MutableRefObject<PromptLibraryPanelActions | null> }) => React.ReactNode;
   selectionFocusEnabled?: boolean;
@@ -96,8 +97,13 @@ export const PromptBrowseHighlight: React.FC<{ text: string; query: string }> = 
 };
 
 /** 汇总只读卡片；详情与管理继续使用原有编辑组件。 */
-export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, onCreateCategory, onRenameCategory, onDeleteCategory, onMoveCategory, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
+export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, onCreateCategory, onRenameCategory, onDeleteCategory, onMoveCategory, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
   useLanguage();
+  const library = usePromptLibrary();
+  const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
+  const chainsError = suppliedChainsError ?? library?.chainsError;
+  const onRetryChains = suppliedRetryChains ?? library?.onRetryChains;
+  const countsPending = !!(chainsLoading || chainsError);
   const directories = useMemo(() => suppliedDirectories || createDefaultPromptLibraryTree(), [suppliedDirectories]);
   const [memory, setMemory] = useState(() => readMemory(directories));
   const navigationId = useId();
@@ -272,10 +278,10 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         {onManage && <ToolbarButton onClick={() => void openManage(close, mobile, onManage)}>{t('管理提示词')}</ToolbarButton>}{mobile && onExtract && <ToolbarButton onClick={() => void openManage(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
     </ToolbarPopover>
-    <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [favoritesSelected && favorites.status !== 'ready' ? '?' : shown.length, scopeTotal])}</ToolbarCountCaption>
+    <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [!shown.length && countsPending || favoritesSelected && favorites.status !== 'ready' ? '—' : shown.length, !scopeTotal && countsPending ? '—' : scopeTotal])}</ToolbarCountCaption>
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
-    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
+    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       selectionAnchor.onScroll();
@@ -293,7 +299,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
           onOpen={() => void selectEntry(chain)} onEdit={() => { if (entry.section === 'items' && renderEntryEditor) void selectEntry(chain); else if (!editorActions.current) onOpen(chain); else void leaveDetail().then(leave => { if (leave) onOpen(chain); }); }} onUse={() => void handleUseEntry(chain)}
           onDelete={onDelete ? () => void remove(chain) : undefined} notify={notify}
           onCopy={() => void copy(entry.section === 'saved' ? JSON.stringify((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot, null, 2) : chain.basePrompt || entry.summary, entry.section === 'saved' ? '已复制这条记录的内容快照' : '已复制提示词')} />;
-      }} /> : <EmptyState title={t(favoritesSelected && favorites.status !== 'ready' ? favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…' : entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={favoritesSelected && favorites.status !== 'ready' ? undefined : t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
+      }} /> : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : <EmptyState title={t(favoritesSelected && favorites.status !== 'ready' ? favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…' : entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={favoritesSelected && favorites.status !== 'ready' ? undefined : t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
     </div>
     {selected && (selected.section === 'items' && renderEntryEditor ? renderEntryEditor(selected.chain, { onClose: finishClose, actionsRef: editorActions }) : <DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
       subInfo={promptLibraryEntryLabel(selected.chain, directories)}

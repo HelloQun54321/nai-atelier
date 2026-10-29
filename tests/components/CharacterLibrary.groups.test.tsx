@@ -28,12 +28,62 @@ beforeEach(() => {
   HTMLElement.prototype.scrollTo = vi.fn();
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const setup = () => render(<CharacterLibrary chains={[custom]} onCreate={vi.fn()} onSelect={vi.fn()} onDelete={vi.fn(async () => {})} onUpdateChain={vi.fn()} onNavigateToPlayground={vi.fn()} notify={vi.fn()} />);
+const setup = (overrides: Partial<React.ComponentProps<typeof CharacterLibrary>> = {}) => {
+  const props = { chains: [custom], onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(async () => {}), onUpdateChain: vi.fn(), onNavigateToPlayground: vi.fn(), notify: vi.fn(), ...overrides };
+  return { ...render(<CharacterLibrary {...props} />), props };
+};
+it('加载状态：轻量目录先返回也不把挂起分页当空，分页失败可重试到真实空结果', async () => {
+  let reject!: (error: Error) => void;
+  mocks.page.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  setup({ chains: [] });
+  await waitFor(() => expect(mocks.all).toHaveBeenCalled());
+  expect(screen.queryByText('没有找到符合条件的角色')).toBeNull();
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  await act(async () => reject(new Error('合成分页失败')));
+  expect(screen.getByRole('alert').textContent).toContain('角色 Tag 目录加载失败');
+  expect(screen.queryByText('没有找到符合条件的角色')).toBeNull();
+  mocks.page.mockResolvedValueOnce({ entries: [], page: 0, pageCount: 0, pageSize: 1, total: 0 });
+  fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重试' }));
+  expect(await screen.findByText('没有找到符合条件的角色')).toBeTruthy();
+});
+it('加载状态：自定义链读取未知不报空，错误重试与缓存刷新保持可用角色', async () => {
+  localStorage.setItem('nai_catalog_groups_character', JSON.stringify({ active: '#source:custom' }));
+  const retry = vi.fn();
+  const view = setup({ chains: [], chainsLoading: true, onRetryChains: retry });
+  expect(screen.queryByText('没有找到符合条件的角色')).toBeNull();
+  view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} chainsError="合成链读取失败" />);
+  expect(screen.getByRole('alert').textContent).toContain('合成链读取失败');
+  fireEvent.click(within(screen.getByRole('alert')).getByRole('button', { name: '重试' }));
+  expect(retry).toHaveBeenCalledOnce();
+  view.rerender(<CharacterLibrary {...view.props} chains={[custom]} chainsLoading />);
+  expect(screen.getByRole('button', { name: '选择角色：同名' })).toBeTruthy();
+  view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} />);
+  expect(await screen.findByText('没有找到符合条件的角色')).toBeTruthy();
+});
 const select = async (id: string) => {
   if (!screen.queryByRole('combobox', { name: '选择分组' })) fireEvent.click(screen.getByRole('button', { name: '分组导航' }));
   await waitFor(() => expect(within(screen.getByRole('combobox', { name: '选择分组' })).getByRole('option', { name: /^甲组 \(/ })).toBeTruthy());
   fireEvent.change(screen.getByRole('combobox', { name: '选择分组' }), { target: { value: id } });
 };
+it('加载状态：自定义链未知时来源与完整计数未知，缓存非零保留且成功空才显示零', async () => {
+  localStorage.setItem('nai_catalog_groups_character', JSON.stringify({ expanded: true }));
+  localStorage.setItem('nai_character_link_variant_favorites', 'false');
+  const view = setup({ chains: [], chainsLoading: true });
+  await screen.findByRole('option', { name: 'danbooru (3)' });
+  expect(screen.getByRole('option', { name: '自定义 (—)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '全部 (—)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '收藏 (—)' })).toBeTruthy();
+  view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} chainsError="合成读取失败" />);
+  expect(screen.getByRole('option', { name: '自定义 (—)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: 'danbooru (3)' })).toBeTruthy();
+  view.rerender(<CharacterLibrary {...view.props} chains={[custom]} chainsLoading />);
+  expect(screen.getByRole('option', { name: '自定义 (1)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '全部 (4)' })).toBeTruthy();
+  view.rerender(<CharacterLibrary {...view.props} chainsLoading={false} />);
+  expect(screen.getByRole('option', { name: '自定义 (0)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '全部 (3)' })).toBeTruthy();
+  expect(screen.getByRole('option', { name: '收藏 (0)' })).toBeTruthy();
+});
 it('来源目录与用户分组可切换，来源搜索按身份过滤且同名角色不混淆', async () => {
   localStorage.setItem('nai_character_link_variant_favorites', 'false');
   setup(); await screen.findByRole('button', { name: '选择角色：同名' });

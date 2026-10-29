@@ -4,11 +4,31 @@ import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '
 import { afterEach, expect, it, vi } from 'vitest';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 const render = (ui: React.ReactNode) => renderView(ui, { wrapper: ConfirmDialogProvider });
-import { LibraryDialog, PromptLibraryChooser, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryWorkspace, PromptLibraryUseDialog, PromptLibrarySaveDialog, type WorkspaceAccess } from '../../components/PromptLibraryAccess';
+import { LibraryDialog, PromptLibraryChooser, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryWorkspace, PromptLibraryUseDialog, PromptLibrarySaveDialog, PromptLibraryRandomButton, type WorkspaceAccess } from '../../components/PromptLibraryAccess';
 import { ImageActivityProvider } from '../../components/SmartImage';
 import { createCombinationData } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
+
+it('条目读取状态：实验室取用继承context加载失败和重试，不把未知当空', () => {
+  const retry = vi.fn(), save = vi.fn();
+  const page = (chainsLoading = false, chainsError = '') => <PromptLibraryContext.Provider value={{ chains: [], chainsLoading, chainsError, onRetryChains: retry, save }}><PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>;
+  const view = render(page(true));
+  expect(screen.getByText('加载中…')).toBeTruthy(); expect(screen.queryByText('没有匹配的条目')).toBeNull();
+  view.rerender(page(false, '读取提示词库失败'));
+  expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(page()); expect(screen.getByText('没有匹配的条目')).toBeTruthy();
+});
+
+it('条目读取状态：实验室嵌套搭配沿用同一失败状态和重试，不显示未知0条', () => {
+  const retry = vi.fn();
+  render(<PromptLibraryContext.Provider value={{ chains: [], chainsError: '读取提示词库失败', onRetryChains: retry, save: vi.fn() }}><PromptLibraryWorkspace state={{ params: LAB_DEFAULT_PARAMS, base: '', subject: '', negative: '', classified: true }} onChange={vi.fn()}><PromptLibraryRandomButton /></PromptLibraryWorkspace></PromptLibraryContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
+  expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  expect(screen.queryAllByText('该库当前 0 条，该栏留空')).toHaveLength(0);
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+});
 import type { PromptChain } from '../../types';
 
 afterEach(cleanup);

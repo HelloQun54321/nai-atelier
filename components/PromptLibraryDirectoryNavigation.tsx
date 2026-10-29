@@ -29,9 +29,10 @@ interface PromptLibraryDirectoryNavigationProps {
   onMove?: (id: string, parentId: string | null) => void;
   disabled?: boolean;
   embedded?: boolean;
+  countsPending?: boolean;
 }
 
-export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedIds, allSelected, unclassified, favorites = false, favoriteIds, onSelect, expanded, onCreate, onRename, onDelete, onMove, disabled = false, embedded = false }: PromptLibraryDirectoryNavigationProps) {
+export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedIds, allSelected, unclassified, favorites = false, favoriteIds, onSelect, expanded, onCreate, onRename, onDelete, onMove, disabled = false, embedded = false, countsPending = false }: PromptLibraryDirectoryNavigationProps) {
   useLanguage();
   const counts = useMemo(() => {
     const values = new Map<string, Set<string>>([['*', new Set()], ['', new Set()], ...state.nodes.map(node => [node.id, new Set<string>()] as [string, Set<string>])]);
@@ -43,10 +44,11 @@ export function PromptLibraryDirectoryNavigation({ id, state, entries, selectedI
       if (!directoryIds.length) values.get('')!.add(entry.id);
       for (const directoryId of directoryIds) for (const node of getPromptLibraryDirectoryPath(state, directoryId)) values.get(node.id)?.add(entry.id);
     }
-    const counts = new Map<string, number | string>([...values].map(([key, ids]) => [key, ids.size]));
+    const counts = new Map<string, number | string>([...values].map(([key, ids]) => [key, countsPending && !ids.size ? '—' : ids.size]));
     counts.set(DIRECTORY_FAVORITES_ID, favoriteIds ? new Set(entries.filter(entry => librarySectionOf(entry) && favoriteIds.has(entry.id)).map(entry => entry.id)).size : '?');
+    if (countsPending && (counts.get(DIRECTORY_FAVORITES_ID) === 0 || counts.get(DIRECTORY_FAVORITES_ID) === '?')) counts.set(DIRECTORY_FAVORITES_ID, '—');
     return counts;
-  }, [entries, state, favoriteIds]);
+  }, [entries, state, favoriteIds, countsPending]);
   const select = (value: string) => onSelect({ directoryIds: value && value !== '*' && value !== DIRECTORY_FAVORITES_ID ? [value] : [], allDirectories: value === '*', unclassified: value === '', ...(value === DIRECTORY_FAVORITES_ID ? { favorites: true } : {}) });
   if (!expanded) return null;
   return <DirectoryTreeNavigation id={id} label={t('提示词目录导航')} title={t('提示词目录')}

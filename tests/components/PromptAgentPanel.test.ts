@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PromptAgentPanel } from '../../components/PromptAgentPanel';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { NAIParams } from '../../types';
-import { promptAgentService, type PromptAgentEvent, type PromptAgentCompactionResult } from '../../services/promptAgent';
+import { promptAgentService, type PromptAgentEvent, type PromptAgentCompactionResult, type PromptAgentSession } from '../../services/promptAgent';
 import { promptAgentCoordinator } from '../../services/promptAgentCoordinator';
 import { createAgentPromptChange, type AgentPromptChange } from '../../services/agentPromptChanges.mjs';
 import type { PromptAgentDraft } from '../../types';
@@ -423,6 +423,44 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(stub.createCount()).toBe(1);
     expect(loaded).toContain(old.id);
     reopened.unmount();
+  });
+
+  it('会话抽屉首读期间显示加载，失败后可原位重试，后台刷新失败保留已读列表', async () => {
+    stubServices();
+    let resolveInitial!: (sessions: PromptAgentSession[]) => void;
+    const list = vi.spyOn(promptAgentService, 'listSessions')
+      .mockImplementationOnce(() => new Promise(resolve => { resolveInitial = resolve; }))
+      .mockRejectedValueOnce(new Error('synthetic refresh failure'))
+      .mockResolvedValue([mockSession]);
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    const drawer = screen.getByRole('complementary', { name: '助手会话历史' });
+    expect(within(drawer).getByRole('status').textContent).toBe('正在加载对话…');
+    expect(within(drawer).queryByText('没有找到匹配的对话')).toBeNull();
+    await act(async () => resolveInitial([mockSession]));
+    expect(await within(drawer).findByText('新对话')).toBeTruthy();
+
+    await act(async () => window.dispatchEvent(new Event('nai-agent-runtime-changed')));
+    expect(await within(drawer).findByText('无法连接助手服务，请确认本地服务正在运行')).toBeTruthy();
+    expect(within(drawer).getByText('新对话')).toBeTruthy();
+    fireEvent.click(within(drawer).getByRole('button', { name: '重试' }));
+    expect(await within(drawer).findByText('新对话')).toBeTruthy();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(3));
+  });
+
+  it('会话抽屉首读失败显示重试而不是空列表', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'listSessions')
+      .mockRejectedValueOnce(new Error('synthetic first read failure'))
+      .mockResolvedValue([mockSession]);
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    const drawer = screen.getByRole('complementary', { name: '助手会话历史' });
+    expect(await within(drawer).findByRole('alert')).toBeTruthy();
+    expect(within(drawer).queryByText('没有找到匹配的对话')).toBeNull();
+    fireEvent.click(within(drawer).getByRole('button', { name: '重试' }));
+    expect(await within(drawer).findByText('新对话')).toBeTruthy();
+    expect(within(drawer).queryByRole('alert')).toBeNull();
   });
 
   it('新会话创建失败不退回旧历史，重试成功后进入新会话', async () => {

@@ -85,6 +85,9 @@ interface CharacterLibraryProps {
   tagAssistEnabled?: boolean;
   onTagAssistEnabledChange?: (enabled: boolean) => void;
   chains: PromptChain[];
+  chainsLoading?: boolean;
+  chainsError?: string;
+  onRetryChains?: () => void;
   onCreate: (name: string, description: string, type: 'character') => void;
   onSelect: (id: string) => void;
   onUpdateChain: UpdateChainInfo;
@@ -99,6 +102,9 @@ const LazyImage = SmartImage;
 
 export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   chains,
+  chainsLoading = false,
+  chainsError = '',
+  onRetryChains,
   onCreate,
   onUpdateChain,
   onCreateCatalogOverride,
@@ -201,7 +207,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [catalogTotal, setCatalogTotal] = useState(0);
   const [pageCount, setPageCount] = useState(0);
   const [nextPage, setNextPage] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [searchError, setSearchError] = useState('');
+  const [catalogRetry, setCatalogRetry] = useState(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const legacyCustomFavorites = useRef(new Set<string>());
   const [favorites, setFavorites] = useState<Set<string>>(() => {
@@ -242,11 +252,12 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const characterChains = useMemo(() => chains.filter(chain => chain.type === 'character'), [chains]);
   const catalogChains = useMemo(() => characterChains.filter(chain => chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
   const customChains = useMemo(() => characterChains.filter(chain => !chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
-  const catalogKeys = useMemo(() => groupCatalogReady && !groupLoading && !groupError
+  const customCatalogKnown = !chainsLoading && !chainsError || customChains.length > 0;
+  const catalogKeys = useMemo(() => groupCatalogReady && !groupLoading && !groupError && customCatalogKnown
     ? [...groupCatalog.map(entry => `catalog:${entry.name}`), ...customChains.map(chain => `custom:${chain.id}`)] : undefined,
-  [groupCatalogReady, groupLoading, groupError, groupCatalog, customChains]);
-  const catalogSourceCount = useMemo(() => catalogKeys ? new Set(catalogKeys.filter(key => key.length <= 512 && /^catalog:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(8).trim())).size : undefined, [catalogKeys]);
-  const customSourceCount = useMemo(() => new Set(customChains.map(chain => `custom:${chain.id}`).filter(key => key.length <= 512 && /^custom:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(7).trim())).size, [customChains]);
+  [groupCatalogReady, groupLoading, groupError, groupCatalog, customChains, customCatalogKnown]);
+  const catalogSourceCount = useMemo(() => groupCatalogReady && !groupLoading && !groupError ? new Set(groupCatalog.map(entry => `catalog:${entry.name}`).filter(key => key.length <= 512 && /^catalog:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(8).trim())).size : undefined, [groupCatalogReady, groupLoading, groupError, groupCatalog]);
+  const customSourceCount = useMemo(() => customCatalogKnown ? new Set(customChains.map(chain => `custom:${chain.id}`).filter(key => key.length <= 512 && /^custom:[^\u0000-\u001f\u007f]+$/u.test(key) && key.slice(7).trim())).size : undefined, [customChains, customCatalogKnown]);
   const sourceGroups = useMemo(() => [
     { id: '#source:catalog', name: 'danbooru', matches: (key: string) => key.startsWith('catalog:'), count: catalogSourceCount },
     { id: '#source:custom', name: t('自定义'), matches: (key: string) => key.startsWith('custom:'), count: customSourceCount },
@@ -264,6 +275,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const tab: CharacterTab = groups.activeGroup === '#source:catalog' ? 'catalog' : groups.activeGroup === '#source:custom' ? 'custom' : 'all';
   const customSource = tab === 'custom';
   const grouped = groups.activeGroup !== '*';
+  const isLoading = customSource ? chainsLoading : !grouped && (searchTerm.trim() ? !groupCatalogReady && searchLoading : catalogLoading);
+  const resultError = customSource ? chainsError : !grouped && (searchTerm.trim() ? !groupCatalogReady && searchError : catalogError);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [gachaMode, setGachaMode] = useState<GachaMode>(() => {
     const saved = localStorage.getItem('nai_character_gacha_mode');
@@ -365,8 +378,8 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   useEffect(() => {
     localStorage.setItem('nai_character_sort', sort);
     const generation = ++catalogGenerationRef.current;
-    setIsLoading(true);
-    setLoadedCatalog([]);
+    setCatalogLoading(true);
+    setCatalogError('');
     setNextPage(0);
     setPageCount(0);
     leaveGacha();
@@ -379,11 +392,13 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         setNextPage(1);
       })
       .catch(error => {
+        if (generation !== catalogGenerationRef.current) return;
+        setCatalogError('角色 Tag 目录加载失败');
         console.warn('Character tag catalog is unavailable:', error);
         notify('角色 Tag 目录加载失败', 'error');
       })
-      .finally(() => generation === catalogGenerationRef.current && setIsLoading(false));
-  }, [sort]);
+      .finally(() => generation === catalogGenerationRef.current && setCatalogLoading(false));
+  }, [sort, catalogRetry]);
 
   // 旧收藏没有展示快照：进入"只看收藏"时按名字向本地词库逐个检索补齐（串行 + 间隔，避免压垮词库读取）。
   // 检索不到的（可能已从词库下架）记一个仅含名字的快照，避免每次进入都重复检索。
@@ -427,18 +442,20 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     if (grouped || !query) {
       setSearchResults([]);
       // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
-      setIsLoading(false);
+      setSearchLoading(false);
+      setSearchError('');
       return;
     }
-    setIsLoading(true);
+    setSearchLoading(true);
+    setSearchError('');
     const timer = window.setTimeout(() => {
       searchCharacterDictionary(query, 300, sort)
         .then(results => generation === searchGenerationRef.current && setSearchResults(results))
-        .catch(error => console.warn('Character tag search failed:', error))
-        .finally(() => generation === searchGenerationRef.current && setIsLoading(false));
+        .catch(error => { if (generation === searchGenerationRef.current) setSearchError('角色 Tag 目录加载失败'); console.warn('Character tag search failed:', error); })
+        .finally(() => generation === searchGenerationRef.current && setSearchLoading(false));
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [grouped, searchTerm, sort]);
+  }, [grouped, searchTerm, sort, catalogRetry]);
 
   const loadMore = useCallback(async () => {
     if (grouped) { setGroupLimit(value => value + 60); return; }
@@ -847,7 +864,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
          </div>
          <ToolbarButton tone="primary" aria-label={t("新建自定义角色")} onClick={() => setShowCreate(true)} className="mobile-touch !px-2.5 md:!px-3"><Plus /><span className="hidden sm:inline">{t("新建角色")}</span></ToolbarButton>
        </WorkspaceToolbar>
-       {(!showFavOnly || collectionReady) && (customSource || !isLoading) && (!grouped || groups.ready && (customSource || !groupLoading && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{t('角色 {0} · 显示 {1} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length, visibleCards.length])}</ToolbarCountCaption>}
+       {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready && (customSource || groupCatalogReady && !groupError)) && (grouped || !(!searchTerm.trim() && !gachaCards && !showFavOnly && tab !== 'custom' && nextPage === 0)) && <ToolbarCountCaption>{t('角色 {0} · 显示 {1} 张卡片', [!grouped && !searchTerm.trim() && !gachaCards ? catalogTotal + customChains.length : groupCards.length, visibleCards.length])}</ToolbarCountCaption>}
 
        {gachaCards && <GalleryActiveStateBanner count={groupCards.length} entityName={t("角色")} showDrawAgain={false} onDrawAgain={() => void drawGacha()} onExit={() => leaveGacha()} isLoading={isGachaLoading} />}
 
@@ -879,9 +896,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         {showFavOnly && !collectionReady && (variantBackfillError
           ? <p role="alert" className="text-sm text-red-500">{t(variantBackfillError)}<button type="button" onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></p>
           : <p role="status" className="text-sm text-gray-500">{t('加载中…')}</p>)}
-        {!customSource && groupError && <ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton>}
-        {!customSource && groupLoading && <p role="status">{t("正在加载更多角色…")}</p>}
-        {(!showFavOnly || collectionReady) && (customSource || !isLoading) && (!grouped || groups.ready) && (customSource || !groupLoading && !groupError) && visibleCards.length === 0 && (
+        {resultError && <p role="alert" className="text-sm text-red-500">{t(resultError)}<button type="button" onClick={() => customSource ? onRetryChains?.() : setCatalogRetry(value => value + 1)}>{t('重试')}</button></p>}
+        {isLoading && (customSource || !groupLoading) && <p role="status">{t('加载中…')}</p>}
+        {!customSource && groupError && <p role="alert" className="text-sm text-red-500">{t('角色 Tag 目录加载失败')}<ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton></p>}
+        {!customSource && !groupCatalogReady && !groupError && <p role="status">{t("正在加载更多角色…")}</p>}
+        {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready) && (customSource || groupCatalogReady && !groupError) && visibleCards.length === 0 && (
           <EmptyState
             title={t("没有找到符合条件的角色")}
             className="py-20"

@@ -61,6 +61,9 @@ export interface ChainEditorCharactersProps {
     positionImage?: string | null;
     positionSize?: { width: number; height: number };
     allChains?: PromptChain[];
+    chainsLoading?: boolean;
+    chainsError?: string;
+    onRetryChains?: () => void;
     showCharacterReference?: boolean;
     canSaveCharacter?: boolean;
     onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
@@ -89,6 +92,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     positionImage,
     positionSize,
     allChains = [],
+    chainsLoading = false,
+    chainsError,
+    onRetryChains,
     showCharacterReference = false,
     canSaveCharacter = false,
     onSaveCharacter,
@@ -297,7 +303,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
                     <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
                 </button>)}</div>
-                {allChains.every(item => item.type !== 'character') && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
+                {chainsLoading && <p role="status" className="py-4 text-center text-sm text-gray-500">{t("加载中…")}</p>}
+                {!chainsLoading && chainsError && <div role="alert" className="flex items-center justify-center gap-3 py-4 text-sm text-red-600 dark:text-red-400">{t(chainsError)}{onRetryChains && <button type="button" onClick={onRetryChains} className="mobile-touch rounded border border-current px-3 py-1">{t("重试")}</button>}</div>}
+                {!chainsLoading && !chainsError && allChains.every(item => item.type !== 'character') && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
             </>}
         </div>
     </div></ImagePreviewPortal>}

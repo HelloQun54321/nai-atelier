@@ -20,6 +20,7 @@ const isDownloadActive = (stage?: string) => stage === 'downloading' || stage ==
 export const ArtistSampleManager: React.FC = () => {
   useLanguage();
   const [status, setStatus] = useState<ArtistSampleStatus>(emptyStatus);
+  const [statusReady, setStatusReady] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [busy, setBusy] = useState<Record<string, string>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string | undefined>>({});
@@ -36,6 +37,7 @@ export const ArtistSampleManager: React.FC = () => {
     });
     statusRef.current = next;
     setStatus(next);
+    setStatusReady(true);
     setStatusError('');
     if (notifyReady && becameReady) broadcastArtistSamplesChanged();
   }, []);
@@ -129,7 +131,7 @@ export const ArtistSampleManager: React.FC = () => {
         : download?.stage === 'ready' ? t('使用已下载图包')
         : t('下载图包 · 约 {0}', [packageInfo.size]);
       const mainDisabled = !canManageFiles || actionPending || anotherDownload || pickBusy || (item?.phase === 'indexing' && (!files || !packDownloading)) || (packageReady && item?.phase === 'ready' && (!files || !['paused', 'error'].includes(download?.stage || '')));
-      const statusText = files && item && sourceMatches && files.some(file => file.active) ? t('可用 · {0} 个画师 Tag', [item.count])
+      const statusText = !statusReady ? statusError ? '—' : t('加载中…') : files && item && sourceMatches && files.some(file => file.active) ? t('可用 · {0} 个画师 Tag', [item.count])
         : downloading || verifying ? (verifying ? t('正在校验图包…') : t('图包下载中：{0}%', [percent])) : item?.phase === 'ready' && !sourceMatches ? t('当前图包未确认为 V5 Full，原文件已保留') : item?.phase === 'ready' ? t('可用 · {0} 个画师 Tag', [item.count]) : item?.phase === 'indexing' ? t('样张索引中：{0}%', [Math.round(item.progress)]) : download?.stage === 'paused' ? t('已暂停') : item?.phase === 'error' ? t('索引失败') : download?.stage === 'ready' ? t('未启用') : t('未下载');
       return <div key={pack} className={`${index === PACKS.length - 1 ? '' : 'border-b border-gray-100 pb-3 dark:border-gray-800'}`}>
         <div className="flex min-w-0 items-center gap-2"><div className="min-w-0 flex-1"><span className="text-sm font-bold text-gray-800 dark:text-gray-100">NovelAI {pack === 'v45' ? 'V4.5' : 'V5 Full'}</span><p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{statusText}</p></div>

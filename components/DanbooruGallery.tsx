@@ -100,7 +100,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { skipRestore: selectionAnchor.hasAnchor });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(active);
   const [error, setError] = useState('');
   const [pageInput, setPageInput] = useState('');
   const loadedRef = useRef(false);
@@ -587,7 +587,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
                 {displayedItems.map(renderDanbooruCard)}
               </div>
             )
-          ) : !loading && (
+          ) : !loading && !error && (
             <EmptyState className="min-h-72 py-10" icon={<Search className="h-8 w-8" />} title={t("没有找到匹配图片")} hint={t("请尝试放宽筛选条件或更换搜索词。")} />
           )}
 

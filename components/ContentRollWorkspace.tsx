@@ -20,9 +20,10 @@ import type { NAIParams } from '../types';
 import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, normalizePromptLibraryDirectorySelection, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
+import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { PromptPurposeGroup } from './PromptPurposeGroup';
 
-interface ContentRollWorkspaceProps {
+interface ContentRollWorkspaceProps extends PromptLibraryReadState {
   directories?: PromptLibraryTreeState;
   editing?: boolean;
   categoryNames?: string[];
@@ -110,8 +111,13 @@ const restoreDirectoryPicks = (picks: Record<string, RollRow>, directories?: Pro
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ directories, editing = false, active, chains, categoryNames = [], categoryTree, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ directories, editing = false, active, chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, categoryNames = [], categoryTree, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUseCombination, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, entryTarget = null, embedded = false, toolbarSlot = null, onWriteRollToChain }) => {
   useLanguage();
+  const library = usePromptLibrary();
+  const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
+  const chainsError = suppliedChainsError ?? library?.chainsError;
+  const onRetryChains = suppliedRetryChains ?? library?.onRetryChains;
+  const countsPending = !!(chainsLoading || chainsError);
   const [initial] = useState(() => {
     const saved = readStore();
     if (!directories) return saved;
@@ -450,7 +456,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           <input type="checkbox" checked={on} disabled={scopeChecks[kind] === false || applying} onChange={() => { toggleCheck(kind); setConfirming(false); }} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} />
           {t(meta.title)}
         </label>
-        <span className="text-xs tabular-nums text-gray-400">{t('共 {0} 条', [poolSize])}</span>
+        <span className="text-xs tabular-nums text-gray-400">{t('共 {0} 条', [countsPending && !poolSize ? '—' : poolSize])}</span>
       </div>
       <select aria-label={t('选择{0}片段', [t(meta.short)])} value={row?.id && chains.some(item => item.id === row.id) ? row.id : ''} disabled={!on || applying || isLocked} onChange={event => { const entry = chains.find(item => item.id === event.target.value); if (entry) editRow(kind, entry.basePrompt, entry.negativePrompt, entry); }} className="mt-2 h-9 w-full rounded-lg border border-gray-200 bg-transparent px-2 text-sm dark:border-gray-700">
         <option value="">{t('手写或选择片段')}</option>{pool.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -462,14 +468,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
           {(row.constraints?.notes || row.constraintNotes) && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints?.notes || row.constraintNotes}</p>}
         </> : <p className="py-2 text-xs leading-5 text-gray-400" data-content-roll-note={kind}>
-          {t(!on ? '本次不参与：不抽取、也不会填入实验室' : !poolSize ? '该库当前 0 条，该栏留空' : '还没有结果')}
+          {!on ? t('本次不参与：不抽取、也不会填入实验室') : !poolSize && countsPending ? '—' : t(!poolSize ? '该库当前 0 条，该栏留空' : '还没有结果')}
         </p>}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
         <ToolbarButton active={isLocked} aria-pressed={isLocked} disabled={!row?.filled || !on || applying} onClick={() => toggleLock(kind)} title={t(isLocked ? '解除固定' : '固定这一条')}>
           {isLocked ? <Lock /> : <LockOpen />}{t(isLocked ? '已固定' : '固定')}
         </ToolbarButton>
-        <ToolbarButton disabled={!current || !on || isLocked || applying} onClick={() => { rerollKind(kind); setConfirming(false); }}><RefreshCw />{t('换一个')}</ToolbarButton>
+        <ToolbarButton disabled={!current || !on || isLocked || applying || countsPending && !poolSize} onClick={() => { rerollKind(kind); setConfirming(false); }}><RefreshCw />{t('换一个')}</ToolbarButton>
       </div>
     </article>;
   };
@@ -487,7 +493,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
       <span className="min-w-8 text-center text-xs tabular-nums text-gray-400">{history.length ? `${cursor + 1}/${history.length}` : '0/0'}</span>
       <IconButton label="下一组" disabled={cursor >= history.length - 1 || applying} onClick={() => { setCursor(index => Math.min(history.length - 1, index + 1)); setConfirming(false); }}><ChevronRight /></IconButton>
     </div>
-    <ToolbarButton tone="primary" onClick={() => { setConfirming(false); (current ? rollAgain : rollOnce)(); }} disabled={busy || applying || saving || !Object.values(effectiveChecks).some(Boolean)}>
+    <ToolbarButton tone="primary" onClick={() => { setConfirming(false); (current ? rollAgain : rollOnce)(); }} disabled={busy || applying || saving || countsPending && !rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim())) || !Object.values(effectiveChecks).some(Boolean)}>
       <Dice5 /><span>{t(current ? '再抽未固定项' : '抽一次')}</span>
     </ToolbarButton>
   </>;
@@ -497,6 +503,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     <div className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-auto p-4 pb-28 md:p-6">
       {directories && <div className="mb-3"><PromptLibraryDirectoryPicker state={directories} selectedIds={selectedDirectoryIds} allSelected={directoryIds === null} onAllChange={all => { if (all) setDirectoryIds(null); }} onChange={ids => { setDirectoryIds(ids); setChecks({}); setHistory(previous => previous.map((record, index) => index === cursor ? { ...record, directoryIds: ids, checks: {} } : record)); setConfirming(false); }} disabled={applying || saving} includeAll /></div>}
       <p className="mb-3 text-xs text-gray-500">{t('未标注或混合片段可手动取用；单用途随机搭配只抽取相应用途片段。')}</p>
+      {countsPending && !rows.some(({ kind }) => poolFor(kind).some(chain => chain.basePrompt?.trim())) && <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} />}
       {sourceText && <details open className="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"><summary>{t('来源原文')}</summary><pre className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs">{sourceText}</pre></details>}
       <div className="content-library-roll-layout mx-auto w-full max-w-7xl items-start gap-4">
         <section className={directories ? 'space-y-3' : 'content-library-roll-grid'}>

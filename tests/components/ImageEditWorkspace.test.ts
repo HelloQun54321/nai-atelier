@@ -167,6 +167,29 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将�
 });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 将角色库读取状态和重试传到共用选择器', operation => {
+    const draft = createLabImageEditDraft(operation, '', '', { ...params, model: 'nai-diffusion-4-5-full', characters: [{ id: 'role', prompt: 'blue hair', x: 0.5, y: 0.5 }] });
+    const onRetryChains = vi.fn();
+    const props: React.ComponentProps<typeof ImageEditPanel> = {
+      baseImage: null, previewImage: null, operation, draft, layout: { collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
+      onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
+      onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false,
+      allChains: [], chainsLoading: true, showCharacterReference: true, onRetryChains,
+    };
+    const view = render(React.createElement(ImageEditPanel, props));
+    fireEvent.click(screen.getByRole('tab', { name: '提示' }));
+    fireEvent.click(screen.getByRole('button', { name: '从角色库引用' }));
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
+    view.rerender(React.createElement(ImageEditPanel, { ...props, chainsLoading: false, chainsError: '角色库读取失败' }));
+    expect(screen.getByRole('alert').textContent).toContain('角色库读取失败');
+    expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(onRetryChains).toHaveBeenCalledOnce();
+    view.rerender(React.createElement(ImageEditPanel, { ...props, chainsLoading: false }));
+    expect(screen.getByText('角色库中暂无自定义角色')).toBeTruthy();
+  });
+
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 正负词清空分别在既有标题行，不覆盖框中文字或混清另一字段', operation => {
     const { onDraftChange } = renderControls(operation, false, false, false, {}, 'prompt');
     const positive = screen.getByPlaceholderText(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词') as HTMLTextAreaElement;

@@ -319,11 +319,45 @@ it.each(['v45', 'v5'])('%s图包收藏列表与详情预览裁边按实际比例
   expect(onRefresh).not.toHaveBeenCalled();
 });
 
+it('收藏首次失败显示错误与重试，刷新失败保留旧作品且不显示加入第一条', async () => {
+  const refresh = vi.fn(async () => {}), props = { currentUser: mockUser, onRefresh: refresh, notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, { ...props, inspirationsData: null, loadError: '合成收藏读取失败' }));
+  expect(within(screen.getByRole('main')).getByRole('alert').textContent).toContain('合成收藏读取失败'); expect(within(screen.getByRole('main')).queryByRole('status')).toBeNull(); expect(screen.queryByText('这里还没有匹配的收藏')).toBeNull();
+  fireEvent.click(within(screen.getByRole('main')).getByRole('button', { name: '重试' })); expect(refresh).toHaveBeenCalledOnce();
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: mockInspirations, loadError: '合成收藏刷新失败' }));
+  expect(view.container.querySelectorAll('article')).toHaveLength(mockInspirations.length); expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [] })); expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy();
+});
+
+it('画廊手动收录入口透传收藏夹读取状态与重试，不把未读取目录当作空目录', async () => {
+  let fail!: (error: Error) => void;
+  vi.mocked(db.getInspirationBoards).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '加入收藏库' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '加入收藏库' })).getByRole('button', { name: '收藏夹' }));
+  const picker = within(screen.getByRole('dialog', { name: '收藏夹' }));
+  expect(picker.getByRole('status').textContent).toBe('正在读取…'); expect(picker.queryByText('暂无收藏夹')).toBeNull();
+  await act(async () => fail(new Error('合成收藏夹读取失败')));
+  expect(picker.getByRole('alert').textContent).toContain('合成收藏夹读取失败'); expect(picker.queryByText('暂无收藏夹')).toBeNull();
+  fireEvent.click(picker.getByRole('button', { name: '重试' }));
+  expect(await picker.findByRole('checkbox', { name: '角色设计' })).toBeTruthy();
+});
+
+it('标签目录尚未读取与读取失败时筛选不显示无匹配，重试成功空目录才显示', async () => {
+  let fail!: (error: Error) => void; vi.mocked(db.getCollectionTagNames).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); const panel = screen.getByRole('dialog', { name: '筛选收藏' });
+  expect(within(panel).getByRole('status').textContent).toContain('正在读取…'); expect(within(panel).queryByText('没有匹配的标签')).toBeNull();
+  await act(async () => fail(new Error('合成标签读取失败')));
+  expect(within(panel).getByRole('alert').textContent).toContain('合成标签读取失败'); expect(within(panel).queryByText('没有匹配的标签')).toBeNull();
+  fireEvent.click(within(panel).getByRole('button', { name: '重新加载标签' })); expect(await within(panel).findByText('没有匹配的标签')).toBeTruthy();
+});
+
 it.each([390, 1280])('宽度 %s：收藏未读取时显示加载中，读取完成后才显示空状态或作品', width => {
   vi.stubGlobal('innerWidth', width);
   const props = { currentUser: mockUser, onRefresh: vi.fn(), notify: vi.fn() };
   const view = render(React.createElement(InspirationGallery, { ...props, inspirationsData: null }));
-  expect(screen.getByRole('status').textContent).toContain('加载中…');
+  expect(within(screen.getByRole('main')).getByRole('status').textContent).toContain('加载中…');
   expect(screen.queryByText('这里还没有匹配的收藏')).toBeNull();
   expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
   view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [] }));
@@ -551,7 +585,10 @@ it('收藏分类默认收起无导航节点，桌面入口记住独立展开偏�
   expect(navigation.className).toContain('workspace-fixed-pane workspace-category-navigation');
   expect(navigation.className).toContain('hidden w-52');
   expect(navigation.classList.contains('appearance-panel')).toBe(true);
-  expect(navigation.className).toContain('md:block');
+  expect(navigation.classList.contains('md:flex')).toBe(true);
+  expect(navigation.classList.contains('md:flex-col')).toBe(true);
+  expect(navigation.className).not.toContain('overflow-y-auto');
+  expect(within(navigation).getByRole('navigation').className).toContain('md:overflow-y-auto');
   expect(navigation.className).not.toContain('!mt-');
   expect(navigation.className).not.toContain('mb-1.5');
   view.unmount();
@@ -646,7 +683,7 @@ it('列表移除重复标题栏，侧栏与风格串同宽；卡片只保留名�
   expect(container.querySelector('main h1')).toBeNull();
   const sidebar = container.querySelector('aside')!;
   expect(sidebar.classList.contains('w-52')).toBe(true);
-  expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:block')).toBe(true);
+  expect(sidebar.classList.contains('hidden')).toBe(true); expect(sidebar.classList.contains('md:flex')).toBe(true); expect(sidebar.classList.contains('md:flex-col')).toBe(true);
   for (const item of mockInspirations) {
     const card = screen.getByText(item.title).closest('article')!;
     expect(within(card).getByText('#' + item.tags![1])).toBeTruthy();

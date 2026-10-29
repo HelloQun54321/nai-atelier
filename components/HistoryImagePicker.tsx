@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react';
 import { PAGINATION_CONFIG } from '../config/pagination';
 import { localHistory } from '../services/localHistory';
@@ -47,13 +47,19 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
   const dialogRef = useModalA11y<HTMLDivElement>(open);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const requestRef = useRef(0);
   const [error, setError] = useState('');
+  const pending = loading || !loaded || (!error && loadedScope !== scopeChainId);
+  const matchingScope = loadedScope === scopeChainId;
   const [importParams, setImportParams] = useState(false);
   const pageSize = PAGINATION_CONFIG.PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const loadPage = useCallback(async (targetPage: number) => {
+    const request = ++requestRef.current;
     const nextPage = Math.max(1, targetPage);
     setLoading(true);
     setError('');
@@ -74,6 +80,8 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           target = maxPage;
           data = await fetchScoped(target);
         }
+        if (request !== requestRef.current) return;
+        setLoadedScope(scopeChainId);
         setItems((data.items || []).map(row => ({
           id: String(row.id),
           imageUrl: String(row.imageUrl || `/api/local-history/${row.id}/image`),
@@ -86,11 +94,14 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
         return;
       }
       const result = await localHistory.getPage(nextPage - 1, pageSize, undefined, true);
+      if (request !== requestRef.current) return;
+      setLoadedScope(scopeChainId);
       const count = Number(result.count || 0);
       const maxPage = Math.max(1, Math.ceil(count / pageSize));
       if (nextPage > maxPage) {
         setPage(maxPage);
         const lastPage = await localHistory.getPage(maxPage - 1, pageSize, undefined, true);
+        if (request !== requestRef.current) return;
         setItems(lastPage.items);
         setTotalCount(Number(lastPage.count || count));
       } else {
@@ -100,19 +111,18 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
       }
     } catch (loadError) {
       console.error('读取历史图片失败:', loadError);
-      setItems([]);
+      if (request !== requestRef.current) return;
       setError('历史图片读取失败，请重试。');
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) { setLoading(false); setLoaded(true); }
     }
   }, [pageSize, scopeChainId]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setLoaded(false); return; }
     void loadPage(1);
-    if (scopeChainId) return;
-    const unsubscribe = localHistory.subscribe(() => { void loadPage(1); });
-    return unsubscribe;
+    const unsubscribe = scopeChainId ? undefined : localHistory.subscribe(() => { void loadPage(1); });
+    return () => { requestRef.current++; unsubscribe?.(); };
   }, [loadPage, open, scopeChainId]);
 
   useEffect(() => {
@@ -142,7 +152,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-gray-900 dark:text-white">{t("选择历史图片")}</h2>
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-meta text-gray-500 dark:bg-gray-800 dark:text-gray-300">
-                {scopeChainId ? t("这条目的生成图 {0} 张", [totalCount]) : t("全部 {0} 张", [totalCount])}
+                {scopeChainId ? t("这条目的生成图 {0} 张", [pending || error ? '—' : totalCount]) : t("全部 {0} 张", [pending || error ? '—' : totalCount])}
               </span>
             </div>
             {scopeChainId ? (
@@ -152,13 +162,15 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           <div className="flex flex-none items-center gap-1">
             <button type="button" onClick={onClose} className="mobile-touch flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={t("关闭历史图片选择")}><X className="h-5 w-5" /></button>
           </div>
-          <ToolbarCountCaption>{t(scopeChainId ? '当前 {0} 张' : '共 {0} 张', [loading || error ? '—' : totalCount])}</ToolbarCountCaption>
+          <ToolbarCountCaption>{t(scopeChainId ? '当前 {0} 张' : '共 {0} 张', [pending || error ? '—' : totalCount])}</ToolbarCountCaption>
         </header>
 
         <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
-          {loading && items.length === 0 ? (
+          {pending && matchingScope && items.length > 0 && <p role="status" className="mb-3 text-sm text-gray-500">{t('正在读取历史图片…')}</p>}
+          {error && matchingScope && items.length > 0 && <p role="alert" className="mb-3 text-sm text-red-500">{t(error)} <button type="button" onClick={() => void loadPage(page)} className="underline">{t('重新读取')}</button></p>}
+          {pending && (!matchingScope || items.length === 0) ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取历史图片…")}</div>
-          ) : error ? (
+          ) : error && (!matchingScope || items.length === 0) ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500"><span>{t(error)}</span><button type="button" onClick={() => void loadPage(page)} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">{t("重新读取")}</button></div>
           ) : items.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center text-sm text-gray-500 dark:text-gray-400">

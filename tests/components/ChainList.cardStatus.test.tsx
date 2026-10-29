@@ -67,6 +67,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('风格串卡片的待实测状态', () => {
+  it('首读等待和失败不冒充空列表，重试成功后才显示真正空态', () => {
+    const callbacks = props([]);
+    const view = render(<ChainList {...callbacks} isLoading />);
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    expect(screen.queryByText('暂无数据')).toBeNull();
+    view.rerender(<ChainList {...callbacks} loadError="风格串列表加载失败，请稍后重试" />);
+    expect(screen.getByRole('alert').textContent).toContain('风格串列表加载失败');
+    expect(screen.queryByText('暂无数据')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(callbacks.onRefresh).toHaveBeenCalledOnce();
+    view.rerender(<ChainList {...callbacks} />);
+    expect(screen.getByText('暂无数据')).toBeTruthy();
+  });
+
+  it('刷新等待或失败时保留已读风格卡片', () => {
+    const callbacks = props([chain('cached', '已读风格', false)]);
+    const view = render(<ChainList {...callbacks} isLoading />);
+    expect(screen.getByRole('button', { name: '打开风格串：已读风格' })).toBeTruthy();
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    view.rerender(<ChainList {...callbacks} loadError="风格串列表加载失败，请稍后重试" />);
+    expect(screen.getByRole('button', { name: '打开风格串：已读风格' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('风格串列表加载失败');
+    expect(screen.queryByText('暂无数据')).toBeNull();
+  });
+
   it('分享包优先使用专用回读回调，不改变其他导入入口的旧刷新语义', async () => {
     const callbacks = props([chain('plain', '普通风格', false)]), onBundleImported = vi.fn(async () => {});
     render(<ChainList {...callbacks} onBundleImported={onBundleImported} />);

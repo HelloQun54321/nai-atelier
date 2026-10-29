@@ -35,9 +35,10 @@ function FolderDialog({ title, busy, onClose, children }: { title: string; busy:
   </div>;
 }
 
-export function ChainFolderNavigation({ store, selected, onSelect, chainIds, favoriteCount, onMove, notify, disabled = false, expanded = true }: {
+export function ChainFolderNavigation({ store, selected, onSelect, chainIds, favoriteCount, onMove, notify, disabled = false, expanded = true, countsPending = false }: {
   store: Store; selected: string; onSelect: (id: string) => void; chainIds: string[];
   favoriteCount?: number | string;
+  countsPending?: boolean;
   onMove: (ids: string[], folderId: string) => Promise<void>; notify: Notify; disabled?: boolean; expanded?: boolean;
 }) {
   const [editing, setEditing] = useState<ChainFolder | 'new' | null>(null);
@@ -63,8 +64,8 @@ export function ChainFolderNavigation({ store, selected, onSelect, chainIds, fav
       }
       for (const folder of included) result.set(folder, (result.get(folder) || 0) + 1);
     }
-    return result;
-  }, [chainIds, store.state, folders]);
+    return new Map<string, number | string>([...result].map(([id, count]) => [id, countsPending ? '—' : count]));
+  }, [chainIds, store.state, folders, countsPending]);
   const open = (folder: ChainFolder | 'new') => {
     setEditing(folder); setName(folder === 'new' ? '' : folder.name);
     setParentId(folder === 'new' ? current?.id || '' : folder.parentId || '');

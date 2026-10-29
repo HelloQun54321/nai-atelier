@@ -64,6 +64,9 @@ interface ImageEditPanelProps {
   enforceFreeStepLimit?: boolean;
   apiKey: string;
   allChains?: PromptChain[];
+  chainsLoading?: boolean;
+  chainsError?: string;
+  onRetryChains?: () => void;
   showCharacterReference?: boolean;
   canSaveCharacter?: boolean;
   onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
@@ -134,6 +137,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   enforceFreeStepLimit = true,
   apiKey,
   allChains = [],
+  chainsLoading,
+  chainsError,
+  onRetryChains,
   showCharacterReference = false,
   canSaveCharacter = false,
   onSaveCharacter,
@@ -1216,6 +1222,9 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           promptClassificationEnabled={promptClassificationEnabled}
           apiKey={apiKey}
           allChains={allChains}
+          chainsLoading={chainsLoading}
+          chainsError={chainsError}
+          onRetryChains={onRetryChains}
           showCharacterReference={showCharacterReference}
           canSaveCharacter={canSaveCharacter}
           onSaveCharacter={onSaveCharacter}

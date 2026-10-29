@@ -238,6 +238,7 @@ const App = () => {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const [chains, setChains] = useState<PromptChain[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chainsError, setChainsError] = useState('');
   const [dbConfigError, setDbConfigError] = useState(false);
 
   // Playground State
@@ -249,6 +250,7 @@ const App = () => {
 
   // Data Cache State
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
+  const [inspirationsError, setInspirationsError] = useState('');
   const [historyEntry, setHistoryEntry] = useState<{ query: HistoryBrowseQuery; token: number } | null>(null);
   const historyEntryTokenRef = useRef(0);
   const [libraryEntry, setLibraryEntry] = useState<{ query: string; token: number } | null>(null);
@@ -443,6 +445,7 @@ const App = () => {
     const refreshSeq = ++refreshDataSeqRef.current;
     const createRevision = chainCreateRevisionRef.current;
     setLoading(true);
+    setChainsError('');
     try {
       const data = await db.getAllChains();
       if (refreshSeq !== refreshDataSeqRef.current) return;
@@ -459,6 +462,7 @@ const App = () => {
       return [...additions, ...data];
     } catch (e: any) {
       if (refreshSeq !== refreshDataSeqRef.current) return;
+      setChainsError('风格串列表加载失败，请稍后重试');
       if (e.message && e.message.includes('Database not configured')) {
         setDbConfigError(true);
       } else {
@@ -470,14 +474,22 @@ const App = () => {
     }
   });
 
+  const retryChains = React.useCallback(() => { void refreshData(true); }, [refreshData]);
+  const chainReadState = { chainsLoading: loading, chainsError, onRetryChains: retryChains };
+  const inspirationLoadSeqRef = useRef(0);
   const loadInspirations = useCommittedCallback(async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
+    const sequence = ++inspirationLoadSeqRef.current;
+    setInspirationsError('');
     try {
       const data = await db.getAllInspirations(currentUser || undefined,
         !force && lastChainFetch > 0 && Date.now() - lastChainFetch < CACHE_TTL ? chains : undefined);
+      if (sequence !== inspirationLoadSeqRef.current) return;
       setInspirationsCache(data);
       setLastInspirationFetch(Date.now());
     } catch (e) {
+      if (sequence !== inspirationLoadSeqRef.current) return;
+      setInspirationsError('收藏库加载失败，请稍后重试');
       console.error('加载收藏库失败', e);
       notify('收藏库加载失败，请稍后重试', 'error');
     }
@@ -487,6 +499,7 @@ const App = () => {
     if (!currentUser) return;
     const updateCollectionSnapshot = () => {
       setInspirationsCache(collectionSnapshot());
+      setInspirationsError('');
       setLastInspirationFetch(Date.now());
     };
     if (collectionRevision()) updateCollectionSnapshot();
@@ -1077,6 +1090,7 @@ const App = () => {
             if (!await refreshData(true)) throw new Error(t('风格串列表加载失败，请稍后重试'));
           }}
           isLoading={loading}
+          loadError={chainsError}
           notify={notify}
           isGuest={false}
           returnTargetId={view === 'list' ? selectedId : undefined}
@@ -1096,7 +1110,7 @@ const App = () => {
             return createLibraryChain(data.name, '', data.type, { ...data, tags, params: { ...data.params, _promptLibraryPurposes: purposes || [], ...(directoryIds !== undefined ? { _promptLibraryDirectoryIds: directoryIds } : {}) } as NAIParams });
           }}
           onViewCaptured={setLibraryFocusId}
-          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
+          browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} {...chainReadState} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
             directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
             categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange} onCreateCategory={openLibraryCategories} onRenameCategory={editLibraryCategory} onDeleteCategory={deleteLibraryCategory} onMoveCategory={moveLibraryCategory} categoriesBusy={movingLibraryCategory || libraryCategoriesOpen}
             onDelete={handleDeleteLibraryEntry}
@@ -1117,9 +1131,9 @@ const App = () => {
             if (open) { ensurePlayground(); keepViewMounted('playground'); }
             setContentRollOpen(open);
           }}
-          items={toolbarSlot => <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
+          items={toolbarSlot => <PromptLibraryHub chains={chains} {...chainReadState} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
             onDelete={handleDelete} notify={notify} embedded toolbarSlot={toolbarSlot} />}
-          roll={toolbarSlot => <ContentRollWorkspace directories={libraryDirectories} categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} active={view === 'content-library' && contentRollOpen} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+          roll={toolbarSlot => <ContentRollWorkspace directories={libraryDirectories} categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} active={view === 'content-library' && contentRollOpen} chains={chains} {...chainReadState} notify={notify} toolbarSlot={toolbarSlot}
             editing={!!contentRollEditId}
             playgroundParams={playgroundChain?.params || null}
             playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
@@ -1133,13 +1147,13 @@ const App = () => {
             seedRecord={contentRollSeed}
             onSeedConsumed={() => setContentRollSeed(null)}
             embedded />}
-          saved={toolbarSlot => <ContentRollLibrary active={contentLibrarySection === 'saved'} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+          saved={toolbarSlot => <ContentRollLibrary active={contentLibrarySection === 'saved'} chains={chains} {...chainReadState} notify={notify} toolbarSlot={toolbarSlot}
             onLoad={handleLoadContentRoll}
             onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
             onDelete={async chain => { await handleDelete(chain.id); }}
             onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }}
             embedded />}
-          originals={toolbarSlot => <ContentRollLibrary section="originals" active={contentLibrarySection === 'originals'} chains={chains} notify={notify} toolbarSlot={toolbarSlot}
+          originals={toolbarSlot => <ContentRollLibrary section="originals" active={contentLibrarySection === 'originals'} chains={chains} {...chainReadState} notify={notify} toolbarSlot={toolbarSlot}
             onLoad={handleLoadContentRoll}
             onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
             onDelete={async chain => { await handleDelete(chain.id); }}
@@ -1151,6 +1165,7 @@ const App = () => {
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           chains={chains}
+          {...chainReadState}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
@@ -1167,6 +1182,7 @@ const App = () => {
           key={editChain.id}
           chain={editChain}
           allChains={chains}
+          {...chainReadState}
           onUpdateChain={handleUpdateChain}
           onFork={handleForkChain}
           onCreateCharacter={handleSaveCharacterToLibrary}
@@ -1240,6 +1256,7 @@ const App = () => {
           currentUser={currentUser}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           inspirationsData={inspirationsCache}
+          loadError={inspirationsError}
           onRefresh={() => loadInspirations(true)}
           onImportRefresh={async () => {
             const items = await db.getAllInspirations(currentUser);
@@ -1258,6 +1275,7 @@ const App = () => {
         return <CreationFootprint
           active={view === 'footprint'}
           chains={chains}
+          {...chainReadState}
           onOpenHistory={openHistory}
           onOpenCollection={() => void handleNavigate('inspiration')}
           onOpenLab={() => void handleNavigate('playground')}
@@ -1287,6 +1305,7 @@ const App = () => {
         return <PromptLibraryRequestEnabledContext.Provider value><ChainEditor
           chain={playgroundChain}
           allChains={chains}
+          {...chainReadState}
           onUpdateChain={handleUpdatePlaygroundChain}
           onFork={handleForkChain}
           onCreateCharacter={handleSaveCharacterToLibrary}
@@ -1322,13 +1341,13 @@ const App = () => {
   const cachedViews = useMemo(() => Object.fromEntries(
     (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'footprint', 'history', 'roll'] as const)
       .map(target => [target, renderViewContent(target)]),
-  ), [view, chains, currentUser, loading, selectedId, appearancePreferences, inspirationsCache, historyEntry, libraryEntry, rollPinnedEntry, language]);
+  ), [view, chains, currentUser, loading, chainsError, selectedId, appearancePreferences, inspirationsCache, inspirationsError, historyEntry, libraryEntry, rollPinnedEntry, language]);
   const playgroundContent = useMemo(() => renderViewContent('playground'), [
-    view, playgroundChain, chains, currentUser, playgroundImportToken, contentRollRevision, playgroundAgentOpenToken,
+    view, playgroundChain, chains, loading, chainsError, currentUser, playgroundImportToken, contentRollRevision, playgroundAgentOpenToken,
     appearancePreferences, safeMode, language,
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
-    view, chains, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
+    view, chains, loading, chainsError, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
     playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, movingLibraryCategory, libraryCategoriesOpen, language,
   ]);
   const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
@@ -1338,10 +1357,10 @@ const App = () => {
     notify(t('已存入提示词库'));
   });
   const clearLibraryRequest = React.useCallback(() => setLibraryEntryRequest(null), []);
-  const promptLibrary = useMemo(() => ({ chains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
+  const promptLibrary = useMemo(() => ({ chains, chainsLoading: loading, chainsError, onRetryChains: retryChains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
     directories: libraryDirectories, directoriesError: libraryDirectoriesError, reloadDirectories: reloadLibraryDirectories, onCreateDirectory: openLibraryDirectories, onRenameDirectory: editLibraryDirectory, onDeleteDirectory: deleteLibraryDirectory, onMoveDirectory: moveLibraryDirectory, directoriesBusy: movingLibraryDirectory,
     save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace, categoryNames: promptLibraryCategoryNames(chains, libraryCategoryNames || []), categoryTree: libraryCategoryTree,
-  }), [chains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, reloadLibraryDirectories, openLibraryDirectories, editLibraryDirectory, deleteLibraryDirectory, moveLibraryDirectory, movingLibraryDirectory]);
+  }), [chains, loading, chainsError, retryChains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, reloadLibraryDirectories, openLibraryDirectories, editLibraryDirectory, deleteLibraryDirectory, moveLibraryDirectory, movingLibraryDirectory]);
 
   if (!currentUser && !dbConfigError) {
     return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
@@ -1425,7 +1444,7 @@ const App = () => {
           {libraryCategoriesOpen && <PromptLibraryCategoryManager initialTree={libraryCategoryTree} initialParentId={libraryCategoryCreateParent} initialEditingId={libraryCategoryEditingId} initialDeletingId={libraryCategoryDeletingId} onClose={() => setLibraryCategoriesOpen(false)} onSnapshot={({ chains: latestChains, names, tree }) => {
             categoryRevisionRef.current++; refreshDataSeqRef.current++;
             if (tree) { ++directoryLoadRevision.current; setLibraryCategoryTree(tree); }
-            setChains(latestChains); setLibraryCategoryNames(names); setLastChainFetch(Date.now()); setLoading(false);
+            setChains(latestChains); setLibraryCategoryNames(names); setLastChainFetch(Date.now()); setLoading(false); setChainsError('');
           }} onChanged={(from, to) => setLibraryCategoryChange(previous => ({ from, to, token: (previous?.token || 0) + 1 }))} />}
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
             onChange={libraryWorkspace.change} onClose={() => setLibraryUseEntry(null)} onApplied={() => { void handleNavigate('playground'); }} />
@@ -1459,10 +1478,10 @@ const App = () => {
                 <option value="items">{t('片段')}</option><option value="saved">{t('组合')}</option><option value="originals">{t('原文')}</option>
               </select><div ref={setLibraryManageToolbar} className="relative flex min-w-0 flex-1 flex-wrap items-center gap-2" /></div>
               <div className={libraryManageSection === 'items' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ImageActivityProvider active={libraryManageSection === 'items'}>
-                <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
+                <PromptLibraryHub chains={chains} {...chainReadState} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
                   onDelete={handleDelete} notify={notify} embedded toolbarSlot={libraryManageSection === 'items' ? libraryManageToolbar : null} requestCloseRef={libraryManagerCloseRef} onClose={() => setLibraryManageOpen(false)} />
               </ImageActivityProvider></div>
-              {libraryManageSection !== 'items' && <ContentRollLibrary key={libraryManageSection} section={libraryManageSection === 'originals' ? 'originals' : 'saved'} active chains={chains} notify={notify} embedded toolbarSlot={libraryManageToolbar}
+              {libraryManageSection !== 'items' && <ContentRollLibrary key={libraryManageSection} section={libraryManageSection === 'originals' ? 'originals' : 'saved'} active chains={chains} {...chainReadState} notify={notify} embedded toolbarSlot={libraryManageToolbar}
                   onLoad={(chain, index) => { handleLoadContentRoll(chain, index); setLibraryManageOpen(false); }}
                   onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
                   onDelete={async chain => { await handleDelete(chain.id); }}

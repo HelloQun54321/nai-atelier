@@ -454,6 +454,15 @@ it('他人收藏不显示改名铅笔', () => {
   expect(screen.queryByLabelText('收藏标题')).toBeNull();
 });
 
+it('单图详情透传收藏夹读取状态，失败可重试且不显示暂无', () => {
+  const retry = vi.fn();
+  const props = { item: mockItem, tagSuggestions: [], currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}), onReloadBoards: retry };
+  const view = render(React.createElement(InspirationDetail, { ...props, boardsLoading: true })); fireEvent.click(screen.getByRole('button', { name: '管理收藏夹' }));
+  expect(screen.getByRole('status').textContent).toContain('正在读取…'); expect(screen.queryByText('暂无收藏夹')).toBeNull();
+  view.rerender(React.createElement(InspirationDetail, { ...props, boardsError: '单张目录合成失败' }));
+  expect(screen.getByRole('alert').textContent).toContain('单张目录合成失败'); expect(screen.queryByText('暂无收藏夹')).toBeNull(); fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+});
+
 it('单图收藏夹管理只增删本次勾选，失败保留原归属，取消一夹保留其它夹', async () => {
   vi.stubGlobal('innerWidth', 1280);
   const boards = ['one', 'two'].map(id => ({ id, name: id, userId: mockUser.id, sortOrder: 0, createdAt: 1, updatedAt: 1 }));

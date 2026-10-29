@@ -86,6 +86,32 @@ it('足迹带入的画师筛选应用到历史浏览查询', async () => {
     await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.some(([query]) => query.search === 'artist:alpha_artist')).toBe(true));
 });
 
+it('首次历史请求未就绪和失败不显示暂无，重试成功空结果才显示空态', async () => {
+    let fail!: (error: Error) => void;
+    const delayed = new Promise<never>((_resolve, reject) => { fail = reject; });
+    vi.mocked(localHistory.getBrowseOrder).mockReturnValue(delayed);
+    render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} />);
+    expect(screen.getByText('加载中…')).toBeTruthy(); expect(screen.queryByText('暂无生成记录')).toBeNull();
+    await act(async () => fail(new Error('合成历史失败')));
+    expect(await screen.findByText('历史加载失败')).toBeTruthy(); expect(screen.queryByText('暂无生成记录')).toBeNull();
+    vi.mocked(localHistory.getBrowseOrder).mockResolvedValue({ ids: [], models: [], sources: [] }); vi.mocked(localHistory.getPage).mockResolvedValue({ items: [], count: 0 });
+    fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(await screen.findByText('暂无生成记录')).toBeTruthy();
+});
+
+it('历史图片选择器未知数量显示读取，缓存刷新失败保留图片且不报无图', async () => {
+    let finish!: (value: { items: LocalGenItem[]; count: number }) => void;
+    vi.mocked(localHistory.getPage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<HistoryImagePicker open onClose={vi.fn()} onSelect={vi.fn()} />);
+    expect(screen.getByText('正在读取历史图片…')).toBeTruthy(); expect(screen.getByText('全部 — 张')).toBeTruthy(); expect(screen.queryByText('历史页面中还没有生成图片')).toBeNull();
+    await act(async () => finish({ items, count: items.length })); expect(screen.getAllByRole('img', { name: '历史生成图片' })).toHaveLength(2);
+    let fail!: (error: Error) => void;
+    vi.mocked(localHistory.getPage).mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    act(() => listeners.forEach(listener => listener({ type: 'saved' })));
+    expect(screen.getByText('全部 — 张')).toBeTruthy(); expect(screen.getAllByRole('img', { name: '历史生成图片' })).toHaveLength(2);
+    await act(async () => fail(new Error('合成刷新失败')));
+    expect(await screen.findByText('历史图片读取失败，请重试。')).toBeTruthy(); expect(screen.getAllByRole('img', { name: '历史生成图片' })).toHaveLength(2); expect(screen.queryByText('历史页面中还没有生成图片')).toBeNull();
+});
+
 it('历史仅追加下沿数量小字，原数量与手机浏览控件保留', async () => {
     const { container } = await setup(390);
     const caption = container.querySelector('[data-toolbar-count-caption]');

@@ -71,6 +71,23 @@ const setup = async () => {
   await waitFor(() => expect(screen.queryByText('正在读取 Danbooru…')).toBeNull());
   return { ...view, notify };
 };
+it('首次首屏请求等待中不显示空结果，成功空结果与失败保持不同反馈', async () => {
+  let resolveSearch!: (value: ReturnType<typeof result>) => void;
+  search.mockReturnValue(new Promise(done => { resolveSearch = done; }));
+  const notify = vi.fn();
+  const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
+  expect(screen.getByText('正在读取 Danbooru…')).toBeTruthy();
+  expect(screen.queryByText('没有找到匹配图片')).toBeNull();
+  await act(async () => resolveSearch(result()));
+  await screen.findByText('没有找到匹配图片');
+  view.unmount();
+
+  search.mockRejectedValue(new Error('合成请求失败'));
+  const failed = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByText('合成请求失败');
+  expect(screen.queryByText('没有找到匹配图片')).toBeNull();
+  failed.unmount();
+});
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };

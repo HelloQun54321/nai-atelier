@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InspirationImagePicker } from '../../components/InspirationImagePicker';
 
@@ -9,6 +9,19 @@ vi.mock('../../services/dbService', () => ({ db: { getAllInspirations: mocks.ite
 vi.mock('../../components/SmartImage', () => ({ SmartImage: ({ alt }: { alt: string }) => <img alt={alt} /> }));
 vi.mock('../../components/ImagePreviewPortal', () => ({ ImagePreviewPortal: ({ children }: { children: React.ReactNode }) => children }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+it('收藏选择器重开时旧筛选无匹配也显示读取，失败可重试且不把未知数量当零', async () => {
+  mocks.boards.mockResolvedValue([]); mocks.items.mockResolvedValue([{ id: 'one', title: '旧缓存', imageUrl: '/one.png', createdAt: 1 }]);
+  const props = { open: true, onClose: vi.fn(), onSelect: vi.fn() };
+  const view = render(<InspirationImagePicker {...props} />); await screen.findByRole('button', { name: '选择收藏图片：旧缓存' });
+  fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '新资料' } });
+  view.rerender(<InspirationImagePicker {...props} open={false} />);
+  let fail!: (error: Error) => void; mocks.items.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  view.rerender(<InspirationImagePicker {...props} />);
+  expect(screen.getByText('正在读取收藏库…')).toBeTruthy(); expect(screen.getByText('— / — 张')).toBeTruthy(); expect(screen.queryByText('没有找到匹配的收藏图片')).toBeNull();
+  await act(async () => fail(new Error('合成读取失败'))); expect(await screen.findByText('收藏库读取失败，请重试。')).toBeTruthy(); expect(screen.queryByText('没有找到匹配的收藏图片')).toBeNull();
+  mocks.items.mockResolvedValue([]); fireEvent.click(screen.getByRole('button', { name: '重新读取' })); expect(await screen.findByText('没有找到匹配的收藏图片')).toBeTruthy(); expect(screen.getByText('0 / 0 张')).toBeTruthy();
+});
 
 it.each([390, 1280])('宽度 %s：收藏图片选择共用路径目录，父级包含后代且重叠归属不重复展示', async width => {
   vi.stubGlobal('innerWidth', width);

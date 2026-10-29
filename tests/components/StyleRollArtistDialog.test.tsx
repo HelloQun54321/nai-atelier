@@ -78,6 +78,38 @@ const Fixture = ({ library = ['alpha', 'beta'].map(name => ({ name, chinese: '',
   return <StyleRollArtistDialog library={library} pinned={pinned} onPinnedChange={setPinned} blocked={blocked} onBlockedChange={async tags => { await mocks.block(tags); setBlocked(tags); }} excluded={[]} onExcludedChange={() => {}} sampledOnly={sampledOnly} onSampledOnlyChange={setSampledOnly} rules={rules} onRulesChange={setRules} onClose={() => {}} />;
 };
 
+it('加载状态：Roll画师样张读取中不显示空结果，完成后才确认真空', async () => {
+  let finish!: (value: { available: boolean; canManage: boolean; packs: [] }) => void;
+  mocks.status.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(<Fixture library={[]} />);
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  expect(screen.getByText('正在读取画师样张…')).toBeTruthy();
+  await act(async () => finish({ available: true, canManage: true, packs: [] }));
+  expect(await screen.findByText('没有匹配的画师')).toBeTruthy();
+});
+
+it('加载状态：Roll所选目录关系未就绪不报空，返回后显示实际成员', async () => {
+  localStorage.setItem('nai_catalog_groups_roll-artists', JSON.stringify({ active: 'pending-group', expanded: true }));
+  let finish!: (value: { revision: number; groups: { id: string; name: string }[]; memberships: Record<string, string[]> }) => void;
+  mocks.groupGet.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  render(<Fixture />);
+  await waitFor(() => expect(mocks.data).toHaveBeenCalled());
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  await act(async () => finish({ revision: 1, groups: [{ id: 'pending-group', name: '测试组' }], memberships: { 'artist:alpha': ['pending-group'] } }));
+  expect(await screen.findByRole('button', { name: '锁定画师：alpha' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '锁定画师：beta' })).toBeNull();
+});
+
+it('加载状态：Roll样张首次失败显示错误且可重试，不误显示空结果', async () => {
+  mocks.status.mockRejectedValueOnce(new Error('合成样张读取失败'));
+  render(<Fixture library={[]} />);
+  const error = await screen.findByRole('alert');
+  expect(error.textContent).toContain('合成样张读取失败');
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  fireEvent.click(within(error).getByRole('button', { name: '重试' }));
+  expect(await screen.findByText('没有匹配的画师')).toBeTruthy();
+});
+
 it.each(['masonry', 'portrait', 'square'] as const)('%s 布局与画师库共用偏好，瀑布流使用当前图片真实比例而非固定空框', async layout => {
   setMobileImageDisplayPreferences({ layout, columns: 2, desktopColumns: 3 }, 'artists');
   render(<Fixture />); const image = await screen.findByAltText('alpha');

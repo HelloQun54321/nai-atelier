@@ -22,7 +22,8 @@ export const CollectionTagManager: React.FC<{
   onRefresh: () => Promise<void>;
   onTagChanged: (from: string, to?: string) => void;
   notify: (message: string, type?: 'success' | 'error') => void;
-}> = ({ items, tagNames, onSaveTagNames, onReloadTagNames, currentUser, onClose, onRefresh, onTagChanged, notify }) => {
+  loading?: boolean; loadError?: string;
+}> = ({ items, tagNames, loading, loadError, onSaveTagNames, onReloadTagNames, currentUser, onClose, onRefresh, onTagChanged, notify }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const dialogRef = useModalA11y<HTMLElement>(true);
@@ -54,7 +55,7 @@ export const CollectionTagManager: React.FC<{
 
   const addTag = async () => {
     const tag = normalizeInspirationTags([newTag])[0];
-    if (savingRef.current || !tag || tagNames === null || currentUser.role === 'guest') return;
+    if (savingRef.current || loading || loadError || !tag || tagNames === null || currentUser.role === 'guest') return;
     if (tagCounts.some(([name]) => name === tag)) { notify(t('标签已存在'), 'error'); return; }
     savingRef.current = true; setBusy(true);
     try {
@@ -66,7 +67,7 @@ export const CollectionTagManager: React.FC<{
   };
 
   const updateTag = async (from: string, replacement?: string) => {
-    if (savingRef.current || tagNames === null || currentUser.role === 'guest') return;
+    if (savingRef.current || loading || loadError || tagNames === null || currentUser.role === 'guest') return;
     const to = replacement === undefined ? undefined : normalizeInspirationTags([replacement])[0];
     if (replacement !== undefined && (!to || to === from)) return;
     const affected = activeItems.filter(item => canEditItem(item, currentUser) && getCollectionTags(item).includes(from));
@@ -110,23 +111,24 @@ export const CollectionTagManager: React.FC<{
       <header className="flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={requestClose}><X /></IconButton></header>
       <div className="flex-none p-3"><ToolbarSearch autoFocus aria-label={t('搜索标签')} value={search} onChange={event => setSearch(event.target.value)} placeholder={t('搜索标签')} /></div>
       <form className="flex flex-none gap-2 px-3 pb-3" onSubmit={event => { event.preventDefault(); void addTag(); }}>
-        <input aria-label={t('新标签名称')} maxLength={200} value={newTag} disabled={busy || tagNames === null || currentUser.role === 'guest'} onChange={event => setNewTag(event.target.value)} placeholder={t('新标签名称')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-none focus:border-indigo-400 dark:border-gray-700" />
-        <ToolbarButton type="submit" disabled={busy || tagNames === null || currentUser.role === 'guest' || !normalizeInspirationTags([newTag])[0]}>{t('添加标签')}</ToolbarButton>
+        <input aria-label={t('新标签名称')} maxLength={200} value={newTag} disabled={busy || loading || Boolean(loadError) || tagNames === null || currentUser.role === 'guest'} onChange={event => setNewTag(event.target.value)} placeholder={t('新标签名称')} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-transparent px-3 text-sm outline-none focus:border-indigo-400 dark:border-gray-700" />
+        <ToolbarButton type="submit" disabled={busy || loading || Boolean(loadError) || tagNames === null || currentUser.role === 'guest' || !normalizeInspirationTags([newTag])[0]}>{t('添加标签')}</ToolbarButton>
       </form>
-      {tagNames === null && <div className="px-3 pb-3"><ToolbarButton disabled={busy} onClick={() => void onReloadTagNames()}>{t('重新加载标签')}</ToolbarButton></div>}
+      {loading && <p role="status" className="px-3 pb-3 text-sm text-gray-400">{t('正在读取…')}</p>}
+      {!loading && (loadError || tagNames === null) && <div role="alert" className="px-3 pb-3 text-sm text-red-500">{loadError && <p>{t(loadError)}</p>}<ToolbarButton disabled={busy} onClick={() => void onReloadTagNames()}>{t('重新加载标签')}</ToolbarButton></div>}
       <ul className="min-h-0 overflow-y-auto px-3 pb-3">
         {visibleTags.map(([tag, count]) => <li key={tag} className="flex min-h-12 items-center gap-2 border-b border-gray-100 py-1 dark:border-gray-800">
           {editing?.tag === tag ? <>
             <CollectionTagInput maxLength={200} onPick={value => setEditing({ tag, value })} autoFocus aria-label={t('标签名称')} value={editing.value} suggestions={tagCounts.map(([name]) => name).filter(name => name !== tag)} disabled={busy} onChange={event => setEditing({ tag, value: event.target.value })} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void updateTag(tag, editing.value); } }} className="mobile-touch h-10 min-w-0 flex-1 rounded-xl border border-indigo-400 bg-transparent px-2 text-sm outline-none" />
-            <IconButton label={t('保存')} disabled={busy || tagNames === null || !normalizeInspirationTags([editing.value])[0] || normalizeInspirationTags([editing.value])[0] === tag} onClick={() => void updateTag(tag, editing.value)}><Check /></IconButton>
+            <IconButton label={t('保存')} disabled={busy || loading || Boolean(loadError) || tagNames === null || !normalizeInspirationTags([editing.value])[0] || normalizeInspirationTags([editing.value])[0] === tag} onClick={() => void updateTag(tag, editing.value)}><Check /></IconButton>
             <IconButton label={t('取消')} disabled={busy} onClick={() => setEditing(null)}><X /></IconButton>
           </> : <>
             <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={tag}>#{tag}</span><span className="whitespace-nowrap text-xs text-gray-400">{t('{0}页', [count])}</span>
-            <IconButton label={t('重命名标签：{0}', [tag])} disabled={busy || tagNames === null || !editableTags.has(tag)} onClick={() => setEditing({ tag, value: tag })}><Pencil /></IconButton>
-            <IconButton label={t('移除标签：{0}', [tag])} disabled={busy || tagNames === null || !editableTags.has(tag)} onClick={() => void updateTag(tag)} className="text-red-500"><Trash2 /></IconButton>
+            <IconButton label={t('重命名标签：{0}', [tag])} disabled={busy || loading || Boolean(loadError) || tagNames === null || !editableTags.has(tag)} onClick={() => setEditing({ tag, value: tag })}><Pencil /></IconButton>
+            <IconButton label={t('移除标签：{0}', [tag])} disabled={busy || loading || Boolean(loadError) || tagNames === null || !editableTags.has(tag)} onClick={() => void updateTag(tag)} className="text-red-500"><Trash2 /></IconButton>
           </>}
         </li>)}
-        {!visibleTags.length && <li className="py-8 text-center text-sm text-gray-400">{t('没有匹配的标签')}</li>}
+        {!loading && !loadError && tagNames !== null && !visibleTags.length && <li className="py-8 text-center text-sm text-gray-400">{t('没有匹配的标签')}</li>}
       </ul>
     </section>
   </div></ImagePreviewPortal>;

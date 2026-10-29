@@ -14,6 +14,22 @@ const chains: PromptChain[] = KINDS.map(kind => ({ id: kind, type: kind as Promp
   params: LAB_DEFAULT_PARAMS, modules: [], tags: [], variableValues: {}, createdAt: 1, updatedAt: 1 }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 
+it('条目读取状态：搭配候选未就绪不报0条，失败能重试，缓存候选继续可用', () => {
+  const retry = vi.fn();
+  const page = (items: PromptChain[], chainsLoading = false, chainsError = '') => <ContentRollWorkspace active chains={items} chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={retry} notify={vi.fn()} />;
+  const view = render(page([], true));
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  expect(screen.queryAllByText('共 0 条')).toHaveLength(0);
+  expect(screen.queryAllByText('该库当前 0 条，该栏留空')).toHaveLength(0);
+  expect((screen.getByRole('button', { name: '抽一次' }) as HTMLButtonElement).disabled).toBe(true);
+  view.rerender(page([], false, '读取提示词库失败'));
+  expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(page([])); expect(screen.getAllByText('共 0 条').length).toBeGreaterThan(0);
+  view.rerender(page(chains, true)); expect(screen.queryByText('加载中…')).toBeNull();
+  expect((screen.getByRole('button', { name: '抽一次' }) as HTMLButtonElement).disabled).toBe(false);
+});
+
 it('编辑与另存组合预填标签，失败保留输入，明确留空会保存空数组', async () => {
   const save = vi.fn().mockRejectedValueOnce(new Error('保存失败')).mockResolvedValue('saved');
   const seedRecord = { picks: { scene: { kind: 'scene', filled: true, text: 'rain' } }, seed: '旧组合', seeds: {}, tags: ['夜景', '我的分类'] };

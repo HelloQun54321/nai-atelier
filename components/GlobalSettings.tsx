@@ -355,6 +355,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   // ---- 多密钥保管箱 ----
   const [keyVault, setKeyVault] = useState<NaiKeyEntry[]>([]);
+  const [keyVaultLoaded, setKeyVaultLoaded] = useState(false);
+  const [keyVaultLoading, setKeyVaultLoading] = useState(false);
+  const [keyVaultLoadError, setKeyVaultLoadError] = useState('');
+  const keyVaultLoadedRef = useRef(false);
   const activeGateway = keyVault.find(entry => entry.key === apiKey)?.gatewayUrl;
   const [newKeyName, setNewKeyName] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
@@ -367,15 +371,34 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   // 关闭设置或切换密钥即复位，避免明文长期停在屏幕上（局域网访问场景同理）。
   const [revealedKeyId, setRevealedKeyId] = useState('');
 
+  const refreshVault = async (isCurrent: () => boolean = () => true) => {
+    const hasSnapshot = keyVaultLoadedRef.current;
+    if (!hasSnapshot) { setKeyVaultLoading(true); setKeyVaultLoadError(''); }
+    try {
+      const entries = await naiKeyVault.list();
+      if (!isCurrent()) return;
+      setKeyVault(entries);
+      keyVaultLoadedRef.current = true;
+      setKeyVaultLoaded(true);
+      setKeyVaultLoadError('');
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (!hasSnapshot) setKeyVaultLoadError('读取失败，请重试');
+      throw error;
+    } finally {
+      if (isCurrent() && !hasSnapshot) setKeyVaultLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     // 保管箱已迁入 local-data（Worker 保管），list 为异步；打开设置时拉取一次。
     let active = true;
-    void naiKeyVault.list().then(entries => { if (active) setKeyVault(entries); });
+    void refreshVault(() => active).catch(() => {});
     return () => { active = false; };
+    // 每次打开只读取一次，避免状态更新反复触发读取。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  const refreshVault = async () => setKeyVault(await naiKeyVault.list());
 
   const activateKeyEntry = (entry: NaiKeyEntry) => {
     if (entry.key === readApiKey()) return;
@@ -1130,7 +1153,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {activeSection === 'novelai' && <div>
             {/* 密钥保管箱：多把密钥 + 命名备注，点击使用即切换 */}
             <div data-agent-private="true" className="space-y-2">
-              {keyVault.length === 0 && (
+              {!keyVaultLoaded && keyVaultLoading && <p role="status" className="py-3 text-center text-xs text-gray-500">{t('正在读取配置…')}</p>}
+              {!keyVaultLoaded && keyVaultLoadError && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                <span>{t(keyVaultLoadError)}</span>
+                <button type="button" onClick={() => { void refreshVault().catch(() => {}); }} className="mobile-touch shrink-0 rounded px-2 py-1 font-bold underline">{t('重试')}</button>
+              </div>}
+              {keyVaultLoaded && keyVault.length === 0 && (
                 <p className="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-500 dark:border-gray-600 dark:text-gray-400">{t("还没有保存的密钥，在下方添加第一把。")}</p>
               )}
               {keyVault.map(entry => {

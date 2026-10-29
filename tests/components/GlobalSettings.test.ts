@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, DEFAULT_LAB_PAGE_LAYOUTS, readAppearancePresetImport } from '../../services/appearancePreferences';
@@ -403,6 +403,31 @@ describe('GlobalSettings', () => {
     fireEvent.click(screen.getAllByRole('button', { name: '复制完整 Key' })[0]);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(key));
     expect(screen.queryByText(key)).toBeNull();
+  });
+
+  it('Key 保管箱首读期间显示加载，只有读取完成后才显示真实空状态', async () => {
+    let resolveList!: (entries: Awaited<ReturnType<typeof naiKeyVault.list>>) => void;
+    const list = vi.spyOn(naiKeyVault, 'list').mockImplementation(() => new Promise(resolve => { resolveList = resolve; }));
+    try {
+      render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+      expect(await screen.findByText('正在读取配置…')).toBeTruthy();
+      expect(screen.queryByText('还没有保存的密钥，在下方添加第一把。')).toBeNull();
+      await act(async () => resolveList([]));
+      expect(await screen.findByText('还没有保存的密钥，在下方添加第一把。')).toBeTruthy();
+    } finally { list.mockRestore(); }
+  });
+
+  it('Key 保管箱首读失败原位显示错误并可重试', async () => {
+    const list = vi.spyOn(naiKeyVault, 'list').mockRejectedValueOnce(new Error('synthetic read failure')).mockResolvedValueOnce([]);
+    try {
+      render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('读取失败，请重试');
+      expect(screen.queryByText('还没有保存的密钥，在下方添加第一把。')).toBeNull();
+      fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+      expect(await screen.findByText('还没有保存的密钥，在下方添加第一把。')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    } finally { list.mockRestore(); }
   });
 
   it('当前成员 Key 显示网关来源并隐藏另一个公共队列地址', async () => {

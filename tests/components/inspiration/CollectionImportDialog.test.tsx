@@ -39,6 +39,23 @@ const openInfo = () => {
   if (!(summary.closest('details') as HTMLDetailsElement).open) fireEvent.click(summary);
 };
 
+it('手动收录的收藏夹读取与失败不显示暂无，重试成功后才显示空态', () => {
+  const { props, rerender } = setup();
+  const onReloadBoards = vi.fn();
+  rerender(<CollectionImportDialog {...props} boards={[]} boardsLoading onReloadBoards={onReloadBoards} />);
+  fireEvent.click(screen.getByRole('button', { name: '收藏夹' }));
+  const picker = within(screen.getByRole('dialog', { name: '收藏夹' }));
+  expect(picker.getByRole('status').textContent).toBe('正在读取…');
+  expect(picker.queryByText('暂无收藏夹')).toBeNull();
+  rerender(<CollectionImportDialog {...props} boards={[]} boardsError="合成收藏夹读取失败" onReloadBoards={onReloadBoards} />);
+  expect(picker.getByRole('alert').textContent).toContain('合成收藏夹读取失败');
+  expect(picker.queryByText('暂无收藏夹')).toBeNull();
+  fireEvent.click(picker.getByRole('button', { name: '重试' }));
+  expect(onReloadBoards).toHaveBeenCalledOnce();
+  rerender(<CollectionImportDialog {...props} boards={[]} onReloadBoards={onReloadBoards} />);
+  expect(picker.getByText('暂无收藏夹')).toBeTruthy();
+});
+
 it('导入图片可同时选择多个收藏夹，并保留起始收藏夹', async () => {
   const second = { ...boards[0], id: 'second', name: '第二收藏夹' };
   const props = { currentUser: user, boards: [...boards, second], tagSuggestions: [], initialFiles: [file('multi-folder.png')], initialBoardId: 'folder', onClose: vi.fn(), onRefresh: vi.fn(async () => {}), notify: vi.fn() };

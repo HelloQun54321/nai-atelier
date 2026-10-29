@@ -41,6 +41,15 @@ const rename = (from: string, to: string) => {
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
 };
 
+it('标签目录待定或失败不显示无匹配，成功空目录才显示空态', () => {
+  const props = { items: [], tagNames: null, onSaveTagNames: vi.fn(async () => {}), onReloadTagNames: vi.fn(async () => {}), currentUser: user, onClose: vi.fn(), notify: vi.fn(), onTagChanged: vi.fn(), onRefresh: vi.fn(async () => {}) };
+  const view = render(<CollectionTagManager {...props} loading />);
+  expect(screen.getByRole('status').textContent).toContain('正在读取…'); expect(screen.queryByText('没有匹配的标签')).toBeNull(); expect(screen.queryByRole('button', { name: '重新加载标签' })).toBeNull();
+  view.rerender(<CollectionTagManager {...props} loadError="合成标签读取失败" />);
+  expect(screen.getByRole('alert').textContent).toContain('合成标签读取失败'); expect(screen.queryByText('没有匹配的标签')).toBeNull(); fireEvent.click(screen.getByRole('button', { name: '重新加载标签' })); expect(props.onReloadTagNames).toHaveBeenCalledOnce();
+  view.rerender(<CollectionTagManager {...props} tagNames={[]} />); expect(screen.getByText('没有匹配的标签')).toBeTruthy();
+});
+
 it('管理展示全库有效标签与页数，可搜索，旧来源和归档标签不混入，打开不写入', () => {
   setup();
   const dialog = screen.getByRole('dialog', { name: '管理标签' });

@@ -111,6 +111,16 @@ it('目录计数按完整风格串ID去重，不受渲染数量和父子重复�
   expect(navigation.getByRole('button', { name: '画风实验 / 平涂' }).textContent).toBe('平涂2');
 });
 
+it('链库数量未知时目录显示占位，成功空结果才显示零', () => {
+  const props = { store: { state: stored, ready: true, busy: false, error: '', save: vi.fn(), reload: vi.fn() }, selected: '*', onSelect: vi.fn(), chainIds: [], onMove: vi.fn(), notify: vi.fn() };
+  const view = render(<ChainFolderNavigation {...props} countsPending />);
+  const navigation = within(screen.getByLabelText('风格串文件夹'));
+  expect(navigation.getByRole('button', { name: '全部' }).textContent).toBe('全部—');
+  expect(navigation.getByRole('button', { name: '画风实验' }).textContent).toBe('画风实验—');
+  view.rerender(<ChainFolderNavigation {...props} />);
+  expect(navigation.getByRole('button', { name: '全部' }).textContent).toBe('全部0');
+});
+
 describe('风格串文件夹完整交互', () => {
   it('拖动文件夹只移动父级，保留完整子树和风格串多重归属', async () => {
     stored.folders.push({ id: 'grandchild', name: '细分', parentId: 'child' }, { id: 'target', name: '目标', parentId: null });

@@ -31,6 +31,9 @@ interface Props {
   item: Inspiration;
   tagSuggestions: string[];
   boards?: InspirationBoard[];
+  boardsLoading?: boolean;
+  boardsError?: string;
+  onReloadBoards?: () => void;
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onClose: () => void;
@@ -42,6 +45,9 @@ export const InspirationDetail = React.memo(function InspirationDetail({
   item,
   tagSuggestions,
   boards = [],
+  boardsLoading,
+  boardsError,
+  onReloadBoards,
   currentUser,
   notify,
   onClose,
@@ -326,7 +332,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
               className="h-8 min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-1 text-base font-bold text-gray-950 outline-none dark:bg-gray-900 dark:text-white sm:text-lg"
             /> : <h2 data-safe-mode-title="true" className="min-w-0 truncate text-base font-bold text-gray-950 dark:text-white sm:text-lg">{draft.title}</h2>}
             {editable && <button type="button" aria-label={t("修改收藏标题")} title={t("修改收藏标题")} onClick={() => { setEditingTitle(true); titleInputRef.current?.focus(); titleInputRef.current?.select(); }} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>}
-            {editable && <CollectionFolderPicker boards={boards} value={getCollectionBoardIds(draft)} iconOnly disabled={Boolean(busy)} onToggle={(id, checked) => {
+            {editable && <CollectionFolderPicker boards={boards} loading={boardsLoading} error={boardsError} onRetry={onReloadBoards} value={getCollectionBoardIds(draft)} iconOnly disabled={Boolean(busy)} onToggle={(id, checked) => {
               setBusy('folder');
               void db.updateInspiration(item.id, checked ? { addBoardIds: [id] } : { removeBoardIds: [id] }).then(async () => {
                 update('boardIds', checked ? [...getCollectionBoardIds(draft), id] : getCollectionBoardIds(draft).filter(value => value !== id));

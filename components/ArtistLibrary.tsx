@@ -333,7 +333,9 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
     const [artistCatalogCount, setArtistCatalogCount] = useState(0);
-    const [isCatalogLoading, setIsCatalogLoading] = useState(true);
+    const [catalogPageLoading, setCatalogPageLoading] = useState(true);
+    const [catalogSearchLoading, setCatalogSearchLoading] = useState(false);
+    const [catalogPageReady, setCatalogPageReady] = useState(false);
     const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
     const [hasMoreCatalog, setHasMoreCatalog] = useState(false);
     const [catalogError, setCatalogError] = useState('');
@@ -352,6 +354,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const usageFiltersActive = chainUsageFilter !== 'all' || imageUsageFilter !== 'all';
     const localUsageBrowse = isArtistUsageSort(artistSort) || usageFiltersActive;
     const localCatalogBrowse = localUsageBrowse || groupBrowse || statusBrowse;
+    const isCatalogLoading = !onlySamples && !localCatalogBrowse && (hasSearch ? catalogSearchLoading : catalogPageLoading);
     const resultKey = JSON.stringify([searchTerm, onlySamples, statusFilter, artistSort, chainUsageFilter, imageUsageFilter, samplePack, groups.activeGroup]);
     const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
     const catalogSearchRequestRef = useRef(0);
@@ -454,7 +457,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         if (localCatalogBrowse) {
             catalogLoadGenerationRef.current++;
             catalogPageLoadingRef.current = false;
-            setIsCatalogLoading(false);
+            setCatalogPageLoading(false);
             setIsLoadingMoreCatalog(false);
             setHasMoreCatalog(false);
             setCatalogError('');
@@ -465,9 +468,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         catalogPageLoadingRef.current = true;
         nextCatalogPageRef.current = 0;
         catalogPageCountRef.current = 0;
-        setLoadedCatalogArtists([]);
         setHasMoreCatalog(false);
-        setIsCatalogLoading(true);
+        setCatalogPageLoading(true);
         setIsLoadingMoreCatalog(false);
         setCatalogError('');
         setLoadMoreError('');
@@ -476,6 +478,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             .then(result => {
                 if (cancelled || generation !== catalogLoadGenerationRef.current) return;
                 setLoadedCatalogArtists(result.entries);
+                setCatalogPageReady(true);
                 setArtistCatalogCount(result.total);
                 nextCatalogPageRef.current = 1;
                 catalogPageCountRef.current = result.pageCount;
@@ -491,7 +494,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             .finally(() => {
                 if (!cancelled && generation === catalogLoadGenerationRef.current) {
                     catalogPageLoadingRef.current = false;
-                    setIsCatalogLoading(false);
+                    setCatalogPageLoading(false);
                 }
             });
         return () => { cancelled = true; };
@@ -502,7 +505,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             catalogSearchRequestRef.current++;
             setCatalogSearchResults([]);
             setSearchError('');
-            setIsCatalogLoading(false);
+            setCatalogSearchLoading(false);
             return;
         }
         const terms = onlySamples ? [] : searchTerms;
@@ -511,11 +514,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             setCatalogSearchResults([]);
             setSearchError('');
             // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
-            setIsCatalogLoading(false);
+            setCatalogSearchLoading(false);
             return;
         }
 
-        setIsCatalogLoading(true);
+        setCatalogSearchLoading(true);
         setSearchError('');
         const timer = window.setTimeout(() => {
             getArtistSampleDictionary()
@@ -531,7 +534,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     console.warn('Artist tag search failed:', error);
                 })
                 .finally(() => {
-                    if (requestId === catalogSearchRequestRef.current) setIsCatalogLoading(false);
+                    if (requestId === catalogSearchRequestRef.current) setCatalogSearchLoading(false);
                 });
         }, 180);
         return () => window.clearTimeout(timer);
@@ -794,7 +797,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         : !filteredArtists.length ? <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">{t('没有匹配的画师')}{onlySamples && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}</WorkspacePageState> : null}
                 </>}
                 {!groupBrowse && !statusBrowse && onlySamples && !filteredArtists.length && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
-                    {usageFiltersActive ? t('没有匹配的画师') : !currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
+                    {sampleLoading || currentSampleError ? sampleStatusText : usageFiltersActive ? t('没有匹配的画师') : currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
                     {hasSearch && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
                     {!hasSearch && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
@@ -802,14 +805,16 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>
                     </div>}
                 </WorkspacePageState>}
-                {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
+                {!groupBrowse && !statusBrowse && !onlySamples && (isCatalogLoading || localCatalogBrowse && sampleLoading) && <p role="status" className="py-4 text-sm text-gray-400">{t('正在加载画师…')}</p>}
+                {!groupBrowse && !statusBrowse && !onlySamples && filteredArtists.length > 0 && (searchError || catalogError) && <p role="alert" className="py-4 text-sm text-red-500">{searchError || catalogError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button></p>}
+                {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && !(localCatalogBrowse && sampleLoading) && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {searchError || catalogError ? <>
                         {searchError || catalogError}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button>
                     </> : hasSearch ? <>
                         {t('没有匹配的画师')}
                         <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSearchTerm('')}>{t('清除搜索')}</button>
-                    </> : usageFiltersActive ? t('没有匹配的画师') : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
+                    </> : usageFiltersActive || localCatalogBrowse || catalogPageReady ? t('没有匹配的画师') : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
                 </WorkspacePageState>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>

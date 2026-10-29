@@ -38,6 +38,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   useLanguage();
   const confirmAction = useConfirmDialog();
   const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [backupLabel, setBackupLabel] = useState('');
   const [isEditingTargetDir, setIsEditingTargetDir] = useState(false);
@@ -63,6 +64,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   };
 
   const fetchStatus = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await getLocalBackupStatus();
       setStatus(data);
@@ -85,7 +87,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
     } catch (err) {
       const msg = err instanceof Error ? err.message : '无法读取备份状态';
       setError(msg);
-    }
+    } finally { setLoading(false); }
   }, [isEditingTargetDir, notify]);
 
   useEffect(() => {
@@ -161,7 +163,13 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
     }
   };
 
-  const isRunning = Boolean(status?.running);
+  if (!status) return <div className="space-y-3">
+    <h4 className="font-semibold text-gray-900 dark:text-white">{t("重要数据备份")}</h4>
+    {error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{t(error)} <button type="button" disabled={loading} onClick={() => void fetchStatus()} className="mobile-touch rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button></p>}
+    {loading && <p role="status" className="flex items-center gap-2 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />{t("正在读取…")}</p>}
+  </div>;
+
+  const isRunning = Boolean(status.running);
   const progress = status?.progress || { copiedFiles: 0, totalFiles: 0, copiedBytes: 0, totalBytes: 0, currentItem: '', percent: 0 };
   const sourceStats = status?.sourceStats || { fileCount: 0, totalBytes: 0 };
   const backups = status?.backups || [];
@@ -197,6 +205,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
         <div className="flex items-center gap-2 rounded-xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
           <AlertCircle className="h-4 w-4 flex-none" />
           <span>{t(error)}</span>
+          <button type="button" disabled={loading} onClick={() => void fetchStatus()} className="mobile-touch flex-none rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button>
         </div>
       )}
 

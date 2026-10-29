@@ -186,6 +186,23 @@ const dragDirectoryToRoot = async (nav: HTMLElement, sourceName: string) => {
   return root;
 };
 
+it('App 将共享串库的首读、失败与重试状态传入提示词浏览，成功后才报空', async () => {
+  let rejectRead!: (error: Error) => void;
+  mocks.getAllChains.mockReturnValue(new Promise<PromptChain[]>((_resolve, reject) => { rejectRead = reject; }));
+  await setup('prompts');
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  expect(screen.queryByText('提示词库还是空的')).toBeNull();
+  await act(async () => { rejectRead(new Error('合成串库暂不可读')); });
+  expect(screen.getByRole('alert').textContent).toContain('风格串列表加载失败，请稍后重试');
+  expect(screen.queryByText('提示词库还是空的')).toBeNull();
+  const attempts = mocks.getAllChains.mock.calls.length;
+  mocks.getAllChains.mockResolvedValue([]);
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await screen.findByText('提示词库还是空的');
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(attempts + 1);
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
 it('当前目录读取失败时不以默认树开放写入，重试后才显示提示词库', async () => {
   mocks.loadDirectories.mockRejectedValueOnce(new Error('合成目录暂不可读'));
   const { default: App } = await import('../../App');

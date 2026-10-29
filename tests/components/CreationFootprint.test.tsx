@@ -3,7 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { CreationFootprint } from '../../components/CreationFootprint';
-import type { UsageStats } from '../../services/usageStats';
+import type { UsageAssets, UsageStats } from '../../services/usageStats';
 
 const mocks = vi.hoisted(() => ({
   getStats: vi.fn(),
@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getAssets: vi.fn(),
   getSessions: vi.fn(),
   ensureCollection: vi.fn(),
+  collectionRevision: 0,
+  collectionListeners: new Set<() => void>(),
   collection: [] as { sourceType: string; sourceId: string; archived?: boolean; boardId?: string; boardIds?: string[] }[],
 }));
 
@@ -18,8 +20,8 @@ vi.mock('../../services/usageStats', async original => ({ ...await original<type
 vi.mock('../../services/collectionFavorites', () => ({
   ensureCollection: mocks.ensureCollection,
   collectionSnapshot: () => mocks.collection,
-  subscribeCollection: () => () => {},
-  collectionRevision: () => 0,
+  subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => mocks.collectionListeners.delete(listener); },
+  collectionRevision: () => mocks.collectionRevision,
 }));
 vi.mock('../../services/anlasBudget', () => ({ getActiveKeyHash: async () => '' }));
 vi.mock('../../services/naiUsage', () => ({ useNovelaiUsage: () => ({ info: null }) }));
@@ -72,7 +74,7 @@ const setup = (overrides: Partial<UsageStats> = {}) => {
 };
 
 beforeEach(() => {
-  localStorage.clear(); vi.clearAllMocks(); mocks.collection = [];
+  localStorage.clear(); vi.clearAllMocks(); mocks.collection = []; mocks.collectionRevision = 0; mocks.collectionListeners.clear();
   mocks.getEvents.mockResolvedValue({ totals: [], daily: [], keys: [], generatedAt: 0 });
   mocks.getAssets.mockResolvedValue({ roll: [], vibes: [], vibeGroups: [] });
   mocks.getSessions.mockResolvedValue([]);
@@ -264,6 +266,49 @@ it('摘要沿用资产周期口径，切换周期不重读资产，刷新重读�
   const signal = mocks.getAssets.mock.calls[1][0] as AbortSignal;
   view.rerender(<CreationFootprint active={false} chains={[]} onOpenHistory={() => {}} onOpenCollection={() => {}} onOpenLab={() => {}} onOpenRoll={() => {}} />);
   expect(signal.aborted).toBe(true);
+});
+
+it('收藏与资产独立加载，未就绪不显示零或暂无，成功空资产才显示暂无', async () => {
+  let finishAssets!: (value: UsageAssets) => void, finishCollection!: () => void;
+  mocks.getAssets.mockImplementationOnce(() => new Promise(resolve => { finishAssets = resolve; }));
+  mocks.ensureCollection.mockImplementationOnce(() => new Promise<void>(resolve => { finishCollection = resolve; }));
+  setup(); await screen.findByText('创作资产');
+  const collection = screen.getByText('收藏概览').closest('section')!;
+  expect(within(collection).getByRole('status').textContent).toContain('正在读取收藏库…'); expect(within(collection).getByText('收藏的图片').previousElementSibling?.textContent).toBe('—');
+  const ranking = screen.getByText('Roll 实验排行').parentElement!;
+  expect(ranking.textContent).toContain('加载中…'); expect(ranking.textContent).not.toContain('暂无');
+  expect(screen.getByText('素材与收藏来源').parentElement!.textContent).not.toContain('暂无');
+  await act(async () => { mocks.collection = [{ sourceType: 'history', sourceId: 'one' }]; finishAssets({ roll: [], vibes: [], vibeGroups: [] }); finishCollection(); });
+  expect(within(collection).getByText('收藏的图片').previousElementSibling?.textContent).toBe('1'); expect(ranking.textContent).toContain('暂无');
+});
+
+it('收藏或资产读取失败保持未知并可重试，失败不转成空排行或零收藏', async () => {
+  mocks.getAssets.mockRejectedValueOnce(new Error('合成资产失败')); mocks.ensureCollection.mockRejectedValueOnce(new Error('合成收藏失败'));
+  setup(); await screen.findByText('资产读取失败，请重试'); await screen.findByText('收藏读取失败，请重试');
+  expect(screen.getByText('Roll 实验排行').parentElement!.textContent).not.toContain('暂无'); expect(screen.getByText('素材与收藏来源').parentElement!.textContent).not.toContain('暂无');
+  const collection = screen.getByText('收藏概览').closest('section')!; expect(within(collection).getByText('收藏的图片').previousElementSibling?.textContent).toBe('—');
+  fireEvent.click(within(collection).getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(screen.queryByText('收藏读取失败，请重试')).toBeNull());
+  await waitFor(() => expect(within(collection).getByText('收藏的图片').previousElementSibling?.textContent).toBe('0'));
+});
+
+it('链库尚未读取或失败时足迹资产不把空数组当零，可沿用父层重试', async () => {
+  mocks.getStats.mockResolvedValue(stats()); const retry = vi.fn();
+  const props = { chains: [], onOpenHistory: vi.fn(), onOpenCollection: vi.fn(), onOpenLab: vi.fn(), onOpenRoll: vi.fn(), onRetryChains: retry };
+  const view = render(<CreationFootprint {...props} chainsLoading />); await screen.findByText('创作资产');
+  expect(screen.getByText('风格串').parentElement!.textContent).toBe('风格串—');
+  view.rerender(<CreationFootprint {...props} chainsError="合成链库失败" />); fireEvent.click(within(screen.getByText('合成链库失败').closest('[role="alert"]')!).getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(<CreationFootprint {...props} />); expect(screen.getByText('风格串').parentElement!.textContent).toBe('风格串0');
+});
+
+it('统计刷新失败保留已知内容，收藏初次失败在共享快照成功刷新后恢复', async () => {
+  mocks.ensureCollection.mockRejectedValueOnce(new Error('初次收藏失败'));
+  setup(); await screen.findByText('收藏读取失败，请重试');
+  act(() => { mocks.collection = [{ sourceType: 'history', sourceId: 'fresh' }]; mocks.collectionRevision++; mocks.collectionListeners.forEach(listener => listener()); });
+  await waitFor(() => expect(screen.queryByText('收藏读取失败，请重试')).toBeNull());
+  expect(within(screen.getByText('收藏概览').closest('section')!).getByText('收藏的图片').previousElementSibling?.textContent).toBe('1');
+  mocks.getStats.mockRejectedValueOnce(new Error('合成统计刷新失败')); fireEvent.click(screen.getByRole('button', { name: '刷新统计' }));
+  expect(await screen.findByText('合成统计刷新失败')).toBeTruthy(); expect(screen.getByText('作品总数')).toBeTruthy(); expect(screen.getByText('120')).toBeTruthy(); expect(screen.queryByText('还没有创作记录')).toBeNull();
 });
 
 it('失败的资产分组显示未知，成功读取的空分组仍显示零', async () => {

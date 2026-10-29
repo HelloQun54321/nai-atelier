@@ -82,6 +82,53 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstub
 const publishGeneration = () => act(() => { mocks.generationRevision++; mocks.generationListeners.forEach(listener => listener()); });
 const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
 
+it('加载状态：普通画师目录分页未完成不能显示不可用，真实失败仍可重试', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  let fail!: (error: Error) => void;
+  mocks.page.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  setup();
+  await waitFor(() => expect(mocks.page).toHaveBeenCalled());
+  expect(screen.queryByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeNull();
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  expect(screen.getByText('正在加载画师…')).toBeTruthy();
+  await act(async () => fail(new Error('合成分页失败')));
+  expect(await screen.findByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(await screen.findByRole('button', { name: /选择画师：alpha[ _]artist/ })).toBeTruthy();
+});
+
+it('加载状态：已有画师卡片刷新期间及失败后保留，成功空目录显示真空态', async () => {
+  localStorage.setItem('nai_artist_only_samples', 'false');
+  setup();
+  await screen.findByRole('button', { name: /选择画师：alpha[ _]artist/ });
+  let fail!: (error: Error) => void;
+  mocks.page.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'least' } });
+  expect(screen.getByRole('button', { name: /选择画师：alpha[ _]artist/ })).toBeTruthy();
+  await act(async () => fail(new Error('合成刷新失败')));
+  expect(screen.getByRole('button', { name: /选择画师：alpha[ _]artist/ })).toBeTruthy();
+  const error = screen.getByRole('alert');
+  mocks.page.mockResolvedValueOnce({ entries: [], page: 0, pageCount: 0, pageSize: 100, total: 0 });
+  fireEvent.click(within(error).getByRole('button', { name: '重试' }));
+  expect(await screen.findByText('没有匹配的画师')).toBeTruthy();
+  expect(screen.queryByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeNull();
+});
+
+it('加载状态：使用筛选不能把样张刷新读取或失败遮成无匹配', async () => {
+  setup(); await screen.findByText('收录 4 串 · 生成 2 张');
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: '风格串收录' }), { target: { value: 'unused' } });
+  await screen.findByText('没有匹配的画师');
+  let fail!: (error: Error) => void;
+  mocks.status.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  act(() => window.dispatchEvent(new Event('nai-artist-samples-changed')));
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  await act(async () => fail(new Error('合成样张状态失败')));
+  expect(screen.queryByText('没有匹配的画师')).toBeNull();
+  expect(screen.getAllByText('合成样张状态失败').length).toBeGreaterThan(0);
+});
+
 const prepareGroups = (memberships: Record<string, string[]>) => {
   groupMocks.state = { revision: 1, groups: [{ id: 'g1', name: '合成组' }, { id: 'g2', name: '另一组' }], memberships };
   localStorage.setItem('nai_catalog_groups_artist', JSON.stringify({ expanded: true, active: '*' }));

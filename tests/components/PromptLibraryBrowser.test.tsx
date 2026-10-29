@@ -20,6 +20,22 @@ const entries = [
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); delete document.documentElement.dataset.galleryFrostedCaption; });
 const use = vi.fn(); const edit = vi.fn();
+
+it('条目读取状态：主浏览延迟和失败不显示空库，成功空库与缓存刷新分别展示', () => {
+  const retry = vi.fn();
+  const page = (chains: PromptChain[], chainsLoading = false, chainsError = '') => <PromptLibraryBrowser chains={chains} chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={retry} toolbarSlot={null} onUse={use} onOpen={edit} notify={vi.fn()} />;
+  const view = render(page([], true));
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  expect(screen.queryByText('提示词库还是空的')).toBeNull();
+  view.rerender(page([], false, '读取提示词库失败'));
+  expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  expect(screen.queryByText('提示词库还是空的')).toBeNull();
+  view.rerender(page([])); expect(screen.getByText('提示词库还是空的')).toBeTruthy();
+  view.rerender(page(entries, true)); expect(screen.getByRole('button', { name: '查看礼服' })).toBeTruthy();
+  expect(screen.queryByText('加载中…')).toBeNull();
+  view.rerender(page(entries, false, '读取提示词库失败')); expect(screen.getByRole('button', { name: '查看礼服' })).toBeTruthy();
+});
 const Harness = ({ chains = entries, notify = vi.fn(), ...props }: Partial<Pick<PromptLibraryBrowserProps, 'chains' | 'focusEntryId' | 'categoryNames' | 'onMoveDirectory' | 'directoriesBusy' | 'categoryTree' | 'onCreateCategory' | 'onCreateDirectory' | 'onRenameCategory' | 'onDeleteCategory' | 'onRenameDirectory' | 'onDeleteDirectory' | 'onMoveCategory' | 'categoriesBusy' | 'onMoveDirectory' | 'directoriesBusy' | 'onExtract' | 'categoryChange' | 'onUpdateTags' | 'onDelete' | 'notify'>>) => {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   return <><div ref={setSlot} data-toolbar-caption-host /><PromptLibraryBrowser {...props} chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={notify} /></>;

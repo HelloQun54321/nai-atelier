@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CharacterReferenceManager } from '../../components/CharacterReferenceManager';
 import type { NAIParams } from '../../types';
 
-const rules = vi.hoisted(() => ({ characterReferenceCost: 7 }));
+const rules = vi.hoisted(() => ({ characterReferenceCost: 7, listOverride: undefined as ((archived: boolean) => Promise<unknown[]>) | undefined }));
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: rules }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsCharacterReferences: true }) }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn() }));
 vi.mock('../../services/characterReferenceService', () => ({ characterReferenceService: {
-  list: async (_query: string, archived: boolean) => archived ? [] : [{ id: 'ref', name: '已有角色参考名字', originalImageUrl: '/synthetic.png', defaultStrength: 0.6, defaultFidelity: 0.6 }],
+  list: async (_query: string, archived: boolean) => rules.listOverride ? rules.listOverride(archived) : archived ? [] : [{ id: 'ref', name: '已有角色参考名字', originalImageUrl: '/synthetic.png', defaultStrength: 0.6, defaultFidelity: 0.6 }],
 } }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); rules.listOverride = undefined; window.history.replaceState({}, ""); });
 it('参考图所有费用提示跟随动态单价', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
     characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
@@ -46,4 +46,33 @@ it('精准参考保持三种类型及原值，已有资产名称不随通用名�
   }
   fireEvent.click(await screen.findByRole('button', { name: '详情' }));
   expect(screen.getByRole('heading', { name: '已有角色参考名字' })).toBeTruthy();
+});
+
+it('首次读取等待和失败不显示空库，重试成功空结果才显示空态', async () => {
+  const pending = Promise.withResolvers<unknown[]>();
+  rules.listOverride = () => pending.promise;
+  render(<CharacterReferenceManager params={{} as NAIParams} setParams={vi.fn()} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  expect(screen.getByText('加载中…')).toBeTruthy();
+  expect(screen.queryByText('还没有精准参考图')).toBeNull();
+  await act(async () => pending.reject(new Error('synthetic')));
+  expect(screen.getByRole('alert').textContent).toContain('资料库加载失败');
+  expect(screen.queryByText('还没有精准参考图')).toBeNull();
+  rules.listOverride = async () => [];
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(await screen.findByText('还没有精准参考图')).toBeTruthy();
+});
+
+it('缓存资料刷新失败时保留已有卡片', async () => {
+  render(<CharacterReferenceManager params={{} as NAIParams} setParams={vi.fn()} markChange={vi.fn()} notify={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  await screen.findByRole('button', { name: /已有角色参考名字/ });
+  fireEvent.click(screen.getByRole('button', { name: '完成' }));
+  const pending = Promise.withResolvers<unknown[]>();
+  rules.listOverride = () => pending.promise;
+  fireEvent.click(screen.getByRole('button', { name: /精准参考/ }));
+  expect(screen.getByRole('button', { name: /已有角色参考名字/ })).toBeTruthy();
+  await act(async () => pending.reject(new Error('synthetic')));
+  expect(screen.getByRole('button', { name: /已有角色参考名字/ })).toBeTruthy();
+  expect(screen.getByRole('alert')).toBeTruthy();
 });

@@ -39,6 +39,22 @@ const rename = (from: string, to: string) => {
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
 };
 
+it('链库未读完时不显示无标签，失败可重试且缓存标签保持可见', () => {
+  const props = { chains: [] as PromptChain[], onClose: vi.fn(), onRefresh: vi.fn(), onTagChanged: vi.fn(), notify: vi.fn() };
+  const view = render(<ChainTagManager {...props} isLoading />);
+  expect(screen.getByRole('status').textContent).toContain('加载中…');
+  expect(screen.queryByText('没有匹配的标签')).toBeNull();
+  view.rerender(<ChainTagManager {...props} loadError="风格串列表加载失败，请稍后重试" />);
+  expect(screen.getByRole('alert').textContent).toContain('风格串列表加载失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(props.onRefresh).toHaveBeenCalledOnce();
+  view.rerender(<ChainTagManager {...props} chains={fixture()} isLoading />);
+  expect(screen.getByText('#逆光')).toBeTruthy();
+  expect((screen.getByRole('button', { name: '重命名标签：逆光' }) as HTMLButtonElement).disabled).toBe(true);
+  view.rerender(<ChainTagManager {...props} />);
+  expect(screen.getByText('没有匹配的标签')).toBeTruthy();
+});
+
 it('搜索框取得焦点，关闭后归还真实管理入口', () => {
   const trigger = document.createElement('button');
   document.body.appendChild(trigger); trigger.focus();

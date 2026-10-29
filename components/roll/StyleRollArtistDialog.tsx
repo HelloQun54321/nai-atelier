@@ -55,6 +55,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   useSyncExternalStore(subscribeArtistSampleGeneration, artistSampleGenerationRevision);
   const generatedSamples = getGeneratedArtistSamples();
   const [sampleRetry, setSampleRetry] = useState(0);
+  const [sampleError, setSampleError] = useState('');
   useEffect(() => { const changed = () => setSampleRetry(value => value + 1); window.addEventListener(ARTIST_SAMPLES_CHANGED, changed); return () => window.removeEventListener(ARTIST_SAMPLES_CHANGED, changed); }, []);
   const [defaultPack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
   const [cardPacks, setCardPacks] = useState<Record<string, ArtistSamplePack>>({});
@@ -118,6 +119,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
   }, [active, close, dialog]);
   useEffect(() => {
     let current = true;
+    setSampleLoading(true); setSampleError('');
     void Promise.all([getArtistSampleStatus(), getArtistSampleData()]).then(async ([status, data]) => {
       if (!current) return;
       setSampleStatus(status);
@@ -130,10 +132,10 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
           const catalog = await getArtistSampleCatalog(pack);
           if (!isArtistSampleSourceForPack(pack, catalog)) throw new Error(t('当前图包未确认为 V5 Full，原文件已保留'));
           return [pack, catalog] as const;
-        } catch (cause) { if (current) setError((cause as Error).message); return null; }
+        } catch (cause) { if (current) setSampleError((cause as Error).message); return null; }
       }));
       if (current) setSampleCatalogs(Object.fromEntries(catalogs.filter(value => value !== null)));
-    }).catch(cause => { if (current) setError((cause as Error).message); }).finally(() => { if (current) setSampleLoading(false); });
+    }).catch(cause => { if (current) setSampleError((cause as Error).message); }).finally(() => { if (current) setSampleLoading(false); });
     return () => { current = false; };
   }, [sampleRetry]);
   useEffect(() => {
@@ -223,7 +225,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
           </ToolbarSelect>
         </div>
       </div>
-      {error && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error)}</p>}
+      {(error || sampleError || libraryError || groups.error) && <p role="alert" className="shrink-0 px-4 pb-2 text-xs text-red-500">{t(error || sampleError || libraryError || groups.error)}{(groups.error || sampleError) && <button type="button" className="mobile-touch ml-2 underline" onClick={() => groups.error ? void groups.reload() : setSampleRetry(value => value + 1)}>{t('重试')}</button>}</p>}
       {usageOpen && <AnchoredToolbarPopover anchorRef={usageAnchor} title={t('筛选')} width={280} allowMobile onClose={closeUsage}>
         <div className="space-y-3">
           {usageStatus === 'loading' && <p role="status" className="text-xs text-gray-500">{t('正在统计画师使用…')}</p>}
@@ -258,11 +260,11 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       {groups.navigation}
       <div ref={gallery} data-roll-artist-gallery className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
-        {(loading || sampleLoading || favoritesPending && collectionStatus === 'loading') && <p role="status" className="mb-3 text-xs text-gray-500">{t(favoritesPending ? '加载中…' : '正在读取画师样张…')}</p>}
+        {(loading || sampleLoading || groups.activeGroup !== '*' && !groups.ready && !groups.error || favoritesPending && collectionStatus === 'loading') && <p role="status" className="mb-3 text-xs text-gray-500">{t(favoritesPending ? '加载中…' : '正在读取画师样张…')}</p>}
         {favoritesPending && collectionStatus === 'error' && <button type="button" className="mobile-touch text-xs underline" onClick={() => { setError(''); setCollectionRetry(value => value + 1); }}>{t('重新加载')}</button>}
         {!favoritesPending && (imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>)}
         {artists.length > limit && <ToolbarButton className="mt-5 w-full" onClick={() => setLimit(current => current + 60)}>{t('加载更多')}</ToolbarButton>}
-        {!loading && !favoritesPending && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
+        {!loading && !sampleLoading && !sampleError && !libraryError && !error && !groups.error && (groups.activeGroup === '*' || groups.ready) && !favoritesPending && !artists.length && <p className="p-8 text-center text-sm text-gray-500">{t('没有匹配的画师')}</p>}
       </div>
       </div>
     </div>

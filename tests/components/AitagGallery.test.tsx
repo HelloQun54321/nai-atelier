@@ -93,18 +93,50 @@ afterEach(() => {
   if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
 });
-const setup = async (layout = 'masonry', selectionFocusEnabled = true, chains?: PromptChain[]) => {
+const setup = async (layout = 'masonry', selectionFocusEnabled = true, chains?: PromptChain[], waitForFirst = true) => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
   const { AitagGallery } = await import('../../components/AitagGallery');
   const { ImageActivityContext } = await import('../../components/SmartImage');
   const notify = vi.fn();
   const draw = (active: boolean, currentChains = chains) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} selectionFocusEnabled={selectionFocusEnabled} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onNavigateToChains={mocks.navigateChains} onCreateArtistChain={mocks.createChain} chains={currentChains} /></ImageActivityContext.Provider>;
   const view = render(draw(true));
-  await screen.findByRole('button', { name: '查看作品 合成作品 1' });
+  if (waitForFirst) await screen.findByRole('button', { name: '查看作品 合成作品 1' });
   return { ...view, draw, notify, main: view.container.querySelector('main')! };
 };
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+
+it('空缓存首次请求完成前显示加载态，只有成功确认空结果后才显示无匹配结果', async () => {
+  let resolveSearch!: (value: { items: AitagWorkSummary[]; total: number; page: number; page_size: number }) => void;
+  mocks.search.mockReturnValue(new Promise(resolve => { resolveSearch = resolve; }));
+  const view = await setup('portrait', true, undefined, false);
+  expect(screen.getByText('加载 aitag 数据中...')).toBeTruthy();
+  expect(screen.queryByText('没有匹配结果')).toBeNull();
+
+  await act(async () => resolveSearch({ items: [], total: 0, page: 1, page_size: 60 }));
+  await screen.findByText('没有匹配结果');
+  view.unmount();
+});
+
+it('已有 AITag 作品在新检索等待期间继续显示，首屏请求失败不冒充无匹配结果', async () => {
+  const pending = new Promise<{ items: AitagWorkSummary[]; total: number; page: number; page_size: number }>(() => {});
+  mocks.search.mockImplementationOnce(async () => ({ items: works, total: works.length, page: 1, page_size: 60 })).mockReturnValue(pending);
+  const view = await setup('portrait');
+  const input = screen.getByRole('searchbox', { name: '搜索 AITag 作品' });
+  fireEvent.change(input, { target: { value: '合成检索' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(screen.getByRole('button', { name: '查看作品 合成作品 1' })).toBeTruthy();
+  expect(screen.queryByText('加载 aitag 数据中...')).toBeNull();
+  view.unmount();
+
+  vi.resetModules();
+  mocks.search.mockRejectedValue(new Error('合成请求失败'));
+  mocks.searchCache.mockRejectedValue(new Error('合成缓存读取失败'));
+  const failed = await setup('portrait', true, undefined, false);
+  await screen.findByText('合成缓存读取失败');
+  expect(screen.queryByText('没有匹配结果')).toBeNull();
+  failed.unmount();
+});
 
 const installAppendObserver = () => {
   const observers: Array<{ callback: IntersectionObserverCallback; targets: Element[] }> = [];

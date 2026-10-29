@@ -11,6 +11,18 @@ const folders = ['one', 'two', 'three'].map(id => ({ id, name: id, userId: 'test
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+it.each([390, 1280])('宽度 %s：收藏夹待定和失败不显示暂无，已知空目录才显示空态', width => {
+  vi.stubGlobal('innerWidth', width);
+  const retry = vi.fn(), props = { boards: [], value: [], onToggle: vi.fn(), onRetry: retry };
+  const view = render(<CollectionFolderPicker {...props} loading />); fireEvent.click(screen.getByRole('button', { name: '管理收藏夹' }));
+  expect(screen.getByRole('status').textContent).toContain('正在读取…'); expect(screen.queryByText('暂无收藏夹')).toBeNull();
+  view.rerender(<CollectionFolderPicker {...props} error="合成收藏夹读取失败" />);
+  expect(screen.getByRole('alert').textContent).toContain('合成收藏夹读取失败'); expect(screen.queryByText('暂无收藏夹')).toBeNull(); fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(<CollectionFolderPicker {...props} boards={folders} loading />);
+  expect(screen.getByRole('checkbox', { name: 'one' })).toHaveProperty('disabled', true); expect(screen.queryByText('暂无收藏夹')).toBeNull();
+  view.rerender(<CollectionFolderPicker {...props} />); expect(screen.getByText('暂无收藏夹')).toBeTruthy();
+});
+
 it('多归属选择使用共用树复选框和完整路径，只勾选指定子夹，不连带勾选祖先', () => {
   const boards = folders.map((board, index) => ({ ...board, parentId: index ? folders[index - 1].id : null }));
   const onToggle = vi.fn();

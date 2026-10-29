@@ -29,6 +29,19 @@ const chains = [
 const props = () => ({chains,onCreate:vi.fn(),onSelect:vi.fn(),onUpdateChain:vi.fn(),onDelete:vi.fn(),notify:vi.fn()});
 const Hub = () => libraries.PromptLibraryHub;
 
+it('条目读取状态：片段管理从context继承延迟错误重试，缓存卡片继续显示', () => {
+  const Manager = Hub(), retry = vi.fn();
+  const page = (items: PromptChain[], chainsLoading = false, chainsError = '') => <ConfirmDialogProvider><PromptLibraryContext.Provider value={{ chains: items, chainsLoading, chainsError, onRetryChains: retry, save: vi.fn() }}><Manager {...props()} chains={items} /></PromptLibraryContext.Provider></ConfirmDialogProvider>;
+  const view = renderView(page([], true));
+  expect(screen.getByText('加载中…')).toBeTruthy(); expect(screen.queryByText('图片提示词库还是空的')).toBeNull();
+  view.rerender(page([], false, '读取提示词库失败'));
+  expect(screen.getByRole('alert').textContent).toContain('读取提示词库失败');
+  fireEvent.click(screen.getByRole('button', { name: '重试' })); expect(retry).toHaveBeenCalledOnce();
+  view.rerender(page([])); expect(screen.getByText('图片提示词库还是空的')).toBeTruthy();
+  view.rerender(page(chains, true)); expect(screen.getByText('形象甲')).toBeTruthy();
+  expect(screen.queryByText('加载中…')).toBeNull();
+});
+
 it('独立编辑只保留一个窗口标题和滚动正文，名称正文在目录前，封面不强制竖幅', () => {
   const directories = { revision: 1, nodes: [{ id: 'light', parentId: null, name: '光照' }] };
   const entry = { ...chains[0], previewImage: '/synthetic/cover.png' };

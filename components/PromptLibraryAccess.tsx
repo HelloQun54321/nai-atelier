@@ -13,7 +13,7 @@ import { applyLibrarySelection, planLibrarySelection, type LibraryCompletionEdit
 import { prepareCollectedPrompt } from '../services/collectedPrompt';
 import type { PromptApplyMode } from '../services/promptApply';
 import type { ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
-import { IconButton, ToolbarButton, ToolbarActionRow } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarActionRow, WorkspacePageState, PageSpinner } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageActivityContext } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -32,7 +32,19 @@ import { getPromptLibraryEntryDirectoryIds, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS,
 import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 
-interface LibraryAccess {
+export interface PromptLibraryReadState {
+  chainsLoading?: boolean;
+  chainsError?: string;
+  onRetryChains?: () => void;
+}
+
+export function PromptLibraryReadStatus({ chainsLoading, chainsError, onRetryChains }: PromptLibraryReadState) {
+  if (chainsLoading) return <WorkspacePageState className="py-8"><PageSpinner label={t('加载中…')} /></WorkspacePageState>;
+  if (!chainsError) return null;
+  return <WorkspacePageState role="alert" className="items-center gap-2 py-8 text-center text-sm text-gray-500"><span>{t(chainsError)}</span>{onRetryChains && <ToolbarButton onClick={onRetryChains}>{t('重试')}</ToolbarButton>}</WorkspacePageState>;
+}
+
+interface LibraryAccess extends PromptLibraryReadState {
   chains: PromptChain[];
   categoryNames?: string[];
   categoryTree?: PromptLibraryCategoryTreeState;
@@ -191,7 +203,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
       currentText = (field.negative ? compiled?.negativePrompt : compiled?.prompt) || '';
     }
   }
-  const countCaption = (library?.chains.length || 0) > 0 ? <ToolbarCountCaption>{captionFiltered
+  const countCaption = (library?.chains.length || 0) > 0 && (shown.length > 0 || !library?.chainsLoading && !library?.chainsError) ? <ToolbarCountCaption>{captionFiltered
     ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, captionTotal])
     : t('共 {0} 条', [captionTotal])}</ToolbarCountCaption> : null;
   const apply = async () => {
@@ -234,7 +246,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
     <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={setAllDirectories} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
       <select aria-label={t(section === 'saved' ? '文件夹' : '用途 Tag')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{section === 'saved' ? tags.map(value => <option key={value} value={value}>{promptLibraryCategoryLabel(library?.categoryTree, value)}</option>) : PROMPT_PURPOSE_GROUPS.map(group => <optgroup key={group.id} label={t(group.label)}>{group.purposes.map(id => <option key={id} value={id}>{t(promptPurposeLabel(id))}</option>)}</optgroup>)}</select></div>
-    <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && <p className="text-sm text-gray-500">{t('没有匹配的条目')}</p>}</div></>}
+    <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && (library?.chainsLoading || library?.chainsError ? <PromptLibraryReadStatus {...library} /> : <p className="text-sm text-gray-500">{t('没有匹配的条目')}</p>)}</div></>}
     {onApplied && entry && <p className="text-sm font-semibold">{entry.name}</p>}
     {entry && <>
       <div role="group" aria-label={t('应用方式')} className="flex gap-2">{Object.entries(MODE_LABELS).map(([key, label]) => <ToolbarButton key={key} active={mode === key} onClick={() => setMode(key as PromptApplyMode)}>{t(label)}</ToolbarButton>)}</div>
@@ -337,7 +349,7 @@ export function PromptLibraryRandomButton({ roleId, disabled, fallback, variant 
   return <>{placeTrigger(<>{!roleId && workspace.canUndo && (variant === 'menu'
     ? <ToolbarActionRow icon={<RotateCcw className="h-4 w-4" />} label="撤销上次填入" onClick={workspace.undo} />
     : <IconButton label="撤销上次填入" onClick={workspace.undo}><RotateCcw /></IconButton>)}{trigger}</>)}
-    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><DirectoryStatus /><div ref={setToolbarSlot} className="flex items-center gap-2" />{!library.directoriesError && (!library.reloadDirectories || library.directories) && <ContentRollWorkspace active={active} chains={library.chains} categoryNames={library.categoryNames} categoryTree={library.categoryTree} directories={library.directories} embedded toolbarSlot={toolbarSlot} notify={setNotice}
+    {open && <LibraryDialog wide title="搭配" onClose={() => setOpen(false)}><DirectoryStatus /><div ref={setToolbarSlot} className="flex items-center gap-2" />{!library.directoriesError && (!library.reloadDirectories || library.directories) && <ContentRollWorkspace active={active} chains={library.chains} chainsLoading={library.chainsLoading} chainsError={library.chainsError} onRetryChains={library.onRetryChains} categoryNames={library.categoryNames} categoryTree={library.categoryTree} directories={library.directories} embedded toolbarSlot={toolbarSlot} notify={setNotice}
       playgroundParams={params} entryTarget={entryTarget}
       onApplyRoll={async plan => { workspace.change(applyLibrarySelection({ before: workspace.state, params, plan })); return true; }}
       canUndo={workspace.canUndo} onUndoApply={async () => { workspace.undo(); return true; }}

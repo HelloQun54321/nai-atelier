@@ -58,6 +58,7 @@ interface ChainListProps {
   /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
   onNavigateToPlayground?: () => void;
   isLoading: boolean;
+  loadError?: string;
   notify: (msg: string, type?: 'success' | 'error') => void;
   isGuest?: boolean;
   returnTargetId?: string;
@@ -71,7 +72,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onBundleImported, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isLoading, loadError, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -487,7 +488,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     <div>
       <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
       {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className="mobile-touch mb-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" />}
-      {customTagOptions.length === 0 ? <p className="text-xs text-gray-400">{t("暂无自定义标签，可在卡片铅笔中添加")}</p> : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
+      {customTagOptions.length === 0 ? <p className="text-xs text-gray-400">{isLoading ? t('加载中…') : loadError ? t(loadError) : t("暂无自定义标签，可在卡片铅笔中添加")}</p> : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
       {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">{t("同时包含所选标签")}</p>}
     </div>
   </div>;
@@ -542,7 +543,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>}
           </>}
         </WorkspaceToolbar>
-        {!isLoading && <ToolbarCountCaption>{countCaptionFiltered
+        {!isLoading && !loadError && <ToolbarCountCaption>{countCaptionFiltered
           ? t('匹配 {0} 条 · 共 {1} 条', [filteredChains.length, countCaptionTotal])
           : t('共 {0} 条', [filteredChains.length])}</ToolbarCountCaption>}
 
@@ -552,9 +553,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
         </WorkspaceChrome>
         <div data-workspace-body className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} favoriteCount={favoritesReady ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
+        {type === 'style' && !isGuest && <ChainFolderNavigation expanded={foldersExpanded} store={folderStore} selected={activeFolder} onSelect={selectFolder} chainIds={chains.filter(chain => chain.type === 'style' || !chain.type).map(chain => chain.id)} countsPending={Boolean((isLoading || loadError) && !chains.length)} favoriteCount={favoritesReady && !((isLoading || loadError) && !chains.length) ? new Set(chains.filter(chain => (chain.type === 'style' || !chain.type) && favorites.has(chain.id)).map(chain => chain.id)).size : '—'} onMove={(ids, folder) => setFolderMemberships(ids, { [folder]: true })} notify={notify} disabled={bulkDeleteBusy || syncSelection.busy} />}
         <div ref={chainScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
-          {activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? <WorkspacePageState role={favoritesError ? 'alert' : 'status'} className="py-20 text-center text-sm text-gray-500">{favoritesError || t('加载中…')}{favoritesError && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button>}</WorkspacePageState> : filteredChains.length === 0 ? (
+          {filteredChains.length > 0 && (isLoading || loadError) && <div role={loadError && !isLoading ? 'alert' : 'status'} className="mb-3 text-center text-sm text-gray-500">{isLoading ? t('加载中…') : t(loadError || '')}{!isLoading && loadError && <button type="button" onClick={onRefresh} className="mobile-touch ml-2 underline">{t('重试')}</button>}</div>}
+          {filteredChains.length === 0 && (isLoading || loadError) ? <WorkspacePageState role={loadError && !isLoading ? 'alert' : 'status'} className="py-20 text-center text-sm text-gray-500">{isLoading ? t('加载中…') : t(loadError || '')}{!isLoading && loadError && <button type="button" onClick={onRefresh} className="mobile-touch ml-2 underline">{t('重试')}</button>}</WorkspacePageState> : activeFolder === DIRECTORY_FAVORITES_ID && !favoritesReady ? <WorkspacePageState role={favoritesError ? 'alert' : 'status'} className="py-20 text-center text-sm text-gray-500">{favoritesError || t('加载中…')}{favoritesError && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoritesRetry(value => value + 1)}>{t('重新加载')}</button>}</WorkspacePageState> : filteredChains.length === 0 ? (
             <WorkspacePageState className="appearance-group text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
               {!isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}
@@ -622,7 +624,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
       {infoChain && <ChainInfoModal key={infoChain.id} chain={infoChain} onSave={onUpdateChain} onClose={() => setInfoChain(null)} notify={notify} />}
       {moveIds && type === 'style' && <ChainFolderMembershipDialog store={folderStore} ids={moveIds} onSave={setFolderMemberships} onClose={() => setMoveIds(null)} />}
-      {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={typeChains} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
+      {tagManagerOpen && !isGuest && <ChainTagManager key={type} chains={typeChains} isLoading={isLoading} loadError={loadError} onRefresh={onReloadTags || onRefresh} onClose={() => setTagManagerOpen(false)} notify={notify} onTagChanged={(from, to) => setSelectedTags(current => new Set([...current].flatMap(tag => tag === from ? to ? [to] : [] : [tag])))} />}
       {/* Folder Batch Import Modal */}
       <FolderBatchImportModal
         isOpen={isFolderImportOpen}

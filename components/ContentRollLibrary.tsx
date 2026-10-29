@@ -9,7 +9,7 @@ import type { LocalGenItem, PromptChain } from '../types';
 import { KINDS, META, contentRead, contentScopeOf } from '../services/contentRoll';
 import { collectedPromptText } from '../services/collectedPrompt';
 import { librarySectionOf } from '../services/promptLibraryEntries';
-import { PromptLibrarySaveDialog, usePromptLibrary } from './PromptLibraryAccess';
+import { PromptLibrarySaveDialog, usePromptLibrary, PromptLibraryReadStatus, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { promptLibraryHistoryImageUrl } from './PromptLibrary';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
@@ -19,7 +19,7 @@ import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { PromptLibraryTagEditor } from './PromptLibraryTagEditor';
 
-interface ContentRollLibraryProps {
+interface ContentRollLibraryProps extends PromptLibraryReadState {
   section?: 'saved' | 'originals';
   active: boolean;
   chains: PromptChain[];
@@ -33,9 +33,13 @@ interface ContentRollLibraryProps {
 }
 
 /** 与条目共用工具栏和卡片密度；快照只读，载入仍交给同一套填入确认。 */
-export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section = 'saved', active, chains, notify, onLoad, onRename, onDelete, onSetCover, embedded = false, toolbarSlot = null }) => {
+export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section = 'saved', active, chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, notify, onLoad, onRename, onDelete, onSetCover, embedded = false, toolbarSlot = null }) => {
   useLanguage();
   const library = usePromptLibrary();
+  const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
+  const chainsError = suppliedChainsError ?? library?.chainsError;
+  const onRetryChains = suppliedRetryChains ?? library?.onRetryChains;
+  const countsPending = !!(chainsLoading || chainsError);
   const [organize, setOrganize] = useState<PromptChain | null>(null);
   const [tag, setTag] = useState('');
   const [roleChoices, setRoleChoices] = useState<Record<string, number>>({});
@@ -102,7 +106,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
     </ToolbarPopover>
     <ToolbarSearch value={query} aria-label={t('搜索名称、标签或提示词')} placeholder={t('搜索名称、标签或提示词')}
       onChange={event => { setQuery(event.target.value); resetScroll(); }} containerClassName="md:max-w-none!" />
-    {chains.length > 0 && <ToolbarCountCaption>{query.trim() || tag
+    {chains.length > 0 && (shown.length > 0 || !countsPending) && <ToolbarCountCaption>{query.trim() || tag
       ? t('匹配 {0} 条 · 共 {1} 条', [shown.length, records.length])
       : t('共 {0} 条', [records.length])}</ToolbarCountCaption>}
   </>;
@@ -144,7 +148,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
               </div>
             </div>}
           </article>;
-        }} /> : <EmptyState icon={<Layers className="h-7 w-7" />} title={t(records.length ? '没有符合搜索条件的记录' : section === 'originals' ? '原文还是空的' : '组合库还是空的')}
+        }} /> : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : <EmptyState icon={<Layers className="h-7 w-7" />} title={t(records.length ? '没有符合搜索条件的记录' : section === 'originals' ? '原文还是空的' : '组合库还是空的')}
         hint={records.length ? undefined : t(section === 'originals' ? '收录提示词，保留原文。' : '新建组合，或随机搭配。')}
         action={records.length ? <ToolbarButton onClick={() => { setQuery(''); resetScroll(); }}>{t('清除筛选')}</ToolbarButton> : undefined} />}
     </div>

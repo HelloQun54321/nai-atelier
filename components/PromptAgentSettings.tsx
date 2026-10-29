@@ -43,6 +43,10 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [config, setConfig] = useState<PromptAgentConfig | null>(null);
   const [customProviders, setCustomProviders] = useState<PromptAgentCustomProvider[]>([]);
   const [models, setModels] = useState<PromptAgentModel[]>([]);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsLoadError, setSettingsLoadError] = useState('');
+  const settingsLoadedRef = useRef(false);
   const [view, setView] = useState<View>('home');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,13 +63,25 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const subViewRef = useModalA11y<HTMLDivElement>(view !== 'home');
 
   const reload = async () => {
-    const [nextConfig, nextModels, nextCustomProviders] = await Promise.all([
-      promptAgentService.getConfig(), promptAgentService.getAvailableModels(), promptAgentService.getCustomProviders(),
-    ]);
-    setConfig(nextConfig);
-    setModels(nextModels);
-    setCustomProviders(nextCustomProviders);
-    window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
+    const hasSnapshot = settingsLoadedRef.current;
+    if (!hasSnapshot) { setSettingsLoading(true); setSettingsLoadError(''); }
+    try {
+      const [nextConfig, nextModels, nextCustomProviders] = await Promise.all([
+        promptAgentService.getConfig(), promptAgentService.getAvailableModels(), promptAgentService.getCustomProviders(),
+      ]);
+      setConfig(nextConfig);
+      setModels(nextModels);
+      setCustomProviders(nextCustomProviders);
+      settingsLoadedRef.current = true;
+      setSettingsLoaded(true);
+      setSettingsLoadError('');
+      window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
+    } catch (error) {
+      if (!hasSnapshot) setSettingsLoadError('读取 AI 模型服务失败');
+      throw error;
+    } finally {
+      if (!hasSnapshot) setSettingsLoading(false);
+    }
   };
 
   useEffect(() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }, []);
@@ -202,6 +218,11 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <div data-agent-surface className="agent-theme mt-3 space-y-4">
       {/* 阶段二：层级 1 - 当前运行模型卡 */}
       <div className="appearance-group rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        {!settingsLoaded && settingsLoading && <p role="status" className="mb-3 text-xs text-gray-500">{t('正在读取模型列表…')}</p>}
+        {!settingsLoaded && settingsLoadError && <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          <span>{t(settingsLoadError)}</span>
+          <button type="button" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch shrink-0 rounded-lg px-2 py-1 font-bold underline">{t('重试')}</button>
+        </div>}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-meta font-bold uppercase tracking-wider text-indigo-500">{t("当前助手模型")}</div>
           <div className="flex items-center gap-2">
@@ -214,7 +235,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               {t("更换模型")}</button>
           </div>
         </div>
-        <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : t("尚未配置模型服务")}</div>
+        {settingsLoaded && <div className="mt-1.5 truncate text-base font-black text-gray-900 dark:text-white">{config?.configured ? displayModelName(currentModel?.name || config.model) : t("尚未配置模型服务")}</div>}
         {config?.configured && <div className="mt-1 text-xs text-gray-500">{t("{0} · {1} 个服务已配置", [(currentModel as { providerName?: string } | null)?.providerName || currentModel?.provider, config.configuredProviders.length])}</div>}
       </div>
       {config && agentRuntimeWarning(config) && <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{agentRuntimeWarning(config)}</div>}
@@ -254,7 +275,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             </div>
           ))}
 
-          {customProviders.length === 0 && (
+          {settingsLoaded && customProviders.length === 0 && (
             <div className="rounded-xl border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400 dark:border-gray-800">
               {t("尚未连接 API")}</div>
           )}
@@ -341,7 +362,9 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={next => { if (next.baseUrl !== customDraft.baseUrl || next.apiKey !== customDraft.apiKey || next.api !== customDraft.api) setDiscoveredModels([]); setCustomDraft(next); setCustomResult(null); }} result={customResult} discovered={discoveredModels} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} presets={AGENT_PROVIDER_PRESETS} onSavePreset={(preset, apiKey) => void savePreset(preset, apiKey)} /> :
           <div className="appearance-group mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
-            {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">{query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}</div>}
+            {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">
+              {!settingsLoaded && settingsLoading ? t('正在读取模型列表…') : !settingsLoaded && settingsLoadError ? <><p>{t(settingsLoadError)}</p><button type="button" onClick={() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button></> : query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}
+            </div>}
           </div>}
       </main>
     </div>)}

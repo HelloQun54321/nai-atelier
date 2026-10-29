@@ -211,6 +211,9 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [running, setRunning] = useState(false);
   const [sessions, setSessions] = useState<PromptAgentSession[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsLoadError, setSessionsLoadError] = useState('');
   const [activeSessionId, setActiveSessionId] = useState('');
   const [models, setModels] = useState<PromptAgentModel[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
@@ -422,9 +425,24 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const refreshSessions = async () => {
-    const items = await promptAgentCoordinator.ensureSession(await promptAgentService.listSessions());
-    setSessions(items);
-    setActiveSessionId(promptAgentCoordinator.selectedSessionId());
+    if (!sessionsLoaded) setSessionsLoading(true);
+    let listLoaded = false;
+    try {
+      const listed = await promptAgentService.listSessions();
+      listLoaded = true;
+      setSessions(listed);
+      setSessionsLoaded(true);
+      setSessionsLoadError('');
+      setSessionsLoading(false);
+      const items = await promptAgentCoordinator.ensureSession(listed);
+      setSessions(items);
+      setActiveSessionId(promptAgentCoordinator.selectedSessionId());
+    } catch (error) {
+      if (!listLoaded) setSessionsLoadError('无法连接助手服务，请确认本地服务正在运行');
+      throw error;
+    } finally {
+      setSessionsLoading(false);
+    }
   };
 
   const applyCompactionEvents = (events: PromptAgentEvent[], sessionId: string, restoring = false) => {
@@ -1030,6 +1048,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       </div>
       <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder={t("搜索对话")} className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+        {!sessionsLoaded && sessionsLoadError ? <div role="alert" className="py-6 text-center text-xs text-red-600 dark:text-red-400">
+          <p>{t(sessionsLoadError)}</p>
+          <button type="button" onClick={() => { void refreshSessions().catch(() => {}); }} className="mobile-touch mt-3 rounded-lg px-3 py-2 font-bold text-indigo-600 underline dark:text-indigo-300">{t('重试')}</button>
+        </div> : !sessionsLoaded || sessionsLoading ? <div role="status" className="py-8 text-center text-xs text-gray-400">{t('正在加载对话…')}</div> : <>
+        {sessionsLoadError && <div role="status" className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 px-2 py-2 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">
+          <span>{t(sessionsLoadError)}</span>
+          <button type="button" onClick={() => { void refreshSessions().catch(() => {}); }} className="mobile-touch shrink-0 rounded px-2 py-1 font-bold underline">{t('重试')}</button>
+        </div>}
         {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-400">{t("没有找到匹配的对话")}</div>
         ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
@@ -1044,6 +1070,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || compacting || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />{t("删除")}</button>
           </div>}
         </div>)}
+        </>}
       </div>
     </aside>
 

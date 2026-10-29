@@ -17,6 +17,9 @@ import { splitTags } from './InspirationShared';
 interface CollectionImportDialogProps {
   currentUser: User;
   boards: InspirationBoard[];
+  boardsLoading?: boolean;
+  boardsError?: string;
+  onReloadBoards?: () => void;
   tagSuggestions: string[];
   initialFiles: File[];
   initialBoardId: string;
@@ -43,7 +46,7 @@ interface Candidate {
 
 export const CollectionImportDialog: React.FC<CollectionImportDialogProps> = props => <ImagePreviewPortal><CollectionImportPanel {...props} /></ImagePreviewPortal>;
 
-const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentUser, boards, tagSuggestions, initialFiles, initialBoardId, onClose, onRefresh, notify }) => {
+const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentUser, boards, boardsLoading, boardsError, onReloadBoards, tagSuggestions, initialFiles, initialBoardId, onClose, onRefresh, notify }) => {
   useLanguage();
   const dialogRef = useModalA11y<HTMLDivElement>(true);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -194,7 +197,7 @@ const CollectionImportPanel: React.FC<CollectionImportDialogProps> = ({ currentU
       <header className="appearance-content operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800"><h2 className="text-xl font-black">{t('加入收藏库')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={close}><X /></IconButton></header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
         <div className="flex flex-none items-end gap-3">
-          <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('收藏夹')}</span><CollectionFolderPicker value={boardIds} onToggle={(id, checked) => setBoardIds(previous => checked ? [...previous, id] : previous.filter(value => value !== id))} boards={boards} disabled={busy} label="收藏夹" className={`${fieldClass} w-full`} /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('公共标签')}</span><CollectionTagInput aria-label={t('公共标签')} onPick={setTags} suggestions={tagSuggestions} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('构图, 光影')} className={fieldClass} /></label></div>
+          <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2"><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('收藏夹')}</span><CollectionFolderPicker value={boardIds} onToggle={(id, checked) => setBoardIds(previous => checked ? [...previous, id] : previous.filter(value => value !== id))} boards={boards} loading={boardsLoading} error={boardsError} onRetry={onReloadBoards} disabled={busy} label="收藏夹" className={`${fieldClass} w-full`} /></label><label><span className="mb-1 block text-xs font-bold text-gray-500">{t('公共标签')}</span><CollectionTagInput aria-label={t('公共标签')} onPick={setTags} suggestions={tagSuggestions} value={tags} disabled={busy} onChange={event => setTags(event.target.value)} placeholder={t('构图, 光影')} className={fieldClass} /></label></div>
           {items.length > 0 && <IconButton label={t('追加图片')} disabled={busy || currentUser.role === 'guest'} onClick={() => inputRef.current?.click()} className="!h-11 !w-11"><Upload /></IconButton>}
         </div>
         <input aria-label={t('上传收藏图片')} disabled={busy || currentUser.role === 'guest'} ref={inputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => { enqueue(Array.from(event.target.files || [])); event.target.value = ''; }} />

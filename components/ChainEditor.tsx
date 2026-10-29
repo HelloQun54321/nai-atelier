@@ -64,6 +64,9 @@ export interface ChainEditorSaveHandle {
 interface ChainEditorProps {
     chain: PromptChain;
     allChains: PromptChain[]; // 角色卡就地引用角色库。
+    chainsLoading?: boolean;
+    chainsError?: string;
+    onRetryChains?: () => void;
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
     onCreateCharacter?: (chain: PromptChain) => Promise<void>;
@@ -94,7 +97,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, promptClassificationEnabled = false, onPromptClassificationEnabledChange, autoClassifyMetadata = false, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, promptClassificationEnabled = false, onPromptClassificationEnabledChange, autoClassifyMetadata = false, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -2230,6 +2233,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             tagAssistEnabled={tagAssistEnabled}
                             characterPresetSources={characterPresetSources}
                             allChains={allChains}
+                            chainsLoading={chainsLoading}
+                            chainsError={chainsError}
+                            onRetryChains={onRetryChains}
                             showCharacterReference
                             canSaveCharacter
                             onSaveCharacter={saveCharacterToLibrary}
@@ -2399,6 +2405,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onClearHistoryGroup={handleClearHistoryGroup}
                 apiKey={apiKey}
                 allChains={allChains}
+                chainsLoading={chainsLoading}
+                chainsError={chainsError}
+                onRetryChains={onRetryChains}
                 showCharacterReference
                 canSaveCharacter
                 onSaveCharacter={saveCharacterToLibrary}

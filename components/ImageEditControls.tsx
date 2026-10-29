@@ -49,6 +49,9 @@ interface ImageEditControlsProps {
   enforceFreeStepLimit?: boolean;
   apiKey: string;
   allChains?: PromptChain[];
+  chainsLoading?: boolean;
+  chainsError?: string;
+  onRetryChains?: () => void;
   showCharacterReference?: boolean;
   canSaveCharacter?: boolean;
   onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
@@ -84,7 +87,7 @@ interface ImageEditControlsProps {
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, promptClassificationEnabled = false, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, promptClassificationEnabled = false, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], chainsLoading, chainsError, onRetryChains, showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onPasteImage, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas', promptToolbarSlot,
@@ -218,6 +221,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         tagAssistEnabled={tagAssistEnabled}
         characterPresetSources={{}}
         allChains={allChains}
+        chainsLoading={chainsLoading}
+        chainsError={chainsError}
+        onRetryChains={onRetryChains}
         showCharacterReference={showCharacterReference}
         canSaveCharacter={canSaveCharacter}
         onSaveCharacter={onSaveCharacter}

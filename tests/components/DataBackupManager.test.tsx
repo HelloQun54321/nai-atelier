@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DataBackupManager } from '../../components/DataBackupManager';
 
@@ -97,9 +97,45 @@ it('LAN 只显示手动路径编辑，不提供本机目录浏览', async () => 
 it('备份卡片窄屏为可收缩单列，长路径不扩大整列宽度', async () => {
   mocks.backupStatus.mockResolvedValue({ ...backupStatus, targetDir: `D:\\${'很长的备份文件夹\\'.repeat(12)}` });
   render(<DataBackupManager notify={vi.fn()} />);
-  const sourceCard = screen.getByText('当前本地源数据 (local-data)').closest('div.rounded-xl')!;
+  const sourceCard = (await screen.findByText('当前本地源数据 (local-data)')).closest('div.rounded-xl')!;
   const grid = sourceCard.parentElement!;
   expect(grid.classList.contains('grid-cols-1')).toBe(true);
   expect(grid.classList.contains('sm:grid-cols-2')).toBe(true);
   expect([...grid.children].every(card => card.classList.contains('min-w-0'))).toBe(true);
+});
+
+
+it('首次读取等待与失败不展示虚假的源数据、目录或空备份，重试成功才显示真实空态', async () => {
+  const pending = Promise.withResolvers<typeof backupStatus>();
+  mocks.backupStatus.mockReturnValue(pending.promise);
+  render(<DataBackupManager notify={vi.fn()} />);
+  expect(screen.getByRole('status').textContent).toContain('正在读取…');
+  expect(screen.queryByText('0 B')).toBeNull();
+  expect(screen.queryByText('首次备份时将自动创建该目录')).toBeNull();
+  expect(screen.queryByRole('button', { name: /历史备份存档/ })).toBeNull();
+  await act(async () => pending.reject(new Error('无法读取备份状态')));
+  expect(screen.getByRole('alert').textContent).toContain('无法读取备份状态');
+  expect(screen.queryByText('0 B')).toBeNull();
+  expect(screen.queryByText('暂无备份')).toBeNull();
+  mocks.backupStatus.mockResolvedValue(backupStatus);
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  fireEvent.click(await screen.findByRole('button', { name: /历史备份存档/ }));
+  expect(screen.getByText('暂无备份')).toBeTruthy();
+});
+
+it('后台刷新等待和失败保留已经读取的备份与源数据', async () => {
+  const saved = { ...backupStatus, sourceStats: { fileCount: 123, totalBytes: 456 }, backups: [{ name: 'synthetic-cache', path: 'D:/synthetic-cache', createdAt: '', totalBytes: 1, fileCount: 1 }] };
+  mocks.backupStatus.mockResolvedValue(saved);
+  render(<DataBackupManager notify={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /历史备份存档/ }));
+  expect(screen.getByText('synthetic-cache')).toBeTruthy();
+  const pending = Promise.withResolvers<typeof saved>();
+  mocks.backupStatus.mockReturnValue(pending.promise);
+  // 通过原有编辑状态触发读取，不调用备份或任何写入操作。
+  fireEvent.click(screen.getByRole('button', { name: '修改路径' }));
+  expect(screen.getByText('synthetic-cache')).toBeTruthy();
+  await act(async () => pending.reject(new Error('synthetic refresh failure')));
+  expect(screen.getByText('synthetic-cache')).toBeTruthy();
+  expect(screen.getByText('· 123 个文件')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
 });

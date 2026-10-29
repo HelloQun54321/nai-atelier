@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { PromptAgentSettings } from '../../components/PromptAgentSettings';
@@ -27,6 +27,34 @@ it('设置只加载模型与 API，保留生图协作，不再请求或展示注
   fireEvent.click(screen.getByRole('tab', { name: '自定义模型 API' }));
   expect(screen.getByLabelText('API 地址')).toBeTruthy();
   expect(notify).not.toHaveBeenCalledWith('读取 AI 模型服务失败', 'error');
+});
+
+it('模型和连接首读未完成时不显示空状态，读取失败可在原位重试', async () => {
+  let resolveModels!: (response: Response) => void;
+  let configReads = 0, modelReads = 0;
+  const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/config')) {
+      if (++configReads === 1) throw new Error('synthetic offline');
+      return Response.json({ provider: '', model: '', configured: false, configuredProviders: [], backendVersion: 'synthetic', sourceVersion: 'synthetic' });
+    }
+    if (url.endsWith('/available-models')) return ++modelReads === 1 ? Response.json({ items: [] }) : new Promise<Response>(resolve => { resolveModels = resolve; });
+    if (url.endsWith('/custom-providers')) return Response.json({ items: [] });
+    throw new Error(`不应调用的接口：${url}`);
+  });
+  vi.stubGlobal('fetch', fetch);
+  const notify = vi.fn();
+  render(<ConfirmDialogProvider><PromptAgentSettings notify={notify} /></ConfirmDialogProvider>);
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(screen.queryByText('尚未配置模型服务')).toBeNull();
+  expect(screen.queryByText('尚未连接 API')).toBeNull();
+  fireEvent.click(screen.getByRole('alert').querySelector('button')!);
+  expect(await screen.findByText('正在读取模型列表…')).toBeTruthy();
+  expect(screen.queryByText('还没有模型，请先连接 API')).toBeNull();
+  await act(async () => resolveModels(Response.json({ items: [] })));
+  expect(await screen.findByText('尚未配置模型服务')).toBeTruthy();
+  expect(screen.getByText('尚未连接 API')).toBeTruthy();
+  expect(notify).toHaveBeenCalledWith('读取 AI 模型服务失败', 'error');
 });
 
 it('破限模式读取服务端默认状态与规则，保存失败保留开关，重试成功后再次打开仍使用保存值', async () => {

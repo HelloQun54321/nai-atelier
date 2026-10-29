@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Folder, LoaderCircle, Search, X } from 'lucide-react';
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard } from '../types';
@@ -30,13 +30,17 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
   const [items, setItems] = useState<Inspiration[]>([]);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const dialogRef = useModalA11y<HTMLDivElement>(open);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const requestRef = useRef(0);
+  const pending = loading || !loaded;
   const [error, setError] = useState('');
   const [selectedBoardId, setSelectedBoardId] = useState<string>('*');
   const [searchQuery, setSearchQuery] = useState('');
   const [importParams, setImportParams] = useState(false);
 
   const loadData = useCallback(async () => {
+    const request = ++requestRef.current;
     setLoading(true);
     setError('');
     try {
@@ -44,20 +48,22 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
         db.getAllInspirations(),
         db.getInspirationBoards(),
       ]);
+      if (request !== requestRef.current) return;
       setItems(allInspirations.filter(item => !item.archived));
       setBoards(allBoards);
     } catch (loadError) {
       console.error('读取收藏图片失败:', loadError);
-      setItems([]);
+      if (request !== requestRef.current) return;
       setError('收藏库读取失败，请重试。');
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) { setLoading(false); setLoaded(true); }
     }
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setLoaded(false); return; }
     void loadData();
+    return () => { requestRef.current++; };
   }, [loadData, open]);
 
   useEffect(() => {
@@ -108,7 +114,7 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-gray-900 dark:text-white">{t("选择收藏图片")}</h2>
-              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("{0} / {1} 张", [filteredItems.length, items.length])}</span>
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-meta font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("{0} / {1} 张", [pending || error ? '—' : filteredItems.length, pending || error ? '—' : items.length])}</span>
             </div>
           </div>
           <div className="flex flex-none items-center gap-1">
@@ -147,10 +153,12 @@ export const InspirationImagePicker: React.FC<InspirationImagePickerProps> = ({ 
           <DirectoryTreeNavigation label={t("收藏夹目录")} title={t("收藏夹")} nodes={boards} selectedId={selectedBoardId} onSelect={setSelectedBoardId} expanded preferenceKey="nai-collection-picker-tree-branches" allLabel={t("全部收藏")} unclassifiedLabel={t("未整理")} />
         {/* 收藏网格 */}
         <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
-          {loading && items.length === 0 ? (
+          {pending && filteredItems.length > 0 && <p role="status" className="mb-3 text-sm text-gray-500">{t('正在读取收藏库…')}</p>}
+          {error && filteredItems.length > 0 && <p role="alert" className="mb-3 text-sm text-red-500">{t(error)} <button type="button" onClick={() => void loadData()} className="underline">{t('重新读取')}</button></p>}
+          {pending && filteredItems.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取收藏库…")}</div>
-          ) : error ? (
+          ) : error && filteredItems.length === 0 ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-red-500">
               <span>{t(error)}</span>
               <button type="button" onClick={() => void loadData()} className="rounded-lg bg-red-50 px-3 py-2 font-semibold hover:bg-red-100 dark:bg-red-950/30">

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import React, { useEffect, useState } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChainEditorCharacters } from '../../../components/chain/ChainEditorCharacters';
+import { ChainEditorCharacters, type ChainEditorCharactersProps } from '../../../components/chain/ChainEditorCharacters';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../../services/appearancePreferences';
-import type { NAIParams } from '../../../types';
+import type { NAIParams, PromptChain } from '../../../types';
 
 vi.mock('../../../components/chain/CharacterTaggerReference', () => ({ CharacterTaggerReference: () => null }));
 
@@ -13,13 +13,14 @@ const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, samp
   { id: 'b', prompt: 'red hair', negativePrompt: 'blue hair', x: 0.7, y: 0.3 },
 ] };
 const mark = vi.fn();
-const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial, onContentRollForRole }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void }) => {
+type LibraryProps = Pick<ChainEditorCharactersProps, 'allChains' | 'chainsLoading' | 'chainsError' | 'onRetryChains' | 'showCharacterReference'>;
+const Harness = ({ freeform = false, canEdit = true, model, classified = true, initialParams = initial, onContentRollForRole, library = {} }: { freeform?: boolean; canEdit?: boolean; model?: string; classified?: boolean; initialParams?: NAIParams; onContentRollForRole?: (index: number) => void; library?: LibraryProps }) => {
   const [params, setParams] = useState(initialParams);
   return <><ChainEditorCharacters promptClassificationEnabled={classified} params={{ ...params, model }} setParams={setParams} characters={params.characters || []}
     canEdit={canEdit} onContentRollForRole={onContentRollForRole} tagAssistEnabled={false} characterPresetSources={{}} markPresetSectionModified={vi.fn()} markChange={mark}
     addCharacter={vi.fn()} removeCharacter={index => setParams(current => ({ ...current, characters: current.characters?.filter((_, i) => i !== index) }))}
     updateCharacter={(index, patch, useCoords) => { setParams(current => ({ ...current, ...(useCoords === undefined ? {} : { useCoords }), characters: current.characters?.map((character, i) => i === index ? { ...character, ...patch } : character) })); mark(); }}
-    activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']} mobileEditorTab="character" freeformPosition={freeform} />
+    activeLabLayout={DEFAULT_LAB_PAGE_LAYOUTS['text-to-image']} mobileEditorTab="character" freeformPosition={freeform} {...library} />
     <output data-testid="draft">{JSON.stringify(params)}</output></>;
 };
 const draft = (): NAIParams => JSON.parse(screen.getByTestId('draft').textContent!);
@@ -29,6 +30,53 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('角色库首读等待与失败不冒充空库，重试成功为空后才显示空态', async () => {
+    let resolve!: (chains: PromptChain[]) => void;
+    let reject!: (error: Error) => void;
+    const load = vi.fn(() => new Promise<PromptChain[]>((yes, no) => { resolve = yes; reject = no; }));
+    const LoadingHarness = () => {
+      const [library, setLibrary] = useState<LibraryProps>({ allChains: [], chainsLoading: true });
+      const fetchChains = () => {
+        setLibrary(current => ({ ...current, chainsLoading: true, chainsError: undefined }));
+        void load().then(allChains => setLibrary({ allChains, chainsLoading: false }), error => setLibrary(current => ({ ...current, chainsLoading: false, chainsError: error.message })));
+      };
+      useEffect(fetchChains, []);
+      return <Harness library={{ ...library, showCharacterReference: true, onRetryChains: fetchChains }} />;
+    };
+    render(<LoadingHarness />);
+    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toBe('加载中…');
+    expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
+    await act(async () => reject(new Error('角色库读取失败')));
+    expect(screen.getByRole('alert').textContent).toContain('角色库读取失败');
+    expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(within(screen.getByRole('dialog')).getByRole('status')).toBeTruthy();
+    await act(async () => resolve([]));
+    expect(within(screen.getByRole('dialog')).queryByRole('status')).toBeNull();
+    expect(screen.getByText('角色库中暂无自定义角色')).toBeTruthy();
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it('后台刷新与失败保留已有角色并仍可引用，不清空当前角色坐标', () => {
+    const allChains: PromptChain[] = [{ id: 'stored', userId: 'synthetic', name: '已有角色', type: 'character', description: '', tags: [], basePrompt: 'green hair', negativePrompt: 'hat', modules: [], params: initial, createdAt: 1, updatedAt: 1 }];
+    const library = { allChains, chainsLoading: true, showCharacterReference: true };
+    const view = render(<Harness library={library} />);
+    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    const cachedButton = screen.getByRole('button', { name: /已有角色/ });
+    expect(within(screen.getByRole('dialog')).getByRole('status')).toBeTruthy();
+    view.rerender(<Harness library={{ ...library, chainsLoading: false, chainsError: '刷新失败' }} />);
+    expect(screen.getByRole('button', { name: /已有角色/ })).toBe(cachedButton);
+    expect(screen.getByRole('alert').textContent).toContain('刷新失败');
+    expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
+    fireEvent.click(cachedButton);
+    expect(draft().characters?.[0]).toMatchObject({ prompt: 'green hair', negativePrompt: 'hat', x: 0.223, y: 0.887 });
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it.each([false, true])('分类=%s 时所有角色原文框均可拉伸，包含动态目录正负词', classified => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
     render(<Harness classified={classified} initialParams={{ ...initial, characters: [role] }} />);

@@ -24,6 +24,17 @@ const entries = [entry('both', ['clothes', 'shirt']), entry('motion', ['motion']
 const props = () => ({ id: 'prompt-directories', state, entries, selectedIds: [], allSelected: true, unclassified: false, expanded: true, onSelect: vi.fn() });
 const describedCount = (button: HTMLElement) => document.getElementById(button.getAttribute('aria-describedby')!)?.textContent;
 
+it('条目读取状态：目录未就绪的零计数显示未知，保留非零缓存，成功后显示真零', () => {
+  const view = render(<PromptLibraryDirectoryNavigation {...props()} entries={[]} countsPending />);
+  expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('—');
+  expect(describedCount(screen.getByRole('button', { name: '场景' }))).toBe('—');
+  view.rerender(<PromptLibraryDirectoryNavigation {...props()} countsPending />);
+  expect(describedCount(screen.getByRole('button', { name: '全部' }))).toBe('6');
+  expect(describedCount(screen.getByRole('button', { name: '场景' }))).toBe('—');
+  view.rerender(<PromptLibraryDirectoryNavigation {...props()} />);
+  expect(describedCount(screen.getByRole('button', { name: '场景' }))).toBe('0');
+});
+
 it('目录导航沿用文件夹布局，父目录含后代计数去重，全部与未归类分别统计', () => {
   render(<PromptLibraryDirectoryNavigation {...props()} />);
   const aside = screen.getByRole('complementary', { name: '提示词目录导航' });

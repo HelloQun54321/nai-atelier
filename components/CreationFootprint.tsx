@@ -20,6 +20,9 @@ import type { InspirationSourceType } from '../types';
 interface CreationFootprintProps {
   active?: boolean;
   chains: PromptChain[];
+  chainsLoading?: boolean;
+  chainsError?: string;
+  onRetryChains?: () => void;
   onOpenHistory: (query?: HistoryBrowseQuery) => void;
   onOpenCollection: () => void;
   onOpenLab: () => void;
@@ -127,7 +130,7 @@ const SmallMetric: React.FC<{ label: string; value: React.ReactNode; detail?: Re
   </div>
 );
 
-export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = true, chains, onOpenHistory, onOpenCollection, onOpenLab, onOpenRoll }) => {
+export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = true, chains, chainsLoading, chainsError, onRetryChains, onOpenHistory, onOpenCollection, onOpenLab, onOpenRoll }) => {
   const language = useLanguage();
   const [granularity, setGranularity] = useState<Granularity>(() => {
     const saved = localStorage.getItem('nai_footprint_granularity_v2');
@@ -140,6 +143,11 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [assets, setAssets] = useState<UsageAssets & { agent?: PromptAgentSession[] }>({});
+  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [assetsError, setAssetsError] = useState('');
+  const [collectionLoading, setCollectionLoading] = useState(true);
+  const [collectionReady, setCollectionReady] = useState(() => Boolean(collectionRevision()));
+  const [collectionError, setCollectionError] = useState('');
   const [agentLoading, setAgentLoading] = useState(true);
   const [eventStats, setEventStats] = useState<UsageEventStats | null>(null);
   const [keyUsageFirstAt, setKeyUsageFirstAt] = useState<number | null>(null);
@@ -161,6 +169,9 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   const scrollRef = useRef<HTMLDivElement>(null);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'footprint');
   const collectionRevisionValue = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
+  useEffect(() => {
+    if (collectionRevisionValue) { setCollectionReady(true); setCollectionError(''); }
+  }, [collectionRevisionValue]);
 
   useEffect(() => { localStorage.setItem('nai_footprint_granularity_v2', granularity); }, [granularity]);
   useEffect(() => { localStorage.setItem('nai_footprint_month', selectedMonth); }, [selectedMonth]);
@@ -201,16 +212,18 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     let cancelled = false;
     const controller = new AbortController();
     setAgentLoading(true);
+    setAssetsLoading(true); setAssetsError('');
+    setCollectionLoading(true); setCollectionError('');
     void eventsRequestRef.current.then(() => {
       if (cancelled) return;
       return Promise.allSettled([
-        getUsageAssets(controller.signal).catch(() => ({})).then(summary => {
+        getUsageAssets(controller.signal).then(summary => {
           if (!cancelled) setAssets(previous => ({ ...summary, agent: previous.agent }));
-        }),
+        }).catch(() => { if (!cancelled) setAssetsError(t('资产读取失败，请重试')); }).finally(() => { if (!cancelled) setAssetsLoading(false); }),
         promptAgentService.listSessions().catch(() => undefined).then(agent => {
           if (!cancelled) setAssets(previous => ({ ...previous, agent }));
         }).finally(() => { if (!cancelled) setAgentLoading(false); }),
-        ensureCollection(),
+        ensureCollection().then(() => { if (!cancelled) setCollectionReady(true); }).catch(() => { if (!cancelled) setCollectionError(t('收藏读取失败，请重试')); }).finally(() => { if (!cancelled) setCollectionLoading(false); }),
       ]);
     });
     return () => { cancelled = true; controller.abort(); };
@@ -255,7 +268,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
       boards: boards.size,
       bySource: [...bySource].sort((left, right) => right[1] - left[1]),
     };
-  }, [collectionRevisionValue]);
+  }, [collectionRevisionValue, collectionReady, collectionLoading]);
 
   const chainStats = useMemo(() => ({
     style: chains.filter(chain => chain.type === 'style').length,
@@ -573,7 +586,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
           </div>}
           {!hasData && keyUsage}
 
-          {!error && hasData && totals && stats && <>
+          {hasData && totals && stats && <>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
               <StatCard label={t('作品总数')} value={formatNumber(totals.images)} detail={t('最近 {0}', [formatDay(totals.lastAt || 0)])} icon={<ImageIcon />} />
               <StatCard label={t('活跃天数')} value={formatNumber(totals.activeDays)} detail={t('平均每个活跃日 {0} 张', [averagePerActiveDay])} icon={<CalendarDays />} />
@@ -637,10 +650,12 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               </SectionCard>
 
               <SectionCard title={t('收藏概览')} hint={t('全部收藏，不随上方范围变化')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
+                {collectionLoading && <p role="status" className="mb-3 text-sm text-gray-400">{t('正在读取收藏库…')}</p>}
+                {collectionError && <p role="alert" className="mb-3 text-sm text-red-500">{collectionError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
                 <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.chains)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.artists)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.total)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.chains) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.artists) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{(collectionReady ? formatNumber(collectionStats.total) : '—')}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
                 </div>
                 <p className="mt-3 text-micro leading-5 text-gray-400">{t('收藏是作品级记录；这里只汇总数量，不改变收藏内容。')}</p>
               </SectionCard>
@@ -666,7 +681,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('带角色 {0} 张 · {1} 个槽', [formatNumber(stats.characterUsage.images), formatNumber(stats.characterUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('Vibe {0} 张 · {1} 个槽', [formatNumber(stats.vibeUsage.images), formatNumber(stats.vibeUsage.slots)])}</span>
                   <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('精准参考 {0} 张 · {1} 个槽', [formatNumber(stats.referenceUsage.images), formatNumber(stats.referenceUsage.slots)])}</span>
-                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {formatNumber(chainStats.character)}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {(chainsLoading || chainsError ? '—' : formatNumber(chainStats.character))}</span>
                 </div>
               </SectionCard>
               <SectionCard title={t('常用标签')} hint={t('从 Prompt 与角色内容归纳')}>
@@ -680,24 +695,27 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             </div>
 
             <SectionCard title={t('创作资产')} hint={t('本地保存的配方、参考与实验')} action={<button type="button" onClick={onOpenRoll} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开 Roll 串')}</button>}>
+              {(assetsLoading || chainsLoading) && <p role="status" className="mb-3 text-sm text-gray-400">{t('加载中…')}</p>}
+              {assetsError && <p role="alert" className="mb-3 text-sm text-red-500">{assetsError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
+              {chainsError && <p role="alert" className="mb-3 text-sm text-red-500">{t(chainsError)} {onRetryChains && <button type="button" onClick={onRetryChains} className="underline">{t('重试')}</button>}</p>}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-                <SmallMetric label={t('风格串')} value={formatNumber(chainStats.style)} />
-                <SmallMetric label={t('角色库')} value={formatNumber(chainStats.character)} />
+                <SmallMetric label={t('风格串')} value={(chainsLoading || chainsError ? '—' : formatNumber(chainStats.style))} />
+                <SmallMetric label={t('角色库')} value={(chainsLoading || chainsError ? '—' : formatNumber(chainStats.character))} />
                 <SmallMetric label={t('Vibe 资产')} value={assets.vibes ? formatNumber(vibeStats.assets) : '—'} detail={assets.vibes ? t('编码 {0}', [formatNumber(vibeStats.encodings)]) : undefined} />
                 <SmallMetric label={t('Vibe 分组')} value={assets.vibeGroups ? formatNumber(vibeStats.groups) : '—'} />
                 <SmallMetric label={t('Roll 实验')} value={assets.roll ? formatNumber(rollStats.experiments) : '—'} />
                 <SmallMetric label={t('Roll 候选')} value={assets.roll ? formatNumber(rollStats.candidates) : '—'} />
                 <SmallMetric label={t('已保存组合')} value={assets.roll ? formatNumber(rollStats.saved) : '—'} />
-                <SmallMetric label={t('收藏夹')} value={formatNumber(collectionStats.boards)} detail={t('收藏 {0}', [formatNumber(collectionStats.total)])} />
+                <SmallMetric label={t('收藏夹')} value={(collectionReady ? formatNumber(collectionStats.boards) : '—')} detail={t('收藏 {0}', [(collectionReady ? formatNumber(collectionStats.total) : '—')])} />
               </div>
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
                   <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('Roll 实验排行')}</p>
-                  {rollStats.top.length ? <div className="space-y-0.5">{rollStats.top.map(row => <button key={row.id} type="button" onClick={onOpenRoll} className="mobile-touch flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/70"><span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200">{row.name}</span><span className="flex-none text-micro text-gray-400">{t('{0} 候选 · {1} 保存', [formatNumber(row.candidates), formatNumber(row.saved)])}</span></button>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                  {rollStats.top.length ? <div className="space-y-0.5">{rollStats.top.map(row => <button key={row.id} type="button" onClick={onOpenRoll} className="mobile-touch flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/70"><span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200">{row.name}</span><span className="flex-none text-micro text-gray-400">{t('{0} 候选 · {1} 保存', [formatNumber(row.candidates), formatNumber(row.saved)])}</span></button>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{assets.roll ? t('暂无') : assetsLoading ? t('加载中…') : '—'}</p>}
                 </div>
                 <div>
                   <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('素材与收藏来源')}</p>
-                  {collectionStats.bySource.length ? <div className="space-y-1">{collectionStats.bySource.slice(0, 6).map(([source, count]) => <div key={source} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"><span className="min-w-0 truncate text-gray-600 dark:text-gray-300">{sourceLabel(source as InspirationSourceType)}</span><span className="flex-none text-micro tabular-nums text-gray-400">{formatNumber(count)}</span></div>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                  {collectionStats.bySource.length ? <div className="space-y-1">{collectionStats.bySource.slice(0, 6).map(([source, count]) => <div key={source} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"><span className="min-w-0 truncate text-gray-600 dark:text-gray-300">{sourceLabel(source as InspirationSourceType)}</span><span className="flex-none text-micro tabular-nums text-gray-400">{formatNumber(count)}</span></div>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{collectionReady ? t('暂无') : collectionLoading ? t('加载中…') : '—'}</p>}
                 </div>
               </div>
             </SectionCard>
