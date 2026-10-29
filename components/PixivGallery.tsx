@@ -1,12 +1,10 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage, getLanguage } from '../services/i18n';
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Calendar,
   CircleUserRound,
   Clock,
   Filter,
-  Flame,
   Heart,
   KeyRound,
   LogIn,
@@ -54,6 +52,7 @@ import {
   pixivService,
 } from '../services/pixivService';
 import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHistoryService';
+import './PixivGallery.css';
 
 interface PixivGalleryProps {
   active: boolean;
@@ -87,12 +86,12 @@ const feedTabs: { id: PixivFeedMode; label: string }[] = [
 ];
 
 const rankingSubModes: { id: PixivRankingSubMode; label: string }[] = [
-  { id: 'day_ai', label: '🔥 AI专榜' },
+  { id: 'day_ai', label: 'AI 专榜' },
   { id: 'day', label: '日榜' },
   { id: 'week', label: '周榜' },
   { id: 'month', label: '月榜' },
   { id: 'week_original', label: '原创榜' },
-  { id: 'day_rookie', label: '新人榜' },
+  { id: 'week_rookie', label: '新人榜' },
   { id: 'day_male', label: '男性向' },
   { id: 'day_female', label: '女性向' },
 ];
@@ -143,6 +142,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   const [relatedCursor, setRelatedCursor] = useState<string | null>(null);
   const [relatedError, setRelatedError] = useState('');
   const detailScrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (detailScrollRef.current) detailScrollRef.current.scrollTop = 0;
+  }, [selectedId]);
   const relatedSentinelRef = useRef<HTMLDivElement>(null);
   const relatedInFlightRef = useRef(false);
   // "看了又看"加载代际：丢弃快速切换作品后晚到的旧响应
@@ -537,7 +539,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   };
 
   const loadMore = () => {
-    if (!nextCursor || loadingMore || showHistory) return;
+    if (!nextCursor || loading || loadingMore || showHistory) return;
     void loadFeed(mode, {
       cursor: nextCursor,
       ...(mode === 'search' ? { word: searchInput } : {}),
@@ -813,7 +815,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   return (
     <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
       <WorkspaceChrome>
-      <WorkspaceToolbar>
+      <WorkspaceToolbar className="pixiv-toolbar">
+        <div className="pixiv-toolbar-primary">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
             <ToolbarSearch
@@ -821,10 +824,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               onChange={event => setSearchInput(event.target.value)}
               placeholder={t("Pixiv Tag 搜索，回车直接检索")}
               aria-label={t("搜索 Pixiv")}
-              containerClassName="min-w-[12rem] flex-1 md:max-w-none"
+              containerClassName="min-w-0 flex-1 md:max-w-none"
             />
           </form>
-          <div className="hidden flex-none items-center gap-1.5 overflow-x-auto md:flex">
+          <div className="pixiv-feed-nav hidden min-w-0 items-center gap-1.5 overflow-x-auto md:flex">
             {feedTabs.map(tab => {
               const active = !showHistory && mode === tab.id;
               return (
@@ -874,10 +877,10 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         <ToolbarPopover label={t("账户")} title={t("Pixiv 账户")} icon={<CircleUserRound />} width={280}>
           {close => <button type="button" onClick={() => { close(); void handleDisconnect(); }} className={TOOLBAR_MENU_CLASS + ' !text-red-600 dark:!text-red-400'}><Unplug />{t("断开 Pixiv 连接")}</button>}
         </ToolbarPopover>
-      </WorkspaceToolbar>
+        </div>
 
       {/* 移动端独立导航行（搜索与操作按钮保持首行，导航 Tab 单行横向滚动） */}
-      <div className="appearance-group flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 backdrop-blur md:hidden dark:border-gray-800 dark:bg-gray-900/80">
+      <div className="pixiv-mobile-nav flex min-w-0 items-center gap-1.5 overflow-x-auto md:hidden">
         {feedTabs.map(tab => {
           const active = !showHistory && mode === tab.id;
           return (
@@ -926,13 +929,12 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
       {/* 排行榜二级工具栏（子模式 + 历史日期穿越） */}
       {mode === 'ranking' && !showHistory && (
-        <div className="appearance-group flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
-              <Flame className="size-3.5 text-orange-500" />{t("榜单:")}</span>
+        <div className="pixiv-subnav pixiv-ranking-controls">
+          <div className="pixiv-ranking-modes">
             {rankingSubModes.map(sub => (
               <FilterPill
                 key={sub.id}
+                className="pixiv-filter-pill"
                 active={rankingMode === sub.id}
                 onClick={() => {
                   setRankingMode(sub.id);
@@ -944,28 +946,29 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-            <Calendar className="size-3.5 text-indigo-500" />
-            <span className="font-semibold">{t("历史日期:")}</span>
+          <div className="pixiv-ranking-date text-gray-500 dark:text-gray-400">
             <input
               type="date"
+              aria-label={t("历史日期:")}
+              title={t("历史日期:")}
               value={rankingDate}
               onChange={e => {
                 setRankingDate(e.target.value);
                 void loadFeed('ranking', { ranking_mode: rankingMode, date: e.target.value });
               }}
-              className="h-7 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              className="pixiv-date-input rounded-lg border border-gray-200 bg-transparent px-2 text-xs text-gray-800 dark:border-gray-700 dark:text-gray-200"
             />
             {rankingDate && (
               <button
                 type="button"
+                aria-label={t("恢复默认")}
                 onClick={() => {
                   setRankingDate('');
                   void loadFeed('ranking', { ranking_mode: rankingMode, date: '' });
                 }}
-                className="text-xs text-indigo-600 hover:underline dark:text-indigo-400"
+                className="pixiv-date-reset whitespace-nowrap rounded-lg px-2 text-xs text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
               >
-                {t("今日")}</button>
+                {t("恢复默认")}</button>
             )}
           </div>
         </div>
@@ -973,8 +976,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
       {/* 搜索二级筛选栏 */}
       {mode === 'search' && !showHistory && (
-        <div className="appearance-group flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
-          <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
+        <div className="pixiv-subnav pixiv-search-controls">
+          <span className="flex shrink-0 items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
             <Filter className="size-3.5 text-indigo-500" />{t("排序:")}</span>
           {[
             { id: 'popular_desc', label: '热门度' },
@@ -983,6 +986,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           ].map(opt => (
             <FilterPill
               key={opt.id}
+              className="pixiv-filter-pill"
               active={searchSort === opt.id}
               onClick={() => {
                 setSearchSort(opt.id as any);
@@ -993,9 +997,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
             </FilterPill>
           ))}
 
-          <span className="mx-1 h-3.5 w-px bg-gray-200 dark:bg-gray-700" />
+          <span aria-hidden="true" className="mx-1 h-3.5 w-px shrink-0 bg-gray-200 dark:bg-gray-700" />
 
-          <span className="font-semibold text-gray-500 dark:text-gray-400">{t("收藏门槛:")}</span>
+          <span className="shrink-0 font-semibold text-gray-500 dark:text-gray-400">{t("收藏门槛:")}</span>
           {[
             { id: '', label: '不限' },
             { id: '10000users入り', label: '10000+ 收藏' },
@@ -1004,6 +1008,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           ].map(opt => (
             <FilterPill
               key={opt.id}
+              className="pixiv-filter-pill"
               active={bookmarkThreshold === opt.id}
               onClick={() => {
                 setBookmarkThreshold(opt.id);
@@ -1015,7 +1020,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           ))}
         </div>
       )}
-
+      </WorkspaceToolbar>
       <ToolbarCountCaption>{showHistory ? t('共 {0} 条', [historyItems.length.toLocaleString()]) : t('已加载 {0} 件{1}', [loadedRef.current ? formatCount(items.length) : '—', ''])}</ToolbarCountCaption>
       </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
@@ -1085,10 +1090,15 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
           {!showHistory && nextCursor && (
             <div className="mt-5 flex items-center justify-center gap-3 pb-4">
-              <ToolbarButton disabled={loadingMore} onClick={() => void loadMore()}>
+              <ToolbarButton disabled={loading || loadingMore} onClick={() => void loadMore()}>
                 <RefreshCw className={loadingMore ? 'animate-spin' : ''} />{t("加载更多")}</ToolbarButton>
               <div ref={autoLoadSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" />
             </div>
+          )}
+          {!showHistory && mode === 'ranking' && loadedRef.current && !loading && !loadingMore && !error && items.length > 0 && nextCursor === null && (
+            <p className="mt-5 pb-4 text-center text-meta text-gray-400 dark:text-gray-500">
+              {t('本期榜单已加载完，共 {0} 件作品', [formatCount(items.length)])}
+            </p>
           )}
           </div>
         </main>
@@ -1175,7 +1185,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                       >
                         <button type="button" onClick={() => openDetail(rel)} className="h-full w-full" aria-label={t("查看相关作品 {0}", [rel.title])}>
                           <SmartImage
-                            src={rel.urls.medium || rel.urls.thumb}
+                            src={rel.urls.medium || rel.urls.large || rel.urls.thumb || getPixivCurrentPageUrl(rel, 0)}
                             alt={rel.title}
                             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           />

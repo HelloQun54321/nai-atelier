@@ -9,7 +9,7 @@ import { longPress } from '../support/touchEvents';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 import { PixivGallery } from '../../components/PixivGallery';
-import { pixivService, importPixivImageAsFile, type PixivIllust } from '../../services/pixivService';
+import { pixivService, importPixivImageAsFile, type PixivFeedResult, type PixivIllust } from '../../services/pixivService';
 import { db } from '../../services/dbService';
 import { api } from '../../services/api';
 import { galleryHistoryService } from '../../services/galleryHistoryService';
@@ -218,6 +218,65 @@ it('相关推荐沿用首图取用，复制图片不切换当前详情', async (
   await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith('/api/media?source=' + encodeURIComponent(related.metaPages[0]) + '&variant=original', false));
   expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/100');
 });
+it('主列表外的相关推荐可连续打开详情，返回后主列表仍能打开原作品', async () => {
+  const firstRelated = {
+    ...illust, id: '201', title: '第一条推荐', metaPages: ['https://i.pximg.net/related-201.png'],
+    urls: { ...illust.urls, thumb: '', medium: '', large: '' },
+  };
+  const nextRelated = { ...illust, id: '202', title: '下一条推荐' };
+  const mainWorks = [illust, { ...illust, id: '101', title: '主列表第二件' }];
+  const imageObservers: { callback: IntersectionObserverCallback; targets: Set<Element> }[] = [];
+  let releaseSecondRelated!: () => void;
+  vi.stubGlobal('IntersectionObserver', class {
+    state: typeof imageObservers[number];
+    constructor(callback: IntersectionObserverCallback) { this.state = { callback, targets: new Set() }; imageObservers.push(this.state); }
+    observe(target: Element) { this.state.targets.add(target); }
+    disconnect() {}
+  });
+  vi.mocked(pixivService.feed).mockImplementation(async (mode, options) => ({
+    mode,
+    items: mode === 'related'
+      ? options?.params?.illust_id === '100'
+        ? [firstRelated]
+        : options?.params?.illust_id === '201'
+          ? (await new Promise<void>(resolve => { releaseSecondRelated = resolve; }), [nextRelated])
+          : []
+      : mainWorks,
+    nextCursor: null, nextUrl: null, fetchedAt: Date.now(),
+  }));
+
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artwork.*artist/ }));
+  const detailBody = container.querySelector<HTMLElement>('.aitag-detail-panel--open > .overflow-y-auto')!;
+  detailBody.scrollTop = 500;
+  const relatedButton = await screen.findByRole('button', { name: '查看相关作品 第一条推荐' });
+  await waitFor(() => expect(imageObservers.some(observer => [...observer.targets].some(target => relatedButton.contains(target)))).toBe(true));
+  const imageObserver = imageObservers.find(observer => [...observer.targets].some(target => relatedButton.contains(target)))!;
+  const imageTarget = [...imageObserver.targets].find(target => relatedButton.contains(target))!;
+  await act(async () => imageObserver.callback([{ target: imageTarget, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+  const relatedImage = await screen.findByRole('img', { name: '第一条推荐' });
+  expect(relatedImage.getAttribute('src')).toBe('/api/media?source=' + encodeURIComponent(firstRelated.metaPages[0]) + '&variant=thumb-160');
+  fireEvent.click(relatedButton);
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/201'));
+  expect(detailBody.scrollTop).toBe(0);
+
+  await waitFor(() => expect(releaseSecondRelated).toBeTypeOf('function'));
+  detailBody.scrollTop = 280;
+  await act(async () => { releaseSecondRelated(); });
+  await screen.findByRole('button', { name: '查看相关作品 下一条推荐' });
+  expect(detailBody.scrollTop).toBe(280);
+  detailBody.scrollTop = 700;
+  fireEvent.click(screen.getByRole('button', { name: '查看相关作品 下一条推荐' }));
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/202'));
+  expect(detailBody.scrollTop).toBe(0);
+  expect(pixivService.feed).toHaveBeenLastCalledWith('related', { params: { illust_id: '202' } });
+
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(screen.getByRole('button', { name: /主列表第二件.*artist/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /主列表第二件.*artist/ }));
+  await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/101'));
+  expect(pixivService.feed).toHaveBeenLastCalledWith('related', { params: { illust_id: '101' } });
+});
 it.each(['masonry', 'portrait', 'square', 'history'])('Pixiv %s 卡片沿用 AITag 聚焦居中，切换和关闭详情同步恢复', async layout => {
   const works = [illust, { ...illust, id: '101', title: 'second artwork' }];
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
@@ -376,4 +435,134 @@ it('相关推荐完整显示超过9项，详情触底按游标追加、失败停
   expect(pixivService.feed).toHaveBeenLastCalledWith('related', { cursor: 'related-2', params: { illust_id: '100' } });
   fireEvent.click(screen.getByRole('button', { name: '查看相关作品 追加推荐' }));
   await waitFor(() => expect(screen.getByRole('link', { name: '查看原帖' }).getAttribute('href')).toBe('https://www.pixiv.net/artworks/300'));
+});
+
+it('排行榜日期跨榜单与顶栏收起保留，清除恢复默认且切换足迹隐藏子栏', async () => {
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  fireEvent.click(screen.getAllByRole('button', { name: '排行榜' })[0]);
+  const dateInput = await screen.findByLabelText('历史日期:') as HTMLInputElement;
+
+  fireEvent.click(screen.getByRole('button', { name: '日榜' }));
+  await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: 'day' } }));
+  fireEvent.change(dateInput, { target: { value: '2025-03-08' } });
+  await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: 'day', date: '2025-03-08' } }));
+
+  fireEvent.click(screen.getByRole('button', { name: '周榜' }));
+  await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: 'week', date: '2025-03-08' } }));
+  fireEvent.click(screen.getByRole('button', { name: '收起顶栏' }));
+  expect(dateInput.closest('.hidden')).not.toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '展开顶栏' }));
+  const restoredDate = screen.getByLabelText('历史日期:') as HTMLInputElement;
+  expect(restoredDate.closest('.hidden')).toBeNull();
+  expect(restoredDate.value).toBe('2025-03-08');
+  expect(screen.getByRole('button', { name: '周榜' }).getAttribute('aria-pressed')).toBe('true');
+
+  fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
+  expect(restoredDate.value).toBe('');
+  await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: 'week' } }));
+
+  fireEvent.click(screen.getAllByRole('button', { name: '推荐' })[0]);
+  await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('recommended', { cursor: undefined, params: {} }));
+  expect(screen.queryByLabelText('历史日期:')).toBeNull();
+  fireEvent.click(screen.getAllByRole('button', { name: '足迹' })[0]);
+  expect(screen.queryByLabelText('历史日期:')).toBeNull();
+});
+
+it('八个排行榜入口传入各自的 Pixiv ranking_mode', async () => {
+  vi.mocked(pixivService.feed).mockImplementation(async mode => ({ mode, items: [illust], nextCursor: null, nextUrl: null, fetchedAt: 1 }));
+  render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  fireEvent.click(screen.getAllByRole('button', { name: '排行榜' })[0]);
+  const modes = [
+    ['AI 专榜', 'day_ai'], ['日榜', 'day'], ['周榜', 'week'], ['月榜', 'month'],
+    ['原创榜', 'week_original'], ['新人榜', 'week_rookie'], ['男性向', 'day_male'], ['女性向', 'day_female'],
+  ] as const;
+  for (const [label, rankingMode] of modes) {
+    fireEvent.click(await screen.findByRole('button', { name: label }));
+    await waitFor(() => expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: rankingMode } }));
+  }
+});
+
+it.each([
+  { rankingLabel: 'AI 专榜', rankingMode: 'day_ai', pageSizes: [30, 20, 0], total: 50 },
+  { rankingLabel: '周榜', rankingMode: 'week', pageSizes: [30, 30, 10], total: 70 },
+])('%s 不因单页不足30张或累计50张而提前结束，直到游标为空才显示完成', async ({ rankingLabel, rankingMode, pageSizes, total }) => {
+  let offset = 0;
+  const createPage = (count: number) => Array.from({ length: count }, (_, index) => ({
+    ...illust, id: String(5000 + offset + index), title: `${rankingMode} 作品 ${offset + index}`,
+  }));
+  const first = createPage(pageSizes[0]); offset += pageSizes[0];
+  const second = createPage(pageSizes[1]); offset += pageSizes[1];
+  const third = createPage(pageSizes[2]);
+  let finishThird!: (result: PixivFeedResult<PixivIllust>) => void;
+  vi.mocked(pixivService.feed).mockImplementation(async (mode, options) => {
+    if (mode !== 'ranking') return { mode, items: [illust], nextCursor: null, nextUrl: null, fetchedAt: 1 };
+    if (options?.cursor === 'rank-cursor-2') return { mode, items: second, nextCursor: 'rank-cursor-3', nextUrl: 'rank-cursor-3', fetchedAt: 1 };
+    if (options?.cursor === 'rank-cursor-3') return new Promise(resolve => { finishThird = resolve; });
+    if (!options?.cursor && options?.params?.ranking_mode === rankingMode) return { mode, items: first, nextCursor: 'rank-cursor-2', nextUrl: 'rank-cursor-2', fetchedAt: 1 };
+    return { mode, items: [illust], nextCursor: null, nextUrl: null, fetchedAt: 1 };
+  });
+
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  fireEvent.click(screen.getAllByRole('button', { name: '排行榜' })[0]);
+  if (rankingMode !== 'day_ai') fireEvent.click(await screen.findByRole('button', { name: rankingLabel }));
+  await waitFor(() => expect(container.querySelectorAll('[data-gallery-work-id]')).toHaveLength(pageSizes[0]));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  await waitFor(() => expect(container.querySelectorAll('[data-gallery-work-id]')).toHaveLength(pageSizes[0] + pageSizes[1]));
+  expect(screen.getByRole('button', { name: '加载更多' })).toBeTruthy();
+  expect(screen.queryByText(/本期榜单已加载完/)).toBeNull();
+
+  await waitFor(() => expect(finishThird).toBeTypeOf('function'));
+  fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: '加载更多' }) as HTMLButtonElement).disabled).toBe(true));
+  expect(screen.queryByText(/本期榜单已加载完/)).toBeNull();
+  await act(async () => { finishThird({ mode: 'ranking', items: third, nextCursor: null, nextUrl: null, fetchedAt: 1 }); });
+  await waitFor(() => expect(container.querySelectorAll('[data-gallery-work-id]')).toHaveLength(total));
+  expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+  expect(screen.getByText(`本期榜单已加载完，共 ${total} 件作品`)).toBeTruthy();
+  expect(vi.mocked(pixivService.feed).mock.calls
+    .filter(([mode, options]) => mode === 'ranking' && (options?.cursor || options?.params?.ranking_mode === rankingMode))
+    .map(([, options]) => options?.cursor)).toEqual([undefined, 'rank-cursor-2', 'rank-cursor-3']);
+});
+
+it('切换榜单首屏加载时锁住旧游标，成功结果生效且加载／错误期间不显示末页文案', async () => {
+  let staleCursorCalls = 0;
+  let finishDay!: (result: PixivFeedResult<PixivIllust>) => void;
+  vi.mocked(pixivService.feed).mockImplementation(async (mode, options) => {
+    if (options?.cursor === 'old-ranking-cursor') {
+      staleCursorCalls++;
+      if (staleCursorCalls === 1) throw new Error('预取失败');
+      return { mode, items: [{ ...illust, id: 'old-page', title: '旧榜游标结果' }], nextCursor: null, nextUrl: null, fetchedAt: 1 };
+    }
+    if (mode !== 'ranking') return { mode, items: [illust], nextCursor: null, nextUrl: null, fetchedAt: 1 };
+    if (options?.params?.ranking_mode === 'day_ai') return { mode, items: [{ ...illust, id: 'ai-first', title: 'AI 榜首屏' }], nextCursor: 'old-ranking-cursor', nextUrl: 'old-ranking-cursor', fetchedAt: 1 };
+    if (options?.params?.ranking_mode === 'day') return new Promise(resolve => { finishDay = resolve; });
+    throw new Error('榜单请求失败');
+  });
+
+  const { container } = render(<PixivGallery active currentUser={{ id: 'owner' } as User} notify={vi.fn()} onNavigateToPlayground={vi.fn()} />);
+  await screen.findByRole('button', { name: /synthetic artwork.*artist/ });
+  fireEvent.click(screen.getAllByRole('button', { name: '排行榜' })[0]);
+  await screen.findByRole('button', { name: '加载更多' });
+  await waitFor(() => expect(staleCursorCalls).toBe(1));
+
+  fireEvent.click(screen.getByRole('button', { name: '日榜' }));
+  await waitFor(() => expect(finishDay).toBeTypeOf('function'));
+  const loadMore = screen.getByRole('button', { name: '加载更多' }) as HTMLButtonElement;
+  expect(loadMore.disabled).toBe(true);
+  expect(screen.queryByText(/本期榜单已加载完/)).toBeNull();
+  fireEvent.click(loadMore);
+  expect(staleCursorCalls).toBe(1);
+  expect(pixivService.feed).toHaveBeenLastCalledWith('ranking', { cursor: undefined, params: { ranking_mode: 'day' } });
+
+  await act(async () => { finishDay({ mode: 'ranking', items: [{ ...illust, id: 'day-first', title: '日榜新首屏' }], nextCursor: null, nextUrl: null, fetchedAt: 2 }); });
+  expect(screen.getByRole('button', { name: /日榜新首屏.*artist/ })).toBeTruthy();
+  expect(container.querySelector('[data-gallery-work-id="old-page"]')).toBeNull();
+  expect(screen.getByText('本期榜单已加载完，共 1 件作品')).toBeTruthy();
+
+  fireEvent.click(screen.getByRole('button', { name: '周榜' }));
+  expect(await screen.findByText('榜单请求失败')).toBeTruthy();
+  expect(screen.queryByText(/本期榜单已加载完/)).toBeNull();
 });

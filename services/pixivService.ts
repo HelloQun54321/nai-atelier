@@ -19,7 +19,7 @@ export type PixivRankingSubMode =
   | 'day'
   | 'day_ai'
   | 'week_original'
-  | 'day_rookie'
+  | 'week_rookie'
   | 'week'
   | 'month'
   | 'day_male'

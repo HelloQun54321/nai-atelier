@@ -1,0 +1,123 @@
+/* 上下两层共用工具栏材质与圆角，分类只承担排布和轻选中态。 */
+.workspace-command-bar.pixiv-toolbar {
+  container: pixiv-toolbar / inline-size;
+  height: auto;
+  min-height: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.pixiv-toolbar-primary {
+  display: flex;
+  min-width: 0;
+  min-height: var(--workspace-toolbar-height);
+  align-items: center;
+  gap: calc(var(--spacing) * 2);
+  padding-inline: calc(var(--spacing) * 3);
+}
+
+.pixiv-toolbar-primary form { min-width: 6rem; }
+.pixiv-feed-nav { flex: 0 1 auto; max-width: 72%; padding-block: 3px; }
+.pixiv-feed-nav,
+.pixiv-mobile-nav,
+.pixiv-ranking-modes,
+.pixiv-search-controls { scrollbar-width: none; }
+:is(.pixiv-feed-nav, .pixiv-mobile-nav, .pixiv-ranking-modes, .pixiv-search-controls)::-webkit-scrollbar { display: none; }
+.pixiv-toolbar :is(.pixiv-feed-nav, .pixiv-mobile-nav) button:focus-visible {
+  outline: 2px solid var(--nai-accent, var(--color-indigo-500));
+  outline-offset: -2px;
+}
+
+.pixiv-mobile-nav,
+.pixiv-subnav {
+  gap: calc(var(--spacing) * 1.5);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border-top: 1px solid var(--nai-panel-border, var(--color-gray-200));
+}
+
+.pixiv-subnav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  font-size: .8125rem;
+}
+
+.pixiv-ranking-modes {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: calc(var(--spacing) * .5);
+  overflow-x: auto;
+}
+
+.pixiv-toolbar .pixiv-filter-pill {
+  flex-shrink: 0;
+  height: var(--nai-control-height, 32px);
+  min-height: var(--nai-control-height, 32px);
+  white-space: nowrap;
+  border-color: transparent;
+  border-radius: var(--workspace-control-radius);
+  background-image: none;
+  box-shadow: none;
+}
+
+html:root .pixiv-toolbar .pixiv-subnav .pixiv-filter-pill:not([data-active='true']) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+html:root .pixiv-toolbar .pixiv-subnav .pixiv-filter-pill:not([data-active='true']):hover {
+  background-color: color-mix(in srgb, var(--nai-accent, var(--color-indigo-600)) 7%, transparent);
+}
+.pixiv-toolbar .pixiv-filter-pill:focus-visible,
+.pixiv-toolbar :is(.pixiv-date-input, .pixiv-date-reset):focus-visible {
+  outline: 2px solid var(--nai-accent, var(--color-indigo-500));
+  outline-offset: -2px;
+}
+
+@layer theme-state {
+  html:root .pixiv-toolbar .pixiv-subnav .pixiv-filter-pill[data-appearance='control'][data-active='true'] {
+    background-color: color-mix(in srgb, var(--nai-accent, var(--color-indigo-600)) 13%, transparent) !important;
+    color: var(--nai-accent-text-800, var(--color-indigo-700)) !important;
+    border-color: color-mix(in srgb, var(--nai-accent, var(--color-indigo-600)) 18%, transparent);
+  }
+  html:root.dark .pixiv-toolbar .pixiv-subnav .pixiv-filter-pill[data-appearance='control'][data-active='true'] {
+    color: var(--color-indigo-300) !important;
+  }
+}
+
+.pixiv-ranking-date { display: flex; flex: none; align-items: center; gap: calc(var(--spacing) * 1.5); }
+.pixiv-toolbar :is(.pixiv-date-input, .pixiv-date-reset) {
+  height: var(--nai-control-height, 32px);
+  min-height: var(--nai-control-height, 32px);
+}
+.pixiv-date-input { min-width: 0; width: 9rem; color-scheme: light; }
+.dark .pixiv-date-input { color-scheme: dark; }
+.pixiv-search-controls { overflow-x: auto; white-space: nowrap; }
+
+@media (min-width: 768px) {
+  .pixiv-toolbar-primary { padding-inline: calc(var(--spacing) * 5); }
+  .pixiv-subnav { margin-inline: calc(var(--spacing) * 3); padding-inline: calc(var(--spacing) * 2); }
+}
+
+@media (min-width: 768px) and (pointer: fine) {
+  .pixiv-subnav {
+    --nai-control-height: clamp(28px, calc(var(--workspace-toolbar-height) - 26px), 32px);
+    padding-block: 3.5px;
+  }
+}
+
+@container pixiv-toolbar (max-width: 680px) {
+  .pixiv-ranking-controls { flex-direction: column; align-items: stretch; gap: calc(var(--spacing) * 1); }
+  .pixiv-ranking-modes { flex: none; }
+  .pixiv-ranking-date { justify-content: flex-end; }
+}
+
+@media (max-width: 767px), (any-pointer: coarse) {
+  .pixiv-subnav { --nai-control-height: 44px; }
+  .pixiv-toolbar :is(button, input) { min-height: 44px; }
+  .pixiv-toolbar-primary { padding-block: calc(var(--spacing) * 1.5); }
+}
