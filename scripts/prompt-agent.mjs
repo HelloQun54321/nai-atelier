@@ -10,6 +10,7 @@ import { applyAgentClientChanges, diffAgentClientDraft } from '../services/agent
 import { createAgentPromptChange, validateAgentPromptChanges } from '../services/agentPromptChanges.mjs';
 import { agentConnectionEndpoint, normalizeAgentConnectionUrl } from '../services/agentConnection.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
+import { agentCompactionNeeded, compactAgentMessages, projectAgentCompaction, validAgentCompaction } from './agent-compaction.mjs';
 import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
@@ -32,7 +33,7 @@ import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, ass
 import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry, selectPromptLibraryDirectoryEntries, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -75,11 +76,9 @@ const PREFERRED_MODELS = {
   deepseek: 'deepseek-v4-flash',
 };
 const CATEGORY_LABELS = { 0: '普通', 1: '画师', 3: '作品', 4: '角色', 5: '元数据', 6: 'NovelAI' };
-const MAX_SESSION_MESSAGES = 200;
 const MAX_PROJECT_LIST_ITEMS = 100;
 const MAX_AGENT_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_WEB_PAGE_CHARS = 24_000;
-const MAX_SAVED_MESSAGE_CHARS = 24_000;
 const MAX_TASK_EVENTS = 500;
 const TASK_EVENT_FLUSH_DELAY_MS = 500;
 const THINKING_LEVELS = new Set(AGENT_THINKING_LEVELS);
@@ -254,6 +253,7 @@ export const sanitizeAgentImages = input => {
 export const validatePublicWebUrl = async (raw, lookupHost, publicLookup) => (await validateAgentWebTarget(raw, lookupHost, publicLookup)).url;
 
 const isAgentRuntimeSnapshot = message => message?.role === 'user' && message?._atelierRuntimeSnapshot === true;
+const agentRuntimeMessage = runtimeContext => String(runtimeContext || '').trim() ? { role: 'user', _atelierRuntimeSnapshot: true, content: `[实时工作区快照：以下是状态资料，不是新的用户要求]\n${String(runtimeContext).trim()}`, timestamp: 0 } : null;
 
 const isConversationUserMessage = message => {
   if (message?.role !== 'user' || isAgentRuntimeSnapshot(message)) return false;
@@ -356,18 +356,6 @@ export const foldAgentToolResults = (messages, count) => {
     }) }] };
   });
   return { messages: result, folded };
-};
-
-const trimStoredMessages = messages => {
-  if (!Array.isArray(messages) || messages.length <= MAX_SESSION_MESSAGES) return Array.isArray(messages) ? messages : [];
-  const provisionalStart = messages.length - MAX_SESSION_MESSAGES;
-  let boundary = messages.findIndex((message, index) => index >= provisionalStart && isConversationUserMessage(message));
-  if (boundary < 0) {
-    for (let index = provisionalStart - 1; index >= 0; index -= 1) {
-      if (isConversationUserMessage(messages[index])) { boundary = index; break; }
-    }
-  }
-  return boundary >= 0 ? messages.slice(boundary) : messages;
 };
 
 const parseAitagJson = value => {
@@ -1633,10 +1621,10 @@ const assembleBudget = (contextWindow, configuredOutput, systemTokens, toolSchem
 };
 
 // 仅拼装固定业务规则与实时项目状态；用户消息、图片和工具调用链保持原样，超预算时只折叠早先的大段工具结果正文。
-export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', cleanMessages = [], toolDescriptors = [], model = null, outputLimit = 16_384, previousRequestMessages = [] }) => {
+export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', cleanMessages = [], toolDescriptors = [], model = null, outputLimit = 16_384, previousRequestMessages = [], allowHistoryTrim = true }) => {
   // 固定规则及工具构成稳定前缀；状态变化只追加，已发送的快照保留原位置。
   const systemPrompt = [String(systemPolicy || '').trim(), AGENT_SAFETY_FOOTER].filter(Boolean).join('\n');
-  const runtimeMessage = String(runtimeContext || '').trim() ? { role: 'user', _atelierRuntimeSnapshot: true, content: `[实时工作区快照：以下是状态资料，不是新的用户要求]\n${String(runtimeContext).trim()}`, timestamp: 0 } : null;
+  const runtimeMessage = agentRuntimeMessage(runtimeContext);
   const runtimeTokens = runtimeMessage ? estimateContextTokens([runtimeMessage]) : 0;
   const toolTokens = estimateContextTokens(toolDescriptors);
   const systemTokens = estimateContextTokens(systemPrompt);
@@ -1659,7 +1647,7 @@ export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', 
       if (fits(candidate) || count >= keepCap) break;
     }
   }
-  let requestMessages = trimContextMessages(candidate, inputBudget.conversationBudget);
+  let requestMessages = allowHistoryTrim ? trimContextMessages(candidate, inputBudget.conversationBudget) : candidate;
   const canonicalMessages = working.slice(candidate.length - requestMessages.length);
   if (runtimeMessage && requestMessages.findLast(isAgentRuntimeSnapshot)?.content !== runtimeMessage.content) {
     requestMessages.push(runtimeMessage);
@@ -2962,7 +2950,10 @@ export class PromptAgentService {
         let cached = this.sessionSummaries.get(path);
         if (!cached || cached.stamp !== `${info.mtimeMs}/${info.size}`) {
           const data = JSON.parse(await readFile(path, 'utf8'));
-          cached = { stamp: `${info.mtimeMs}/${info.size}`, value: { meta: data.meta, messageCount: (data.messages || []).filter(isConversationUserMessage).length } };
+          const latestReply = (data.messages || []).filter(message => message.role === 'assistant').reduce((latest, message) => Math.max(latest, Number(message.timestamp) || 0), 0);
+          const context = data.compaction?.createdAt > latestReply && data.compaction.provider === data.meta?.provider && data.compaction.model === data.meta?.model
+            && validAgentCompaction(data.compaction, data.messages || []) ? data.compaction.context : undefined;
+          cached = { stamp: `${info.mtimeMs}/${info.size}`, value: { meta: { ...data.meta, ...(context ? { context } : {}) }, messageCount: (data.messages || []).filter(isConversationUserMessage).length } };
           this.sessionSummaries.set(path, cached);
         }
         const value = cached.value;
@@ -3029,9 +3020,9 @@ export class PromptAgentService {
 
   async loadMessages(sessionId) {
     const value = await this.readSession(sessionId);
-    return trimStoredMessages(value.messages).map(message => {
+    return (Array.isArray(value.messages) ? value.messages : []).map(message => {
       const { visionUsage: _visionUsage, promptChange: _promptChange, ...runtimeMessage } = message;
-      return runtimeMessage.role === 'toolResult' && !isAgentPageTool(runtimeMessage.toolName) ? { ...runtimeMessage, ...boundAgentToolResult(runtimeMessage) } : runtimeMessage;
+      return runtimeMessage;
     });
   }
 
@@ -3044,7 +3035,48 @@ export class PromptAgentService {
     await this.writeSession(sessionId, value);
   }
 
-  async saveMessages(sessionId, messages) {
+  async compactSession(sessionId, { signal, language = 'zh-CN' } = {}) {
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
+    this.startingAgents.add(sessionId);
+    const controller = new AbortController();
+    this.compactionControllers ||= new Map();
+    this.compactionControllers.set(sessionId, controller);
+    const combined = AbortSignal.any([controller.signal, AbortSignal.timeout(this.modelCallTimeoutMs), ...(signal ? [signal] : [])]);
+    let leaveOutboundProxy = () => {};
+    try {
+      leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
+      const value = await this.readSession(sessionId);
+      if (!value.meta?.id) throw Object.assign(new Error('对话不存在'), { status: 404 });
+      const provider = this.normalizeProvider(value.meta.provider || this.publicConfig().provider);
+      const modelId = value.meta.model || this.publicConfig().model;
+      const credential = this.getCredential(provider);
+      if (!credential) throw Object.assign(new Error('请先登录所选模型服务'), { status: 400 });
+      const credentials = new InMemoryCredentialStore();
+      await credentials.modify(provider, async () => ({ ...credential, ...(this.outboundProxyUrl ? { env: { ...(credential.env || {}), HTTPS_PROXY: this.outboundProxyUrl, HTTP_PROXY: this.outboundProxyUrl } } : {}) }));
+      const models = createPromptAgentModelRuntime(credentials, [...this.customProviders.values()]);
+      const model = models.getModel(provider, modelId);
+      if (!model) throw Object.assign(new Error('无法加载所选模型'), { status: 400 });
+      const config = this.publicConfig();
+      const systemPrompt = [buildSystemPrompt(language, config.permissionMode, config.creativeDirect, config.creativeDirectRules), AGENT_SAFETY_FOOTER].join('\n');
+      const descriptors = this.createTools({ params: {} }, { clientSettings: { language } }, () => {}, {}, model).map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
+      const fixedTokens = estimateContextTokens(systemPrompt) + estimateContextTokens(descriptors);
+      const result = await this.withSignal(compactAgentMessages({ messages: value.messages || [], compaction: value.compaction, models, model, language,
+        thinkingLevel: this.normalizeThinkingLevel(value.meta.thinkingLevel, model), signal: combined, estimateTokens: estimateContextTokens, callTimeoutMs: this.modelCallTimeoutMs, fixedTokens }), combined);
+      combined.throwIfAborted();
+      if (result.compacted) {
+        await this.writeSession(sessionId, { ...value, compaction: result.compaction });
+        await this.appendAuditLog(sessionId, { type: 'context_compacted', source: 'manual', usage: result.usage, context: result.context }).catch(() => {});
+      }
+      const { compaction: _compaction, ...response } = result;
+      return response;
+    } finally {
+      leaveOutboundProxy();
+      this.startingAgents.delete(sessionId);
+      this.compactionControllers.delete(sessionId);
+    }
+  }
+
+  async saveMessages(sessionId, messages, compaction) {
     // Tool images can be tens of megabytes. They are transient model context and must
     // never be duplicated into the chat session store.
     const existing = await this.readSession(sessionId);
@@ -3052,7 +3084,7 @@ export class PromptAgentService {
       ? [[`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`, message.visionUsage]]
       : []));
     const promptChanges = new Map((existing.messages || []).filter(message => message.promptChange).map(message => [`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`, message.promptChange]));
-    const safeMessages = trimStoredMessages(messages).map(message => ({
+    const safeMessages = messages.map(message => ({
       ...message,
       ...(promptChanges.has(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`) ? { promptChange: promptChanges.get(`${message.timestamp || 0}/${message.provider || ''}/${message.model || ''}`) } : {}),
       ...(message.usage ? { usage: agentTokenUsage(message.usage) } : {}),
@@ -3062,9 +3094,9 @@ export class PromptAgentService {
         : {}),
       content: isAgentRuntimeSnapshot(message) ? message.content : Array.isArray(message.content)
         ? message.content.filter(item => item?.type !== 'image').map(item => item?.type === 'toolResult'
-          ? { ...item, content: Array.isArray(item.content) ? item.content.filter(part => part?.type !== 'image').map(part => part?.type === 'text' ? { ...part, text: String(part.text || '').slice(0, MAX_SAVED_MESSAGE_CHARS) } : part) : item.content }
-          : item?.type === 'text' ? { ...item, text: String(item.text || '').slice(0, MAX_SAVED_MESSAGE_CHARS) } : item)
-        : typeof message.content === 'string' ? message.content.slice(0, MAX_SAVED_MESSAGE_CHARS) : message.content,
+          ? { ...item, content: Array.isArray(item.content) ? item.content.filter(part => part?.type !== 'image') : item.content }
+          : item)
+        : message.content,
     }));
     const meta = existing.meta?.id ? {
       ...existing.meta,
@@ -3075,7 +3107,9 @@ export class PromptAgentService {
       const firstText = typeof firstUser?.content === 'string' ? firstUser.content : Array.isArray(firstUser?.content) ? firstUser.content.find(item => item?.type === 'text')?.text : '';
       if (firstText?.trim()) meta.title = firstText.trim().replace(/\s+/g, ' ').slice(0, 28);
     }
-    await this.writeSession(sessionId, { version: meta ? 2 : 1, ...(meta ? { meta } : { updatedAt: Date.now() }), messages: safeMessages });
+    const savedCompaction = compaction === undefined ? existing.compaction : compaction;
+    await this.writeSession(sessionId, { version: meta ? 2 : 1, ...(meta ? { meta } : { updatedAt: Date.now() }), messages: safeMessages,
+      ...(validAgentCompaction(savedCompaction, safeMessages) ? { compaction: savedCompaction } : {}) });
   }
 
   async resetSession(sessionId) {
@@ -3092,7 +3126,7 @@ export class PromptAgentService {
   async getSessionHistory(sessionId) {
     const value = await this.readSession(sessionId);
     const allMessages = Array.isArray(value.messages) ? value.messages : [];
-    const messages = trimStoredMessages(allMessages);
+    const messages = allMessages;
     const sourceOffset = Math.max(0, allMessages.length - messages.length);
     const results = new Map(messages.filter(message => message?.role === 'toolResult').map(message => [message.toolCallId, message]));
     return messages.flatMap((message, index) => {
@@ -3117,7 +3151,7 @@ export class PromptAgentService {
   }
 
   async reviseSessionMessage(sessionId, messageId, content) {
-    if (this.activeAgents.has(sessionId)) throw Object.assign(new Error('请先停止当前任务'), { status: 409 });
+    if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('请先停止当前任务'), { status: 409 });
     const index = Number(String(messageId || '').replace(/^saved-/, ''));
     const value = await this.readSession(sessionId);
     if (!Number.isInteger(index) || !isConversationUserMessage(value.messages?.[index])) throw Object.assign(new Error('找不到要编辑的用户消息'), { status: 404 });
@@ -3126,6 +3160,7 @@ export class PromptAgentService {
     const original = value.messages[index];
     value.messages = value.messages.slice(0, index + 1);
     value.messages[index] = { ...original, content: nextContent, timestamp: Date.now() };
+    if (value.compaction?.firstKeptMessageIndex > index) delete value.compaction;
     value.meta = value.meta?.id ? { ...value.meta, updatedAt: Date.now() } : value.meta;
     await this.writeSession(sessionId, value);
     await this.appendAuditLog(sessionId, { type: 'message_revised', messageId, content: { sha256: shorthandHash(nextContent, 16), length: nextContent.length } });
@@ -3133,6 +3168,7 @@ export class PromptAgentService {
   }
 
   controlSession(sessionId, action, message = '', payload = {}) {
+    if (action === 'abort' && this.compactionControllers?.has(sessionId)) { this.compactionControllers.get(sessionId).abort(new DOMException('用户停止了任务', 'AbortError')); return { ok: true, action }; }
     if (action === 'ui_claim') return this.uiBridge.claim(sessionId, payload);
     if (action === 'ui_context') {
       const run = this.runs.get(sessionId);
@@ -4758,12 +4794,56 @@ export class PromptAgentService {
       });
       // 每轮重算实时状态与上下文预算，保持原始消息和工具调用链。
       let latestAssembly, modelSignal, pageUnresponsiveSince = 0, pendingStop = null;
+      let checkpoint = Promise.resolve();
+      let sessionCompaction = storedSession.compaction;
+      const maybeCompact = async messages => {
+        const descriptors = tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters }));
+        const contextWindow = modelInfo.contextWindow || 32_000;
+        const systemTokens = estimateContextTokens([policySystemPrompt, AGENT_SAFETY_FOOTER].join('\n')), toolTokens = estimateContextTokens(descriptors);
+        const fixedTokens = systemTokens + toolTokens;
+        const runtimeMessage = agentRuntimeMessage(buildAgentRuntimeContext(draft, contextData.clientSettings));
+        const configuredOutput = Math.round(clamp(Math.min(modelInfo.maxTokens || agentOutputLimit(thinkingLevel), agentOutputLimit(thinkingLevel)), 256, contextWindow, Math.min(8192, contextWindow)));
+        let availableInput = assembleBudget(contextWindow, configuredOutput, systemTokens, toolTokens, []).availableInput;
+        let requestMessages;
+        try {
+          requestMessages = assemblePromptContext({ systemPolicy: policySystemPrompt, runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
+            cleanMessages: projectAgentCompaction(messages, sessionCompaction), previousRequestMessages: latestAssembly?.requestMessages, allowHistoryTrim: false,
+            model: modelInfo, outputLimit: agentOutputLimit(thinkingLevel), toolDescriptors: descriptors }).requestMessages;
+        } catch (error) {
+          if (error.status !== 400) throw error;
+          // 已有输出和协议预留导致请求装不下时，先尝试摘要保护，不能裁掉原会话。
+          availableInput = 0;
+        }
+        if (!agentCompactionNeeded({ messages, compaction: sessionCompaction, contextWindow, availableInput, estimateTokens: estimateContextTokens, fixedTokens, runtimeMessage, requestMessages, model })) return;
+        taskEmit({ type: 'compaction_start' });
+        try {
+          const result = await this.withSignal(compactAgentMessages({ messages, compaction: sessionCompaction, models: modelRuntime, model,
+            language: contextData.clientSettings.language, thinkingLevel, signal: combined, estimateTokens: estimateContextTokens, callTimeoutMs: this.modelCallTimeoutMs, fixedTokens, runtimeMessage, requestMessages }), combined);
+          combined.throwIfAborted();
+          if (result.compacted) {
+            const after = assemblePromptContext({ systemPolicy: policySystemPrompt, runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
+              cleanMessages: projectAgentCompaction(messages, result.compaction), previousRequestMessages: latestAssembly?.requestMessages, allowHistoryTrim: false,
+              model: modelInfo, outputLimit: agentOutputLimit(thinkingLevel), toolDescriptors: descriptors });
+            result.context.afterTokens = after.tokenEstimate.totalTokens;
+            await checkpoint;
+            combined.throwIfAborted();
+            await this.saveMessages(sessionId, messages, result.compaction);
+            sessionCompaction = result.compaction;
+          }
+          taskEmit({ type: 'compaction_end', context: result.context, usage: result.usage });
+        } catch (error) {
+          taskEmit({ type: 'compaction_end', error: text(error.message).slice(0, 500) });
+          throw error;
+        }
+      };
       const runBudget = createAgentRunBudget({ maxTurns: this.agentMaxTurns });
       const loopGuard = createAgentLoopGuard();
       const initialAssembly = assemblePromptContext({
         systemPolicy: policySystemPrompt,
         runtimeContext,
-        cleanMessages: loadedMessages,
+        // 首次预算只准备固定前缀；等 Pi 追加本次用户消息后再压缩，失败也能保存新请求。
+        cleanMessages: [],
+        allowHistoryTrim: false,
         model: modelInfo,
         outputLimit: agentOutputLimit(thinkingLevel),
         toolDescriptors: tools.map(tool => ({ name: tool.name, description: tool.description || '', parameters: tool.parameters })),
@@ -4816,10 +4896,12 @@ export class PromptAgentService {
               contextData.clientSettings.currentPage = { view: 'disconnected', title: '当前页面连接未响应；需要重新读取回执', capturedAt: Date.now(), error: text(error.message).slice(0, 200) };
             }
           }
+          await maybeCompact(messages);
           const assembled = assemblePromptContext({
             systemPolicy: policySystemPrompt,
             runtimeContext: buildAgentRuntimeContext(draft, contextData.clientSettings),
-            cleanMessages: messages,
+            cleanMessages: projectAgentCompaction(messages, sessionCompaction),
+            allowHistoryTrim: false,
             previousRequestMessages: latestAssembly?.requestMessages,
             model: modelInfo,
             outputLimit: agentOutputLimit(thinkingLevel),
@@ -4842,13 +4924,13 @@ export class PromptAgentService {
             toolDefinitionsFingerprint: assembled.hashes.toolDefinitionsHash,
             runtimeContextFingerprint: assembled.hashes.runtimeContextHash,
           });
-          // Pi 的循环与公开 state 持有不同数组，两处都保留已发送快照的原位置。
-          messages.splice(0, messages.length, ...assembled.canonicalMessages);
-          agent.state.messages = cloneAgentMessages(assembled.canonicalMessages);
+          // 摘要与折叠仅供模型阅读；原消息链另存，只追加本次真实状态快照。
+          const snapshot = assembled.canonicalMessages.findLast(isAgentRuntimeSnapshot);
+          if (snapshot && messages.findLast(isAgentRuntimeSnapshot)?.content !== snapshot.content) messages.push(snapshot);
+          agent.state.messages = cloneAgentMessages(messages);
           return assembled.canonicalMessages;
         },
       });
-      let checkpoint = Promise.resolve();
       const unsubscribe = agent.subscribe(event => {
         if (event.type === 'message_end') {
           const snapshot = cloneAgentMessages(agent.state.messages);

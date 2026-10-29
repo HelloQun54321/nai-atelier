@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatModelOptionTitle, promptAgentService } from '../../services/promptAgent';
+import * as i18n from '../../services/i18n';
 
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it('同名模型展示时标注服务来源', () => {
   const models = [
@@ -21,6 +22,20 @@ it('新会话和模型切换只发送原生会话参数，不再提供预设客�
   expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ model: 'a', thinkingLevel: 'high' });
   expect(Object.keys(promptAgentService).filter(name => /Creative|Preset|Injection/.test(name)))
     .toEqual(['setCreativeDirect', 'setCreativeDirectRules']);
+});
+
+it('压缩上下文使用同一会话HTTP接口，编码会话ID且原样交付结果', async () => {
+  const result = { compacted: true, context: { beforeTokens: 30000, afterTokens: 6000, retainedMessages: 8, contextWindow: 64000 } };
+  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json(result)); vi.stubGlobal('fetch', fetch);
+  vi.spyOn(i18n, 'getLanguage').mockReturnValue('ja');
+  expect(await promptAgentService.compactSession('conversation/中文')).toEqual(result);
+  expect(fetch).toHaveBeenCalledWith('/api/prompt-agent/sessions/conversation%2F%E4%B8%AD%E6%96%87/compact', expect.objectContaining({ method: 'POST' }));
+  expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ language: 'ja' });
+});
+
+it('压缩接口失败保留后端原因，不把失败返回当成成功', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: '会话正在运行，暂不能压缩' }, { status: 409 })));
+  await expect(promptAgentService.compactSession('s')).rejects.toThrow('会话正在运行，暂不能压缩');
 });
 
 it.each(['请求未响应', '响应正文未读完'])('会话设置保存%s时超时退出，而不是一直占用发送状态', async phase => {

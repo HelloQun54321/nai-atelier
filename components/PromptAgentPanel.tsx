@@ -19,7 +19,7 @@ import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent'
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { beginExportTarget } from '../services/exportLocation';
 import { isTopmostModal } from './useModalA11y';
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft, PromptAgentGenerationResult } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, promptAgentService } from '../services/promptAgent';
@@ -28,7 +28,7 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
 import { getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { clearMobileThumbnailCache, getMobileCacheStats, setMobileCacheLimitMb } from '../services/mobileImageCache';
-import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowLeft, Bot, Check, ChevronDown, Copy, Download, Expand, ImagePlus, List, Minimize2, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react';
 
 interface PromptAgentPanelProps {
   open: boolean;
@@ -229,10 +229,18 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [sessionMenuId, setSessionMenuId] = useState('');
   const [editingTitle, setEditingTitle] = useState('');
   const [editingMessageId, setEditingMessageId] = useState('');
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const commandListId = useId();
   const [sessionSearch, setSessionSearch] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState('');
   const [exportingLog, setExportingLog] = useState(false);
   const [logExportError, setLogExportError] = useState('');
+  const [compactRequestPending, setCompacting] = useState(false);
+  const [autoCompacting, setAutoCompacting] = useState(false);
+  const compacting = compactRequestPending || autoCompacting;
+  const [compactionNotice, setCompactionNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  useEffect(() => { setCompactionNotice(null); setAutoCompacting(false); }, [activeSessionId]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [followingBottom, setFollowingBottom] = useState(true);
   const [visibleMessageCount, setVisibleMessageCount] = useState(60);
@@ -419,6 +427,22 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setActiveSessionId(promptAgentCoordinator.selectedSessionId());
   };
 
+  const applyCompactionEvents = (events: PromptAgentEvent[], sessionId: string, restoring = false) => {
+    for (const event of events) {
+      if (event.type === 'compaction_start') { setAutoCompacting(true); setCompactionNotice(null); }
+      if (event.type === 'compaction_end') {
+        setAutoCompacting(false);
+        if (event.error) setCompactionNotice({ text: event.error, error: true });
+        else if (event.context) {
+          if (!restoring) setSessions(previous => previous.map(item => item.id === sessionId ? { ...item, context: event.context } : item));
+          setCompactionNotice({ text: '上下文已压缩' });
+        }
+      }
+      if (event.type === 'response_end' && !restoring) setSessions(previous => previous.map(item => item.id === sessionId ? { ...item, context: undefined } : item));
+      if (event.type === 'done' || event.type === 'error') setAutoCompacting(false);
+    }
+  };
+
   useEffect(() => {
     if (!props.open) return;
     setSessionInitError('');
@@ -460,6 +484,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (loadSeq !== sessionLoadSeqRef.current) return;
       taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events: task.events || [] };
       setTaskSnapshot(task);
+      applyCompactionEvents(task.events || [], activeSessionId, true);
       const restored: PanelMessage[] = items.map(item => withPromptReceipt(item, true));
       if ((['interrupted', 'preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status))) && task.events?.length) {
         const replayText = task.events.map(event => {
@@ -489,10 +514,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       try {
         const prior = taskCursorRef.current;
         const task = await promptAgentService.getTask(activeSessionId, prior.cursor, prior.runId);
+        const incomingEvents = task.events || [];
         const events = task.reset || task.runId !== prior.runId ? task.events || [] : [...prior.events, ...(task.events || [])].slice(-500);
         task.events = events;
         taskCursorRef.current = { runId: task.runId || '', cursor: task.cursor || 0, events };
         if (disposed) return;
+        applyCompactionEvents(incomingEvents, activeSessionId, !prior.runId || task.reset || task.runId !== prior.runId);
         promptAgentCoordinator.resumePageRequests(activeSessionId, task, () => currentDraftRef.current);
         setTaskSnapshot(task);
         const isRunning = ['preparing', 'running', 'waiting_confirmation', 'executing'].includes(String(task.status));
@@ -505,6 +532,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         else if (wasRunning && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
           if (task.status !== 'completed') interruptGeneration();
           setRunning(false);
+          setAutoCompacting(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
           if (!disposed) setMessages([...history.map(item => withPromptReceipt(item, true)), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail, resumable: resumableStop(task.status, task.stopReason) }] : [])]);
           void refreshSessions();
@@ -521,8 +549,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const activeModel = models.find(item => item.provider === activeSession?.provider && item.id === activeSession?.model);
   const supportsImages = Boolean(activeModel?.imageInput);
   const sessionReady = Boolean(activeSessionId && activeSession && activeModel);
+  const canCompact = sessionReady && !running && !compacting && !modelChanging && messages.some(message => message.role === 'user');
+  const slashQuery = input.trim().slice(1).toLocaleLowerCase();
+  const showSlashCommand = props.open && !editingMessageId && !slashDismissed && !composing && !/[\r\n]/.test(input) && input.trim().startsWith('/')
+    && ('compact'.startsWith(slashQuery) || t('压缩上下文').toLocaleLowerCase().includes(slashQuery) || '压缩上下文'.includes(slashQuery));
   const runningTool = messages.slice().reverse().map(message => message.tools?.find(tool => tool.state === 'running')).find(Boolean);
-  const executionStatus = running
+  const executionStatus = compacting ? '正在压缩上下文…' : running
     ? taskSnapshot.status === 'waiting_confirmation' ? '等待你确认' : taskSnapshot.status === 'executing' ? '正在执行已批准操作' : runningTool ? t("正在{0}", [t(toolLabels[runningTool.name] || runningTool.name)]) : responseStartedRef.current ? '正在生成回复' : '正在准备任务'
     : taskSnapshot.status === 'failed' ? '上次任务失败' : taskSnapshot.status === 'aborted' ? '已停止' : taskSnapshot.status === 'interrupted' ? '服务已中断' : !sessionReady ? modelsLoaded ? '请配置或选择模型服务' : '正在加载对话' : editingMessageId ? '正在编辑旧消息' : '准备就绪';
 
@@ -631,6 +663,41 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }
   };
 
+  const compactContext = async () => {
+    if (!canCompact) return;
+    const sessionId = activeSessionId;
+    setCompacting(true); setCompactionNotice(null);
+    try {
+      const result = await promptAgentService.compactSession(sessionId);
+      const [history, updatedSessions] = await Promise.all([promptAgentService.getSession(sessionId), promptAgentService.listSessions()]);
+      setSessions(updatedSessions.map(item => item.id === sessionId && result.context ? { ...item, context: result.context } : item));
+      if (composerSessionRef.current !== sessionId) return;
+      ++sessionLoadSeqRef.current;
+      setMessages(history.map(item => withPromptReceipt(item, true)));
+      setCompactionNotice({ text: result.compacted ? '上下文已压缩' : '当前上下文无需压缩' });
+    } catch (error) {
+      if (composerSessionRef.current === sessionId) setCompactionNotice({ text: error instanceof Error ? error.message : '压缩上下文失败', error: true });
+    } finally { setCompacting(false); }
+  };
+
+  const executeSlashCommand = () => {
+    if (!canCompact || editingMessageId) return;
+    setInput(previous => previous === input ? '' : previous);
+    setSlashDismissed(true);
+    void compactContext();
+  };
+
+  const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composing || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (showSlashCommand) {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSlashDismissed(true); return; }
+      if (event.key === 'Tab' && !event.shiftKey) { event.preventDefault(); setInput('/compact'); return; }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); return; }
+      if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); executeSlashCommand(); return; }
+    }
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); }
+  };
+
   const handleConfirmedAction = (event: Extract<PromptAgentEvent, { type: 'action' }>) => {
     const approvalKey = props.apiKey;
     const assertApprovalTarget = () => {
@@ -700,7 +767,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const run = async (suggestion?: string, mode: 'prompt' | 'retry' | 'resume' = 'prompt') => {
-    if (running) return;
+    if (mode === 'prompt' && !editingMessageId && !/[\r\n]/.test(suggestion ?? input) && (suggestion ?? input).trim().toLowerCase() === '/compact') { executeSlashCommand(); return; }
+    if (running || compacting) return;
     const prompt = (suggestion ?? input).trim() || (mode === 'prompt' && attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
     if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode !== 'retry' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
@@ -746,6 +814,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       } } }, event => {
         if (event.type === 'error' || event.type === 'done' && event.status && event.status !== 'completed') interruptGeneration();
         if (!uiActiveRef.current) return;
+        applyCompactionEvents([event], activeSessionId);
         if (event.runId) setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {
@@ -819,18 +888,19 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       }
     } finally {
       setRunning(false);
+      setAutoCompacting(false);
       void refreshSessions();
     }
   };
 
   const reset = async () => {
-    if (running || !activeSessionId || !activeSession) return;
+    if (running || compacting || !activeSessionId || !activeSession) return;
     if (!await confirmAction({ rememberKey: 'agent.conversation.clear', title: '清空当前助手对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
-    try { await promptAgentService.resetSession(activeSessionId); setMessages([]); } catch (error) { reportControlError(error); }
+    try { await promptAgentService.resetSession(activeSessionId); setMessages([]); setSessions(previous => previous.map(item => item.id === activeSessionId ? { ...item, context: undefined } : item)); } catch (error) { reportControlError(error); }
   };
 
   const createSession = async () => {
-    if (running) return;
+    if (running || compacting) return;
     setBusySessionAction(true);
     try {
       const created = await promptAgentService.createSession();
@@ -842,6 +912,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const saveSessionTitle = async (session: PromptAgentSession) => {
+    if (compacting) return;
     const title = editingTitle.trim();
     if (!title || title === session.title) { setEditingSessionId(''); return; }
     const updated = await promptAgentService.updateSession(session.id, { title });
@@ -850,7 +921,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const deleteSession = async (session: PromptAgentSession) => {
-    if (running || sessions.length <= 1) return;
+    if (running || compacting || sessions.length <= 1) return;
     const accepted = await confirmAction({ rememberKey: 'agent.conversation.delete', title: '删除这条助手对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
     if (!accepted) return;
     try {
@@ -865,13 +936,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const updateSessionModel = async (model: PromptAgentModel) => {
-    if (!activeSession || running) return;
+    if (!activeSession || running || compacting) return;
     const updated = await promptAgentService.updateSession(activeSession.id, { provider: model.provider, model: model.id });
-    setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+    setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated, context: undefined } : item));
   };
 
   const updateThinkingLevel = async (thinkingLevel: PromptAgentThinkingLevel) => {
-    if (!activeSession || running) return;
+    if (!activeSession || running || compacting) return;
     const updated = await promptAgentService.updateSession(activeSession.id, { thinkingLevel });
     setSessions(previous => previous.map(item => item.id === updated.id ? { ...item, ...updated } : item));
   };
@@ -904,7 +975,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
-  const stopTask = async () => { interruptGeneration(); try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
+  const stopTask = async () => { if (running) interruptGeneration(); try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
   const openAgentSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } }));
   const addAttachments = async (files: FileList | readonly File[] | null) => {
     if (!files || attachmentLoadingRef.current || !sessionReady || running || !supportsImages) return;
@@ -954,7 +1025,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <aside aria-label={t("助手会话历史")} className={`appearance-panel appearance-overlay ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
         <b className="min-w-0 flex-1 truncate text-sm dark:text-white">{t("助手对话")}</b>
-        <button type="button" onClick={() => void createSession()} disabled={running || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label={t("新建对话")} title={t("新建对话")}><Plus className="h-5 w-5" /></button>
+        <button type="button" onClick={() => void createSession()} disabled={running || compacting || busySessionAction} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20 disabled:opacity-40" aria-label={t("新建对话")} title={t("新建对话")}><Plus className="h-5 w-5" /></button>
         <button type="button" onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="mobile-touch flex h-9 w-9 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("关闭会话列表")} title={t("关闭")}><X className="h-5 w-5" /></button>
       </div>
       <div className="px-2 py-2"><input value={sessionSearch} onChange={event => setSessionSearch(event.target.value)} placeholder={t("搜索对话")} className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-xs text-gray-800 outline-none placeholder:text-gray-400 focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-600" /></div>
@@ -962,15 +1033,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-400">{t("没有找到匹配的对话")}</div>
         ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={running && session.id !== activeSessionId} onClick={() => { if (!running) { promptAgentCoordinator.selectSession(session); setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
+          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={(running || compactRequestPending) && session.id !== activeSessionId} onClick={() => { if (!running && !compactRequestPending) { promptAgentCoordinator.selectSession(session); setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} · {1} 轮 · {2}", [displayModelName(session.model), session.messageCount || 0, new Date(session.updatedAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })])}</span>
             <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">{t("工作中")}</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">{t("上次中断")}</span> : session.taskStatus === 'failed' ? <span className="text-red-500">{t("上次失败")}</span> : <span className="text-emerald-700 dark:text-emerald-400">{t("就绪")}</span>}</span>
           </button>}
           <button type="button" data-session-menu onClick={() => setSessionMenuId(value => value === session.id ? '' : session.id)} className="mobile-touch absolute right-1 top-1/2 flex -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:bg-white/70 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("会话操作")} title={t("会话操作")}><MoreHorizontal className="h-4 w-4" /></button>
           {sessionMenuId === session.id && <div data-session-menu className="appearance-panel appearance-overlay absolute right-1 top-[calc(50%+1.45rem)] z-30 w-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900">
-            <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />{t("重命名")}</button>
-            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />{t("删除")}</button>
+            <button type="button" onClick={() => { setSessionMenuId(''); setEditingSessionId(session.id); setEditingTitle(session.title); }} disabled={running || compacting} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><Pencil className="h-3.5 w-3.5" />{t("重命名")}</button>
+            <button type="button" onClick={() => { setSessionMenuId(''); void deleteSession(session); }} disabled={running || compacting || sessions.length <= 1} className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5 text-rose-500" />{t("删除")}</button>
           </div>}
         </div>)}
       </div>
@@ -1008,7 +1079,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             {running && <div className="flex min-w-0 items-center gap-1.5 truncate text-micro text-gray-500"><span className="truncate font-bold text-indigo-600 dark:text-indigo-400">{t(executionStatus)}</span></div>}
           </div>
 
-          {/* 新增：“…” 更多菜单（收进：导出会话日志、清空当前对话） */}
+          {/* 会话工具收进现有聊天菜单，不占用输入区。 */}
           <div ref={moreMenuRef} className="relative flex items-center">
             <button aria-pressed={Boolean(showMoreMenu)}
               type="button"
@@ -1035,13 +1106,16 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                   <Download className="h-4 w-4 text-gray-400" />
                   <span>{exportingLog ? t("正在导出…") : t("导出会话日志")}</span>
                 </button>
+                <button type="button" onClick={() => { setShowMoreMenu(false); void compactContext(); }} disabled={!canCompact} className="mobile-touch flex min-h-11 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800" aria-label={t("压缩上下文")}>
+                  <Minimize2 className="h-4 w-4 shrink-0 text-gray-400" /><span>{t(compacting ? '正在压缩上下文…' : '压缩上下文')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setShowMoreMenu(false);
                     void reset();
                   }}
-                  disabled={!sessionReady || running || !messages.length}
+                  disabled={!sessionReady || running || compacting || !messages.length}
                   className="flex h-9 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-rose-400 dark:hover:bg-rose-950/30"
                   aria-label={t("清空对话")}
                 >
@@ -1057,6 +1131,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>
       </header>
       {logExportError && <div role="status" className="absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg bg-red-50 px-2 py-1 text-micro font-bold text-red-600 shadow dark:bg-red-950/80 dark:text-red-300">{logExportError}</div>}
+      {(compacting || compactionNotice) && <div role="status" className={`absolute right-3 top-[calc(3.25rem+env(safe-area-inset-top))] z-40 max-w-[min(28rem,calc(100%-1.5rem))] rounded-lg px-2 py-1 text-micro font-bold shadow ${compactionNotice?.error ? 'bg-red-50 text-red-600 dark:bg-red-950/80 dark:text-red-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}>{t(compacting ? '正在压缩上下文…' : compactionNotice!.text)}</div>}
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} onScroll={event => { const element = event.currentTarget; const next = element.scrollHeight - element.scrollTop - element.clientHeight < 80; followBottomRef.current = next; setFollowingBottom(next); }} className="relative flex-1 space-y-6 overflow-y-auto px-4 py-5 md:px-6">
@@ -1077,11 +1152,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           />
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}
         </div>
-          <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
+          <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface relative mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
           {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>{t("正在编辑旧消息")}</b><span className="ml-1">{t("发送后会从这里重新执行，后面的旧回答将被替换。")}</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">{t("取消")}</button></div>}
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">{t("任务要求 {0} / 8000 字符，请分段发送。", [input.length])}</p>}
           {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">{t("正在处理图片副本…")}</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
+          {showSlashCommand && <div id={commandListId} role="listbox" aria-label={t('助手命令')} className="appearance-panel appearance-overlay absolute inset-x-0 bottom-full z-20 mb-2 max-w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+            <button id={`${commandListId}-compact`} type="button" role="option" aria-selected={canCompact} aria-disabled={!canCompact} disabled={!canCompact} tabIndex={-1} onPointerDown={event => event.preventDefault()} onClick={executeSlashCommand} className="mobile-touch flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><span className="shrink-0 font-mono">/compact</span><span className="min-w-0 truncate">{t('压缩上下文')}</span></button>
+          </div>}
           {!!attachments.length && <p className="mb-2 text-micro text-gray-500">{t("发送时交给 {0}；图片用量计入当前模型。原文件保持不变。", [`${activeModel?.provider}/${activeModel?.id}`])}</p>}
           {!!attachments.length && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -1100,13 +1178,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               ))}
             </div>
           )}
-          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void run(); } }} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或粘贴图片…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} aria-autocomplete="list" aria-controls={showSlashCommand ? commandListId : undefined} aria-haspopup="listbox" aria-activedescendant={showSlashCommand ? `${commandListId}-compact` : undefined} onFocus={() => setSlashDismissed(false)} onBlur={() => setSlashDismissed(true)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => { setInput(event.target.value); setSlashDismissed(false); }} onKeyDown={handleComposerKeyDown} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或用 / 查看命令…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
           <div className="mt-1 flex min-w-0 items-center gap-2">
             <label title={!sessionReady ? t("请配置或选择模型服务") : supportsImages ? t("添加图片") : t("当前模型不支持图片输入")} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label={t("选择图片附件")} onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
-            <AgentPermissionSelect disabled={running} />
-            <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} contextUsage={getAgentContextUsage(messages, activeModel)} open={showModelMenu} disabled={!props.open || running || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
-            {running && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full" aria-label={t("停止")} title={t("停止任务；已完成的修改不会撤销")}><Square className="h-3.5 w-3.5 fill-current" /></button>}
-            {!running && <button type="button" onClick={() => void run()} disabled={!sessionReady || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? t("请配置或选择模型服务") : t("正在加载对话") : editingMessageId ? t("重新发送") : t("执行")} title={t("发送 · Enter；换行 · Shift+Enter")}><ArrowUp className="h-[18px] w-[18px]" /></button>}
+            <AgentPermissionSelect disabled={running || compacting} />
+            <AgentModelControl key={activeSessionId} models={models} activeModel={activeModel} thinkingLevels={availableThinkingLevels} thinkingLevel={selectedThinkingLevel} contextUsage={getAgentContextUsage(messages, activeModel, activeSession?.context)} open={showModelMenu} disabled={!props.open || running || compacting || !activeSessionId || !activeSession} onOpenChange={changeModelMenu} onModelChange={updateSessionModel} onThinkingChange={updateThinkingLevel} onBusyChange={setModelChanging} onConfigure={openAgentSettings} />
+            {(running || compactRequestPending) && <button type="button" onClick={() => void stopTask()} className="agent-composer-action flex items-center justify-center rounded-full" aria-label={t("停止")} title={t("停止任务；已完成的修改不会撤销")}><Square className="h-3.5 w-3.5 fill-current" /></button>}
+            {!running && !compactRequestPending && <button type="button" onClick={() => void run()} disabled={!sessionReady || compacting || modelChanging || attachmentBusy || (!input.trim() && !attachments.length)} className="agent-composer-action flex items-center justify-center rounded-full disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 dark:disabled:bg-gray-800 dark:disabled:text-gray-600" aria-label={!sessionReady ? modelsLoaded ? t("请配置或选择模型服务") : t("正在加载对话") : editingMessageId ? t("重新发送") : t("执行")} title={t("发送 · Enter；换行 · Shift+Enter")}><ArrowUp className="h-[18px] w-[18px]" /></button>}
           </div>
         </div>
       </main>

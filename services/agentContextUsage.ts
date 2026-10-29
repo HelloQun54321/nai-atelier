@@ -1,9 +1,10 @@
-import type { PromptAgentModel, PromptAgentUsage } from './promptAgent';
-export interface AgentContextUsage { used: number; limit: number; cacheHitRate?: number }
+import type { PromptAgentCompactionContext, PromptAgentModel, PromptAgentUsage } from './promptAgent';
+export interface AgentContextUsage { used: number; limit: number; cacheHitRate?: number; source?: 'compaction' }
 
 /** 上下文取最近一次请求的完整用量，不能累加整段会话的账面 Token。 */
-export const getAgentContextUsage = (messages: readonly { role: string; model?: string; provider?: string; usage?: PromptAgentUsage }[], model?: PromptAgentModel) => {
+export const getAgentContextUsage = (messages: readonly { role: string; model?: string; provider?: string; usage?: PromptAgentUsage }[], model?: PromptAgentModel, context?: PromptAgentCompactionContext) => {
   if (!model || !Number.isFinite(model.contextWindow) || model.contextWindow <= 0) return undefined;
+  if (context && Number.isFinite(context.afterTokens) && context.afterTokens >= 0) return { used: context.afterTokens, limit: model.contextWindow, source: 'compaction' as const };
   const latest = [...messages].reverse().find(message => message.role === 'agent' && message.model === model.id && message.provider === model.provider && message.usage);
   if (!latest?.usage) return undefined;
   const usage = latest.usage;

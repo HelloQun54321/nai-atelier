@@ -519,7 +519,7 @@ test('内部快照超出历史条数后仍保留当前完整工具轮且旧会�
   }
   await service.saveMessages(session.id, messages);
   const saved = await service.readSession(session.id);
-  assert.equal(saved.messages.some(message => message.content === 'synthetic old user turn'), false);
+  assert.equal(saved.messages.some(message => message.content === 'synthetic old user turn'), true);
   assert.ok(saved.messages.some(message => message.content === 'synthetic current user turn'));
   assert.equal(saved.messages.filter(message => message._atelierRuntimeSnapshot === true).length, 205);
   const longSnapshot = saved.messages.find(message => message._atelierRuntimeSnapshot === true);
@@ -531,7 +531,7 @@ test('内部快照超出历史条数后仍保留当前完整工具轮且旧会�
   assert.ok(calls.every(id => results.has(id)));
   assert.equal((await service.loadMessages(session.id)).length, saved.messages.length);
   assert.equal(JSON.stringify(await service.getSessionHistory(session.id)).includes('[实时工作区快照'), false);
-  assert.equal((await service.listSessions()).find(item => item.id === session.id).messageCount, 1);
+  assert.equal((await service.listSessions()).find(item => item.id === session.id).messageCount, 2);
 
   const legacy = await service.createSession();
   await service.saveMessages(legacy.id, [
@@ -785,7 +785,9 @@ test('自动循环上限给出原因并在任务回执持久化，不误报完�
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true }); const session = await service.createSession();
   const previous = globalThis.fetch; const events = []; let calls = 0;
   // 每轮换一个查询，避开重复调用守卫，专门验证轮数上限。
-  globalThis.fetch = async () => syntheticAgentStream({ id: ++calls, tool: 'search_novelai_docs', args: { query: 'synthetic ' + calls } });
+  globalThis.fetch = async (_url, options) => !JSON.parse(options.body).tools?.length
+    ? syntheticAgentStream({ text: '合成查询摘要，继续核对未完成事项' }, { input: 1000, output: 40 })
+    : syntheticAgentStream({ id: ++calls, tool: 'search_novelai_docs', args: { query: 'synthetic ' + calls } });
   try {
     await service.run({ sessionId: session.id, message: '检查参数', draft: { params: {} } }, e => events.push(e));
     const done = events.find(e => e.type === 'done'), task = await service.getTask(session.id);
@@ -1909,21 +1911,217 @@ test('角色按 ID 合并动态目录及其来源负面，保留全部未传内�
 }));
 
 
-test('实际助手请求折叠查询正文后，会话文件仍保存完整工具原文和配对', () => isolated(async service => {
+test('Pi压缩：自动摘要后继续任务，完整工具原文和配对仍存档且不重放', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 64000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
   const session = await service.createSession();
   const original = longToolRun(80, { chars: 3000 });
+  Object.assign(original.findLast(message => message.role === 'assistant'), { provider: session.provider, model: session.model, timestamp: 2, usage: { input: 50000, output: 2000, cacheRead: 0, cacheWrite: 0, totalTokens: 52000 } });
   await service.saveMessages(session.id, original);
 
-  const previous = globalThis.fetch; const requests = [];
+  const previous = globalThis.fetch; const requests = [], events = [];
   globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ text: '已读取' }); };
-  try { await service.run({ sessionId: session.id, message: '继续核对', draft: { params: {} } }, () => {}); }
+  try { await service.run({ sessionId: session.id, message: '继续核对', draft: { params: { steps: 31 } } }, event => events.push(event)); }
   finally { globalThis.fetch = previous; }
-  assert.equal(requests.length, 1);
-  assert.equal(JSON.stringify(requests[0].messages).includes('_agentFolded'), true);
+  const summaries = requests.filter(request => !request.tools?.length), ordinary = requests.filter(request => request.tools?.length);
+  assert.ok(summaries.length > 0);
+  assert.equal(ordinary.length, 1);
+  assert.equal(events.some(event => event.type === 'compaction_start'), true);
+  assert.equal(events.some(event => event.type === 'compaction_end' && !event.error), true);
+  assert.equal(events.some(event => event.type === 'tool_start'), false);
+  assert.match(JSON.stringify(ordinary[0].messages), /先前对话的压缩摘要/);
+  assert.match(JSON.stringify(ordinary[0].messages), /steps.{0,8}31/);
   const saved = await service.loadMessages(session.id);
   assert.equal(saved.some(isFolded), false);
   const results = saved.filter(message => message.role === 'toolResult');
   assert.equal(results.length, original.filter(message => message.role === 'toolResult').length);
   assert.deepEqual(results, original.filter(message => message.role === 'toolResult'));
+}));
+
+const piCompactionHistory = () => {
+  const messages = [];
+  for (let index = 0; index < 100; index++) messages.push(
+    { role: 'user', content: `synthetic-user-${index} ` + '原始约定'.repeat(80) },
+    { role: 'assistant', content: [{ type: 'text', text: `synthetic-answer-${index} ` + '已完成记录'.repeat(80) }] },
+  );
+  messages.splice(20, 0,
+    { role: 'assistant', content: [{ type: 'toolCall', id: 'historic-write', name: 'update_prompts', arguments: { basePrompt: 'historical-only' } }] },
+    { role: 'toolResult', toolCallId: 'historic-write', toolName: 'update_prompts', content: [{ type: 'text', text: 'historical receipt' }] },
+  );
+  messages.push({ role: 'user', _atelierRuntimeSnapshot: true, content: '[实时工作区快照] historical snapshot only', timestamp: 1 });
+  return messages;
+};
+
+test('Pi压缩：手动摘要重开恢复边界，后续工具checkpoint不覆盖完整原文', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), original = piCompactionHistory();
+  await service.saveMessages(session.id, original);
+  const before = (await service.readSession(session.id)).messages;
+  const previous = globalThis.fetch, requests = [], events = [];
+  let ordinaryCalls = 0;
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body); requests.push(request);
+    return syntheticAgentStream(!request.tools?.length ? { text: '合成历史摘要：保留原约定和完成回执' }
+      : ++ordinaryCalls === 1 ? { id: 'fresh-read', tool: 'get_local_time' } : { text: '继续完成' }, { input: 1000, output: 50 });
+  };
+  try {
+    const compacted = await service.compactSession(session.id);
+    assert.equal(compacted.compacted, true);
+    const persisted = await service.readSession(session.id);
+    assert.deepEqual(persisted.messages, before);
+    assert.ok(persisted.compaction.firstKeptMessageIndex > 0 && persisted.compaction.firstKeptMessageIndex < before.length);
+    assert.ok(compacted.context.afterTokens < compacted.context.beforeTokens);
+    assert.equal(requests.every(request => !request.tools?.length), true);
+    assert.equal(JSON.stringify(requests).includes('historical snapshot only'), false);
+    const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
+    restored.appendAuditLog = async () => {};
+    assert.deepEqual((await restored.readSession(session.id)).compaction, persisted.compaction);
+    await restored.run({ sessionId: session.id, message: '只读取当前时间', draft: { params: { steps: 33 } } }, event => events.push(event));
+    const saved = await restored.readSession(session.id);
+    assert.deepEqual(saved.messages.slice(0, before.length), before);
+    assert.equal(saved.compaction.firstKeptMessageIndex, persisted.compaction.firstKeptMessageIndex);
+    assert.equal(events.filter(event => event.type === 'tool_start').length, 1);
+    assert.equal(events.some(event => event.toolCallId === 'historic-write'), false);
+    const ordinary = requests.filter(request => request.tools?.length);
+    assert.equal(ordinary.length, 2);
+    assert.match(JSON.stringify(ordinary[0].messages), /合成历史摘要/);
+    assert.equal(JSON.stringify(ordinary[0].messages).includes('synthetic-user-0 '), false);
+    assert.match(JSON.stringify(ordinary.at(-1).messages), /steps.{0,8}33/);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('Pi压缩：摘要失败或取消保留原文与旧摘要，不执行历史工具且忙时拒绝', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession(); await service.saveMessages(session.id, piCompactionHistory());
+  const original = await service.readSession(session.id), previous = globalThis.fetch;
+  original.compaction = { version: 1, summary: '先前成功保存的合成摘要', firstKeptMessageIndex: 2, tokensBefore: 1000, usage: { input: 100, output: 10 }, createdAt: 1, provider: original.meta.provider, model: original.meta.model };
+  await service.writeSession(session.id, original);
+  let calls = 0;
+  try {
+    globalThis.fetch = async () => { calls++; return new Response(JSON.stringify({ error: { message: 'synthetic summary rejected' } }), { status: 400, headers: { 'content-type': 'application/json' } }); };
+    await assert.rejects(service.compactSession(session.id));
+    assert.equal(calls, 1);
+    assert.deepEqual(await service.readSession(session.id), original);
+    globalThis.fetch = async (_url, options) => {
+      calls++;
+      assert.equal(JSON.parse(options.body).tools?.length || 0, 0);
+      return syntheticAgentStream({ id: 'forbidden-summary-tool', tool: 'request_generation', args: { count: 1 } });
+    };
+    await assert.rejects(service.compactSession(session.id), /摘要未完整生成/);
+    assert.deepEqual(await service.readSession(session.id), original);
+    const controller = new AbortController();
+    let started;
+    const start = new Promise(resolve => { started = resolve; });
+    globalThis.fetch = async (_url, options) => { calls++; started(); return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })); };
+    const pending = service.compactSession(session.id, { signal: controller.signal });
+    await start;
+    await assert.rejects(service.compactSession(session.id), error => error.status === 409);
+    controller.abort(new DOMException('synthetic cancel', 'AbortError'));
+    await assert.rejects(pending);
+    assert.deepEqual(await service.readSession(session.id), original);
+    assert.equal(calls, 3);
+    assert.equal(service.activeAgents.size, 0);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('Pi压缩：手动摘要期间编辑旧消息返回409，取消后原文和摘要均不变', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  await service.saveMessages(session.id, piCompactionHistory());
+  const before = await service.readSession(session.id), previous = globalThis.fetch, controller = new AbortController();
+  let started;
+  const start = new Promise(resolve => { started = resolve; });
+  globalThis.fetch = async (_url, options) => { started(); return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true })); };
+  const pending = service.compactSession(session.id, { signal: controller.signal });
+  try {
+    await start;
+    assert.equal(service.startingAgents.has(session.id), true);
+    await assert.rejects(service.reviseSessionMessage(session.id, 'saved-0', '不应覆盖原文'), error => error.status === 409);
+    assert.deepEqual(await service.readSession(session.id), before);
+  } finally {
+    controller.abort(new DOMException('synthetic cancel', 'AbortError'));
+    await assert.rejects(pending);
+    globalThis.fetch = previous;
+  }
+  assert.deepEqual(await service.readSession(session.id), before);
+  assert.equal(service.startingAgents.has(session.id), false);
+}));
+
+test('Pi压缩：切换模型或来源后会话列表不复活旧模型的上下文估算', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }, { id: 'b', contextWindow: 64000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  await service.saveMessages(session.id, [{ role: 'user', content: '旧请求' }, { role: 'assistant', content: [{ type: 'text', text: '旧回复' }], timestamp: 1 }, { role: 'user', content: '近期请求' }]);
+  const value = await service.readSession(session.id);
+  const context = { beforeTokens: 5000, afterTokens: 1000, retainedMessages: 1, contextWindow: 128000 };
+  value.compaction = { version: 1, summary: '合成摘要', firstKeptMessageIndex: 2, createdAt: 2, provider: value.meta.provider, model: value.meta.model, context };
+  await service.writeSession(session.id, value);
+  assert.deepEqual((await service.listSessions()).find(item => item.id === session.id).context, context);
+  await service.updateSession(session.id, { model: 'b' });
+  assert.equal((await service.listSessions()).find(item => item.id === session.id).context, undefined);
+  const switched = await service.readSession(session.id);
+  assert.deepEqual(switched.compaction, value.compaction, '切换模型只影响展示，不重写旧摘要');
+  switched.meta.model = value.meta.model;
+  switched.compaction.provider = 'different-synthetic-provider';
+  await service.writeSession(session.id, switched);
+  assert.equal((await service.listSessions()).find(item => item.id === session.id).context, undefined);
+}));
+
+test('Pi压缩：自动摘要失败也保留本次新用户请求和完整旧历史', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  await service.saveMessages(session.id, piCompactionHistory());
+  const original = await service.readSession(session.id);
+  original.compaction = { version: 1, summary: '上次有效摘要', firstKeptMessageIndex: 2, tokensBefore: 1000, createdAt: 1, provider: original.meta.provider, model: original.meta.model };
+  Object.assign(original.messages.findLast(message => message.role === 'assistant'), { provider: original.meta.provider, model: original.meta.model, timestamp: 2, usage: { input: 100000, cacheRead: 3000, cacheWrite: 0, output: 1000, totalTokens: 104000 } });
+  await service.writeSession(session.id, original);
+  const previous = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    assert.equal(JSON.parse(options.body).tools?.length || 0, 0, '只尝试摘要，没有启动业务模型或工具');
+    return new Response(JSON.stringify({ error: { message: 'synthetic summary rejected' } }), { status: 400, headers: { 'content-type': 'application/json' } });
+  };
+  try { await assert.rejects(service.run({ sessionId: session.id, message: '本次新请求必须在摘要失败后保留', draft: { params: {} } }, () => {})); }
+  finally { globalThis.fetch = previous; }
+  const saved = await service.readSession(session.id);
+  assert.equal(calls, 1);
+  assert.deepEqual(saved.messages.slice(0, original.messages.length), original.messages);
+  assert.deepEqual(saved.compaction, original.compaction);
+  assert.ok(saved.messages.slice(original.messages.length).some(message => message.role === 'user' && JSON.stringify(message.content).includes('本次新请求必须在摘要失败后保留')));
+  const restored = new PromptAgentService({ lanSecret: 'synthetic', configFile: service.isolatedRoot }); await restored.init();
+  assert.ok((await restored.getSessionHistory(session.id)).some(message => message.role === 'user' && message.text === '本次新请求必须在摘要失败后保留'));
+}));
+
+test('Pi压缩：大量短消息未达完整窗口80%时不发摘要请求', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 128000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const messages = Array.from({ length: 220 }, (_, index) => ({ role: index % 2 ? 'assistant' : 'user', content: [{ type: 'text', text: '合成短消息' }], timestamp: index,
+    ...(index % 2 ? { provider: session.provider, model: session.model, api: 'openai-completions', stopReason: 'stop', usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2 } } : {}) }));
+  await service.saveMessages(session.id, messages);
+  const previous = globalThis.fetch, requests = [], events = [];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ text: '本轮完成' }, { input: 1000, output: 10 }); };
+  try { await service.run({ sessionId: session.id, message: '继续短会话', draft: { params: {} } }, event => events.push(event)); }
+  finally { globalThis.fetch = previous; }
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].tools?.length > 0);
+  assert.equal(events.some(event => event.type === 'compaction_start'), false);
+  const saved = await service.readSession(session.id);
+  assert.deepEqual(saved.messages.slice(0, messages.length), messages);
+  assert.equal(saved.compaction, undefined);
+}));
+
+test('Pi压缩：已折叠旧工具原文很大但请求未达80%时不反复摘要', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), models: [{ id: 'a', contextWindow: 64000, maxTokens: 8192 }], apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), original = longToolRun(80, { chars: 3000 });
+  await service.saveMessages(session.id, original);
+  const previous = globalThis.fetch, requests = [], events = [];
+  globalThis.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return syntheticAgentStream({ text: '无需另发摘要' }, { input: 20000, output: 10 }); };
+  try {
+    for (const message of ['继续核对', '接着核对']) await service.run({ sessionId: session.id, message, draft: { params: {} } }, event => events.push(event));
+  } finally { globalThis.fetch = previous; }
+  assert.equal(requests.length, 2, '两次业务请求，没有额外摘要请求');
+  assert.ok(requests.every(request => request.tools?.length > 0 && JSON.stringify(request.messages).includes('_agentFolded')));
+  assert.equal(events.some(event => event.type === 'compaction_start'), false);
+  const saved = await service.readSession(session.id);
+  assert.deepEqual(saved.messages.slice(0, original.length), original);
+  assert.equal(saved.compaction, undefined);
 }));

@@ -15,6 +15,7 @@ const executable = process.env.NAI_DESKTOP_TEST_EXE;
 test('Windows 安装资源独立启动、D1/R2 持久化、词库可写与退出回收', { skip: !executable, timeout: 100_000 }, async () => {
   const root = createWorkspace('desktop-package-');
   const exe = resolve(executable), runtime = join(dirname(exe), 'resources', 'runtime');
+  assert.match(await readFile(join(runtime, 'scripts', 'agent-compaction.mjs'), 'utf8'), /prepareCompaction/);
   const data = join(root, '数据 中文 空格'), documents = join(root, '文档');
   const occupied = createServer(socket => socket.destroy());
   let child, ports;

@@ -3,6 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { AgentContextRing } from '../../components/AgentContextRing';
+import { setLanguage } from '../../services/i18n';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('上下文浮层使用全局面板材质及明暗配色，缓存分隔线与次级文字同步适配', () => {
   render(<AgentContextRing usage={{ used: 4000, limit: 10000, cacheHitRate: 50 }} />);
@@ -56,4 +57,23 @@ it('键盘焦点仍在圆环时，鼠标离开不抢走说明，失焦后关闭'
   render(<AgentContextRing usage={{ used: 4, limit: 10 }} />); const ring = screen.getByRole('meter');
   act(() => ring.focus()); fireEvent.pointerEnter(ring); fireEvent.pointerLeave(ring);
   expect(screen.getByRole('tooltip')).toBeTruthy(); act(() => ring.blur()); expect(screen.queryByRole('tooltip')).toBeNull();
+});
+
+it('压缩后的数值明确显示为估算，不能冒充最近回复用量或缓存命中', () => {
+  render(<AgentContextRing usage={{ used: 1500, limit: 10000, source: 'compaction' }} />);
+  const ring = screen.getByRole('meter');
+  expect(ring.getAttribute('aria-valuetext')).toContain('摘要压缩后的上下文估算');
+  expect(ring.getAttribute('aria-valuetext')).not.toContain('最近一次模型回复');
+  fireEvent.focus(ring);
+  expect(screen.getByRole('tooltip').textContent).toContain('摘要压缩后的上下文估算');
+  expect(screen.getByRole('tooltip').textContent).toContain('缓存命中率：未知');
+});
+
+it('英文压缩估算无障碍说明完整翻译，不把中文句式拼在已翻译短语外', () => {
+  setLanguage('en');
+  try {
+    render(<AgentContextRing usage={{ used: 1500, limit: 10000, source: 'compaction' }} />);
+    const text = screen.getByRole('meter').getAttribute('aria-valuetext')!;
+    expect(text).toContain('1,500'); expect(text).not.toMatch(/[\u3400-\u9fff]/);
+  } finally { setLanguage('zh-CN'); }
 });

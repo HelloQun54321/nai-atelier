@@ -25,3 +25,10 @@ it('缓存命中率只以全部输入为分母，包含缓存写入并排除输�
   expect(getAgentContextUsage([{ ...message, usage: { ...usage, input: 0, cacheRead: 0, cacheWrite: 0 } }], model)?.cacheHitRate).toBeUndefined();
   expect(getAgentContextUsage([{ ...message, usage: { ...usage, cacheRead: undefined } as unknown as PromptAgentUsage }], model)?.cacheHitRate).toBeUndefined();
 });
+
+it('压缩后使用明确标记的上下文估算，不冒充缓存或把摘要请求用量累加进去', () => {
+  const context = { beforeTokens: 9000, afterTokens: 1500, retainedMessages: 4, contextWindow: 10000 };
+  expect(getAgentContextUsage([message], model, context)).toEqual({ used: 1500, limit: 10000, source: 'compaction' });
+  expect(getAgentContextUsage([message], model, { ...context, afterTokens: NaN })).toMatchObject({ used: 4000 });
+  expect(getAgentContextUsage([message], model)).toMatchObject({ used: 4000 });
+});

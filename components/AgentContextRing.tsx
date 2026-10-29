@@ -14,7 +14,7 @@ export const AgentContextRing: React.FC<{ usage?: AgentContextUsage }> = ({ usag
   const id = useId();
   const position = useAgentPopoverPosition(open, anchor, tooltip, 260, 'center');
   const percent = usage ? Math.min(100, Math.max(0, usage.used / usage.limit * 100)) : undefined;
-  const contextTitle = usage ? `上下文已用 ${Math.round(percent!)}% · ${usage.used.toLocaleString(getLanguage())} / ${usage.limit.toLocaleString(getLanguage())} tokens（最近一次模型回复用量，含缓存与输出）` : '上下文使用情况：尚未收到当前模型的用量数据';
+  const contextTitle = usage ? t('上下文已用 {0}% · {1} / {2} tokens（{3}）', [Math.round(percent!), usage.used.toLocaleString(getLanguage()), usage.limit.toLocaleString(getLanguage()), t(usage.source === 'compaction' ? '摘要压缩后的上下文估算' : '最近一次模型回复用量，含缓存与输出')]) : t('上下文使用情况：尚未收到当前模型的用量数据');
   const cache = usage?.cacheHitRate;
   const close = () => { pinned.current = false; setOpen(false); };
   useEffect(() => {
@@ -26,7 +26,7 @@ export const AgentContextRing: React.FC<{ usage?: AgentContextUsage }> = ({ usag
     return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
   return <>
-    <span ref={anchor} tabIndex={0} role={usage ? 'meter' : 'img'} aria-label={usage ? t("上下文使用情况") : t(contextTitle)} aria-valuemin={usage ? 0 : undefined} aria-valuemax={usage ? 100 : undefined} aria-valuenow={percent} aria-valuetext={t(contextTitle)} aria-describedby={open ? id : undefined} title=""
+    <span ref={anchor} tabIndex={0} role={usage ? 'meter' : 'img'} aria-label={usage ? t("上下文使用情况") : contextTitle} aria-valuemin={usage ? 0 : undefined} aria-valuemax={usage ? 100 : undefined} aria-valuenow={percent} aria-valuetext={contextTitle} aria-describedby={open ? id : undefined} title=""
       onPointerEnter={event => { if (event.pointerType !== 'touch') setOpen(true); }} onPointerLeave={event => { if (event.pointerType !== 'touch' && !pinned.current && document.activeElement !== anchor.current) setOpen(false); }}
       onFocus={() => setOpen(true)} onBlur={close} onClick={() => { pinned.current = !pinned.current; setOpen(pinned.current); }}
       onKeyDown={event => { if (event.key === 'Escape') { close(); event.stopPropagation(); } else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pinned.current = !open; setOpen(!open); } }}
@@ -37,6 +37,7 @@ export const AgentContextRing: React.FC<{ usage?: AgentContextUsage }> = ({ usag
       <div className="text-gray-500 dark:text-gray-400">{t("上下文窗口：")}</div>
       <div className="text-gray-500 dark:text-gray-400">{usage ? t("{0}% 已用", [Math.round(percent!)]) : t("用量未知")}</div>
       <div>{usage ? t("已用 {0} 标记，共 {1}", [compactTokens(usage.used), compactTokens(usage.limit)]) : t("当前模型尚未返回用量")}</div>
+      {usage?.source === 'compaction' && <div className="text-xs text-gray-500 dark:text-gray-400">{t('摘要压缩后的上下文估算')}</div>}
       <div className="mt-1 border-t border-gray-200 pt-1 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{t("缓存命中率：{0}", [cache === undefined ? t("未知") : `${cache.toFixed(1)}%`])}</div>
     </div>, document.body)}
   </>;

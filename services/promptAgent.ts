@@ -7,6 +7,7 @@ import { agentConnectionEndpoint } from './agentConnection.mjs';
 import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace';
 import { stableOperationId } from './operationId';
 import type { PromptLibraryTreeState } from './promptLibraryDirectories';
+import { getLanguage } from './i18n';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -173,6 +174,7 @@ export interface PromptAgentSession {
   messageCount?: number;
   running?: boolean;
   taskStatus?: 'running' | 'completed' | 'failed' | 'aborted' | 'interrupted';
+  context?: PromptAgentCompactionContext;
 }
 
 export interface PromptAgentUsage {
@@ -190,6 +192,14 @@ export interface PromptAgentVisionUsage {
   provider: string;
   model: string;
   imageCount: number;
+  usage?: PromptAgentUsage;
+}
+
+export interface PromptAgentCompactionContext { beforeTokens: number; afterTokens: number; retainedMessages: number; contextWindow: number }
+
+export interface PromptAgentCompactionResult {
+  compacted: boolean;
+  context?: PromptAgentCompactionContext;
   usage?: PromptAgentUsage;
 }
 
@@ -220,6 +230,8 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
+  | { type: 'compaction_start' }
+  | { type: 'compaction_end'; context?: PromptAgentCompactionContext; usage?: PromptAgentUsage; error?: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; errorDetail?: string; stopReason?: string; draftChanged?: boolean; promptChange?: AgentPromptChange }
   | { type: 'error'; error: string; errorDetail?: string }));
 
@@ -627,6 +639,11 @@ export const promptAgentService = {
   deleteSession: async (sessionId: string) => {
     const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
     if (!response.ok) return readError(response);
+  },
+  compactSession: async (sessionId: string): Promise<PromptAgentCompactionResult> => {
+    const response = await fetch(`/api/prompt-agent/sessions/${encodeURIComponent(sessionId)}/compact`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ language: getLanguage() }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
   },
   control: async (sessionId: string, action: 'abort' | 'confirm' | 'finalize' | 'ui_result', message?: string, payload?: Record<string, unknown>) => {
     const response = await fetch('/api/prompt-agent/control', { method: 'POST', headers: { 'Content-Type': 'application/json', ...agentAuthHeaders() }, body: JSON.stringify({ sessionId, action, message, ...(payload || {}) }) });

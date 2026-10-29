@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PromptAgentPanel } from '../../components/PromptAgentPanel';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { NAIParams } from '../../types';
-import { promptAgentService } from '../../services/promptAgent';
+import { promptAgentService, type PromptAgentEvent, type PromptAgentCompactionResult } from '../../services/promptAgent';
 import { promptAgentCoordinator } from '../../services/promptAgentCoordinator';
 import { createAgentPromptChange, type AgentPromptChange } from '../../services/agentPromptChanges.mjs';
 import type { PromptAgentDraft } from '../../types';
@@ -118,6 +118,231 @@ const panelElement = (_canUndo = false, overrides = {}) => {
 const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
+
+  it.each([{ width: 320, dark: false }, { width: 1280, dark: true }])('斜杠建议贴近输入框且不占历史空间，$width宽度明暗主题可点击执行并保留后来输入', async ({ width, dark }) => {
+    vi.stubGlobal('innerWidth', width); stubServices();
+    const history = [{ id: 'u', role: 'user' as const, text: '原来的目标' }, { id: 'a', role: 'agent' as const, text: '保留的回答' }];
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue(history); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const run = vi.spyOn(promptAgentService, 'run');
+    let finish!: (value: PromptAgentCompactionResult) => void;
+    const compact = vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const wasDark = document.documentElement.classList.contains('dark'); document.documentElement.classList.toggle('dark', dark);
+    try {
+      renderPanel(); await screen.findByText('保留的回答');
+      const input = screen.getByRole('textbox', { name: '任务要求' });
+      expect(input.getAttribute('placeholder')).toBe('输入要求，或用 / 查看命令…');
+      fireEvent.change(input, { target: { value: '/' } });
+      const list = screen.getByRole('listbox', { name: '助手命令' });
+      const option = within(list).getByRole('option', { name: '/compact 压缩上下文' });
+      expect(input.getAttribute('aria-controls')).toBe(list.id); expect(input.getAttribute('aria-activedescendant')).toBe(option.id);
+      expect(input.getAttribute('aria-haspopup')).toBe('listbox'); expect(input.hasAttribute('aria-expanded')).toBe(false);
+      for (const name of ['absolute', 'bottom-full', 'inset-x-0', 'max-w-full', 'appearance-overlay', 'bg-white', 'dark:bg-gray-900']) expect(list.classList.contains(name)).toBe(true);
+      expect(list.parentElement?.classList.contains('relative')).toBe(true); expect(option.classList.contains('min-h-11')).toBe(true);
+      expect(screen.getAllByRole('option')).toHaveLength(1);
+      fireEvent.pointerDown(option, { pointerType: width < 768 ? 'touch' : 'mouse' }); fireEvent.click(option);
+      expect(compact).toHaveBeenCalledExactlyOnceWith('session-1'); expect(input).toHaveProperty('value', '');
+      expect(screen.queryByRole('listbox')).toBeNull();
+      fireEvent.change(input, { target: { value: '/compact' } });
+      expect(screen.getByRole('option', { name: '/compact 压缩上下文' })).toHaveProperty('disabled', true);
+      fireEvent.keyDown(input, { key: 'Enter' }); expect(compact).toHaveBeenCalledOnce(); expect(input).toHaveProperty('value', '/compact');
+      fireEvent.change(input, { target: { value: '压缩期间后来写的草稿' } });
+      await act(async () => finish({ compacted: true }));
+      expect(await screen.findByText('上下文已压缩')).toBeTruthy(); expect(input).toHaveProperty('value', '压缩期间后来写的草稿');
+      expect(screen.getByText('保留的回答')).toBeTruthy(); expect(run).not.toHaveBeenCalled();
+    } finally { document.documentElement.classList.toggle('dark', wasDark); }
+  });
+
+  it('斜杠支持英文前缀、中文过滤、Tab补全及Esc收起，Shift+Enter和IME确认不误执行', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '既有目标' }]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const compact = vi.spyOn(promptAgentService, 'compactSession').mockResolvedValue({ compacted: false }); const close = vi.fn();
+    renderPanel(false, { onClose: close }); await screen.findByText('既有目标'); const input = screen.getByRole('textbox', { name: '任务要求' });
+    for (const value of ['/comp', '/压缩']) { fireEvent.change(input, { target: { value } }); expect(screen.getByRole('option', { name: '/compact 压缩上下文' })).toBeTruthy(); }
+    fireEvent.keyDown(input, { key: 'Tab' }); expect(input).toHaveProperty('value', '/compact'); expect(compact).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true }); expect(compact).not.toHaveBeenCalled();
+    fireEvent.compositionStart(input); expect(screen.queryByRole('listbox')).toBeNull(); fireEvent.keyDown(input, { key: 'Enter', isComposing: true }); expect(compact).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input); fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 }); expect(compact).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Escape' }); expect(screen.queryByRole('listbox')).toBeNull(); expect(close).not.toHaveBeenCalled(); expect(input).toHaveProperty('value', '/compact');
+    fireEvent.change(input, { target: { value: '/comp' } }); fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByText('当前上下文无需压缩')).toBeTruthy(); expect(compact).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/compact', ' /COMPACT '])('完整命令“%s”点击发送走压缩而非模型，失败仍保留附件与后来输入', async command => {
+    stubServices({ imageInput: true }); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '原始目标' }]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '', attachments: [{ name: 'slash-synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
+    const run = vi.spyOn(promptAgentService, 'run'); let reject!: (error: Error) => void;
+    const compact = vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+    try {
+      renderPanel(); await screen.findByText('原始目标'); const input = screen.getByRole('textbox', { name: '任务要求' });
+      fireEvent.change(input, { target: { value: command } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+      expect(compact).toHaveBeenCalledOnce(); expect(input).toHaveProperty('value', '');
+      fireEvent.change(input, { target: { value: '失败也不丢的新输入' } }); await act(async () => reject(new Error('合成摘要失败')));
+      expect(await screen.findByText('合成摘要失败')).toBeTruthy(); expect(input).toHaveProperty('value', '失败也不丢的新输入');
+      expect(screen.getByRole('button', { name: '移除附件 slash-synthetic.png' })).toBeTruthy(); expect(run).not.toHaveBeenCalled();
+    } finally { promptAgentCoordinator.saveComposer('session-1', '', []); }
+  });
+
+  it.each([false, true])('无历史或任务忙=%s时命令不能启动且不作为普通消息发送', async busy => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue(busy ? [{ id: 'u', role: 'user', text: '执行中的目标' }] : []); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue(busy ? { status: 'running' } : {});
+    const compact = vi.spyOn(promptAgentService, 'compactSession'), run = vi.spyOn(promptAgentService, 'run');
+    renderPanel(); const input = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    if (busy) await screen.findByRole('button', { name: '停止' });
+    fireEvent.change(input, { target: { value: '/compact' } }); const option = screen.getByRole('option', { name: '/compact 压缩上下文' });
+    expect(option).toHaveProperty('disabled', true); fireEvent.click(option); fireEvent.keyDown(input, { key: 'Enter' });
+    if (!busy) fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    expect(compact).not.toHaveBeenCalled(); expect(run).not.toHaveBeenCalled(); expect(input).toHaveProperty('value', '/compact');
+  });
+
+  it.each(['https://example.com/a/b', '普通正文 /compact', '/unknown', '/compact extra', '/compact\n继续正文'])('正文“%s”原样发送，不拦截未注册或混入正文的斜杠', async text => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const compact = vi.spyOn(promptAgentService, 'compactSession'); const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async () => {});
+    renderPanel(); const input = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    fireEvent.change(input, { target: { value: text } }); expect(screen.queryByRole('listbox')).toBeNull(); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce()); expect(run.mock.calls[0][0].message).toBe(text); expect(compact).not.toHaveBeenCalled();
+  });
+
+  it('编辑旧消息时完整斜杠仍走原编辑重发，不抢走编辑语义', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '旧消息' }]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const compact = vi.spyOn(promptAgentService, 'compactSession'); const revise = vi.spyOn(promptAgentService, 'reviseMessage').mockResolvedValue([{ id: 'u', role: 'user', text: '/compact' }]);
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async () => {});
+    renderPanel(); await screen.findByText('旧消息'); fireEvent.click(screen.getByRole('button', { name: '编辑重发' }));
+    const input = screen.getByRole('textbox', { name: '任务要求' }); fireEvent.change(input, { target: { value: '/compact' } }); expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重新发送' })); await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(revise).toHaveBeenCalledExactlyOnceWith('session-1', 'u', '/compact'); expect(compact).not.toHaveBeenCalled();
+  });
+
+  it('没有真实对话或任务仍在执行时，聊天菜单不能压缩上下文', async () => {
+    stubServices();
+    const compact = vi.spyOn(promptAgentService, 'compactSession');
+    const history = vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    const task = vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const view = renderPanel(); await screen.findByRole('heading', { name: '新对话' });
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    expect(screen.getByRole('button', { name: '压缩上下文' })).toHaveProperty('disabled', true);
+    view.unmount(); history.mockResolvedValue([{ id: 'user', role: 'user', text: '已有要求' }]); task.mockResolvedValue({ status: 'running' });
+    renderPanel(); await screen.findAllByRole('button', { name: /停止/ });
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    expect(screen.getByRole('button', { name: '压缩上下文' })).toHaveProperty('disabled', true);
+    expect(compact).not.toHaveBeenCalled();
+  });
+
+  it.each([320, 1280])('宽度 %s：压缩只从聊天菜单发起，成功刷新原历史但保留输入草稿', async width => {
+    vi.stubGlobal('innerWidth', width); stubServices();
+    const original = [{ id: 'user', role: 'user' as const, text: '原始要求' }, { id: 'answer', role: 'agent' as const, text: '原始回答' }];
+    const history = vi.spyOn(promptAgentService, 'getSession').mockResolvedValue(original);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    let finish!: (value: PromptAgentCompactionResult) => void;
+    const compact = vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    renderPanel(); await screen.findByText('原始回答');
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    fireEvent.change(input, { target: { value: '还没发送的下一条' } });
+    expect(screen.queryByRole('button', { name: '压缩上下文' })).toBeNull();
+    const readsBefore = history.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    const button = screen.getByRole('button', { name: '压缩上下文' });
+    expect(button.classList.contains('min-h-11')).toBe(true); fireEvent.click(button);
+    expect(compact).toHaveBeenCalledExactlyOnceWith('session-1');
+    expect(screen.getByText('正在压缩上下文…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '执行' })).toBeNull();
+    expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '助手权限' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '模型与思考设置' })).toHaveProperty('disabled', true);
+    expect(input).toHaveProperty('value', '还没发送的下一条');
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }));
+    expect(screen.getByRole('button', { name: '压缩上下文' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: '压缩上下文' })); expect(compact).toHaveBeenCalledOnce();
+    await act(async () => finish({ compacted: true, context: { beforeTokens: 30000, afterTokens: 6000, retainedMessages: 8, contextWindow: 64000 } }));
+    expect(await screen.findByText('上下文已压缩')).toBeTruthy();
+    expect(history.mock.calls.length).toBeGreaterThan(readsBefore);
+    expect(screen.getByText('原始要求')).toBeTruthy(); expect(screen.getByText('原始回答')).toBeTruthy();
+    expect(input).toHaveProperty('value', '还没发送的下一条');
+    expect(screen.getByRole('button', { name: '执行' })).toHaveProperty('disabled', false);
+    expect(original).toHaveLength(2);
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('6,000');
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('摘要压缩后的上下文估算');
+  });
+
+  it('自动压缩事件更新状态与估算，真实回复回执覆盖估算且摘要不成为聊天发言', async () => {
+    stubServices(); vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]); vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    let emit!: (event: PromptAgentEvent) => void, finish!: () => void;
+    vi.spyOn(promptAgentService, 'run').mockImplementation((_input, onEvent) => { emit = onEvent; return new Promise<undefined>(resolve => { finish = () => resolve(undefined); }); });
+    renderPanel(); const input = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect(input).toHaveProperty('disabled', false));
+    fireEvent.change(input, { target: { value: '继续当前目标' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    act(() => emit({ type: 'compaction_start' })); expect(screen.getAllByText('正在压缩上下文…').length).toBeGreaterThan(0);
+    fireEvent.change(input, { target: { value: '执行期间继续写' } });
+    act(() => emit({ type: 'compaction_end', context: { beforeTokens: 30000, afterTokens: 5000, retainedMessages: 6, contextWindow: 64000 }, usage: { input: 25000, output: 1000, cacheRead: 0, cacheWrite: 0, totalTokens: 26000 } }));
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('5,000');
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('摘要压缩后的上下文估算');
+    act(() => { emit({ type: 'response_start', id: 'response' }); emit({ type: 'text_delta', delta: '继续后的真实回答' }); emit({ type: 'response_end', provider: 'deepseek', model: 'deepseek-chat', usage: { input: 5100, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 5200 }, stopReason: 'stop', timestamp: 2 }); });
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('5,200');
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).not.toContain('估算');
+    expect(screen.getAllByText('继续当前目标')).toHaveLength(1); expect(screen.getByText('继续后的真实回答')).toBeTruthy();
+    expect(input).toHaveProperty('value', '执行期间继续写');
+    await act(async () => finish());
+  });
+
+  it('重开会话和远端任务事件恢复压缩估算与失败通知，不显示摘要为新消息', async () => {
+    const context = { beforeTokens: 30000, afterTokens: 4500, retainedMessages: 6, contextWindow: 64000 };
+    stubServices({ context });
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '原始用户内容' }]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ events: [{ type: 'compaction_start' }, { type: 'compaction_end', error: '自动摘要失败，原文保留' }] });
+    renderPanel(); await screen.findByText('原始用户内容');
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('4,500');
+    expect(await screen.findByText('自动摘要失败，原文保留')).toBeTruthy();
+    expect(screen.queryByText('上下文已压缩')).toBeNull();
+  });
+
+  it('手动摘要可用现有停止按钮取消，保留输入和附件并恢复发送及权限', async () => {
+    stubServices({ imageInput: true });
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '原始内容' }]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.spyOn(promptAgentCoordinator, 'loadComposer').mockReturnValue({ text: '尚未发送', attachments: [{ name: 'synthetic.png', data: 'c3ludGhldGlj', mimeType: 'image/png' }] });
+    let cancel!: (reason: Error) => void;
+    vi.spyOn(promptAgentService, 'compactSession').mockImplementation(() => new Promise((_resolve, reject) => { cancel = reject; }));
+    const abort = vi.spyOn(promptAgentService, 'control').mockImplementation(async () => { cancel(new Error('摘要压缩已停止')); });
+    renderPanel(); await screen.findByText('原始内容');
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' })); fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }));
+    expect(screen.getByRole('button', { name: '助手权限' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: '停止' }));
+    expect(await screen.findByText('摘要压缩已停止')).toBeTruthy(); expect(abort).toHaveBeenCalledExactlyOnceWith('session-1', 'abort');
+    expect(screen.getByRole('textbox', { name: '任务要求' })).toHaveProperty('value', '尚未发送');
+    expect(screen.getByRole('button', { name: '移除附件 synthetic.png' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '执行' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: '助手权限' })).toHaveProperty('disabled', false);
+    promptAgentCoordinator.saveComposer('session-1', '', []);
+  });
+
+  it('切模型清除旧压缩估算，旧任务回放不会抹掉最新手动压缩估算', async () => {
+    const context = { beforeTokens: 30000, afterTokens: 4500, retainedMessages: 6, contextWindow: 64000 };
+    stubServices({ context });
+    const usage = { input: 20000, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 20100 };
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'u', role: 'user', text: '旧任务内容' }, { id: 'a', role: 'agent', text: '旧任务回答', provider: 'deepseek', model: 'deepseek-chat', usage }]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({ runId: 'old', cursor: 1, status: 'completed', events: [{ type: 'response_end', provider: 'deepseek', model: 'deepseek-chat', usage, stopReason: 'stop', timestamp: 1 }] });
+    vi.spyOn(promptAgentService, 'getAvailableModels').mockResolvedValue(['deepseek-chat', 'other'].map(id => ({ id, name: id, provider: 'deepseek', reasoning: false, imageInput: false, contextWindow: 64000, maxTokens: 8192, thinkingLevels: ['off'] })));
+    const update = vi.spyOn(promptAgentService, 'updateSession').mockResolvedValue({ ...mockSession, model: 'other', context });
+    renderPanel(); await screen.findByText('旧任务回答');
+    expect(screen.getByRole('meter').getAttribute('aria-valuetext')).toContain('4,500');
+    fireEvent.click(screen.getByRole('button', { name: '模型与思考设置' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '模型与思考' })).getByRole('button', { name: 'deepseek-chat' }));
+    fireEvent.click(await screen.findByRole('button', { name: '选择模型：other' }));
+    await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole('meter')).toBeNull());
+    expect(screen.getByRole('img', { name: '上下文使用情况：尚未收到当前模型的用量数据' })).toBeTruthy();
+  });
+
+  it('压缩失败就地提示原因，保留原聊天和未发送草稿', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([{ id: 'user', role: 'user', text: '不能丢的要求' }, { id: 'answer', role: 'agent', text: '不能丢的回答' }]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.spyOn(promptAgentService, 'compactSession').mockRejectedValue(new Error('摘要模型暂不可用'));
+    renderPanel(); await screen.findByText('不能丢的回答');
+    const input = screen.getByRole('textbox', { name: '任务要求' }); fireEvent.change(input, { target: { value: '继续写草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' })); fireEvent.click(screen.getByRole('button', { name: '压缩上下文' }));
+    const notice = await screen.findByText('摘要模型暂不可用'); expect(notice.getAttribute('role')).toBe('status');
+    expect(screen.getByText('不能丢的要求')).toBeTruthy(); expect(screen.getByText('不能丢的回答')).toBeTruthy();
+    expect(input).toHaveProperty('value', '继续写草稿'); expect(screen.queryByText('上下文已压缩')).toBeNull();
+    expect(screen.getByRole('button', { name: '执行' })).toHaveProperty('disabled', false);
+  });
 
   it('对话差异在实际应用回调后才标为已应用，撤回重做保存回执且不调用模型', async () => {
     stubServices();

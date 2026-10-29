@@ -56,6 +56,11 @@ test('启动检查区别当前后端、旧后端、未加载代码与无关监�
   assert.equal(await inspectExistingLocalServer('synthetic', async () => response({ unrelated: true })), null);
   assert.equal(await inspectExistingLocalServer('synthetic', async () => { throw new Error('offline'); }), null);
 });
+test('助手启动签名包含 Pi 摘要模块，单独更新后应要求后端重启', async () => {
+  const source = await readFile(new URL('../../scripts/prompt-agent.mjs', import.meta.url), 'utf8');
+  const files = JSON.parse(source.match(/const runtimeSourceFiles = (\[[^\n]+\]);/)[1].replace(/'/g, '"'));
+  assert.ok(files.includes('agent-compaction.mjs'));
+});
 test('重启仅核对本项目，身份缺失或另一个项目不会执行终止', async () => {
   let calls = 0;
   for (const identity of [{}, { projectDir: resolve('another-project') }]) {

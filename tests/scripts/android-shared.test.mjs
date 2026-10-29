@@ -107,6 +107,8 @@ test('Android 打包源码覆盖助手启动签名全部文件，文件系统 sh
   const agent = await readFile(join(projectRoot, 'scripts/prompt-agent.mjs'), 'utf8');
   const packaged = JSON.parse(build.match(/for \(const name of (\[[^\n]+\])\) sources\[name\]/)[1].replace(/'/g, '"'));
   const required = JSON.parse(agent.match(/const runtimeSourceFiles = (\[[^\n]+\]);/)[1].replace(/'/g, '"'));
+  assert.ok(required.includes('agent-compaction.mjs'), '助手启动签名必须包含 Pi 摘要模块');
+  assert.ok(packaged.includes('scripts/agent-compaction.mjs'), 'Android 必须打包 Pi 摘要模块');
   for (const file of required) {
     assert.ok(packaged.includes(new URL(file, 'file:///scripts/prompt-agent.mjs').pathname.slice(1)), `启动签名文件未打包：${file}`);
   }

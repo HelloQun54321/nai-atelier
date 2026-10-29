@@ -3720,6 +3720,25 @@ const serveDistFile = async (req, res, url) => {
           return sendJson(res, 201, await promptAgent.createSession(body));
         }
         if (url.pathname.startsWith('/api/prompt-agent/sessions/')) {
+          if (url.pathname.endsWith('/compact')) {
+            if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+            const sessionId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/sessions/'.length, -'/compact'.length));
+            const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');
+            const controller = new AbortController();
+            const abort = () => { if (!res.writableEnded) controller.abort(); };
+            req.on('aborted', abort);
+            res.on('close', abort);
+            try {
+              const result = await promptAgent.compactSession(sessionId, { signal: controller.signal, language: body.language });
+              if (!res.destroyed) return sendJson(res, 200, result);
+              return;
+            } catch (error) {
+              if (!res.destroyed) throw error;
+            } finally {
+              req.off('aborted', abort);
+              res.off('close', abort);
+            }
+          }
           const sessionId = decodeURIComponent(url.pathname.slice('/api/prompt-agent/sessions/'.length));
           if (req.method === 'PATCH') {
             const body = JSON.parse((await readRequestBody(req, 8 * 1024)).toString('utf8') || '{}');

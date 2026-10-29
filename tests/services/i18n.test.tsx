@@ -11,6 +11,15 @@ import ts from 'typescript';
 import messages from '../../locales/messages.json';
 import { sourceLabel } from '../../services/inspirationUtils';
 
+it('助手上下文压缩操作、估算说明与失败原因具备完整译文', () => {
+  const keys = ['助手命令', '输入要求，或用 / 查看命令…', '压缩上下文', '正在压缩上下文…', '上下文已压缩', '当前上下文无需压缩', '压缩上下文失败', '摘要压缩后的上下文估算', '最近一次模型回复用量，含缓存与输出', '上下文已用 {0}% · {1} / {2} tokens（{3}）', '单组历史内容超过摘要模型预算，请选择更大上下文模型', '上下文摘要未完整生成，原会话已保留', '模型未返回有效上下文摘要，原会话已保留', '上下文摘要生成超时，原会话已保留', '请先登录所选模型服务'];
+  for (const key of keys) expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+  for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+    expect(translate(language.code, '压缩上下文')).not.toBe('压缩上下文');
+    expect(translate(language.code, '上下文已用 {0}% · {1} / {2} tokens（{3}）', [20, '2k', '10k', translate(language.code, '摘要压缩后的上下文估算')])).toContain('20%');
+  }
+});
+
 it('翻译词典没有重复键，清理后保留原来实际生效的译文', () => {
   const source = ts.parseJsonText('messages.json', readFileSync('locales/messages.json', 'utf8'));
   const keys = new Set<string>(), duplicates: string[] = [];
