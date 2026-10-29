@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.144.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.145.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -402,6 +402,7 @@ AI 单类生成与「AI 生成搭配」使用当前创作助手模型，可能�
 - **翻译区直接编辑**：点击 Tag 之间的空白可就地插入，默认不显示图标或占位框；输入框仅点击后出现，失焦或回车后收起，支持首部、末尾及权重组内部；输入与粘贴沿用词库补全，回车或离开输入位置后写入。选中译文时，上方对应原文同步显示主题强调色，重复词按位置分别对应；Tag 区域可拖动右下角调整高度；红色垃圾桶开启删除模式，隐藏权重显示，逐词多选标红，点击「删除 n 个 Tag」确认，组内其他词的权重保留；
 - **撤销与快捷键**：旋转箭头撤销输入、权重调整或删除，支持 Ctrl/Cmd+Z 撤销、Ctrl+Y 或 Ctrl/Cmd+Shift+Z 重做；选中 Tag 后可复制、剪切原文或粘贴到当前插入位置（默认末尾），文字输入框保持原生快捷键；
 - **AI 补译**：遇到未收录的 Tag，可调用已配置的 LLM 补齐中文含义并保存到本地翻译缓存；模型服务按自己的计费规则收费。
+- **助手顺手补译**：创作助手修改提示词时，在当前对话中静默补齐相关完整提示词的缺失中文释义，包括用户原有词及全局／角色正负、分类和模块；已有译文复用，不改英文原词与权重。译文保存到工坊本地，刷新、重启及其它提示词框都可复用，不另开翻译模型请求。
 - **整页翻译与图片反推**：工作台和实验室顶栏可一次翻译当前模式各提示词框中未翻译的 Tag；通用图片反推面板支持直接 Ctrl+V 粘贴图片，角色提示词框也可直接粘贴反推。
 
 ### 🎨 画师库与 👤 角色库

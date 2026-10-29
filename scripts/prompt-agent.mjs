@@ -9,6 +9,7 @@ import { AgentUiBridge } from './agent-ui-bridge.mjs';
 import { createAgentPageTools, isAgentPageTool } from './agent-page-tools.mjs';
 import { applyAgentClientChanges, diffAgentClientDraft } from '../services/agentLabSync.mjs';
 import { createAgentPromptChange, validateAgentPromptChanges } from '../services/agentPromptChanges.mjs';
+import { parsePromptTags } from '../services/promptTags.mjs';
 import { agentConnectionEndpoint, normalizeAgentConnectionUrl } from '../services/agentConnection.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { agentCompactionNeeded, compactAgentMessages, projectAgentCompaction, validAgentCompaction } from './agent-compaction.mjs';
@@ -34,7 +35,7 @@ import { buildTextExtractionSystemPrompt, buildVisionExtractionSystemPrompt, ass
 import { readPromptLibraryTree, getPromptLibraryDefaultSelection, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, getPromptLibraryDirectoryLegacyKind, isPromptLibraryFragmentEntry, normalizePromptLibraryDirectorySelection, PROMPT_LIBRARY_DIRECTORY_IDS_KEY } from '../services/promptLibraryTree.mjs';
 
 const CONFIG_FILE = 'local-data/prompt-agent.json';
-const runtimeSourceFiles = ['agent-prompt-library.mjs', 'prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
+const runtimeSourceFiles = ['agent-prompt-library.mjs', 'prompt-agent.mjs', 'novelai-agent-knowledge.mjs', 'agent-runtime.mjs', 'agent-compaction.mjs', 'agent-local-images.mjs', 'agent-ui-bridge.mjs', 'agent-page-tools.mjs', '../services/agentLabSync.mjs', '../services/agentPromptChanges.mjs', '../services/agentOperation.mjs', '../services/agentThinking.mjs', '../services/agentConnection.mjs', '../services/promptClassification.mjs', '../services/promptSegments.mjs', '../services/promptTags.mjs', '../services/vibeProtocol.mjs', '../services/promptExtraction.mjs', '../services/promptLibraryTree.mjs', '../services/promptPurposes.mjs', '../PROJECT_AGENT.md'];
 // 内置助手的独立规则在启动时读取，保持会话缓存前缀稳定；更新文件后提示重启。
 const PROJECT_AGENT_INSTRUCTIONS = readFileSync(new URL('../PROJECT_AGENT.md', import.meta.url), 'utf8').trim();
 const sourceSignature = () => createHash('sha256').update(runtimeSourceFiles.map(file => readFileSync(new URL(file, import.meta.url))).join('\n')).digest('hex');
@@ -1035,8 +1036,20 @@ const normalizeTranslationTag = value => text(value)
   .replaceAll('_', ' ')
   .replace(/\s+/g, ' ')
   .trim()
-  .toLowerCase()
-  .slice(0, 120);
+  .toLowerCase();
+
+// 只读取提示词正文，不把目录、来源、名称或已有中文对照当成待译 Tag。
+const promptTranslationTexts = source => {
+  const params = source?.params || {};
+  const sections = params._promptSections || {};
+  return [source?.basePrompt, source?.subjectPrompt ?? source?.variableValues?.subject, source?.negativePrompt,
+    ...(source?.modules || []).map(module => module.content),
+    ...globalSectionKeys(sections).map(key => sections[key]), ...Object.values(sections.sectionNegatives || {}),
+    ...Object.values(params._characterSectionsNegatives || {}),
+    ...(params.characters || []).flatMap(character => [character.prompt, character.negativePrompt,
+      ...Object.values(character.sections || {}), ...Object.values(character.sectionNegatives || {})]),
+  ].filter(value => typeof value === 'string' && value.trim());
+};
 
 export const parseTranslationResponse = (raw, allowedTags) => {
   const cleaned = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
@@ -1830,6 +1843,26 @@ export class PromptAgentService {
     });
   }
 
+  saveTagTranslations(entries, metadata = {}) {
+    const next = (this.tagTranslationWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
+      const items = { ...this.tagTranslations };
+      const now = Date.now();
+      let changed = false;
+      for (const [rawTag, rawChinese] of entries) {
+        const tag = normalizeTranslationTag(rawTag), chinese = text(rawChinese).trim();
+        if (!tag || !chinese || text(items[tag]?.chinese).trim()) continue;
+        items[tag] = { ...metadata, chinese, updatedAt: now };
+        changed = true;
+      }
+      if (!changed) return;
+      // 串行合并并在落盘成功后发布，失败不冒充已保存缓存。
+      await atomicJsonWrite(this.tagTranslationFilePath(), { version: 1, updatedAt: now, items });
+      this.tagTranslations = items;
+    });
+    this.tagTranslationWriteTail = next;
+    return next;
+  }
+
   async translateTags(rawTags) {
     const tags = [...new Set((Array.isArray(rawTags) ? rawTags : []).map(normalizeTranslationTag).filter(Boolean))];
     if (!tags.length) throw Object.assign(new Error('没有需要翻译的提示词'), { status: 400 });
@@ -1876,9 +1909,7 @@ export class PromptAgentService {
         const allowed = new Set(afterWait);
         const translated = parseTranslationResponse(extractAssistantText(agent.state.messages), allowed);
         if (translated.size !== allowed.size) throw Object.assign(new Error(`模型只返回了 ${translated.size}/${allowed.size} 个有效翻译，请重试`), { status: 502 });
-        const now = Date.now();
-        for (const [tag, chinese] of translated) this.tagTranslations[tag] = { chinese, updatedAt: now, provider, model: modelId };
-        await atomicJsonWrite(this.tagTranslationFilePath(), { version: 1, updatedAt: now, items: this.tagTranslations });
+        await this.saveTagTranslations(translated, { provider, model: modelId });
         return { provider, model: modelId };
       } finally {
         leaveOutboundProxy();
@@ -3410,6 +3441,36 @@ export class PromptAgentService {
       return { content: jsonText({ ok: true, confirmed: true, action, result: result.result }), details: { action, confirmed: true, result: result.result } };
     };
     const changed = resource => emit({ type: 'project_changed', resource });
+    const translationSources = new Map();
+    const dictionaryTranslations = new Map();
+    let dictionaryUnavailable = false;
+    const pendingTranslationTags = () => [...new Set([...translationSources.values()].flat())]
+      .filter(tag => !text(this.tagTranslations[tag]?.chinese).trim());
+    const translationStatus = () => {
+      const missing = pendingTranslationTags();
+      return { missingTags: missing.slice(0, 20), remaining: missing.length,
+        ...(missing.length ? { instruction: '静默补齐这些 Tag 的简体中文含义，调用 save_tag_translations 保存；按返回的下一批继续直到 remaining=0。不改提示词原文，不播报翻译过程或另起模型请求。' } : {}) };
+    };
+    const withPromptTranslations = async (result, source, before, key) => {
+      const texts = promptTranslationTexts(source);
+      if (JSON.stringify(texts) === JSON.stringify(before)) return result;
+      const tags = [...new Set(texts.flatMap(value => parsePromptTags(value).map(token => token.lookupTag)))];
+      const missing = [];
+      for (const tag of tags) {
+        if (text(this.tagTranslations[tag]?.chinese).trim()) continue;
+        if (!dictionaryTranslations.has(tag)) {
+          let matches = [];
+          if (!dictionaryUnavailable) {
+            try { matches = await this.searchTags(tag, 30); } catch { dictionaryUnavailable = true; }
+          }
+          dictionaryTranslations.set(tag, matches.some(item => normalizeTranslationTag(item.tag) === tag && text(item.chinese).trim()));
+        }
+        if (!dictionaryTranslations.get(tag)) missing.push(tag);
+      }
+      translationSources.set(key, missing);
+      result.content = [...jsonText({ tagTranslations: translationStatus(), ...JSON.parse(result.content[0].text) }), ...result.content.slice(1)];
+      return result;
+    };
     const allowedWebUrls = new Set();
     let webSearchCount = 0;
     let webReadCount = 0;
@@ -3754,6 +3815,19 @@ export class PromptAgentService {
         },
       },
       {
+        name: 'save_tag_translations', label: '保存 Tag 译文', description: '静默保存提示词修改回执中 missingTags 的简体中文含义，复用本次对话翻译，不另起模型请求。只写翻译缓存，不改英文提示词；按返回的下一批继续补齐，已有译文不覆盖。',
+        parameters: Type.Object({ items: Type.Array(Type.Object({ tag: Type.String(), chinese: Type.String() }), { minItems: 1, maxItems: 20 }) }),
+        execute: async (_id, args) => {
+          const allowed = new Set(pendingTranslationTags());
+          const translations = parseTranslationResponse(JSON.stringify(args.items), allowed);
+          if (!translations.size) throw new Error('没有本轮提示词中待补齐的有效译文');
+          await this.saveTagTranslations(translations, { provider: modelInfo?.provider || this.config.provider, model: modelInfo?.id || this.config.model });
+          const items = this.lookupTagTranslations([...translations.keys()]);
+          emit({ type: 'tag_translations', items });
+          return { content: jsonText({ ok: true, saved: items.length, tagTranslations: translationStatus() }), details: { saved: items.length } };
+        },
+      },
+      {
         name: 'search_tags', label: '搜索 Tag', description: '按中文或英文搜索本地 Tag 词库。',
         parameters: Type.Object({ query: Type.String(), limit: Type.Optional(Type.Number()) }),
         execute: async (_id, args) => { const results = await this.searchTags(args.query, args.limit); return { content: jsonText(results), details: results }; },
@@ -3987,7 +4061,7 @@ export class PromptAgentService {
           }
           const result = await readProject('/api/chains', { method: 'POST', body });
           changed('chains');
-          return { content: jsonText({ ok: true, id: result.id, name: body.name }), details: result };
+          return withPromptTranslations({ content: jsonText({ ok: true, id: result.id, name: body.name }), details: result }, body, [], `chain:${result.id || body.id}`);
         },
       },
       {
@@ -4021,7 +4095,7 @@ export class PromptAgentService {
           if (!Object.keys(body).length) throw new Error('没有要修改的字段');
           await readProject(`/api/chains/${encodeURIComponent(args.id)}`, { method: 'PUT', body });
           changed('chains');
-          return { content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body };
+          return withPromptTranslations({ content: jsonText({ ok: true, id: args.id, updated: Object.keys(body) }), details: body }, { ...current, ...body }, promptTranslationTexts(current), `chain:${args.id}`);
         },
       },
       {
@@ -4587,7 +4661,7 @@ export class PromptAgentService {
           }
           const result = await readProject('/api/chains', { method: 'POST', body });
           changed('chains');
-          return { content: jsonText({ ok: true, id: result.id || body.id, name }), details: result };
+          return withPromptTranslations({ content: jsonText({ ok: true, id: result.id || body.id, name }), details: result }, body, [], `chain:${result.id || body.id}`);
         },
       },
       {
@@ -4625,7 +4699,7 @@ export class PromptAgentService {
           if (!Object.keys(body).length) throw new Error('没有要修改的字段');
           await readProject(`/api/chains/${encodeURIComponent(id)}`, { method: 'PUT', body });
           changed('chains');
-          return { content: jsonText({ ok: true, id, updated: Object.keys(body) }), details: { id, updated: Object.keys(body) } };
+          return withPromptTranslations({ content: jsonText({ ok: true, id, updated: Object.keys(body) }), details: { id, updated: Object.keys(body) } }, { ...current, ...body }, promptTranslationTexts(current), `chain:${id}`);
         },
       },
       {
@@ -4649,7 +4723,10 @@ export class PromptAgentService {
     ].map(tool => ({ ...tool, execute: async (...args) => {
       const readOnly = /^(get_|list_|search_|read_|inspect_|show_)/.test(tool.name) || ['enable_tool_group', 'navigate_view', 'open_settings'].includes(tool.name) || tool.name === 'operate_current_page' && ['navigate', 'scroll', 'hover', 'press', 'click', 'wait', 'command', 'copy_image', 'double_click'].includes(args[1]?.action) || tool.name === 'request_local_image_folder_access' && args[1]?.access === 'read';
       if (this.config.permissionMode === 'read_only' && !readOnly) throw new Error('当前为只读权限，不能修改项目、生成或保存图片；请由用户在权限菜单切换档位');
+      const editsPrompt = ['update_prompts', 'set_characters', 'set_prompt_modules'].includes(tool.name);
+      const before = editsPrompt ? promptTranslationTexts(draft) : undefined;
       const result = await tool.execute(...args);
+      if (editsPrompt) await withPromptTranslations(result, draft, before, 'draft');
       if (['update_prompts', 'set_prompt_modules', 'set_characters', 'set_generation_params', 'set_vibes', 'set_character_references'].includes(tool.name)) {
         // 工具成功只表示工作草稿已暂存；页面最终应用仍受手动编辑保护。
         result.content = [...result.content, ...jsonText({ stateKind: 'working_draft', staged: true, pageApplied: false, note: '业务工具仅修改本轮工作草稿；不能声称已显示在页面。' })];

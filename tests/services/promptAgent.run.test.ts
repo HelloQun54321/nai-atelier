@@ -2,6 +2,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { promptAgentService, agentRuntimeWarning } from '../../services/promptAgent';
 import type { PromptAgentConfig } from '../../services/promptAgent';
 import type { PromptAgentDraft } from '../../types';
+import { parsePromptTags, resolvePromptTranslations, subscribeTagTranslations } from '../../services/tagTranslations';
+
+vi.mock('../../services/tagDictionary', () => ({
+  normalizeTagQuery: (value: string) => value.replaceAll('_', ' ').replace(/\s+/g, ' ').trim().toLowerCase(),
+  lookupTagTranslations: vi.fn(async () => new Map()),
+}));
 
 afterEach(() => vi.unstubAllGlobals());
 const input = { sessionId: 'test', message: 'hello', draft: {} as PromptAgentDraft, context: {} };
@@ -22,6 +28,29 @@ it('仅跳过坏 JSON，正确分发尾部完成事件', async () => {
   const callback = vi.fn();
   await promptAgentService.run(input, callback);
   expect(callback.mock.calls.map(([event]) => event.type)).toEqual(['text_delta', 'done']);
+});
+
+it.each(['run', 'getTask'] as const)('%s 收到已落盘译文事件后静默更新 Tag 翻译缓存', async source => {
+  const tag = `agent-cached-translation-${source}`;
+  const lookupTag = tag.replaceAll('-', ' ').toLowerCase();
+  const event = { type: 'tag_translations', items: [{ tag: ` ${tag.replaceAll('-', '_')} `, chinese: '已保存译文' }] };
+  const request = vi.fn(async (url: string, _init?: RequestInit) => url.endsWith('/run')
+    ? new Response(`${JSON.stringify(event)}\n${JSON.stringify({ type: 'done', draft: {}, message: '', provider: '', model: '' })}\n`)
+    : new Response(JSON.stringify({ events: [event] }), { headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', request);
+  const listener = vi.fn();
+  const unsubscribe = subscribeTagTranslations(listener);
+  try {
+    if (source === 'run') await promptAgentService.run(input, () => {});
+    else await promptAgentService.getTask('test');
+    expect(listener).toHaveBeenCalledTimes(1);
+    await expect(resolvePromptTranslations(parsePromptTags(lookupTag))).resolves.toMatchObject([
+      { lookupTag, chinese: '已保存译文', source: 'ai' },
+    ]);
+    expect(request.mock.calls.some(([url, init]) => url.includes('tag-translations') || String(init?.body || '').includes('"action":"translate"'))).toBe(false);
+  } finally {
+    unsubscribe();
+  }
 });
 
 it('本地图片携带当前 Key，外部地址不会收到凭据', async () => {

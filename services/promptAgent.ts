@@ -8,6 +8,7 @@ import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace'
 import { stableOperationId } from './operationId';
 import type { PromptLibraryTreeState } from './promptLibraryDirectories';
 import { getLanguage } from './i18n';
+import { acceptTagTranslations } from './tagTranslations';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -230,6 +231,7 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
+  | { type: 'tag_translations'; items: Array<{ tag?: string; chinese?: string }> }
   | { type: 'compaction_start' }
   | { type: 'compaction_end'; context?: PromptAgentCompactionContext; usage?: PromptAgentUsage; error?: string }
   | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; errorDetail?: string; stopReason?: string; draftChanged?: boolean; promptChange?: AgentPromptChange }
@@ -676,7 +678,9 @@ export const promptAgentService = {
   getTask: async (sessionId: string, after = 0, runId = ''): Promise<PromptAgentTask> => {
     const response = await fetch(`/api/prompt-agent/task?sessionId=${encodeURIComponent(sessionId)}&after=${after}&runId=${encodeURIComponent(runId)}&clientId=${encodeURIComponent(getAgentPageClientId())}`, { cache: 'no-store' });
     if (!response.ok) return readError(response) as never;
-    return response.json();
+    const task = await response.json() as PromptAgentTask;
+    task.events?.forEach(event => { if (event.type === 'tag_translations') acceptTagTranslations(event.items); });
+    return task;
   },
   getAuditLog: async (sessionId: string): Promise<Record<string, unknown>> => {
     const response = await fetch(`/api/prompt-agent/log?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' });
@@ -706,6 +710,7 @@ export const promptAgentService = {
       let event: PromptAgentEvent;
       try { event = JSON.parse(line); }
       catch { console.warn('[promptAgent] 跳过无法解析的事件行'); return; }
+      if (event.type === 'tag_translations') acceptTagTranslations(event.items);
       onEvent(event);
       if (event.type === 'error') throw new Error(event.error || '助手执行失败');
       if (event.type === 'done') terminal = true;

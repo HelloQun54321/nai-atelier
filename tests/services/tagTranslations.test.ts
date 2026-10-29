@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parsePromptTags, removePromptTagTokens, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
+import { parsePromptTags, removePromptTagTokens, resolvePromptTranslations, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
 
 describe('removePromptTagTokens', () => {
   it.each([
@@ -198,6 +198,30 @@ describe('translateMissingPromptTags', () => {
       const translated = await translateMissingPromptTags(tags);
       expect(batches.map(batch => batch.length)).toEqual([50, 1]);
       expect(translated).toHaveLength(tags.length);
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
+  });
+});
+
+describe('resolvePromptTranslations', () => {
+  it.each([51, 101])('查询 %i 条已保存翻译时按接口上限分批', async count => {
+    const batches: string[][] = [];
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith('/tag-data/')) return { ok: true, json: async () => ({ shards: {}, chineseShards: {}, popular: {} }) } as Response;
+      const body = JSON.parse(String(init?.body)) as { action: string; tags: string[] };
+      expect(body.action).toBe('lookup');
+      expect(body.tags.length).toBeLessThanOrEqual(50);
+      batches.push(body.tags);
+      return { ok: true, json: async () => ({ items: body.tags.map(tag => ({ tag, chinese: `译:${tag}` })) }) } as Response;
+    }));
+    try {
+      const prompt = Array.from({ length: count }, (_, index) => `cached-lookup-regression-${count}-${index}`).join(', ');
+      const result = await resolvePromptTranslations(parsePromptTags(prompt));
+      expect(batches.map(batch => batch.length)).toEqual(count === 51 ? [50, 1] : [50, 50, 1]);
+      expect(result).toHaveLength(count);
+      expect(result.every(item => item.source === 'ai' && item.chinese === `译:${item.lookupTag}`)).toBe(true);
     } finally {
       vi.stubGlobal('fetch', originalFetch);
     }
