@@ -141,6 +141,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
   const [deleteMode, setDeleteMode] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [tagComposing, setTagComposing] = useState(false);
   const [insertionIndex, setInsertionIndex] = useState<number | null>(null);
   const [editingTag, setEditingTag] = useState<{ id: string; start: number; end: number } | null>(null);
   const [clearActionState, setClearActionState] = useState<'cleared' | 'undone' | null>(null);
@@ -181,6 +182,20 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     const cached = new Map(translations.map(item => [item.lookupTag, item]));
     return promptTokens.map(token => ({ ...token, chinese: cached.get(token.lookupTag)?.chinese, source: cached.get(token.lookupTag)?.source || 'missing' as const }));
   }, [promptTokens, translations]);
+  const draftTokens = useMemo(() => tagAssistEnabled && showTranslations && (editingTag || insertionIndex !== null) ? parsePromptTags(tagInput).filter(token => !isLibraryOnlyQuery(token.lookupTag)) : [], [tagAssistEnabled, showTranslations, editingTag, insertionIndex, tagInput]);
+  const [draftTranslations, setDraftTranslations] = useState<PromptTagTranslation[]>([]);
+  const draftTranslationMap = useMemo(() => new Map([...translations, ...draftTranslations].filter(item => item.chinese).map(item => [item.lookupTag, item.chinese])), [translations, draftTranslations]);
+  const draftChinese = draftTokens.map(token => draftTranslationMap.get(token.lookupTag) || t('待翻译')).join(', ') || t('待翻译');
+  useEffect(() => {
+    if (!draftTokens.length || tagComposing) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void resolvePromptTranslations(draftTokens).then(items => {
+        if (active) setDraftTranslations(items);
+      }).catch(error => { if (active) console.warn('Prompt draft translation lookup failed:', error); });
+    }, 80);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [draftTokens, tagComposing, translationRevision]);
   const [catalogEntries, setCatalogEntries] = useState<Map<string, TagSuggestion>>(new Map());
   const [libraryInfo, setLibraryInfo] = useState<PromptTagLibraryTarget | null>(null);
   useEffect(() => {
@@ -301,10 +316,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   };
 
   const selectedTokens = promptTokens.filter(token => selectedTagIds.has(token.id));
-  const highlightRanges = tagAssistEnabled && showTranslations ? selectedTokens.map(token => ({
+  const highlightRanges = tagAssistEnabled && showTranslations ? [...selectedTokens.map(token => ({
     start: !deleteMode ? token.groupStart ?? token.start ?? 0 : token.start ?? 0,
     end: !deleteMode ? token.groupEnd ?? token.end ?? 0 : token.end ?? 0,
-  })).sort((a, b) => a.start - b.start || b.end - a.end) : [];
+  })), ...(editingTag ? [{ start: editingTag.start, end: editingTag.end }] : [])].sort((a, b) => a.start - b.start || b.end - a.end) : [];
   const hasHighlight = highlightRanges.length > 0;
   const syncHighlight = useCallback(() => {
     const textarea = textareaRef.current, layer = highlightRef.current, text = highlightTextRef.current;
@@ -366,16 +381,23 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     closeSuggestions();
     clearSelection();
     setDeleteMode(false);
+    return { value: next, start: prefix.length };
   };
   const finishTagInput = (text: string) => {
+    let committed: { value: string; start: number } | undefined;
     if (editingTag) {
       const replacement = text.trim();
-      if (replacement) commitValue(value.slice(0, editingTag.start) + replacement + value.slice(editingTag.end));
-    } else insertTags(text);
+      if (replacement) {
+        const next = value.slice(0, editingTag.start) + replacement + value.slice(editingTag.end);
+        commitValue(next);
+        committed = { value: next, start: editingTag.start };
+      }
+    } else committed = insertTags(text);
     setTagInput('');
     setInsertionIndex(null);
     setEditingTag(null);
     closeSuggestions();
+    return committed;
   };
   const editTag = (item: PromptTagToken) => {
     if (!editable || deleteMode || item.start === undefined || item.end === undefined) return;
@@ -529,8 +551,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     setIsLoading(true);
     searchTimerRef.current = window.setTimeout(() => {
       searchTimerRef.current = null;
-      const personal: PromptSuggestion[] = (personalLibrary && !/artist:\s*$/i.test(nextValue.slice(0, nextTarget.replaceStart)) ? searchLibraryEntries(personalLibrary.chains, nextTarget.query, libraryField) : [])
-        .filter(entry => source === 'prompt' || librarySectionOf(entry) !== 'saved' && !entry.negativePrompt?.trim()).map(entry => ({
+      const artistPrefix = /artists?:\s*$/i.test(nextValue.slice(0, nextTarget.replaceStart)) || source === 'tag' && editingTag && /artists?:\s*$/i.test(value.slice(0, editingTag.start));
+      const personal: PromptSuggestion[] = (personalLibrary && !artistPrefix ? searchLibraryEntries(personalLibrary.chains, nextTarget.query, libraryField) : []).map(entry => ({
         name: entry.name, chinese: libraryEntryText(entry, libraryField), category: -1, categoryLabel: t(librarySectionOf(entry) === 'saved' ? '组合' : librarySectionOf(entry) === 'originals' ? '原文' : '片段'), postCount: 0, isNovelAI: false, libraryEntry: entry,
       }));
       if (requestId === requestIdRef.current) setSuggestions(personal);
@@ -543,14 +565,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         if (requestId === requestIdRef.current) setIsLoading(false);
       });
     }, 80);
-  }, [editable, tagAssistEnabled, completionEnabled, personalLibrary, libraryField, value, closeSuggestions]);
+  }, [editable, tagAssistEnabled, completionEnabled, personalLibrary, libraryField, value, editingTag, closeSuggestions]);
 
   const selectSuggestion = (suggestion: PromptSuggestion) => {
     if (!target || !editable) return;
     const input = completionSource === 'tag' ? tagInputRef.current : textareaRef.current;
     const sourceValue = completionSource === 'tag' ? tagInput : value;
-    if (suggestion.libraryEntry && (librarySectionOf(suggestion.libraryEntry) === 'saved' || suggestion.libraryEntry.negativePrompt?.trim()) && completionSource === 'prompt' && !libraryField?.negative) {
-      setLibrarySelection({ entry: suggestion.libraryEntry, edit: { value, start: target.replaceStart, end: target.replaceEnd, field: libraryField || {} } });
+    if (suggestion.libraryEntry && (librarySectionOf(suggestion.libraryEntry) === 'saved' || suggestion.libraryEntry.negativePrompt?.trim()) && !libraryField?.negative) {
+      let edit: LibraryCompletionEdit = { value, start: target.replaceStart, end: target.replaceEnd, field: libraryField || {} };
+      if (completionSource === 'tag') {
+        const committed = finishTagInput(tagInput);
+        if (!committed) return;
+        const offset = committed.start - (tagInput.length - tagInput.trimStart().length);
+        edit = { ...edit, value: committed.value, start: offset + target.replaceStart, end: offset + Math.min(target.replaceEnd, tagInput.trimEnd().length) };
+      }
+      setLibrarySelection({ entry: suggestion.libraryEntry, edit });
       closeSuggestions();
       return;
     }
@@ -673,6 +702,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     }}
     onFocus={event => {
       composingRef.current = false;
+      setTagComposing(false);
       preloadTagDictionary();
       refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? 0, 'tag');
     }}
@@ -688,14 +718,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       if (event.key === 'Enter') { event.preventDefault(); finishTagInput(tagInput); }
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setTagInput(''); setInsertionIndex(null); setEditingTag(null); closeSuggestions(); }
     }}
-    onCompositionStart={() => { composingRef.current = true; closeSuggestions(); }}
+    onCompositionStart={() => { composingRef.current = true; setTagComposing(true); closeSuggestions(); }}
     onCompositionEnd={event => {
       composingRef.current = false;
+      setTagComposing(false);
       if (document.activeElement !== event.currentTarget) finishTagInput(event.currentTarget.value);
       else refreshSuggestions(event.currentTarget.value, event.currentTarget.selectionStart ?? event.currentTarget.value.length, 'tag');
     }}
     style={{ font: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', color: 'inherit', minHeight: 0, height: '100%', width: '100%', padding: '0.125rem 0.25rem', border: 0, borderRadius: 'inherit', background: 'transparent', boxShadow: 'none' }}
     className="min-w-0 resize-none overflow-hidden whitespace-pre-wrap outline-none [grid-area:1/1] [overflow-wrap:anywhere]" />
+    {!editingTag && tagInput.trim() && <span className="min-w-0 max-w-full whitespace-pre-wrap px-1 pb-0.5 font-sans text-xs font-medium [grid-area:2/1] [overflow-wrap:anywhere]">{draftChinese}</span>}
   </span>;
   const insertionAt = (index: number) => {
     if (deleteMode || !editable) return null;
@@ -848,7 +880,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                       <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>
                         {editingTag?.id === item.id ? tagInputField : item.displayTag}
                       </span>
-                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${editingTag?.id === item.id ? 'invisible' : ''} ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.chinese || t("词库暂无翻译")}>{item.chinese || t("待翻译")}</span>
+                      <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={editingTag?.id === item.id ? draftChinese : item.chinese || t("词库暂无翻译")}>{editingTag?.id === item.id ? draftChinese : item.chinese || t("待翻译")}</span>
                       {infoButton(item)}
                     </div>,
                   );
@@ -895,7 +927,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                         <span className={`min-w-0 max-w-full whitespace-pre-wrap font-mono text-micro [overflow-wrap:anywhere] ${groupTextTone}`} title={member.displayTag}>
                           {editingTag?.id === member.id ? tagInputField : member.displayTag}
                         </span>
-                        <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${editingTag?.id === member.id ? 'invisible' : ''} ${groupTextTone}`} title={member.chinese || t("词库暂无翻译")}>{member.chinese || t("待翻译")}</span>
+                        <span className={`min-w-0 max-w-full whitespace-pre-wrap text-xs font-medium [overflow-wrap:anywhere] ${groupTextTone}`} title={editingTag?.id === member.id ? draftChinese : member.chinese || t("词库暂无翻译")}>{editingTag?.id === member.id ? draftChinese : member.chinese || t("待翻译")}</span>
                         {infoButton(member)}
                       </span>
                     </React.Fragment>)}

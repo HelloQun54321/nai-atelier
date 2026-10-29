@@ -287,6 +287,89 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
   });
 
   it.each([
+    ['alpha, alpha, tail', 'alpha, '],
+    ['alpha, 2::alpha, beta::, tail', 'alpha, 2::'],
+  ])('编辑 %s 时只高亮当前重复词，草稿变化仍定位原位置，取消后清除', (initial, prefix) => {
+    render(React.createElement(Harness, { initial, showTranslations: true }));
+    const zone = screen.getByLabelText('提示词中文翻译');
+    fireEvent.doubleClick(within(zone).getAllByText('alpha')[1]);
+    const input = screen.getByRole('combobox', { name: '修改提示词' });
+    const checkHighlight = () => {
+      const marks = document.querySelectorAll('[data-prompt-highlight]');
+      expect(marks).toHaveLength(1);
+      expect(marks[0].textContent).toBe('alpha');
+      expect(marks[0].previousSibling?.textContent).toBe(prefix);
+      expect(zone.querySelector('[role="button"][aria-pressed="true"]')).toBeNull();
+    };
+    checkHighlight();
+    fireEvent.change(input, { target: { value: 'much longer replacement' } });
+    checkHighlight();
+    expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe(initial);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(document.querySelector('[data-prompt-highlight]')).toBeNull();
+  });
+
+  it.each(['masterpiece', '2::masterpiece, alpha::'])('编辑 %s 的草稿未保存也显示当前词译文，未知词立即待翻译且不调模型', async initial => {
+    const translate = vi.spyOn(tagTranslations, 'translateMissingPromptTags');
+    try {
+      render(React.createElement(Harness, { initial, showTranslations: true }));
+      const zone = screen.getByLabelText('提示词中文翻译');
+      fireEvent.doubleClick(await within(zone).findByText('杰作'));
+      const input = screen.getByRole('combobox', { name: '修改提示词' });
+      fireEvent.change(input, { target: { value: 'masterpiece lighting' } });
+      expect(within(zone).queryByText('杰作')).toBeNull();
+      await within(zone).findByText('杰作光照');
+      const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+      expect(textarea.value).toBe(initial);
+      fireEvent.change(input, { target: { value: 'unknown draft' } });
+      expect(within(zone).queryByText('杰作光照')).toBeNull();
+      expect(within(zone).getAllByText('待翻译').length).toBeGreaterThan(0);
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(textarea.value).toBe(initial);
+      await within(zone).findByText('杰作');
+      expect(translate).not.toHaveBeenCalled();
+    } finally { translate.mockRestore(); }
+  });
+
+  it('空白插入的草稿也即时显示已有译文，不提前写入原文', async () => {
+    render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
+    const input = openTagInput();
+    fireEvent.change(input, { target: { value: 'masterpiece lighting' } });
+    await within(screen.getByLabelText('提示词中文翻译')).findByText('杰作光照');
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('alpha');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(textarea.value).toBe('alpha, masterpiece lighting');
+  });
+
+  it('旧草稿的译文迟到不覆盖当前草稿，也不改变原文', async () => {
+    let release!: (items: tagTranslations.PromptTagTranslation[]) => void;
+    const pending = new Promise<tagTranslations.PromptTagTranslation[]>(resolve => { release = resolve; });
+    let oldTokens: tagTranslations.PromptTagTranslation[] = [];
+    const lookup = vi.spyOn(tagTranslations, 'resolvePromptTranslations').mockImplementation(async tokens => {
+      if (tokens.some(token => token.lookupTag === 'old draft')) {
+        oldTokens = tokens.map(token => ({ ...token, chinese: '旧草稿译文', source: 'dictionary' as const }));
+        return pending;
+      }
+      return tokens.map(token => ({ ...token, chinese: token.lookupTag === 'new draft' ? '新草稿译文' : undefined, source: token.lookupTag === 'new draft' ? 'dictionary' as const : 'missing' as const }));
+    });
+    try {
+      render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
+      const zone = screen.getByLabelText('提示词中文翻译');
+      fireEvent.doubleClick(within(zone).getByText('alpha'));
+      const input = screen.getByRole('combobox', { name: '修改提示词' });
+      fireEvent.change(input, { target: { value: 'old draft' } });
+      await waitFor(() => expect(oldTokens).toHaveLength(1));
+      fireEvent.change(input, { target: { value: 'new draft' } });
+      await within(zone).findByText('新草稿译文');
+      await act(async () => { release(oldTokens); });
+      expect(within(zone).queryByText('旧草稿译文')).toBeNull();
+      expect(within(zone).getByText('新草稿译文')).toBeTruthy();
+      expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe('alpha');
+    } finally { lookup.mockRestore(); }
+  });
+
+  it.each([
     ['alpha, alpha', 1, 'alpha, gamma', 'alpha'],
     ['1.2::alpha, alpha::, tail', 1, '1.2::alpha, gamma::, tail', 'alpha'],
     ['{{alpha, beta}}, tail', 0, '{{gamma, beta}}, tail', 'alpha'],
