@@ -1,6 +1,7 @@
 import { promptPurposeLabel, type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Lock, MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
@@ -43,7 +44,7 @@ const FACET_HINT: Record<string, string> = {
 
 const facetHint = (facet: LabFacetView) => FACET_HINT[facet.id] || '写这一栏的提示词';
 
-export type LabCategoryTab = 'style' | 'character' | 'reference' | 'params' | 'add' | string;
+export type LabCategoryTab = 'style' | 'character' | 'reference' | 'params' | string;
 
 export interface LabCategoryCharacterTools {
   chains: PromptChain[];
@@ -66,14 +67,46 @@ export function labCategoryTabOptions(sections: PromptSections | null | undefine
     ...zones.map(zone => [zone.id, zone.label] as [string, string]),
     ...(references ? [['reference', '参考'] as [string, string]] : []),
     ['params', '参数'],
-    ['add', '添加'],
   ];
 }
 
-function RegionMenu({ label, children }: { label: string; children: React.ReactNode }) {
+/** 菜单优先翻到按钮上方；上方不够且右侧有空位时改到按钮右侧。两种位置都不压住按钮下方正在编辑的栏。 */
+function placeRegionMenu(anchor: DOMRect, height: number): { top: number; left: number; maxHeight: number } {
+  const width = 208;
+  const gap = 6;
+  const margin = 8;
+  const above = Math.max(0, anchor.top - margin - gap);
+  const rightSpace = window.innerWidth - anchor.right - margin - gap;
+  const clampLeft = (value: number) => Math.max(margin, Math.min(value, window.innerWidth - width - margin));
+  const besideRight = rightSpace >= width;
+  if (besideRight && above < Math.min(height, 168)) {
+    const maxHeight = Math.max(112, window.innerHeight - margin * 2);
+    const used = Math.min(height, maxHeight);
+    return { top: Math.max(margin, Math.min(anchor.top, window.innerHeight - margin - used)), left: anchor.right + gap, maxHeight };
+  }
+  const maxHeight = above;
+  const used = Math.min(height, maxHeight);
+  return { top: anchor.top - gap - used, left: clampLeft(anchor.right - width), maxHeight };
+}
+
+function RegionMenu({ label, children, onOpen }: { label: string; children: React.ReactNode; onOpen?: () => void }) {
   useLanguage();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open) { setBox(null); return; }
+    const place = () => {
+      const anchor = trigger.current?.getBoundingClientRect();
+      if (!anchor) return;
+      setBox(placeRegionMenu(anchor, menu.current?.scrollHeight || 240));
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -82,14 +115,23 @@ function RegionMenu({ label, children }: { label: string; children: React.ReactN
       event.stopPropagation();
       setOpen(false);
     };
-    const onPointer = (event: PointerEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (trigger.current?.contains(target) || menu.current?.contains(target)) return;
+      setOpen(false);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', onPointer);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onPointer); };
   }, [open]);
-  return <div ref={ref} className="relative z-30">
-    <button type="button" aria-label={label} aria-expanded={open} onClick={() => setOpen(value => !value)} className="mobile-touch flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-gray-500"><MoreHorizontal className="h-4 w-4" />{t('更多')}</button>
-    {open && <div role="menu" className="absolute right-0 top-full z-40 mt-1 w-52 rounded-[var(--workspace-card-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] p-1 shadow-[var(--nai-panel-shadow)]" onClick={() => setOpen(false)}>{children}</div>}
+  const toggle = () => setOpen(value => {
+    const next = !value;
+    if (next) onOpen?.();
+    return next;
+  });
+  return <div className="relative z-30">
+    <button ref={trigger} type="button" aria-label={label} aria-expanded={open} onClick={toggle} className="mobile-touch flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-gray-500"><MoreHorizontal className="h-4 w-4" />{t('更多')}</button>
+    {open && createPortal(<div ref={menu} role="menu" style={{ position: 'fixed', top: box?.top ?? 0, left: box?.left ?? 0, maxHeight: box?.maxHeight, visibility: box ? 'visible' : 'hidden' }} className="z-[80] w-52 overflow-y-auto rounded-[var(--workspace-card-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] p-1 shadow-[var(--nai-panel-shadow)]" onClick={() => setOpen(false)}>{children}</div>, document.body)}
   </div>;
 }
 
@@ -129,7 +171,7 @@ function ZonePane({ zone, sections, layout, disabled, tagAssist, negativeLocked,
         <h2 className="text-base font-semibold">{t(zone.label)}</h2>
         <p className="mt-0.5 text-xs text-gray-500">{t('只编辑这一页。随机这一页不会改画风。')}</p>
       </div>
-      <RegionMenu label={t('{0} 的更多操作', [t(zone.label)])}>
+      <RegionMenu label={t('{0} 的更多操作', [t(zone.label)])} onOpen={() => onFocus('')}>
         {purposes.length > 0 && <PromptLibraryRandomButton purposes={purposes} variant="menu" disabled={disabled} />}
         {zone.available.map(item => <button key={item.id} type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(addPictureFacet(stored, zone.id, item.id, promptPurposeLabel(item.id as PromptPurposeId)))}>{t('添加{0}', [t(item.label)])}</button>)}
         <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(movePictureZone(stored, zone.id, -1))}>{t('上移')}</button>
@@ -259,8 +301,8 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
             <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} />{t('角色 {0}', [index + 1])}</label>
             <div className="flex flex-wrap items-center gap-1">
               {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" />{t('保存到角色库')}</button>}
-              {characterTools && <button type="button" aria-label={t('从角色库引用')} title={t('从角色库引用')} onClick={() => openReference(index)} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30"><UserRound className="h-4 w-4" />{t('从角色库引用')}</button>}
-              <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])}>
+              <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])} onOpen={() => setFocusedId('')}>
+                {characterTools && <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => openReference(index)}>{t('从角色库引用')}</button>}
                 <PromptLibraryRandomButton roleId={character.id} purposes={board.facets.map(facet => facet.purposeId).filter((id): id is PromptPurposeId => Boolean(id))} variant="menu" disabled={disabled} />
                 {board.available.map(item => <button key={item.id} type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(addCharacterFacet(stored, item.id, promptPurposeLabel(item.id as PromptPurposeId)))}>{t('添加{0}', [t(item.label)])}</button>)}
                 <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs text-red-600" onClick={() => onRemoveCharacter(index)}>{t('移除角色')}</button>
@@ -284,8 +326,8 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
         else onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
       }} />}
     </section>}
-    {zone && tab !== 'style' && tab !== 'character' && tab !== 'reference' && tab !== 'params' && tab !== 'add' && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}
-    {pictureExtra(sections).trim() && tab !== 'style' && tab !== 'reference' && tab !== 'params' && tab !== 'add' && tab !== 'character' && <div className={insetClass}>
+    {zone && tab !== 'style' && tab !== 'character' && tab !== 'reference' && tab !== 'params' && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}
+    {pictureExtra(sections).trim() && tab !== 'style' && tab !== 'reference' && tab !== 'params' && tab !== 'character' && <div className={insetClass}>
       <span className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100">{t('补充')}</span>
       <TagAutocompleteTextarea aria-label={t('补充')} tagAssistEnabled={tagAssist} showTranslations={focusedId === 'extra'} disabled={disabled} value={pictureExtra(sections)} onValueChange={value => onSections(writeSectionText(sections, 'extra', value))} onFocus={() => setFocusedId('extra')} placeholder={t('还没归进分页的画面内容')} className={`${fieldClass} min-h-16`} />
     </div>}
