@@ -1550,3 +1550,12 @@ html[data-motion='off'] .media-card:hover { transform: none; }
   html[data-motion='full'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
   html[data-motion='full'] .animate-spin { animation-duration: 1s !important; }
 }
+
+/* 只作用于分类编辑。空栏占位要比正文淡，避免看起来像已经填了字。 */
+.lab-category-mode textarea::placeholder {
+  color: color-mix(in srgb, var(--color-gray-500) 72%, transparent);
+}
+html.dark .lab-category-mode textarea::placeholder,
+html:root[data-theme-details='true'].dark .lab-editor-surface .lab-category-mode textarea::placeholder {
+  color: color-mix(in srgb, var(--color-gray-400) 70%, transparent) !important;
+}

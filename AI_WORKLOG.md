@@ -6,6 +6,7 @@
 
 ## 2026-10-30
 
+- **Cursor（Grok 4.7）**：按真实后端截图收紧分类编辑：小栏改为区域内的浅层，权重条只跟着焦点，结构摘要改成可收起的玻璃行，空栏用淡占位，「添加」分页会选中。角色页补上定位、存进角色库和从角色库引用。更多菜单支持 Esc。整段编辑界面未改。
 - **Cursor（Grok 4.7）**：恢复实验室分类编辑为可选分页。画风保持整段且不参与 Roll；场景等画面与角色分栏各自一页，可再添加分页。整段编辑界面保持原样，只增加进入分类的开关。补栏位组装与 Roll 回归、CHANGELOG。
 - **Cursor（Composer）**：按局域网 Bug 报告修复：前端助手／Roll／实验室／导出／页面客户端 ID 统一 `createUuid`；媒体网关对非 image/* 响应按文件头 sniff WebP 等 MIME。补 id／agentWorkspace／media-gateway 回归与 CHANGELOG。未提交。
 - **Cursor（Composer）**：顶栏把手底色改与顶栏共用 `--nai-toolbar-surface` 与同款磨砂，箭头矢量并纠正方向；去掉 CSS border 三角叠影。补回归、CHANGELOG，更新本地前端产物。未提交。
