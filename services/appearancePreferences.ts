@@ -138,6 +138,8 @@ export interface AppearancePreferences {
   tagAssistEnabled: boolean;
   /** 原文框高度跟随内容；本端编辑偏好，不属于外观预设。 */
   promptInputAutoHeight: boolean;
+  /** 实验室分类编辑。本端编辑偏好，不写入外观预设，旧的 promptClassificationEnabled 不恢复。 */
+  labSectionedPrompt: boolean;
   /** 翻译区高度跟随内容；本端编辑偏好，不属于外观预设。 */
   promptTranslationAutoHeight: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
@@ -174,6 +176,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   gallerySelectionFocus: true,
   tagAssistEnabled: true,
   promptInputAutoHeight: true,
+  labSectionedPrompt: false,
   promptTranslationAutoHeight: true,
   generationStreamPreview: false,
   rememberGenerationSettings: true,
@@ -248,6 +251,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     promptInputAutoHeight: typeof input.promptInputAutoHeight === 'boolean'
       ? input.promptInputAutoHeight
       : DEFAULT_APPEARANCE_PREFERENCES.promptInputAutoHeight,
+    labSectionedPrompt: input.labSectionedPrompt === true,
     promptTranslationAutoHeight: typeof input.promptTranslationAutoHeight === 'boolean'
       ? input.promptTranslationAutoHeight
       : DEFAULT_APPEARANCE_PREFERENCES.promptTranslationAutoHeight,

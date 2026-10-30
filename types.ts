@@ -23,6 +23,7 @@ export interface PromptModule {
 export interface CharacterSectionContent {
   [key: `directory:${string}`]: string | undefined;
   [key: `purpose:${string}`]: string | undefined;
+  [key: `custom:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;
@@ -166,6 +167,8 @@ export interface NAIParams {
    * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
    */
   _promptSections?: PromptSections;
+  /** 分类编辑的分区顺序与用户追加的栏。不影响未打开分类时的整段正文。 */
+  _labSectionLayout?: import('./services/labSections').LabSectionLayout;
   /** 角色词库个人覆写的原始完整 Tag，缺省旧记录仍按 basePrompt 识别。 */
   _characterCatalogTag?: string;
   _promptLibraryPurposes?: import('./services/promptPurposes.mjs').PromptPurposeId[];
@@ -194,6 +197,7 @@ export interface PromptSectionSource {
 export interface PromptSections {
   [key: `directory:${string}`]: string | undefined;
   [key: `purpose:${string}`]: string | undefined;
+  [key: `custom:${string}`]: string | undefined;
   appearance?: string;
   wardrobe?: string;
   pose?: string;

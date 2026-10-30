@@ -52,6 +52,8 @@ import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags 
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
+import { LabCategoryMode, labCategoryTabOptions } from './chain/LabCategoryMode';
+import { enterSectionedPrompt, subjectFromSections } from '../services/labSections';
 import { PromptLibraryWorkspace, PromptLibraryRandomButton } from './PromptLibraryAccess';
 import { LAB_PICTURE_PURPOSES } from '../services/labPromptLayout';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
@@ -91,11 +93,14 @@ interface ChainEditorProps {
     rememberGenerationSettings?: boolean;
     generationMemory?: GenerationMemoryPreferences;
     labPageLayouts: LabPageLayouts;
+    /** 分类编辑。关闭时实验室界面与原来一致。 */
+    sectionedPrompt?: boolean;
+    onSectionedPromptChange?: (enabled: boolean) => void;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chainsLoading, chainsError, onRetryChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, sectionedPrompt = false, onSectionedPromptChange, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -286,6 +291,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const [isImportDragActive, setIsImportDragActive] = useState(false);
     const [translationPending, setTranslationPending] = useState(false);
     const [selectedEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'reference' | 'params'>('global');
+    const [categoryTab, setCategoryTab] = useState('style');
+    const [categoryAdding, setCategoryAdding] = useState(false);
     const supportsReferences = activeModelInfo.supportsVibes || activeModelInfo.supportsCharacterReferences;
     const mobileEditorTab = selectedEditorTab === 'reference' && !supportsReferences ? 'global' : selectedEditorTab;
     useEffect(() => {
@@ -351,6 +358,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
 
     const sourceChainId = chain.id === 'playground' ? 'playground' : chain.id;
     const activeGenerationMode = workspaceSession.activeMode;
+    const sectionedActive = sectionedPrompt && activeGenerationMode === 'text-to-image';
+    const showReference = sectionedActive ? categoryTab === 'reference' : mobileEditorTab === 'reference';
+    const showParams = sectionedActive ? categoryTab === 'params' : mobileEditorTab === 'params';
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     activeEditOperationRef.current = activeEditOperation;
@@ -1017,6 +1027,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         editorRevisionRef.current += 1;
         setHasChanges(true);
     };
+    const turnSectioned = (enabled: boolean) => {
+        onSectionedPromptChange?.(enabled);
+        if (!enabled) return;
+        const next = enterSectionedPrompt(basePrompt, subjectPrompt, negativePrompt, params._promptSections);
+        setBasePrompt(next.base);
+        setSubjectPrompt(next.subject);
+        setNegativePrompt(next.negative);
+        setParams(previous => ({ ...previous, _promptSections: next.sections }));
+        setCategoryTab('style');
+        markChange();
+    };
 
     // --- Character Handlers ---
     const addCharacter = () => {
@@ -1030,11 +1051,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     };
 
     const updateCharacter = (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => {
-        if (!params.characters?.[idx]) return;
-        const newChars = [...params.characters];
-        newChars[idx] = { ...newChars[idx], ...updates };
-        setParams({ ...params, characters: newChars, ...(useCoords !== undefined ? { useCoords } : {}) });
-        markCharacterSourceModified(newChars[idx].id);
+        const current = params.characters?.[idx];
+        if (!current) return;
+        setParams(previous => {
+            if (!previous.characters?.[idx]) return previous;
+            const characters = [...previous.characters];
+            characters[idx] = { ...characters[idx], ...updates };
+            return { ...previous, characters, ...(useCoords !== undefined ? { useCoords } : {}) };
+        });
+        markCharacterSourceModified(current.id);
         markChange();
     };
 
@@ -1862,7 +1887,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const currentAgentDraft = (raw = false): PromptAgentDraft => {
         const content: PromptAgentDraft = activeEditDraft ? { editContext: { baseImageAvailable: Boolean(imageEditBaseImage), maskAvailable: Boolean(imageEditMaskData), strength: activeEditDraft.strength, noise: activeEditDraft.noise, focused: activeEditDraft.focused }, basePrompt: activeEditDraft.prompt, subjectPrompt: '', negativePrompt: activeEditDraft.negativePrompt, modules: [], params: activeEditDraft.params } : { basePrompt, subjectPrompt, negativePrompt, modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params };
         const visible = normalizeAgentLabDraft(content);
-        return { ...(raw ? content : visible), target: { chainId: chain.id, name: chain.name, mode: activeGenerationMode, fingerprint: agentDraftFingerprint({ content: visible, canvas: activeEditDraft ? agentCanvasFingerprint : null }) } };
+        const exposeSections = raw || (sectionedPrompt && activeGenerationMode === 'text-to-image');
+        return { ...(exposeSections ? content : visible), target: { chainId: chain.id, name: chain.name, mode: activeGenerationMode, fingerprint: agentDraftFingerprint({ content: visible, canvas: activeEditDraft ? agentCanvasFingerprint : null }) } };
     };
     agentTargetRef.current = currentAgentDraft().target;
     const readAgentDraftRef = useRef(currentAgentDraft);
@@ -2087,7 +2113,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     };
 
     return (
-        <PromptLibraryWorkspace key={chain.id} register active={activeGenerationMode === 'text-to-image'} state={{ params, base: basePrompt, subject: subjectPrompt, negative: negativePrompt, classified: false }} onExternalChange={async () => {
+        <PromptLibraryWorkspace key={chain.id} register active={activeGenerationMode === 'text-to-image'} state={{ params, base: basePrompt, subject: subjectPrompt, negative: negativePrompt, classified: false, sectioned: sectionedActive }} onExternalChange={async () => {
             if (isGenerating || modeTransitionRef.current) throw new Error(t('实验室正在执行任务，请稍后使用提示词'));
             await selectGenerationMode('text-to-image');
         }} onChange={next => {
@@ -2138,6 +2164,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
                 translationPending={translationPending}
                 notify={notify}
+                sectionedPrompt={sectionedActive}
+                onSectionedPromptChange={activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
             {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
@@ -2170,22 +2198,23 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 }}
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
-                promptClassificationEnabled={false}
+                promptClassificationEnabled={sectionedActive}
                 characters={allChains}
             />
             {agentProposal && (!agentProposal.draft.target || agentProposal.draft.target.chainId === chain.id && agentProposal.draft.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal.draft} onClose={() => setAgentProposal(null)} onApply={async draft => { await applyGuardedAgentDraft(draft, agentProposal.onApplied, agentProposal.beforeApply); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
             <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
                 disabled={isGenerating} fallback={onContentRollForGlobal} />
-            <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
+            {sectionedActive ? <LabEditorTabs key={`${chain.id}:sectioned`} value={categoryTab === 'add' ? 'style' : categoryTab} options={labCategoryTabOptions(params._promptSections, params._labSectionLayout, supportsReferences)} onChange={value => { if (value === 'add') setCategoryAdding(true); else { setCategoryTab(value); setCategoryAdding(false); } }} /> : <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
                 ? [['global', '全局'], ['character', '角色'], ['reference', '参考'], ['params', '参数']]
-                : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />
+                : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />}
 
             {/* Editor Content */}
             <div className="appearance-content chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
                 <div className="appearance-content chain-editor-main flex min-w-0 w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="lab-editor-surface flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
+                        {sectionedActive && <LabCategoryMode tab={categoryTab} adding={categoryAdding} base={basePrompt} negative={negativePrompt} sections={params._promptSections} layout={params._labSectionLayout} characters={params.characters || []} tagAssist={tagAssistEnabled} negativeLocked={isNaiMediumModel(params.model)} onCancelAdd={() => setCategoryAdding(false)} onBase={value => { setBasePrompt(value); markPresetSectionModified('base'); markChange(); }} onNegative={value => { setNegativePrompt(value); markPresetSectionModified('negative'); markChange(); }} onSections={next => { setParams(previous => ({ ...previous, _promptSections: next })); setSubjectPrompt(subjectFromSections(next, params._labSectionLayout)); markPresetSectionModified('subject'); markChange(); }} onLayout={next => { setParams(previous => ({ ...previous, _labSectionLayout: next })); const zone = next.pinnedZones?.at(-1); if (categoryAdding && zone) setCategoryTab(zone); markChange(); }} onCopy={copyPromptToClipboard} onAddCharacter={addCharacter} onUpdateCharacter={updateCharacter} onRemoveCharacter={removeCharacter} />}
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             onPlainPromptChange={value => {
@@ -2205,7 +2234,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
                             activeLabLayout={activeLabLayout}
-                            mobileEditorTab={mobileEditorTab}
+                            mobileEditorTab={sectionedActive ? 'reference' : mobileEditorTab}
                         />
 
                         {/* Character Management (New V4.5) */}
@@ -2233,14 +2262,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             updateCharacter={updateCharacter}
                             removeCharacter={removeCharacter}
                             activeLabLayout={activeLabLayout}
-                            mobileEditorTab={mobileEditorTab}
+                            mobileEditorTab={sectionedActive ? 'reference' : mobileEditorTab}
                         />
 
                         {activeModelInfo.supportsCharacterReferences && <LabModuleSection
                             moduleId="characterReference"
                             label={t("精准参考")}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
-                            className={mobileEditorTab === 'reference' ? 'block' : 'hidden'}
+                            className={showReference ? 'block' : 'hidden'}
                         >
                             <CharacterReferenceManager
                                 params={params}
@@ -2255,7 +2284,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             moduleId="negative"
                             label={t("全局负面提示词")}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
+                            className={!sectionedActive && mobileEditorTab === 'global' ? 'block' : 'hidden'}
                         >
                         <section className={isNaiMediumModel(params.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(params.model) ? t('Medium 不支持负面提示词') : undefined}>
                             <div className="mb-2 flex items-center justify-between gap-3">
@@ -2284,7 +2313,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             moduleId="vibe"
                             label="氛围参考"
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.vibe)}
-                            className={mobileEditorTab === 'reference' ? 'block' : 'hidden'}
+                            className={showReference ? 'block' : 'hidden'}
                         >
                             <VibeManager
                                 params={params}
@@ -2300,7 +2329,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                             moduleId="params"
                             label={t("参数设置")}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.params)}
-                            className={mobileEditorTab === 'params' ? 'block' : 'hidden'}
+                            className={showParams ? 'block' : 'hidden'}
                         >
                         <ChainEditorParams
                             params={params}

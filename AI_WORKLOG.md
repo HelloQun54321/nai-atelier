@@ -6,6 +6,7 @@
 
 ## 2026-10-30
 
+- **Cursor（Grok 4.7）**：恢复实验室分类编辑为可选分页。画风保持整段且不参与 Roll；场景等画面与角色分栏各自一页，可再添加分页。整段编辑界面保持原样，只增加进入分类的开关。补栏位组装与 Roll 回归、CHANGELOG。
 - **Cursor（Composer）**：按局域网 Bug 报告修复：前端助手／Roll／实验室／导出／页面客户端 ID 统一 `createUuid`；媒体网关对非 image/* 响应按文件头 sniff WebP 等 MIME。补 id／agentWorkspace／media-gateway 回归与 CHANGELOG。未提交。
 - **Cursor（Composer）**：顶栏把手底色改与顶栏共用 `--nai-toolbar-surface` 与同款磨砂，箭头矢量并纠正方向；去掉 CSS border 三角叠影。补回归、CHANGELOG，更新本地前端产物。未提交。
 - **Cursor（Composer）**：落实提示词原文框／翻译区「高度跟随内容」双开关（生图偏好 → 提示词编辑，默认开）；appearancePreferences 持久化与 dataset 订阅，TagAutocompleteTextarea 自动量高、人工调高本轮优先；同步设置 UI、五语文案、模块决策、CHANGELOG 与定向回归。未提交或递增版本。

@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Copy, FileDown, Languages, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
+import { Copy, FileDown, Languages, ListTree, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton, ToolbarActionRow as ActionRow } from '../DesignSystem';
@@ -35,6 +35,8 @@ export interface ChainEditorHeaderProps {
     onTranslateMissingPrompts: () => void;
     translationPending?: boolean;
     notify: (msg: string, type?: 'success' | 'error') => void;
+    sectionedPrompt?: boolean;
+    onSectionedPromptChange?: (enabled: boolean) => void;
 }
 
 export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
@@ -62,6 +64,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     onTranslateMissingPrompts,
     translationPending = false,
     notify,
+    sectionedPrompt = false,
+    onSectionedPromptChange,
 }) => {
   useLanguage();
     const importInputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +152,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
                     <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
                 </>}
+                {onSectionedPromptChange && <IconButton label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} aria-pressed={sectionedPrompt === true} onClick={() => onSectionedPromptChange(!sectionedPrompt)} className={sectionedPrompt ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-800 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}><ListTree /></IconButton>}
                 <IconButton
                     label={tagAssistEnabled ? t("关闭 Tag 辅助") : t("开启 Tag 辅助")}
                     aria-pressed={tagAssistEnabled}
@@ -184,6 +189,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 {renderPromptTools()}
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
                 {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
+                {onSectionedPromptChange && <ActionRow icon={<ListTree className="h-4 w-4" />} label={t(sectionedPrompt ? '切换为整段编辑' : '切换为分类编辑')} detail={t(sectionedPrompt ? '分类' : '整段')} onClick={() => { onSectionedPromptChange(!sectionedPrompt); closeActions(); }} />}
                 <ActionRow
                     icon={<Tags className="h-4 w-4" />}
                     label={t("Tag 辅助")}

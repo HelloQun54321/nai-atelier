@@ -1,8 +1,9 @@
 import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey } from './promptPurposes.mjs';
-import type { NAIParams, PromptChain } from '../types';
+import type { NAIParams, PromptChain, PromptSections } from '../types';
 import { applyContentRollToParams, planContentRollApply, type ContentRollTarget } from './contentRollApply';
 import { combinationPicks, applyLibraryText, fragmentKindOf, type PromptLibraryField } from './promptLibraryEntries';
 import { mergePromptSections, resolvePromptSections } from './labWorkspace';
+import { isStyleSectionKey, projectSectionedNegative, projectSectionedPrompt, readLabSectionLayout, subjectFromSections } from './labSections';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from './characterPrompts';
 import { getEditableGlobalNegative, getEditableGlobalPrompt, mergePromptFields } from './promptUtils';
 import type { PromptApplyMode } from './promptApply';
@@ -18,6 +19,8 @@ export interface PromptLibraryWorkspaceState {
   subject: string;
   negative: string;
   classified: boolean;
+  /** 分类编辑：画面和角色按栏写入，全局画风保持整段。 */
+  sectioned?: boolean;
   maxCharacters?: number;
 }
 
@@ -101,7 +104,14 @@ export function applyLibrarySelection(selection: ReturnType<typeof planLibrarySe
   const writesGlobal = Object.keys(plan.globalSections).length > 0;
   if (!writesGlobal) result.params._promptSections = before.params._promptSections;
   const next = { ...before, params: result.params, subject: writesGlobal ? mergePromptSections(result.params._promptSections) : before.subject };
-  if (!before.classified) {
+  if (before.sectioned) {
+    const projected = projectSectionedPrompt(next.base, next.params._promptSections);
+    const folded = projectSectionedNegative(next.negative, projected.sections);
+    next.base = projected.base;
+    next.negative = folded.negative;
+    next.params = { ...next.params, _promptSections: folded.sections };
+    next.subject = writesGlobal || Object.keys(plan.globalSections).length ? subjectFromSections(folded.sections, readLabSectionLayout(next.params._labSectionLayout)) : next.subject;
+  } else if (!before.classified) {
     if (writesGlobal) {
       next.base = mergePromptFields(next.base, next.subject);
       next.negative = Object.entries(next.params._promptSections?.sectionNegatives || {}).reduce((text, [kind, negative]) =>
@@ -123,6 +133,79 @@ export interface RollApplyReceipt {
   fields: Record<string, { before: string; after: string; parts: Record<string, string> }>;
 }
 
+const facetField = (roleId: string | undefined, kind: string, negative: boolean) =>
+  `${roleId ? `character:${roleId}:facet:` : 'picture:'}${kind}${negative ? ':negative' : ''}`;
+
+/**
+ * 分类编辑下的 Roll：每个用途写回自己的栏，重抽只换这一栏里本次抽到的部分。
+ * 全局画风（base / 全局负面 / 画风用途）保持原样。
+ */
+export function applySectionedRoll(
+  state: PromptLibraryWorkspaceState,
+  picks: Record<string, RollRow>,
+  target: ContentRollTarget,
+  previousReceipt?: RollApplyReceipt,
+): { state: PromptLibraryWorkspaceState; receipt: RollApplyReceipt; conflicts: string[] } {
+  const roles = state.params.characters || [];
+  if (target.mode === 'existing' && !roles.some(role => role.id === target.id)) throw new Error('目标角色已不存在，请重新打开随机搭配');
+  const incoming = new Map<string, { roleId?: string; negative: boolean; kind: string; parts: Record<string, string> }>();
+  for (const [key, row] of Object.entries(picks)) {
+    if (!row.filled) continue;
+    const kind = rollSectionKey(key);
+    if (isStyleSectionKey(kind) || isStyleSectionKey(key)) continue;
+    const picture = target.mode === 'global' || kind === 'presentation' || (row.scope || META[kind]?.scope) === 'global';
+    const ids = picture ? [undefined] : target.mode === 'existing' ? [target.id] : target.mode === 'all-enabled' ? roles.filter(role => role.enabled !== false).map(role => role.id) : [];
+    for (const id of ids) {
+      for (const negative of [false, true]) {
+        const field = facetField(id, kind, negative);
+        const data = incoming.get(field) || { roleId: id, negative, kind, parts: {} };
+        data.parts[kind] = [data.parts[kind], negative ? row.negative || '' : row.text || ''].filter(part => part !== undefined).join(', ');
+        incoming.set(field, data);
+      }
+    }
+  }
+  const next = { ...state, sectioned: true, params: { ...state.params, _promptSections: { ...(state.params._promptSections || {}) } } };
+  const sections = { ...(next.params._promptSections || {}) } as PromptSections;
+  const sectionNegatives = { ...(sections.sectionNegatives || {}) };
+  let characters = roles.map(role => ({ ...role, sections: { ...(role.sections || {}) }, sectionNegatives: { ...(role.sectionNegatives || {}) } }));
+  const receipt: RollApplyReceipt = { fields: { ...previousReceipt?.fields } };
+  const conflicts: string[] = [];
+  let pictureChanged = false;
+  for (const [field, data] of incoming) {
+    const role = data.roleId ? characters.find(item => item.id === data.roleId) : undefined;
+    const current = role
+      ? textOf(data.negative ? (role.sectionNegatives as Record<string, string> | undefined)?.[data.kind] : role.sections?.[data.kind as keyof typeof role.sections])
+      : textOf(data.negative ? sectionNegatives[data.kind] : (sections as Record<string, unknown>)[data.kind]);
+    const previous = previousReceipt?.fields[field];
+    if (previous && current !== previous.after) { conflicts.push(field); continue; }
+    const before = previous ? previous.before : current;
+    const parts = { ...previous?.parts, ...data.parts };
+    const after = mergePromptFields(before, Object.values(parts).filter(part => part.trim()).join(', '));
+    receipt.fields[field] = { before, after, parts };
+    if (role) {
+      if (data.negative) role.sectionNegatives = { ...role.sectionNegatives, [data.kind]: after };
+      else role.sections = { ...role.sections, [data.kind]: after };
+      if (!after.trim()) {
+        if (data.negative) delete (role.sectionNegatives as Record<string, string>)[data.kind];
+        else delete role.sections[data.kind as keyof typeof role.sections];
+      }
+    } else if (data.negative) {
+      if (after.trim()) sectionNegatives[data.kind] = after; else delete sectionNegatives[data.kind];
+      pictureChanged = true;
+    } else {
+      (sections as Record<string, string>)[data.kind] = after;
+      if (!after.trim()) delete (sections as Record<string, unknown>)[data.kind];
+      pictureChanged = true;
+    }
+  }
+  sections.sectionNegatives = sectionNegatives;
+  next.params = { ...next.params, _promptSections: sections, characters };
+  if (pictureChanged) next.subject = subjectFromSections(sections, readLabSectionLayout(next.params._labSectionLayout));
+  return { state: next, receipt, conflicts };
+}
+
+const textOf = (value: unknown) => String(value ?? '');
+
 /** 纯规划也用于预览；调用方成功应用state后才接受receipt，撤销时一并恢复。 */
 export function applyRollSelection(
   state: PromptLibraryWorkspaceState,
@@ -130,6 +213,7 @@ export function applyRollSelection(
   target: ContentRollTarget,
   previousReceipt?: RollApplyReceipt,
 ): { state: PromptLibraryWorkspaceState; receipt: RollApplyReceipt; conflicts: string[] } {
+  if (state.sectioned) return applySectionedRoll(state, picks, target, previousReceipt);
   const roles = state.params.characters || [];
   if (target.mode === 'existing' && !roles.some(role => role.id === target.id)) throw new Error('目标角色已不存在，请重新打开随机搭配');
   const hasRoleContent = Object.entries(picks).some(([key, row]) => row.filled && (row.text?.trim() || row.negative?.trim()) && (row.scope || META[rollSectionKey(key)]?.scope) !== 'global' && rollSectionKey(key) !== 'presentation');
