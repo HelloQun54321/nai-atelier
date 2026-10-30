@@ -115,19 +115,6 @@ it.each([3, 4])('%s个分区左右键与首尾键切换并同步选中和键盘�
   expect(document.activeElement).toBe(global);
 });
 
-it('分页条末尾的附加按钮不是分页，方向键也不会落到它上面', () => {
-  render(<LabEditorTabs value="global" options={threeOptions} onChange={() => {}} accessory={<button type="button" aria-label="添加分页">+</button>} />);
-  const tabs = screen.getAllByRole('tab');
-  expect(tabs).toHaveLength(3);
-  expect(screen.getByRole('button', { name: '添加分页' }).getAttribute('role')).toBeNull();
-  expect(screen.getByRole('tablist').style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
-  const last = screen.getByRole('tab', { name: '参数' });
-  fireEvent.keyDown(last, { key: 'ArrowRight' });
-  expect(document.activeElement).toBe(screen.getByRole('tab', { name: '全局' }));
-  fireEvent.keyDown(screen.getByRole('tab', { name: '全局' }), { key: 'End' });
-  expect(document.activeElement).toBe(last);
-});
-
 it('参考页隐藏后从四页恢复三页等宽，保留有效页的选中与焦点并按新顺序循环', () => {
   const onChange = vi.fn();
   const view = render(<LabEditorTabs value="params" options={fourOptions} onChange={onChange} />);

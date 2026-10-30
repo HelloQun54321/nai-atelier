@@ -167,7 +167,7 @@ export function applySectionedRoll(
   const next = { ...state, sectioned: true, params: { ...state.params, _promptSections: { ...(state.params._promptSections || {}) } } };
   const sections = { ...(next.params._promptSections || {}) } as PromptSections;
   const sectionNegatives = { ...(sections.sectionNegatives || {}) };
-  let characters = roles.map(role => ({ ...role, sections: { ...(role.sections || {}) }, sectionNegatives: { ...(role.sectionNegatives || {}) } }));
+  const characters = roles.map(role => ({ ...role, sections: { ...(role.sections || {}) }, sectionNegatives: { ...(role.sectionNegatives || {}) } }));
   const receipt: RollApplyReceipt = { fields: { ...previousReceipt?.fields } };
   const conflicts: string[] = [];
   let pictureChanged = false;

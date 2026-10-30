@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, type ReactNode } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { t } from '../services/i18n';
 import { useTopbarCollapsed } from '../services/workspaceTopbar';
 
@@ -8,12 +8,10 @@ const scrollAreas = (nav: HTMLElement | null) => {
 };
 
 /** 四模式共用分区；只切换可见内容，桌面编辑栏与手机正文分别保留滚动位置。 */
-export const LabEditorTabs = <T extends string,>({ value, options, onChange, accessory }: {
+export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
   value: T;
   options: readonly (readonly [T, string])[];
   onChange: (value: T) => void;
-  /** 贴在分页条末尾，不是分页。不要把按钮直接放进 tablist，否则会被拉成整页标签。 */
-  accessory?: ReactNode;
 }) => {
   const navRef = useRef<HTMLElement>(null);
   const positions = useRef<Partial<Record<T, [number, number]>>>({});
@@ -96,6 +94,5 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange, acc
       className={`relative min-w-0 rounded-lg text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-indigo-500 ${value === key ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>
       {t(label)}
     </button>)}
-    {accessory && <span className="pointer-events-auto absolute top-1/2 right-1 z-40 -translate-y-1/2 lg:right-auto lg:left-full lg:ml-1">{accessory}</span>}
   </nav>;
 };

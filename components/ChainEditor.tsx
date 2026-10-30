@@ -47,7 +47,7 @@ import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { compileCharacterContent } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
-import { FileDown, Plus } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
@@ -292,7 +292,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const [translationPending, setTranslationPending] = useState(false);
     const [selectedEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'reference' | 'params'>('global');
     const [categoryTab, setCategoryTab] = useState('style');
-    const [categoryAdding, setCategoryAdding] = useState(false);
     const supportsReferences = activeModelInfo.supportsVibes || activeModelInfo.supportsCharacterReferences;
     const mobileEditorTab = selectedEditorTab === 'reference' && !supportsReferences ? 'global' : selectedEditorTab;
     useEffect(() => {
@@ -2205,7 +2204,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             {activeGenerationMode === 'text-to-image' ? <>
             <PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} toolbarSlot={promptToolbarSlot}
                 disabled={isGenerating} fallback={onContentRollForGlobal} />
-            {sectionedActive ? <LabEditorTabs key={`${chain.id}:sectioned`} value={categoryTab} options={labCategoryTabOptions(params._promptSections, params._labSectionLayout, supportsReferences)} onChange={value => { setCategoryTab(value); setCategoryAdding(false); }} accessory={<button type="button" aria-label={t('添加分页')} title={t('添加分页')} aria-pressed={categoryAdding} onClick={() => setCategoryAdding(open => !open)} className={`mobile-touch inline-flex h-8 w-8 items-center justify-center rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] text-gray-600 shadow-sm dark:text-gray-200 ${categoryAdding ? 'text-[var(--nai-accent)]' : ''}`}><Plus className="h-4 w-4" /></button>} /> : <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
+            {sectionedActive ? <LabEditorTabs key={`${chain.id}:sectioned`} value={categoryTab} options={labCategoryTabOptions(supportsReferences)} onChange={setCategoryTab} /> : <LabEditorTabs key={chain.id} value={mobileEditorTab} options={supportsReferences
                 ? [['global', '全局'], ['character', '角色'], ['reference', '参考'], ['params', '参数']]
                 : [['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />}
 
@@ -2214,7 +2213,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 {/* Left Panel - Editor */}
                 <div className="appearance-content chain-editor-main flex min-w-0 w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="lab-editor-surface flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
-                        {sectionedActive && <LabCategoryMode tab={categoryTab} adding={categoryAdding} base={basePrompt} negative={negativePrompt} sections={params._promptSections} layout={params._labSectionLayout} characters={params.characters || []} tagAssist={tagAssistEnabled} negativeLocked={isNaiMediumModel(params.model)} onCancelAdd={() => setCategoryAdding(false)} characterTools={{ chains: allChains, chainsLoading, chainsError, onRetryChains, onSaveCharacter: saveCharacterToLibrary, notify, freeformPosition: activeModelInfo.freeformCharacterPosition, params, setParams, onSettingsChange: () => markPresetSectionModified('settings') }} onBase={value => { setBasePrompt(value); markPresetSectionModified('base'); markChange(); }} onNegative={value => { setNegativePrompt(value); markPresetSectionModified('negative'); markChange(); }} onSections={next => { setParams(previous => ({ ...previous, _promptSections: next })); setSubjectPrompt(subjectFromSections(next, params._labSectionLayout)); markPresetSectionModified('subject'); markChange(); }} onLayout={next => { setParams(previous => ({ ...previous, _labSectionLayout: next })); const zone = next.pinnedZones?.at(-1); if (categoryAdding && zone) setCategoryTab(zone); markChange(); }} onCopy={copyPromptToClipboard} onAddCharacter={addCharacter} onUpdateCharacter={updateCharacter} onRemoveCharacter={removeCharacter} />}
+                        {sectionedActive && <LabCategoryMode tab={categoryTab} base={basePrompt} negative={negativePrompt} sections={params._promptSections} layout={params._labSectionLayout} characters={params.characters || []} tagAssist={tagAssistEnabled} negativeLocked={isNaiMediumModel(params.model)} characterTools={{ chains: allChains, chainsLoading, chainsError, onRetryChains, onSaveCharacter: saveCharacterToLibrary, notify, freeformPosition: activeModelInfo.freeformCharacterPosition, params, setParams, onSettingsChange: () => markPresetSectionModified('settings') }} onBase={value => { setBasePrompt(value); markPresetSectionModified('base'); markChange(); }} onNegative={value => { setNegativePrompt(value); markPresetSectionModified('negative'); markChange(); }} onSections={next => { setParams(previous => ({ ...previous, _promptSections: next })); setSubjectPrompt(subjectFromSections(next, params._labSectionLayout)); markPresetSectionModified('subject'); markChange(); }} onLayout={next => { setParams(previous => ({ ...previous, _labSectionLayout: next })); markChange(); }} onCopy={copyPromptToClipboard} onAddCharacter={addCharacter} onUpdateCharacter={updateCharacter} onRemoveCharacter={removeCharacter} />}
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             onPlainPromptChange={value => {

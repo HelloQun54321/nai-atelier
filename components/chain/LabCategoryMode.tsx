@@ -1,8 +1,8 @@
 import { promptPurposeLabel, type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Lock, MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
+import { MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PromptCopyButton } from './PresetSourceBadges';
@@ -15,15 +15,16 @@ import { compilePrompt } from '../../services/promptUtils';
 import { hasCharacterSections } from '../../services/characterPrompts';
 import type { CharacterParams, NAIParams, PromptChain, PromptSectionSource, PromptSections } from '../../types';
 import {
-  PICTURE_ZONES, addCharacterFacet, addCustomZone, addPictureFacet, customSectionId, movePictureZone, pictureExtra,
-  pinPictureZone, pinnedPictureZones, readCharacterBoard, readLabSectionLayout, readPictureBoard, removeCharacterFacet,
-  removeCustomZone, removePictureFacet, unpinPictureZone, writeSectionNegative, writeSectionText,
+  addCharacterFacet, addPictureFacet, pictureExtra, readCharacterBoard, readLabSectionLayout, readPictureBoard,
+  removeCharacterFacet, removeCustomZone, removePictureFacet, writeSectionNegative, writeSectionText,
   type LabFacetView, type LabSectionLayout, type LabZoneView,
 } from '../../services/labSections';
 import { createUuid } from '../../services/id';
 
-const fieldClass = 'lab-category-field w-full resize-y rounded-xl border border-gray-200/80 bg-transparent p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-[var(--nai-accent)] dark:border-white/10 dark:text-gray-100';
-const insetClass = 'rounded-[var(--workspace-card-radius)] border border-[color-mix(in_srgb,var(--nai-panel-border)_35%,transparent)] bg-[color-mix(in_srgb,var(--nai-panel-solid-surface)_28%,transparent)] p-3';
+const fieldClass = 'lab-category-field w-full resize-y rounded-lg border border-gray-200/80 bg-transparent p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-[var(--nai-accent)] dark:border-white/10 dark:text-gray-100';
+const insetClass = 'rounded-xl border border-gray-200/80 p-3 dark:border-white/10';
+/** 与普通模式的实验室模块卡片同款外观，分类页不再自己拼一套。 */
+const cardClass = 'lab-module-section lab-region appearance-reading-surface appearance-card appearance-group flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white/70 p-4 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-900/60';
 
 const FACET_HINT: Record<string, string> = {
   'purpose:place': '写地点、室内或背景',
@@ -59,12 +60,12 @@ export interface LabCategoryCharacterTools {
   onSettingsChange?: () => void;
 }
 
-export function labCategoryTabOptions(sections: PromptSections | null | undefined, layout: LabSectionLayout | null | undefined, references: boolean): [string, string][] {
-  const zones = pinnedPictureZones(sections, layout);
+/** 分类编辑的固定分页：全局、角色、场景，参考随模型能力出现。场景不靠添加，直接在角色后面。 */
+export function labCategoryTabOptions(references: boolean): [string, string][] {
   return [
     ['style', '全局'],
     ['character', '角色'],
-    ...zones.map(zone => [zone.id, zone.label] as [string, string]),
+    ['scene', '场景'],
     ...(references ? [['reference', '参考'] as [string, string]] : []),
     ['params', '参数'],
   ];
@@ -130,7 +131,7 @@ function RegionMenu({ label, children, onOpen }: { label: string; children: Reac
     return next;
   });
   return <div className="relative z-30">
-    <button ref={trigger} type="button" aria-label={label} aria-expanded={open} onClick={toggle} className="mobile-touch flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-gray-500"><MoreHorizontal className="h-4 w-4" />{t('更多')}</button>
+    <button ref={trigger} type="button" aria-label={label} aria-expanded={open} onClick={toggle} className="mobile-touch flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"><MoreHorizontal className="h-3.5 w-3.5" />{t('更多')}</button>
     {open && createPortal(<div ref={menu} role="menu" style={{ position: 'fixed', top: box?.top ?? 0, left: box?.left ?? 0, maxHeight: box?.maxHeight, visibility: box ? 'visible' : 'hidden' }} className="z-[80] w-52 overflow-y-auto rounded-[var(--workspace-card-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] p-1 shadow-[var(--nai-panel-shadow)]" onClick={() => setOpen(false)}>{children}</div>, document.body)}
   </div>;
 }
@@ -150,9 +151,9 @@ function FacetField({ facet, disabled, tagAssist, negativeLocked, roleId, focuse
       <button type="button" className="text-xs text-gray-400 opacity-0 group-focus-within/zone:opacity-100 group-hover/zone:opacity-100" onClick={() => setNegativeOpen(open => !open)}>{t(negativeOpen ? '收起负面' : '负面')}</button>
       {onRemove && <button type="button" className="text-xs text-gray-400 opacity-0 group-focus-within/zone:opacity-100 group-hover/zone:opacity-100" onClick={onRemove}>{t('移除')}</button>}
     </div>
-    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} libraryField={{ purposeId: facet.purposeId, roleId }} tagAssistEnabled={tagAssist} showTranslations={focused} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
+    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} libraryField={{ purposeId: facet.purposeId, roleId }} tagAssistEnabled={tagAssist} showTranslations={Boolean(facet.text.trim())} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
     {purposes && focused && <PromptLibraryRandomButton purposes={purposes} roleId={roleId} variant="menu" disabled={disabled} />}
-    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ purposeId: facet.purposeId, roleId, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={focused} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
+    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ purposeId: facet.purposeId, roleId, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(facet.negative.trim())} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
   </div>;
 }
 
@@ -165,19 +166,13 @@ function ZonePane({ zone, sections, layout, disabled, tagAssist, negativeLocked,
   const stored = readLabSectionLayout(layout);
   const purposes = zone.facets.map(facet => facet.purposeId).filter((id): id is PromptPurposeId => Boolean(id));
   const write = (id: string, value: string, source?: PromptSectionSource) => onSections(writeSectionText(sections, id, value, source));
-  return <section aria-label={t(zone.label)} className="lab-module-section lab-region relative z-0 flex flex-col gap-4 p-4 md:p-5">
-    <header className="relative z-30 flex items-start justify-between gap-3">
-      <div>
-        <h2 className="text-base font-semibold">{t(zone.label)}</h2>
-        <p className="mt-0.5 text-xs text-gray-500">{t('只编辑这一页。随机这一页不会改画风。')}</p>
-      </div>
+  return <section aria-label={t(zone.label)} className={`${cardClass} relative z-0 gap-4`}>
+    <header className="relative z-30 flex items-center justify-between gap-3">
+      <h2 className="min-w-0 truncate text-xs font-bold text-gray-700 dark:text-gray-300">{t(zone.label)}</h2>
       <RegionMenu label={t('{0} 的更多操作', [t(zone.label)])} onOpen={() => onFocus('')}>
         {purposes.length > 0 && <PromptLibraryRandomButton purposes={purposes} variant="menu" disabled={disabled} />}
         {zone.available.map(item => <button key={item.id} type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(addPictureFacet(stored, zone.id, item.id, promptPurposeLabel(item.id as PromptPurposeId)))}>{t('添加{0}', [t(item.label)])}</button>)}
-        <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(movePictureZone(stored, zone.id, -1))}>{t('上移')}</button>
-        <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(movePictureZone(stored, zone.id, 1))}>{t('下移')}</button>
-        {zone.removable ? <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs text-red-600" onClick={() => { const next = removeCustomZone(stored, sections, zone.id); onLayout(next.layout); onSections(next.sections); }}>{t('移除分区')}</button>
-          : <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(unpinPictureZone(stored, zone.id))}>{t('从分页拿下')}</button>}
+        {zone.removable && <button type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs text-red-600" onClick={() => { const next = removeCustomZone(stored, sections, zone.id); onLayout(next.layout); onSections(next.sections); }}>{t('移除分区')}</button>}
       </RegionMenu>
     </header>
     <div className="flex flex-col gap-2">
@@ -223,82 +218,52 @@ function CharacterLibraryDialog({ action, chains, chainsLoading, chainsError, on
   </div></ImagePreviewPortal>;
 }
 
-export function LabCategoryMode({ tab, adding, base, negative, sections, layout, characters, disabled, tagAssist, negativeLocked, onCancelAdd, onBase, onNegative, onSections, onLayout, onCopy, onAddCharacter, onUpdateCharacter, onRemoveCharacter, characterTools }: {
-  tab: string; adding: boolean; base: string; negative: string; sections?: PromptSections | null; layout?: LabSectionLayout | null;
+export function LabCategoryMode({ tab, base, negative, sections, layout, characters, disabled, tagAssist, negativeLocked, onBase, onNegative, onSections, onLayout, onCopy, onAddCharacter, onUpdateCharacter, onRemoveCharacter, characterTools }: {
+  tab: string; base: string; negative: string; sections?: PromptSections | null; layout?: LabSectionLayout | null;
   characters: CharacterParams[]; disabled?: boolean; tagAssist: boolean; negativeLocked: boolean;
-  onCancelAdd: () => void; onBase: (value: string) => void; onNegative: (value: string) => void;
+  onBase: (value: string) => void; onNegative: (value: string) => void;
   onSections: (sections: PromptSections) => void; onLayout: (layout: LabSectionLayout) => void; onCopy: (value: string, label: string) => void;
   onAddCharacter: () => void; onUpdateCharacter: (index: number, updates: Partial<CharacterParams>) => void; onRemoveCharacter: (index: number) => void;
   characterTools?: LabCategoryCharacterTools;
 }) {
   useLanguage();
-  const formId = useId();
   const stored = readLabSectionLayout(layout);
-  const zones = pinnedPictureZones(sections, stored);
-  const zone = zones.find(item => item.id === tab) || readPictureBoard(sections, stored).find(item => item.id === tab);
-  const [name, setName] = useState('');
+  const board = readPictureBoard(sections, stored);
+  const zone = board.find(item => item.id === 'scene');
+  /** 场景是固定页；主体、构图与镜头不再单独成页，写了内容的历史栏在场景页下方继续可编辑。 */
+  const extras = board.filter(item => item.id !== 'scene' && (item.facets.some(facet => facet.text.trim() || facet.negative.trim()) || item.removable));
   const [focusedId, setFocusedId] = useState('');
-  const [styleFocus, setStyleFocus] = useState<'positive' | 'negative' | ''>('');
   const [positionOpen, setPositionOpen] = useState(false);
   const [libraryAction, setLibraryAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
-  const available = PICTURE_ZONES.filter(item => !zones.some(current => current.id === item.id));
-  const addBuiltin = (id: string) => { onLayout(pinPictureZone(stored, id)); onCancelAdd(); };
-  const addNamed = () => {
-    const id = customSectionId(createUuid());
-    const next = addCustomZone(stored, name, id);
-    const zoneId = next.zones.at(-1)?.id;
-    onLayout(zoneId ? pinPictureZone(next, zoneId) : next);
-    setName('');
-    onCancelAdd();
-  };
   const openReference = (index: number) => setLibraryAction({ kind: 'reference', index });
   return <div className="lab-category-mode flex flex-col gap-4 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-0">
-    {adding && <form id={formId} className="lab-module-section lab-region flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); if (name.trim()) addNamed(); }}>
-      <h2 className="text-sm font-semibold">{t('添加分页')}</h2>
-      <div className="flex flex-wrap gap-2">{available.map(item => <button key={item.id} type="button" className="mobile-touch h-9 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-3 text-xs" onClick={() => addBuiltin(item.id)}>{t(item.label)}</button>)}</div>
-      <div className="flex flex-wrap items-center gap-2">
-        <input aria-label={t('分区名称')} value={name} onChange={event => setName(event.target.value)} placeholder={t('自定义分页，例如夜景')} className="h-10 min-w-36 flex-1 rounded-lg border border-gray-200 bg-transparent px-3 text-sm dark:border-gray-700" />
-        <button type="submit" className="mobile-touch h-10 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-3 text-xs font-semibold text-[var(--nai-on-accent)]">{t('添加')}</button>
-        <button type="button" className="mobile-touch h-10 px-2 text-xs text-gray-500" onClick={onCancelAdd}>{t('取消')}</button>
-      </div>
-    </form>}
-    {tab === 'style' && <article className="lab-module-section lab-region flex flex-col gap-3 p-4 md:p-5">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-1.5 text-base font-semibold"><Lock className="h-3.5 w-3.5" aria-hidden="true" />{t('画风')}</h2>
-          <p className="mt-0.5 text-xs text-gray-500">{t('整段使用，随机搭配不会改这里。')}</p>
-        </div>
+    {tab === 'style' && <article className={cardClass}>
+      <header className="flex items-center justify-between gap-3">
+        <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('画风')}</h2>
         <PromptCopyButton onClick={() => onCopy(base, '画风')} title={t('复制画风')} />
       </header>
-      <TagAutocompleteTextarea aria-label={t('画风')} tagAssistEnabled={tagAssist} showTranslations={styleFocus === 'positive'} disabled={disabled} value={base} onValueChange={onBase} onFocus={() => setStyleFocus('positive')} placeholder={t('画师、媒介、光影，整段填写')} className={`${fieldClass} min-h-32`} />
+      <TagAutocompleteTextarea aria-label={t('画风')} tagAssistEnabled={tagAssist} showTranslations={Boolean(base.trim())} disabled={disabled} value={base} onValueChange={onBase} placeholder={t('画师、媒介、光影，整段填写')} className={`${fieldClass} min-h-32`} />
       <div className={negativeLocked ? 'nai-model-locked' : undefined}>
         <div className="mb-1.5 flex items-center justify-between"><span className="text-xs text-gray-500">{t('画风负面（可选）')}</span><PromptCopyButton onClick={() => onCopy(negative, '画风负面')} title={t('复制画风负面')} /></div>
-        <TagAutocompleteTextarea aria-label={t('画风负面（可选）')} libraryField={{ negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={styleFocus === 'negative'} disabled={disabled || negativeLocked} value={negative} onValueChange={onNegative} onFocus={() => setStyleFocus('negative')} placeholder={t('不想要的画风，可以留空')} className={`${fieldClass} min-h-20`} />
+        <TagAutocompleteTextarea aria-label={t('画风负面（可选）')} libraryField={{ negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(negative.trim())} disabled={disabled || negativeLocked} value={negative} onValueChange={onNegative} placeholder={t('不想要的画风，可以留空')} className={`${fieldClass} min-h-20`} />
       </div>
     </article>}
     {tab === 'character' && <section aria-label={t('角色')} className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">{t('角色')}</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          {characterTools && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"><MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>}
-          {characterTools && <button type="button" className="mobile-touch flex h-9 items-center gap-1 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-3 text-xs font-semibold" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" />{t('从角色库引用')}</button>}
-          <button type="button" className="mobile-touch h-9 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-3 text-xs font-semibold text-[var(--nai-on-accent)]" onClick={onAddCharacter}>{t('添加角色')}</button>
+        <h2 className="text-xs font-bold text-gray-700 dark:text-gray-300">{t('角色')}</h2>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {characterTools && characters.length > 0 && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"><MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>}
+          {characterTools && <button type="button" className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" />{t('从角色库引用')}</button>}
+          <button type="button" className="appearance-group mobile-touch flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>{t('添加角色')}</button>
         </div>
       </div>
       {characterTools && positionOpen && <CharacterPositionStage characters={characters} freeform={Boolean(characterTools.freeformPosition)} width={characterTools.params.width} height={characterTools.params.height} canEdit={!disabled} useCoords={characterTools.params.useCoords === true} onPosition={(index, position) => { characterTools.setParams({ ...characterTools.params, useCoords: true, characters: (characterTools.params.characters || []).map((item, itemIndex) => itemIndex === index ? { ...item, ...position } : item) }); characterTools.onSettingsChange?.(); }} />}
-      {characters.length === 0 && <article className="lab-module-section lab-region flex flex-col items-start gap-3 p-5">
-        <h3 className="text-sm font-semibold">{t('还没有角色')}</h3>
-        <p className="text-xs text-gray-500">{t('外貌、服饰和动作写在角色页。场景和构图用各自的分页。')}</p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="mobile-touch h-10 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-4 text-sm font-semibold text-[var(--nai-on-accent)]" onClick={onAddCharacter}>{t('添加角色')}</button>
-          {characterTools && <button type="button" className="mobile-touch flex h-10 items-center gap-1 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-4 text-sm font-semibold" onClick={() => openReference(-1)}><UserRound className="h-4 w-4" />{t('从角色库引用')}</button>}
-        </div>
-      </article>}
+      {characters.length === 0 && <div className="py-2 text-center text-xs text-gray-400">{t('暂无角色，点击上方添加')}</div>}
       {characters.map((character, index) => {
         const board = readCharacterBoard(character, stored);
-        return <article key={character.id} className="lab-module-section lab-region flex flex-col gap-3 p-4">
+        return <article key={character.id} className={cardClass}>
           <header className="flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} />{t('角色 {0}', [index + 1])}</label>
+            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200"><input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} />{t('角色 {0}', [index + 1])}</label>
             <div className="flex flex-wrap items-center gap-1">
               {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" />{t('保存到角色库')}</button>}
               <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])} onOpen={() => setFocusedId('')}>
@@ -317,7 +282,7 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
           </div>
           <div className={insetClass}>
             <span className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100">{t('补充')}</span>
-            <TagAutocompleteTextarea aria-label={t('角色 {0} 补充', [index + 1])} libraryField={{ roleId: character.id }} tagAssistEnabled={tagAssist} showTranslations={focusedId === `${character.id}:extra`} disabled={disabled} value={character.prompt || ''} onValueChange={value => onUpdateCharacter(index, { prompt: value })} onFocus={() => setFocusedId(`${character.id}:extra`)} placeholder={t('还没归进上面各栏的角色内容')} className={`${fieldClass} min-h-16`} />
+            <TagAutocompleteTextarea aria-label={t('角色 {0} 补充', [index + 1])} libraryField={{ roleId: character.id }} tagAssistEnabled={tagAssist} showTranslations={Boolean(character.prompt.trim())} disabled={disabled} value={character.prompt || ''} onValueChange={value => onUpdateCharacter(index, { prompt: value })} onFocus={() => setFocusedId(`${character.id}:extra`)} placeholder={t('还没归进上面各栏的角色内容')} className={`${fieldClass} min-h-16`} />
           </div>
         </article>;
       })}
@@ -326,10 +291,11 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
         else onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
       }} />}
     </section>}
-    {zone && tab !== 'style' && tab !== 'character' && tab !== 'reference' && tab !== 'params' && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}
-    {pictureExtra(sections).trim() && tab !== 'style' && tab !== 'reference' && tab !== 'params' && tab !== 'character' && <div className={insetClass}>
+    {!['style', 'character', 'reference', 'params'].includes(tab) && zone && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}
+    {!['style', 'character', 'reference', 'params'].includes(tab) && extras.map(item => <ZonePane key={item.id} zone={item} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />)}
+    {pictureExtra(sections).trim() && !['style', 'reference', 'params', 'character'].includes(tab) && <div className={insetClass}>
       <span className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100">{t('补充')}</span>
-      <TagAutocompleteTextarea aria-label={t('补充')} tagAssistEnabled={tagAssist} showTranslations={focusedId === 'extra'} disabled={disabled} value={pictureExtra(sections)} onValueChange={value => onSections(writeSectionText(sections, 'extra', value))} onFocus={() => setFocusedId('extra')} placeholder={t('还没归进分页的画面内容')} className={`${fieldClass} min-h-16`} />
+      <TagAutocompleteTextarea aria-label={t('补充')} tagAssistEnabled={tagAssist} showTranslations={Boolean(pictureExtra(sections).trim())} disabled={disabled} value={pictureExtra(sections)} onValueChange={value => onSections(writeSectionText(sections, 'extra', value))} onFocus={() => setFocusedId('extra')} placeholder={t('还没归进分页的画面内容')} className={`${fieldClass} min-h-16`} />
     </div>}
   </div>;
 }
