@@ -49,7 +49,12 @@ it('共用把手收起顶栏：内容隐藏、高度归零、方向与状态持�
   expect(collapse.getAttribute('aria-expanded')).toBe('true');
   expect(host.textContent).toContain('工具栏');
   expect(host.style.getPropertyValue('--workspace-chrome-height')).toBe('72px');
+  // 静止态不给隐藏「收起」文案留 gap，三角靠 leading-none + 光学微调居中。
+  expect(collapse.className).toContain('leading-none');
+  expect(collapse.className).not.toMatch(/(?:^|\s)gap-1(?:\s|$)/);
   expect(collapse.querySelector('span')?.className).toContain('border-b-[6px]');
+  expect(collapse.querySelector('span')?.className).toContain('translate-y-px');
+  expect(collapse.querySelector('span:not([aria-hidden])')?.className).toContain('group-hover:ml-1');
 
   fireEvent.click(collapse);
   expect(getTopbarCollapsed()).toBe(true);

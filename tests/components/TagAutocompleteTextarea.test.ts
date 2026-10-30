@@ -175,7 +175,9 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(screen.queryByRole('listbox')).toBeNull();
     vi.restoreAllMocks();
   });
-  it('空 Tag 辅助区收紧，填入和清空恢复对应高度且保留手动调整', async () => {
+  it('关闭跟随时：空 Tag 辅助区收紧，填入和清空恢复固定高度且保留手动调整', async () => {
+    document.documentElement.dataset.promptInputAutoHeight = 'false';
+    document.documentElement.dataset.promptTranslationAutoHeight = 'false';
     render(React.createElement(Harness, { showTranslations: true }));
     const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
     expect(list().classList.contains('h-10')).toBe(true);
@@ -198,8 +200,12 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     await waitFor(() => expect(list().classList.contains('h-10')).toBe(true));
     expect(list().style.height).toBe('240px');
     expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy();
+    delete document.documentElement.dataset.promptInputAutoHeight;
+    delete document.documentElement.dataset.promptTranslationAutoHeight;
   });
-  it('原文与翻译区的高度各自调整，内容编辑不会覆盖人工高度', () => {
+  it('关闭跟随时：原文与翻译区高度各自调整，内容编辑不会覆盖人工高度', () => {
+    document.documentElement.dataset.promptInputAutoHeight = 'false';
+    document.documentElement.dataset.promptTranslationAutoHeight = 'false';
     render(React.createElement(Harness, { showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
     const list = screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
@@ -211,6 +217,28 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(textarea.style.height).toBe('128px'); expect(list.style.height).toBe('112px');
     fireEvent.change(textarea, { target: { value: 'unknown tag' } });
     expect(textarea.style.height).toBe('128px'); expect(list.style.height).toBe('112px');
+    delete document.documentElement.dataset.promptInputAutoHeight;
+    delete document.documentElement.dataset.promptTranslationAutoHeight;
+  });
+  it('开启跟随时：翻译区用内容高度，人工调高后本轮内容变化不再改高度', async () => {
+    document.documentElement.dataset.promptInputAutoHeight = 'true';
+    document.documentElement.dataset.promptTranslationAutoHeight = 'true';
+    render(React.createElement(Harness, { showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
+    expect(list().classList.contains('h-auto')).toBe(true);
+    expect(list().classList.contains('h-36')).toBe(false);
+    expect(textarea.classList.contains('resize-none')).toBe(true);
+    fireEvent.change(textarea, { target: { value: 'masterpiece' } });
+    await waitFor(() => expect(list().style.height).not.toBe(''));
+    const autoHeight = list().style.height;
+    fireEvent.keyDown(screen.getByRole('button', { name: '调整翻译区高度' }), { key: 'ArrowDown' });
+    const manualHeight = list().style.height;
+    expect(manualHeight).not.toBe(autoHeight);
+    fireEvent.change(textarea, { target: { value: 'masterpiece, best quality, ultra detailed' } });
+    expect(list().style.height).toBe(manualHeight);
+    delete document.documentElement.dataset.promptInputAutoHeight;
+    delete document.documentElement.dataset.promptTranslationAutoHeight;
   });
   it('手指在对照框内滑动不会选中 Tag，滚动层保留自己的滚动且不拦截手势', async () => {
     render(React.createElement(Harness, { initial: 'masterpiece, masterpiece lighting', showTranslations: true }));

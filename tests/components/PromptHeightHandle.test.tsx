@@ -61,3 +61,16 @@ it('键盘上下调整有最小高度，普通点击和其他按键不更改内�
   fireEvent.click(handle); fireEvent.keyDown(handle, { key: 'Enter' });
   expect(target.style.height).toBe('40px');
 });
+
+it('跟随高度开启时把手对鼠标也可见，并回调人工调高', () => {
+  const onManualResize = vi.fn();
+  function AlwaysVisible() {
+    const target = useRef<HTMLTextAreaElement>(null);
+    return <><textarea ref={target} aria-label="原文" defaultValue="词" style={{ height: 80, minHeight: 40, maxHeight: 300 }} /><PromptHeightHandle targetRef={target} label="调整高度" alwaysVisible onManualResize={onManualResize} /></>;
+  }
+  render(<AlwaysVisible />);
+  const handle = screen.getByRole('button', { name: '调整高度' });
+  expect(handle.classList.contains('pointer-fine:hidden')).toBe(false);
+  fireEvent.keyDown(handle, { key: 'ArrowDown' });
+  expect(onManualResize).toHaveBeenCalled();
+});

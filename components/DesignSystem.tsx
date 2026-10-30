@@ -123,10 +123,11 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
       title={collapsed ? t('展开顶栏') : t('收起顶栏')}
       onClick={() => toggleTopbarCollapsed()}
-      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center gap-1 overflow-hidden rounded-full border border-gray-400/80 bg-transparent px-2 text-micro font-semibold text-gray-600 shadow-lg backdrop-blur-[2px] transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-400/70 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
+      className={`group ${collapsed ? 'absolute left-0 top-0' : 'self-start'} z-40 flex h-11 min-h-11 w-11 min-w-11 items-center justify-center overflow-hidden rounded-full border border-gray-400/80 bg-transparent px-2 text-micro font-semibold leading-none text-gray-600 shadow-lg backdrop-blur-[2px] transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-400/70 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 md:absolute md:left-1/2 md:top-0 md:h-5 md:min-h-0 md:w-auto md:-translate-x-1/2`}
     >
-      <span aria-hidden="true" className={`block h-0 w-0 shrink-0 border-x-[5px] border-x-transparent ${collapsed ? 'border-t-[6px] border-t-current' : 'border-b-[6px] border-b-current'}`} />
-      <span className="hidden max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 md:block md:group-hover:max-w-12 md:group-hover:opacity-100 md:group-focus-visible:max-w-12 md:group-focus-visible:opacity-100">{collapsed ? t('展开') : t('收起')}</span>
+      {/* CSS 三角尖角会让等距空隙显偏上／下；静止态也不给隐藏文案留 gap，避免三角偏一侧。 */}
+      <span aria-hidden="true" className={`block h-0 w-0 shrink-0 border-x-[5px] border-x-transparent ${collapsed ? 'border-t-[6px] border-t-current -translate-y-px' : 'border-b-[6px] border-b-current translate-y-px'}`} />
+      <span className="hidden max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 md:block md:group-hover:ml-1 md:group-hover:max-w-12 md:group-hover:opacity-100 md:group-focus-visible:ml-1 md:group-focus-visible:max-w-12 md:group-focus-visible:opacity-100">{collapsed ? t('展开') : t('收起')}</span>
     </button>
     {/* 收起时只切换可见性：实验室三分区依赖顶栏测量，重建子树会让共用底板丢失。 */}
     <div className={collapsed ? 'hidden' : 'flex min-w-0 flex-col md:contents'}>{children}</div>

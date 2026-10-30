@@ -62,6 +62,22 @@ describe('appearance preferences', () => {
     expect(normalizeAppearancePreferences({}).continuousGenerationEnabled).toBe(true);
   });
 
+  it('原文框与翻译区高度跟随默认开启，可分别关闭并保存，不进入外观预设', () => {
+    expect(normalizeAppearancePreferences({}).promptInputAutoHeight).toBe(true);
+    expect(normalizeAppearancePreferences({}).promptTranslationAutoHeight).toBe(true);
+    expect(normalizeAppearancePreferences({ promptInputAutoHeight: 'false', promptTranslationAutoHeight: null })).toMatchObject({
+      promptInputAutoHeight: true,
+      promptTranslationAutoHeight: true,
+    });
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false, promptTranslationAutoHeight: false });
+    expect(loadAppearancePreferences()).toMatchObject({ promptInputAutoHeight: false, promptTranslationAutoHeight: false });
+    expect(validateAppearancePreset({ name: '主题', promptInputAutoHeight: false, promptTranslationAutoHeight: false }))
+      .not.toHaveProperty('promptInputAutoHeight');
+    expect(validateAppearancePreset({ name: '主题', promptTranslationAutoHeight: true }))
+      .not.toHaveProperty('promptTranslationAutoHeight');
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+  });
+
   it('读取旧实验室分类偏好时忽略，保存新偏好时不再写回', () => {
     localStorageValues.set('nai_appearance_preferences', JSON.stringify({ tagAssistEnabled: false, promptClassificationEnabled: true, autoClassifyMetadata: true }));
     expect(loadAppearancePreferences().tagAssistEnabled).toBe(false);
@@ -145,6 +161,8 @@ describe('appearance preferences', () => {
       galleryHoverFloat: true,
       gallerySelectionFocus: true,
       tagAssistEnabled: false,
+      promptInputAutoHeight: true,
+      promptTranslationAutoHeight: true,
       generationStreamPreview: true,
       rememberGenerationSettings: false,
       generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,

@@ -136,6 +136,10 @@ export interface AppearancePreferences {
   /** 选中作品时垂直居中并淡化其他卡片。 */
   gallerySelectionFocus: boolean;
   tagAssistEnabled: boolean;
+  /** 原文框高度跟随内容；本端编辑偏好，不属于外观预设。 */
+  promptInputAutoHeight: boolean;
+  /** 翻译区高度跟随内容；本端编辑偏好，不属于外观预设。 */
+  promptTranslationAutoHeight: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
   /** 跨重启记住各工作台的文字与参数，不属于外观预设。 */
@@ -169,6 +173,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   galleryHoverFloat: true,
   gallerySelectionFocus: true,
   tagAssistEnabled: true,
+  promptInputAutoHeight: true,
+  promptTranslationAutoHeight: true,
   generationStreamPreview: false,
   rememberGenerationSettings: true,
   generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
@@ -239,6 +245,12 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,
+    promptInputAutoHeight: typeof input.promptInputAutoHeight === 'boolean'
+      ? input.promptInputAutoHeight
+      : DEFAULT_APPEARANCE_PREFERENCES.promptInputAutoHeight,
+    promptTranslationAutoHeight: typeof input.promptTranslationAutoHeight === 'boolean'
+      ? input.promptTranslationAutoHeight
+      : DEFAULT_APPEARANCE_PREFERENCES.promptTranslationAutoHeight,
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
@@ -317,7 +329,12 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   const captionChanged = root.dataset.galleryFrostedCaption !== String(preferences.galleryFrostedCaption);
   root.dataset.galleryFrostedCaption = String(preferences.galleryFrostedCaption);
   root.dataset.galleryHoverFloat = String(preferences.galleryHoverFloat);
+  const inputAutoChanged = root.dataset.promptInputAutoHeight !== String(preferences.promptInputAutoHeight);
+  const translationAutoChanged = root.dataset.promptTranslationAutoHeight !== String(preferences.promptTranslationAutoHeight);
+  root.dataset.promptInputAutoHeight = String(preferences.promptInputAutoHeight);
+  root.dataset.promptTranslationAutoHeight = String(preferences.promptTranslationAutoHeight);
   if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
+  if (inputAutoChanged || translationAutoChanged) window.dispatchEvent(new Event('nai-prompt-auto-height-change'));
   const accent = resolveThemeDetails(preferences.details, isDark)?.accentColor || preferences.accentColor;
   root.style.setProperty('--nai-accent', accent);
   applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', accent);
@@ -334,6 +351,19 @@ const subscribeGalleryCaption = (listener: () => void) => {
 export const useGalleryFrostedCaption = () => useSyncExternalStore(
   subscribeGalleryCaption,
   () => document.documentElement.dataset.galleryFrostedCaption !== 'false',
+);
+
+const subscribePromptAutoHeight = (listener: () => void) => {
+  window.addEventListener('nai-prompt-auto-height-change', listener);
+  return () => window.removeEventListener('nai-prompt-auto-height-change', listener);
+};
+export const usePromptInputAutoHeight = () => useSyncExternalStore(
+  subscribePromptAutoHeight,
+  () => document.documentElement.dataset.promptInputAutoHeight !== 'false',
+);
+export const usePromptTranslationAutoHeight = () => useSyncExternalStore(
+  subscribePromptAutoHeight,
+  () => document.documentElement.dataset.promptTranslationAutoHeight !== 'false',
 );
 
 /** App 挂载前和系统明暗变化时恢复外观，访问门禁与错误页也使用同一套偏好。 */

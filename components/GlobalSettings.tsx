@@ -1111,6 +1111,26 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </button>
 
               <div className="appearance-group rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
+                <h4 className="mb-3 text-xs font-bold text-gray-800 dark:text-gray-100">{t("提示词编辑")}</h4>
+                <div className="space-y-2">
+                  {([
+                    ['promptInputAutoHeight', '原文框高度跟随内容', '有多少字就显示多少；过长时内部滚动。关闭后用手拉固定高度。'],
+                    ['promptTranslationAutoHeight', '翻译区高度跟随内容', 'Tag 有多少就显示多少；过长时内部滚动。关闭后用手拉固定高度。'],
+                  ] as const).map(([key, label, description]) => (
+                    <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">{t(label)}</span>
+                        <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span>
+                      </span>
+                      <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="appearance-group rounded-2xl border border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("实验室模块默认展开")}</h4>
                   <button

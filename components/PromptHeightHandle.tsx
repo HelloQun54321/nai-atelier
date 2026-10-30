@@ -1,8 +1,14 @@
 import React, { useRef } from 'react';
 import { ChevronsUpDown } from 'lucide-react';
 
-/** 触屏把手放在已有操作行，避免占用文字区的滑动手势。 */
-export function PromptHeightHandle({ targetRef, label }: { targetRef: React.RefObject<HTMLElement | null>; label: string }) {
+/** 触屏把手放在已有操作行；跟随高度开启时鼠标也显示，因原文框会关掉原生拖角。 */
+export function PromptHeightHandle({ targetRef, label, onManualResize, alwaysVisible = false }: {
+  targetRef: React.RefObject<HTMLElement | null>;
+  label: string;
+  /** 人工拖动／方向键调高时通知，便于本轮挂载内暂停自动高度。 */
+  onManualResize?: () => void;
+  alwaysVisible?: boolean;
+}) {
   const drag = useRef<{ pointerId: number; y: number; height: number } | null>(null);
   const height = () => {
     const target = targetRef.current!;
@@ -13,6 +19,7 @@ export function PromptHeightHandle({ targetRef, label }: { targetRef: React.RefO
     if (!target) return;
     const style = getComputedStyle(target);
     target.style.height = `${Math.min(parseFloat(style.maxHeight) || Infinity, Math.max(parseFloat(style.minHeight) || 40, next))}px`;
+    onManualResize?.();
   };
   const finish = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
@@ -20,7 +27,7 @@ export function PromptHeightHandle({ targetRef, label }: { targetRef: React.RefO
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   return <button type="button" aria-label={label} title={label} style={{ touchAction: 'none' }}
-    className="mobile-touch flex h-7 w-7 shrink-0 cursor-ns-resize select-none items-center justify-center rounded text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-gray-200 pointer-fine:hidden"
+    className={`mobile-touch flex h-7 w-7 shrink-0 cursor-ns-resize select-none items-center justify-center rounded text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-gray-200 ${alwaysVisible ? '' : 'pointer-fine:hidden'}`}
     onPointerDown={event => {
       if (event.button !== 0 || drag.current || !targetRef.current) return;
       event.preventDefault(); event.stopPropagation();

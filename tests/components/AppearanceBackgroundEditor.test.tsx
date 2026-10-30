@@ -40,6 +40,15 @@ describe('工作区背景设置', () => {
     fireEvent.click(screen.getByText('移除背景图片'));
     expect(onChange).toHaveBeenLastCalledWith(undefined);
   });
+  it('设置预览用完整显示看清原图，铺满只影响工作区实际背景', () => {
+    const view = render(<AppearanceBackgroundEditor background={{ ...background, fit: 'cover' }} onChange={() => true} />);
+    const frame = view.container.querySelector('.theme-background-preview')!.parentElement!;
+    expect(frame.className).toContain('aspect-video');
+    expect(frame.className).toContain('max-h-56');
+    expect(view.container.querySelector<HTMLElement>('.theme-background-preview')!.style.backgroundSize).toBe('auto, contain');
+    view.rerender(<AppearanceBackgroundEditor background={{ ...background, fit: 'tile', tileSize: 64 }} onChange={() => true} />);
+    expect(view.container.querySelector<HTMLElement>('.theme-background-preview')!.style.backgroundSize).toBe('auto, 64px auto');
+  });
   it('关闭设置后迟到的解码不能覆盖后来选用的主题', async () => {
     let resolve!: (value: typeof background) => void;
     vi.mocked(prepareThemeBackground).mockReturnValueOnce(new Promise(done => { resolve = done; }));

@@ -17,13 +17,16 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('公共、角色及负面提示词均支持鼠标拉伸和框外触屏把手，调高不改模板', async () => {
+it('默认高度跟随时：公共、角色及负面提示词用把手调高，不改模板', async () => {
   const value = createDefaultRollTemplate(DEFAULT_NAI_RUNTIME), change = vi.fn();
   render(<GenerationTemplateEditor value={value} onChange={change} />);
   await waitFor(() => expect(screen.queryByText('正在读取生成预设…')).toBeNull());
   const fields = Array.from(document.querySelectorAll('textarea'));
   expect(fields).toHaveLength(3);
-  for (const field of fields) expect(field.classList.contains('resize-y')).toBe(true);
+  for (const field of fields) {
+    expect(field.classList.contains('resize-none')).toBe(true);
+    expect(field.classList.contains('resize-y')).toBe(false);
+  }
   const handles = screen.getAllByRole('button', { name: '调整输入框高度' });
   expect(handles).toHaveLength(3);
   fields[2].style.height = '80px';

@@ -278,6 +278,22 @@ describe('GlobalSettings', () => {
     expect(screen.queryByRole('checkbox', { name: '导入后自动分类' })).toBeNull();
   });
 
+  it('提示词编辑提供原文框与翻译区高度跟随开关，默认开启，可分别关闭', async () => {
+    const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange }));
+    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    const inputSwitch = await screen.findByRole('switch', { name: '原文框高度跟随内容' });
+    const translationSwitch = screen.getByRole('switch', { name: '翻译区高度跟随内容' });
+    expect(inputSwitch.getAttribute('aria-checked')).toBe('true');
+    expect(translationSwitch.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(inputSwitch);
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptInputAutoHeight).toBe(false));
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptTranslationAutoHeight).toBe(true);
+    fireEvent.click(translationSwitch);
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptTranslationAutoHeight).toBe(false));
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].promptInputAutoHeight).toBe(false);
+  });
+
   it('应用外观预设和恢复默认外观不会重置连续生成偏好', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, {

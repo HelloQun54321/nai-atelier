@@ -157,7 +157,7 @@ describe('共用角色编辑器', () => {
     expect((within(screen.getByRole('dialog')).getByRole('searchbox') as HTMLInputElement).value).toBe('');
   });
 
-  it('完整角色原文框均可拉伸，动态目录正负词合并显示', () => {
+  it('完整角色原文框默认可跟随内容并用把手调高，动态目录正负词合并显示', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
     render(<Harness initialParams={{ ...initial, characters: [role] }} />);
     const fields = Array.from(document.querySelectorAll('textarea'));
@@ -165,8 +165,8 @@ describe('共用角色编辑器', () => {
     expect(screen.getByPlaceholderText('角色提示词')).toHaveProperty('value', 'dress, blue hair');
     expect(screen.getByPlaceholderText('选填')).toHaveProperty('value', 'coat, red hair');
     for (const field of fields) {
-      expect(field.classList.contains('resize-y')).toBe(true);
-      expect(field.classList.contains('resize-none')).toBe(false);
+      expect(field.classList.contains('resize-none')).toBe(true);
+      expect(field.classList.contains('resize-y')).toBe(false);
     }
     expect(screen.getAllByRole('button', { name: '调整输入框高度' })).toHaveLength(fields.length);
     expect(mark).not.toHaveBeenCalled();

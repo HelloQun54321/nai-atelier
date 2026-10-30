@@ -10,6 +10,7 @@ import { PromptLibraryChooser, PromptLibraryFieldActions, usePromptLibrary } fro
 import { isLibraryOnlyQuery, libraryEntryText, librarySectionOf, searchLibraryEntries, type PromptLibraryField } from '../services/promptLibraryEntries';
 import type { LibraryCompletionEdit } from '../services/promptLibraryApply';
 import { lookupTagCatalogEntries, normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
+import { usePromptInputAutoHeight, usePromptTranslationAutoHeight } from '../services/appearancePreferences';
 import {
   parsePromptTags,
   PromptTagToken,
@@ -23,6 +24,9 @@ import {
   wrapPromptTag,
   wrapPromptTagTokens,
 } from '../services/tagTranslations';
+
+/** 跟随内容时的上限，再长就内部滚动，避免把预览顶出视口。 */
+const PROMPT_AUTO_HEIGHT_MAX = 'min(60dvh, 28rem)';
 
 interface CompletionTarget {
   query: string;
@@ -112,11 +116,17 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const library = usePromptLibrary();
   const personalLibrary = libraryEnabled ? library : null;
   const completionEnabled = tagAssistEnabled || !!personalLibrary;
+  const inputAutoHeight = usePromptInputAutoHeight();
+  const translationAutoHeight = usePromptTranslationAutoHeight();
   const [librarySelection, setLibrarySelection] = useState<{ entry: PromptChain; edit: LibraryCompletionEdit } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   const highlightTextRef = useRef<HTMLDivElement>(null);
   const tagListRef = useRef<HTMLDivElement>(null);
+  const inputManualHeightRef = useRef(false);
+  const translationManualHeightRef = useRef(false);
+  const fittingInputRef = useRef(false);
+  const fittingTranslationRef = useRef(false);
   const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => { setClearActionTarget(clearActionSlotRef?.current || null); }, [clearActionSlotRef]);
   const tagInputRef = useRef<HTMLTextAreaElement>(null);
@@ -345,6 +355,79 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     window.addEventListener('resize', syncHighlight);
     return () => { resize?.disconnect(); theme.disconnect(); textarea.removeEventListener('scroll', syncHighlight); window.removeEventListener('resize', syncHighlight); };
   }, [hasHighlight, syncHighlight]);
+
+  useEffect(() => { inputManualHeightRef.current = false; }, [inputAutoHeight]);
+  useEffect(() => { translationManualHeightRef.current = false; }, [translationAutoHeight]);
+
+  const fitInputHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el || !inputAutoHeight || inputManualHeightRef.current) return;
+    fittingInputRef.current = true;
+    el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
+    el.style.height = 'auto';
+    const min = parseFloat(getComputedStyle(el).minHeight) || 40;
+    const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
+    el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
+    requestAnimationFrame(() => { fittingInputRef.current = false; });
+  }, [inputAutoHeight]);
+
+  const fitTranslationHeight = useCallback(() => {
+    const el = tagListRef.current;
+    if (!el || !translationAutoHeight || translationManualHeightRef.current) return;
+    fittingTranslationRef.current = true;
+    el.style.maxHeight = PROMPT_AUTO_HEIGHT_MAX;
+    el.style.height = 'auto';
+    const min = parseFloat(getComputedStyle(el).minHeight) || 40;
+    const max = parseFloat(getComputedStyle(el).maxHeight) || Infinity;
+    el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
+    requestAnimationFrame(() => { fittingTranslationRef.current = false; });
+  }, [translationAutoHeight]);
+
+  useLayoutEffect(() => {
+    if (!inputAutoHeight) {
+      if (textareaRef.current && !inputManualHeightRef.current) {
+        textareaRef.current.style.height = '';
+        textareaRef.current.style.maxHeight = '';
+      }
+      return;
+    }
+    fitInputHeight();
+  }, [value, inputAutoHeight, fitInputHeight]);
+
+  useLayoutEffect(() => {
+    if (!translationAutoHeight) {
+      if (tagListRef.current && !translationManualHeightRef.current) {
+        tagListRef.current.style.height = '';
+        tagListRef.current.style.maxHeight = '';
+      }
+      return;
+    }
+    fitTranslationHeight();
+  }, [currentTranslations.length, value, translationAutoHeight, showTranslations, tagAssistEnabled, fitTranslationHeight]);
+
+  // 宽度变化会改换行，跟随模式下重新量高；人工调高后本轮挂载不再自动改。
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || !inputAutoHeight || typeof ResizeObserver === 'undefined') return;
+    const resize = new ResizeObserver(() => {
+      if (fittingInputRef.current || inputManualHeightRef.current) return;
+      fitInputHeight();
+    });
+    resize.observe(el);
+    return () => resize.disconnect();
+  }, [inputAutoHeight, fitInputHeight]);
+
+  useEffect(() => {
+    const el = tagListRef.current;
+    if (!el || !translationAutoHeight || typeof ResizeObserver === 'undefined') return;
+    const resize = new ResizeObserver(() => {
+      if (fittingTranslationRef.current || translationManualHeightRef.current) return;
+      fitTranslationHeight();
+    });
+    resize.observe(el);
+    return () => resize.disconnect();
+  }, [translationAutoHeight, showTranslations, tagAssistEnabled, currentTranslations.length, fitTranslationHeight]);
+
   const clearSelection = () => {
     neutralGroupsRef.current.groups = [];
     setSelectedTagIds(new Set());
@@ -747,7 +830,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }}
       className={`mobile-touch inline-flex min-h-10 cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)] ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
   };
-  const promptActions = <>{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} /></>;
+  const promptActions = <>{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -781,8 +864,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
         disabled={disabled}
         readOnly={readOnly}
         value={value}
-        className={`${className || ''} resize-y`}
-        style={{ ...textareaProps.style, ...(hasHighlight ? { WebkitTextFillColor: 'transparent', caretColor: 'var(--nai-accent)' } : {}) }}
+        className={`${(className || '').replace(/\b(?:resize-(?:none|y|x)|overflow-y-auto)\b/g, '').replace(/\s+/g, ' ').trim()} ${inputAutoHeight ? 'resize-none overflow-y-auto' : 'resize-y'}`}
+        style={{ ...textareaProps.style, ...(inputAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : {}), ...(hasHighlight ? { WebkitTextFillColor: 'transparent', caretColor: 'var(--nai-accent)' } : {}) }}
         role={completionEnabled ? 'combobox' : undefined}
         aria-autocomplete={completionEnabled ? 'list' : undefined}
         aria-expanded={completionEnabled ? isOpen && completionSource === 'prompt' : undefined}
@@ -857,7 +940,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             if (text.trim()) { event.preventDefault(); insertTags(text); }
           }}>
           {/* 触屏通过框外把手调高，内容区仍允许滚动传递，鼠标保留原生右下角拖拽。 */}
-          <div ref={tagListRef} className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 pointer-fine:resize-y pointer-fine:overscroll-contain`}>
+          <div ref={tagListRef} className={`flex min-h-10 flex-wrap content-start items-start gap-1.5 overflow-y-auto pr-1.5 pb-1.5 ${translationAutoHeight ? 'h-auto' : currentTranslations.length ? 'h-36' : 'h-10'} ${translationAutoHeight ? 'overscroll-contain' : 'pointer-fine:resize-y pointer-fine:overscroll-contain'}`} style={translationAutoHeight ? { maxHeight: PROMPT_AUTO_HEIGHT_MAX } : undefined}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -945,7 +1028,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             {insertionAt(currentTranslations.length)}
           </div>
           <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
-            <PromptHeightHandle targetRef={tagListRef} label={t('调整翻译区高度')} />
+            <PromptHeightHandle targetRef={tagListRef} label={t('调整翻译区高度')} alwaysVisible={translationAutoHeight} onManualResize={() => { translationManualHeightRef.current = true; }} />
             <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
             {deleteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); clearSelection(); }} className="mobile-touch h-8 rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
