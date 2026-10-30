@@ -37,7 +37,7 @@ it('实验室随机入口透传画面名单，应用保留完整全局风格与�
   const state = { params: LAB_DEFAULT_PARAMS, base: 'artist:original, watercolor, warm lighting', subject: '', negative: 'lowres, bad anatomy', classified: false };
   render(<PromptLibraryContext.Provider value={{ chains: [entry], save: vi.fn() }}><PromptLibraryWorkspace state={state} onChange={changed}><PromptLibraryRandomButton purposes={LAB_PICTURE_PURPOSES} /></PromptLibraryWorkspace></PromptLibraryContext.Provider>);
   fireEvent.click(screen.getByRole('button', { name: '随机搭配' }));
-  expect(screen.queryByRole('textbox', { name: '画风与技法内容' })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: '画风配方内容' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '编辑地点与布景' }));
   fireEvent.change(screen.getByRole('combobox', { name: '选择地点与布景片段' }), { target: { value: 'place' } });
   expect(document.querySelector('[data-content-roll-apply-preview]')!.textContent).toContain('rainy street');

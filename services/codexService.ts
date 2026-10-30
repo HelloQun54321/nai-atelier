@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import type { CharacterParams, NAIParams } from '../types';
 import { createUuid } from './id';
 import { extractMetadata, parseNovelAIMetadata, type PromptFragmentImport } from './metadataService';
@@ -45,7 +47,8 @@ export async function fetchCodexJson(url: string, file?: { size: number; sha256:
   if (!response.ok) throw await parseErrorResponse(response);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (file) {
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice().buffer)), n => n.toString(16).padStart(2, '0')).join('');
+    // 局域网 HTTP 属于非安全上下文，crypto.subtle 不可用；与分享包等处一样用纯 JS SHA-256。
+    const hash = bytesToHex(sha256(bytes));
     if (bytes.byteLength !== file.size || hash !== file.sha256) throw new Error('法典数据校验失败，保留已有缓存');
   }
   return JSON.parse(new TextDecoder().decode(bytes));

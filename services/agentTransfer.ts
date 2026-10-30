@@ -1,3 +1,5 @@
+import { createUuid } from './id';
+
 /** 仅保存当前标签页主动操作产生的图片与导出，不监听系统剪贴板。 */
 const exports = new Map<string, { blob: Blob; name: string } | { name: string; bytes: number; mimeType: string; error: string }>();
 let exportCaptureDepth = 0;
@@ -9,7 +11,8 @@ export const getAgentCopiedImage = () => { if (!copied) throw new Error('还没�
 export const captureAgentExport = (blob: Blob, name: string) => {
   if (!exportCaptureDepth || capturedBlobs.has(blob)) return;
   capturedBlobs.add(blob);
-  exports.set(crypto.randomUUID(), blob.size > 30 * 1024 * 1024
+  // 局域网 HTTP 可能缺少 crypto.randomUUID，沿用 createUuid 回退。
+  exports.set(createUuid(), blob.size > 30 * 1024 * 1024
     ? { name, bytes: blob.size, mimeType: blob.type, error: '导出文件超过助手 30 MB 暂存上限，无法通过助手另存；请核对页面原有导出结果，不能据此确认指定目录已保存' }
     : { blob, name });
   while (exports.size > 4) exports.delete(exports.keys().next().value!);

@@ -1,4 +1,4 @@
-import { getEntryPurposes, purposeSectionKey } from './promptPurposes.mjs';
+import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey } from './promptPurposes.mjs';
 import type { NAIParams, PromptChain } from '../types';
 import { applyContentRollToParams, planContentRollApply, type ContentRollTarget } from './contentRollApply';
 import { combinationPicks, applyLibraryText, fragmentKindOf, type PromptLibraryField } from './promptLibraryEntries';
@@ -55,13 +55,13 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
   const kind = fragmentKindOf(entry);
   let picks: Record<string, RollRow> = kind ? {} : combinationPicks(entry, roleIndex);
   const purposes = getEntryPurposes(entry);
-  if (field.purposeId && kind && (purposes.length !== 1 || purposes[0] !== field.purposeId)) throw new Error('此栏位只接受对应的单一用途片段');
+  if (field.purposeId && kind && (purposes.length !== 1 || purposes[0] !== normalizePromptPurposeId(field.purposeId))) throw new Error('此栏位只接受对应的单一用途片段');
   if (kind && purposes.length === 1) {
     const key = purposeSectionKey(purposes[0]);
     picks = { [key]: { kind: key, scope: target.mode === 'global' ? 'global' : 'character',
       filled: !!entry.basePrompt.trim(), text: entry.basePrompt, negative: entry.negativePrompt || '', id: entry.id, name: entry.name } };
   } else if (kind) picks = {};
-  if (field.purposeId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === purposeSectionKey(field.purposeId!))
+  if (field.purposeId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => normalizePromptPurposeSectionKey(rollSectionKey(key)) === purposeSectionKey(field.purposeId!))
     .map(([key, row]) => [key, { ...row, scope: target.mode === 'global' ? 'global' : 'character' }]));
   else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === 'directory:' + field.directoryId));
   else if (field.kind) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === field.kind));

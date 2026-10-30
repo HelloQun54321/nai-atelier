@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createHash } from 'node:crypto';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
@@ -68,6 +69,18 @@ describe('useAnlasBudget', () => {
       expect(hook.result.current.personal?.opusImages).toBe(1);
     });
     hook.unmount();
+  });
+});
+
+describe('hashNaiApiKey', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('与网关 createHash(sha256) 口径一致，且不依赖 crypto.subtle', async () => {
+    const key = 'pst-lan-http-key';
+    vi.stubGlobal('crypto', { getRandomValues: globalThis.crypto?.getRandomValues?.bind(globalThis.crypto) });
+    expect(await hashNaiApiKey(key)).toBe(createHash('sha256').update(key).digest('hex'));
+    expect(await hashNaiApiKey(` ${key} `)).toBe(createHash('sha256').update(key).digest('hex'));
+    expect(await hashNaiApiKey('')).toBe('');
   });
 });
 

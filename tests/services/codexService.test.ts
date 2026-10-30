@@ -100,6 +100,12 @@ it('完整性校验按原始 UTF-8 字节，拒绝错误的 SHA 或大小', asyn
   await expect(fetchCodexJson('https://assets.quicktagcloud.com/data/current.json', { ...file, size: file.size + 1 })).rejects.toThrow('校验失败');
   await expect(fetchCodexJson('https://assets.quicktagcloud.com/data/current.json', { ...file, sha256: 'bad' })).rejects.toThrow('校验失败');
 });
+it('局域网非安全上下文缺少 crypto.subtle 时仍能按清单校验通过', async () => {
+  const raw = '{"词条":"合成"}'; const file = await manifestFile(raw);
+  vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(raw))));
+  expect(await fetchCodexJson('https://assets.quicktagcloud.com/data/current.json', file)).toEqual({ 词条: '合成' });
+});
 it('外部实时图包失败不读取工坊旧快照', async () => {
   mocks.cache.set('book:synthetic', { entries: [], release: 'old' });
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, getPromptPurposeCandidateStatus, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey } from '../../services/promptPurposes.mjs';
+import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES, getEntryPurposes, getPromptPurposeCandidateStatus, normalizePromptPurposeSectionKey, promptPurposeLabel, readPromptPurposes, selectPurposeEntries, isCreativeSectionKey, isPurposeSectionKey } from '../../services/promptPurposes.mjs';
 import { draw } from '../../services/contentRollDraw';
 import { contentRead, contentSnapshotOf } from '../../services/contentRoll';
 import { planContentRollApply, applyContentRollToParams } from '../../services/contentRollApply';
@@ -34,9 +34,14 @@ it('单用途候选状态区分真实排除原因，纯池与状态一致且不�
   expect(JSON.stringify(entries)).toBe(before);
 });
 
-it('22 个稳定用途拒绝自定义值，不从目录、旧类型和自由标签猜用途', () => {
-  expect(new Set(PROMPT_PURPOSES.map(item => item.id)).size).toBe(22);
+it('16 个稳定用途拒绝自定义值，不从目录、旧类型和自由标签猜用途', () => {
+  expect(new Set(PROMPT_PURPOSES.map(item => item.id)).size).toBe(16);
   expect(readPromptPurposes(['pose', 'clothing', 'pose'])).toEqual(['clothing', 'pose']);
+  // 旧版画风细项只读归并到画风配方，不批量改写用户资料。
+  expect(readPromptPurposes(['artist', 'lighting', 'style', 'texture'])).toEqual(['style']);
+  expect(promptPurposeLabel('lighting')).toBe('画风配方');
+  expect(isPurposeSectionKey('purpose:artist')).toBe(true);
+  expect(normalizePromptPurposeSectionKey('purpose:artist')).toBe('purpose:style');
   for (const invalid of [null, 'clothing', ['衣服'], ['other'], ['clothing', 'custom']]) expect(() => readPromptPurposes(invalid)).toThrow('用途 Tag 无效');
   expect(getEntryPurposes({ ...entry('old'), type: 'wardrobe', tags: ['clothing'] } as PromptChain)).toEqual([]);
   expect(isCreativeSectionKey('purpose:custom')).toBe(false);
@@ -73,10 +78,10 @@ it('提取审阅和本地草稿保留混合用途，落库不改正文', () => {
   expect(payload.data.basePrompt).toBe(candidate.prompt);
 });
 
-it('五个大区完整覆盖 22 个用途且没有重复，分组不是可保存的用途', () => {
-  expect(PROMPT_PURPOSE_GROUPS.map(group => group.label)).toEqual(['主体与外观', '动作与关系', '场景与环境', '镜头与光影', '画风与表现']);
+it('五个大区完整覆盖 16 个用途且没有重复，分组不是可保存的用途', () => {
+  expect(PROMPT_PURPOSE_GROUPS.map(group => group.label)).toEqual(['主体与外观', '动作与关系', '场景与环境', '镜头、构图与文字', '画风与成像']);
   const ids = PROMPT_PURPOSE_GROUPS.flatMap(group => group.purposes);
-  expect(ids).toHaveLength(22);
+  expect(ids).toHaveLength(16);
   expect([...ids].sort()).toEqual(PROMPT_PURPOSES.map(item => item.id).sort());
   expect(() => readPromptPurposes(['subject'])).toThrow('用途 Tag 无效');
 });

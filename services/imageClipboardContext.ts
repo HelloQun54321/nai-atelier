@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import type { NAIParams } from '../types';
 import { extractMetadata, parseNovelAIMetadata } from './metadataService';
 
@@ -32,8 +34,9 @@ const pixelFingerprint = async (blob: Blob) => {
       if (!context) return null;
       context.drawImage(bitmap, 0, 0);
       const pixels = context.getImageData(0, 0, width, height).data;
-      const hash = await crypto.subtle.digest('SHA-256', pixels);
-      return `${width}x${height}:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('')}`;
+      // 局域网 HTTP 无 crypto.subtle；像素指纹仍须与复制时一致。
+      const hash = bytesToHex(sha256(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)));
+      return `${width}x${height}:${hash}`;
     } finally { canvas.width = 0; canvas.height = 0; }
   } finally { bitmap.close(); }
 };

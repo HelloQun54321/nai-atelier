@@ -174,7 +174,7 @@ it.each([['global', LAB_PICTURE_PURPOSES], ['existing', LAB_SUBJECT_PURPOSES]] a
     playgroundParams={params} seedRecord={seedRecord} onApplyRoll={apply} onSaveRoll={save} />);
   document.querySelectorAll<HTMLButtonElement>('[data-prompt-purpose-group] > button').forEach(button => fireEvent.click(button));
   expect(screen.getAllByRole('checkbox')).toHaveLength(allowed.length);
-  for (const forbidden of ['画师引用', '画风与技法', '线条与质感', '特效与成像', '质量与细节', '光照与阴影', '色彩与色调']) {
+  for (const forbidden of ['画风配方']) {
     expect(screen.queryByRole('textbox', { name: `${forbidden}内容` })).toBeNull();
   }
   const first = allowed[0], label = PROMPT_PURPOSES.find(item => item.id === first)!.label;
@@ -203,13 +203,13 @@ it.each([['global', LAB_PICTURE_PURPOSES], ['existing', LAB_SUBJECT_PURPOSES]] a
 it('受限用途组标题匹配实际内容，自由搭配保留完整组名', () => {
   const props = { active: true, chains: [], directories, notify: vi.fn(), entryTarget: { mode: 'global' as const } };
   const view = render(<ContentRollWorkspace {...props} allowedPurposes={LAB_PICTURE_PURPOSES} />);
-  for (const label of ['互动与关系', '构图与镜头', '文字与标识', '场景与环境']) expect(screen.getByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
-  for (const label of ['动作与关系', '镜头与光影', '画风与表现']) expect(screen.queryByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeNull();
+  for (const label of ['互动与关系', '镜头、构图与文字', '场景与环境']) expect(screen.getByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
+  for (const label of ['动作与关系', '镜头与光影', '画风与成像']) expect(screen.queryByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeNull();
   view.rerender(<ContentRollWorkspace {...props} allowedPurposes={LAB_SUBJECT_PURPOSES} />);
   expect(screen.getByText('动作与表情', { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
   expect(screen.getByText('主体与外观', { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
   view.rerender(<ContentRollWorkspace {...props} />);
-  for (const label of ['动作与关系', '镜头与光影', '画风与表现']) expect(screen.getByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
+  for (const label of ['动作与关系', '镜头、构图与文字', '画风与成像']) expect(screen.getByText(label, { selector: '[data-prompt-purpose-group] > p' })).toBeTruthy();
 });
 
 it('同一组件切换受限范围时按当前入口排除异scope历史，不改库页默认自由能力', () => {
@@ -220,9 +220,9 @@ it('同一组件切换受限范围时按当前入口排除异scope历史，不�
   openPurposeGroup('主体与外观');
   expect(editorControl('textbox', { name: '服饰与配件内容' })).toHaveProperty('value', '');
   view.rerender(<ContentRollWorkspace {...props} entryTarget={{ mode: 'global' }} />);
-  openPurposeGroup('画风与表现');
+  openPurposeGroup('画风与成像');
   expect(editorControl('textbox', { name: '服饰与配件内容' })).toHaveProperty('value', 'global dress');
-  expect(editorControl('textbox', { name: '画风与技法内容' })).toHaveProperty('value', 'style text');
+  expect(editorControl('textbox', { name: '画风配方内容' })).toHaveProperty('value', 'style text');
 });
 
 it('条目读取状态：搭配候选未就绪不报0条，失败能重试，缓存候选继续可用', () => {
@@ -535,7 +535,7 @@ it('固定全局入口恢复角色用途历史仍保留全部用途空栏，不�
   render(<ContentRollWorkspace active entryTarget={{ mode: 'global' }} directories={directories} chains={directoryChains}
     notify={vi.fn()} seedRecord={{ picks, seed: '角色组合', seeds: {} }} />);
   for (const group of PROMPT_PURPOSE_GROUPS) openPurposeGroup(group.label);
-  expect(screen.getAllByRole('checkbox', { name: /^参与「/ })).toHaveLength(22);
+  expect(screen.getAllByRole('checkbox', { name: /^参与「/ })).toHaveLength(16);
   expect(document.querySelectorAll('[data-content-roll-row][data-filled="true"]')).toHaveLength(0);
   expect((editorControl('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('');
   expect(screen.queryByRole('textbox', { name: '服饰与配件 · 角色内容' })).toBeNull();
@@ -552,7 +552,7 @@ it('固定角色入口恢复全局用途历史仍保留全部用途空栏，不�
   render(<ContentRollWorkspace active entryTarget={{ mode: 'existing', id: 'target' }} playgroundParams={target}
     directories={directories} chains={directoryChains} notify={vi.fn()} seedRecord={{ picks, seed: '全局组合', seeds: {} }} />);
   for (const group of PROMPT_PURPOSE_GROUPS) openPurposeGroup(group.label);
-  expect(screen.getAllByRole('checkbox', { name: /^参与「/ })).toHaveLength(22);
+  expect(screen.getAllByRole('checkbox', { name: /^参与「/ })).toHaveLength(16);
   expect(document.querySelectorAll('[data-content-roll-row][data-filled="true"]')).toHaveLength(0);
   expect((editorControl('textbox', { name: '服饰与配件内容' }) as HTMLTextAreaElement).value).toBe('');
   expect(screen.queryByRole('textbox', { name: '服饰与配件 · 全局内容' })).toBeNull();

@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { useCallback, useEffect, useState } from 'react';
 import { ImageEditOperation, NAIParams } from '../types';
 import { api } from './api';
@@ -27,15 +29,11 @@ export interface AnlasBudgetState {
 
 const clampBudget = (value: number) => Math.max(0, Math.min(1_000_000_000, Math.floor(Number(value) || 0)));
 
-const sha256Hex = async (text: string) => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
-};
-
 /** 按 NovelAI Key 计算与网关一致的身份指纹。 */
 export const hashNaiApiKey = async (apiKey: string) => {
   const normalized = apiKey.trim();
-  return normalized ? sha256Hex(normalized) : '';
+  // 局域网 HTTP 无 crypto.subtle；与网关 createHash('sha256') 同口径。
+  return normalized ? bytesToHex(sha256(utf8ToBytes(normalized))) : '';
 };
 
 // 成本估算使用的官方常量由网关自动同步（services/naiRuntime.ts），默认值兜底。

@@ -80,7 +80,7 @@ const invoke = async (method: string, body?: unknown, owner = 'owner') => (await
 it('首次读取返回默认树且不写入；保存空树不会恢复预设或更改任何片段', async () => {
   const result = await invoke('GET');
   expect(result.headers.get('Cache-Control')).toBe('no-store');
-  expect((await result.json() as ReturnType<typeof initial>).nodes.filter(node => node.parentId === null)).toHaveLength(8);
+  expect((await result.json() as ReturnType<typeof initial>).nodes.filter(node => node.parentId === null)).toHaveLength(6);
   expect(sqlite.prepare('SELECT COUNT(*) AS n FROM settings').get()!.n).toBe(1);
   expect((await invoke('PUT', { revision: 0, nodes: [] })).status).toBe(200);
   expect(await (await invoke('GET')).json()).toEqual({ revision: 1, nodes: [] });

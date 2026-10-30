@@ -96,4 +96,10 @@ describe('主动复制图片的会话内生成配置', () => {
     await rememberCopiedImage(beginImageClipboardCopy(), image(), image(), { prompt: '', params: { ...params, characters, useCoords: undefined } });
     expect((await getCopiedImageData(file(image())))?.params).toMatchObject({ characters, useCoords: false });
   });
+
+  it('局域网非安全上下文缺少 crypto.subtle 时像素指纹仍能匹配', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+    await rememberCopiedImage(beginImageClipboardCopy(), image(), image(), generationData);
+    expect(await getCopiedImageData(file(image()))).toEqual(generationData);
+  });
 });

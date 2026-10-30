@@ -1,13 +1,18 @@
-export type PromptPurposeId = 'identity' | 'appearance' | 'clothing' | 'pose' | 'expression' | 'creature' | 'object' | 'vehicle' | 'place' | 'nature' | 'time' | 'interaction' | 'camera' | 'composition' | 'lighting' | 'color' | 'artist' | 'style' | 'texture' | 'effect' | 'quality' | 'text';
+export type PromptPurposeId = 'identity' | 'appearance' | 'clothing' | 'pose' | 'expression' | 'creature' | 'object' | 'vehicle' | 'place' | 'nature' | 'time' | 'interaction' | 'camera' | 'composition' | 'text' | 'style';
+/** 旧版画风细项仅在读取旧资料时出现，运行时归并到 style。 */
+export type LegacyPromptPurposeId = 'artist' | 'texture' | 'effect' | 'quality' | 'lighting' | 'color';
 export type PurposeSectionKey = `purpose:${PromptPurposeId}`;
 export type CreativeSectionKey = PurposeSectionKey | `directory:${string}`;
 export const PROMPT_PURPOSES: ReadonlyArray<{ id: PromptPurposeId; label: string; description: string }>;
 export const PROMPT_PURPOSE_GROUPS: ReadonlyArray<{ id: string; label: string; purposes: readonly PromptPurposeId[] }>;
 export const PROMPT_PURPOSE_IDS: readonly PromptPurposeId[];
+export const LEGACY_PROMPT_PURPOSE_MAP: Readonly<Record<LegacyPromptPurposeId, 'style'>>;
+export const normalizePromptPurposeId: (id: string) => PromptPurposeId;
 export const PROMPT_PURPOSES_KEY: '_promptLibraryPurposes';
 export const PROMPT_PURPOSE_INSTRUCTION: string;
 export function promptPurposeLabel(id: string): string;
 export function purposeSectionKey(id: PromptPurposeId): PurposeSectionKey;
+export function normalizePromptPurposeSectionKey(key: string): string;
 export function isPurposeSectionKey(key: unknown): key is PurposeSectionKey;
 export function isCreativeSectionKey(key: unknown): key is CreativeSectionKey;
 export function readPromptPurposes(value: unknown): PromptPurposeId[];

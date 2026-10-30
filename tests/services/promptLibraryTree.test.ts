@@ -17,16 +17,14 @@ const tree = (): PromptLibraryTreeState => ({ revision: 0, nodes: [
 describe('用户完整掌控的提示词目录树', () => {
   it('预设只是两层起点，每次创建独立对象；空树照常保留', () => {
     const state = readPromptLibraryTree(createDefaultPromptLibraryTree());
-    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(8);
+    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(6);
     expect(state.nodes.filter(node => node.parentId === null).map(node => [node.name, state.nodes.filter(child => child.parentId === node.id).map(child => child.name)])).toEqual([
       ['人物', ['外貌与身体', '服饰与配件', '动作与姿态', '表情与情绪']],
       ['其他主体', ['动物与生物', '物品与道具', '载具与机械']],
       ['场景环境', ['地点与布景', '自然与天气', '时间与季节']],
       ['互动与关系', ['人物互动', '与物品及环境互动']],
       ['构图与镜头', ['视角与景别', '构图与布局']],
-      ['光照与色彩', ['光照与阴影', '色彩与色调']],
-      ['画风与表现', ['媒介与技法', '线条与质感']],
-      ['质量与细节', ['质量标签', '细节表现']],
+      ['画风配方', ['画师引用', '画风与技法', '质量与细节', '光照与色彩']],
     ]);
     expect(Math.max(...flattenPromptLibraryDirectories(state).map(node => node.depth))).toBe(1);
     state.nodes[0].name = '已更名';

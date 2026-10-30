@@ -6,7 +6,7 @@ import { PromptPurposePicker } from '../../components/PromptPurposePicker';
 import { PROMPT_PURPOSE_GROUPS, PROMPT_PURPOSES } from '../../services/promptPurposes.mjs';
 import { openPurposeGroup } from '../support/promptPurposeGroups';
 
-it('用途选择的五组顺序一致，收起保留选择，所有 22 个用途都可进入', () => {
+it('用途选择的五组顺序一致，收起保留选择，所有 16 个用途都可进入', () => {
   const change = vi.fn();
   render(<PromptPurposePicker value={['clothing']} onChange={change} />);
   expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(PROMPT_PURPOSE_GROUPS.map(group => group.label));

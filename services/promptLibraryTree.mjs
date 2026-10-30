@@ -12,9 +12,7 @@ export function createDefaultPromptLibraryTree() {
     ['environment', '场景环境', 'global', [['environment-scene', '地点与布景'], ['environment-nature', '自然与天气'], ['environment-time', '时间与季节']]],
     ['interaction', '互动与关系', 'global', [['interaction-people', '人物互动'], ['interaction-object', '与物品及环境互动']]],
     ['composition', '构图与镜头', 'global', [['composition-camera', '视角与景别'], ['composition-layout', '构图与布局']]],
-    ['lighting', '光照与色彩', 'global', [['lighting-light', '光照与阴影'], ['lighting-color', '色彩与色调']]],
-    ['style', '画风与表现', 'global', [['style-medium', '媒介与技法'], ['style-expression', '线条与质感']]],
-    ['quality', '质量与细节', 'global', [['quality-detail', '质量标签'], ['quality-supplement', '细节表现']]],
+    ['style', '画风配方', 'global', [['style-artist', '画师引用'], ['style-medium', '画风与技法'], ['style-quality', '质量与细节'], ['style-light', '光照与色彩']]],
   ];
   return { revision: 0, nodes: groups.flatMap(([id, name, target, children]) => [
     { id, parentId: null, name, target }, ...children.map(([childId, childName]) => ({ id: childId, parentId: id, name: childName })),

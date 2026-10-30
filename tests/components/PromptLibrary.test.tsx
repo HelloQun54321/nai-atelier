@@ -479,10 +479,9 @@ it('片段详情直接编辑，封面位于名称和正文前；保存留在原�
   expect(prompt.closest('fieldset')?.className).not.toContain('lg:grid-cols');
   fireEvent.change(prompt, { target: { value: 'watercolor, paper texture' } });
   fireEvent.change(screen.getByRole('textbox', { name: '备注' }), { target: { value: '更新备注' } });
-  openPurposeGroup('画风与表现'); fireEvent.click(screen.getByRole('button', { name: '线条与质感' }));
   fireEvent.click(screen.getByRole('button', { name: '保存' }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
-  expect(save.mock.calls[0][1]).toMatchObject({ basePrompt: 'watercolor, paper texture', description: '更新备注', negativePrompt: 'lowres', tags: ['旧标签'], params: { seed: 42, _promptLibraryPurposes: ['style', 'texture'] } });
+  expect(save.mock.calls[0][1]).toMatchObject({ basePrompt: 'watercolor, paper texture', description: '更新备注', negativePrompt: 'lowres', tags: ['旧标签'], params: { seed: 42, _promptLibraryPurposes: ['style'] } });
   expect(screen.getByRole('complementary', { name: entry.name })).toBeTruthy();
   await waitFor(() => expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true));
   fireEvent.change(prompt, { target: { value: 'latest prompt' } });

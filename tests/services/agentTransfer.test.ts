@@ -32,6 +32,19 @@ it('原生导出可提供实际副本，普通操作不捕获，同一产物不�
   finally {stop();}
   expect(getAgentExport(getAgentExports().at(-1)!.id).blob).toBe(blob);
 });
+it('缺少 crypto.randomUUID 时导出暂存仍可用', () => {
+  vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1; return bytes; } });
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); });
+  const blob = new Blob(['uuid-fallback']);
+  const stop = captureAgentExports();
+  try {
+    captureAgentExport(blob, 'fallback.png');
+    const receipt = getAgentExports().at(-1)!;
+    expect(receipt.name).toBe('fallback.png');
+    expect(receipt.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(getAgentExport(receipt.id).blob).toBe(blob);
+  } finally { stop(); }
+});
 
 it('分享包与 Vibe 组合保留原始 Blob、文件名和 MIME，超限导出返回不可另存的明确回执', () => {
   vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic-' + Math.random()); });

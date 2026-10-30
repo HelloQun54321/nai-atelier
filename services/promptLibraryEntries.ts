@@ -1,4 +1,4 @@
-import { getEntryPurposes, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
+import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { t } from './i18n';
 import type { NAIParams, PromptChain } from '../types';
 import { rollItemKey, rollSectionKey, contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
@@ -48,11 +48,25 @@ export function librarySectionOf(chain: PromptChain): PromptLibrarySection | nul
 export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<string, RollRow> {
   const read = contentRead((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   if (!read.ok) return {};
+  // 旧版画风细项（purpose:artist 等）归并到画风配方分栏；同一 scope 内按原顺序拼接正负，
+  // 不同 scope 的同用途仍保持独立身份。
+  const mergedItems = new Map<string, { item: (typeof read.items)[number]; text: string; negative: string; notes: string }>();
+  for (const item of read.items) {
+    const unitId = String(normalizePromptPurposeSectionKey(item.unitId));
+    const itemId = item.itemId ? rollItemKey(normalizePromptPurposeSectionKey(rollSectionKey(item.itemId)), item.scope) : undefined;
+    const key = `${unitId}|${item.scope}|${itemId || ''}`;
+    const previous = mergedItems.get(key);
+    if (!previous) { mergedItems.set(key, { item: { ...item, unitId, ...(itemId ? { itemId } : {}) }, text: item.text, negative: item.negative, notes: item.constraintNotes }); continue; }
+    previous.text = [previous.text, item.text].filter(Boolean).join(', ');
+    previous.negative = [previous.negative, item.negative].filter(Boolean).join(', ');
+    previous.notes = [previous.notes, item.constraintNotes].filter(Boolean).join('；');
+  }
+  const items = [...mergedItems.values()];
   const itemCounts = new Map<string, number>();
-  for (const item of read.items) itemCounts.set(item.unitId, (itemCounts.get(item.unitId) || 0) + 1);
-  const directoryPicks: Record<string, RollRow> = Object.fromEntries(read.items.map(item => [item.itemId || ((itemCounts.get(item.unitId) || 0) > 1 ? rollItemKey(item.unitId, item.scope) : item.unitId), {
+  for (const { item } of items) itemCounts.set(item.unitId, (itemCounts.get(item.unitId) || 0) + 1);
+  const directoryPicks: Record<string, RollRow> = Object.fromEntries(items.map(({ item, text, negative, notes }) => [item.itemId || ((itemCounts.get(item.unitId) || 0) > 1 ? rollItemKey(item.unitId, item.scope) : item.unitId), {
     kind: item.unitId, directoryId: item.directoryId, directoryName: item.directoryName, directoryPath: item.directoryPath,
-    scope: item.scope, filled: true, text: item.text, negative: item.negative, constraintNotes: item.constraintNotes,
+    scope: item.scope, filled: true, text, negative, constraintNotes: notes,
     id: String(item.meta?.entryId || ''), name: String(item.meta?.entryName || item.directoryName || chain.name), meta: item.meta,
   }]));
   const role = read.roles[roleIndex];
@@ -68,11 +82,11 @@ export function combinationPicks(chain: PromptChain, roleIndex = 0): Record<stri
 }
 
 export function libraryEntryText(chain: PromptChain, field: PromptLibraryField = {}): string {
-  if (field.purposeId && !isContentRecord(chain) && (getEntryPurposes(chain).length !== 1 || !getEntryPurposes(chain).includes(field.purposeId))) return '';
+  if (field.purposeId && !isContentRecord(chain) && (getEntryPurposes(chain).length !== 1 || !getEntryPurposes(chain).includes(normalizePromptPurposeId(field.purposeId)))) return '';
   if ((chain.params as unknown as Record<string, unknown>)?._promptLibraryPolarity === 'negative') return field.negative ? chain.basePrompt || '' : '';
   if (!isContentRecord(chain)) return field.negative ? chain.negativePrompt || '' : chain.basePrompt || '';
   const picks = combinationPicks(chain);
-  return Object.entries(picks).filter(([kind, row]) => field.purposeId ? rollSectionKey(kind) === purposeSectionKey(field.purposeId) : field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
+  return Object.entries(picks).filter(([kind, row]) => field.purposeId ? normalizePromptPurposeSectionKey(rollSectionKey(kind)) === purposeSectionKey(field.purposeId) : field.directoryId ? row.directoryId === field.directoryId : field.kind ? kind === field.kind : true)
     .map(([, row]) => field.negative ? row.negative : row.text).filter(Boolean).join(', ');
 }
 
@@ -120,12 +134,18 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
     ['character', role?.sections, role?.sectionNegatives],
   ] as const) for (const [kind, text] of Object.entries(sections || {})) {
     if (!isCreativeSectionKey(kind) || typeof text !== 'string' || !text.trim()) continue;
-    const directoryId = isPurposeSectionKey(kind) ? '' : kind.slice('directory:'.length);
+    // 旧工作草稿里的画风细项归并到同一分栏，避免出现多个「画风配方」。
+    const normalizedKind = String(normalizePromptPurposeSectionKey(kind));
+    const directoryId = isPurposeSectionKey(normalizedKind) ? '' : normalizedKind.slice('directory:'.length);
 
-    const path = isPurposeSectionKey(kind) ? [promptPurposeLabel(kind.slice(8))] : directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
-    picks[rollItemKey(kind, scope)] = { kind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
+    const path = isPurposeSectionKey(normalizedKind) ? [promptPurposeLabel(normalizedKind.slice(8))] : directories ? getPromptLibraryDirectoryPath(directories, directoryId).map(node => node.name) : [];
+    const key = rollItemKey(normalizedKind, scope);
+    const previous = picks[key];
+    picks[key] = { kind: normalizedKind, directoryId, directoryName: path.at(-1) || directoryId, directoryPath: path,
       scope,
-      filled: true, text, negative: String((negatives as Record<string, unknown> | undefined)?.[kind] || '') };
+      filled: true,
+      text: [previous?.text, text].filter(Boolean).join(', '),
+      negative: [previous?.negative, String((negatives as Record<string, unknown> | undefined)?.[kind] || '')].filter(Boolean).join(', ') };
   }
   const presentation = params._promptSections?.presentation;
   if (presentation?.trim()) picks.presentation = { kind: 'presentation', scope: 'global', filled: true, text: presentation, negative: params._promptSections?.sectionNegatives?.presentation || '', meta: params._promptSections?.sectionMeta?.presentation };
