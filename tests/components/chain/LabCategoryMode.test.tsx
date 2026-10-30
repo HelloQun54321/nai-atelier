@@ -17,7 +17,7 @@ describe('分类模式分页', () => {
     expect(screen.getByText('整段使用，随机搭配不会改这里。')).toBeTruthy();
   });
 
-  it('场景是单独一页，结构摘要默认收起', () => {
+  it('场景是单独一页，不显示拼好的提示词', () => {
     const layout = pinPictureZone(undefined, 'scene');
     expect(labCategoryTabOptions(sections, layout, true).map(item => item[0])).toEqual(['style', 'character', 'scene', 'reference', 'params', 'add']);
     render(<LabCategoryMode tab="scene" adding={false} base="artist:keep" negative="" sections={sections} layout={layout} characters={[]} tagAssist={false} negativeLocked={false} onCancelAdd={vi.fn()} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />);
