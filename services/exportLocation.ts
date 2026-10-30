@@ -1,6 +1,7 @@
 import { isAndroidApp } from './platform';
 import { captureAgentExport } from './agentTransfer';
 import { openStorageDirectory } from './storageLocations';
+import { createUuid } from './id';
 
 export type ExportMode = 'system' | 'directory' | 'ask';
 export interface ExportLocation {
@@ -170,7 +171,7 @@ export async function saveExportBlob(blob: Blob, filename: string, target = begi
   if (blob.size > 2 * 1024 * 1024 * 1024) throw new Error('导出文件超过 2 GiB 上限');
   if (isAndroidApp()) {
     const { native, writeBlob } = await import('../mobile/native');
-    const path = `transfer/${crypto.randomUUID()}`;
+    const path = `transfer/${createUuid()}`;
     try {
       await writeBlob(blob, path);
       await native.saveFile({ path, filename, mime: blob.type.split(';')[0] || 'application/octet-stream', removeAfterSave: true });

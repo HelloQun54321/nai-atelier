@@ -6,6 +6,7 @@
 
 ## 2026-10-30
 
+- **Cursor（Composer）**：按局域网 Bug 报告修复：前端助手／Roll／实验室／导出／页面客户端 ID 统一 `createUuid`；媒体网关对非 image/* 响应按文件头 sniff WebP 等 MIME。补 id／agentWorkspace／media-gateway 回归与 CHANGELOG。未提交。
 - **Cursor（Composer）**：顶栏把手底色改与顶栏共用 `--nai-toolbar-surface` 与同款磨砂，箭头矢量并纠正方向；去掉 CSS border 三角叠影。补回归、CHANGELOG，更新本地前端产物。未提交。
 - **Cursor（Composer）**：落实提示词原文框／翻译区「高度跟随内容」双开关（生图偏好 → 提示词编辑，默认开）；appearancePreferences 持久化与 dataset 订阅，TagAutocompleteTextarea 自动量高、人工调高本轮优先；同步设置 UI、五语文案、模块决策、CHANGELOG 与定向回归。未提交或递增版本。
 - **Cursor（Composer）**：顶栏收起把手三角居中——静止态去掉隐藏文案的 gap、leading-none，尖角按方向光学微调；悬停间距改到文案 margin。补回归与 CHANGELOG。未提交。

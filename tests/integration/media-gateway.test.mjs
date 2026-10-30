@@ -231,6 +231,7 @@ import {
   normalizeVibeStrengths,
   parseInvalidVibeCacheKeys,
   requestRemoteBuffer,
+  sniffImageMime,
   selectPreciseReferenceCanvas,
   CloudQueueCoordinator,
   createSseEventObserver,
@@ -1693,6 +1694,25 @@ test('requestRemoteBuffer never treats 403, non-image or oversized responses as 
   await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })), /not an image/);
   await assert.rejects(() => requestRemoteBuffer('https://cdn.donmai.us/x.webp', async () => new Response('x', { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(31 * 1024 * 1024) } })), /too large/);
   await assert.rejects(() => requestRemoteBuffer('https://evil.example/x.webp', async () => new Response('x')), /not allowed/);
+});
+
+test('requestRemoteBuffer 对 octet-stream 的真实 WebP 按文件头认图，纯文本仍拒绝', async () => {
+  const webp = Buffer.from([
+    0x52, 0x49, 0x46, 0x46, 0x1a, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+    0x56, 0x50, 0x38, 0x20, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  assert.equal(sniffImageMime(webp), 'image/webp');
+  assert.equal(sniffImageMime(Buffer.from('not-an-image')), '');
+  const accepted = await requestRemoteBuffer('https://assets.quicktagcloud.com/originals/demo.webp', async () =>
+    new Response(webp, { status: 200, headers: { 'content-type': 'application/octet-stream' } }));
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.headers['content-type'], 'image/webp');
+  assert.deepEqual([...accepted.buffer], [...webp]);
+  await assert.rejects(
+    () => requestRemoteBuffer('https://assets.quicktagcloud.com/originals/demo.webp', async () =>
+      new Response('plain text', { status: 200, headers: { 'content-type': 'application/octet-stream' } })),
+    /not an image/,
+  );
 });
 
 test('缩略图预热器：去重入队、并发消化、已缓存跳过', async () => {

@@ -2592,6 +2592,23 @@ const requestWorkerBuffer = (source, req, workerPort, signal) => new Promise((re
   upstream.end();
 });
 
+/** 上游偶发把真图标成 octet-stream；按文件头识别常见图片 MIME，认不出则仍拒绝。 */
+export const sniffImageMime = buffer => {
+  if (!buffer || buffer.length < 12) return '';
+  const head = (start, end) => buffer.toString('latin1', start, end);
+  if (head(0, 4) === 'RIFF' && head(8, 12) === 'WEBP') return 'image/webp';
+  if (buffer[0] === 0x89 && head(1, 4) === 'PNG') return 'image/png';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (head(0, 3) === 'GIF') return 'image/gif';
+  if (head(0, 2) === 'BM') return 'image/bmp';
+  if (head(4, 8) === 'ftyp') {
+    const brand = head(8, 12);
+    if (brand === 'avif' || brand === 'avis') return 'image/avif';
+    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) return 'image/heic';
+  }
+  return '';
+};
+
 export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
   let current = source;
   for (let redirects = 0; redirects < 4; redirects++) {
@@ -2619,8 +2636,11 @@ export const requestRemoteBuffer = async (source, remoteFetch = fetch) => {
     }
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     if (!response.ok) return { status: response.status, headers: { 'content-type': contentType }, buffer: Buffer.alloc(0) };
-    if (!contentType.startsWith('image/')) throw new Error('Remote response is not an image');
-    return { status: response.status, headers: { 'content-type': contentType }, buffer: await readLimitedResponse(response) };
+    const buffer = await readLimitedResponse(response);
+    const mediaType = contentType.toLowerCase().split(';')[0].trim();
+    const resolvedType = mediaType.startsWith('image/') ? mediaType : sniffImageMime(buffer);
+    if (!resolvedType) throw new Error('Remote response is not an image');
+    return { status: response.status, headers: { 'content-type': resolvedType }, buffer };
   }
   throw new Error('Too many image redirects');
 };

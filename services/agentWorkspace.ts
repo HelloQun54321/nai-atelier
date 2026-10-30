@@ -1,6 +1,7 @@
 import { executeAgentCommand, getAgentCommands } from './agentCommands';
 import { promptAgentService } from './promptAgent';
 import { captureAgentExports, copyAgentImage, getAgentCopiedImage, getAgentExport, getAgentExports } from './agentTransfer';
+import { createUuid } from './id';
 /** 工坊页面语义桥：按前景、状态和可验证结果协作，不把 DOM 点击当成任务完成。 */
 export interface AgentPageControl {
   id: string; role: string; label: string; actions: string[];
@@ -167,7 +168,7 @@ export const readAgentPageHeading = () => {
   return { title, capturedAt: Date.now() };
 };
 export const getAgentPageClientId = () => {
-  try { let id = sessionStorage.getItem('nai-agent-page-client'); if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('nai-agent-page-client', id); } return id; } catch { return bootId; }
+  try { let id = sessionStorage.getItem('nai-agent-page-client'); if (!id) { id = createUuid(); sessionStorage.setItem('nai-agent-page-client', id); } return id; } catch { return bootId; }
 };
 export const readAgentPage = (options: AgentPageReadOptions = {}): AgentPageSnapshot => {
   const page = capture();

@@ -6,6 +6,7 @@ import { clampCharacterCoordinate, compileCharacterContent } from './characterPr
 import { getEditableGlobalNegative, getGlobalPromptSectionKeys } from './promptUtils';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from './appearancePreferences';
+import { createUuid } from './id';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
@@ -408,7 +409,7 @@ const enqueueAssetOperation = <T>(id: string, operation: () => Promise<T>): Prom
   return next;
 };
 
-export const saveLabWorkspaceAsset = async (blob: Blob, id: string = crypto.randomUUID()): Promise<string> => {
+export const saveLabWorkspaceAsset = async (blob: Blob, id: string = createUuid()): Promise<string> => {
   await enqueueAssetOperation(id, async () => {
     const db = await openAssetDb();
     await new Promise<void>((resolve, reject) => {

@@ -10,6 +10,7 @@ import { localHistory } from './localHistory';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { emitCloudQueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive } from './cloudQueue';
 import { recordUsageEvent } from './usageEvents';
+import { createUuid } from './id';
 
 export interface GenerationSeriesProgress { current: number; total: number; stopping: boolean; position?: number }
 
@@ -279,7 +280,7 @@ export const beginGenerationSeries = (options: {
     if (!key) throw agentOperationError('请先配置 NovelAI API Key', 'missing_key');
     if (!options.placement && (groups.get(options.scope) || []).length > 0) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
     const session: GenerationSeriesSession = {
-        scope: options.scope, key, token: crypto.randomUUID(), count: options.count, steps: options.descriptor.history.params.steps ?? 0,
+        scope: options.scope, key, token: createUuid(), count: options.count, steps: options.descriptor.history.params.steps ?? 0,
         model: options.descriptor.history.params.model, operation: options.descriptor.history.edit?.operation || 'text-to-image',
         agent: options.agent,
         ...(options.placement ? { placement: options.placement } : {}),

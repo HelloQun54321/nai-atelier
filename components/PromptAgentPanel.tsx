@@ -23,6 +23,7 @@ import type { AgentDisplayPreferences } from '../services/agentDisplayPreference
 import { isAgentTaskRunning, type AgentCharacterReference, type AgentPromptApplied, type AgentPromptApplication, type AgentPromptBeforeApply, type AgentQuestionAnswer, type AgentQuestionRequest, type PromptAgentEvent, type PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { beginExportTarget } from '../services/exportLocation';
+import { createUuid } from '../services/id';
 import { hasExposedModalOutside, isTopmostModal } from './useModalA11y';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -398,7 +399,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const recordPromptApplication = (change: AgentPromptChange, sessionId: string) => (before: PromptAgentDraft, after: PromptAgentDraft, application?: AgentPromptApplication) => {
     const applied = createAppliedAgentPromptChange(change, before, after, application?.selectedAfter);
     if (!applied.appliedChanges?.length) return;
-    void savePromptChange({ ...applied, ...(application?.beforeVersionId ? { beforeVersionId: application.beforeVersionId, rawAfter: after, selectedAfter: application.selectedAfter } : {}) }, sessionId).catch(error => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error.message }]));
+    void savePromptChange({ ...applied, ...(application?.beforeVersionId ? { beforeVersionId: application.beforeVersionId, rawAfter: after, selectedAfter: application.selectedAfter } : {}) }, sessionId).catch(error => setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: error.message }]));
   };
   const saveBeforePromptApplication = (sessionId: string, reason: 'before_apply' | 'before_restore', changeId?: string): AgentPromptBeforeApply => async (before, after) => {
     const saved = await promptAgentService.savePromptVersion(sessionId, { draft: before, afterDraft: after, source: 'page', reason, ...(changeId ? { changeId } : {}) });
@@ -891,7 +892,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               const accepted = await confirmAction({ rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, [patch.payload?.model, patch.payload?.informationExtracted]) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload, title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
+                setMessages(previous => [...previous, { id: createUuid(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
                 return;
               }
               try {
@@ -910,15 +911,15 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 if (patch.action !== 'grant_local_image_folder') window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: patch }));
                 if (patch.action !== 'encode_vibe' && patch.action !== 'clear_mobile_cache' && (receipt?.ok !== true || receipt.success === false || receipt.partial || receipt.outcome === 'partial' || receipt.outcome === 'failed')) {
                   const partial = receipt?.partial || receipt?.outcome === 'partial';
-                  setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: partial ? `该项目操作仅部分完成：已完成 ${receipt?.completedCount ?? '未知'} 项，失败 ${receipt?.failedCount ?? '未知'} 项。` : receipt?.error || '该项目操作未完成，请核对实际结果。' }]);
+                  setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: partial ? `该项目操作仅部分完成：已完成 ${receipt?.completedCount ?? '未知'} 项，失败 ${receipt?.failedCount ?? '未知'} 项。` : receipt?.error || '该项目操作未完成，请核对实际结果。' }]);
                   return;
                 }
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。` : '已在你确认后完成该项目操作。' }]);
+                setMessages(previous => [...previous, { id: createUuid(), role: 'agent', text: patch.action === 'grant_local_image_folder' ? `已允许本次对话${patch.payload?.access === 'write' ? '保存图片到' : '读取图片目录'}：${String(patch.payload?.directory || '')}。` : '已在你确认后完成该项目操作。' }]);
               } catch (error) {
                 const result = agentGenerationFailure(error);
                 if (approved) await promptAgentService.control(activeSessionId, 'finalize', patch.requestId, { requestId: patch.requestId, success: false, result }).catch(() => {});
                 else await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false, result }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
+                setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: error instanceof Error ? error.message : '项目操作失败' }]);
               }
             })();
           } else if (event.action.kind === 'request_generation') {
@@ -938,10 +939,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
                 }, generationAction.patch.count, generationAction.patch.placement);
                 const receipt = normalizeAgentGenerationResult(success);
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: receipt.success, result: receipt });
-                if (!receipt.success && receipt.outcome !== 'cancelled') setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: receipt.error || '生成失败' }]);
+                if (!receipt.success && receipt.outcome !== 'cancelled') setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: receipt.error || '生成失败' }]);
               } catch (error) {
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false, result: agentGenerationFailure(error) }).catch(() => {});
-                setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
+                setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
               } finally {
                 generationInterruptRef.current = undefined;
               }
@@ -957,7 +958,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const activeReferences = characterReferences.filter(reference => prompt.includes(`@${reference.name}`));
     if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode !== 'retry' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
-      setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
+      setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
       return;
     }
     let effectiveMode = mode;
@@ -969,13 +970,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         setEditingMessageId('');
         setCharacterReferences([]); setMention(null); setReferenceLimitNotice('');
       } catch (error) {
-        setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '编辑消息失败' }]);
+        setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: error instanceof Error ? error.message : '编辑消息失败' }]);
         return;
       }
     }
-    const assistantId = crypto.randomUUID();
+    const assistantId = createUuid();
     // 接续时旧的停止提示不再提供按钮；新的结果另起一条提示。
-    setMessages(previous => [...(revisedMessages || previous).map(item => item.resumable ? { ...item, resumable: false } : item), ...(effectiveMode !== 'retry' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt, ...(activeReferences.length ? { characterReferences: activeReferences } : {}) }] : []), { id: assistantId, role: 'agent', text: '' }]);
+    setMessages(previous => [...(revisedMessages || previous).map(item => item.resumable ? { ...item, resumable: false } : item), ...(effectiveMode !== 'retry' ? [{ id: createUuid(), role: 'user' as const, text: prompt, ...(activeReferences.length ? { characterReferences: activeReferences } : {}) }] : []), { id: assistantId, role: 'agent', text: '' }]);
     currentAssistantIdRef.current = assistantId;
     responseStartedRef.current = false;
     if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); setCharacterReferences([]); setMention(null); setReferenceLimitNotice(''); }
@@ -1014,7 +1015,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         });
         if (event.type === 'response_start') {
           if (responseStartedRef.current) {
-            const nextId = crypto.randomUUID();
+            const nextId = createUuid();
             currentAssistantIdRef.current = nextId;
             setMessages(previous => [...previous, { id: nextId, role: 'agent', text: '' }]);
           } else responseStartedRef.current = true;
@@ -1080,7 +1081,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));
       } else {
-        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '助手执行失败', detail: error instanceof Error ? (error as Error & { detail?: string }).detail : undefined }]);
+        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: createUuid(), role: 'error', text: error instanceof Error ? error.message : '助手执行失败', detail: error instanceof Error ? (error as Error & { detail?: string }).detail : undefined }]);
       }
     } finally {
       setRunning(false);
@@ -1170,7 +1171,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     window.setTimeout(() => setCopiedMessageId(current => current === messageId ? '' : current), 1400);
   };
 
-  const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
+  const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: createUuid(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
   const answerQuestion = async (request: AgentQuestionRequest, answers: AgentQuestionAnswer[]) => {
     const sessionId = activeSessionId;
     await promptAgentService.control(sessionId, 'answer', undefined, { runId: request.runId, requestId: request.requestId, answers });
