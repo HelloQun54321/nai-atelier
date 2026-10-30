@@ -2165,7 +2165,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 translationPending={translationPending}
                 notify={notify}
                 sectionedPrompt={sectionedActive}
-                onSectionedPromptChange={activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
+                onSectionedPromptChange={onSectionedPromptChange && activeGenerationMode === 'text-to-image' ? turnSectioned : undefined}
             />
 
             {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
