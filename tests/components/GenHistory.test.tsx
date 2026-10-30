@@ -220,6 +220,7 @@ describe('历史缩略图就地操作', () => {
         fireEvent.click(screen.getByRole('button', { name: '按时间清理历史…' }));
         const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
         fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '7' } });
+        await waitFor(() => expect((within(dialog).getByRole('button', { name: '确认删除' }) as HTMLButtonElement).disabled).toBe(false));
         fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }));
         await waitFor(() => expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'history.clean-days', rememberScope: 7 })));
         expect(localHistory.deleteOlderThan).not.toHaveBeenCalled();
@@ -227,6 +228,35 @@ describe('历史缩略图就地操作', () => {
         confirmAction.mockResolvedValue(true);
         fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }));
         await waitFor(() => expect(localHistory.deleteOlderThan).toHaveBeenCalledWith(7));
+    });
+
+    it('清理预览数量只采用最后一次输入的结果，读取中或失败时禁止确认且不显示为 0', async () => {
+        await setup();
+        const pending = new Map<number, (count: number) => void>();
+        vi.mocked(localHistory.countOlderThan).mockImplementation(days => new Promise(resolve => { pending.set(days, resolve); }));
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '按时间清理历史…' }));
+        const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
+        const confirm = within(dialog).getByRole('button', { name: '确认删除' }) as HTMLButtonElement;
+        // 先输入 3 再改成 30：30 的结果先到，3 的旧结果迟到也不能覆盖确认文案。
+        fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '3' } });
+        fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '30' } });
+        expect(confirm.disabled).toBe(true);
+        expect(dialog.textContent).toContain('将删除 30 天前的 … 张图片');
+        await act(async () => { pending.get(30)?.(5); });
+        await act(async () => { pending.get(3)?.(99); });
+        expect(dialog.textContent).toContain('将删除 30 天前的 5 张图片');
+        expect(confirm.disabled).toBe(false);
+        // 小数天数按实际执行的取整值预览，读取失败显示原因并禁止确认。
+        vi.mocked(localHistory.countOlderThan).mockRejectedValueOnce(new Error('synthetic count failure'));
+        fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '7.6' } });
+        await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toBe('读取失败，请重试'));
+        expect(localHistory.countOlderThan).toHaveBeenLastCalledWith(7);
+        expect(dialog.textContent).not.toContain(' 0 张');
+        expect(confirm.disabled).toBe(true);
+        fireEvent.click(confirm);
+        expect(confirmAction).not.toHaveBeenCalled();
+        expect(localHistory.deleteOlderThan).not.toHaveBeenCalled();
     });
 
     it('历史详情直接用统一爱心，不再二次填写收藏表单或重复保存图片', async () => {

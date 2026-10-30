@@ -87,6 +87,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
   const onPasteImage = vi.fn();
   const onDraftChange = vi.fn();
   const onBrushSizeChange = vi.fn();
+  const onMinimumContextAreaChange = vi.fn();
   const notify = vi.fn();
   const historyItem = { id: 'history-1', imageUrl: 'data:image/png;base64,fixture', prompt: 'history prompt', negativePrompt: '', params, createdAt: 1 };
   return { ...render(React.createElement(ImageEditControls, {
@@ -134,7 +135,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onNoiseChange: vi.fn(),
     onBrushSizeChange,
     onFocusedChange: vi.fn(),
-    onMinimumContextAreaChange: vi.fn(),
+    onMinimumContextAreaChange,
     onToolChange: vi.fn(),
     onManualMaskEditingChange,
     onClearMask: vi.fn(),
@@ -143,10 +144,48 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange, onNegativePromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, notify };
+  })), onManualMaskEditingChange, onPromptChange, onNegativePromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, onMinimumContextAreaChange, notify };
 };
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it.each([['inpaint', false], ['outpaint', true]] as const)('%s 笔刷数值保留逐字草稿，失焦夹值、回车提交，空值恢复', (operation, manualMaskEditing) => {
+  const { onBrushSizeChange } = renderControls(operation, manualMaskEditing);
+  const input = screen.getByRole('spinbutton', { name: '笔刷大小数值' }) as HTMLInputElement;
+  for (const text of ['', '6', '64', '1', '12', '128', '2', '25', '256']) {
+    fireEvent.change(input, { target: { value: text } });
+    expect(input.value).toBe(text); expect(onBrushSizeChange).not.toHaveBeenCalled();
+  }
+  fireEvent.blur(input); expect(onBrushSizeChange).toHaveBeenLastCalledWith(256);
+  fireEvent.change(input, { target: { value: '1024' } });
+  fireEvent.blur(input); expect(input.value).toBe('512'); expect(onBrushSizeChange).toHaveBeenLastCalledWith(512);
+  input.focus(); fireEvent.change(input, { target: { value: '1' } });
+  fireEvent.keyDown(input, { key: 'Enter' }); expect(input.value).toBe('8'); expect(onBrushSizeChange).toHaveBeenLastCalledWith(8);
+  onBrushSizeChange.mockClear();
+  fireEvent.change(input, { target: { value: '' } }); fireEvent.blur(input);
+  expect(input.value).toBe('64'); expect(onBrushSizeChange).not.toHaveBeenCalled();
+});
+
+it('最小上下文数值保留 6→64 草稿，失焦夹值、回车提交，非法输入恢复', () => {
+  const { onMinimumContextAreaChange } = renderControls('inpaint', false, false, false, {}, 'params');
+  const input = screen.getByRole('spinbutton', { name: '最小上下文数值' }) as HTMLInputElement;
+  const previous = input.value;
+  for (const text of ['', '6', '64']) {
+    fireEvent.change(input, { target: { value: text } });
+    expect(input.value).toBe(text); expect(onMinimumContextAreaChange).not.toHaveBeenCalled();
+  }
+  input.focus(); fireEvent.keyDown(input, { key: 'Enter' }); expect(input.value).toBe('64');
+  expect(onMinimumContextAreaChange).not.toHaveBeenCalled();
+  input.focus(); fireEvent.change(input, { target: { value: '65' } }); fireEvent.keyDown(input, { key: 'Enter' });
+  expect(onMinimumContextAreaChange).toHaveBeenLastCalledWith(65);
+  fireEvent.change(input, { target: { value: '128' } }); fireEvent.blur(input);
+  expect(input.value).toBe('96'); expect(onMinimumContextAreaChange).toHaveBeenLastCalledWith(96);
+  fireEvent.change(input, { target: { value: '1' } }); fireEvent.blur(input);
+  expect(input.value).toBe('32'); expect(onMinimumContextAreaChange).toHaveBeenLastCalledWith(32);
+  onMinimumContextAreaChange.mockClear();
+  fireEvent.change(input, { target: { value: 'invalid' } }); fireEvent.blur(input);
+  expect(input.value).toBe(previous); expect(onMinimumContextAreaChange).not.toHaveBeenCalled();
+});
 
 it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将强制置空状态与回调传给公共参数，切换不改草稿', operation => {
   const onDraftChange = vi.fn();
@@ -259,9 +298,11 @@ describe('ImageEditControls', () => {
     fireEvent.change(slider, { target: { value: '128' } });
     expect(onBrushSizeChange).toHaveBeenLastCalledWith(128);
     fireEvent.change(numeric, { target: { value: '1024' } });
+    fireEvent.blur(numeric);
     expect(onBrushSizeChange).toHaveBeenLastCalledWith(512);
     fireEvent.click(screen.getByRole('button', { name: '橡皮擦' }));
     fireEvent.change(numeric, { target: { value: '32' } });
+    fireEvent.blur(numeric);
     expect(onBrushSizeChange).toHaveBeenLastCalledWith(32);
     const baseImageSection = container.querySelector('[data-lab-module="baseImage"]');
     expect(baseImageSection?.contains(slider)).toBe(true);

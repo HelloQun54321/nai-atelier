@@ -537,26 +537,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
     const detail = details[work.id];
     const imageCount = getAitagWorkImageCount(work, detail);
     const cacheLevel = getAitagCardCacheLevel(work, detail);
-    const cardTone = cacheLevel === 'full'
-      ? {
-          card: 'bg-emerald-50/80 dark:bg-emerald-950/35',
-          border: 'border-emerald-200 dark:border-emerald-800/80 hover:border-emerald-400 dark:hover:border-emerald-500',
-          image: 'bg-emerald-100 dark:bg-emerald-950',
-          marker: 'bg-emerald-500',
-        }
-      : cacheLevel === 'first-image'
-        ? {
-            card: 'bg-sky-50/70 dark:bg-sky-950/30',
-            border: 'border-sky-200 dark:border-sky-800/75 hover:border-sky-400 dark:hover:border-sky-500',
-            image: 'bg-sky-100 dark:bg-sky-950',
-            marker: 'bg-sky-500',
-          }
-        : {
-            card: 'bg-white dark:bg-gray-950',
-            border: 'border-gray-200 dark:border-gray-800 hover:border-indigo-400',
-            image: 'bg-gray-100 dark:bg-gray-800',
-            marker: 'bg-transparent',
-          };
+    const cacheMarker = cacheLevel === 'full' ? 'bg-emerald-500' : 'bg-sky-500';
     const firstImage = work.firstImage || work.first_image || detail?.images[0];
     const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(firstImage);
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
@@ -576,11 +557,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             loadDetail(work);
           }
         }}
-        className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectionFocusEnabled && selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
-          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
+        className={`appearance-group mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col bg-white dark:bg-gray-950 ${selectionFocusEnabled && selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
+          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-gray-200 dark:border-gray-800 hover:border-indigo-400'
         }`}
       >
-        <div className={`mobile-gallery-frame md:aspect-square relative overflow-hidden ${cardTone.image}`} style={{ '--mobile-image-ratio': ratioStyle } as React.CSSProperties}>
+        <div className="appearance-media mobile-gallery-frame md:aspect-square relative overflow-hidden bg-gray-100 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratioStyle } as React.CSSProperties}>
           <AitagPreviewImage
             work={work}
             detail={details[work.id]}
@@ -612,7 +593,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
         </div>
         <div className="gallery-card-caption p-3 flex-1">
           <div className="flex items-center gap-2">
-            {cacheLevel !== 'none' && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${cardTone.marker}`} />}
+            {cacheLevel !== 'none' && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${cacheMarker}`} />}
             <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>

@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryBrowseControls } from '../../components/HistoryBrowseControls';
 import type { HistoryBrowseQuery } from '../../services/historyBrowse';
+import { setLanguage, t } from '../../services/i18n';
 
 let workWidth: number;
 let resize: (width: number) => void;
@@ -22,7 +23,7 @@ beforeEach(() => {
   });
   vi.stubGlobal('matchMedia', () => ({ matches: false }));
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const setup = (query: HistoryBrowseQuery = { sort: 'newest' }, mobile = false) => {
   const onApply = vi.fn();
   const Harness = () => {
@@ -34,6 +35,18 @@ const setup = (query: HistoryBrowseQuery = { sort: 'newest' }, mobile = false) =
 };
 const more = () => fireEvent.click(screen.getByRole('button', { name: /^更多筛选/ }));
 const date = () => fireEvent.click(screen.getByRole('button', { name: /^时间范围：/ }));
+
+it.each(['en', 'ja', 'ko'] as const)('%s：全部时间及单侧日期边界随界面语言翻译', language => {
+  setLanguage(language);
+  const { unmount } = setup();
+  expect(screen.getByRole('button', { name: t('时间范围：{0}', [t('全部时间')]) }).textContent).toBe(t('全部时间'));
+  unmount();
+  const fromView = setup({ from: new Date('2026-01-02T00:00:00').getTime() });
+  expect(screen.getByRole('button', { name: new RegExp(t('至今') + '$') }).textContent).toContain(t('至今'));
+  fromView.unmount();
+  setup({ to: new Date('2026-01-02T00:00:00').getTime() });
+  expect(screen.getByRole('button', { name: new RegExp(t('不限')) }).textContent).toContain(t('不限'));
+});
 
 describe('历史单行顶栏', () => {
   it('范围、更多条件、排序、随机依序直接可达，没有常驻搜索或重复控制', () => {

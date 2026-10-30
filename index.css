@@ -820,6 +820,11 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 @media (pointer: coarse) {
   .character-tools button { height: 44px; min-height: 44px; width: 44px; min-width: 44px; }
 }
+/* 平板等主指针为触屏的设备即使使用电脑布局，标为触控目标的控件也保持 44px 命中区；
+   带触屏的笔记本主指针仍是鼠标，继续使用电脑尺寸。 */
+@media (min-width: 768px) and (pointer: coarse) {
+  .mobile-touch { min-width: 44px; min-height: 44px; touch-action: manipulation; }
+}
 @media (min-width: 1024px) {
   .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-padding: 2px; }
   .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(-1 * var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height)); }
@@ -1057,13 +1062,15 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   z-index: 30;
   display: flex;
   width: 4.5rem;
-  height: 16px;
+  /* 命中区 44px，可见握把仍停在原位置（顶部 6px）；下方只覆盖不可点的标题文字。 */
+  height: 44px;
+  padding-top: 6px;
   transform: translateX(-50%);
   cursor: ns-resize;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   touch-action: none;
-  min-height: 16px !important;
+  min-height: 44px !important;
 }
 
 .agent-resize-handle-mobile span {
@@ -1120,8 +1127,18 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 }
 
 @media (max-width: 767px) {
-  /* 把手已占顶栏左列，与右侧同排控件居中，不再单独预留一行。 */
-  .content-library > .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { align-self: center; }
+  /* 把手已占顶栏左列，与右侧第一排控件垂直居中（随密度与安全区变化），不再单独预留一行。 */
+  .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { margin-top: calc(env(safe-area-inset-top) + (var(--workspace-toolbar-height) - 2.75rem) / 2); }
+  .content-library > .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { align-self: center; margin-top: 0; }
+
+  /* 顶栏放不下时整排横向滑动，不换行、不新增工具行；两侧还有控件时在该侧边缘淡出提示。 */
+  .workspace-toolbar-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .workspace-toolbar-scroll::-webkit-scrollbar { display: none; }
+  .workspace-toolbar-scroll > * { flex-shrink: 0; }
+  .workspace-toolbar-scroll > .flex-1 { flex-shrink: 1; }
+  .workspace-toolbar-scroll[data-overflow-end] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.75rem), transparent); }
+  .workspace-toolbar-scroll[data-overflow-start] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 1.75rem), transparent); }
+  .workspace-toolbar-scroll[data-overflow-start][data-overflow-end] { -webkit-mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); mask-image: linear-gradient(to right, transparent, #000 1.75rem, #000 calc(100% - 1.75rem), transparent); }
 
   :root {
     --mobile-topbar: 3.5rem;
@@ -1172,7 +1189,9 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
 
   .mobile-toolbar { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3); }
   .mobile-safe-bottom { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
-  .mobile-layer { position: fixed; inset: 0; z-index: 1100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
+  /* 顶层原语层级：内容窗口 1200~2000；锚定／信息浮层与手机底部面板默认 2100（调用处可显式抬高）；提示 2300；确认框 2400。
+     菜单与面板可从任意窗口内打开，必须高于全部内容窗口，否则在窗口里打开会被父窗口盖住。 */
+  .mobile-layer { position: fixed; inset: 0; z-index: 2100; background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); animation: ui-fade-in 140ms ease-out; }
   .mobile-sheet { position: absolute; inset-inline: 0; bottom: 0; display: flex; max-height: min(82dvh, 44rem); flex-direction: column; overflow: hidden; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0; background: var(--nai-panel-surface); box-shadow: 0 -16px 40px rgb(0 0 0 / .25); animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
   .mobile-detail { position: fixed; inset: 0; z-index: 1050; display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: var(--nai-panel-surface); animation: mobile-detail-in 160ms cubic-bezier(.2,.8,.2,1); }
   @keyframes mobile-detail-in { from { opacity: 0; transform: translateX(10px); } }

@@ -204,10 +204,14 @@ function fixture(fullSchema = false) {
     if (!response) throw new Error(`未处理合成请求 ${path}`);
     return { status: response.status, body: await response.json() as any, headers: response.headers };
   };
-  return { sqlite, files, bucket, db, request, beforeNextBatch: (callback: () => void) => { beforeBatch = callback; }, import: (value: unknown) => request('/api/vibes/import', { document: value }) };
+  return { sqlite, files, bucket, db, env, request, beforeNextBatch: (callback: () => void) => { beforeBatch = callback; }, import: (value: unknown) => request('/api/vibes/import', { document: value }) };
 }
 
 describe('官方 Vibe 文件往返', () => {
+  const different = Buffer.from('different-encoding'.repeat(10)).toString('base64');
+  const bundle = (...vibes: unknown[]) => ({ identifier: 'novelai-vibe-transfer-bundle', version: 1, vibes });
+  const encodedDocument = () => document(undefined, { type: 'encoding', image: undefined, id: hash(encoding) });
+
   it('同图四个提取量不选择变体也完整导出，并逐份恢复相同编码字节', async () => {
     const f = fixture();
     const variants = Object.fromEntries([0.6, 0.5, 0.4, 0.3].map(information => [String(information), variant(information,
@@ -222,6 +226,87 @@ describe('官方 Vibe 文件往返', () => {
       const data = await target.request(`/api/vibes/${restored.body.item.id}/encodings/${item.id}/data`);
       expect(data.body.encoding).toBe(variants[String(item.informationExtracted)].encoding);
     }
+  });
+
+  it('组合末项与已有编码冲突时，前项不写 D1 或 R2', async () => {
+    const f = fixture();
+    await f.import(document());
+    const before = new Map(f.files), put = vi.spyOn(f.env.BUCKET!, 'put');
+    const response = await f.import(bundle(encodedDocument(), document({ 'v4-5full': { a: variant(0.7, different) } })));
+    expect(response.status).toBe(400); expect(response.body.error).toContain('冲突');
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_assets').get()?.count).toBe(1);
+    expect(put).not.toHaveBeenCalled(); expect(f.files).toEqual(before);
+  });
+
+  it('单文档末个变体冲突时，前面的新编码不产生孤儿对象', async () => {
+    const f = fixture();
+    await f.import(document());
+    const before = new Map(f.files), put = vi.spyOn(f.env.BUCKET!, 'put');
+    const response = await f.import(document({ 'v4-5full': { fresh: variant(1), conflict: variant(0.7, different) } }));
+    expect(response.status).toBe(400); expect(response.body.error).toContain('冲突');
+    expect(f.files).toEqual(before); expect(put).not.toHaveBeenCalled();
+  });
+
+  it('组合内部同图同参数冲突也在所有写入前拒绝', async () => {
+    const f = fixture(), put = vi.spyOn(f.env.BUCKET!, 'put');
+    const response = await f.import(bundle(document(), document({ 'v4-5full': { a: variant(0.7, different) } })));
+    expect(response.status).toBe(400); expect(response.body.error).toContain('冲突');
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_assets').get()?.count).toBe(0);
+    expect(f.files.size).toBe(0); expect(put).not.toHaveBeenCalled();
+  });
+
+  it('R2 写入中途失败清理整包新对象，保留旧对象并返回通用 500', async () => {
+    const f = fixture();
+    await f.import(document());
+    const before = new Map(f.files), originalPut = f.env.BUCKET!.put.bind(f.env.BUCKET!);
+    let calls = 0;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(f.env.BUCKET!, 'put').mockImplementation(async (...args) => {
+      await originalPut(...args);
+      if (++calls === 2) throw new Error('R2 internal credential detail');
+      return undefined;
+    });
+    const response = await f.import(bundle(document({ 'v4-5full': { a: variant(1) } }), encodedDocument()));
+    expect(response).toMatchObject({ status: 500, body: { error: '请求处理失败，请查看本地服务日志' } });
+    expect(f.files).toEqual(before);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_assets').get()?.count).toBe(1);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_encodings_all').get()?.count).toBe(1);
+  });
+
+  it('D1 提交失败整包回滚并清理原图、缩略图和编码，不泄露内部错误', async () => {
+    const f = fixture();
+    await f.request('/api/vibes');
+    f.sqlite.exec(`CREATE TRIGGER fail_import BEFORE INSERT ON vibe_encoding_variants
+      WHEN NEW.model = 'nai-diffusion-4-full' BEGIN SELECT RAISE(ABORT, 'D1 internal table detail'); END`);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const response = await f.import(bundle(encodedDocument(), document({ v4full: { a: variant() } } as any, { thumbnail: `data:image/png;base64,${image}` })));
+    expect(response).toMatchObject({ status: 500, body: { error: '请求处理失败，请查看本地服务日志' } });
+    expect(f.files.size).toBe(0);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_assets').get()?.count).toBe(0);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM vibe_encodings_all').get()?.count).toBe(0);
+  });
+
+  it('失败补偿中一个 R2 删除失败仍继续清理剩余新对象', async () => {
+    const f = fixture();
+    await f.request('/api/vibes');
+    f.sqlite.exec(`CREATE TRIGGER fail_import BEFORE INSERT ON vibe_encoding_variants BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`);
+    const originalDelete = f.env.BUCKET!.delete.bind(f.env.BUCKET!);
+    const removed: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(f.env.BUCKET!, 'delete').mockImplementation(async key => {
+      removed.push(String(key));
+      if (removed.length === 1) throw new Error('synthetic delete failure');
+      return originalDelete(key);
+    });
+    const response = await f.import(document(undefined, { thumbnail: `data:image/png;base64,${image}` }));
+    expect(response.status).toBe(500); expect(removed).toHaveLength(3); expect(f.files.size).toBe(1);
+  });
+
+  it('非法 JSON 和图片仍作为校验错误返回 400', async () => {
+    const f = fixture();
+    expect((await f.request('/api/vibes/import', { fileText: '{broken' })).status).toBe(400);
+    expect((await f.import(document(undefined, { image: 'broken%%%' }))).status).toBe(400);
+    expect(f.files.size).toBe(0);
   });
 
   it('多模型、多提取量独立保留，官方文本哈希与本地图片字节去重同时成立', async () => {

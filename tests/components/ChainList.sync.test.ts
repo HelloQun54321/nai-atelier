@@ -493,7 +493,9 @@ describe('风格串列表的酒馆筛选交互', () => {
     const desktop = [...header.querySelectorAll('button')].filter(button => !button.closest('.md\\:hidden'));
     expect(desktop.map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['展开文件夹', '筛选', '智慧姬同步', '查找相似', '风格串分享包', '收集模式', '批量导入', '新建风格串']);
     const folderToggle = screen.getByRole('button', { name: '展开文件夹' });
-    expect(header.firstElementChild).toBe(folderToggle);
+    // 手机横滑内层包住整排控件（电脑端为 contents），顺序检查落在实际控件这一层。
+    const toolbarRow = header.querySelector('.workspace-toolbar-scroll') || header;
+    expect(toolbarRow.firstElementChild).toBe(folderToggle);
     expect(folderToggle.nextElementSibling?.contains(screen.getByPlaceholderText('搜索我的风格串'))).toBe(true);
     expect(header.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(screen.queryByRole('button', { name: /刷新|反推/ })).toBeNull();

@@ -13,6 +13,7 @@ import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from 
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 const themeFixture = vi.hoisted(() => ({ presets: null as import('../../services/appearancePreferences').AppearancePreset[] | null, fail: false }));
+const historyFixture = vi.hoisted(() => ({ enabled: false }));
 vi.mock('../../services/sharedAppearancePresets', () => ({ sharedAppearancePresets: {
   load: vi.fn(async (legacy: import('../../services/appearancePreferences').AppearancePreset[]) => {
     if (themeFixture.fail) throw Error('offline');
@@ -49,9 +50,13 @@ vi.mock('../../services/mobileImageCache', () => ({
   setMobileCacheLimitMb: vi.fn(),
 }));
 
-vi.mock('../../components/MobileUI', () => ({
-  useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
-}));
+vi.mock('../../components/MobileUI', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../components/MobileUI')>();
+  return { ...actual, useMobileHistoryLayer: (open: boolean, onClose: () => void, prefix: string) => {
+    const close = actual.useMobileHistoryLayer(historyFixture.enabled && open, onClose, prefix);
+    return historyFixture.enabled ? close : onClose;
+  } };
+});
 
 vi.mock('../../services/anlasBudget', () => ({
   DEFAULT_ANLAS_BUDGET: 1666,
@@ -88,13 +93,15 @@ vi.mock('../../services/naiKeyVault', () => ({
 }));
 
 interface SettingsHarnessProps {
+  open?: boolean;
+  onClose?: () => void;
   initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
   initialAppearancePreferences?: Partial<AppearancePreferences>;
   onAppearancePreferencesChange?: (preferences: AppearancePreferences) => void;
   notify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
 }
 
-const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance', initialAppearancePreferences, onAppearancePreferencesChange, notify = vi.fn() }) => {
+const SettingsHarness: React.FC<SettingsHarnessProps> = ({ open = true, onClose = vi.fn(), initialSection = 'appearance', initialAppearancePreferences, onAppearancePreferencesChange, notify = vi.fn() }) => {
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => ({
     ...DEFAULT_APPEARANCE_PREFERENCES,
     ...initialAppearancePreferences,
@@ -102,9 +109,9 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
   React.useEffect(() => onAppearancePreferencesChange?.(appearancePreferences), [appearancePreferences, onAppearancePreferencesChange]);
   return React.createElement(ConfirmDialogProvider, null,
     React.createElement(GlobalSettings, {
-      open: true,
+      open,
       initialSection,
-      onClose: vi.fn(),
+      onClose,
       notify,
       isDark: false,
       themeMode: appearancePreferences.themeMode,
@@ -314,6 +321,8 @@ describe('GlobalSettings', () => {
   });
 
   beforeEach(() => {
+    historyFixture.enabled = false;
+    window.history.replaceState({}, '');
     themeFixture.presets = null; themeFixture.fail = false;
     vi.mocked(downloadFile).mockClear();
     subscriptionFixture.entries = [];
@@ -449,9 +458,116 @@ describe('GlobalSettings', () => {
 
   afterEach(() => {
     cleanup();
+    window.history.replaceState({}, '');
+    vi.restoreAllMocks();
     setLanguage('zh-CN');
     vi.unstubAllGlobals();
     delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+
+  it('跨越手机断点保留当前分类及已显示的 Key，重新打开才复位', async () => {
+    let mobile = true;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      get matches() { return mobile && query.includes('767px'); },
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    })));
+    const key = 'pst-resize-1234';
+    subscriptionFixture.entries = [{ id: 'resize', name: '合成旋转测试', key, createdAt: 0 }];
+    const view = render(React.createElement(SettingsHarness, { initialSection: 'home' }));
+    const choices = screen.getByText('选择设置分类').parentElement!.parentElement!;
+    fireEvent.click(within(choices).getByRole('button', { name: 'NovelAI 与 Anlas' }));
+    fireEvent.click((await screen.findAllByRole('button', { name: '显示完整 Key' }))[0]);
+    for (const next of [false, true]) {
+      mobile = next;
+      act(() => listeners.forEach(listener => listener()));
+      expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('NovelAI 与 Anlas');
+      expect(screen.getByText(key)).toBeTruthy();
+    }
+    view.rerender(React.createElement(SettingsHarness, { initialSection: 'generation' }));
+    expect(screen.getByText(key)).toBeTruthy();
+    view.rerender(React.createElement(SettingsHarness, { open: false, initialSection: 'novelai' }));
+    view.rerender(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    expect(await screen.findByRole('button', { name: '显示完整 Key' })).toBeTruthy();
+    expect(screen.queryByText(key)).toBeNull();
+  });
+
+  it.each(['home', 'generation'] as const)('手机设置从 %s 打开时，返回先到分类，再关闭窗口', initialSection => {
+    historyFixture.enabled = true;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const base = { source: 'synthetic-settings' };
+    window.history.replaceState(base, '');
+    const close = vi.fn();
+    render(React.createElement(SettingsHarness, { initialSection, onClose: close }));
+    const parentState = initialSection === 'home' ? window.history.state : {
+      ...window.history.state,
+      __naiMobileLayers: window.history.state.__naiMobileLayers.slice(0, 1),
+      __naiMobileLayer: window.history.state.__naiMobileLayers[0],
+    };
+    if (initialSection === 'home') {
+      const choices = screen.getByText('选择设置分类').parentElement!.parentElement!;
+      fireEvent.click(within(choices).getByRole('button', { name: '生图偏好与实验室' }));
+    }
+    expect(window.history.state.__naiMobileLayers).toHaveLength(2);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('生图偏好与实验室');
+    window.history.replaceState(parentState, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: parentState }));
+    expect(screen.getByText('选择设置分类')).toBeTruthy();
+    expect(close).not.toHaveBeenCalled();
+    window.history.replaceState(base, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: base }));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it.each(['返回设置分类', 'Escape'])('手机设置的 %s 消耗子页历史，连续关闭动作不越过分类层', method => {
+    historyFixture.enabled = true;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const base = { source: 'synthetic-section' };
+    window.history.replaceState(base, '');
+    const close = vi.fn();
+    render(React.createElement(SettingsHarness, { initialSection: 'generation', onClose: close }));
+    const layers = window.history.state.__naiMobileLayers;
+    const parent = { ...base, __naiMobileLayer: layers[0], __naiMobileLayers: layers.slice(0, 1) };
+    if (method === 'Escape') {
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: method }));
+    }
+    expect(window.history.back).toHaveBeenCalledOnce();
+    window.history.replaceState(parent, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: parent }));
+    expect(screen.getByText('选择设置分类')).toBeTruthy();
+    expect(close).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(window.history.back).toHaveBeenCalledTimes(2);
+    window.history.replaceState(base, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: base }));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('手机子页明确关闭整窗时依次收掉两层历史，不留空的设置分类层', () => {
+    historyFixture.enabled = true;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const base = { source: 'synthetic-close' };
+    window.history.replaceState(base, '');
+    const close = vi.fn();
+    render(React.createElement(SettingsHarness, { initialSection: 'generation', onClose: close }));
+    const layers = window.history.state.__naiMobileLayers;
+    const parent = { ...base, __naiMobileLayer: layers[0], __naiMobileLayers: layers.slice(0, 1) };
+    fireEvent.click(screen.getByRole('button', { name: '关闭全局设置' }));
+    expect(window.history.back).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    window.history.replaceState(parent, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: parent }));
+    expect(window.history.back).toHaveBeenCalledTimes(2);
+    window.history.replaceState(base, '');
+    fireEvent(window, new PopStateEvent('popstate', { state: base }));
+    expect(close).toHaveBeenCalledOnce();
   });
   it('真实设置选择五种语言，保存选择并保留未完成的自定义主题名称', () => {
     render(React.createElement(SettingsHarness));

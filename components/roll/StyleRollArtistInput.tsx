@@ -40,7 +40,7 @@ export const StyleRollArtistInput: React.FC<Props> = ({ label, value, onChange, 
       <span className="mt-1 flex items-start gap-2">
         <textarea aria-label={t(label)} placeholder={t('搜索或粘贴画师 Tag，逗号或换行分隔')} value={text} disabled={disabled}
           onChange={event => { setText(event.target.value); setError(''); }}
-          onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (text.trim()) add(text); } }}
+          onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); if (text.trim()) add(text); } }}
           className="mobile-touch min-h-16 min-w-0 flex-1 resize-y rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-normal dark:border-gray-700 dark:bg-gray-950" />
         <IconButton label={t('添加到{0}', [t(label)])} disabled={disabled || !text.trim()} onClick={() => add(text)}><Plus /></IconButton>
       </span>

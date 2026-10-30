@@ -36,9 +36,9 @@ const recentDates = (days: number) => {
 const getDateLabel = (query: HistoryBrowseQuery) => {
   const from = dateValue(query.from), to = dateValue(query.to);
   const short = (value: string) => value.startsWith(`${new Date().getFullYear()}-`) ? value.slice(5).replace('-', '/') : value.replaceAll('-', '/');
-  if (!from && !to) return '全部时间';
+  if (!from && !to) return t('全部时间');
   if (from === to) return short(from);
-  return `${from ? short(from) : '不限'}–${to ? short(to) : '至今'}`;
+  return `${from ? short(from) : t('不限')}–${to ? short(to) : t('至今')}`;
 };
 
 /** 范围在前、浏览方式在后；只有窄工作区才把日期收回更多筛选。 */

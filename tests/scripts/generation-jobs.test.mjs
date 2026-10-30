@@ -305,6 +305,55 @@ test('跨客户端取消在途任务仍收图保存，取消终态保留部分�
   assert.throws(() => fixture.jobs.cancel('another-key', a), { status: 404 });
 });
 
+for (const cancelJob of [false, true]) test(`保存成功遇取消墓碑如实返回已保存及取消，释放 Key 且不续跑（取消 runner=${cancelJob}）`, async () => {
+  let finishSave;
+  const fixture = setup({ save: async (_job, _output, metadata) => {
+    await new Promise(resolve => { finishSave = resolve; });
+    return { ...metadata, imageUrl: '/saved/' + metadata.id };
+  } });
+  fixture.jobs.start('key', a, 3, undefined, descriptor(), {});
+  const job = fixture.jobs.get('key', a);
+  await until(() => Boolean(finishSave));
+  assert.equal(fixture.tasks.current('key').phase, 'saving');
+  fixture.tasks.cancelAll('key');
+  if (cancelJob) fixture.jobs.cancel('key', a);
+  fixture.tasks.pause('key', true);
+  fixture.tasks.enqueue('key', b, 'end');
+  fixture.tasks.cancel('key', a);
+  assert.equal(fixture.tasks.status('key', b).position, 1);
+  assert.throws(() => fixture.tasks.reserve('key', c), { code: 'generation_busy' });
+  finishSave(); await job.running;
+  const result = fixture.jobs.snapshot(job);
+  assert.equal(result.completedCount, 1);
+  assert.equal(result.historyIds[0], result.lastSavedItem.id);
+  assert.equal(result.state, 'cancelled'); assert.equal(result.code, 'generation_cancelled');
+  assert.equal(fixture.calls.length, 1);
+  assert.equal(fixture.tasks.current('key').token, b);
+  assert.equal(fixture.tasks.status('key', b).paused, true);
+  assert.equal(fixture.tasks.snapshot('key').completed, 0);
+  assert.throws(() => fixture.tasks.status('key', a), { code: 'generation_cancelled' });
+});
+
+test('取消墓碑期间真实保存失败仍报 history_save_failed，释放 Key 且不补张', async () => {
+  let failSave;
+  const fixture = setup({ save: async () => {
+    await new Promise(resolve => { failSave = resolve; });
+    throw Object.assign(new Error('synthetic cancelled save failure'), { preview: { image: 'data:image/png;base64,AQID' } });
+  } });
+  fixture.jobs.start('key', a, 3, undefined, descriptor(), {});
+  const job = fixture.jobs.get('key', a);
+  await until(() => Boolean(failSave));
+  fixture.tasks.cancelAll('key'); fixture.jobs.cancel('key', a);
+  assert.equal(fixture.tasks.current('key').token, a);
+  failSave(); await job.running;
+  const result = fixture.jobs.snapshot(job);
+  assert.equal(result.state, 'failed'); assert.equal(result.code, 'history_save_failed');
+  assert.equal(result.completedCount, 0); assert.equal(result.preview.image, 'data:image/png;base64,AQID');
+  assert.equal(fixture.calls.length, 1);
+  assert.equal(fixture.tasks.current('key'), undefined);
+  assert.equal(fixture.tasks.snapshot('key').completed, 0);
+});
+
 test('后台插队以保存为边界，插入任务完成后恢复原任务余量及队尾', async () => {
   const fixture = setup(); let finishFirst;
   const generate = fixture.jobs.generate;

@@ -33,8 +33,18 @@ import { OpusUsageBar } from './OpusUsageBar';
 import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 import { InteractionPopover } from './InteractionPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { useMobileHistoryLayer } from './MobileUI';
+import { isTopmostModal, useModalA11y } from './useModalA11y';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
+
+const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.ElementType; onClick: () => void }> = ({ label, active, icon: Icon, onClick }) => (
+  <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
+    {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
+    <span className="flex h-6 w-6 items-center justify-center"><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.8} /></span>
+    <span className="text-micro font-medium">{t(label)}</span>
+  </button>
+);
 
 type AppView = 'list' | 'characters' | 'content-library' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'prompts' | 'content-roll' | 'content-roll-library';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
@@ -109,6 +119,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
   const [showResources, setShowResources] = useState(false);
+  const resourceMenuRef = useModalA11y<HTMLDivElement>(showResources && !hideNav);
+  const requestResourcesClose = useMobileHistoryLayer(showResources && !hideNav, () => setShowResources(false), 'resources');
+  const resourcesClosingRef = useRef(false);
+  useEffect(() => { resourcesClosingRef.current = false; }, [showResources]);
+  useEffect(() => {
+    if (!showResources || hideNav) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !isTopmostModal(resourceMenuRef.current)) return;
+      event.preventDefault(); event.stopPropagation();
+      if (!resourcesClosingRef.current) {
+        resourcesClosingRef.current = true;
+        requestResourcesClose();
+      }
+    };
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  }, [showResources, hideNav, resourceMenuRef, requestResourcesClose]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('nai_sidebar_collapsed') === 'true');
   const [externalBrowseExpanded, setExternalBrowseExpanded] = useState(() => localStorage.getItem('nai_sidebar_external_gallery_expanded') === 'true');
   const [showExternalBrowsePopover, setShowExternalBrowsePopover] = useState(false);
@@ -334,17 +361,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     window.addEventListener('pointercancel', handleCancel);
   };
 
-  const MobileNavButton: React.FC<{ label: string; active: boolean; icon: React.ElementType; onClick: () => void }> = ({ label, active, icon: Icon, onClick }) => (
-    <button onClick={onClick} className={`relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-500'}`}>
-      {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-500" />}
-      <span className="flex h-6 w-6 items-center justify-center"><Icon aria-hidden="true" className="h-[19px] w-[19px]" strokeWidth={1.8} /></span>
-      <span className="text-micro font-medium">{t(label)}</span>
-    </button>
-  );
-
   return (
     <div className="workspace-canvas relative flex h-[100dvh] bg-gray-50 font-sans text-gray-900 transition-colors duration-300 dark:bg-gray-900 dark:text-gray-100">
-      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="fixed left-1/2 top-4 z-[2000] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'appearance-contrast bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{t(toast.message)}</span></div></div>}
+      {toast && <div role={toast.type === "error" ? "alert" : "status"} data-agent-notification={toast.type} className="fixed left-1/2 top-4 z-[2300] w-[90%] -translate-x-1/2 text-center md:top-6 md:w-auto"><div className={`flex items-center justify-center gap-2 rounded-xl px-5 py-3 shadow-xl ${toast.type === 'error' ? 'bg-red-500 text-white' : 'appearance-contrast bg-gray-800 text-white dark:bg-white dark:text-gray-900'}`}>{toast.type === 'error' ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}<span className="text-sm font-medium">{t(toast.message)}</span></div></div>}
       <CloudQueueStatus hidden={Boolean(hideNav)} />
 
       <aside data-collapsed={sidebarCollapsed} data-resizing={isSidebarResizing} style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }} className={`app-sidebar relative z-40 hidden flex-shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:flex ${isSidebarResizing ? '' : 'transition-[width] duration-200'}`}>
@@ -472,16 +491,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
         style={mobileAgentDrag
           ? { left: mobileAgentDrag.left, right: 'auto', top: `${clampMobileAgentY(mobileAgentDrag.y, Boolean(hideNav)) * 100}dvh` }
           : { left: mobileAgentDock.side === 'left' ? 0 : 'auto', right: mobileAgentDock.side === 'right' ? 0 : 'auto', top: `${clampMobileAgentY(mobileAgentDock.y, Boolean(hideNav)) * 100}dvh` }}
-        className={`fixed z-[950] flex h-11 w-9 touch-none select-none items-center justify-center border border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-950/20 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden ${mobileAgentDrag ? 'cursor-grabbing rounded-xl transition-none' : `cursor-grab transition-all duration-200 hover:from-indigo-400 hover:to-violet-500 ${mobileAgentDock.side === 'left' ? 'rounded-r-xl border-l-0' : 'rounded-l-xl border-r-0'}`} -translate-y-1/2`}
+        className={`fixed z-[950] flex h-11 w-11 touch-none select-none items-center justify-center border border-indigo-300/70 bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md shadow-indigo-950/20 outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 dark:border-indigo-400/40 dark:from-indigo-600 dark:to-violet-700 md:hidden ${mobileAgentDrag ? 'cursor-grabbing rounded-xl transition-none' : `cursor-grab transition-all duration-200 hover:from-indigo-400 hover:to-violet-500 ${mobileAgentDock.side === 'left' ? 'rounded-r-xl border-l-0' : 'rounded-l-xl border-r-0'}`} -translate-y-1/2`}
       >
         <Sparkles className="h-4 w-4" aria-hidden="true" />
       </button>}
 
       {!hideNav && <>
-        {showResources && <div role="dialog" aria-modal="true" aria-label={t("资源库菜单")} className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={() => setShowResources(false)}><div className="appearance-panel appearance-overlay absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">{t("资源库")}</span><button onClick={() => setShowResources(false)} className="appearance-group mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("关闭资源库菜单")}><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-meta font-medium leading-none">{t(item.label)}</span></button>; })}</div></div></div>}
+        {showResources && <div className="fixed inset-0 z-[950] bg-black/35 backdrop-blur-[2px] md:hidden" onClick={requestResourcesClose}><div ref={resourceMenuRef} role="dialog" aria-modal="true" aria-label={t("资源库菜单")} className="appearance-panel appearance-overlay absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-3 right-3 rounded-3xl border border-gray-200 bg-white p-3 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}><div className="mb-2 flex items-center justify-between px-2"><span className="text-sm font-bold">{t("资源库")}</span><button onClick={requestResourcesClose} className="appearance-group mobile-touch flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800" aria-label={t("关闭资源库菜单")}><X className="h-[18px] w-[18px]" /></button></div><div className="grid grid-cols-2 gap-2">{resourceItems.map(item => { const ResourceIcon = item.icon; return <button key={item.id} onClick={() => navigateMobile(item.id)} className={`flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-2xl ${activeView === item.id ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><span className="flex h-6 w-6 items-center justify-center"><ResourceIcon className="h-[18px] w-[18px]" strokeWidth={1.8} /></span><span className="text-meta font-medium leading-none">{t(item.label)}</span></button>; })}</div></div></div>}
         <div className="app-mobile-nav fixed bottom-0 left-0 right-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-gray-200 bg-white/95 px-1 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 md:hidden">
           <MobileNavButton label={t("风格串")} active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
-          <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
+          <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => { if (showResources) requestResourcesClose(); else setShowResources(true); }} />
           <MobileNavButton label={t("实验室")} active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
           <MobileNavButton label={t("历史")} active={activeView === 'history' || activeView === 'footprint'} icon={icons.history} onClick={() => navigateMobile('history')} />
           <MobileNavButton label={t("设置")} active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />

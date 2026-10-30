@@ -94,7 +94,7 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
     : null;
   return <div className="content-library workspace-canvas flex min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
     <WorkspaceChrome>
-      <WorkspaceToolbar className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-1' : ''}`}>
+      <WorkspaceToolbar scrollable={false} className={`content-library-toolbar ${browse ? '!flex-nowrap !gap-1' : ''}`}>
         {!browse && <div role="tablist" aria-label={t('提示词库分区')} className="appearance-segmented flex h-11 shrink-0 gap-1 rounded-xl border border-gray-200 bg-gray-100/80 p-0.5 dark:border-gray-800 dark:bg-gray-900/80 md:h-10">
           {SECTIONS.map(([key, label], index) => <button key={key} id={`${id}-${key}-tab`} aria-controls={`${id}-${key}-panel`} type="button" role="tab" aria-selected={section === key} tabIndex={section === key ? 0 : -1}
             onClick={() => onSectionChange(key)}

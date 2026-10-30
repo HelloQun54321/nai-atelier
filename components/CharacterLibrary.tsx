@@ -841,7 +841,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
        <WorkspaceChrome>
 <WorkspaceToolbar>
          {groups.toolbar}
-         <div className="relative min-w-0 flex-1">
+         <div className="relative min-w-0 flex-1 max-md:min-w-[8.75rem]">
            <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索角色、作品或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
            {!customSource && isLoading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />}
          </div>

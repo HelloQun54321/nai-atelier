@@ -125,7 +125,7 @@ export async function saveLocalBackupConfig(config: { targetDir: string }): Prom
 export async function openLocalBackupFolder(targetPath?: string): Promise<{ success: boolean; path: string }> {
   const response = await fetch('/api/local-maintenance/backup/open-folder', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-nai-local-control': 'true' },
     body: JSON.stringify({ path: targetPath }),
   });
   const data = await response.json().catch(() => null);

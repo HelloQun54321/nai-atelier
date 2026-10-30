@@ -136,11 +136,39 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;
-}> = ({ children, className = '' }) => {
+  /** 手机放不下时整排横向滑动；自带窄屏排布的顶栏可关闭。 */
+  scrollable?: boolean;
+}> = ({ children, className = '', scrollable = true }) => {
   const surface = useRef<HTMLElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   useGlassRefraction(surface);
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    // 只标记两侧是否还有被遮住的控件，由样式在对应边缘淡出；电脑端此层不产生盒子，始终不标记。
+    const update = () => {
+      const overflow = element.scrollWidth - element.clientWidth;
+      element.toggleAttribute('data-overflow-start', overflow > 1 && element.scrollLeft > 1);
+      element.toggleAttribute('data-overflow-end', overflow > 1 && element.scrollLeft < overflow - 1);
+    };
+    update();
+    element.addEventListener('scroll', update, { passive: true });
+    // 跨过断点时此层在 contents 与滚动容器间切换，ResizeObserver 不一定触发，窗口尺寸变化也重算。
+    window.addEventListener('resize', update);
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    const observeChildren = () => { resize?.disconnect(); resize?.observe(element); Array.from(element.children).forEach(child => resize?.observe(child)); update(); };
+    observeChildren();
+    const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver(observeChildren);
+    mutation?.observe(element, { childList: true });
+    return () => {
+      element.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      resize?.disconnect();
+      mutation?.disconnect();
+    };
+  }, []);
   return <header ref={surface} className={`workspace-page-heading workspace-command-bar relative z-30 flex flex-none items-center gap-2 overflow-visible border-b border-gray-200 bg-white px-3 py-0 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 ${className}`}>
-    {children}
+    {scrollable ? <div ref={scroller} className="workspace-toolbar-scroll flex min-w-0 flex-1 items-center gap-2 self-stretch md:contents">{children}</div> : children}
   </header>;
 };
 

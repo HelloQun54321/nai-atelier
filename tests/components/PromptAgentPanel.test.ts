@@ -1222,6 +1222,62 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.getByRole('button', { name: '更多会话操作' }).parentElement!.textContent).not.toBe(before);
   });
 
+  it('电脑停靠助手不是模态窗口：层级更低的其他窗口在前景时 Esc 与焦点循环归该窗口', async () => {
+    vi.stubGlobal('innerWidth', 1280);
+    const onClose = vi.fn();
+    stubServices(); renderPanel(false, { onClose });
+    await screen.findByRole('heading', { name: '新对话' });
+    const panel = screen.getByRole('dialog', { name: '助手控制面板' });
+    expect(panel.getAttribute('aria-modal')).toBeNull();
+    // Roll 设置等窗口层级（1000）低于助手（1100），曾被助手抢走 Esc 与 Tab 圈禁。
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.className = 'fixed z-[1000]';
+    document.body.appendChild(dialog);
+    const { isTopmostModal } = await import('../../components/useModalA11y');
+    expect(isTopmostModal(dialog)).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    dialog.remove();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('手机底部助手仍是模态窗口，会话列表打开时隐藏高度把手', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    stubServices(); renderPanel(false);
+    await screen.findByRole('heading', { name: '新对话' });
+    expect(screen.getByRole('dialog', { name: '助手控制面板' }).getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('button', { name: '调整助手高度' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    // 会话列表打开时隐藏高度把手，避免 44px 命中区盖住列表顶栏按钮。
+    expect(screen.queryByRole('button', { name: '调整助手高度' })).toBeNull();
+  });
+
+  it('改名时 Esc 只取消改名，不连带关闭会话列表', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    stubServices(); renderPanel(false);
+    await screen.findByRole('heading', { name: '新对话' });
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    fireEvent.click(screen.getByRole('button', { name: '会话操作' }));
+    fireEvent.click(screen.getByRole('button', { name: '重命名' }));
+    const input = screen.getByDisplayValue('新对话');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByDisplayValue('新对话')).toBeNull();
+    expect(screen.getByRole('complementary', { name: '助手会话历史' }).className).toContain('translate-x-0');
+  });
+
+  it('手机高度把手在系统接管手势（pointercancel）后卸载拖动监听，下一次触摸不再改尺寸', async () => {
+    vi.stubGlobal('innerWidth', 390);
+    stubServices(); renderPanel(false);
+    await screen.findByRole('heading', { name: '新对话' });
+    const panel = screen.getByRole('dialog', { name: '助手控制面板' });
+    const before = panel.style.getPropertyValue('--agent-mobile-height');
+    fireEvent.pointerDown(screen.getByRole('button', { name: '调整助手高度' }), { clientY: 600, pointerId: 1 });
+    fireEvent(window, new Event('pointercancel'));
+    fireEvent(window, Object.assign(new Event('pointermove'), { clientY: 100 }));
+    expect(panel.style.getPropertyValue('--agent-mobile-height')).toBe(before);
+  });
+
   it('顶栏保留会话操作，模型入口移到发送键旁且不再重复展示', async () => {
     stubServices();
     renderPanel(false);

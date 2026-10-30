@@ -5,6 +5,7 @@ import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InspirationGallery } from '../../components/InspirationGallery';
+import { InspirationDetail } from '../../components/inspiration/InspirationDetail';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
@@ -236,6 +237,102 @@ it('目录排序只调整同父级，不改父归属或其它层级顺序', asyn
   expect(db.updateInspirationBoard).toHaveBeenCalled();
   expect(vi.mocked(db.updateInspirationBoard).mock.calls.every(([id]) => ['child', 'sibling'].includes(id))).toBe(true);
   expect(vi.mocked(db.updateInspirationBoard).mock.calls.every(([, updates]) => Object.keys(updates).join() === 'sortOrder')).toBe(true);
+});
+
+it.each([390, 1280])('宽度 %s：无匹配收藏可清除全部条件，空库与加载状态各自独立', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const item: Inspiration = { id: 'empty-state', userId: mockUser.id, title: '已有收藏', prompt: '', imageUrl: '/synthetic.png', createdAt: 1 };
+  const props = { currentUser: mockUser, inspirationsData: [item] as Inspiration[] | null, onRefresh: vi.fn(async () => {}), notify: vi.fn() };
+  const view = render(React.createElement(InspirationGallery, props));
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '无此收藏' } });
+  const empty = await screen.findByText('无匹配结果');
+  expect(empty.closest('.min-h-\\[45vh\\]')).toBeNull();
+  expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+  await screen.findByText('已有收藏');
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: [] }));
+  expect(screen.getByRole('button', { name: '加入第一条收藏' })).toBeTruthy();
+  view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: null }));
+  expect(screen.queryByRole('button', { name: '加入第一条收藏' })).toBeNull();
+  expect(screen.queryByText('无匹配结果')).toBeNull();
+});
+
+const detailProps = () => ({
+  item: { id: 'detail-regression', userId: mockUser.id, title: '合成详情', prompt: 'original prompt', negativePrompt: 'original negative', tags: ['原标签'], imageUrl: '/synthetic.png', createdAt: 1 } as Inspiration,
+  tagSuggestions: [], currentUser: mockUser, onClose: vi.fn(), onRefresh: vi.fn(async () => {}), notify: vi.fn(),
+});
+
+it('空收藏夹也显示清除筛选，恢复全部收藏时不写资料', async () => {
+  const props = detailProps();
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [props.item], onRefresh: props.onRefresh, notify: props.notify }));
+  fireEvent.click(await screen.findByRole('button', { name: '选择收藏夹：角色设计' }));
+  expect(screen.getByText('无匹配结果')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+  expect(screen.getByText('合成详情')).toBeTruthy();
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+});
+
+it.each([390, 1280])('宽度 %s：底图菜单复用锚定弹层，Esc 关闭并归还焦点', async width => {
+  vi.stubGlobal('innerWidth', width);
+  render(React.createElement(InspirationDetail, detailProps()));
+  const trigger = screen.getByRole('button', { name: '更多底图模式' });
+  trigger.focus(); fireEvent.click(trigger);
+  const menu = screen.getByRole('dialog', { name: '选择底图模式' });
+  expect(menu.classList.contains('appearance-popover')).toBe(true);
+  expect(menu.style.maxHeight).not.toBe('');
+  expect(within(menu).getByRole('button', { name: '底图：扩图' }).querySelector('.lucide-expand')).not.toBeNull();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: '选择底图模式' })).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+it('提示词复制等待真实结果，HTTP 回退失败只报告失败', async () => {
+  const props = detailProps();
+  const writeText = vi.fn(() => new Promise<void>(() => {}));
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: { writeText }, configurable: true } }));
+  const view = render(React.createElement(InspirationDetail, props));
+  fireEvent.click(within(view.container.querySelector('[data-collection-section="prompt"]') as HTMLElement).getByRole('button', { name: '复制' }));
+  expect(writeText).toHaveBeenCalledWith(props.item.prompt);
+  expect(props.notify).not.toHaveBeenCalled();
+  view.unmount();
+  vi.stubGlobal('navigator', Object.create(navigator, { clipboard: { value: undefined } }));
+  const original = Object.getOwnPropertyDescriptor(document, 'execCommand');
+  const execCommand = vi.fn(() => false);
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand });
+  try {
+    const fallback = render(React.createElement(InspirationDetail, props));
+    fireEvent.click(within(fallback.container.querySelector('[data-collection-section="prompt"]') as HTMLElement).getByRole('button', { name: '复制' }));
+    await waitFor(() => expect(props.notify).toHaveBeenCalledWith('复制失败', 'error'));
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('textarea[readonly]')).toBeNull();
+    execCommand.mockReturnValue(true); props.notify.mockClear();
+    fireEvent.click(within(fallback.container.querySelector('[data-collection-section="negative"]') as HTMLElement).getByRole('button', { name: '复制' }));
+    await waitFor(() => expect(props.notify).toHaveBeenCalledWith('负面提示词已复制'));
+  } finally {
+    if (original) Object.defineProperty(document, 'execCommand', original);
+    else Reflect.deleteProperty(document, 'execCommand');
+  }
+});
+
+it.each(['prompt', 'negativePrompt', 'tags'] as const)('%s：保存失败保留文字草稿、回滚即时标签，文字可重试保存', async field => {
+  const props = detailProps();
+  vi.mocked(db.updateInspiration).mockRejectedValueOnce(new Error('合成保存失败'));
+  render(React.createElement(InspirationDetail, props));
+  if (field === 'tags') fireEvent.click(screen.getByTitle('删除 #原标签'));
+  else {
+    const input = screen.getByLabelText(field === 'prompt' ? '提示词' : '负面提示词');
+    fireEvent.change(input, { target: { value: '未保存修改' } }); fireEvent.blur(input);
+  }
+  await waitFor(() => expect(props.notify).toHaveBeenCalledWith('合成保存失败', 'error'));
+  if (field === 'tags') expect(screen.getByText('#原标签')).toBeTruthy();
+  else expect((screen.getByLabelText(field === 'prompt' ? '提示词' : '负面提示词') as HTMLTextAreaElement).value).toBe('未保存修改');
+  expect(props.onRefresh).not.toHaveBeenCalled();
+  if (field !== 'tags') {
+    vi.mocked(db.updateInspiration).mockResolvedValueOnce(undefined);
+    fireEvent.blur(screen.getByLabelText(field === 'prompt' ? '提示词' : '负面提示词'));
+    await waitFor(() => expect(props.onRefresh).toHaveBeenCalledOnce());
+    expect(db.updateInspiration).toHaveBeenLastCalledWith(props.item.id, { [field]: '未保存修改' });
+  }
 });
 
 it('全部收藏仍在列表中，打开、切换和关闭详情只重渲染发生选择变化的封面', async () => {
@@ -760,7 +857,7 @@ it.each([390, 1280])('宽度 %s：旧来源 Tag 不进入卡片、搜索或标�
   expect(screen.queryByText('Pixiv 收藏图')).toBeNull();
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
   fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '生成历史' } });
-  await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('无匹配结果')).toBeTruthy());
 });
 
 it('收藏搜索不再匹配备注；详情采用固定顺序', async () => {
@@ -772,7 +869,7 @@ it('收藏搜索不再匹配备注；详情采用固定顺序', async () => {
   expect(sections()).toEqual(['tags', 'prompt', 'negative', 'params']);
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));
   fireEvent.change(screen.getByPlaceholderText('搜索标题、提示词或标签…'), { target: { value: '自动收录' } });
-  await waitFor(() => expect(screen.getByText('这里还没有匹配的收藏')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('无匹配结果')).toBeTruthy());
 });
 
 describe('InspirationGallery 来源筛选与未整理心智', () => {

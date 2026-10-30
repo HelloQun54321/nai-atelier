@@ -566,3 +566,58 @@ test('取消全部队列的 HTTP 入口只接受当前 Key 的明确请求', asy
   assert.equal(after.data.total, 0);
   assert.equal(after.data.busy, false);
 });
+
+for (const managed of [false, true]) test(`保存中取消全部后，收尾释放并交接且保留取消墓碑（托管=${managed}）`, () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  tasks.reserve('key', owner, 2);
+  if (managed) tasks.manage('key', owner);
+  tasks.enter('key', owner)();
+  assert.equal(tasks.current('key').phase, 'saving');
+  tasks.cancelAll('key');
+  tasks.pause('key', true);
+  tasks.enqueue('key', other, 'end');
+  tasks.cancel('key', owner); tasks.cancel('key', owner);
+  assert.equal(tasks.current('key').token, owner);
+  assert.equal(tasks.status('key', other).position, 1);
+  assert.throws(() => tasks.reserve('key', 'c'.repeat(32)), { code: 'generation_busy' });
+  tasks.cancel('key', owner, true);
+  assert.equal(tasks.current('key').token, other);
+  assert.deepEqual(tasks.status('key', other), { position: 0, paused: true, waitMs: 0 });
+  assert.equal(tasks.snapshot('key').completed, 0);
+  assert.throws(() => tasks.enter('key', other), { code: 'generation_paused' });
+  tasks.cancel('key', owner, true);
+  assert.equal(tasks.current('key').token, other);
+  assert.throws(() => tasks.status('key', owner), { code: 'generation_cancelled' });
+});
+
+test('取消收尾确认仍不提前释放在途请求，公共清理结束才交接', () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  tasks.reserve('key', owner, 2); tasks.manage('key', owner);
+  const finish = tasks.enter('key', owner);
+  tasks.cancelAll('key'); tasks.enqueue('key', other, 'end');
+  tasks.cancel('key', owner, true);
+  assert.equal(tasks.current('key').token, owner);
+  assert.equal(tasks.status('key', other).position, 1);
+  finish();
+  assert.equal(tasks.status('key', other).position, 0);
+  assert.equal(tasks.snapshot('key').completed, 0);
+});
+
+test('浏览器保存完成 PUT 在取消墓碑存在时释放租约，不记完成且不误放普通心跳', async () => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  await runTask(tasks, 'POST', owner);
+  const key = tasks.tasks.keys().next().value;
+  tasks.enter(key, owner)(); tasks.cancelAll(key);
+  assert.equal((await runTask(tasks, 'PUT', owner)).data.code, 'generation_cancelled');
+  assert.equal((await runTask(tasks, 'PUT', owner, undefined, undefined, 0)).data.code, 'generation_cancelled');
+  assert.equal((await runTask(tasks, 'PUT', owner, undefined, undefined, 2)).data.code, 'generation_cancelled');
+  assert.equal((await runTask(tasks, 'DELETE', owner)).status, 200);
+  assert.equal((await runTask(tasks, 'POST', other)).data.code, 'generation_busy');
+  const result = await runTask(tasks, 'PUT', owner, undefined, undefined, 1);
+  assert.equal(result.status, 409); assert.equal(result.data.code, 'generation_cancelled');
+  assert.equal(tasks.current(key), undefined);
+  assert.equal(tasks.snapshot(key).completed, 0);
+  assert.equal((await runTask(tasks, 'POST', other)).status, 200);
+  await runTask(tasks, 'DELETE', owner);
+  assert.equal(tasks.current(key).token, other);
+});

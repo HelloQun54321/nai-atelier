@@ -145,7 +145,7 @@ describe('全局外观覆盖审计', () => {
       PromptAgentPanel: 'showSessions', PromptAgentSettings: 'agent-settings-subview',
       AgentModelControl: 'agent-model-popover', AgentPermissionSelect: 'z-[1300]', AgentContextRing: 'agent-context-tooltip',
       TagAutocompleteTextarea: 'touch-pan-y', TagSelectionBar: 'pointer-events-auto',
-      'inspiration/InspirationDetail': 'bottom-12', InspirationGallery: 'hover-reveal-md absolute right-1',
+      InspirationGallery: 'hover-reveal-md absolute right-1',
       ImageEditCanvas: 'top-2 right-2', GenHistory: 'mobile-safe-bottom fixed', Layout: 'absolute bottom-',
     };
     for (const [file, token] of Object.entries(expected)) {
@@ -153,6 +153,11 @@ describe('全局外观覆盖审计', () => {
       expect(matches.length, file).toBe(1);
       expect(matches[0].text, file).toContain('appearance-panel appearance-overlay');
     }
+    // 收藏详情的底图菜单改用共用锚定浮层，承托由浮层原语声明，不再保留手写遮罩菜单。
+    const inspirationDetail = sources.find(item => item.file.replaceAll('\\', '/') === 'components/inspiration/InspirationDetail.tsx')!.text;
+    expect(inspirationDetail).toContain('AnchoredToolbarPopover');
+    expect(inspirationDetail).not.toContain('fixed inset-0 z-20');
+    expect(classes.filter(item => item.file === 'components/ToolbarPopover.tsx' && item.text.includes('appearance-panel appearance-popover'))).toHaveLength(1);
     const agentMenus = classes.filter(item => item.file === 'components/PromptAgentPanel.tsx' && item.text.includes('appearance-panel absolute right-'));
     expect(agentMenus).toEqual([]);
     const agentSettingsPanels = classes.filter(item => item.file === 'components/PromptAgentSettings.tsx' && item.text.includes('appearance-panel'));

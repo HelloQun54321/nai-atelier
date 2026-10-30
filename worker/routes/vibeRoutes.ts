@@ -178,98 +178,144 @@ function mapCharacterReferenceAsset(row: any) {
   };
 }
 
+class VibeImportValidationError extends Error {}
+
+// 仅把纯解析错误标为客户端错误；哈希计算和 D1/R2 异常仍由服务端处理。
+function parseVibeImportImage(value: string) {
+  try { return parseImageData(value); }
+  catch (cause) { throw new VibeImportValidationError(cause instanceof Error ? cause.message : 'Vibe 图片无效'); }
+}
+
+function decodeVibeImportBase64(value: string) {
+  try { return base64ToBytes(value); }
+  catch { throw new VibeImportValidationError('Vibe Base64 数据无效'); }
+}
+
 async function prepareVibeDocument(document: any) {
   if (document?.identifier !== 'novelai-vibe-transfer' || document.version !== 1 || !document.encodings || Array.isArray(document.encodings)
-    || typeof document.encodings !== 'object' || !['image', 'encoding', undefined].includes(document.type)) throw new Error('不是有效的 .naiv4vibe 文件');
+    || typeof document.encodings !== 'object' || !['image', 'encoding', undefined].includes(document.type)) throw new VibeImportValidationError('不是有效的 .naiv4vibe 文件');
   const image = document.image ? String(document.image).replace(/^data:image\/[^;]+;base64,/i, '') : '';
   let original: ReturnType<typeof parseImageData> | null = null;
   if (image) {
-    const bytes = base64ToBytes(image);
+    const bytes = decodeVibeImportBase64(image);
     const format = bytes[0] === 0x89 ? 'png' : bytes[0] === 0xff ? 'jpeg' : 'webp';
-    original = parseImageData(`data:image/${format};base64,${image}`);
+    original = parseVibeImportImage(`data:image/${format};base64,${image}`);
   }
-  const thumbnail = document.thumbnail ? parseImageData(String(document.thumbnail)) : null;
-  if (thumbnail && thumbnail.bytes.length > 2 * 1024 * 1024) throw new Error('Vibe 文件中的缩略图过大');
+  const thumbnail = document.thumbnail ? parseVibeImportImage(String(document.thumbnail)) : null;
+  if (thumbnail && thumbnail.bytes.length > 2 * 1024 * 1024) throw new VibeImportValidationError('Vibe 文件中的缩略图过大');
   const declared = String(document.id || '').toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(declared)) throw new Error('Vibe 文件缺少有效的图片标识');
+  if (!/^[a-f0-9]{64}$/.test(declared)) throw new VibeImportValidationError('Vibe 文件缺少有效的图片标识');
   const sourceHash = original ? await sha256Hex(original.bytes) : declared;
-  if (original && ![sourceHash, await hashVibeText(image), await hashVibeText(String(document.image))].includes(declared)) throw new Error('Vibe 文件的原图哈希不匹配');
+  if (original && ![sourceHash, await hashVibeText(image), await hashVibeText(String(document.image))].includes(declared)) throw new VibeImportValidationError('Vibe 文件的原图哈希不匹配');
   const encodings: { model: string; modelKey: string; information: number; known: boolean; parameters: Record<string, unknown> | null; bytes: Uint8Array; hash: string; text: string }[] = [];
   for (const [modelKey, variants] of Object.entries(document.encodings as Record<string, any>)) {
-    if (!variants || typeof variants !== 'object' || Array.isArray(variants)) throw new Error('Vibe 编码列表无效');
+    if (!variants || typeof variants !== 'object' || Array.isArray(variants)) throw new VibeImportValidationError('Vibe 编码列表无效');
     for (const variant of Object.values(variants) as any[]) {
       const text = variant?.encoding;
-      if (typeof text !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) throw new Error('Vibe 编码数据无效');
-      const bytes = base64ToBytes(text);
-      if (bytes.length < 64 || bytes.length > 12 * 1024 * 1024) throw new Error('Vibe 编码大小异常');
+      if (typeof text !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) throw new VibeImportValidationError('Vibe 编码数据无效');
+      const bytes = decodeVibeImportBase64(text);
+      if (bytes.length < 64 || bytes.length > 12 * 1024 * 1024) throw new VibeImportValidationError('Vibe 编码大小异常');
       const parameters = variant.params ?? null;
-      if (parameters !== null && (typeof parameters !== 'object' || Array.isArray(parameters))) throw new Error('Vibe 编码参数无效');
+      if (parameters !== null && (typeof parameters !== 'object' || Array.isArray(parameters))) throw new VibeImportValidationError('Vibe 编码参数无效');
       const known = parameters?.information_extracted != null;
       const model = VIBE_MODELS[modelKey] || modelKey;
       const information = known ? parameters.information_extracted : document.importInfo?.information_extracted ?? defaultVibeInformation(model);
-      if (typeof information !== 'number' || !Number.isFinite(information) || information < 0 || information > 1) throw new Error('信息提取量必须在 0 到 1 之间');
+      if (typeof information !== 'number' || !Number.isFinite(information) || information < 0 || information > 1) throw new VibeImportValidationError('信息提取量必须在 0 到 1 之间');
       encodings.push({ model, modelKey, information, known, parameters, bytes, hash: await sha256Hex(bytes), text });
     }
   }
-  if (!encodings.length) throw new Error('Vibe 文件中没有可用编码');
-  if (document.type === 'encoding' && await hashVibeText(encodings[0].text) !== declared) throw new Error('Vibe 文件的编码哈希不匹配');
+  if (!encodings.length) throw new VibeImportValidationError('Vibe 文件中没有可用编码');
+  if (document.type === 'encoding' && await hashVibeText(encodings[0].text) !== declared) throw new VibeImportValidationError('Vibe 文件的编码哈希不匹配');
   const strength = document.importInfo?.strength ?? 0.6;
-  if (typeof strength !== 'number' || !Number.isFinite(strength)) throw new Error('Vibe 强度必须是有限数值');
+  if (typeof strength !== 'number' || !Number.isFinite(strength)) throw new VibeImportValidationError('Vibe 强度必须是有限数值');
   return { document, original, thumbnail, sourceHash, encodings, strength };
 }
 
-async function storeVibeDocument(db: D1Database, env: Env, prepared: Awaited<ReturnType<typeof prepareVibeDocument>>) {
-  const { document, original, thumbnail, sourceHash, encodings, strength } = prepared;
-  let asset = await db.prepare('SELECT * FROM vibe_assets WHERE source_hash = ?').bind(sourceHash).first<any>();
-  const id = asset?.id || crypto.randomUUID(), now = Date.now();
+async function storeVibeDocuments(db: D1Database, env: Env, preparedDocuments: Awaited<ReturnType<typeof prepareVibeDocument>>[]) {
+  const assets = new Map<string, any>();
+  const encodingsByAsset = new Map<string, any[]>();
   const statements = [];
-  const existing = asset ? (await db.prepare('SELECT * FROM vibe_encodings_all WHERE vibe_id = ?').bind(id).all<any>()).results : [];
-  let imported = 0;
-  for (const item of encodings) {
-    const parameterKey = vibeParameterKey(item.parameters);
-    const previous = existing.find(row => mapVibeEncoding(row).model === item.model && vibeParameterKey(mapVibeEncoding(row).parameters) === parameterKey);
-    if (previous) {
-      if (previous.encoding_hash !== item.hash) {
-        throw new Error('已有 Vibe 编码与导入文件冲突，已保留原编码');
+  const uploads: { key: string; bytes: Uint8Array; contentType: string }[] = [];
+  const entries = [];
+  // 预检既有数据与本包暂存数据，直到末项通过都不写 D1/R2。
+  for (const prepared of preparedDocuments) {
+    const { document, original, thumbnail, sourceHash, encodings, strength } = prepared;
+    const asset = assets.get(sourceHash) || await db.prepare('SELECT * FROM vibe_assets WHERE source_hash = ?').bind(sourceHash).first<any>();
+    const id = asset?.id || crypto.randomUUID(), now = Date.now();
+    const entryStatements = [];
+    const existing = encodingsByAsset.get(id) || (asset ? (await db.prepare('SELECT * FROM vibe_encodings_all WHERE vibe_id = ?').bind(id).all<any>()).results : []);
+    encodingsByAsset.set(id, existing);
+    let imported = 0;
+    for (const item of encodings) {
+      const parameterKey = vibeParameterKey(item.parameters);
+      const previous = existing.find(row => mapVibeEncoding(row).model === item.model && vibeParameterKey(mapVibeEncoding(row).parameters) === parameterKey);
+      if (previous) {
+        if (previous.encoding_hash !== item.hash) {
+          throw new VibeImportValidationError('已有 Vibe 编码与导入文件冲突，已保留原编码');
+        }
+        continue;
       }
-      continue;
+      const encodingId = crypto.randomUUID(), key = `vibes/encodings/${id}/${encodingId}.bin`;
+      uploads.push({ key, bytes: item.bytes, contentType: 'application/octet-stream' });
+      entryStatements.push(db.prepare(`INSERT INTO vibe_encoding_variants
+        (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known, parameter_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(encodingId, id, item.model, item.modelKey, item.information, key, item.hash, now,
+        item.parameters === null ? null : JSON.stringify(item.parameters), item.known ? 1 : 0, parameterKey));
+      existing.push({ id: encodingId, model: item.model, information_extracted: item.information, encoding_hash: item.hash,
+        parameters: item.parameters === null ? null : JSON.stringify(item.parameters), information_known: item.known ? 1 : 0 });
+      imported++;
     }
-    const encodingId = crypto.randomUUID(), key = `vibes/encodings/${id}/${encodingId}.bin`;
-    await env.BUCKET!.put(key, exactArrayBuffer(item.bytes), { httpMetadata: { contentType: 'application/octet-stream' } });
-    statements.push(db.prepare(`INSERT INTO vibe_encoding_variants
-      (id, vibe_id, model, model_key, information_extracted, encoding_key, encoding_hash, created_at, parameters, information_known, parameter_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(encodingId, id, item.model, item.modelKey, item.information, key, item.hash, now,
-      item.parameters === null ? null : JSON.stringify(item.parameters), item.known ? 1 : 0, parameterKey));
-    existing.push({ id: encodingId, model: item.model, information_extracted: item.information, encoding_hash: item.hash,
-      parameters: item.parameters === null ? null : JSON.stringify(item.parameters), information_known: item.known ? 1 : 0 });
-    imported++;
+    let originalKey = asset?.original_key || null, thumbnailKey = asset?.thumbnail_key || null;
+    if (original && !originalKey) {
+      originalKey = `vibes/originals/${id}-${crypto.randomUUID()}.${original.format}`;
+      uploads.push({ key: originalKey, bytes: original.bytes, contentType: original.contentType });
+    }
+    if (thumbnail && !thumbnailKey) {
+      thumbnailKey = `vibes/thumbnails/${id}-${crypto.randomUUID()}.${thumbnail.format}`;
+      uploads.push({ key: thumbnailKey, bytes: thumbnail.bytes, contentType: thumbnail.contentType });
+    }
+    if (!asset) entryStatements.unshift(db.prepare(`INSERT INTO vibe_assets
+      (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type, default_strength, archived, created_at, updated_at, source_type, import_info)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`).bind(id, String(document.name || `Vibe ${sourceHash.slice(0, 8)}`).slice(0, 100),
+      sourceHash, originalKey, original?.contentType || null, thumbnailKey, thumbnail?.contentType || null, strength, now, now,
+      document.type || (original ? 'image' : 'encoding'), JSON.stringify(document.importInfo || {})));
+    else entryStatements.push(db.prepare(`UPDATE vibe_assets SET archived = 0, updated_at = ?, original_key = ?, original_type = COALESCE(original_type, ?),
+      thumbnail_key = ?, thumbnail_type = COALESCE(thumbnail_type, ?) WHERE id = ?`).bind(now, originalKey, original?.contentType || null, thumbnailKey, thumbnail?.contentType || null, id));
+    statements.push(...entryStatements);
+    assets.set(sourceHash, { ...asset, id, original_key: originalKey, thumbnail_key: thumbnailKey });
+    entries.push({ id, document, strength, imported });
   }
-  let originalKey = asset?.original_key || null, thumbnailKey = asset?.thumbnail_key || null;
-  if (original && !originalKey) {
-    originalKey = `vibes/originals/${id}.${original.format}`;
-    await env.BUCKET!.put(originalKey, exactArrayBuffer(original.bytes), { httpMetadata: { contentType: original.contentType } });
+
+  const attemptedKeys: string[] = [];
+  try {
+    for (const upload of uploads) {
+      // put 可能已落盘才断连；唯一的新键在发起前登记，补偿不碰旧对象。
+      attemptedKeys.push(upload.key);
+      await env.BUCKET!.put(upload.key, exactArrayBuffer(upload.bytes), { httpMetadata: { contentType: upload.contentType } });
+    }
+    // D1 batch 在事务内提交整包，任意条目失败均回滚。
+    await db.batch(statements);
+  } catch (cause) {
+    for (const key of attemptedKeys) {
+      try { await env.BUCKET!.delete(key); }
+      catch (cleanupCause) { console.error('Vibe 导入失败后的新对象清理失败', key, cleanupCause); }
+    }
+    throw cause;
   }
-  if (thumbnail && !thumbnailKey) {
-    thumbnailKey = `vibes/thumbnails/${id}.${thumbnail.format}`;
-    await env.BUCKET!.put(thumbnailKey, exactArrayBuffer(thumbnail.bytes), { httpMetadata: { contentType: thumbnail.contentType } });
+  // 已提交后的读取失败不能清理仍被 D1 引用的文件。
+  const results = [];
+  for (const { id, document, strength, imported } of entries) {
+    const asset = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(id).first<any>();
+    const item = await mapVibeAsset(db, asset);
+    const info = document.importInfo || {};
+    const requestedParameters = { information_extracted: info.information_extracted, ...(info.mask ? { mask: info.mask } : {}) };
+    const encoding = item.encodings.find((variant: any) => variant.model === vibeBaseModel(info.model)
+      && vibeParameterKey(variant.parameters) === vibeParameterKey(requestedParameters))
+      || item.encodings.find((variant: any) => variant.model === vibeBaseModel(info.model)) || item.encodings[0];
+    results.push({ item, imported, slot: { vibeId: id, vibeName: item.name, encodingId: encoding.id,
+      informationExtracted: encoding.informationExtracted, informationKnown: encoding.informationKnown, strength } });
   }
-  if (!asset) statements.unshift(db.prepare(`INSERT INTO vibe_assets
-    (id, name, source_hash, original_key, original_type, thumbnail_key, thumbnail_type, default_strength, archived, created_at, updated_at, source_type, import_info)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`).bind(id, String(document.name || `Vibe ${sourceHash.slice(0, 8)}`).slice(0, 100),
-    sourceHash, originalKey, original?.contentType || null, thumbnailKey, thumbnail?.contentType || null, strength, now, now,
-    document.type || (original ? 'image' : 'encoding'), JSON.stringify(document.importInfo || {})));
-  else statements.push(db.prepare(`UPDATE vibe_assets SET archived = 0, updated_at = ?, original_key = ?, original_type = COALESCE(original_type, ?),
-    thumbnail_key = ?, thumbnail_type = COALESCE(thumbnail_type, ?) WHERE id = ?`).bind(now, originalKey, original?.contentType || null, thumbnailKey, thumbnail?.contentType || null, id));
-  await db.batch(statements);
-  asset = await db.prepare('SELECT * FROM vibe_assets WHERE id = ?').bind(id).first<any>();
-  const item = await mapVibeAsset(db, asset);
-  const info = document.importInfo || {};
-  const requestedParameters = { information_extracted: info.information_extracted, ...(info.mask ? { mask: info.mask } : {}) };
-  const encoding = item.encodings.find((variant: any) => variant.model === vibeBaseModel(info.model)
-    && vibeParameterKey(variant.parameters) === vibeParameterKey(requestedParameters))
-    || item.encodings.find((variant: any) => variant.model === vibeBaseModel(info.model)) || item.encodings[0];
-  return { item, imported, slot: { vibeId: id, vibeName: item.name, encodingId: encoding.id,
-    informationExtracted: encoding.informationExtracted, informationKnown: encoding.informationKnown, strength } };
+  return results;
 }
 
 async function exportVibeDocuments(db: D1Database, env: Env, id: string, selection?: any) {
@@ -643,20 +689,29 @@ export async function handleVibeRoute(ctx: RouteContext): Promise<Response | nul
     }
 
     if (path === '/api/vibes/import' && method === 'POST') {
-      const body = await request.json() as any;
       try {
-        const document = typeof body.fileText === 'string' ? JSON.parse(body.fileText) : body.document;
+        let body: any, document: any;
+        try {
+          body = await request.json();
+          document = typeof body?.fileText === 'string' ? JSON.parse(body.fileText) : body?.document;
+        } catch (cause) {
+          if (cause instanceof SyntaxError) throw new VibeImportValidationError('Vibe 文件不是有效的 JSON');
+          throw cause;
+        }
         const bundle = document?.identifier === 'novelai-vibe-transfer-bundle';
         if (bundle && (document.version !== 1 || !Array.isArray(document.vibes) || !document.vibes.length || document.vibes.length > 16)) return error('Vibe 组合必须包含 1 到 16 项', 400);
         // 整份文件先校验；损坏的末项不能让前面的资料被部分导入。
         const prepared = await Promise.all((bundle ? document.vibes : [document]).map(prepareVibeDocument));
-        const results = [];
-        for (const entry of prepared) results.push(await storeVibeDocument(db, env, entry));
+        const results = await storeVibeDocuments(db, env, prepared);
         const slots = results.map(result => result.slot);
         return json({ item: results[0].item, items: results.map(result => result.item), slots, bundle,
           normalizeStrengths: typeof document.normalizeStrengths === 'boolean' ? document.normalizeStrengths : slots.reduce((sum, slot) => sum + Math.abs(slot.strength), 0) <= 1.01,
           imported: results.reduce((sum, result) => sum + result.imported, 0) });
-      } catch (cause) { return error(cause instanceof Error ? cause.message : 'Vibe 文件无效', 400); }
+      } catch (cause) {
+        if (cause instanceof VibeImportValidationError) return error(cause.message, 400);
+        console.error('Vibe 文件导入失败', cause);
+        return error('请求处理失败，请查看本地服务日志', 500);
+      }
     }
 
     if (path === '/api/vibes/export' && method === 'POST') {

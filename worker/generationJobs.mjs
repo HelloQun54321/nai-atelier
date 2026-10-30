@@ -207,13 +207,14 @@ export class GenerationJobs {
         while (this.tasks.current(job.key)?.token === job.token && this.tasks.current(job.key).inFlight) await this.sleep(50);
         job.cleanupError ||= this.readCleanup(job);
         if (saveError) throw saveError;
+        // 保存已落定，后续续租/取消异常不能再冒充历史保存失败。
+        job.state = 'waiting';
         job.historyIds.push(item.id);
         job.lastSavedItem = item;
         job.preview = undefined;
         job.previewVersion++;
         this.notify(job);
         this.tasks.renew(job.key, job.token, job.historyIds.length);
-        job.state = 'waiting';
       }
       job.state = job.cancelled ? 'cancelled' : 'succeeded';
       if (job.cancelled) { job.error = '已取消后续生成，已提交的图片仍已保存'; job.code = 'generation_cancelled'; }
@@ -225,7 +226,7 @@ export class GenerationJobs {
       if (error.preview) { job.preview = error.preview; job.previewVersion++; }
     } finally {
       // 公共清理可能晚于图片交付；不要因任务结束抢先放开它仍持有的单并发锁。
-      if (job.cancelled) this.tasks.cancel(job.key, job.token); else this.tasks.release(job.key, job.token);
+      if (job.cancelled) this.tasks.cancel(job.key, job.token, true); else this.tasks.release(job.key, job.token);
       job.finishedAt = this.now();
       job.descriptor = undefined;
       job.sequence = undefined;

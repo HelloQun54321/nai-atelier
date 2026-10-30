@@ -1,6 +1,6 @@
 import type { PromptToolbarSlot } from './PromptLibraryAccess';
 import { t, useLanguage } from '../services/i18n';
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
@@ -94,6 +94,17 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   useLanguage();
   const promptClearActionSlotRef = useRef<HTMLSpanElement>(null);
   const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
+  const [brushSizeValue, setBrushSizeValue] = useState(String(brushSize));
+  const [minimumContextValue, setMinimumContextValue] = useState(String(minimumContextArea));
+  useEffect(() => { setBrushSizeValue(String(brushSize)); }, [brushSize]);
+  useEffect(() => { setMinimumContextValue(String(minimumContextArea)); }, [minimumContextArea]);
+  const commitNumericDraft = (text: string, value: number, min: number, max: number, setText: (text: string) => void, onChange: (value: number) => void) => {
+    const number = Number(text);
+    if (!text.trim() || !Number.isFinite(number)) { setText(String(value)); return; }
+    const next = Math.max(min, Math.min(max, Math.trunc(number)));
+    setText(String(next));
+    if (next !== value) onChange(next);
+  };
   const sectionText = mergePromptSections(selectableParams._promptSections);
   const sectionMatches = Boolean(sectionText && (draft.prompt === sectionText || draft.prompt.endsWith(', ' + sectionText)));
   const basePrompt = sectionMatches ? draft.prompt.slice(0, -sectionText.length).replace(/,\s*$/, '') : draft.prompt;
@@ -136,8 +147,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 step="4"
                 aria-label={t("笔刷大小数值")}
                 disabled={isBusy || safeMode}
-                value={brushSize}
-                onChange={event => onBrushSizeChange(Math.max(8, Math.min(512, parseInt(event.target.value, 10) || 8)))}
+                value={brushSizeValue}
+                onChange={event => setBrushSizeValue(event.target.value)}
+                onBlur={() => commitNumericDraft(brushSizeValue, brushSize, 8, 512, setBrushSizeValue, onBrushSizeChange)}
+                onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
                 className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-indigo-600 outline-none transition focus:border-indigo-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-indigo-400 dark:focus:border-indigo-400 dark:focus:bg-gray-900"
               />
               <span className="font-mono text-xs text-gray-400">px</span>
@@ -453,8 +466,10 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                       step="8"
                       aria-label={t("最小上下文数值")}
                       disabled={isBusy || safeMode}
-                      value={minimumContextArea}
-                      onChange={event => onMinimumContextAreaChange(Math.max(32, Math.min(96, parseInt(event.target.value, 10) || 32)))}
+                      value={minimumContextValue}
+                      onChange={event => setMinimumContextValue(event.target.value)}
+                      onBlur={() => commitNumericDraft(minimumContextValue, minimumContextArea, 32, 96, setMinimumContextValue, onMinimumContextAreaChange)}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
                       className="w-16 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-xs font-semibold text-amber-600 outline-none transition focus:border-amber-500 focus:bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-amber-400 dark:focus:border-amber-400 dark:focus:bg-gray-900"
                     />
                     <span className="font-mono text-xs text-gray-400">px</span>

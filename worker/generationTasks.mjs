@@ -153,17 +153,18 @@ export class GenerationTasks {
     return { cancelled: tokens.length, ...this.snapshot(key) };
   }
   // 明确取消某个 token；未知 token 报过期且不建立墓碑，不影响其他任务。在途与待保存图片不提前放行。
-  cancel(key, token) {
+  cancel(key, token, settled = false) {
     this.prune();
     const paused = Boolean(this.queues.get(key)?.paused);
-    if (this.isCancelled(key, token)) return { cancelled: true, position: 0, paused };
     const task = this.tasks.get(key);
     if (task?.token === token) {
-      this.rememberCancelled(key, token);
+      if (!this.isCancelled(key, token)) this.rememberCancelled(key, token);
       task.cancelled = true;
-      if (!task.inFlight && task.phase !== 'saving') { this.tasks.delete(key); this.promote(key); }
+      // 重复取消不等于保存完成；只有执行方确认保存落定后才释放 saving，墓碑不阻断这次收尾。
+      if (!task.inFlight && (settled || task.phase !== 'saving')) { this.tasks.delete(key); this.promote(key); }
       return { cancelled: true, position: 0, paused };
     }
+    if (this.isCancelled(key, token)) return { cancelled: true, position: 0, paused };
     const queue = this.waiting.get(key);
     const index = queue?.findIndex(candidate => candidate.token === token) ?? -1;
     if (index >= 0) {
@@ -175,6 +176,11 @@ export class GenerationTasks {
     throw expiredFailure();
   }
   renew(key, token, completed, prepare = false) {
+    if (completed !== undefined && this.isCancelled(key, token)) {
+      const task = this.current(key);
+      // 浏览器保存确认也能收尾已取消的租约；心跳、旧进度和非法进度不能放行或增加记账。
+      if (task?.token === token && Number.isSafeInteger(completed) && completed > task.completed && completed <= task.count) this.cancel(key, token, true);
+    }
     const status = this.status(key, token);
     const task = status.position === 0 ? this.owned(key, token) : this.waiting.get(key)[status.position - 1];
     if (completed !== undefined) {
