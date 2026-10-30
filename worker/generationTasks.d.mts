@@ -22,8 +22,8 @@ export class GenerationTasks {
   owned(key: string, token: string): GenerationTaskLease;
   /** 标记后台托管：无浏览器心跳也不被清理。 */
   manage(key: string, token: string): GenerationTaskLease;
-  /** 明确取消：在途/待保存不提前放行；未知 token 抛过期且不建立墓碑。 */
-  cancel(key: string, token: string): GenerationCancelResult;
+  /** 明确取消：在途/待保存不提前放行；settled 仅供执行方在保存成功或失败已落定后收尾，保留墓碑。 */
+  cancel(key: string, token: string, settled?: boolean): GenerationCancelResult;
   /** 取消当前执行位与全部等待项，并返回取消数及队列快照。 */
   cancelAll(key: string): { cancelled: number } & GenerationQueueSnapshot;
   renew(key: string, token: string, completed?: number, prepare?: boolean): { position: number; paused: boolean; waitMs?: number };

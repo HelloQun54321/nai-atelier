@@ -192,6 +192,69 @@ it('手机底栏仍是五个入口，资源面板可达提示词库与原有资�
   expect(within(resources).getByRole('button', { name: 'AITag' })).toBeTruthy();
 });
 
+const prepareMobileHistory = () => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+  window.history.replaceState({ source: 'synthetic-shell' }, '');
+  vi.spyOn(window.history, 'back').mockImplementation(() => {});
+};
+const returnToMobileState = (state: unknown) => {
+  window.history.replaceState(state, '');
+  fireEvent(window, new PopStateEvent('popstate', { state }));
+};
+
+it('资源菜单注册独立返回层，系统返回仅关闭菜单并保留底层历史', () => {
+  prepareMobileHistory();
+  const base = window.history.state;
+  const { container } = renderLayout();
+  const nav = within(container.querySelector('.app-mobile-nav') as HTMLElement);
+  fireEvent.click(nav.getByRole('button', { name: '资源库' }));
+  expect(window.history.state.__naiMobileLayers).toHaveLength(1);
+  expect(screen.getByRole('dialog', { name: '资源库菜单' })).toBeTruthy();
+  returnToMobileState(base);
+  expect(screen.queryByRole('dialog', { name: '资源库菜单' })).toBeNull();
+  expect(window.history.state).toEqual(base);
+  expect(window.history.back).not.toHaveBeenCalled();
+});
+
+it('资源菜单移入焦点并圈禁 Tab，Esc 退一层后归还原触发按钮', () => {
+  prepareMobileHistory();
+  const base = window.history.state;
+  const { container } = renderLayout();
+  const trigger = within(container.querySelector('.app-mobile-nav') as HTMLElement).getByRole('button', { name: '资源库' });
+  trigger.focus(); fireEvent.click(trigger);
+  const dialog = screen.getByRole('dialog', { name: '资源库菜单' });
+  const buttons = within(dialog).getAllByRole('button');
+  expect(document.activeElement).toBe(buttons[0]);
+  buttons.at(-1)!.focus(); fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(buttons[0]);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(window.history.back).toHaveBeenCalledOnce();
+  returnToMobileState(base);
+  expect(screen.queryByRole('dialog', { name: '资源库菜单' })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+it('Layout 更新时五个手机导航按钮保持节点身份、焦点及后续点击', () => {
+  const props = createProps();
+  const view = render(<Layout {...props} />);
+  const nav = view.container.querySelector('.app-mobile-nav') as HTMLElement;
+  const buttons = within(nav).getAllByRole('button');
+  buttons[2].focus();
+  view.rerender(<Layout {...props} safeMode />);
+  expect(within(nav).getAllByRole('button')).toEqual(buttons);
+  expect(document.activeElement).toBe(buttons[2]);
+  fireEvent.click(buttons[2]);
+  expect(props.onNavigate).toHaveBeenCalledWith('playground');
+});
+
+it('手机浮动助手的宽高命中区域均至少为 44px', () => {
+  renderLayout();
+  const trigger = screen.getByRole('button', { name: '打开创作助手' });
+  expect(trigger.classList.contains('h-11')).toBe(true);
+  expect(trigger.classList.contains('w-11')).toBe(true);
+});
+
 it('反复收展保留主工作区与菜单文字节点，折叠子菜单退出交互，宽度仍连续过渡', () => {
   localStorage.setItem('nai_sidebar_width', '260');
   localStorage.setItem('nai_sidebar_external_gallery_expanded', 'true');

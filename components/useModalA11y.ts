@@ -19,15 +19,20 @@ const isExposed = (element: HTMLElement) => {
   return style.display !== 'none' && style.visibility !== 'hidden';
 };
 
+const exposedModals = () => Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]')).filter(dialog => {
+  for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
+    if (!isExposed(node)) return false;
+  }
+  return true;
+});
+
+/** 非模态面板（如电脑端停靠助手）只在没有其他可见模态窗口时处理键盘，不抢窗口的 Esc 与焦点循环。 */
+export const hasExposedModalOutside = (root: HTMLElement | null) => exposedModals().some(dialog => !root?.contains(dialog));
+
 /** 按遮罩层级与嵌套关系识别最上层窗口，避免确认框与父窗口同时处理键盘。 */
 export const isTopmostModal = (root: HTMLElement | null) => {
   if (!root) return false;
-  const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[aria-modal="true"]')).filter(dialog => {
-    for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {
-      if (!isExposed(node)) return false;
-    }
-    return true;
-  });
+  const dialogs = exposedModals();
   const layer = (dialog: HTMLElement) => {
     let z = 0;
     for (let node: HTMLElement | null = dialog; node; node = node.parentElement) {

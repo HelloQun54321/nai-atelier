@@ -1096,6 +1096,119 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
   });
 });
 
+describe('TagAutocompleteTextarea 连续输入与键盘视口回归', () => {
+  const suggestion = (name: string): tagDictionary.TagSuggestion => ({ name, chinese: name, category: 0, categoryLabel: 'Tag', postCount: 10, isNovelAI: false });
+  const tickSearch = () => act(async () => { await vi.advanceTimersByTimeAsync(80); });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => responseFor(manifest)));
+    vi.spyOn(tagDictionary, 'lookupTagCatalogEntries').mockResolvedValue(new Map());
+    vi.spyOn(tagTranslations, 'resolvePromptTranslations').mockResolvedValue([]);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each(['Prompt', '添加提示词'])('%s 连续输入在防抖与异步等待期间保留候选，迟到结果不覆盖，空结果关闭', async label => {
+    let resolveOlder!: (items: tagDictionary.TagSuggestion[]) => void;
+    let resolveLatest!: (items: tagDictionary.TagSuggestion[]) => void;
+    const search = vi.spyOn(tagDictionary, 'searchTagDictionary')
+      .mockResolvedValueOnce([suggestion('old_one'), suggestion('old_two')])
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOlder = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveLatest = resolve; }))
+      .mockResolvedValueOnce([]);
+    render(React.createElement(Harness, { showTranslations: label !== 'Prompt' }));
+    // 上游改为点击插入位置后才出现「添加提示词」输入框。
+    const input = (label === '添加提示词' ? openTagInput() : screen.getByRole('combobox', { name: label })) as HTMLInputElement;
+    act(() => input.focus());
+    fireEvent.change(input, { target: { value: 'ma' } });
+    expect(screen.getByText('正在加载 Tag…')).toBeTruthy();
+    await tickSearch();
+    const popup = screen.getByRole('listbox');
+    const oldOptions = screen.getAllByRole('option');
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.change(input, { target: { value: 'mas' } });
+    expect(screen.getAllByRole('option')).toEqual(oldOptions);
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false);
+    expect(screen.queryByText('正在加载 Tag…')).toBeNull();
+    await tickSearch();
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('option')).toEqual(oldOptions);
+    fireEvent.change(input, { target: { value: 'mast' } });
+    await tickSearch();
+    await act(async () => { resolveOlder([suggestion('stale')]); });
+    expect(screen.getAllByRole('option')).toEqual(oldOptions);
+    expect(screen.getByRole('listbox')).toBe(popup);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('mast');
+    await act(async () => { resolveLatest([suggestion('latest')]); });
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['latestlatestTag10']);
+    fireEvent.change(input, { target: { value: 'missing' } });
+    await tickSearch();
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it.each(['Prompt', '添加提示词'])('%s 的 Safari 229 确认键在 compositionend 后既不补全也不追加', async label => {
+    vi.spyOn(tagDictionary, 'searchTagDictionary').mockResolvedValue([suggestion('masterpiece')]);
+    render(React.createElement(Harness, { showTranslations: true }));
+    // 上游改为点击插入位置后才出现「添加提示词」输入框。
+    const input = (label === '添加提示词' ? openTagInput() : screen.getByRole('combobox', { name: label })) as HTMLInputElement;
+    const prompt = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: 'ma' } });
+    fireEvent.compositionEnd(input);
+    expect(fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, isComposing: false })).toBe(true);
+    expect(input.value).toBe('ma');
+    expect(prompt.value).toBe(label === 'Prompt' ? 'ma' : '');
+    await tickSearch();
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(fireEvent.keyDown(input, { key: 'Enter', keyCode: 229, isComposing: false })).toBe(true);
+    expect(input.value).toBe('ma');
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 13 });
+    expect(input.value).toBe('masterpiece');
+  });
+
+  it.each([375, 1024])('上弹候选以布局视口定位，键盘缩小视觉视口时保持锚点：%ipx', async width => {
+    vi.stubGlobal('innerWidth', width);
+    vi.stubGlobal('innerHeight', 800);
+    const viewport = Object.assign(new EventTarget(), { height: 450, offsetTop: 0 });
+    vi.stubGlobal('visualViewport', viewport);
+    vi.spyOn(tagDictionary, 'searchTagDictionary').mockResolvedValue([suggestion('masterpiece')]);
+    render(React.createElement(Harness));
+    const input = screen.getByRole('combobox', { name: 'Prompt' });
+    vi.spyOn(input, 'getBoundingClientRect').mockReturnValue({ top: 350, bottom: 400, left: 20, width: 280 } as DOMRect);
+    fireEvent.change(input, { target: { value: 'ma' } });
+    await tickSearch();
+    const popup = screen.getByRole('listbox');
+    expect(popup.style.position).toBe('fixed');
+    expect(popup.style.top).toBe('');
+    expect(popup.style.bottom).toBe('454px');
+    viewport.height = 500;
+    act(() => { viewport.dispatchEvent(new Event('resize')); });
+    expect(popup.style.bottom).toBe('454px');
+  });
+
+  it.each([false, true])('权重工具行统一桌面高度并保留手机触控规则（暗色 %s）', dark => {
+    document.documentElement.classList.toggle('dark', dark);
+    try {
+      render(React.createElement(Harness, { initial: 'alpha', showTranslations: true }));
+      const toolbar = screen.getByRole('button', { name: '撤销' }).parentElement!;
+      const assertControls = () => {
+        // 高度拖动把手是共用调整控件，不属于这一排操作按钮。
+        for (const button of within(toolbar).getAllByRole('button').filter(button => !/高度$/.test(button.getAttribute('aria-label') || ''))) {
+          expect(button.classList.contains('mobile-touch')).toBe(true);
+          expect(button.classList.contains('h-8') || button.classList.contains('h-full')).toBe(true);
+        }
+      };
+      assertControls();
+      fireEvent.click(screen.getByRole('button', { name: '数值' }));
+      expect(screen.getByRole('textbox', { name: '数值权重' }).classList.contains('h-full')).toBe(true);
+      assertControls();
+      fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
+      assertControls();
+    } finally { document.documentElement.classList.remove('dark'); }
+  });
+});
+
 describe('findCompletionTarget', () => {
   it('识别中文逗号后的新 Tag', () => {
     expect(findCompletionTarget('masterpiece，1g', 14)).toMatchObject({
@@ -1141,7 +1254,10 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
       expect(undo.textContent).toBe(''); expect(undo.disabled).toBe(true);
       expect(translate).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('button', { name: '翻译缺失项 1' }));
-      const error = await screen.findByRole('button', { name: '翻译失败详情' }); fireEvent.click(error);
+      const error = await screen.findByRole('button', { name: '翻译失败详情' });
+      expect(error.classList.contains('mobile-touch')).toBe(true);
+      expect(error.classList.contains('h-8')).toBe(true);
+      fireEvent.click(error);
       expect(screen.getByRole('dialog', { name: '翻译失败详情' }).textContent).toContain(failure);
       expect((screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement).value).toBe(longTag); expect(tag.getAttribute('aria-pressed')).toBe('true');
     } finally { resolve.mockRestore(); translate.mockRestore(); }

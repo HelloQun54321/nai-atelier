@@ -111,6 +111,25 @@ describe('风格串卡片的待实测状态', () => {
     expect(screen.queryByText('暂无数据')).toBeNull();
   });
 
+  it('搜索无匹配显示紧凑清除筛选，清除后恢复已有风格串', () => {
+    render(<ChainList {...props([chain('plain', '已有风格', false)])} />);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '没有这条' } });
+    const empty = screen.getByText('无匹配结果');
+    expect(empty.closest('.py-20')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(screen.getByRole('button', { name: '打开风格串：已有风格' })).toBeTruthy();
+  });
+
+  it('空资料库保留引导，加载期间不显示空态或创建引导', () => {
+    const callbacks = props([]);
+    const view = render(<ChainList {...callbacks} />);
+    expect(screen.getByText('暂无数据').closest('.py-20')).not.toBeNull();
+    view.rerender(<ChainList {...callbacks} isLoading />);
+    expect(screen.queryByText('暂无数据')).toBeNull();
+    expect(screen.queryByText('无匹配结果')).toBeNull();
+    expect(screen.getByText('加载中…')).toBeTruthy();
+    expect(within(view.container.querySelector<HTMLElement>('[data-workspace-body]')!).queryByRole('button', { name: '新建风格串' })).toBeNull();
+  });
   it('分享包优先使用专用回读回调，不改变其他导入入口的旧刷新语义', async () => {
     const callbacks = props([chain('plain', '普通风格', false)]), onBundleImported = vi.fn(async () => {});
     render(<ChainList {...callbacks} onBundleImported={onBundleImported} />);

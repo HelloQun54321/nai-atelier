@@ -136,6 +136,7 @@ vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (pro
   <output aria-label="预览历史编号">{props.historyLabel}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览下一张</button>}
   <output aria-label="生成不可用原因">{props.unavailableLabel}</output>
+  {props.errorMsg && <div role="alert">{props.errorMsg}</div>}
   {props.onSaveArtistSample && <button onClick={props.onSaveArtistSample}>保存为画师样张</button>}
   <button disabled={props.generationDisabled} onClick={() => { fireEvent.keyDown(window, { key: 'Escape' }); void props.handleGenerate(); }}>生成合成文生图</button>
   {props.generationCountControl && <GenerationCountControl {...props.generationCountControl} disabled={props.isGenerating} busy={props.isGenerating || props.generationDisabled} />}
@@ -632,6 +633,56 @@ describe('自定义封面保存与回显', () => {
     expect(screen.getByLabelText('文生图当前显示').textContent).toBe(item.imageUrl);
     expect(state.unlinkHistory).not.toHaveBeenCalled();
   });
+});
+
+it.each(['文生图', '图生图', '局部重绘', '扩图'])('%s 缺 Key 错误在下次提交时清除，成功后不残留手机红框', async label => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  state.subscription = state.refreshedSubscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 10 } };
+  setup(); if (label !== '文生图') await switchTo(label);
+  const submit = () => fireEvent.click(screen.getByRole('button', { name: label === '文生图' ? '生成合成文生图' : '生成合成编辑' }));
+  await act(async () => { submit(); });
+  expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('请先在“全局设置”中配置 NovelAI API Key'))).toBe(true);
+  act(() => { sessionStorage.setItem('nai_api_key', 'synthetic-key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'synthetic-key' })); });
+  await act(async () => { submit(); });
+  await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+  expect(screen.queryAllByRole('alert')).toHaveLength(0);
+});
+
+it.each(['文生图', '图生图', '局部重绘', '扩图'])('%s 错误不跟随模式切换且返回原模式也不恢复', async label => {
+  setup(); if (label !== '文生图') await switchTo(label);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: label === '文生图' ? '生成合成文生图' : '生成合成编辑' })); });
+  expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
+  await switchTo(label === '文生图' ? '图生图' : '文生图');
+  expect(screen.queryAllByRole('alert')).toHaveLength(0);
+  await switchTo(label); expect(screen.queryAllByRole('alert')).toHaveLength(0);
+});
+
+it('编辑预处理迟到错误只属于提交模式，不覆盖切换后的文生图', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  let rejectPreparation!: (error: Error) => void;
+  vi.mocked(prepareImageEdit).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectPreparation = reject; }));
+  setup(); await switchTo('图生图');
+  fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' }));
+  await waitFor(() => expect(rejectPreparation).toBeTypeOf('function'));
+  await switchTo('文生图');
+  await act(async () => { rejectPreparation(new Error('synthetic late preparation failure')); });
+  expect(screen.queryAllByRole('alert')).toHaveLength(0);
+  await switchTo('图生图'); expect(screen.queryAllByRole('alert')).toHaveLength(0);
+});
+
+it('空闲暂停队列在四模式提供明确不可用原因，文生图执行入口也说明原因', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  vi.mocked(getGenerationQueue).mockResolvedValue({ busy: false, completed: 0, total: 0, paused: true, pausing: false, waiting: [] });
+  const view = setup();
+  await waitFor(() => expect(screen.getByLabelText('生成不可用原因').textContent).toBe('队列已暂停'));
+  fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+  expect(view.props.notify).toHaveBeenCalledWith('队列已暂停', 'error');
+  for (const label of ['图生图', '局部重绘', '扩图']) {
+    await switchTo(label);
+    expect(screen.getByLabelText('编辑生成不可用原因').textContent).toBe('队列已暂停');
+  }
+  expect(state.startJob).not.toHaveBeenCalled();
 });
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('退出后 %s 按记忆恢复当前模式和内容，不自动写回预设', async mode => {

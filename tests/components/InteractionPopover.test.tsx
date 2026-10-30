@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import React, { useRef, useState } from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InfoPopover } from '../../components/InfoPopover';
 import { InteractionPopover } from '../../components/InteractionPopover';
 import { ImagePreviewPortal } from '../../components/ImagePreviewPortal';
+import { MobileDetailView } from '../../components/MobileUI';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -60,4 +61,50 @@ it('右侧弹层保持锚点右方与顶边对齐，贴近视口底部时向上�
   expect(parseFloat(bottomPanel.style.maxHeight)).toBe(284);
   expect(bottomPanel.style.transformOrigin).toBe('0px 264px');
   expect(bottomPanel.className).toContain('overflow-y-auto');
+});
+
+const returnTo = (state: unknown) => {
+  window.history.replaceState(state, '');
+  fireEvent(window, new PopStateEvent('popstate', { state }));
+};
+const DetailWithInfo = () => {
+  const [open, setOpen] = useState(true);
+  return <div className="agent-stage"><MobileDetailView open={open} title="合成作品详情" onClose={() => setOpen(false)}>
+    <InfoPopover label="作品信息" content="合成说明" />
+  </MobileDetailView></div>;
+};
+
+it.each(['系统返回', '关闭说明', 'Escape', '点外关闭'])('手机详情内的信息浮层%s只退当前层，下一次返回才关闭详情', async method => {
+  vi.stubGlobal('innerWidth', 390);
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+  vi.spyOn(window.history, 'back').mockImplementation(() => {});
+  window.history.replaceState({ source: 'synthetic-info' }, '');
+  const base = window.history.state;
+  render(<DetailWithInfo />);
+  const detailState = window.history.state;
+  expect(detailState.__naiMobileLayers).toHaveLength(1);
+  const trigger = screen.getByRole('button', { name: '作品信息' });
+  trigger.focus(); fireEvent.click(trigger);
+  expect(window.history.state.__naiMobileLayers).toHaveLength(2);
+  if (method === '关闭说明') fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
+  if (method === 'Escape') fireEvent.keyDown(window, { key: 'Escape' });
+  if (method === '点外关闭') fireEvent.pointerDown(document.body);
+  if (method !== '系统返回') await waitFor(() => expect(window.history.back).toHaveBeenCalledOnce());
+  returnTo(detailState);
+  expect(screen.queryByRole('dialog', { name: '作品信息' })).toBeNull();
+  expect(screen.getByRole('dialog', { name: '合成作品详情' })).toBeTruthy();
+  expect(document.activeElement).toBe(trigger);
+  returnTo(base);
+  expect(screen.queryByRole('dialog', { name: '合成作品详情' })).toBeNull();
+});
+
+it('桌面独立信息浮层不添加手机返回层', () => {
+  vi.stubGlobal('innerWidth', 1440);
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
+  window.history.replaceState({ source: 'synthetic-desktop' }, '');
+  render(<InfoPopover label="桌面说明" content="合成说明" />);
+  fireEvent.click(screen.getByRole('button', { name: '桌面说明' }));
+  expect(window.history.state).toEqual({ source: 'synthetic-desktop' });
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: '桌面说明' })).toBeNull();
 });

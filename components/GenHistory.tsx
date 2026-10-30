@@ -244,7 +244,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const [cleanMode, setCleanMode] = useState<'days' | 'count'>('days');
     const [cleanDays, setCleanDays] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_DAYS);
     const [cleanCount, setCleanCount] = useState<number>(PAGINATION_CONFIG.CLEANUP.DEFAULT_COUNT);
-    const [cleanPreviewCount, setCleanPreviewCount] = useState(0);
+    // 预览数量会写进不可恢复的确认文案：读取中为 null，失败为 'error'，两者都禁止确认，不能伪装成 0。
+    const [cleanPreviewCount, setCleanPreviewCount] = useState<number | null | 'error'>(null);
+    const cleanPreviewSeqRef = useRef(0);
     const [isPreparingImport, setIsPreparingImport] = useState(false);
     const [importMode, setImportMode] = useState<GenerationMode>('text-to-image');
     const [reuseEditMask, setReuseEditMask] = useState(false);
@@ -891,18 +893,28 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         }
     };
 
+    // 按实际执行的取整值预览；连续输入时只接受最后一次请求的结果，迟到的旧数量不能覆盖。
+    const refreshCleanPreview = (mode: 'days' | 'count', value: number) => {
+        const seq = ++cleanPreviewSeqRef.current;
+        const normalized = Math.floor(value);
+        setCleanPreviewCount(null);
+        if (!Number.isFinite(normalized) || normalized < 1) return;
+        const pending = mode === 'days'
+            ? localHistory.countOlderThan(normalized)
+            : localHistory.getCount().then(count => Math.max(0, count - normalized));
+        pending.then(
+            count => { if (seq === cleanPreviewSeqRef.current) setCleanPreviewCount(count); },
+            () => { if (seq === cleanPreviewSeqRef.current) setCleanPreviewCount('error'); },
+        );
+    };
+
+    const cleanPreviewLabel = typeof cleanPreviewCount === 'number' ? cleanPreviewCount : '…';
+
     const handleCleanMenuClick = (mode: 'days' | 'count') => {
         setCleanMode(mode);
         setShowCleanMenu(false);
         setShowCleanModal(true);
-        // 预览将删除的数量
-        if (mode === 'days') {
-            localHistory.countOlderThan(cleanDays).then(setCleanPreviewCount).catch(() => setCleanPreviewCount(0));
-        } else {
-            localHistory.getCount().then(count => {
-                setCleanPreviewCount(Math.max(0, count - cleanCount));
-            }).catch(() => setCleanPreviewCount(0));
-        }
+        refreshCleanPreview(mode, mode === 'days' ? cleanDays : cleanCount);
     };
 
     const handleCleanConfirm = async () => {
@@ -912,6 +924,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 notify(cleanMode === 'days' ? '请输入有效天数' : '请输入有效保留数量', 'error');
                 return;
             }
+            if (typeof cleanPreviewCount !== 'number') return;
 
             if (!await confirmAction({
                 rememberKey: `history.clean-${cleanMode}`, rememberScope: normalizedValue,
@@ -1243,10 +1256,11 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-gray-900 dark:text-white"><AlertTriangle className="h-5 w-5 text-amber-500" />{t("确认清理")}</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                             {cleanMode === 'days'
-                                ? t("将删除 {0} 天前的 {1} 张图片", [cleanDays, cleanPreviewCount])
-                                : t("按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张", [cleanPreviewCount, cleanCount])
+                                ? t("将删除 {0} 天前的 {1} 张图片", [Math.floor(cleanDays), cleanPreviewLabel])
+                                : t("按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张", [cleanPreviewLabel, Math.floor(cleanCount)])
                             }
                         </p>
+                        {cleanPreviewCount === 'error' && <p role="alert" className="text-xs text-red-500 mb-2">{t("读取失败，请重试")}</p>}
                         <p className="text-xs text-red-500 mb-4">{t("此操作无法恢复")}</p>
                         <div className="mb-4">
                             {cleanMode === 'days' ? (
@@ -1259,11 +1273,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                         onChange={e => {
                                             const value = Number(e.target.value);
                                             setCleanDays(value);
-                                            if (Number.isFinite(value) && value >= 1) {
-                                                localHistory.countOlderThan(value).then(setCleanPreviewCount);
-                                            } else {
-                                                setCleanPreviewCount(0);
-                                            }
+                                            refreshCleanPreview('days', value);
                                         }}
                                         className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
@@ -1278,13 +1288,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                         onChange={e => {
                                             const value = Number(e.target.value);
                                             setCleanCount(value);
-                                            if (Number.isFinite(value) && value >= 1) {
-                                                localHistory.getCount().then(count => {
-                                                    setCleanPreviewCount(Math.max(0, count - value));
-                                                });
-                                            } else {
-                                                setCleanPreviewCount(0);
-                                            }
+                                            refreshCleanPreview('count', value);
                                         }}
                                         className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm outline-none dark:text-white"
                                     />
@@ -1299,7 +1303,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 {t("取消")}</button>
                             <button
                                 data-agent-action="business" onClick={handleCleanConfirm}
-                                disabled={!Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
+                                disabled={typeof cleanPreviewCount !== 'number' || !Number.isFinite(cleanMode === 'days' ? cleanDays : cleanCount) || (cleanMode === 'days' ? cleanDays : cleanCount) < 1}
                                 className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {t("确认删除")}</button>

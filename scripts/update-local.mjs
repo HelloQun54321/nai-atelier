@@ -33,6 +33,11 @@ export async function updateLocal({ root = resolve(dirname(fileURLToPath(import.
   if (!release) throw new Error('当前渠道尚无可用发行版，请查看下载页');
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
   const target = release.tag_name.replace(/^v/, '');
+  // 本地源码已等于或领先最新发行版（例如跟随 main 开发提交）时无需更新，不当作错误。
+  if (compareReleaseVersions(target, pkg.version) <= 0) {
+    log(`已是最新：本地 ${pkg.version}，最新发行版 ${target}，无需更新`);
+    return null;
+  }
   verifyUpdateTarget(pkg.version, target, []);
   git(['fetch', '--no-tags', officialRemote, `refs/tags/${release.tag_name}`]);
   const targetCommit = git(['rev-parse', 'FETCH_HEAD^{commit}']);

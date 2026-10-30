@@ -548,8 +548,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       for (const row of rows) {
         // 历史消失后归属也失去意义；表缺失时自愈创建，不阻塞删除主流程。
         await deletePromptLibraryLinksByHistory(db, row.id);
-        if (row.image_key) await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db);
-        await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id));
+        // 数据库删除已提交；原图与蒙版各自容错，不能让单个 R2 故障截断后续清理。
+        if (row.image_key) {
+          try { await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db); }
+          catch (cause) { console.error('历史原图清理失败', row.id, cause); }
+        }
+        try { await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id)); }
+        catch (cause) { console.error('历史蒙版清理失败', row.id, cause); }
       }
       return rows.length;
     };
@@ -1116,7 +1121,11 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         result = await db.prepare('SELECT id, image_key FROM local_generation_history WHERE user_id = ? AND created_at < ?')
           .bind(currentUser.id, cutoff).all<{id: string, image_key: string}>();
       } else {
-        const keepCount = Math.max(1, Math.floor(Number(body.keepCount || 1)));
+        const requestedCount = body.keepCount ?? 1;
+        if (!['number', 'string'].includes(typeof requestedCount) || !Number.isFinite(Number(requestedCount))) {
+          return error('保留数量必须是有效数字', 400);
+        }
+        const keepCount = Math.min(Number.MAX_SAFE_INTEGER, Math.max(1, Math.floor(Number(requestedCount))));
         result = await db.prepare(`
           SELECT id, image_key FROM local_generation_history WHERE user_id = ?
           ORDER BY created_at DESC LIMIT -1 OFFSET ?
@@ -1294,11 +1303,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
   };
 
   const deleteInspirationAsset = async (item: any) => {
-    if (item.image_key) {
-      await deleteR2File(env, `/api/assets/${encodeURIComponent(item.image_key)}`, db);
-    } else if (item.image_url) {
-      await deleteR2File(env, item.image_url, db);
-    }
+    try {
+      if (item.image_key) {
+        await deleteR2File(env, `/api/assets/${encodeURIComponent(item.image_key)}`, db);
+      } else if (item.image_url) {
+        await deleteR2File(env, item.image_url, db);
+      }
+    } catch (cause) { console.error('收藏原图清理失败', item.id, cause); }
   };
 
   const inspirationImageMatch = path.match(/^\/api\/inspirations\/([^/]+)\/image$/);

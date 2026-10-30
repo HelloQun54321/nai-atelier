@@ -23,7 +23,7 @@ import type { AgentDisplayPreferences } from '../services/agentDisplayPreference
 import { isAgentTaskRunning, type AgentCharacterReference, type AgentPromptApplied, type AgentPromptApplication, type AgentPromptBeforeApply, type AgentQuestionAnswer, type AgentQuestionRequest, type PromptAgentEvent, type PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { beginExportTarget } from '../services/exportLocation';
-import { isTopmostModal } from './useModalA11y';
+import { hasExposedModalOutside, isTopmostModal } from './useModalA11y';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PromptAgentDraft, PromptAgentGenerationResult, PromptChain } from '../types';
@@ -322,6 +322,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [hasOpened, setHasOpened] = useState(false);
   const [panelWidth, setPanelWidth] = useState(() => Math.min(680, Math.max(420, Number(localStorage.getItem('nai_agent_panel_width')) || 520)));
   const [mobileHeight, setMobileHeight] = useState(() => Math.min(92, Math.max(25, Number(localStorage.getItem('nai_agent_mobile_height')) || 68)));
+  // 电脑端停靠助手与工作区并排、不是模态窗口，不能抢其他窗口的 Esc 与焦点循环；手机底部面板仍是模态。
+  const [docked, setDocked] = useState(() => window.innerWidth >= 1024);
+  useEffect(() => {
+    const update = () => setDocked(window.innerWidth >= 1024);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
   const currentAssistantIdRef = useRef('');
   const responseStartedRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -471,6 +478,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
       const next = pendingPanelWidthRef.current;
       setPanelWidth(next);
       localStorage.setItem('nai_agent_panel_width', String(Math.round(next)));
@@ -478,11 +486,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
+    window.addEventListener('pointercancel', stop, { once: true });
   };
 
   const startMobileResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (window.innerWidth >= 1024) return;
     event.preventDefault();
+    // 触屏拖动离开把手后仍由它接收事件，系统手势接管时会收到 pointercancel 并收尾。
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* 合成事件或已释放的指针无需捕获 */ }
     const startY = event.clientY;
     const startPixels = window.innerHeight * mobileHeight / 100;
     panelRef.current?.style.setProperty('transition', 'none');
@@ -495,6 +506,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
       const next = pendingMobileHeightRef.current;
       setMobileHeight(next);
       localStorage.setItem('nai_agent_mobile_height', String(Math.round(next)));
@@ -502,6 +514,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', stop, { once: true });
+    window.addEventListener('pointercancel', stop, { once: true });
   };
 
   const choosePanelWidth = (width: number) => {
@@ -707,7 +720,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   useEffect(() => {
     if (!props.open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isTopmostModal(panelRef.current)) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // 电脑端停靠时面板不是模态窗口：只要有其他可见窗口，Esc 就归那个窗口。
+      const ownsEscape = window.innerWidth >= 1024 ? !hasExposedModalOutside(panelRef.current) : isTopmostModal(panelRef.current);
+      if (ownsEscape) {
         if (sessionMenuId) {
           setSessionMenuId('');
           return;
@@ -1215,14 +1231,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     <div
       ref={panelRef}
       role="dialog"
-      aria-modal="true"
+      aria-modal={docked ? undefined : 'true'}
       aria-label={t("助手控制面板")}
       data-agent-surface
       className="agent-theme appearance-panel agent-panel pointer-events-auto absolute flex overflow-hidden border-gray-200 bg-gray-50 shadow-2xl transition-[width,height,border-radius] dark:border-gray-800 dark:bg-gray-950"
       style={{ '--agent-mobile-height': `${mobileHeight}dvh`, '--agent-width': `${panelWidth}px` } as React.CSSProperties}
     >
     <button type="button" aria-label={t("调整助手宽度")} onPointerDown={startDesktopResize} className="agent-resize-handle-desktop" />
-    <button type="button" aria-label={t("调整助手高度")} onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>
+    {!showSessions && <button type="button" aria-label={t("调整助手高度")} onPointerDown={startMobileResize} className="agent-resize-handle-mobile"><span /></button>}
     {showSessions && <button type="button" aria-label={t("关闭会话列表")} onClick={() => { setShowSessions(false); setSessionMenuId(''); }} className="absolute inset-0 z-10 bg-black/35" />}
     <aside aria-label={t("助手会话历史")} className={`appearance-panel appearance-overlay ${showSessions ? 'translate-x-0' : '-translate-x-full'} absolute inset-y-0 left-0 z-20 flex w-[min(82%,19rem)] flex-col border-r border-gray-200 bg-white pt-[env(safe-area-inset-top)] shadow-2xl transition-transform dark:border-gray-800 dark:bg-gray-900`}>
       <div className="flex h-14 items-center gap-2 border-b border-gray-100 px-3 dark:border-gray-800">
@@ -1242,8 +1258,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         </div>}
         {sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).length === 0 ? (
           <div className="py-8 text-center text-xs text-gray-400">{t("没有找到匹配的对话")}</div>
-        ) : sessions.filter(session => session.title.toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingSessionId(''); }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={(running || compactRequestPending) && session.id !== activeSessionId} onClick={() => { if (!running && !compactRequestPending) { promptAgentCoordinator.selectSession(session); setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
+        ) : sessions.filter(session => (session.title || '').toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(session => <div key={session.id} className={`group relative min-h-[4.75rem] rounded-xl border ${session.id === activeSessionId ? 'border-indigo-300 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950/30' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
+          {editingSessionId === session.id ? <form onSubmit={event => { event.preventDefault(); void saveSessionTitle(session); }} className="flex min-h-[4.75rem] items-center px-2 pr-12"><input autoFocus value={editingTitle} onChange={event => setEditingTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setEditingSessionId(''); } }} onBlur={() => void saveSessionTitle(session)} className="h-9 min-w-0 flex-1 rounded-lg border border-indigo-300 bg-white px-2 text-xs text-gray-800 outline-none dark:bg-gray-950 dark:text-gray-100" /></form> : <button type="button" disabled={(running || compactRequestPending) && session.id !== activeSessionId} onClick={() => { if (!running && !compactRequestPending) { promptAgentCoordinator.selectSession(session); setActiveSessionId(session.id); setShowSessions(false); setSessionMenuId(''); } }} className="block min-h-[4.75rem] w-full py-2 pl-3 pr-12 text-left">
             <span className="block truncate text-sm font-bold text-gray-800 dark:text-gray-100">{session.title}</span>
             <span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} · {1} 轮 · {2}", [displayModelName(session.model), session.messageCount || 0, new Date(session.updatedAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })])}</span>
             <span className="mt-1 flex items-center gap-1.5 text-mini font-bold">{session.running ? <span className="text-indigo-600">{t("工作中")}</span> : session.taskStatus === 'interrupted' ? <span className="text-amber-600">{t("上次中断")}</span> : session.taskStatus === 'failed' ? <span className="text-red-500">{t("上次失败")}</span> : <span className="text-emerald-700 dark:text-emerald-400">{t("就绪")}</span>}</span>

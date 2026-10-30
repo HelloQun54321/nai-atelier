@@ -220,7 +220,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
       finally { if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) { intervalRevisionRef.current++; setIntervalPending(false); } }
     };
     const externalGenerationBusy = Boolean(queueState && queueState.total > queueState.completed) && !isGenerating;
-    const generationUnavailableLabel = externalGenerationBusy ? t("此 Key 正在生成") : undefined;
+    const generationUnavailableLabel = externalGenerationBusy ? t("此 Key 正在生成") : queueState?.paused ? t("队列已暂停") : undefined;
     const stopGenerationSeries = React.useCallback(() => {
         if (!generationSeriesRef.current) return;
         stopGenerationSeriesSession(generationSeriesRef.current);
@@ -240,7 +240,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
     const previewHistoryLoadRevisionRef = useRef(0);
     const previewSelectionRevisionRef = useRef(0);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [generationError, setGenerationError] = useState<{ mode: GenerationMode; message: string } | null>(null);
     const generationInFlightRef = useRef(false);
     // 生成是长任务：用户在生成途中离开编辑页（edit 视图不常驻）后，异步回调只能写持久层，
     // 不得再触碰本组件状态。
@@ -354,6 +354,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     activeEditOperationRef.current = activeEditOperation;
+    const errorMsg = generationError?.mode === activeGenerationMode ? generationError.message : null;
+    const setErrorMsg = (message: string | null) => {
+        // 异步准备失败只反馈给提交时的模式，不能覆盖用户切换后的工作区。
+        if (message && (activeEditOperationRef.current || 'text-to-image') !== activeGenerationMode) return;
+        setGenerationError(message ? { mode: activeGenerationMode, message } : null);
+    };
+    useEffect(() => { setGenerationError(null); }, [activeGenerationMode, chain.id]);
     const generationSession = getGenerationSeriesSession(chain.id);
     const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : isImageGenerating ? 'preparing' : 'waiting';
     const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
@@ -1659,11 +1666,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     };
 
     const handleGenerate = async (placement?: GenerationPlacement) => {
+        setErrorMsg(null);
         if (placement && !continuousGenerationEnabledRef.current) {
             notify('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'error');
             return false;
         }
-        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || externalGenerationBusy || queueState?.paused)) return false;
+        if (!placement && queueState?.paused) {
+            notify(t("队列已暂停"), 'error');
+            return false;
+        }
+        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || externalGenerationBusy)) return false;
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
@@ -1718,6 +1730,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
     };
 
     const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params?: NAIParams; onApproved?: () => Promise<void>; agent?: boolean; count?: number; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
+        setErrorMsg(null);
         const count = validateGenerationCount(options?.agent ? options.count : effectiveGenerationCount);
         // 未提交的任务同样回完整回执：请求数与已保存数为 0，历史 ID 为空。
         const stop = (message: string, code: string, outcome: 'blocked' | 'failed' | 'cancelled' = 'blocked'): PromptAgentGenerationResult => {
@@ -1776,7 +1789,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         generationInFlightRef.current = true;
         if (mountedRef.current) {
             setIsGenerating(true);
-            setErrorMsg(null);
         }
         try {
             const editParams: NAIParams = {

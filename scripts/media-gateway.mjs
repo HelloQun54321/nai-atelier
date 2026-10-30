@@ -3982,6 +3982,8 @@ const serveDistFile = async (req, res, url) => {
     if (url.pathname === '/api/local-maintenance/backup/open-folder') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      // 资源管理器窗口只会出现在电脑上：与存储管理一致，仅允许电脑本机页面唤起。
+      if (!collectorLocalRequest(req) || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '打开目录只允许电脑本机页面操作' });
       try {
         const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
         const targetPath = body.path || (await localBackupService.getStatus()).targetDir;

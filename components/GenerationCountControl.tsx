@@ -36,7 +36,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const [intervalValue, setIntervalValue] = useState(intervalSeconds.toFixed(1));
   const [open, setOpen] = useState(false);
   const [mobile, setMobile] = useState(() => window.innerWidth < 768);
-  const anchorRef = useRef<HTMLButtonElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const intervalInputRef = useRef<HTMLInputElement>(null);
   const close = React.useCallback(() => setOpen(false), []);
   useEffect(() => {
@@ -66,7 +66,8 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const primaryBlocked = continuousGenerationEnabled && occupied && onQueue
     ? Boolean(queueDisabled)
     : Boolean(disabled) || occupied || paused;
-  const primaryUnavailable = Boolean(primaryBlocked && unavailableLabel);
+  const primaryUnavailableLabel = unavailableLabel || (paused && !occupied ? t("队列已暂停") : undefined);
+  const primaryUnavailable = Boolean(primaryBlocked && primaryUnavailableLabel);
   const showProgress = continuousGenerationEnabled || paused || waiting.length > 0
     || total - completed > 1 || Boolean(series && series.total - series.current > 1);
   const hasMenuContent = continuousGenerationEnabled || waiting.length > 0;
@@ -91,7 +92,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   };
   const showPrimaryCount = continuousGenerationEnabled && !primaryUnavailable;
   const showPrimaryCost = !primaryUnavailable && (continuousGenerationEnabled || !primaryBlocked);
-  const primaryLabel = primaryUnavailable ? unavailableLabel
+  const primaryLabel = primaryUnavailable ? primaryUnavailableLabel
     : !continuousGenerationEnabled && paused && occupied ? t("继续生成")
       : !continuousGenerationEnabled && saving ? t("正在保存…")
       : !continuousGenerationEnabled && occupied ? t("生成中…")
@@ -153,18 +154,20 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
       <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{saving ? t("正在保存…") : `${completed}/${total}`}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
-    <button ref={anchorRef} type="button" data-agent-action="business" aria-haspopup={hasMenuContent ? 'dialog' : undefined} aria-expanded={hasMenuContent ? open : undefined} aria-disabled={primaryBlocked}
+    <div ref={anchorRef} role="group" className={'generation-action-button generation-action-button--workbench flex min-w-0 flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (showCloudQueue ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
+    <button type="button" data-agent-action="business" aria-disabled={primaryBlocked}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
-      className={'generation-action-button generation-action-button--workbench mobile-touch flex flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (showCloudQueue ? 'max-lg:!min-w-0 ' : '') + (executing ? 'generation-action-button--loading' : '')}>
+      className={'mobile-touch relative z-[1] flex min-w-0 flex-1 items-stretch rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 lg:rounded-xl ' + (executing ? 'generation-action-button--loading !bg-none !bg-transparent !shadow-none !filter-none' : '')}>
       <span className={'flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-2 ' + (showCloudQueue ? 'max-lg:!px-2 ' : '') + (primaryBlocked && !executing ? 'opacity-50' : '')}>
         <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />
         <span>{primaryLabel}</span>
         {showPrimaryCount && <span className="whitespace-nowrap text-xs font-medium opacity-80">{t("{0} 张", [count])}</span>}
         {showPrimaryCost && costLabel && <span className="generation-action-button__cost whitespace-nowrap">{costLabel}</span>}
       </span>
-      {hasMenuContent && <span data-generation-menu title={t("生成选项")} onClick={event => { event.stopPropagation(); if (hasMenuContent) setOpen(value => !value); }} className={'flex min-h-10 w-9 shrink-0 items-center justify-center border-l border-current/15 hover:bg-current/5 ' + (open ? 'bg-current/5' : '')}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? 'rotate-180' : '')} /></span>}
     </button>
+    {hasMenuContent && <button type="button" data-generation-menu aria-label={t("生成选项")} title={t("生成选项")} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} className={'mobile-touch relative z-[1] flex min-h-10 w-9 shrink-0 items-center justify-center border-l border-current/15 outline-none hover:bg-current/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ' + (open ? 'bg-current/5' : '')}><ChevronDown aria-hidden="true" className={'h-4 w-4 transition-transform ' + (open ? 'rotate-180' : '')} /></button>}
+    </div>
     {showQueueStatus && <CloudQueueButton generationProgress={generationProgress} className="lg:absolute lg:inset-y-0 lg:left-full lg:ml-3" />}
     {open && hasMenuContent && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t("生成选项")} onClose={close}>{panel}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={t("生成选项")} above compact width={280} onClose={close}>{panel}</AnchoredToolbarPopover>)}
   </div>;

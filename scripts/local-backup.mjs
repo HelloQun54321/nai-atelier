@@ -247,6 +247,10 @@ export async function openInExplorer(targetPath) {
   if (!targetPath || !existsSync(targetPath)) {
     throw new Error('目标路径不存在');
   }
+  // 系统默认处理器会直接运行可执行文件或脚本，这里只允许打开现有目录。
+  if (!isAbsolute(targetPath) || !(await stat(targetPath)).isDirectory()) {
+    throw new Error('只能打开现有目录');
+  }
 
   const normalized = normalize(targetPath);
   if (IS_WINDOWS) {

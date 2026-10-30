@@ -193,6 +193,16 @@ describe('风格串文件夹完整交互', () => {
     expect((memberships.getByRole('checkbox', { name: '目录11 / 目录5 / 目录6 / 目录7 / 目录8 / 目录9 / 目录10 / 目录11' }) as HTMLInputElement).checked).toBe(true);
     expect((memberships.getByRole('checkbox', { name: '目录11' }) as HTMLInputElement).checked).toBe(false);
   });
+  it('空目录显示无匹配结果，清除筛选回到全部且不改资料归属', async () => {
+    stored.folders.push({ id: 'empty', name: '空目录', parentId: null });
+    await setup(); choose('empty');
+    expect(screen.getByText('无匹配结果').closest('.py-20')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect((screen.getByLabelText('选择文件夹') as HTMLSelectElement).value).toBe('*');
+    expect(screen.getByRole('button', { name: '打开风格串：风格 a' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '打开风格串：风格 b' })).toBeTruthy();
+    expect(put).not.toHaveBeenCalled();
+  });
   it('父目录包含子目录、未整理独立，重新进入记住目录且不改标签', async () => {
     const view = await setup();
     choose('root');

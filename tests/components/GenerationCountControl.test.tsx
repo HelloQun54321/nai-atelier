@@ -11,8 +11,43 @@ beforeEach(async () => {
   await getCloudQueuePreferences();
 });
 afterEach(() => { cleanup(); emitCloudQueueStatus(null); vi.unstubAllGlobals(); });
+const actionSurface = (button: HTMLElement) => button.closest('.generation-action-button') as HTMLElement;
 const state = { busy: true, completed: 2, total: 8, paused: false, pausing: false, waiting: [] };
 const props = { count: 3, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: vi.fn(), onGenerate: vi.fn(), costLabel: '90 Anlas' };
+
+it.each([1280, 390])('%s 宽度生成选项是独立可聚焦按钮，禁用生成仍能打开菜单且不提交', width => {
+  vi.stubGlobal('innerWidth', width);
+  const generate = vi.fn(), queue = vi.fn();
+  render(<GenerationCountControl {...props} disabled onGenerate={generate} onQueue={queue} />);
+  const main = screen.getByRole('button', { name: /生成.*3 张/ });
+  const options = screen.getByRole('button', { name: '生成选项' });
+  expect(main.contains(options)).toBe(false);
+  expect(main.nextElementSibling).toBe(options);
+  expect(options.tabIndex).toBe(0);
+  expect(options.classList.contains('mobile-touch')).toBe(true);
+  expect(options.classList.contains('min-h-10')).toBe(true);
+  options.focus(); expect(document.activeElement).toBe(options);
+  expect(options.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(options);
+  expect(options.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('dialog', { name: '生成选项' })).toBeTruthy();
+  expect(generate).not.toHaveBeenCalled(); expect(queue).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('连续生成 %s 时空闲暂停队列明确说明不可用，菜单仍可追加且不恢复队列', continuousGenerationEnabled => {
+  const generate = vi.fn(), queue = vi.fn(), toggle = vi.fn();
+  render(<GenerationCountControl {...props} continuousGenerationEnabled={continuousGenerationEnabled} onGenerate={generate} onQueue={queue} onTogglePause={toggle}
+    queueState={{ ...state, busy: false, completed: 0, total: 0, paused: true }} />);
+  const main = screen.getByRole('button', { name: '队列已暂停' });
+  expect(main.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(main); expect(generate).not.toHaveBeenCalled(); expect(toggle).not.toHaveBeenCalled();
+  expect(main.textContent).not.toContain('90 Anlas');
+  if (continuousGenerationEnabled) {
+    fireEvent.click(screen.getByRole('button', { name: '生成选项' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '加入队列' }));
+    expect(queue).toHaveBeenCalledWith('end'); expect(toggle).not.toHaveBeenCalled();
+  }
+});
 
 it.each([1280, 390])('%s 宽度左右小按钮用图片与人物区分分数，公共状态只在点开后出现', async width => {
   vi.stubGlobal('innerWidth', width);
@@ -23,11 +58,11 @@ it.each([1280, 390])('%s 宽度左右小按钮用图片与人物区分分数，�
   const right = screen.getByRole('button', { name: 'Key 排队 2/4' });
   expect(left.querySelector('.lucide-images')).toBeTruthy(); expect(left.textContent).toBe('2/8');
   expect(right.querySelector('.lucide-user-round')).toBeTruthy(); expect(right.textContent).toBe('2/4');
-  expect(left.nextElementSibling).toBe(main); expect(main.nextElementSibling).toBe(right.parentElement);
+  expect(left.nextElementSibling).toBe(actionSurface(main)); expect(actionSurface(main).nextElementSibling).toBe(right.parentElement);
   expect(left.classList.contains('lg:right-full')).toBe(true);
   expect(right.parentElement?.classList.contains('lg:left-full')).toBe(true);
-  expect(main.parentElement?.classList.contains('lg:max-w-[calc(100%-14rem)]')).toBe(true);
-  expect(main.classList.contains('max-lg:!min-w-0')).toBe(true);
+  expect(actionSurface(main).parentElement?.classList.contains('lg:max-w-[calc(100%-14rem)]')).toBe(true);
+  expect(actionSurface(main).classList.contains('max-lg:!min-w-0')).toBe(true);
   expect(main.firstElementChild?.classList.contains('max-lg:!px-2')).toBe(true);
   for (const button of [left, right]) expect(button.classList.contains('min-h-10')).toBe(true);
   expect(screen.queryByRole('status')).toBeNull();
@@ -57,20 +92,20 @@ it.each([1280, 390])('%s 宽度恢复主按钮尺寸、图标，切换连续模�
   vi.stubGlobal('innerWidth', width);
   const view = render(<GenerationCountControl {...props} continuousGenerationEnabled={false} />);
   const main = screen.getByRole('button', { name: /生成.*90 Anlas/ });
-  expect(main.parentElement?.classList.contains('lg:w-80')).toBe(true);
-  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
-  expect(main.classList.contains('rounded-full')).toBe(true);
-  expect(main.classList.contains('lg:rounded-xl')).toBe(true);
+  expect(actionSurface(main).parentElement?.classList.contains('lg:w-80')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--workbench')).toBe(true);
+  expect(actionSurface(main).classList.contains('rounded-full')).toBe(true);
+  expect(actionSurface(main).classList.contains('lg:rounded-xl')).toBe(true);
   expect(main.querySelector('.lucide-image')).toBeTruthy();
   expect(main.firstElementChild?.classList.contains('px-4')).toBe(true);
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} busy disabled generationState="generating" />);
   expect(screen.getByRole('button', { name: '生成中…' })).toBe(main);
-  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
-  expect(main.parentElement?.classList.contains('lg:w-80')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--workbench')).toBe(true);
+  expect(actionSurface(main).parentElement?.classList.contains('lg:w-80')).toBe(true);
   view.rerender(<GenerationCountControl {...props} generationState="saving" queueState={state} />);
   expect(screen.getByRole('button', { name: /加入队列.*3 张.*90 Anlas/ })).toBe(main);
-  expect(main.parentElement?.classList.contains('lg:max-w-[calc(100%-8rem)]')).toBe(true);
-  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
+  expect(actionSurface(main).parentElement?.classList.contains('lg:max-w-[calc(100%-8rem)]')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--workbench')).toBe(true);
 });
 
 it.each([false, true])('连续生成 %s 时真实执行亮起特效，暂停、等待及费用确认停止，恢复后再亮起', continuousGenerationEnabled => {
@@ -78,7 +113,7 @@ it.each([false, true])('连续生成 %s 时真实执行亮起特效，暂停、�
   const common = { ...props, continuousGenerationEnabled, onQueue: queue, onGenerate: generate, busy: true, disabled: true, series: { current: 0, total: 3, stopping: false } };
   const view = render(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
   const main = screen.getByRole('button', { name: continuousGenerationEnabled ? /加入队列.*3 张/ : '生成中…' });
-  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   expect(main.getAttribute('aria-disabled')).toBe(String(!continuousGenerationEnabled));
   expect(main.firstElementChild?.classList.contains('opacity-50')).toBe(false);
   fireEvent.click(main);
@@ -86,18 +121,18 @@ it.each([false, true])('连续生成 %s 时真实执行亮起特效，暂停、�
   expect(generate).not.toHaveBeenCalled();
   for (const generationState of ['preparing', 'generating', 'saving'] as const) {
     view.rerender(<GenerationCountControl {...common} generationState={generationState} queueState={state} />);
-    expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+    expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   }
   view.rerender(<GenerationCountControl {...common} generationState="saving" queueState={{ ...state, paused: true, pausing: true }} />);
-  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   for (const generationState of ['paused', 'waiting', 'awaiting_confirmation', 'succeeded', 'failed', 'cancelled'] as const) {
     view.rerender(<GenerationCountControl {...common} generationState={generationState} queueState={{ ...state, paused: generationState === 'paused' }} />);
-    expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+    expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(false);
   }
   view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={{ ...state, paused: true }} />);
-  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(false);
   view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
-  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
 });
 
 it('短间隔保留特效，等待插队或公共队列时停止，菜单仍可排到下一位', () => {
@@ -105,14 +140,14 @@ it('短间隔保留特效，等待插队或公共队列时停止，菜单仍可�
   const common = { ...props, onQueue: queue, busy: true, series: { current: 1, total: 3, stopping: false }, generationState: 'waiting' as const };
   const view = render(<GenerationCountControl {...common} queueState={state} />);
   const main = screen.getByRole('button', { name: /加入队列.*3 张/ });
-  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   view.rerender(<GenerationCountControl {...common} series={{ ...common.series, position: 1 }} queueState={state} />);
-  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(false);
   view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
   act(() => emitCloudQueueStatus({ taskId: 'synthetic-task', phase: 'waiting', position: 1 }));
-  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(false);
   act(() => emitCloudQueueStatus({ taskId: 'synthetic-task', phase: 'generating' }));
-  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(actionSurface(main).classList.contains('generation-action-button--loading')).toBe(true);
   fireEvent.keyDown(main, { key: 'ArrowDown', altKey: true });
   fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '排到下一位' }));
   expect(queue).toHaveBeenCalledWith('next');
@@ -207,7 +242,7 @@ it('关闭连续生成时保留真实忙碌、暂停与系列管理，但不把�
   expect(screen.getByRole('button', { name: '生成中…' }).getAttribute('aria-disabled')).toBe('true');
 
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} queueState={{ ...state, busy: true, completed: 2, total: 2, paused: true }} />);
-  const pausedButton = screen.getByRole('button', { name: '生成' });
+  const pausedButton = screen.getByRole('button', { name: '队列已暂停' });
   expect(pausedButton.getAttribute('aria-disabled')).toBe('true');
   expect(screen.queryByText('0/0')).toBeNull();
   fireEvent.click(pausedButton); expect(generate).not.toHaveBeenCalled();
@@ -371,7 +406,7 @@ it('桌面菜单锚定整个生成按钮的中心，不以右侧箭头为中心'
   vi.stubGlobal('innerWidth', 1280); vi.stubGlobal('innerHeight', 800);
   render(<GenerationCountControl {...props} />);
   const button = screen.getByRole('button', { name: /生成.*3 张/ });
-  vi.spyOn(button, 'getBoundingClientRect').mockReturnValue({ x: 600, y: 700, left: 600, top: 700, right: 800, bottom: 744, width: 200, height: 44, toJSON: () => ({}) });
+  vi.spyOn(actionSurface(button), 'getBoundingClientRect').mockReturnValue({ x: 600, y: 700, left: 600, top: 700, right: 800, bottom: 744, width: 200, height: 44, toJSON: () => ({}) });
   fireEvent.keyDown(button, { key: 'ArrowDown', altKey: true });
   expect(screen.getByRole('dialog', { name: '生成选项' }).style.left).toBe('700px');
 });

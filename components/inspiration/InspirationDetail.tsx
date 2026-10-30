@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Copy,
+  Expand,
   ExternalLink,
   FlaskConical,
   ImagePlus,
@@ -18,6 +19,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataSe
 import { getCollectionBoardIds, getCollectionTags, getCollectionPreviewTransform, rememberCollectionFolder, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionFolderPicker, CollectionTagInput } from './CollectionControls';
 import { ToolbarButton } from '../DesignSystem';
+import { AnchoredToolbarPopover } from '../ToolbarPopover';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
 import { ParamsViewer } from '../ParamsViewer';
 import { ImageShareOverlay } from '../ImageShareActions';
@@ -58,6 +60,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
   const displayedItem = useRef(item);
   const [draft, setDraft] = useState(item);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const labMenuAnchorRef = useRef<HTMLButtonElement>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [busy, setBusy] = useState('');
   const [taggerOpen, setTaggerOpen] = useState(false);
@@ -110,6 +113,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
    */
   const updateAndPersist = async <K extends keyof Inspiration>(key: K, value: Inspiration[K], successMsg?: string) => {
     if (!editable) return;
+    const previousValue = draft[key];
     update(key, value);
     try {
       await db.updateInspiration(item.id, { [key]: value });
@@ -117,6 +121,8 @@ export const InspirationDetail = React.memo(function InspirationDetail({
       if (successMsg) notify(successMsg);
       return true;
     } catch (error: any) {
+      // 文字输入保留供重试；即时标签操作失败时恢复原值，不覆盖后续编辑或另一张图。
+      if (key === 'tags') setDraft(previous => previous.id === item.id && previous[key] === value ? { ...previous, [key]: previousValue } : previous);
       notify(error?.message || '更新失败', 'error');
       return false;
     }
@@ -141,10 +147,14 @@ export const InspirationDetail = React.memo(function InspirationDetail({
     void updateAndPersist('tags', nextTags);
   };
 
-  const handleCopy = (text: string, label: string) => {
+  const handleCopy = async (text: string, label: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    notify(`${label}已复制`);
+    try {
+      await copyTagText(text);
+      notify(`${label}已复制`);
+    } catch {
+      notify('复制失败', 'error');
+    }
   };
 
   const importToPlayground = async () => {
@@ -433,10 +443,11 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                   <span className="truncate">{t("导入实验室")}</span>
                 </button>
                 <button
+                  ref={labMenuAnchorRef}
                   type="button"
                   disabled={Boolean(busy) || !draft.imageUrl}
                   onClick={() => { setLabMenuOpen(!labMenuOpen); }}
-                  aria-label={t("更多底图模式")} aria-haspopup="menu" aria-expanded={labMenuOpen}
+                  aria-label={t("更多底图模式")} aria-haspopup="dialog" aria-expanded={labMenuOpen}
                   title={t("选择导入模式")}
                   className="mobile-touch flex items-center justify-center px-2.5 text-white/80 hover:text-white hover:bg-black/15 border-l border-white/15 transition-colors rounded-r-xl sm:px-3"
                 >
@@ -444,14 +455,12 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                 </button>
 
                 {labMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-20" onClick={() => setLabMenuOpen(false)} />
-                    <div role="menu" aria-label={t("选择底图模式")} className="appearance-panel appearance-overlay absolute bottom-12 left-0 z-30 w-52 overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+                  <AnchoredToolbarPopover anchorRef={labMenuAnchorRef} title={t("选择底图模式")} width={208} above compact allowMobile onClose={() => setLabMenuOpen(false)}>
                       <button
                         type="button"
                         disabled={Boolean(busy)}
                         onClick={() => { setLabMenuOpen(false); void importToPlayground(); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                        className="mobile-touch flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
                       >
                         <FlaskConical className="h-3.5 w-3.5 text-indigo-500" />
                         {t("完整导入（文生图）")}</button>
@@ -460,7 +469,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                         type="button"
                         disabled={Boolean(busy)}
                         onClick={() => { setLabMenuOpen(false); void importAsBaseImage('image-to-image'); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                        className="mobile-touch flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <ImagePlus className="h-3.5 w-3.5 text-indigo-500" />
                         {t("底图：图生图")}</button>
@@ -468,7 +477,7 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                         type="button"
                         disabled={Boolean(busy)}
                         onClick={() => { setLabMenuOpen(false); void importAsBaseImage('inpaint'); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                        className="mobile-touch flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
                         <Wand2 className="h-3.5 w-3.5 text-indigo-500" />
                         {t("底图：局部重绘")}</button>
@@ -476,12 +485,11 @@ export const InspirationDetail = React.memo(function InspirationDetail({
                         type="button"
                         disabled={Boolean(busy)}
                         onClick={() => { setLabMenuOpen(false); void importAsBaseImage('outpaint'); }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                        className="mobile-touch flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
                       >
-                        <ExternalLink className="h-3.5 w-3.5 text-indigo-500" />
+                        <Expand className="h-3.5 w-3.5 text-indigo-500" />
                         {t("底图：扩图")}</button>
-                    </div>
-                  </>
+                  </AnchoredToolbarPopover>
                 )}
               </div>
 

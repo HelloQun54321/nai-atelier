@@ -24,6 +24,17 @@ const setup = (detailsOpen = true) => {
   return { ...result, dialog, image, stage: image.parentElement!, onNavigate, onClose, onDetailsChange };
 };
 
+it('原图失败隐藏坏图，手动重试后恢复图片可见', () => {
+  const { image } = setup(false);
+  expect(image.style.visibility).not.toBe('hidden');
+  fireEvent.error(image);
+  expect(screen.getByRole('button', { name: '原图加载失败 · 重试' })).toBeTruthy();
+  expect(image.style.visibility).toBe('hidden');
+  fireEvent.click(screen.getByRole('button', { name: '原图加载失败 · 重试' }));
+  expect(screen.getByRole('img').style.visibility).not.toBe('hidden');
+  expect(screen.queryByRole('button', { name: '原图加载失败 · 重试' })).toBeNull();
+});
+
 describe('历史图片缩放与手势', () => {
   it('原图比例覆盖旧参数但不改变显示宽高规则，详情挤窄舞台后重新适配', () => {
     let box = { width: 1000, height: 700 }, resize!: () => void;

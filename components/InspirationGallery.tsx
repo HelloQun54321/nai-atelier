@@ -486,7 +486,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         </div>
         <ToolbarButton aria-label={t("退出多选")} title={t("退出多选")} onClick={() => { setSelectedIds(new Set()); setSelectionMode(false); }} className="mobile-touch !px-2.5"><X /><span className="hidden sm:inline">{t("退出多选")}</span></ToolbarButton>
       </> : <>
-      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 md:h-10 md:max-w-none!" className="h-full! min-h-0!">
+      <ToolbarSearch value={search} onChange={event => setSearch(event.target.value)} aria-label={t("搜索标题、提示词或标签…")} placeholder={t("搜索标题、提示词或标签…")} containerClassName="h-11 min-w-0 flex-1 max-md:min-w-[8.75rem] md:h-10 md:max-w-none!" className="h-full! min-h-0!">
         <SearchFilterChips chips={tagChips} expanded={showFilters} onMore={() => setShowFilters(true)} />
       </ToolbarSearch>
       <ToolbarPopover title={t("筛选收藏")} open={showFilters} onOpenChange={setShowFilters} count={mobile => activeFilterCount - (mobile ? 0 : Number(collection !== 'all') + Number(Boolean(boardId)))} width={360}>
@@ -529,7 +529,12 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
             </div>
           )}
           {visibleCount < groups.length && <div className="flex justify-center py-6"><button type="button" onClick={() => setVisibleCount(count => count + COLLECTION_RENDER_BATCH)} className="appearance-group mobile-touch rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{t("加载更多（{0}）", [groups.length - visibleCount])}</button><div ref={loadMoreSentinelRef} className="h-4 w-full max-w-40" aria-hidden="true" /></div>}
-        </> : loadError ? null : (
+        </> : loadError ? null : activeFilterCount > 0 || search.trim() || debouncedSearch.trim() ? (
+          <div className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            <p>{t("无匹配结果")}</p>
+            <button type="button" onClick={() => { setSearch(''); setDebouncedSearch(''); setTagFilter([]); setTagQuery(''); setSourceFilter(''); setBoardId(''); setCollection('all'); }} className="mobile-touch mt-2 px-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400">{t("清除筛选")}</button>
+          </div>
+        ) : (
           <EmptyState
             className="min-h-[45vh] px-6"
             icon={<Sparkles className="h-8 w-8" />}

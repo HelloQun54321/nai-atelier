@@ -234,14 +234,37 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
   const themeLibrary = useSharedAppearancePresets(open, appearancePreferences, setAppearancePreferences);
   const themeLibraryBusy = !themeLibrary.ready || themeLibrary.busy;
-  // P2-2：Esc 与浏览器手势返回共用 requestClose。移动端关闭走 history.back()（异步），
-  // 在 popstate 触发组件卸载前的窗口内再按 Esc 会二次 history.back() 越过标记直接退出页面；
-  // 用 closingRef 挡住“关闭动作已在途”的重复触发，重新打开时复位。
+  // 返回与关闭共用在途保护，防止 popstate 完成前重复 history.back()。
+  // 手机子页单独入栈；明确关闭整窗时按子页、分类依次清理。
   const closingRef = useRef(false);
-  useEffect(() => { if (open) closingRef.current = false; }, [open]);
+  const closeWholeSettingsRef = useRef(false);
+  useEffect(() => { if (open) { closingRef.current = false; closeWholeSettingsRef.current = false; } }, [open]);
   // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还），ref 挂在内容容器上。
   const dialogRef = useModalA11y<HTMLDivElement>(open);
-  const requestClose = useMobileHistoryLayer(open, onClose, 'settings');
+  const requestSettingsClose = useMobileHistoryLayer(open, onClose, 'settings');
+  const requestSectionBack = useMobileHistoryLayer(open && isMobile && activeSection !== 'home', () => {
+    setActiveSection('home');
+    if (closeWholeSettingsRef.current) {
+      closeWholeSettingsRef.current = false;
+      requestSettingsClose();
+    } else {
+      closingRef.current = false;
+    }
+  }, 'settings-section');
+  const requestBack = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (isMobile && activeSection !== 'home') requestSectionBack();
+    else requestSettingsClose();
+  }, [isMobile, activeSection, requestSectionBack, requestSettingsClose]);
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (isMobile && activeSection !== 'home') {
+      closeWholeSettingsRef.current = true;
+      requestSectionBack();
+    } else requestSettingsClose();
+  }, [isMobile, activeSection, requestSectionBack, requestSettingsClose]);
 
   useEffect(() => {
     const query = window.matchMedia('(max-width: 767px)');
@@ -254,6 +277,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   useEffect(() => {
     if (!open) return;
+    // 仅打开时读取初始状态，旋转或入口参数变化不重置当前设置会话。
     setActiveSection(initialSection === 'home' ? (isMobile ? 'home' : 'appearance') : initialSection);
     setApiKey(readApiKey());
     setRememberApiKey(getRememberNaiKey());
@@ -262,7 +286,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setShowNewKeyValue(false);
     void getNaiRuntimeConfig().then(config => setNaiRuntimeCoefficient(config.imagesPerPercent || 17.3));
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
-  }, [open, initialSection, isMobile]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -280,13 +304,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isTopmostModal(dialogRef.current) && !closingRef.current) {
-        closingRef.current = true;
-        requestClose();
+        event.preventDefault(); event.stopPropagation();
+        requestBack();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, requestClose]);
+  }, [open, requestBack]);
 
   useEffect(() => {
     if (!open) return;
@@ -674,7 +698,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       >
         <div className="workspace-command-bar flex items-center justify-between border-b border-gray-200 px-3 dark:border-gray-800 md:px-5">
           <div className="flex min-w-0 items-center gap-2">
-            {activeSectionMeta && <button type="button" onClick={() => setActiveSection('home')} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label={t("返回设置分类")} title={t("返回设置分类")}><ArrowLeft className="h-[18px] w-[18px]" /></button>}
+            {activeSectionMeta && <button type="button" onClick={requestBack} className="mobile-touch flex flex-none items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300 md:hidden" aria-label={t("返回设置分类")} title={t("返回设置分类")}><ArrowLeft className="h-[18px] w-[18px]" /></button>}
             <div className="min-w-0">
               <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">{t(activeSectionMeta?.label) || t("全局设置")}</h2>
 

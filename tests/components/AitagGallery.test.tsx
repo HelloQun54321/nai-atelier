@@ -657,6 +657,10 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
       expect(marker?.getAttribute('aria-hidden')).toBe('true');
     } else expect(marker).toBeNull();
     expect(title.getAttribute('data-safe-mode-title')).toBe('true');
+    expect(first.className).toContain('bg-white');
+    expect(first.className).not.toMatch(/(?:bg|border)-(?:emerald|sky)-/);
+    expect(first.querySelector('.mobile-gallery-frame')?.className).toContain('bg-gray-100');
+    expect(first.querySelector('.mobile-gallery-frame')?.className).not.toMatch(/bg-(?:emerald|sky)-/);
     expect(first.lastElementChild?.classList.contains('gallery-card-caption')).toBe(true);
     expect(first.querySelector('.h-1')).toBeNull();
   });
