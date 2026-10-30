@@ -797,6 +797,8 @@ body,
 /* 实验室命令栏在组件内按实际宽度收纳，宽栏左右等分，窄栏保持单行。 */
 /* 分区入口固定在滚动内容外；电脑只占左栏，预览保持原位置。 */
 .workspace-mode-tabs { height: 44px; padding: 0 !important; gap: 0 !important; border-radius: 0; }
+/* 分类模式的加号贴在分页条末尾，给窄屏留出位置；宽屏改到分页条外侧，避免被拉成整页标签。 */
+.workspace-mode-tabs:has(> span) { padding-right: 2.75rem !important; }
 .workspace-mode-tabs > button { height: 100% !important; }
 .workspace-mode-tabs > button[aria-selected='false'] + button[aria-selected='false']::before {
   content: '';
@@ -866,6 +868,7 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
     background: transparent !important;
     box-shadow: none;
   }
+  html:root .chain-editor-workspace .workspace-mode-tabs:has(> span) { padding-right: 0 !important; }
   html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
   .workspace-mode-tabs > button { font-size: .8125rem; font-weight: 500; }
   .workspace-mode-tabs > button[aria-selected='true'] { font-weight: 600; }
@@ -1549,4 +1552,15 @@ html[data-motion='off'] .media-card:hover { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   html[data-motion='full'] :is(.animate-pulse, .animate-bounce, .smart-image-shimmer) { animation: none !important; }
   html[data-motion='full'] .animate-spin { animation-duration: 1s !important; }
+}
+
+/* 只作用于分类编辑。空栏占位要比正文淡一档，在玻璃上仍要能读出来。 */
+.lab-category-mode textarea::placeholder {
+  color: color-mix(in srgb, var(--color-gray-500) 88%, transparent);
+  opacity: 1;
+}
+html.dark .lab-category-mode textarea::placeholder,
+html:root[data-theme-details='true'].dark .lab-editor-surface .lab-category-mode textarea::placeholder {
+  color: color-mix(in srgb, var(--color-gray-300) 78%, transparent) !important;
+  opacity: 1;
 }

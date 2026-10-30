@@ -23,7 +23,8 @@ import { useMobileHistoryLayer } from './MobileUI';
 import { ContentRollWorkspace } from './ContentRollWorkspace';
 import { CollectionTagInput } from './inspiration/CollectionControls';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
-import { resolvePromptSections } from '../services/labWorkspace';
+import { mergePromptSections, resolvePromptSections } from '../services/labWorkspace';
+import { projectSectionedPrompt, writeSectionText } from '../services/labSections';
 import { CHARACTER_SECTION_KEYS, compileCharacterContent } from '../services/characterPrompts';
 import { getEditableGlobalPrompt, getEditableGlobalNegative, mergePromptFields } from '../services/promptUtils';
 import { createUuid } from '../services/id';
@@ -86,7 +87,7 @@ export function PromptLibraryWorkspace({ state, onChange, active = true, registe
   const [requested, setRequested] = useState<PromptChain | null>(null);
   const [rollReceipt, setRollReceipt] = useState<RollApplyReceipt>();
   const [lastChange, setLastChange] = useState<{ before: PromptLibraryWorkspaceState; after: PromptLibraryWorkspaceState; receiptBefore?: RollApplyReceipt } | null>(null);
-  const canUndo = !!lastChange && state.params === lastChange.after.params && state.base === lastChange.after.base && state.subject === lastChange.after.subject && state.negative === lastChange.after.negative && state.classified === lastChange.after.classified;
+  const canUndo = !!lastChange && state.params === lastChange.after.params && state.base === lastChange.after.base && state.subject === lastChange.after.subject && state.negative === lastChange.after.negative && state.classified === lastChange.after.classified && state.sectioned === lastChange.after.sectioned;
   const latest = useRef({ state, onChange, onExternalChange, canUndo, lastChange, rollReceipt });
   latest.current = { state, onChange, onExternalChange, canUndo, lastChange, rollReceipt };
   const change = useCallback(async (next: PromptLibraryWorkspaceState) => {
@@ -114,7 +115,7 @@ export function PromptLibraryWorkspace({ state, onChange, active = true, registe
     setLastChange(null);
   }, []);
   const maxCharacters = getRuntimeNaiModelInfo(state.params.model, runtime).maxCharacters;
-  const workspaceState = useMemo(() => ({ params: state.params, base: state.base, subject: state.subject, negative: state.negative, classified: state.classified, maxCharacters }), [state.params, state.base, state.subject, state.negative, state.classified, maxCharacters]);
+  const workspaceState = useMemo(() => ({ params: state.params, base: state.base, subject: state.subject, negative: state.negative, classified: state.classified, sectioned: state.sectioned, maxCharacters }), [state.params, state.base, state.subject, state.negative, state.classified, state.sectioned, maxCharacters]);
   const access = useMemo(() => ({ state: workspaceState, change, canUndo, undo, rollReceipt, applyRoll }), [workspaceState, change, canUndo, undo, rollReceipt, applyRoll]);
   const registeredAccess = useMemo(() => ({ ...access, change: externalChange }), [access, externalChange]);
   const registerWorkspace = library?.registerWorkspace;
@@ -238,8 +239,19 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
           const current = workspace.state;
           if (target.mode === 'global') {
             const negative = Object.entries(current.params._promptSections?.sectionNegatives || {}).reduce((text, [kind, addition]) => (current.params._promptSections as Record<string, unknown>)[kind] ? mergePromptFields(text, addition) : text, current.negative);
-            if (field.negative) await workspace.change({ ...current, negative: applyLibraryText(current.classified ? current.negative : negative, text, mode, true), params: current.classified ? current.params : { ...current.params, _promptSections: { ...current.params._promptSections, sectionNegatives: undefined } } });
+            if (current.sectioned && !field.negative) {
+              const projected = projectSectionedPrompt(current.base, resolvePromptSections(current.params._promptSections, current.subject));
+              const nextSections = writeSectionText(projected.sections, 'extra', applyLibraryText(projected.sections.extra || '', text, mode, section === 'originals'));
+              await workspace.change({ ...current, base: projected.base, subject: mergePromptSections(nextSections), negative: contentNegative.trim() ? applyLibraryText(current.negative, contentNegative, mode) : current.negative, params: { ...current.params, _promptSections: nextSections } });
+            } else if (field.negative) await workspace.change({ ...current, negative: applyLibraryText(current.classified || current.sectioned ? current.negative : negative, text, mode, true), params: current.classified || current.sectioned ? current.params : { ...current.params, _promptSections: { ...current.params._promptSections, sectionNegatives: undefined } } });
             else await workspace.change({ ...current, base: applyLibraryText(getEditableGlobalPrompt(current.base, current.subject), text, mode, section === 'originals'), subject: '', negative: contentNegative.trim() ? applyLibraryText(negative, contentNegative, mode) : negative, params: { ...current.params, _promptSections: {} } });
+          } else if (current.sectioned) {
+            const oldRole = current.params.characters?.find(role => target.mode === 'existing' && role.id === target.id);
+            if (target.mode === 'existing' && !oldRole) throw new Error('目标角色已不存在，请重新选择');
+            if (target.mode === 'new' && (current.params.characters?.length || 0) >= (current.maxCharacters ?? getRuntimeNaiModelInfo(current.params.model).maxCharacters)) throw new Error('当前模型的角色数量已达上限');
+            const role = oldRole || { id: createUuid(), prompt: '', x: 0.5, y: 0.5 };
+            const nextRole = { ...role, prompt: field.negative ? role.prompt : applyLibraryText(role.prompt || '', text, mode, section === 'originals'), negativePrompt: field.negative ? applyLibraryText(role.negativePrompt || '', text, mode, true) : contentNegative.trim() ? applyLibraryText(role.negativePrompt || '', contentNegative, mode) : role.negativePrompt };
+            await workspace.change({ ...current, params: { ...current.params, characters: oldRole ? current.params.characters!.map(item => item.id === role.id ? nextRole : item) : [...(current.params.characters || []), nextRole] } });
           } else {
             if (target.mode === 'new' && (current.params.characters?.length || 0) >= (current.maxCharacters ?? getRuntimeNaiModelInfo(current.params.model).maxCharacters)) throw new Error('当前模型的角色数量已达上限');
             const oldRole = current.params.characters?.find(role => target.mode === 'existing' && role.id === target.id);

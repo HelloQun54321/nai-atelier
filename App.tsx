@@ -1195,6 +1195,8 @@ const App = () => {
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
           labPageLayouts={appearancePreferences.labPageLayouts}
+          sectionedPrompt={appearancePreferences.labSectionedPrompt}
+          onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}
           onBack={handleReturnFromEditor}
         />;
@@ -1318,6 +1320,8 @@ const App = () => {
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
           continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
           labPageLayouts={appearancePreferences.labPageLayouts}
+          sectionedPrompt={appearancePreferences.labSectionedPrompt}
+          onSectionedPromptChange={enabled => setAppearancePreferences(current => ({ ...current, labSectionedPrompt: enabled }))}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}
         /></PromptLibraryRequestEnabledContext.Provider>;

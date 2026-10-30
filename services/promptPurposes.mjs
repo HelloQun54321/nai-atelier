@@ -52,7 +52,9 @@ export const purposeSectionKey = id => `purpose:${normalizePromptPurposeId(id)}`
 export const normalizePromptPurposeSectionKey = key => typeof key === 'string' && key.startsWith('purpose:') ? purposeSectionKey(key.slice(8)) : key;
 export const isPurposeSectionKey = key => typeof key === 'string' && key.startsWith('purpose:')
   && (PROMPT_PURPOSE_IDS.includes(key.slice(8)) || Object.hasOwn(LEGACY_PROMPT_PURPOSE_MAP, key.slice(8)));
-export const isCreativeSectionKey = key => isPurposeSectionKey(key) || typeof key === 'string' && /^directory:[\w-]{1,120}$/.test(key);
+/** 用户在分类编辑里追加的栏位。不占用用途 ID，编译时接在固定栏之后。 */
+export const isCustomSectionKey = key => typeof key === 'string' && /^custom:[\w-]{1,80}$/.test(key);
+export const isCreativeSectionKey = key => isPurposeSectionKey(key) || typeof key === 'string' && /^directory:[\w-]{1,120}$/.test(key) || isCustomSectionKey(key);
 
 /** 写入与模型返回必须校验白名单；旧版画风细项会归并到「画风配方」。 */
 export function readPromptPurposes(value) {
