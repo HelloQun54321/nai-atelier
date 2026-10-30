@@ -116,6 +116,47 @@ describe('共用角色编辑器', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('角色库引用弹窗支持名称、提示词与标签搜索，选中后写入当前角色且重新打开清空查询', () => {
+    const allChains: PromptChain[] = [
+      { id: 'moon', userId: 'synthetic', name: '月光骑士', type: 'character', description: '银甲角色', tags: ['骑士', '月光'], basePrompt: 'silver armor, moonlight', negativePrompt: 'blurry', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'silver armor', negativePrompt: 'blurry' }] }, createdAt: 1, updatedAt: 1 },
+      { id: 'forest', userId: 'synthetic', name: '森林精灵', type: 'character', description: '绿叶角色', tags: ['精灵', '森林'], basePrompt: 'green cloak, forest', negativePrompt: 'low quality', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'green cloak', negativePrompt: 'low quality' }] }, createdAt: 2, updatedAt: 2 },
+    ];
+    render(<Harness library={{ allChains, showCharacterReference: true }} />);
+    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    const dialog = screen.getByRole('dialog');
+    const search = within(dialog).getByRole('searchbox', { name: '搜索角色库角色' }) as HTMLInputElement;
+    const roleButtons = () => within(dialog).getAllByRole('button').filter(button => button.textContent !== '关闭');
+
+    expect(search).toBeTruthy();
+    expect(roleButtons()).toHaveLength(2);
+    fireEvent.change(search, { target: { value: '森林精灵' } });
+    expect(within(dialog).getByRole('button', { name: /森林精灵/ })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /月光骑士/ })).toBeNull();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(roleButtons()).toHaveLength(2);
+
+    const beforeSearch = draft();
+    fireEvent.change(search, { target: { value: 'moonlight' } });
+    expect(within(dialog).getByRole('button', { name: /月光骑士/ })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /森林精灵/ })).toBeNull();
+    expect(draft()).toEqual(beforeSearch);
+    fireEvent.change(search, { target: { value: 'green cloak' } });
+    expect(within(dialog).getByRole('button', { name: /森林精灵/ })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /月光骑士/ })).toBeNull();
+    fireEvent.change(search, { target: { value: 'does-not-exist' } });
+    expect(within(dialog).getByText('没有匹配的角色')).toBeTruthy();
+    expect(within(dialog).queryByText('角色库中暂无自定义角色')).toBeNull();
+
+    fireEvent.change(search, { target: { value: '森林' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /森林精灵/ }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(draft().characters?.[0]).toMatchObject({ prompt: 'green cloak, forest', negativePrompt: 'low quality', x: 0.223, y: 0.887 });
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]);
+
+    fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
+    expect((within(screen.getByRole('dialog')).getByRole('searchbox') as HTMLInputElement).value).toBe('');
+  });
+
   it('完整角色原文框均可拉伸，动态目录正负词合并显示', () => {
     const role = { ...initial.characters![0], sections: { 'directory:dress': 'dress' }, sectionNegatives: { 'directory:dress': 'coat' }, sectionMeta: { 'directory:dress': { directoryName: '服装' } } };
     render(<Harness initialParams={{ ...initial, characters: [role] }} />);

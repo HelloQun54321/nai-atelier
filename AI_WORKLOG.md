@@ -6,10 +6,13 @@
 
 ## 2026-10-30
 
+- **Cursor（Composer）**：处理 PR #15：rebase 到 main、解决 CHANGELOG／工作日志冲突、版本递增至 1.149.0 并合并；回复作者已处理。
+
+- **Codex（GPT-6；GPT-6-astra 子代理）**：完成实验室角色卡“从角色库引用”弹窗搜索功能，支持名称、说明、标签及正负提示词匹配，保留加载／错误／真实空库状态并新增无匹配提示；完成组件回归和四语文案定向测试。
+
 - **Cursor（Composer）**：与画风配方批次一并提交：修复局域网 HTTP 非安全上下文下法典页 `crypto.subtle.digest` 崩溃；法典校验、Key 指纹与复制图片像素指纹改用 `@noble/hashes`，助手导出暂存改用 `createUuid()`；补非安全上下文定向回归；版本递增至 1.148.0 并推送。
 
 - **DeepSeek Harness（deepseek-flash）**：按确认方案把画师、画风、质感、特效、质量、光照、色彩 7 个细用途合并为「画风配方」（16 个固定用途），提示词库分组改为「镜头、构图与文字／画风与成像」，片段目录预设合并为一个画风配方父目录；旧条目与旧组合分栏做只读归并映射，不批量改用户资料；同步 AI 用途说明、README、产品决策、CHANGELOG 与多语词条；与局域网 crypto 修复一并提交，版本递增至 1.148.0。
-
 - **DeepSeek Harness（deepseek-flash）**：把 `PROJECT_AGENT.md` 加入 prompt-library 与 nai-roll 两个工作流的触发路径，单独修改助手运行规则也会跑预算与助手回归；版本递增至 1.147.2。
 
 - **DeepSeek Harness（deepseek-flash）**：修复 @ 引用功能触发的 CI 预算回归——把「@ 引用角色即已确认、不再搜索同名角色」规则从 `PROJECT_AGENT.md`（系统提示）移到运行时引用上下文，32768 Token 小窗口模型恢复可用；本地复跑 prompt-library 与 nai-roll 两个 workflow 的全部步骤通过（助手回归 131 项、关联／存储／面板 121 项、Roll／实验室 557 项、产物一致性 7 项），版本递增至 1.147.1。

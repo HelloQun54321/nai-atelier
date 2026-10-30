@@ -17,6 +17,7 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { SmartImage } from '../SmartImage';
 import { ToolbarPopover } from '../ToolbarPopover';
+import { ToolbarSearch } from '../DesignSystem';
 
 const SUBJECT_PURPOSES: readonly PromptPurposeId[] = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
 
@@ -107,6 +108,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     const [positionOpen, setPositionOpen] = useState(false);
     const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
     const [characterName, setCharacterName] = useState('');
+    const [referenceQuery, setReferenceQuery] = useState('');
     const [savingCharacter, setSavingCharacter] = useState(false);
     const actionDialogRef = useModalA11y<HTMLDivElement>(Boolean(activeAction));
     useEffect(() => {
@@ -137,6 +139,15 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         setParams({ ...params, characters: moveCharacter(characters, index, direction) });
         markChange();
     };
+    const characterChains = allChains.filter(item => item.type === 'character');
+    const normalizedReferenceQuery = referenceQuery.trim().toLocaleLowerCase();
+    const filteredCharacterChains = characterChains.filter(item => {
+        if (!normalizedReferenceQuery) return true;
+        const positivePrompt = compilePrompt(item, item.variableValues?.subject || '');
+        const storedCharacterPrompts = (item.params?.characters || []).flatMap(character => [character.prompt, character.negativePrompt || '']);
+        return [item.name, item.description, ...(item.tags || []), positivePrompt, item.negativePrompt || '', ...storedCharacterPrompts]
+            .some(value => value.toLocaleLowerCase().includes(normalizedReferenceQuery));
+    });
     return (<>
     <LabModuleSection
         moduleId="characters"
@@ -235,7 +246,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 <span ref={taggerSlotRef} />
                                 <span ref={positiveSlotRef} />
                                 {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={(!char.prompt.trim() && !hasCharacterSections(char)) || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
-                                {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => setActiveAction({ kind: 'reference', index: idx })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
+                                {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => { setReferenceQuery(''); setActiveAction({ kind: 'reference', index: idx }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
                                 <button type="button" title={t("上移")} aria-label={t("上移角色 {0}", [idx + 1])} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
                                 <button type="button" title={t("下移")} aria-label={t("下移角色 {0}", [idx + 1])} disabled={!canEdit || idx === characters.length - 1} onClick={() => reorder(idx, 1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowDown className="h-4 w-4" /></button>
                                 <button type="button" title={t("移除角色提示词")} aria-label={t("移除角色提示词")} disabled={!canEdit} onClick={() => removeCharacter(idx)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-25 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" /></button>
@@ -275,7 +286,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={savingCharacter} onClick={() => setActiveAction(null)} className="mobile-touch rounded-xl px-4 text-sm text-gray-500">{t("取消")}</button><button type="submit" disabled={!characterName.trim() || savingCharacter} className="mobile-touch rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:opacity-40">{savingCharacter ? t("正在保存…") : t("保存")}</button></div>
             </form> : <>
                 <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-bold">{t("选择角色库角色")}</h2><button type="button" onClick={() => setActiveAction(null)} className="mobile-touch rounded px-2 py-1 text-gray-500">{t("关闭")}</button></div>
-                <div className="space-y-2">{allChains.filter(item => item.type === 'character').map(item => <button key={item.id} type="button" onClick={() => {
+                <ToolbarSearch autoFocus aria-label={t('搜索角色库角色')} placeholder={t('搜索角色名称、标签或提示词')} value={referenceQuery} onChange={event => setReferenceQuery(event.target.value)} containerClassName="mb-3 md:max-w-none!" />
+                <div className="space-y-2">{filteredCharacterChains.map(item => <button key={item.id} type="button" onClick={() => {
                     if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '', sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
                     setActiveAction(null);
                 }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
@@ -284,7 +296,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 </button>)}</div>
                 {chainsLoading && <p role="status" className="py-4 text-center text-sm text-gray-500">{t("加载中…")}</p>}
                 {!chainsLoading && chainsError && <div role="alert" className="flex items-center justify-center gap-3 py-4 text-sm text-red-600 dark:text-red-400">{t(chainsError)}{onRetryChains && <button type="button" onClick={onRetryChains} className="mobile-touch rounded border border-current px-3 py-1">{t("重试")}</button>}</div>}
-                {!chainsLoading && !chainsError && allChains.every(item => item.type !== 'character') && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
+                {!chainsLoading && !chainsError && characterChains.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
+                {!chainsLoading && !chainsError && characterChains.length > 0 && filteredCharacterChains.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t("没有匹配的角色")}</p>}
             </>}
         </div>
     </div></ImagePreviewPortal>}
