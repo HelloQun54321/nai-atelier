@@ -32,6 +32,8 @@ export interface CharacterSectionContent {
 
 export interface CharacterParams {
   id: string;
+  /** 角色名；从角色库引用时带入，缺省显示为「角色 N」。 */
+  name?: string;
   enabled?: boolean; // 临时停用不删除内容；旧资料未记录时默认启用
   prompt: string;
   negativePrompt?: string; // New: Per-character negative prompt

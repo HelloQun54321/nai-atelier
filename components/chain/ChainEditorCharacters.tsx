@@ -108,6 +108,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     const [positionOpen, setPositionOpen] = useState(false);
     const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
     const [characterName, setCharacterName] = useState('');
+    const [editingNameId, setEditingNameId] = useState('');
+    const [nameDraft, setNameDraft] = useState('');
     const [referenceQuery, setReferenceQuery] = useState('');
     const [savingCharacter, setSavingCharacter] = useState(false);
     const actionDialogRef = useModalA11y<HTMLDivElement>(Boolean(activeAction));
@@ -221,12 +223,15 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     </div>;
                     return (
                     <div key={`${scopeKey}:${char.id}`} className="lab-character relative min-w-0 py-3">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+                        <div className="character-card-header mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                                 <input type="checkbox" aria-label={t('启用角色 {0}', [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
                                     onChange={event => updateCharacter(idx, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
-                                {t('角色 ')}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
-                            </label>
+                                {editingNameId === char.id
+                                    ? <input autoFocus aria-label={t('角色名称')} value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => { updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); updateCharacter(idx, { name: nameDraft.trim() || undefined }); setEditingNameId(''); } else if (event.key === 'Escape') setEditingNameId(''); }} className="h-6 w-28 rounded border border-gray-300 bg-white px-1.5 text-xs dark:border-gray-600 dark:bg-gray-800" />
+                                    : <button type="button" disabled={!canEdit} title={t('修改角色名称')} onClick={() => { setEditingNameId(char.id); setNameDraft(char.name || ''); }} className="min-w-0 max-w-40 truncate rounded px-1 py-0.5 text-left hover:bg-gray-100 disabled:opacity-100 dark:hover:bg-gray-800">{char.name ? char.name : <>{t('角色 ')}{idx + 1}</>}</button>}
+                                {char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
+                            </div>
                             <div className="character-tools ml-auto flex flex-wrap items-center justify-end gap-1">
                                 <PromptLibraryRandomButton roleId={char.id} purposes={SUBJECT_PURPOSES} variant="icon" disabled={!canEdit} fallback={canEdit && onContentRollForRole ? () => onContentRollForRole(idx) : undefined} />
                                 <ToolbarPopover label="坐标" title={t("角色 {0} 坐标", [idx + 1])} icon={<MapPin />} iconOnly width={240}>
@@ -288,7 +293,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-bold">{t("选择角色库角色")}</h2><button type="button" onClick={() => setActiveAction(null)} className="mobile-touch rounded px-2 py-1 text-gray-500">{t("关闭")}</button></div>
                 <ToolbarSearch autoFocus aria-label={t('搜索角色库角色')} placeholder={t('搜索角色名称、标签或提示词')} value={referenceQuery} onChange={event => setReferenceQuery(event.target.value)} containerClassName="mb-3 md:max-w-none!" />
                 <div className="space-y-2">{filteredCharacterChains.map(item => <button key={item.id} type="button" onClick={() => {
-                    if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '', sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
+                    if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { name: item.name, prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '', sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
                     setActiveAction(null);
                 }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
                     {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}

@@ -5,7 +5,10 @@ import type { PromptTagToken } from './promptTags.mjs';
 export { parsePromptTags } from './promptTags.mjs';
 export type { PromptTagToken } from './promptTags.mjs';
 
-export type PromptTranslationSource = 'dictionary' | 'ai' | 'missing';
+export type PromptTranslationSource = 'dictionary' | 'ai' | 'missing' | 'native';
+
+/** 原文本身就是中日韩文字时不需要再翻译，也不显示「待翻译」。 */
+export const isNativePromptText = (text: string) => /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(text);
 
 export interface PromptTagTranslation extends PromptTagToken {
   chinese?: string;

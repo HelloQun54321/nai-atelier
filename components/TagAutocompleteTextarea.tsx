@@ -16,6 +16,7 @@ import {
   PromptTagToken,
   PromptTagTranslation,
   PromptWeightKind,
+  isNativePromptText,
   resolvePromptTranslations,
   removePromptTagTokens,
   subscribeTagTranslations,
@@ -190,17 +191,21 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   // 翻译异步返回，但标签位置始终来自当前原文，避免旧结果指向其他词。
   const currentTranslations = useMemo(() => {
     const cached = new Map(translations.map(item => [item.lookupTag, item]));
-    return promptTokens.map(token => ({ ...token, chinese: cached.get(token.lookupTag)?.chinese, source: cached.get(token.lookupTag)?.source || 'missing' as const }));
+    return promptTokens.map(token => {
+      // 原文已经是中日韩文字时仍然留在翻译区，直接显示原文，只跳过「待翻译」和补译请求。
+      if (isNativePromptText(token.displayTag)) return { ...token, chinese: token.displayTag, source: 'native' as const };
+      return { ...token, chinese: cached.get(token.lookupTag)?.chinese, source: cached.get(token.lookupTag)?.source || 'missing' as const };
+    });
   }, [promptTokens, translations]);
   const draftTokens = useMemo(() => tagAssistEnabled && showTranslations && (editingTag || insertionIndex !== null) ? parsePromptTags(tagInput).filter(token => !isLibraryOnlyQuery(token.lookupTag)) : [], [tagAssistEnabled, showTranslations, editingTag, insertionIndex, tagInput]);
   const [draftTranslations, setDraftTranslations] = useState<PromptTagTranslation[]>([]);
   const draftTranslationMap = useMemo(() => new Map([...translations, ...draftTranslations].filter(item => item.chinese).map(item => [item.lookupTag, item.chinese])), [translations, draftTranslations]);
-  const draftChinese = draftTokens.map(token => draftTranslationMap.get(token.lookupTag) || t('待翻译')).join(', ') || t('待翻译');
+  const draftChinese = draftTokens.map(token => isNativePromptText(token.displayTag) ? token.displayTag : draftTranslationMap.get(token.lookupTag) || t('待翻译')).join(', ') || t('待翻译');
   useEffect(() => {
     if (!draftTokens.length || tagComposing) return;
     let active = true;
     const timer = window.setTimeout(() => {
-      void resolvePromptTranslations(draftTokens).then(items => {
+      void resolvePromptTranslations(draftTokens.filter(token => !isNativePromptText(token.displayTag))).then(items => {
         if (active) setDraftTranslations(items);
       }).catch(error => { if (active) console.warn('Prompt draft translation lookup failed:', error); });
     }, 80);
@@ -299,7 +304,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     }
     let active = true;
     const timer = window.setTimeout(() => {
-      void resolvePromptTranslations(parsedTokens).then(items => {
+      void resolvePromptTranslations(parsedTokens.filter(token => !isNativePromptText(token.displayTag))).then(items => {
         if (active) setTranslations(items);
       }).catch(error => {
         if (active) console.warn('Prompt translation lookup failed:', error);

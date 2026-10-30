@@ -1736,4 +1736,17 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     fireEvent.paste(screen.getByLabelText('提示词中文翻译'), { clipboardData: { getData: () => 'beta' } });
     expect(onValueChange).not.toHaveBeenCalled();
   });
+
+  it('原文本身就是中文的片段留在翻译区但不需要翻译，也不显示待翻译', async () => {
+    const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
+    const first = render(React.createElement(Harness, { initial: '红发少女, 黑色长发', showTranslations: true }));
+    await waitFor(() => expect(screen.getByLabelText('提示词中文翻译')).toBeTruthy());
+    expect(list().textContent).toContain('红发少女');
+    expect(list().textContent).toContain('黑色长发');
+    expect(list().textContent).not.toContain('待翻译');
+    first.unmount();
+    render(React.createElement(Harness, { initial: '1girl, 红发少女', showTranslations: true }));
+    await waitFor(() => expect(list().textContent).toContain('待翻译'));
+    expect(list().textContent).toContain('红发少女');
+  });
 });

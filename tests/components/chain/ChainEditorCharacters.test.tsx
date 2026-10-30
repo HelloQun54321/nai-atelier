@@ -256,7 +256,7 @@ describe('共用角色编辑器', () => {
     render(<Harness />);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
     const negative = screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement;
-    const header = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('label')!.parentElement!;
+    const header = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('.character-card-header') as HTMLElement;
     const clearPositive = within(header).getByRole('button', { name: '清空当前提示词' });
     expect(header.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
     expect(positive.parentElement!.contains(clearPositive)).toBe(false);
@@ -326,10 +326,10 @@ describe('共用角色编辑器', () => {
 
   it('角色排序后清空撤销仍跟随稳定角色槽位，不落入其他角色顶栏', () => {
     render(<Harness />);
-    const firstHeader = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('label')!.parentElement!;
+    const firstHeader = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('.character-card-header') as HTMLElement;
     fireEvent.click(within(firstHeader).getByRole('button', { name: '清空当前提示词' }));
     fireEvent.click(screen.getByRole('button', { name: '下移角色 1' }));
-    const movedHeader = screen.getByRole('checkbox', { name: '启用角色 2' }).closest('label')!.parentElement!;
+    const movedHeader = screen.getByRole('checkbox', { name: '启用角色 2' }).closest('.character-card-header') as HTMLElement;
     fireEvent.click(within(movedHeader).getByRole('button', { name: '撤销清空' }));
     expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
     expect(document.activeElement).toBe(screen.getAllByPlaceholderText('角色提示词')[1]);

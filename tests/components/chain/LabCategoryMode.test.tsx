@@ -68,6 +68,22 @@ describe('分类模式分页', () => {
     expect(screen.getAllByRole('button', { name: '从角色库引用' })).toHaveLength(2);
   });
 
+  it('角色在页头切换，一次只显示一个，标题跟随角色名', () => {
+    const named = { id: 'c1', name: '红发少女', prompt: '', x: 0.5, y: 0.5 } as CharacterParams;
+    const unnamed = { id: 'c2', prompt: '', x: 0.5, y: 0.5 } as CharacterParams;
+    const tools = { chains: [], params: { width: 832, height: 1216, characters: [] } as unknown as NAIParams, setParams: vi.fn(), onSaveCharacter: vi.fn() };
+    render(<LabCategoryMode tab="character" base="" negative="" sections={sections} characters={[named, unnamed]} tagAssist={false} negativeLocked={false} characterTools={tools} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />);
+    const namedSwitch = screen.getAllByRole('button', { name: /红发少女/ }).find(button => button.hasAttribute('aria-pressed'))!;
+    expect(namedSwitch.getAttribute('aria-pressed')).toBe('true');
+    const secondSwitch = screen.getAllByRole('button', { name: /角色 2/ }).find(button => button.hasAttribute('aria-pressed'))!;
+    expect(secondSwitch.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('checkbox', { name: '启用角色 1' })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: '启用角色 2' })).toBeNull();
+    fireEvent.click(secondSwitch);
+    expect(screen.getByRole('checkbox', { name: '启用角色 2' })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: '启用角色 1' })).toBeNull();
+  });
+
   it('翻译区按内容显示，与普通模式一致，不要求先点输入框', () => {
     const withText = { ...sections, 'purpose:place': 'rainy street, night' } as PromptSections;
     render(<LabCategoryMode tab="scene" base="" negative="" sections={withText} characters={[]} tagAssist negativeLocked={false} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />);

@@ -186,7 +186,7 @@ function CharacterLibraryDialog({ action, chains, chainsLoading, chainsError, on
   chains: PromptChain[]; chainsLoading?: boolean; chainsError?: string; onRetryChains?: () => void;
   onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
   onClose: () => void;
-  onApply: (index: number, character: Pick<CharacterParams, 'prompt' | 'negativePrompt'>) => void;
+  onApply: (index: number, character: Pick<CharacterParams, 'prompt' | 'negativePrompt' | 'name'>) => void;
 }) {
   useLanguage();
   const [name, setName] = useState('');
@@ -205,7 +205,7 @@ function CharacterLibraryDialog({ action, chains, chainsLoading, chainsError, on
       </form> : <>
         <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-bold">{t('选择角色库角色')}</h2><button type="button" onClick={onClose} className="mobile-touch rounded px-2 py-1 text-gray-500">{t('关闭')}</button></div>
         <ToolbarSearch autoFocus aria-label={t('搜索角色库角色')} placeholder={t('搜索角色名称、标签或提示词')} value={query} onChange={event => setQuery(event.target.value)} containerClassName="mb-3 md:max-w-none!" />
-        <div className="space-y-2">{shown.map(item => <button key={item.id} type="button" onClick={() => { onApply(action.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '' }); onClose(); }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
+        <div className="space-y-2">{shown.map(item => <button key={item.id} type="button" onClick={() => { onApply(action.index, { name: item.name, prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '' }); onClose(); }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
           {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
           <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
         </button>)}</div>
@@ -234,8 +234,23 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
   const extras = board.filter(item => item.id !== 'scene' && (item.facets.some(facet => facet.text.trim() || facet.negative.trim()) || item.removable));
   const [focusedId, setFocusedId] = useState('');
   const [positionOpen, setPositionOpen] = useState(false);
+  const [activeCharacterId, setActiveCharacterId] = useState('');
+  const [editingNameId, setEditingNameId] = useState('');
+  const [nameDraft, setNameDraft] = useState('');
   const [libraryAction, setLibraryAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
   const openReference = (index: number) => setLibraryAction({ kind: 'reference', index });
+  /** 角色一次只显示一个，卡片上方用切换按钮切换；删掉后自动回到第一个。 */
+  const shownCharacterIndex = Math.max(0, characters.findIndex(item => item.id === activeCharacterId));
+  const characterLabel = (item: CharacterParams, index: number) => item.name || t('角色 {0}', [index + 1]);
+  const commitName = (index: number) => {
+    onUpdateCharacter(index, { name: nameDraft.trim() || undefined });
+    setEditingNameId('');
+  };
+  const characterCount = useRef(characters.length);
+  useEffect(() => {
+    if (characters.length > characterCount.current) setActiveCharacterId(characters[characters.length - 1].id);
+    characterCount.current = characters.length;
+  }, [characters]);
   return <div className="lab-category-mode flex flex-col gap-4 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-0">
     {tab === 'style' && <article className={cardClass}>
       <header className="flex items-center justify-between gap-3">
@@ -257,13 +272,22 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
           <button type="button" className="appearance-group mobile-touch flex items-center gap-1 rounded border border-indigo-300 bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/50" onClick={onAddCharacter}>{t('添加角色')}</button>
         </div>
       </div>
+      {characters.length > 0 && <div className="flex flex-wrap items-center gap-1.5">
+        {characters.map((character, index) => <button key={character.id} type="button" aria-pressed={index === shownCharacterIndex} onClick={() => setActiveCharacterId(character.id)} className={`appearance-group mobile-touch flex max-w-full items-center gap-1 rounded border px-2 py-1 text-xs ${index === shownCharacterIndex ? 'border-indigo-300 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}><span className="max-w-40 truncate">{characterLabel(character, index)}</span>{character.enabled === false && <span className="text-gray-400">{t('· 已停用')}</span>}</button>)}
+      </div>}
       {characterTools && positionOpen && <CharacterPositionStage characters={characters} freeform={Boolean(characterTools.freeformPosition)} width={characterTools.params.width} height={characterTools.params.height} canEdit={!disabled} useCoords={characterTools.params.useCoords === true} onPosition={(index, position) => { characterTools.setParams({ ...characterTools.params, useCoords: true, characters: (characterTools.params.characters || []).map((item, itemIndex) => itemIndex === index ? { ...item, ...position } : item) }); characterTools.onSettingsChange?.(); }} />}
       {characters.length === 0 && <div className="py-2 text-center text-xs text-gray-400">{t('暂无角色，点击上方添加')}</div>}
       {characters.map((character, index) => {
+        if (index !== shownCharacterIndex) return null;
         const board = readCharacterBoard(character, stored);
         return <article key={character.id} className={cardClass}>
           <header className="flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200"><input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} />{t('角色 {0}', [index + 1])}</label>
+            <div className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200">
+              <input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
+              {editingNameId === character.id
+                ? <input autoFocus aria-label={t('角色名称')} value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => commitName(index)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitName(index); } else if (event.key === 'Escape') setEditingNameId(''); }} className="h-6 w-32 rounded border border-gray-300 bg-white px-1.5 text-xs font-normal dark:border-gray-600 dark:bg-gray-800" />
+                : <button type="button" title={t('修改角色名称')} onClick={() => { setEditingNameId(character.id); setNameDraft(character.name || ''); }} className="min-w-0 max-w-48 truncate rounded px-1 py-0.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800">{characterLabel(character, index)}</button>}
+            </div>
             <div className="flex flex-wrap items-center gap-1">
               {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" />{t('保存到角色库')}</button>}
               <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])} onOpen={() => setFocusedId('')}>
@@ -287,8 +311,11 @@ export function LabCategoryMode({ tab, base, negative, sections, layout, charact
         </article>;
       })}
       {libraryAction && characterTools && <CharacterLibraryDialog action={libraryAction} chains={characterTools.chains} chainsLoading={characterTools.chainsLoading} chainsError={characterTools.chainsError} onRetryChains={characterTools.onRetryChains} onSaveCharacter={characterTools.onSaveCharacter} onClose={() => setLibraryAction(null)} onApply={(index, next) => {
-        if (index < 0) characterTools.setParams({ ...characterTools.params, characters: [...(characterTools.params.characters || []), { id: createUuid(), prompt: next.prompt, negativePrompt: next.negativePrompt, x: 0.5, y: 0.5 }] });
-        else onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
+        if (index < 0) {
+          const id = createUuid();
+          characterTools.setParams({ ...characterTools.params, characters: [...(characterTools.params.characters || []), { id, name: next.name, prompt: next.prompt, negativePrompt: next.negativePrompt, x: 0.5, y: 0.5 }] });
+          setActiveCharacterId(id);
+        } else onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
       }} />}
     </section>}
     {!['style', 'character', 'reference', 'params'].includes(tab) && zone && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}

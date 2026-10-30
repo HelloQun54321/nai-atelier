@@ -6,6 +6,9 @@
 
 ## 2026-10-31
 
+- **DeepSeek Harness（deepseek-flash）**：中文片段仍留在翻译区并直接显示原文，只是不再标记「待翻译」、也不发起翻译请求（`source: 'native'`）；判断由 `isNativePromptText` 统一提供，批量补译与草稿预览同样跳过请求。新增组件回归，翻译相关 162 项通过。
+- **DeepSeek Harness（deepseek-flash）**：角色切换按钮移到页头下方独立一行（名字 max-w 截断），角色标题改为可就地改名（回车／失焦保存、Esc 取消、清空回退编号），普通模式同步；普通模式角色顶栏加 `character-card-header` 稳定类名并更新相关测试结构查询。
+- **DeepSeek Harness（deepseek-flash）**：分类编辑的角色改成页头切换按钮，一次只渲染一个角色的编辑区（新增／引用后自动切到该角色，删除后回退第一个）；`CharacterParams` 新增可选 `name`，从角色库引用时带入并在卡片标题显示，普通模式同步。补切换与命名回归，类型检查通过。
 - **DeepSeek Harness（deepseek-flash）**：按截图修两处：分类编辑的翻译区改为与普通模式一致按内容显示（`Boolean(text.trim())`），不再绑在聚焦状态；「添加角色」按钮改用靛蓝强调底与浅色文字，与其他两个按钮同为 25px 小按钮。补翻译区回归，类型检查与测试通过。
 - **DeepSeek Harness（deepseek-flash）**：去掉分类编辑「画风」标题前的锁图标与 `Lock` 依赖，全局提示词恢复为正常的可编辑整段输入框（实测 `disabled=false`、`readOnly=false`）；构建产物并页面复核无锁图标。
 - **DeepSeek Harness（deepseek-flash）**：把实验室分类编辑对齐普通模式：分区容器改用与 `LabModuleSection` 同款卡片类与外观，标题统一 12px 粗体，按钮统一为 px-2 py-1 text-xs，输入框圆角改 rounded-lg；删除页面内说明段落，空状态收成一行灰字。清理不再使用的四条词条，测试与产物已更新。

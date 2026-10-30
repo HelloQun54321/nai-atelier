@@ -48,7 +48,7 @@ import { decideCurrentPreviewCover } from '../services/chainCover';
 import { compileCharacterContent } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
-import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags } from '../services/tagTranslations';
+import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags, isNativePromptText } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
@@ -2094,7 +2094,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         const promptValues = activeEditDraft
             ? [activeEditDraft.prompt, getEditableGlobalNegative(activeEditDraft.negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])]
             : [basePrompt, subjectPrompt, getEditableGlobalNegative(negativePrompt, currentParams._promptSections), ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
-        const tokens = promptValues.flatMap(value => parsePromptTags(value || ''));
+        const tokens = promptValues.flatMap(value => parsePromptTags(value || '')).filter(token => !isNativePromptText(token.displayTag));
         if (!tokens.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
 
         setTranslationPending(true);
