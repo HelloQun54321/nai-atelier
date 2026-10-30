@@ -25,14 +25,10 @@ describe('分类模式分页', () => {
     expect(screen.getByRole('textbox', { name: '地点与布景' })).toHaveProperty('placeholder', '写地点、室内或背景');
     expect(screen.getAllByRole('button', { name: /更多操作/ })).toHaveLength(1);
     expect(screen.queryByRole('textbox', { name: '画风' })).toBeNull();
-    const summary = screen.getByText(/本次结构/).closest('details');
-    expect(summary?.open).toBe(false);
-    fireEvent.click(screen.getByText(/本次结构/));
-    expect(summary?.open).toBe(true);
+    expect(screen.queryByText(/本次结构/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /更多操作/ }));
     expect(screen.getByRole('menu')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(screen.getByText(/artist:keep, rainy street/)).toBeTruthy();
   });
 });

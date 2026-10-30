@@ -1,7 +1,7 @@
 import { promptPurposeLabel, type PromptPurposeId } from '../../services/promptPurposes.mjs';
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDown, Lock, MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
+import { Lock, MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PromptCopyButton } from './PresetSourceBadges';
@@ -16,7 +16,7 @@ import type { CharacterParams, NAIParams, PromptChain, PromptSectionSource, Prom
 import {
   PICTURE_ZONES, addCharacterFacet, addCustomZone, addPictureFacet, customSectionId, movePictureZone, pictureExtra,
   pinPictureZone, pinnedPictureZones, readCharacterBoard, readLabSectionLayout, readPictureBoard, removeCharacterFacet,
-  removeCustomZone, removePictureFacet, subjectFromSections, unpinPictureZone, writeSectionNegative, writeSectionText,
+  removeCustomZone, removePictureFacet, unpinPictureZone, writeSectionNegative, writeSectionText,
   type LabFacetView, type LabSectionLayout, type LabZoneView,
 } from '../../services/labSections';
 import { createUuid } from '../../services/id';
@@ -87,9 +87,9 @@ function RegionMenu({ label, children }: { label: string; children: React.ReactN
     window.addEventListener('pointerdown', onPointer);
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onPointer); };
   }, [open]);
-  return <div ref={ref} className="relative">
+  return <div ref={ref} className="relative z-30">
     <button type="button" aria-label={label} aria-expanded={open} onClick={() => setOpen(value => !value)} className="mobile-touch flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-gray-500"><MoreHorizontal className="h-4 w-4" />{t('更多')}</button>
-    {open && <div role="menu" className="absolute right-0 z-20 mt-1 w-52 rounded-[var(--workspace-card-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] p-1 shadow-[var(--nai-panel-shadow)]" onClick={() => setOpen(false)}>{children}</div>}
+    {open && <div role="menu" className="absolute right-0 top-full z-40 mt-1 w-52 rounded-[var(--workspace-card-radius)] border border-[var(--nai-panel-border)] bg-[var(--nai-panel-solid-surface)] p-1 shadow-[var(--nai-panel-shadow)]" onClick={() => setOpen(false)}>{children}</div>}
   </div>;
 }
 
@@ -103,7 +103,7 @@ function FacetField({ facet, disabled, tagAssist, negativeLocked, roleId, focuse
   const purposes = facet.purposeId ? [facet.purposeId] as const : undefined;
   return <div role="group" aria-label={t(facet.label)} className={`lab-category-zone group/zone ${insetClass} flex min-w-0 flex-col gap-1.5`} onFocus={() => onFocus()}>
     <div className="flex min-h-8 items-center justify-between gap-2">
-      <span className="min-w-0 truncate text-xs text-gray-500">{t(facet.label)}{facet.sourceName ? <span className="ml-1">{t('来源：{0}', [facet.sourceName])}</span> : null}</span>
+      <span className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t(facet.label)}{facet.sourceName ? <span className="ml-1 text-xs font-normal text-gray-500">{t('来源：{0}', [facet.sourceName])}</span> : null}</span>
       <span ref={slot} className="flex items-center gap-1 opacity-0 transition-opacity group-focus-within/zone:opacity-100 group-hover/zone:opacity-100" />
       <button type="button" className="text-xs text-gray-400 opacity-0 group-focus-within/zone:opacity-100 group-hover/zone:opacity-100" onClick={() => setNegativeOpen(open => !open)}>{t(negativeOpen ? '收起负面' : '负面')}</button>
       {onRemove && <button type="button" className="text-xs text-gray-400 opacity-0 group-focus-within/zone:opacity-100 group-hover/zone:opacity-100" onClick={onRemove}>{t('移除')}</button>}
@@ -112,21 +112,6 @@ function FacetField({ facet, disabled, tagAssist, negativeLocked, roleId, focuse
     {purposes && focused && <PromptLibraryRandomButton purposes={purposes} roleId={roleId} variant="menu" disabled={disabled} />}
     {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ purposeId: facet.purposeId, roleId, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={focused} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
   </div>;
-}
-
-function StructureSummary({ base, negative, sections, layout, characters }: { base: string; negative: string; sections?: PromptSections | null; layout?: LabSectionLayout | null; characters: CharacterParams[] }) {
-  useLanguage();
-  const zones = pinnedPictureZones(sections, layout).filter(zone => zone.facets.some(facet => facet.text.trim()));
-  const parts = [base.trim() ? t('画风') : '', characters.some(character => character.prompt?.trim() || Object.values(character.sections || {}).some(value => String(value || '').trim())) ? t('角色') : '', ...zones.map(zone => t(zone.label))].filter(Boolean);
-  const preview = [base.trim(), subjectFromSections(sections, layout)].filter(Boolean).join(', ');
-  if (!parts.length && !negative.trim()) return null;
-  return <details className="lab-module-section lab-region group">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-bold text-gray-700 dark:text-gray-200 [&::-webkit-details-marker]:hidden">
-      <span className="min-w-0 truncate">{t('本次结构')}{parts.length ? ` · ${parts.join(' · ')}` : ''}</span>
-      <span className="flex shrink-0 items-center gap-1 text-micro font-medium text-gray-400"><span className="group-open:hidden">{t('展开')}</span><span className="hidden group-open:inline">{t('收起')}</span><ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" /></span>
-    </summary>
-    {preview && <p className="px-4 pb-3 font-mono text-xs leading-relaxed text-gray-500">{preview}</p>}
-  </details>;
 }
 
 function ZonePane({ zone, sections, layout, disabled, tagAssist, negativeLocked, focusedId, onFocus, onSections, onLayout }: {
@@ -138,8 +123,8 @@ function ZonePane({ zone, sections, layout, disabled, tagAssist, negativeLocked,
   const stored = readLabSectionLayout(layout);
   const purposes = zone.facets.map(facet => facet.purposeId).filter((id): id is PromptPurposeId => Boolean(id));
   const write = (id: string, value: string, source?: PromptSectionSource) => onSections(writeSectionText(sections, id, value, source));
-  return <section aria-label={t(zone.label)} className="lab-module-section lab-region flex flex-col gap-4 p-4 md:p-5">
-    <header className="flex items-start justify-between gap-3">
+  return <section aria-label={t(zone.label)} className="lab-module-section lab-region relative z-0 flex flex-col gap-4 p-4 md:p-5">
+    <header className="relative z-30 flex items-start justify-between gap-3">
       <div>
         <h2 className="text-base font-semibold">{t(zone.label)}</h2>
         <p className="mt-0.5 text-xs text-gray-500">{t('只编辑这一页。随机这一页不会改画风。')}</p>
@@ -224,8 +209,8 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
     setName('');
     onCancelAdd();
   };
+  const openReference = (index: number) => setLibraryAction({ kind: 'reference', index });
   return <div className="lab-category-mode flex flex-col gap-4 pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-0">
-    <StructureSummary base={base} negative={negative} sections={sections} layout={stored} characters={characters} />
     {adding && <form id={formId} className="lab-module-section lab-region flex flex-col gap-3 p-4" onSubmit={event => { event.preventDefault(); if (name.trim()) addNamed(); }}>
       <h2 className="text-sm font-semibold">{t('添加分页')}</h2>
       <div className="flex flex-wrap gap-2">{available.map(item => <button key={item.id} type="button" className="mobile-touch h-9 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-3 text-xs" onClick={() => addBuiltin(item.id)}>{t(item.label)}</button>)}</div>
@@ -254,6 +239,7 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
         <h2 className="text-base font-semibold">{t('角色')}</h2>
         <div className="flex flex-wrap items-center gap-2">
           {characterTools && <button type="button" disabled={!characters.length} aria-expanded={positionOpen} onClick={() => setPositionOpen(open => !open)} className="appearance-group mobile-touch flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"><MapPin className="h-3.5 w-3.5" />{t('角色定位')}</button>}
+          {characterTools && <button type="button" className="mobile-touch flex h-9 items-center gap-1 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-3 text-xs font-semibold" onClick={() => openReference(-1)}><UserRound className="h-3.5 w-3.5" />{t('从角色库引用')}</button>}
           <button type="button" className="mobile-touch h-9 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-3 text-xs font-semibold text-[var(--nai-on-accent)]" onClick={onAddCharacter}>{t('添加角色')}</button>
         </div>
       </div>
@@ -261,7 +247,10 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
       {characters.length === 0 && <article className="lab-module-section lab-region flex flex-col items-start gap-3 p-5">
         <h3 className="text-sm font-semibold">{t('还没有角色')}</h3>
         <p className="text-xs text-gray-500">{t('外貌、服饰和动作写在角色页。场景和构图用各自的分页。')}</p>
-        <button type="button" className="mobile-touch h-10 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-4 text-sm font-semibold text-[var(--nai-on-accent)]" onClick={onAddCharacter}>{t('添加角色')}</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="mobile-touch h-10 rounded-[var(--workspace-control-radius)] bg-[var(--nai-accent)] px-4 text-sm font-semibold text-[var(--nai-on-accent)]" onClick={onAddCharacter}>{t('添加角色')}</button>
+          {characterTools && <button type="button" className="mobile-touch flex h-10 items-center gap-1 rounded-[var(--workspace-control-radius)] border border-[var(--nai-panel-border)] px-4 text-sm font-semibold" onClick={() => openReference(-1)}><UserRound className="h-4 w-4" />{t('从角色库引用')}</button>}
+        </div>
       </article>}
       {characters.map((character, index) => {
         const board = readCharacterBoard(character, stored);
@@ -269,8 +258,8 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
           <header className="flex flex-wrap items-center justify-between gap-2">
             <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" aria-label={t('启用角色 {0}', [index + 1])} checked={character.enabled !== false} onChange={event => onUpdateCharacter(index, { enabled: event.target.checked })} />{t('角色 {0}', [index + 1])}</label>
             <div className="flex flex-wrap items-center gap-1">
-              {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" /></button>}
-              {characterTools && <button type="button" aria-label={t('从角色库引用')} title={t('从角色库引用')} onClick={() => setLibraryAction({ kind: 'reference', index })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30"><UserRound className="h-4 w-4" /></button>}
+              {characterTools?.onSaveCharacter && <button type="button" aria-label={t('保存到角色库')} title={t('保存到角色库')} disabled={!character.prompt.trim() && !hasCharacterSections(character)} onClick={() => setLibraryAction({ kind: 'save', character })} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-25 dark:hover:bg-emerald-950/30"><Save className="h-4 w-4" />{t('保存到角色库')}</button>}
+              {characterTools && <button type="button" aria-label={t('从角色库引用')} title={t('从角色库引用')} onClick={() => openReference(index)} className="mobile-touch inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30"><UserRound className="h-4 w-4" />{t('从角色库引用')}</button>}
               <RegionMenu label={t('角色 {0} 的更多操作', [index + 1])}>
                 <PromptLibraryRandomButton roleId={character.id} purposes={board.facets.map(facet => facet.purposeId).filter((id): id is PromptPurposeId => Boolean(id))} variant="menu" disabled={disabled} />
                 {board.available.map(item => <button key={item.id} type="button" className="mobile-touch flex h-9 w-full items-center rounded-lg px-2 text-left text-xs" onClick={() => onLayout(addCharacterFacet(stored, item.id, promptPurposeLabel(item.id as PromptPurposeId)))}>{t('添加{0}', [t(item.label)])}</button>)}
@@ -285,16 +274,19 @@ export function LabCategoryMode({ tab, adding, base, negative, sections, layout,
               onRemove={facet.removable ? () => { const next = removeCharacterFacet(stored, character, facet.id); onLayout(next.layout); onUpdateCharacter(index, next.character); } : undefined} />)}
           </div>
           <div className={insetClass}>
-            <span className="mb-1.5 block text-xs text-gray-500">{t('补充')}</span>
+            <span className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100">{t('补充')}</span>
             <TagAutocompleteTextarea aria-label={t('角色 {0} 补充', [index + 1])} libraryField={{ roleId: character.id }} tagAssistEnabled={tagAssist} showTranslations={focusedId === `${character.id}:extra`} disabled={disabled} value={character.prompt || ''} onValueChange={value => onUpdateCharacter(index, { prompt: value })} onFocus={() => setFocusedId(`${character.id}:extra`)} placeholder={t('还没归进上面各栏的角色内容')} className={`${fieldClass} min-h-16`} />
           </div>
         </article>;
       })}
-      {libraryAction && characterTools && <CharacterLibraryDialog action={libraryAction} chains={characterTools.chains} chainsLoading={characterTools.chainsLoading} chainsError={characterTools.chainsError} onRetryChains={characterTools.onRetryChains} onSaveCharacter={characterTools.onSaveCharacter} onClose={() => setLibraryAction(null)} onApply={(index, next) => onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined })} />}
+      {libraryAction && characterTools && <CharacterLibraryDialog action={libraryAction} chains={characterTools.chains} chainsLoading={characterTools.chainsLoading} chainsError={characterTools.chainsError} onRetryChains={characterTools.onRetryChains} onSaveCharacter={characterTools.onSaveCharacter} onClose={() => setLibraryAction(null)} onApply={(index, next) => {
+        if (index < 0) characterTools.setParams({ ...characterTools.params, characters: [...(characterTools.params.characters || []), { id: createUuid(), prompt: next.prompt, negativePrompt: next.negativePrompt, x: 0.5, y: 0.5 }] });
+        else onUpdateCharacter(index, { ...next, sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
+      }} />}
     </section>}
     {zone && tab !== 'style' && tab !== 'character' && tab !== 'reference' && tab !== 'params' && tab !== 'add' && <ZonePane zone={zone} sections={sections} layout={stored} disabled={disabled} tagAssist={tagAssist} negativeLocked={negativeLocked} focusedId={focusedId} onFocus={setFocusedId} onSections={onSections} onLayout={onLayout} />}
     {pictureExtra(sections).trim() && tab !== 'style' && tab !== 'reference' && tab !== 'params' && tab !== 'add' && tab !== 'character' && <div className={insetClass}>
-      <span className="mb-1.5 block text-xs text-gray-500">{t('补充')}</span>
+      <span className="mb-1.5 block text-sm font-semibold text-gray-800 dark:text-gray-100">{t('补充')}</span>
       <TagAutocompleteTextarea aria-label={t('补充')} tagAssistEnabled={tagAssist} showTranslations={focusedId === 'extra'} disabled={disabled} value={pictureExtra(sections)} onValueChange={value => onSections(writeSectionText(sections, 'extra', value))} onFocus={() => setFocusedId('extra')} placeholder={t('还没归进分页的画面内容')} className={`${fieldClass} min-h-16`} />
     </div>}
   </div>;
