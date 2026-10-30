@@ -2159,6 +2159,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
                 tagAssistEnabled={tagAssistEnabled}
                 splitPromptFields={false}
                 promptClassificationEnabled={false}
+                characters={allChains}
             />
             {agentProposal && (!agentProposal.draft.target || agentProposal.draft.target.chainId === chain.id && agentProposal.draft.target.mode === activeGenerationMode) && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal.draft} onClose={() => setAgentProposal(null)} onApply={async draft => { await applyGuardedAgentDraft(draft, agentProposal.onApplied, agentProposal.beforeApply); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>

@@ -3805,7 +3805,7 @@ const serveDistFile = async (req, res, url) => {
         if (url.pathname === '/api/prompt-agent/session/revise') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 16 * 1024)).toString('utf8') || '{}');
-          return sendJson(res, 200, { items: await promptAgent.reviseSessionMessage(String(body.sessionId || ''), String(body.messageId || ''), String(body.content || '')) });
+          return sendJson(res, 200, { items: await promptAgent.reviseSessionMessage(String(body.sessionId || ''), String(body.messageId || ''), String(body.content || ''), body.characterReferences) });
         }
         if (url.pathname === '/api/prompt-agent/session') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });

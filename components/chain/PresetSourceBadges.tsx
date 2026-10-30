@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
-import type { PromptAgentDraft, PromptAgentGenerationResult } from '../../types';
+import type { PromptAgentDraft, PromptAgentGenerationResult, PromptChain } from '../../types';
 import type { AgentPromptChange } from '../../services/agentPromptChanges.mjs';
 import type { AgentPromptApplied, AgentPromptBeforeApply } from '../../services/promptAgent';
 
@@ -51,6 +51,8 @@ interface PromptAgentOverlayControllerProps {
     tagAssistEnabled: boolean;
     splitPromptFields?: boolean;
     promptClassificationEnabled?: boolean;
+    /** 角色库（含自定义角色），供对话输入框 @ 引用。 */
+    characters?: PromptChain[];
 }
 
 /** Keep the overlay's visibility local so opening it does not rerender the editor. */
@@ -67,6 +69,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     tagAssistEnabled,
     splitPromptFields,
     promptClassificationEnabled,
+    characters,
 }) => {
   useLanguage();
     const [open, setOpen] = useState(false);
@@ -100,6 +103,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             tagAssistEnabled={tagAssistEnabled}
             splitPromptFields={splitPromptFields}
             promptClassificationEnabled={promptClassificationEnabled}
+            characters={characters}
         /></React.Suspense>
     );
 };

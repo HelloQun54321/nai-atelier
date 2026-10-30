@@ -17,6 +17,28 @@ vi.mock('../../components/MobileUI', () => ({
   useMobileHistoryLayer: (_open: boolean, onClose: () => void) => onClose,
 }));
 
+vi.mock('../../services/tagDictionary', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/tagDictionary')>();
+  return { ...actual, searchCharacterDictionary: vi.fn(async () => []), getCharacterDictionaryEntries: vi.fn(async () => []), preloadTagDictionary: vi.fn() };
+});
+import { getCharacterDictionaryEntries, searchCharacterDictionary } from '../../services/tagDictionary';
+
+const characterChain = (overrides: Record<string, unknown> = {}) => ({
+  id: 'character-furina',
+  userId: 'user',
+  type: 'character' as const,
+  name: '芙宁娜',
+  description: '水神',
+  tags: [] as string[],
+  basePrompt: 'furina (genshin impact), blue eyes',
+  negativePrompt: 'bad hands',
+  modules: [],
+  params: { model: 'nai-diffusion-4-full' } as unknown as NAIParams,
+  createdAt: 1,
+  updatedAt: 1,
+  ...overrides,
+});
+
 const responseFor = (payload: unknown, status = 200) => ({
   ok: status >= 200 && status < 300,
   status,
@@ -229,7 +251,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     try {
       renderPanel(); await screen.findByText('保留的回答');
       const input = screen.getByRole('textbox', { name: '任务要求' });
-      expect(input.getAttribute('placeholder')).toBe('输入要求，或用 / 查看命令…');
+      expect(input.getAttribute('placeholder')).toBe('输入要求，或用 / 查看命令，@ 引用角色库…');
       fireEvent.change(input, { target: { value: '/' } });
       const list = screen.getByRole('listbox', { name: '助手命令' });
       const option = within(list).getByRole('option', { name: '/compact 压缩上下文' });
@@ -306,7 +328,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     renderPanel(); await screen.findByText('旧消息'); fireEvent.click(screen.getByRole('button', { name: '编辑重发' }));
     const input = screen.getByRole('textbox', { name: '任务要求' }); fireEvent.change(input, { target: { value: '/compact' } }); expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '重新发送' })); await waitFor(() => expect(run).toHaveBeenCalledOnce());
-    expect(revise).toHaveBeenCalledExactlyOnceWith('session-1', 'u', '/compact'); expect(compact).not.toHaveBeenCalled();
+    expect(revise).toHaveBeenCalledExactlyOnceWith('session-1', 'u', '/compact', []); expect(compact).not.toHaveBeenCalled();
   });
 
   it('没有真实对话或任务仍在执行时，聊天菜单不能压缩上下文', async () => {
@@ -1361,4 +1383,223 @@ it('批准后切换编辑器，后台中断仍停止原生成并回传实际部�
   await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'background-series', expect.objectContaining({ success: false, result: expect.objectContaining({ completedCount: 1, historyIds: ['actual-image'] }) })));
 });
 
+});
+
+describe('创作助手输入 @ 引用角色库角色', () => {
+  beforeEach(() => {
+    Element.prototype.scrollTo = vi.fn();
+    promptAgentCoordinator.selectSession(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    promptAgentCoordinator.selectSession(undefined);
+    sessionStorage.clear(); localStorage.clear();
+  });
+
+  const openMention = async (value: string) => {
+    const input = screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    fireEvent.change(input, { target: { value } });
+    input.setSelectionRange(value.length, value.length);
+    fireEvent.select(input);
+    return input;
+  };
+
+  it('自定义角色候选中选后插入名称，资料只随本轮任务发送并在发送后清除', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async () => {});
+    renderPanel(false, { characters: [characterChain()] });
+    const input = await openMention('请用 @芙');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    const option = within(list).getByRole('option', { name: /@芙宁娜/ });
+    expect(within(list).getByText('自定义')).toBeTruthy();
+    fireEvent.pointerDown(option, { pointerType: 'mouse' });
+    fireEvent.click(option);
+    expect(input.value).toBe('请用 @芙宁娜 ');
+    expect(screen.getByRole('button', { name: '移除引用角色 芙宁娜' })).toBeTruthy();
+    fireEvent.change(input, { target: { value: '请用 @芙宁娜 画一张' } });
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(run.mock.calls[0][0].message).toBe('请用 @芙宁娜 画一张');
+    expect(run.mock.calls[0][0].characterReferences).toEqual([expect.objectContaining({ source: 'custom', name: '芙宁娜', prompt: 'furina (genshin impact), blue eyes' })]);
+    await waitFor(() => expect(screen.queryByRole('button', { name: '移除引用角色 芙宁娜' })).toBeNull());
+  });
+
+  it('@ 词库角色使用角色库补全并标注来源，Esc 只收起候选不关闭面板', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.mocked(searchCharacterDictionary).mockResolvedValueOnce([{ name: 'hu tao', chinese: '胡桃', postCount: 1234 }]);
+    const close = vi.fn();
+    renderPanel(false, { onClose: close });
+    const input = await openMention('@胡');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    await within(list).findByRole('option', { name: /@胡桃/ });
+    expect(searchCharacterDictionary).toHaveBeenCalledWith('胡', 6);
+    expect(within(list).getByText('角色库')).toBeTruthy();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('listbox', { name: '引用角色库角色' })).toBeNull();
+    expect(input.value).toBe('@胡');
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('方向键移动和 Enter 选择，输入法组字中的 Enter 不误选也不发送', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const run = vi.spyOn(promptAgentService, 'run');
+    renderPanel(false, { characters: [characterChain(), characterChain({ id: 'character-raiden', name: '雷电将军', basePrompt: 'raiden shogun', updatedAt: 2 })] });
+    const input = await openMention('@');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    expect(within(list).getAllByRole('option').map(item => item.textContent)).toEqual([expect.stringContaining('雷电将军'), expect.stringContaining('芙宁娜')]);
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(input.value).toBe('@');
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input.value).toBe('@芙宁娜 ');
+  });
+
+  it('从正文删除 @名称 时同步移除引用标签', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    renderPanel(false, { characters: [characterChain()] });
+    const input = await openMention('@芙');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    fireEvent.click(await within(list).findByRole('option', { name: /@芙宁娜/ }));
+    expect(screen.getByRole('button', { name: '移除引用角色 芙宁娜' })).toBeTruthy();
+    fireEvent.change(input, { target: { value: '不要了' } });
+    expect(screen.queryByRole('button', { name: '移除引用角色 芙宁娜' })).toBeNull();
+  });
+
+  it('历史消息显示引用标签，编辑重发时恢复引用并随消息保存', async () => {
+    stubServices();
+    const history = [
+      { id: 'saved-0', role: 'user' as const, text: '@芙宁娜 画一张', characterReferences: [{ source: 'custom' as const, name: '芙宁娜', prompt: 'furina' }] },
+      { id: 'saved-1', role: 'agent' as const, text: '好的' },
+    ];
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue(history);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const revise = vi.spyOn(promptAgentService, 'reviseMessage').mockResolvedValue(history);
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async () => {});
+    renderPanel(false, { characters: [characterChain()] });
+    await screen.findByText('好的');
+    expect(screen.getByText('@芙宁娜')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '编辑重发' }));
+    const input = screen.getByRole('textbox', { name: '任务要求' });
+    expect(input).toHaveProperty('value', '@芙宁娜 画一张');
+    expect(screen.getByRole('button', { name: '移除引用角色 芙宁娜' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重新发送' }));
+    await waitFor(() => expect(revise).toHaveBeenCalledWith('session-1', 'saved-0', '@芙宁娜 画一张', [expect.objectContaining({ name: '芙宁娜' })]));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+  });
+
+  it('英文无空格输入也能联想词库角色（hutao → hu tao）', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    vi.mocked(searchCharacterDictionary).mockResolvedValueOnce([]);
+    vi.mocked(getCharacterDictionaryEntries).mockResolvedValueOnce([{ name: 'hu tao', chinese: '胡桃', postCount: 100 }]);
+    renderPanel();
+    const input = await openMention('@hutao');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    const option = await within(list).findByRole('option', { name: /@胡桃/ });
+    fireEvent.click(option);
+    expect(input.value).toBe('@胡桃 ');
+  });
+});
+
+describe('创作助手引用角色数量上限', () => {
+  beforeEach(() => {
+    Element.prototype.scrollTo = vi.fn();
+    promptAgentCoordinator.selectSession(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    promptAgentCoordinator.selectSession(undefined);
+    sessionStorage.clear(); localStorage.clear();
+  });
+
+  const openMention = async (value: string) => {
+    const input = screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    fireEvent.change(input, { target: { value } });
+    input.setSelectionRange(value.length, value.length);
+    fireEvent.select(input);
+    return input;
+  };
+
+  it('引用数量跟随当前模型上限，超过上限不再新增并提示', async () => {
+  stubServices();
+  vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+  vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+  const characters = ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((letter, index) => characterChain({ id: `character-${letter}`, name: `角色${letter}`, basePrompt: `character ${letter}`, updatedAt: index + 1 }));
+  renderPanel(false, { characters });
+  const input = await openMention('@');
+  const choose = async (name: string) => {
+    const base = input.value === '@' ? '' : input.value;
+    const nextValue = `${base}@${name}`;
+    fireEvent.change(input, { target: { value: nextValue } });
+    input.setSelectionRange(nextValue.length, nextValue.length);
+    fireEvent.select(input);
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    const option = await within(list).findByRole('option', { name: new RegExp(`@${name}`) });
+    fireEvent.click(option);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  };
+  for (const letter of ['A', 'B', 'C', 'D', 'E', 'F']) await choose(`角色${letter}`);
+  expect(screen.getAllByRole('button', { name: /移除引用角色/ })).toHaveLength(6);
+  await choose('角色G');
+  expect(screen.getAllByRole('button', { name: /移除引用角色/ })).toHaveLength(6);
+  expect((await screen.findByRole('alert')).textContent).toBe('当前模型最多引用 6 个角色');
+  });
+});
+
+describe('创作助手引用上限跟随模型', () => {
+  beforeEach(() => {
+    Element.prototype.scrollTo = vi.fn();
+    promptAgentCoordinator.selectSession(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    promptAgentCoordinator.selectSession(undefined);
+    sessionStorage.clear(); localStorage.clear();
+  });
+
+  const openMention = async (value: string) => {
+    const input = screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    fireEvent.change(input, { target: { value } });
+    input.setSelectionRange(value.length, value.length);
+    fireEvent.select(input);
+    return input;
+  };
+
+  it('引用上限跟随草稿模型：V5 允许更多角色', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'getSession').mockResolvedValue([]);
+    vi.spyOn(promptAgentService, 'getTask').mockResolvedValue({});
+    const draft = { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: { model: 'nai-diffusion-5-full', steps: 28, scale: 5, width: 832, height: 1216, sampler: 'k_euler', seed: 0 } as unknown as NAIParams };
+    renderPanel(false, { draft });
+    await openMention('@');
+    const list = await screen.findByRole('listbox', { name: '引用角色库角色' });
+    expect(within(list).getByText('角色库 · 最多引用 32 个')).toBeTruthy();
+  });
 });

@@ -207,6 +207,8 @@ export interface PromptAgentCompactionResult {
 
 export interface PromptAgentHistoryMessage {
   promptChange?: AgentPromptChange;
+  /** 用户消息上保存的 @ 引用；只随该消息保留，正文不注入。 */
+  characterReferences?: AgentCharacterReference[];
   id: string;
   role: 'user' | 'agent';
   text: string;
@@ -224,6 +226,18 @@ export interface AgentPageRequest { requestId: string; operation: AgentPageOpera
 export interface AgentUserQuestion { id: string; prompt: string; options: Array<{ id: string; label: string; description?: string }> }
 export interface AgentQuestionRequest { requestId: string; runId: string; questions: AgentUserQuestion[] }
 export interface AgentQuestionAnswer { questionId: string; optionId?: string; customText?: string; label?: string }
+/** 对话里 @ 引用的角色库资料；只作为本轮上下文，不写进可见消息、不改动草稿。 */
+export interface AgentCharacterReference {
+  id?: string;
+  source: 'custom' | 'catalog';
+  name: string;
+  tag?: string;
+  chinese?: string;
+  description?: string;
+  prompt?: string;
+  negativePrompt?: string;
+  postCount?: number;
+}
 export interface AgentPromptApplication { beforeVersionId?: string; selectedAfter?: PromptAgentDraft }
 export type AgentPromptApplied = (before: PromptAgentDraft, after: PromptAgentDraft, application?: AgentPromptApplication) => void;
 export interface AgentPromptCheckpoint { versionId?: string; finish?: (after: PromptAgentDraft) => Promise<void> }
@@ -683,8 +697,8 @@ export const promptAgentService = {
     const response = await fetch('/api/prompt-agent/session/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) });
     if (!response.ok) return readError(response);
   },
-  reviseMessage: async (sessionId: string, messageId: string, content: string): Promise<PromptAgentHistoryMessage[]> => {
-    const response = await fetch('/api/prompt-agent/session/revise', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, messageId, content }) });
+  reviseMessage: async (sessionId: string, messageId: string, content: string, characterReferences?: AgentCharacterReference[]): Promise<PromptAgentHistoryMessage[]> => {
+    const response = await fetch('/api/prompt-agent/session/revise', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, messageId, content, ...(characterReferences !== undefined ? { characterReferences } : {}) }) });
     if (!response.ok) return readError(response) as never;
     return (await response.json()).items || [];
   },
@@ -711,7 +725,7 @@ export const promptAgentService = {
     return response.json();
   },
   run: async (
-    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry' | 'resume'; images?: Array<{ data: string; mimeType: string }>; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> }; apiKey?: string },
+    input: { sessionId: string; message: string; mode?: 'prompt' | 'retry' | 'resume'; images?: Array<{ data: string; mimeType: string }>; characterReferences?: AgentCharacterReference[]; draft: PromptAgentDraft; context: { clientSettings?: Record<string, unknown> }; apiKey?: string },
     onEvent: (event: PromptAgentEvent) => void,
     signal?: AbortSignal,
   ) => {

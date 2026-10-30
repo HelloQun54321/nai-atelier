@@ -7,6 +7,10 @@ import { getAgentContextUsage } from '../services/agentContextUsage';
 import { AgentProjectImage } from './AgentProjectImage';
 import { extractAgentMedia } from '../services/agentMedia';
 import { prepareAgentAttachment } from '../services/agentAttachments';
+import { findCharacterMention, matchCatalogCharacters, matchCustomCharacters, matchLooseCatalogEntries, mergeCharacterMentionOptions, toAgentCharacterReference, type AgentCharacterMentionOption, type AgentCharacterMentionQuery } from '../services/agentCharacterMentions';
+import { getNaiModelInfo, getRuntimeNaiModelInfo } from '../services/naiModels';
+import { getNaiRuntimeConfig } from '../services/naiRuntime';
+import { getCharacterDictionaryEntries, preloadTagDictionary, searchCharacterDictionary, type CharacterDictionaryEntry } from '../services/tagDictionary';
 import { promptAgentCoordinator } from '../services/promptAgentCoordinator';
 import { applyAgentPromptChange, createAppliedAgentPromptChange, type AgentPromptChange } from '../services/agentPromptChanges.mjs';
 import { AgentPromptChangeCard } from './AgentPromptDiff';
@@ -16,13 +20,13 @@ import { AgentPermissionSelect } from './AgentPermissionSelect';
 import { AgentModelControl } from './AgentModelControl';
 import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
-import { isAgentTaskRunning, type AgentPromptApplied, type AgentPromptApplication, type AgentPromptBeforeApply, type AgentQuestionAnswer, type AgentQuestionRequest, type PromptAgentEvent, type PromptAgentTask } from '../services/promptAgent';
+import { isAgentTaskRunning, type AgentCharacterReference, type AgentPromptApplied, type AgentPromptApplication, type AgentPromptBeforeApply, type AgentQuestionAnswer, type AgentQuestionRequest, type PromptAgentEvent, type PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 import { beginExportTarget } from '../services/exportLocation';
 import { isTopmostModal } from './useModalA11y';
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { PromptAgentDraft, PromptAgentGenerationResult } from '../types';
+import { PromptAgentDraft, PromptAgentGenerationResult, PromptChain } from '../types';
 import { PromptAgentModel, PromptAgentSession, PromptAgentThinkingLevel, PromptAgentUsage, PromptAgentVisionUsage, agentRuntimeWarning, displayModelName, promptAgentService } from '../services/promptAgent';
 import { vibeService } from '../services/vibeService';
 import { useMobileHistoryLayer } from './MobileUI';
@@ -45,15 +49,16 @@ interface PromptAgentPanelProps {
   splitPromptFields?: boolean;
   /** 实验室「分类编辑」：助手按外貌、服饰等栏位读取和写入。 */
   promptClassificationEnabled?: boolean;
+  /** 角色库（含自定义角色），用于输入框 @ 引用；只读资料，不改动任何链。 */
+  characters?: PromptChain[];
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number; resumable?: boolean; promptChange?: AgentPromptChange };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number; resumable?: boolean; promptChange?: AgentPromptChange; characterReferences?: AgentCharacterReference[] };
 // 限额、截断、超时与服务中断后可直接接续；用户主动停止、鉴权或额度失败不提供。
 const RESUMABLE_STOPS = new Set(['turn_limit', 'output_limit', 'output_truncated', 'stalled', 'model_idle', 'model_timeout', 'timeout', 'truncated', 'aborted']);
 const resumableStop = (status?: string, stopReason?: string) => status === 'interrupted' || RESUMABLE_STOPS.has(String(stopReason));
-type AgentAttachment = { data: string; mimeType: string; name: string };
-const toolLabels: Record<string, string> = {
+type AgentAttachment = { data: string; mimeType: string; name: string };const toolLabels: Record<string, string> = {
   request_user_input: '向你提问',
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
   get_local_time: '查询本机时间与时区', get_agent_capabilities: '查询实际可用能力', enable_tool_group: '查询工具分组', show_project_image: '展示项目图片', inspect_project_image: '观察项目图片',
@@ -72,6 +77,24 @@ const toolLabels: Record<string, string> = {
   update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', navigate_view: '切换页面', set_chain_cover_from_history: '设置风格串封面',
   // 仅供旧会话回执显示，运行时不再提供此工具。
   manage_artist_favorite: '管理画师收藏',
+};
+
+/** 候选里高亮输入片段，保持和代码补全一致的即时定位；英文会忽略空格匹配 hutao → hu tao。 */
+const mentionHighlight = (text: string, query: string): React.ReactNode => {
+  const needle = query.trim();
+  if (!needle) return text;
+  const wrap = (start: number, end: number) => <>{text.slice(0, start)}<mark className="rounded bg-transparent font-black text-indigo-600 dark:text-indigo-300">{text.slice(start, end)}</mark>{text.slice(end)}</>;
+  const direct = text.toLowerCase().indexOf(needle.toLowerCase());
+  if (direct >= 0) return wrap(direct, direct + needle.length);
+  const squashedQuery = needle.replace(/\s+/g, '').toLowerCase();
+  if (!squashedQuery) return text;
+  const indexes: number[] = [];
+  let squashed = '';
+  for (let index = 0; index < text.length; index += 1) {
+    if (!/\s/.test(text[index])) { indexes.push(index); squashed += text[index].toLowerCase(); }
+  }
+  const position = squashed.indexOf(squashedQuery);
+  return position < 0 ? text : wrap(indexes[position], indexes[position + squashedQuery.length - 1] + 1);
 };
 
 const renderInlineMarkdown = (value: string, keyPrefix: string): React.ReactNode[] => {
@@ -183,6 +206,7 @@ const AgentMessageList = React.memo(({
         <div className="space-y-1">{message.tools.map(tool => <details key={tool.id} className={`text-xs leading-6 ${tool.state === 'error' || tool.state === 'interrupted' ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}><summary className="cursor-pointer"><span className={tool.state === 'running' ? 'animate-pulse' : ''}>{tool.state === 'running' ? t("处理中") : tool.state === 'error' ? t("失败") : tool.state === 'interrupted' ? t("未完成") : t("完成")} · {t(toolLabels[tool.name] || tool.name)}</span></summary><AgentLiveOutput as="pre" text={JSON.stringify({ input: tool.args, output: tool.result }, null, 2).slice(0, 4000)} live={running && index === visibleMessages.length - 1} label={t("工具回执")} className="appearance-group my-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 text-micro leading-5 dark:bg-gray-900" /></details>)}</div>
       </AgentDisclosure>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
+      {message.role === 'user' && !!message.characterReferences?.length && <div className="mt-1 flex max-w-full flex-wrap justify-end gap-1">{message.characterReferences.map(reference => <span key={`${reference.source}:${reference.tag || reference.name}`} title={reference.tag || reference.name} className="max-w-48 truncate rounded-full bg-gray-200/70 px-2 py-0.5 text-micro text-gray-600 dark:bg-gray-700/50 dark:text-gray-300">@{reference.name}</span>)}</div>}
       {message.tools?.filter(tool => tool.name === 'request_user_input').map(tool => <AgentQuestionHistory key={tool.id} args={tool.args} result={tool.result} />)}
       {message.promptChange && <AgentPromptChangeCard change={message.promptChange} disabled={running} onAction={direction => onPromptChange(message.promptChange!, direction)} />}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
@@ -246,6 +270,53 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const [compactionNotice, setCompactionNotice] = useState<{ text: string; error?: boolean } | null>(null);
   useEffect(() => { setCompactionNotice(null); setAutoCompacting(false); }, [activeSessionId]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [characterReferences, setCharacterReferences] = useState<AgentCharacterReference[]>([]);
+  const [runtimeMaxCharacters, setRuntimeMaxCharacters] = useState<number | null>(null);
+  const referenceLimit = Math.max(1, runtimeMaxCharacters ?? getNaiModelInfo(props.draft.params.model).maxCharacters);
+  const [referenceLimitNotice, setReferenceLimitNotice] = useState('');
+  const [mention, setMention] = useState<AgentCharacterMentionQuery | null>(null);
+  const [mentionOptions, setMentionOptions] = useState<AgentCharacterMentionOption[]>([]);
+  const [mentionActive, setMentionActive] = useState(0);
+  const [mentionLoading, setMentionLoading] = useState(false);
+  const mentionSeqRef = useRef(0);
+  const catalogEntriesRef = useRef<Promise<CharacterDictionaryEntry[]> | null>(null);
+  const mentionListId = useId();
+  const justChoseMentionRef = useRef(false);
+  useEffect(() => {
+    let disposed = false;
+    void getNaiRuntimeConfig().then(config => {
+      if (!disposed) setRuntimeMaxCharacters(getRuntimeNaiModelInfo(props.draft.params.model, config).maxCharacters);
+    }).catch(() => { /* 官方能力不可用时沿用静态模型表。 */ });
+    return () => { disposed = true; };
+  }, [props.draft.params.model]);
+  useEffect(() => {
+    if (!mention) { setMentionOptions([]); setMentionLoading(false); return; }
+    const query = mention.query.trim();
+    const custom = matchCustomCharacters(props.characters || [], query, 6);
+    setMentionOptions(custom); setMentionActive(0);
+    if (!query) { setMentionLoading(false); return; }
+    const seq = ++mentionSeqRef.current;
+    setMentionLoading(true);
+    const timer = window.setTimeout(() => {
+      void searchCharacterDictionary(query, 6).then(async entries => {
+        if (seq !== mentionSeqRef.current) return;
+        let catalog = entries;
+        // 词库索引按空格分词，英文无空格写法（hutao）补一次去空白比对；中文仍走索引。
+        if (catalog.length < 3 && /^[a-z0-9\s_]+$/i.test(query)) {
+          try {
+            catalogEntriesRef.current ||= getCharacterDictionaryEntries();
+            const all = await catalogEntriesRef.current;
+            if (seq !== mentionSeqRef.current) return;
+            const loose = matchLooseCatalogEntries(all, query, 6);
+            if (loose.length) catalog = [...entries, ...loose.filter(entry => !entries.some(item => item.name === entry.name))];
+          } catch { /* 宽松匹配失败时保留原结果。 */ }
+        }
+        setMentionOptions(mergeCharacterMentionOptions(custom, matchCatalogCharacters(props.characters || [], catalog, 6), 8));
+      }).catch(() => { /* 词库未就绪时保留自定义角色候选，不影响继续输入。 */ })
+        .finally(() => { if (seq === mentionSeqRef.current) setMentionLoading(false); });
+    }, 150);
+    return () => { window.clearTimeout(timer); };
+  }, [mention, props.characters]);
   const [followingBottom, setFollowingBottom] = useState(true);
   const [visibleMessageCount, setVisibleMessageCount] = useState(60);
   const [hasOpened, setHasOpened] = useState(false);
@@ -349,6 +420,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     composerSessionRef.current = activeSessionId; composerRestoringRef.current = true;
     const saved = promptAgentCoordinator.loadComposer(activeSessionId);
     setInput(saved.text); setAttachments(saved.attachments); setAttachmentError(''); setEditingMessageId('');
+    setCharacterReferences([]); setMention(null); setReferenceLimitNotice('');
   }, [activeSessionId]);
   useEffect(() => { if (composerRestoringRef.current) { composerRestoringRef.current = false; return; } if (composerSessionRef.current === activeSessionId) promptAgentCoordinator.saveComposer(activeSessionId, input, attachments); }, [activeSessionId, input, attachments]);
   const closePanel = () => {
@@ -357,7 +429,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   const requestClose = useMobileHistoryLayer(props.open, closePanel, 'prompt-agent');
 
   useEffect(() => {
-    if (props.open) setHasOpened(true);
+    if (props.open) { setHasOpened(true); preloadTagDictionary(); }
     localStorage.removeItem('nai_agent_fullscreen');
   }, [props.open]);
 
@@ -655,6 +727,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         if (editingMessageId) {
           setEditingMessageId('');
           setInput('');
+          setCharacterReferences([]); setMention(null); setReferenceLimitNotice('');
           return;
         }
         closePanel();
@@ -728,8 +801,55 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     void compactContext();
   };
 
+  const mentionEnabled = !editingMessageId;
+  const showMentionList = Boolean(mention) && mentionEnabled;
+  const syncMention = (value: string, caret: number) => {
+    // 选择候选后恢复光标会触发一次 select；此时浏览器里的 DOM 值可能还没提交，
+    // 不能再按旧值把候选弹回来。
+    if (justChoseMentionRef.current) { setMention(null); return; }
+    const next = mentionEnabled ? findCharacterMention(value, caret) : null;
+    setMention(previous => previous && next && previous.start === next.start && previous.end === next.end && previous.query === next.query ? previous : next);
+  };
+  const chooseMention = (option: AgentCharacterMentionOption) => {
+    if (!mention) return;
+    const key = option.name.normalize('NFKC').toLowerCase();
+    const duplicate = characterReferences.some(item => item.name.normalize('NFKC').toLowerCase() === key);
+    if (!duplicate && characterReferences.length >= referenceLimit) {
+      setReferenceLimitNotice(t('当前模型最多引用 {0} 个角色', [referenceLimit]));
+      return;
+    }
+    setReferenceLimitNotice('');
+    const inserted = `@${option.name} `;
+    setInput(previous => `${previous.slice(0, mention.start)}${inserted}${previous.slice(mention.end)}`);
+    setMention(null);
+    setCharacterReferences(previous => previous.some(item => item.name.normalize('NFKC').toLowerCase() === key) ? previous : [...previous, toAgentCharacterReference(option)]);
+    const caret = mention.start + inserted.length;
+    justChoseMentionRef.current = true;
+    // 页面在后台时 requestAnimationFrame 可能暂停；用定时器兜底恢复，避免候选永久失效。
+    window.setTimeout(() => { justChoseMentionRef.current = false; }, 0);
+    requestAnimationFrame(() => {
+      const textarea = inputRef.current;
+      if (textarea) { textarea.focus(); textarea.setSelectionRange(caret, caret); }
+      justChoseMentionRef.current = false;
+    });
+  };
+
   const handleComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (composing || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (showMentionList && mentionOptions.length) {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMention(null); return; }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionActive(previous => (previous + (event.key === 'ArrowDown' ? 1 : mentionOptions.length - 1)) % mentionOptions.length);
+        return;
+      }
+      if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey) {
+        event.preventDefault();
+        const option = mentionOptions[Math.min(mentionActive, mentionOptions.length - 1)];
+        if (option) chooseMention(option);
+        return;
+      }
+    }
     if (showSlashCommand) {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setSlashDismissed(true); return; }
       if (event.key === 'Tab' && !event.shiftKey) { event.preventDefault(); setInput('/compact'); return; }
@@ -817,6 +937,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (mode === 'prompt' && !editingMessageId && !/[\r\n]/.test(suggestion ?? input) && (suggestion ?? input).trim().toLowerCase() === '/compact') { executeSlashCommand(); return; }
     if (running || compacting) return;
     const prompt = (suggestion ?? input).trim() || (mode === 'prompt' && attachments.length ? '请分析我附带的图片，并结合项目内容给出建议。' : '');
+    // 引用标签与正文保持一致：正文里已经没有 @名称 的引用不再发送。
+    const activeReferences = characterReferences.filter(reference => prompt.includes(`@${reference.name}`));
     if (!sessionReady || modelChanging || attachmentLoadingRef.current || !activeSessionId || !activeSession || (mode !== 'retry' && !prompt)) return;
     if (mode === 'prompt' && !editingMessageId && attachments.length && !supportsImages) {
       setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: '当前模型不支持图片输入，请在发送键旁选择支持图片的模型。' }]);
@@ -826,9 +948,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     let revisedMessages: PanelMessage[] | null = null;
     if (editingMessageId && mode === 'prompt') {
       try {
-        revisedMessages = (await promptAgentService.reviseMessage(activeSessionId, editingMessageId, prompt)).map(item => ({ ...item }));
+        revisedMessages = (await promptAgentService.reviseMessage(activeSessionId, editingMessageId, prompt, activeReferences)).map(item => ({ ...item }));
         effectiveMode = 'retry';
         setEditingMessageId('');
+        setCharacterReferences([]); setMention(null); setReferenceLimitNotice('');
       } catch (error) {
         setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '编辑消息失败' }]);
         return;
@@ -836,10 +959,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     }
     const assistantId = crypto.randomUUID();
     // 接续时旧的停止提示不再提供按钮；新的结果另起一条提示。
-    setMessages(previous => [...(revisedMessages || previous).map(item => item.resumable ? { ...item, resumable: false } : item), ...(effectiveMode !== 'retry' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt }] : []), { id: assistantId, role: 'agent', text: '' }]);
+    setMessages(previous => [...(revisedMessages || previous).map(item => item.resumable ? { ...item, resumable: false } : item), ...(effectiveMode !== 'retry' ? [{ id: crypto.randomUUID(), role: 'user' as const, text: prompt, ...(activeReferences.length ? { characterReferences: activeReferences } : {}) }] : []), { id: assistantId, role: 'agent', text: '' }]);
     currentAssistantIdRef.current = assistantId;
     responseStartedRef.current = false;
-    if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); }
+    if (effectiveMode === 'prompt') { setInput(''); setAttachments([]); setCharacterReferences([]); setMention(null); setReferenceLimitNotice(''); }
     else if (editingMessageId) setInput('');
     setRunning(true);
     setTaskSnapshot({ status: 'preparing' });
@@ -850,7 +973,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const controller = new AbortController();
     try {
       const imageDisplay = getMobileImageDisplayPreferences();
-      await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
+      await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], characterReferences: effectiveMode === 'prompt' ? activeReferences : [], draft: props.draft, context: { clientSettings: {
         language: getLanguage(),
         currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
@@ -1066,7 +1189,13 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   messageActionsRef.current = {
     loadEarlier: loadEarlierMessages,
     copy: message => { void copyMessage(message.id, message.text).catch(reportControlError); },
-    edit: message => { setEditingMessageId(message.id); setInput(message.text); },
+    edit: message => {
+      setEditingMessageId(message.id);
+      setInput(message.text);
+      setCharacterReferences((message.characterReferences || []).filter(reference => message.text.includes(`@${reference.name}`)));
+      setReferenceLimitNotice('');
+      setMention(null);
+    },
     retry: () => { void run('', 'retry'); },
     resume: () => { void run(t('继续处理'), 'resume'); },
     promptChange: async (change, direction) => {
@@ -1235,12 +1364,25 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           {!followingBottom && <button type="button" onClick={() => { followBottomRef.current = true; setFollowingBottom(true); scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: appearanceScrollBehavior() }); }} className="appearance-surface sticky bottom-2 mx-auto flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 shadow-md transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:text-gray-100"><ArrowDown className="h-3.5 w-3.5" />{t("回到底部")}</button>}
         </div>
           <div onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { if (event.dataTransfer.files.length) { event.preventDefault(); void addAttachments(event.dataTransfer.files); } }} className="appearance-surface relative mx-3 mb-3 rounded-2xl border border-gray-200 bg-gray-50/60 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900/80 dark:focus-within:border-gray-500 md:mx-5" aria-busy={!sessionReady}>
-          {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>{t("正在编辑旧消息")}</b><span className="ml-1">{t("发送后会从这里重新执行，后面的旧回答将被替换。")}</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); }} className="font-bold">{t("取消")}</button></div>}
+          {editingMessageId && !running && <div className="mb-2 flex items-center rounded-xl bg-amber-50 px-3 py-1.5 text-meta text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"><b>{t("正在编辑旧消息")}</b><span className="ml-1">{t("发送后会从这里重新执行，后面的旧回答将被替换。")}</span><span className="flex-1" /><button type="button" onClick={() => { setEditingMessageId(''); setInput(''); setCharacterReferences([]); setMention(null); setReferenceLimitNotice(''); }} className="font-bold">{t("取消")}</button></div>}
           {input.length >= 7000 && <p className="mb-2 text-micro text-gray-500">{t("任务要求 {0} / 8000 字符，请分段发送。", [input.length])}</p>}
           {attachmentBusy && <p role="status" className="mb-2 text-xs text-gray-500">{t("正在处理图片副本…")}</p>}
           {attachmentError && <p role="alert" className="mb-2 text-xs text-red-600 dark:text-red-300">{attachmentError}</p>}
           {showSlashCommand && <div id={commandListId} role="listbox" aria-label={t('助手命令')} className="appearance-panel appearance-overlay absolute inset-x-0 bottom-full z-20 mb-2 max-w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700 dark:bg-gray-900">
             <button id={`${commandListId}-compact`} type="button" role="option" aria-selected={canCompact} aria-disabled={!canCompact} disabled={!canCompact} tabIndex={-1} onPointerDown={event => event.preventDefault()} onClick={executeSlashCommand} className="mobile-touch flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800"><span className="shrink-0 font-mono">/compact</span><span className="min-w-0 truncate">{t('压缩上下文')}</span></button>
+          </div>}
+          {showMentionList && <div id={mentionListId} role="listbox" aria-label={t('引用角色库角色')} className="appearance-panel appearance-overlay absolute inset-x-0 bottom-full z-20 mb-2 max-h-72 max-w-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+            <p className="px-2 py-1 text-micro text-gray-500 dark:text-gray-400">{mentionLoading ? t('正在搜索角色…') : t('角色库 · 最多引用 {0} 个', [referenceLimit])}</p>
+            {mentionOptions.map((option, index) => (
+              <button key={`${option.source}:${option.tag || option.name}:${index}`} id={`${mentionListId}-${index}`} type="button" role="option" aria-label={`@${option.name}`} aria-selected={index === mentionActive} tabIndex={-1} onPointerDown={event => event.preventDefault()} onMouseEnter={() => setMentionActive(index)} onClick={() => chooseMention(option)} className={`mobile-touch flex min-h-11 w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left ${index === mentionActive ? 'bg-indigo-50 dark:bg-indigo-950/40' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">@{mentionHighlight(option.name, mention?.query || '')}</span>
+                  {option.detail && <span className="truncate text-micro text-gray-500 dark:text-gray-400">{mentionHighlight(option.detail, mention?.query || '')}</span>}
+                </span>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-micro text-gray-600 dark:bg-gray-800 dark:text-gray-300">{option.source === 'custom' ? t('自定义') : t('角色库')}</span>
+              </button>
+            ))}
+            {!mentionLoading && mentionOptions.length === 0 && <p className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">{t('没有匹配的角色；可以继续输入角色名。')}</p>}
           </div>}
           {!!attachments.length && <p className="mb-2 text-micro text-gray-500">{t("发送时交给 {0}；图片用量计入当前模型。原文件保持不变。", [`${activeModel?.provider}/${activeModel?.id}`])}</p>}
           {!!attachments.length && (
@@ -1260,7 +1402,26 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               ))}
             </div>
           )}
-          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} aria-autocomplete="list" aria-controls={showSlashCommand ? commandListId : undefined} aria-haspopup="listbox" aria-activedescendant={showSlashCommand ? `${commandListId}-compact` : undefined} onFocus={() => setSlashDismissed(false)} onBlur={() => setSlashDismissed(true)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => { setInput(event.target.value); setSlashDismissed(false); }} onKeyDown={handleComposerKeyDown} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或用 / 查看命令…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
+          {!!characterReferences.length && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {characterReferences.map((reference, index) => (
+                <span key={`${reference.source}:${reference.tag || reference.name}:${index}`} className="flex max-w-48 items-center gap-1.5 rounded-full bg-emerald-50 py-1 pl-2.5 pr-1.5 text-micro text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  <span className="truncate" title={reference.tag || reference.name}>@{reference.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCharacterReferences(previous => previous.filter((_, itemIndex) => itemIndex !== index))}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-emerald-500 hover:bg-emerald-200/60 hover:text-rose-600 dark:hover:bg-emerald-900 dark:hover:text-rose-300"
+                    aria-label={t("移除引用角色 {0}", [reference.name])}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              {!!referenceLimitNotice && characterReferences.length >= referenceLimit && <p role="alert" className="w-full text-micro text-amber-600 dark:text-amber-400">{referenceLimitNotice}</p>}
+              {characterReferences.length > referenceLimit && <p className="w-full text-micro text-amber-600 dark:text-amber-400">{t('当前模型最多引用 {0} 个角色，发送时只保留前 {0} 个。', [referenceLimit])}</p>}
+            </div>
+          )}
+          <textarea onPaste={event => { const files = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); void addAttachments(files); } }} maxLength={8000} aria-label={t("任务要求")} ref={inputRef} value={input} disabled={!sessionReady} aria-autocomplete="list" aria-controls={showMentionList ? mentionListId : showSlashCommand ? commandListId : undefined} aria-haspopup="listbox" aria-activedescendant={showMentionList && mentionOptions.length ? `${mentionListId}-${Math.min(mentionActive, mentionOptions.length - 1)}` : showSlashCommand ? `${commandListId}-compact` : undefined} onFocus={() => { setSlashDismissed(false); }} onBlur={() => { setSlashDismissed(true); setMention(null); }} onSelect={event => syncMention(event.currentTarget.value, event.currentTarget.selectionStart ?? 0)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => { const next = event.target.value; setInput(next); setSlashDismissed(false); syncMention(next, event.target.selectionStart ?? next.length); if (!(event.nativeEvent as InputEvent).isComposing && !composing) setCharacterReferences(previous => previous.filter(reference => next.includes(`@${reference.name}`))); }} onKeyDown={handleComposerKeyDown} rows={1} placeholder={!sessionReady ? modelsLoaded ? t("先接入或选择模型服务…") : t("正在加载对话…") : running ? t("可以先写下一条，任务结束后发送…") : editingMessageId ? t("修改这条消息后重新发送…") : t("输入要求，或用 / 查看命令，@ 引用角色库…")} className="agent-composer-input min-h-12 w-full min-w-0 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-wait disabled:opacity-55 dark:text-gray-100 dark:placeholder:text-gray-500" />
           <div className="mt-1 flex min-w-0 items-center gap-2">
             <label title={!sessionReady ? t("请配置或选择模型服务") : supportsImages ? t("添加图片") : t("当前模型不支持图片输入")} aria-disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} className={'flex h-9 w-9 flex-none items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 ' + (sessionReady && supportsImages && !running && attachments.length < 4 ? 'cursor-pointer hover:bg-gray-200/60 dark:hover:bg-gray-800' : 'cursor-not-allowed opacity-35')}><ImagePlus className="h-[18px] w-[18px]" /><input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden aria-label={t("选择图片附件")} onChange={event => { void addAttachments(event.target.files); event.currentTarget.value = ''; }} disabled={!sessionReady || running || attachmentBusy || attachments.length >= 4 || !supportsImages} /></label>
             <AgentPermissionSelect disabled={running || compacting} />
