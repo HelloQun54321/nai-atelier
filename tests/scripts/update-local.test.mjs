@@ -38,6 +38,9 @@ test('真实合成 Git 更新到发行提交，重装锁定依赖并构建，不
     assert.ok(calls.some(args => Array.isArray(args) && args.includes('build:local')));
     assert.equal(calls.at(-1), 'close');
     for (const path of ['local-data', 'local-cache', 'public/tag-data']) assert.equal(await readFile(join(repo, path, 'synthetic.txt'), 'utf8'), '保留');
+    const logs = [];
+    assert.equal(await updateLocal({ root: repo, git: wrappedGit, published: async () => ({ tag_name: 'v1.0.9' }), reserve: async () => { throw new Error('不应占位'); }, log: message => logs.push(message), start: false }), null);
+    assert.match(logs.at(-1), /已是最新/);
     await writeFile(join(repo, 'untracked.txt'), 'custom');
     await assert.rejects(updateLocal({ root: repo, git: wrappedGit, published: async () => { throw new Error('不应联网'); } }), /本地修改/);
   } finally { removeWorkspace(root); }

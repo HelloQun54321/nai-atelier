@@ -3,3 +3,6 @@
 
 # 如果你想强制所有文件在任何系统上都只用 LF（推荐 Web 项目使用）
 * text=auto eol=lf
+# Windows 批处理必须用 CRLF，否则 cmd 会把行切错（如 chcp 65001 后出现 'p' 不是内部或外部命令）
+*.bat text eol=crlf
+*.cmd text eol=crlf
