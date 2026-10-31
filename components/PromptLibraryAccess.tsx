@@ -168,7 +168,8 @@ export function LibraryDialog({ title, onClose, children, busy = false, wide = f
   </div></ImagePreviewPortal>;
 }
 
-const SECTION_LABELS: Record<PromptLibrarySection, string> = { items: '片段', saved: '组合', originals: '原文' };
+/** 与提示词库主浏览一致：使用层只切片段／组合，不再露出原文范围。 */
+const CHOOSER_SECTION_LABELS: Record<'items' | 'saved', string> = { items: '片段', saved: '组合' };
 const MODE_LABELS: Record<PromptApplyMode, string> = { append: '追加', replace: '替换', 'fill-missing': '仅填空白' };
 
 export function PromptLibraryChooser({ value, onText, onClose, field = {}, initialEntry, completion, whole = false, onApplied }: {
@@ -177,7 +178,9 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
 }) {
   const library = usePromptLibrary();
   const workspace = useContext(WorkspaceContext);
-  const [section, setSection] = useState<PromptLibrarySection>(initialEntry ? librarySectionOf(initialEntry) || 'items' : 'items');
+  const purposeField = Boolean(field.purposeId);
+  /** 有用途的分类栏只挑片段；库页送来的原文／组合仍按条目本身归属取用（保留原文逐字）。 */
+  const [section, setSection] = useState<PromptLibrarySection>(() => purposeField ? 'items' : (initialEntry ? librarySectionOf(initialEntry) || 'items' : 'items'));
   const [kind, setKind] = useState(field.kind || '');
   const [directoryIds, setDirectoryIds] = useState<string[]>(field.directoryId ? [field.directoryId] : field.kind && library?.directories?.nodes.some(node => node.id === LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[field.kind!]) ? [LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS[field.kind]] : []);
   const [allDirectories, setAllDirectories] = useState(!field.directoryId);
@@ -191,8 +194,8 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   const [error, setError] = useState('');
   const [applying, setApplying] = useState(false);
   const pending = useRef(false);
-  /** 从分类栏位打开时按该栏用途直接挑，不逛整棵目录。 */
-  const purposeLocked = Boolean(field.purposeId) && section === 'items';
+  /** 从分类栏位打开时按该栏用途直接挑，不逛整棵目录、也不切范围。 */
+  const purposeLocked = purposeField && section === 'items';
   const snapshot = entry && contentRead((entry.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   const target: ContentRollTarget = targetId === 'global' ? { mode: 'global' } : targetId === 'new' ? { mode: 'new' } : { mode: 'existing', id: targetId };
   const [completionDone, setCompletionDone] = useState(false);
@@ -281,7 +284,7 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   };
   return <LibraryDialog busy={applying} title="使用提示词" onClose={onClose} caption={onApplied ? undefined : countCaption}>
     <DirectoryStatus />
-    {!onApplied && <><div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setTag(key === 'saved' ? '' : field.purposeId || ''); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
+    {!onApplied && <>{!purposeField && <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(CHOOSER_SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setTag(key === 'saved' ? '' : field.purposeId || ''); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>}
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
     {purposeLocked
       ? <p className="text-xs text-gray-500">{t('当前栏：{0}（只显示此用途）', [t(promptPurposeLabel(field.purposeId!))])}</p>

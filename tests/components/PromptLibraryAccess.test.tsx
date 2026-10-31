@@ -39,11 +39,19 @@ it('从分类栏打开时按该栏用途筛选，不展示整库目录选择', (
   ];
   render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'appearance' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   expect(screen.getByText(/当前栏：外貌与身体/)).toBeTruthy();
+  expect(screen.queryByRole('tablist', { name: '提示词类型' })).toBeNull();
   expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
   expect(screen.queryByRole('combobox', { name: '用途 Tag' })).toBeNull();
   expect(screen.getByText('红发')).toBeTruthy();
   expect(screen.queryByText('白裙')).toBeNull();
   expect(screen.queryByText('未标注外貌夹')).toBeNull();
+});
+
+it('使用提示词与主浏览一致，只提供片段与组合', () => {
+  render(<PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}><PromptLibraryChooser value="" onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.getByRole('tab', { name: '片段' })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: '组合' })).toBeTruthy();
+  expect(screen.queryByRole('tab', { name: '原文' })).toBeNull();
 });
 
 it('全局画风栏锁定画风配方，旧细项用途也归并进来', () => {
