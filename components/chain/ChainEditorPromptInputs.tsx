@@ -25,9 +25,11 @@ interface PromptFieldProps {
     negative?: string;
     negativeLocked?: boolean;
     onNegativeChange?: (value: string) => void;
+    /** 外层分区标题已是同名时只保留给读屏，不再显示第二行重复标题 */
+    hideLabel?: boolean;
 }
 
-export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange }) => {
+export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, directoryId, purposeId, roleId, negativeLabel, disabled, tagAssistEnabled, onChange, onCopy, sourceName, negative, negativeLocked, onNegativeChange, hideLabel }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     const negativeContent = onNegativeChange && <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
@@ -38,11 +40,11 @@ export const PromptField: React.FC<PromptFieldProps> = ({ label, value, placehol
     </div>;
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-center justify-between gap-2">
-            <label htmlFor={id} className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+            <label htmlFor={id} className={hideLabel ? 'sr-only' : 'min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100'}>
                 {t(label)}
                 {sourceName ? <span className="ml-1 text-micro font-normal text-gray-400">{t('来源：{0}', [sourceName])}</span> : null}
             </label>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
                 <span ref={clearSlot} />
                 {onCopy && <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />}
             </div>
@@ -90,7 +92,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
-                <PromptField label="全局正面提示词" value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
+                <PromptField label="全局正面提示词" hideLabel={!embedded} value={getEditableGlobalPrompt(prompt, supplementPrompt)} placeholder="全局正面提示词" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         if (onPlainPromptChange) onPlainPromptChange(value);
                         else { setPrompt(value); setSupplementPrompt?.(''); setSections?.({}); }

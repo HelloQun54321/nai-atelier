@@ -121,3 +121,14 @@ it('完整主输入清空撤销与复制沿用既有操作，复制在只读时�
   fireEvent.click(screen.getByTitle('复制全局正面提示词'));
   expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局正面提示词');
 });
+
+it('分区标题已是「全局正面提示词」时不再显示第二行同名标题，读屏名称与右侧操作保留', () => {
+  const { container, rerender } = render(<ChainEditorPromptInputs {...defaults()} />);
+  // 曾在手机上与分区标题重复，并被右侧工具挤成「全局正面提…」。
+  const label = container.querySelector('label[for]')!;
+  expect(label.className).toBe('sr-only');
+  expect(screen.getByRole('textbox', { name: '全局正面提示词' })).toBeTruthy();
+  expect(label.nextElementSibling!.className).toContain('ml-auto');
+  rerender(<ChainEditorPromptInputs {...defaults()} embedded />);
+  expect(container.querySelector('label[for]')!.className).not.toContain('sr-only');
+});

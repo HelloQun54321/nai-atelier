@@ -491,3 +491,18 @@ it('手机词库详情的绝对定位封面由真实比例或2比3回退撑开�
   expect(cover).toContain("style={{ aspectRatio: lightbox.kind === 'catalog' ? cardRatios[lightbox.key] || 2 / 3 : undefined }}");
   expect(cover.indexOf('style={{ aspectRatio:')).toBeLessThan(cover.indexOf('<DanbooruCover'));
 });
+
+it('目录与分组同时失败只显示一行错误，一次重试同时重新读取两者', async () => {
+  // 曾显示两行「角色 Tag 目录加载失败」，其中一个重试按钮没有按钮样式。
+  mocks.page.mockRejectedValueOnce(new Error('合成分页失败'));
+  mocks.all.mockRejectedValueOnce(new Error('合成分组失败'));
+  setup({ chains: [] });
+  await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('角色 Tag 目录加载失败');
+  const pageCalls = mocks.page.mock.calls.length, allCalls = mocks.all.mock.calls.length;
+  fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(mocks.page.mock.calls.length).toBeGreaterThan(pageCalls));
+  await waitFor(() => expect(mocks.all.mock.calls.length).toBeGreaterThan(allCalls));
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+});

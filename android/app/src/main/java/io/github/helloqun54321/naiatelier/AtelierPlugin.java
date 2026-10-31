@@ -55,6 +55,26 @@ public class AtelierPlugin extends Plugin {
         }
         JSObject result=new JSObject();result.put("active",AtelierTaskService.generationTasks.size());call.resolve(result);
     }
+    /** 系统栏让出的上下两条使用页面底色，图标明暗跟随工坊主题；Capacitor 在系统深色切换时会复位，需随后重放。 */
+    Integer barColor; boolean barDark;
+    void applySystemBars(){
+        if(barColor==null)return;
+        android.view.Window window=getActivity().getWindow();android.view.View decor=window.getDecorView();
+        decor.setBackgroundColor(barColor);
+        androidx.core.view.WindowInsetsControllerCompat controller=androidx.core.view.WindowCompat.getInsetsController(window,decor);
+        controller.setAppearanceLightStatusBars(!barDark);controller.setAppearanceLightNavigationBars(!barDark);
+    }
+    @PluginMethod public void systemBars(PluginCall call) {
+        int color;
+        try{color=android.graphics.Color.parseColor(call.getString("color",""));}catch(IllegalArgumentException e){call.reject("系统栏颜色无效");return;}
+        boolean dark=call.getBoolean("dark",false);
+        getActivity().runOnUiThread(()->{barColor=color;barDark=dark;applySystemBars();call.resolve();});
+    }
+    @Override protected void handleOnConfigurationChanged(android.content.res.Configuration config) {
+        super.handleOnConfigurationChanged(config);
+        // 插件回调顺序不固定，排到主线程队尾，确保在 SystemBars 复位之后生效。
+        getActivity().getWindow().getDecorView().post(this::applySystemBars);
+    }
     // 退出工坊时释放保活与唤醒锁；不做常驻服务，系统回收后也不残留任务状态。
     @Override protected void handleOnDestroy() {AtelierTaskService.clearJobs();syncTaskService();}
     final OkHttpClient httpClient=new OkHttpClient.Builder().connectTimeout(30,TimeUnit.SECONDS).readTimeout(300,TimeUnit.SECONDS).build();

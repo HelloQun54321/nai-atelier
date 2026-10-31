@@ -19,6 +19,7 @@ export const native = registerPlugin<{
   exportLocation(options: Reply): Promise<Reply>;
   backup(options: Reply): Promise<Reply>;
   respond(options: Reply): Promise<void>;
+  systemBars(options: { color: string; dark: boolean }): Promise<void>;
   addListener(event: string, callback: (event: Reply) => void): Promise<PluginListenerHandle>;
 }>('Atelier');
 export const webFetch = globalThis.fetch.bind(globalThis);

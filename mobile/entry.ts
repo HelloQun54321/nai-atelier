@@ -7,6 +7,7 @@ import { mobileAgent, assertMobileAgentVibeNotReferenced } from './agent';
 import { error } from '../worker/routes/types';
 import { initMobileClipboard } from './clipboard';
 import { mobileDictionary } from './dictionary';
+import { syncSystemBars } from './systemBars';
 
 Object.assign(globalThis, { Buffer });
 initMobileClipboard();
@@ -82,3 +83,4 @@ Storage.prototype.setItem=function(key,value){if(this===localStorage&&key==='nai
 Storage.prototype.removeItem=function(key){if(this===localStorage&&key==='nai_api_key'){rememberedKey='';native.secure({key,value:''}).catch(credentialError);}else storageRemove.call(this,key);};
 await initMobileRuntime();
 await import('../index');
+syncSystemBars();
