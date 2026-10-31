@@ -2,8 +2,75 @@
 export const PROMPT_LIBRARY_DIRECTORY_IDS_KEY = '_promptLibraryDirectoryIds';
 export const LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS = Object.freeze({
   appearance: 'person-appearance', wardrobe: 'person-wardrobe', pose: 'person-pose',
-  expression: 'person-expression', scene: 'environment-scene', camera: 'composition-camera', general: 'quality-supplement',
+  expression: 'person-expression', scene: 'environment-scene', camera: 'composition-camera', general: 'style',
 });
+
+/** 旧预设目录 ID → 当前预设；迁移条目归属时使用，不改正文。 */
+export const PROMPT_LIBRARY_DIRECTORY_ID_ALIASES = Object.freeze({
+  'subjects-machines': 'subjects-objects',
+  'environment-nature': 'environment-climate',
+  'environment-time': 'environment-climate',
+  interaction: 'person-pose',
+  'interaction-people': 'person-pose',
+  'interaction-object': 'subjects-objects',
+  'composition-layout': 'composition-format',
+  lighting: 'style',
+  'lighting-light': 'style',
+  'lighting-color': 'style',
+  'style-medium': 'style',
+  'style-expression': 'style',
+  quality: 'style',
+  'quality-detail': 'style',
+  'quality-supplement': 'style',
+});
+
+/** 旧目录推测用途；仅在条目尚未标注用途时补齐。 */
+export const PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY = Object.freeze({
+  'person-identity': 'identity',
+  'person-appearance': 'appearance',
+  'person-wardrobe': 'clothing',
+  'person-pose': 'pose',
+  'person-expression': 'expression',
+  'subjects-creatures': 'creature',
+  'subjects-objects': 'object',
+  'subjects-machines': 'vehicle',
+  'environment-scene': 'place',
+  'environment-nature': 'nature',
+  'environment-time': 'time',
+  'environment-climate': 'nature',
+  interaction: 'interaction',
+  'interaction-people': 'interaction',
+  'interaction-object': 'interaction',
+  'composition-camera': 'camera',
+  'composition-layout': 'composition',
+  'composition-format': 'composition',
+  'composition-text': 'text',
+  lighting: 'style',
+  'lighting-light': 'style',
+  'lighting-color': 'style',
+  style: 'style',
+  'style-medium': 'style',
+  'style-expression': 'style',
+  quality: 'style',
+  'quality-detail': 'style',
+  'quality-supplement': 'style',
+});
+
+export function remapPromptLibraryDirectoryIds(ids, knownIds) {
+  const known = knownIds instanceof Set ? knownIds : new Set(knownIds || []);
+  return [...new Set((Array.isArray(ids) ? ids : [])
+    .map(id => PROMPT_LIBRARY_DIRECTORY_ID_ALIASES[id] || id)
+    .filter(id => typeof id === 'string' && known.has(id)))];
+}
+
+export function inferPurposesFromDirectoryIds(ids) {
+  const purposes = [];
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const purpose = PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY[id];
+    if (purpose && !purposes.includes(purpose)) purposes.push(purpose);
+  }
+  return purposes;
+}
 
 export function createDefaultPromptLibraryTree() {
   // 场景：地点与布景／天气与时段。构图：视角与景别／画面形式／文字。载具并进物品；人与人进动作；画风为叶子。

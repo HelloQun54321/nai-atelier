@@ -24,6 +24,13 @@ describe('分类模式分页', () => {
     render(<LabCategoryMode tab="scene" base="artist:keep" negative="" sections={sections} characters={[]} tagAssist={false} negativeLocked={false} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />);
     expect(screen.getByRole('textbox', { name: '场景（原有）' })).toHaveProperty('value', 'rainy street');
     expect(screen.getByRole('textbox', { name: '地点与布景' })).toHaveProperty('placeholder', '写地点、室内或背景');
+    expect(screen.getByRole('textbox', { name: '自然与天气' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '时间与季节' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: '互动与关系' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: '构图与布局' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '视角与景别' })).toHaveProperty('placeholder', '写景别和视角');
+    expect(screen.getByRole('textbox', { name: '文字与标识' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '补充' })).toHaveProperty('placeholder', '还没归进上面各栏的内容');
     expect(screen.getAllByRole('button', { name: /更多操作/ })).toHaveLength(1);
     expect(screen.queryByRole('textbox', { name: '画风' })).toBeNull();
     expect(screen.queryByText(/本次结构/)).toBeNull();
@@ -91,5 +98,43 @@ describe('分类模式分页', () => {
     expect(field.value).toBe('rainy street, night');
     expect(document.activeElement).not.toBe(field);
     expect(screen.getAllByLabelText('提示词中文翻译').length).toBeGreaterThan(0);
+  });
+
+  it('空角色默认人物五栏加通用补充；互动挂角色页共用全局栏；生物／物品／载具可添加', () => {
+    const empty = { id: 'c1', prompt: '', x: 0.5, y: 0.5 } as CharacterParams;
+    const filled = { id: 'c2', prompt: '', x: 0.5, y: 0.5, sections: { 'purpose:creature': 'cat ears', 'purpose:object': 'sword' } } as CharacterParams;
+    const withInteraction = { ...sections, 'purpose:interaction': 'holding hands' } as PromptSections;
+    const onSections = vi.fn();
+    const props = { tab: 'character' as const, base: '', negative: '', sections: withInteraction, tagAssist: false, negativeLocked: false, onBase: vi.fn(), onNegative: vi.fn(), onSections, onLayout: vi.fn(), onCopy: vi.fn(), onAddCharacter: vi.fn(), onUpdateCharacter: vi.fn(), onRemoveCharacter: vi.fn() };
+    const view = render(<LabCategoryMode {...props} characters={[empty]} />);
+    expect(screen.getByRole('textbox', { name: '互动与关系' })).toHaveProperty('value', 'holding hands');
+    expect(screen.getByRole('textbox', { name: '人物设定' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '外貌与身体' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '服饰与配件' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '动作与姿态' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '表情与情绪' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '补充' })).toHaveProperty('placeholder', '还没归进上面各栏的内容');
+    const hasNegative = (label: string) => [...screen.getByRole('group', { name: label }).querySelectorAll('button')].some(button => button.textContent === '负面');
+    expect(hasNegative('人物设定')).toBe(true);
+    expect(hasNegative('外貌与身体')).toBe(true);
+    expect(hasNegative('补充')).toBe(true);
+    expect(screen.queryByRole('textbox', { name: '动物与生物' })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: '互动与关系' }), { target: { value: 'kiss' } });
+    expect(onSections).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '角色 1 的更多操作' }));
+    expect(screen.getByRole('button', { name: '添加动物与生物' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加物品与道具' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '添加载具与机械' })).toBeTruthy();
+    view.unmount();
+    render(<LabCategoryMode {...props} characters={[filled]} />);
+    expect(screen.getByRole('textbox', { name: '互动与关系' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: '动物与生物' })).toHaveProperty('value', 'cat ears');
+    expect(screen.getByRole('textbox', { name: '物品与道具' })).toHaveProperty('value', 'sword');
+  });
+
+  it('场景已有天气正文时仍显示自然与天气栏', () => {
+    const withNature = { ...sections, 'purpose:nature': 'heavy rain' } as PromptSections;
+    render(<LabCategoryMode tab="scene" base="" negative="" sections={withNature} characters={[]} tagAssist={false} negativeLocked={false} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />);
+    expect(screen.getByRole('textbox', { name: '自然与天气' })).toHaveProperty('value', 'heavy rain');
   });
 });

@@ -118,7 +118,7 @@ describe('共用角色编辑器', () => {
 
   it('角色库引用弹窗支持名称、提示词与标签搜索，选中后写入当前角色且重新打开清空查询', () => {
     const allChains: PromptChain[] = [
-      { id: 'moon', userId: 'synthetic', name: '月光骑士', type: 'character', description: '银甲角色', tags: ['骑士', '月光'], basePrompt: 'silver armor, moonlight', negativePrompt: 'blurry', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'silver armor', negativePrompt: 'blurry' }] }, createdAt: 1, updatedAt: 1 },
+      { id: 'moon', userId: 'synthetic', name: '月光骑士', type: 'character', description: '银甲角色', tags: ['骑士', '月光'], basePrompt: 'silver armor, moonlight', negativePrompt: 'blurry', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'silver armor', negativePrompt: 'blurry' }] }, previewImage: '/synthetic-moon.png', createdAt: 1, updatedAt: 1 },
       { id: 'forest', userId: 'synthetic', name: '森林精灵', type: 'character', description: '绿叶角色', tags: ['精灵', '森林'], basePrompt: 'green cloak, forest', negativePrompt: 'low quality', modules: [], params: { ...initial, characters: [{ ...initial.characters![0], prompt: 'green cloak', negativePrompt: 'low quality' }] }, createdAt: 2, updatedAt: 2 },
     ];
     render(<Harness library={{ allChains, showCharacterReference: true }} />);
@@ -129,6 +129,10 @@ describe('共用角色编辑器', () => {
 
     expect(search).toBeTruthy();
     expect(roleButtons()).toHaveLength(2);
+    const cover = within(dialog).getByRole('button', { name: /月光骑士/ }).querySelector('div.relative');
+    expect(cover?.className).toMatch(/\bh-12\b/);
+    expect(cover?.className).toMatch(/\bw-12\b/);
+    expect(cover?.className).toMatch(/\bflex-none\b/);
     fireEvent.change(search, { target: { value: '森林精灵' } });
     expect(within(dialog).getByRole('button', { name: /森林精灵/ })).toBeTruthy();
     expect(within(dialog).queryByRole('button', { name: /月光骑士/ })).toBeNull();

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createDefaultPromptLibraryTree, flattenPromptLibraryDirectories, getPromptLibraryDefaultSelection,
   getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryRollKey,
-  getPromptLibraryDirectoryTarget, getPromptLibraryEntryDirectoryIds, normalizePromptLibraryDirectorySelection,
-  readPromptLibraryTree, removePromptLibraryDirectory, selectPromptLibraryDirectoryEntries,
+  getPromptLibraryDirectoryTarget, getPromptLibraryEntryDirectoryIds, inferPurposesFromDirectoryIds,
+  normalizePromptLibraryDirectorySelection, readPromptLibraryTree, remapPromptLibraryDirectoryIds,
+  removePromptLibraryDirectory, selectPromptLibraryDirectoryEntries,
   type PromptLibraryTreeState,
 } from '../../services/promptLibraryTree.mjs';
 
@@ -82,10 +83,23 @@ describe('用户完整掌控的提示词目录树', () => {
     state.nodes = state.nodes.map(node => ({ ...node, name: `${node.name}新名字` }));
     expect(getPromptLibraryEntryDirectoryIds(entry, state)).toEqual(['person-wardrobe']);
     expect(getPromptLibraryDirectoryLegacyKind(state, 'person-wardrobe')).toBe('wardrobe');
+    expect(getPromptLibraryEntryDirectoryIds({ id: 'g', type: 'preset', params: { _collectedCategory: 'general' } }, state)).toEqual(['style']);
     expect(getPromptLibraryEntryDirectoryIds({ ...entry, params: { _promptLibraryDirectoryIds: [] } }, state)).toEqual([]);
     expect(getPromptLibraryEntryDirectoryIds({ ...entry, params: { _promptLibraryDirectoryIds: ['deleted'] } }, state)).toEqual([]);
     expect(getPromptLibraryEntryDirectoryIds(entry, removePromptLibraryDirectory(state, 'person-wardrobe'))).toEqual([]);
     expect(JSON.stringify(entry)).toBe(original);
+  });
+
+  it('旧目录别名迁到当前预设，并可从旧目录补用途', () => {
+    const known = new Set(createDefaultPromptLibraryTree().nodes.map(node => node.id));
+    expect(remapPromptLibraryDirectoryIds([
+      'interaction-people', 'subjects-machines', 'environment-nature', 'environment-time',
+      'composition-layout', 'lighting-light', 'quality-supplement', 'person-pose', 'missing',
+    ], known)).toEqual([
+      'person-pose', 'subjects-objects', 'environment-climate', 'composition-format', 'style',
+    ]);
+    expect(inferPurposesFromDirectoryIds(['interaction-people', 'subjects-machines', 'environment-time']))
+      .toEqual(['interaction', 'vehicle', 'time']);
   });
 
   it('候选按实际子树去重，支持数据库字符串params，不混入原文、风格或组合', () => {

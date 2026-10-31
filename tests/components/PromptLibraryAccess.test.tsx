@@ -30,6 +30,37 @@ it('取用目录范围从未归类或具体目录切回全部时包含两种片�
   expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.getByText('目录内候选')).toBeTruthy();
 });
 
+it('从分类栏打开时按该栏用途筛选，不展示整库目录选择', () => {
+  const directories = { revision: 1, nodes: [{ id: 'person-appearance', parentId: null, name: '外貌与身体' }, { id: 'person-wardrobe', parentId: null, name: '服饰与配件' }] };
+  const entries: PromptChain[] = [
+    { ...promptEntry, id: 'hair', name: '红发', basePrompt: 'red hair', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: ['appearance'] } },
+    { ...promptEntry, id: 'dress', name: '白裙', basePrompt: 'white dress', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-wardrobe'], _promptLibraryPurposes: ['clothing'] } },
+    { ...promptEntry, id: 'untagged', name: '未标注外貌夹', basePrompt: 'blue eyes', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: [] } },
+  ];
+  render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'appearance' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.getByText(/当前栏：外貌与身体/)).toBeTruthy();
+  expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
+  expect(screen.queryByRole('combobox', { name: '用途 Tag' })).toBeNull();
+  expect(screen.getByText('红发')).toBeTruthy();
+  expect(screen.queryByText('白裙')).toBeNull();
+  expect(screen.queryByText('未标注外貌夹')).toBeNull();
+});
+
+it('全局画风栏锁定画风配方，旧细项用途也归并进来', () => {
+  const directories = { revision: 1, nodes: [{ id: 'style-root', parentId: null, name: '画风配方' }] };
+  const entries: PromptChain[] = [
+    { ...promptEntry, id: 'recipe', name: '水彩配方', basePrompt: 'watercolor', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['style'] } },
+    { ...promptEntry, id: 'legacy-light', name: '旧光照', basePrompt: 'rim light', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['lighting' as never] } },
+    { ...promptEntry, id: 'pose', name: '站立', basePrompt: 'standing', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['pose'] } },
+  ];
+  render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'style' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.getByText(/当前栏：画风配方/)).toBeTruthy();
+  expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
+  expect(screen.getByText('水彩配方')).toBeTruthy();
+  expect(screen.getByText('旧光照')).toBeTruthy();
+  expect(screen.queryByText('站立')).toBeNull();
+});
+
 it('实验室随机入口透传画面名单，应用保留完整全局风格与主负面', async () => {
   localStorage.clear();
   const changed = vi.fn();
@@ -159,7 +190,7 @@ it('手机等待编辑关闭确认时保留当前返回层，取消后仍可再�
 it('分栏收录组合可填写多个自定义标签并选择已有标签', async () => {
   const save = vi.fn().mockResolvedValue(undefined);
   const chain = { id: 'existing', ...createCombinationData('组合', { scene: { kind: 'scene', text: 'rain', filled: true } }), tags: ['已有分类'] } as PromptChain;
-  render(<PromptLibraryContext.Provider value={{ chains: [chain], categoryNames: ['预建分类'], save }}><PromptLibrarySaveDialog text="rain" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'rain' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  render(<PromptLibraryContext.Provider value={{ chains: [chain], categoryNames: ['预建分类'], save }}><PromptLibrarySaveDialog text="rain" initialParams={{ ...LAB_DEFAULT_PARAMS, characters: [], _promptSections: { scene: 'rain' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } });
   const tags = screen.getByRole('textbox', { name: '自定义标签' });
   fireEvent.change(tags, { target: { value: ' 新分类， 新分类, ' } });
@@ -358,7 +389,7 @@ it('真实目录读取失败保留重试并禁用写入，不按旧分类保存'
 
 it('组合收录分类候选显示完整路径而保存真实标签名', async () => {
   const save = vi.fn().mockResolvedValue(undefined), categoryTree = { revision: 1, nodes: [{ id: '父类', name: '父类', parentId: null }, { id: '子类', name: '子类', parentId: '父类' }] };
-  render(<PromptLibraryContext.Provider value={{ chains: [], categoryTree, save }}><PromptLibrarySaveDialog text="night" initialParams={{ ...LAB_DEFAULT_PARAMS, _promptSections: { scene: 'night' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  render(<PromptLibraryContext.Provider value={{ chains: [], categoryTree, save }}><PromptLibrarySaveDialog text="night" initialParams={{ ...LAB_DEFAULT_PARAMS, characters: [], _promptSections: { scene: 'night' } }} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
   fireEvent.change(screen.getByRole('combobox', { name: '保存为' }), { target: { value: 'combination' } }); fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
   fireEvent.click(screen.getByRole('button', { name: '#父类 / 子类' })); expect((screen.getByRole('textbox', { name: '自定义标签' }) as HTMLInputElement).value).toBe('子类');
   fireEvent.click(screen.getByRole('button', { name: '保存' })); await waitFor(() => expect(save).toHaveBeenCalledOnce()); expect(save.mock.calls[0][0].tags).toEqual(['子类']);

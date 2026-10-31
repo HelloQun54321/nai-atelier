@@ -41,7 +41,7 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createBlankLabCharacter, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -1044,8 +1044,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
             notify(`${activeModelInfo.label} 最多支持 ${activeModelInfo.maxCharacters} 个角色提示词`, 'error');
             return;
         }
-        const newChar: CharacterParams = { id: createUuid(), prompt: '', x: 0.5, y: 0.5 };
-        setParams({ ...params, characters: [...(params.characters || []), newChar] });
+        setParams({ ...params, characters: [...(params.characters || []), createBlankLabCharacter()] });
         markChange();
     };
 
@@ -1067,7 +1066,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, chai
         const newChars = [...params.characters];
         const removedId = newChars[idx]?.id;
         newChars.splice(idx, 1);
-        setParams({ ...params, characters: newChars });
+        // 实验室不允许落到零个角色：删光后补一个空白槽。
+        setParams({ ...params, characters: newChars.length ? newChars : [createBlankLabCharacter()] });
         if (removedId) setCharacterPresetSources(previous => {
             const next = { ...previous };
             delete next[removedId];

@@ -123,7 +123,10 @@ describe('lab workspace session', () => {
         expect(draft.params.characters![0]).toMatchObject({ id: 'shared', x: 0.5, y: 0.5, prompt: field === 'characterPrompt' ? 'private-role-positive' : '' });
         expect(draft.params.characters![0].negativePrompt).toBe(field === 'characterNegativePrompt' ? 'private-role-negative' : undefined);
         expect(draft.params.characters![0].enabled).toBeUndefined();
-      } else expect(draft.params.characters).toEqual([]);
+      } else {
+        expect(draft.params.characters).toHaveLength(1);
+        expect(draft.params.characters![0]).toMatchObject({ prompt: '', x: 0.5, y: 0.5 });
+      }
     }
   });
 
@@ -466,11 +469,15 @@ describe('lab workspace session', () => {
       ucPreset: 4,
     });
     expect(LAB_DEFAULT_PARAMS.seed).toBeUndefined();
-    expect(LAB_DEFAULT_PARAMS.characters).toEqual([]);
+    expect(LAB_DEFAULT_PARAMS.characters).toHaveLength(1);
+    expect(LAB_DEFAULT_PARAMS.characters![0]).toMatchObject({ prompt: '', x: 0.5, y: 0.5 });
     // 与新建会话的初始草稿保持一致：重置后编辑草稿应回到该基底。
     const session = createLabWorkspaceSession('', '', '', LAB_DEFAULT_PARAMS, {});
     expect(session.edits.inpaint.params).toMatchObject({ width: 832, height: 1216, steps: 28 });
+    expect(session.edits.inpaint.params.characters).toHaveLength(1);
     expect(session.edits.inpaint.prompt).toBe('');
+    expect(normalizeParams({ width: 832 }).characters).toHaveLength(1);
+    expect(normalizeParams({ width: 832, characters: [] }).characters).toEqual([]);
   });
 
   it('getLabModeLabel 提供四种生成模式的中文名', () => {

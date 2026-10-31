@@ -5,6 +5,17 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-10-31
+- **Cursor (Composer)**：修复角色库引用弹窗 SmartImage 容器默认撑满导致头像巨大；尺寸改写在 containerClassName。
+- **Cursor (Composer)**：分类全局「画风」栏挂上画风配方用途，使用提示词与其它分类栏同样锁定。
+- **Cursor (Composer)**：分类栏「使用提示词」弹窗按栏位用途锁定筛选，隐藏整库目录选择；补回归与决策说明。
+- **Cursor (Composer)**：分类分栏标题操作改为常显（库／清空／负面），避免悬停才出现造成栏间不一致。
+- **Cursor (Composer)**：分类互动栏与场景补充改套同款 lab 卡片材质（互动外包 card；补充并进场景 ZonePane）。
+- **Cursor (Composer)**：本机提示词目录迁到当前五根预设并归类已有片段归属／缺省用途；补目录别名映射、legacy general→style、迁移脚本与测试。
+- **Cursor (Composer)**：互动与关系挪到角色页顶部共用栏（全局 purpose:interaction）；场景默认只留环境与取景六类。
+- **Cursor (Composer)**：分类「补充」切开为与其它栏同款 FacetField（含负面），角色／场景共用通用占位；场景空稿也显示补充。
+- **Cursor (Composer)**：分类模式默认栏补齐——场景页画面七类、角色页人物五类；构图仍挂场景页；同步决策、README、测试。
+- **Cursor (Composer)**：实验室空稿默认一个空白角色，删光后补回空白槽。
+- **Cursor (Composer)**：实验室分类模式默认栏收束（场景仅地点；角色外貌／服饰／动作；有内容旧栏仍显示）；同步决策、README、测试。
 - **Cursor (Composer)**：权重类型缩小圆角改只作用于 `.appearance-segmented.flex.h-8`，避免误伤实验室模式／分区 Tab 圆角。
 - **Cursor (Composer)**：权重类型分段补垂直居中——子钮改 inline-flex／leading-none，并覆盖 filled 主题写死的 34px 高度，避免矮工具栏内文字被裁切。
 - **Cursor (Composer)**：修复权重类型「括号／数值」分段被主题大圆角叠住的问题（小圆角＋间距，并限制 segmented 子按钮圆角）。

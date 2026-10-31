@@ -1,5 +1,5 @@
 import { isCreativeSectionKey } from './promptPurposes.mjs';
-import { GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
+import { CharacterParams, GenerationMode, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LabWorkspaceSession, NAIParams, PromptSections } from '../types';
 import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate, compileCharacterContent } from './characterPrompts';
@@ -16,7 +16,15 @@ const ASSET_DB_VERSION = 3;
 
 const emptyExpansion: ImageEditCanvasExpansion = { top: 0, right: 0, bottom: 0, left: 0 };
 
-/** 实验室重置与新建会话共用的默认参数：832×1216（约百万像素免费面积上限）、随机种子、UC 预设 None；步数跟随默认模型（未设置模型时按 V4.5 为 28 步）。 */
+/** 实验室空稿默认的一个空白角色槽（可写提示词，坐标居中）。 */
+export const createBlankLabCharacter = (): CharacterParams => ({
+    id: createUuid(),
+    prompt: '',
+    x: 0.5,
+    y: 0.5,
+});
+
+/** 实验室重置与新建会话共用的默认参数：832×1216（约百万像素免费面积上限）、随机种子、UC 预设 None；步数跟随默认模型（未设置模型时按 V4.5 为 28 步）；默认带一个空白角色。 */
 export const LAB_DEFAULT_PARAMS: NAIParams = {
     width: 832,
     height: 1216,
@@ -27,7 +35,7 @@ export const LAB_DEFAULT_PARAMS: NAIParams = {
     seed: undefined,
     qualityToggle: true,
     ucPreset: 4,
-    characters: [],
+    characters: [{ id: 'lab-blank-character', prompt: '', x: 0.5, y: 0.5 }],
     useCoords: false,
 };
 
@@ -100,9 +108,16 @@ export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams =
     sampler: safe.sampler || LAB_DEFAULT_PARAMS.sampler,
     noiseSchedule: normalizeNoiseSchedule(safe.noiseSchedule ?? LAB_DEFAULT_PARAMS.noiseSchedule),
     useCoords: safe.useCoords === true,
-    characters: Array.isArray(safe.characters) ? safe.characters.map(character => ({ ...character,
-      x: clampCharacterCoordinate(character.x), y: clampCharacterCoordinate(character.y),
-    })) : [],
+    characters: Array.isArray(safe.characters)
+      ? safe.characters.map(character => ({ ...character,
+        x: clampCharacterCoordinate(character.x), y: clampCharacterCoordinate(character.y),
+      }))
+      : LAB_DEFAULT_PARAMS.characters!.map(character => ({
+        ...character,
+        id: createUuid(),
+        x: clampCharacterCoordinate(character.x),
+        y: clampCharacterCoordinate(character.y),
+      })),
     vibes: safe.vibes ? {
       ...safe.vibes,
       slots: Array.isArray(safe.vibes.slots) ? safe.vibes.slots.map(slot => ({ ...slot })) : [],

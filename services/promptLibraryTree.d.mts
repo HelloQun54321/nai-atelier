@@ -4,6 +4,10 @@ export interface PromptLibraryTreeState { revision: number; nodes: PromptLibrary
 export interface PromptLibraryDirectoryEntry { id: string; type?: string; params?: unknown }
 export const PROMPT_LIBRARY_DIRECTORY_IDS_KEY: '_promptLibraryDirectoryIds';
 export const LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS: Readonly<Record<'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera' | 'general', string>>;
+export const PROMPT_LIBRARY_DIRECTORY_ID_ALIASES: Readonly<Record<string, string>>;
+export const PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY: Readonly<Record<string, string>>;
+export function remapPromptLibraryDirectoryIds(ids: readonly string[] | null | undefined, knownIds: Iterable<string> | Set<string>): string[];
+export function inferPurposesFromDirectoryIds(ids: readonly string[] | null | undefined): string[];
 export function createDefaultPromptLibraryTree(): PromptLibraryTreeState;
 export function readPromptLibraryTree(value: unknown): PromptLibraryTreeState;
 export function getPromptLibraryDirectoryPath(state: PromptLibraryTreeState, id: string): PromptLibraryDirectory[];

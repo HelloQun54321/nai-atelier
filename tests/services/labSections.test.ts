@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { applyRollSelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 import { compilePrompt } from '../../services/promptUtils';
 import {
-  addCustomZone, assembleVisualSubject, customSectionId, enterSectionedPrompt, pinPictureZone, pinnedPictureZones,
-  projectSectionedPrompt, readLabSectionLayout, subjectFromSections,
+  addCustomZone, assembleVisualSubject, CHARACTER_ZONE, customSectionId, enterSectionedPrompt, PICTURE_ZONES,
+  pinPictureZone, pinnedPictureZones, projectSectionedPrompt, readCharacterBoard, readLabSectionLayout,
+  readPictureBoard, subjectFromSections,
 } from '../../services/labSections';
 import type { NAIParams } from '../../types';
 
@@ -18,6 +19,26 @@ const state = (patch: Partial<PromptLibraryWorkspaceState> = {}): PromptLibraryW
 });
 
 describe('分类编辑的栏位', () => {
+  it('默认空框齐全：场景挂环境与取景六类，角色挂人物五类，互动不进场景', () => {
+    expect(PICTURE_ZONES.find(zone => zone.id === 'scene')?.defaults).toEqual([
+      'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
+    ]);
+    expect(PICTURE_ZONES.find(zone => zone.id === 'frame')?.defaults).toEqual([]);
+    expect(CHARACTER_ZONE.defaults).toEqual([
+      'purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression',
+    ]);
+    const scene = readPictureBoard(undefined, undefined).find(zone => zone.id === 'scene');
+    expect(scene?.facets.map(facet => facet.id)).toEqual([
+      'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
+    ]);
+    expect(readCharacterBoard({ id: 'c1', prompt: '', x: 0.5, y: 0.5 }, undefined).facets.map(facet => facet.id))
+      .toEqual(['purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression']);
+    expect(readPictureBoard({ 'purpose:nature': 'fog' } as never, undefined).find(zone => zone.id === 'scene')?.facets.map(facet => facet.id))
+      .toEqual([
+        'purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text',
+      ]);
+  });
+
   it('画风分栏并回全局，而且不会再拆开', () => {
     const first = projectSectionedPrompt('artist:keep', { appearance: '', wardrobe: '', pose: '', scene: 'garden', camera: '', extra: '', 'purpose:style': 'oil painting' });
     expect(first.base).toBe('artist:keep, oil painting');

@@ -296,7 +296,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { name: item.name, prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '', sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
                     setActiveAction(null);
                 }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
-                    {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
+                    {item.previewImage ? <SmartImage src={item.previewImage} alt="" containerClassName="relative h-12 w-12 flex-none overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800" className="h-full w-full object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
                     <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
                 </button>)}</div>
                 {chainsLoading && <p role="status" className="py-4 text-center text-sm text-gray-500">{t("加载中…")}</p>}

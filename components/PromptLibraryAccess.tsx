@@ -191,6 +191,8 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   const [error, setError] = useState('');
   const [applying, setApplying] = useState(false);
   const pending = useRef(false);
+  /** 从分类栏位打开时按该栏用途直接挑，不逛整棵目录。 */
+  const purposeLocked = Boolean(field.purposeId) && section === 'items';
   const snapshot = entry && contentRead((entry.params as unknown as Record<string, unknown>)?._rollContentSnapshot);
   const target: ContentRollTarget = targetId === 'global' ? { mode: 'global' } : targetId === 'new' ? { mode: 'new' } : { mode: 'existing', id: targetId };
   const [completionDone, setCompletionDone] = useState(false);
@@ -203,11 +205,20 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
   }
   const entries = (library?.chains || []).filter(item => librarySectionOf(item) === section);
   const tags = section === 'saved' ? promptLibraryCategoryNames(entries, [...(library?.categoryNames || []), ...(library?.categoryTree?.nodes.map(node => node.name) || [])]) : PROMPT_PURPOSES.map(item => item.id);
-  const directoryEntries = library?.directories && section === 'items' && !allDirectories ? unclassified ? entries.filter(item => !getPromptLibraryEntryDirectoryIds(item, library.directories!).length) : selectPromptLibraryDirectoryEntries(entries, library.directories, directoryIds) : entries;
-  const shown = directoryEntries.filter(item => (libraryEntryText(item, field).trim() || !field.negative && !field.purposeId && isContentRecord(item)) && (library?.directories || !kind || section !== 'items' || fragmentKindOf(item) === kind) && (!tag || (section === 'saved' ? item.tags?.includes(tag) : getEntryPurposes(item).includes(tag as PromptPurposeId)))
-    && [item.name, item.basePrompt, ...(item.tags || []), libraryEntryText(item)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const directoryEntries = purposeLocked || !library?.directories || section !== 'items' || allDirectories
+    ? entries
+    : unclassified
+      ? entries.filter(item => !getPromptLibraryEntryDirectoryIds(item, library.directories!).length)
+      : selectPromptLibraryDirectoryEntries(entries, library.directories, directoryIds);
+  const purposeFilter = purposeLocked ? field.purposeId! : section === 'items' ? tag : '';
+  const shown = directoryEntries.filter(item => {
+    if (!(libraryEntryText(item, field).trim() || !field.negative && !field.purposeId && isContentRecord(item))) return false;
+    if (!purposeLocked && !library?.directories && kind && section === 'items' && fragmentKindOf(item) !== kind) return false;
+    if (section === 'saved' ? tag && !item.tags?.includes(tag) : purposeFilter && !getEntryPurposes(item).includes(purposeFilter as PromptPurposeId)) return false;
+    return [item.name, item.basePrompt, ...(item.tags || []), libraryEntryText(item)].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase());
+  });
   const captionTotal = entries.filter(item => libraryEntryText(item, field).trim() || !field.negative && !field.purposeId && isContentRecord(item)).length;
-  const captionFiltered = !!(query || section === 'items' && (library?.directories ? !allDirectories : kind) || tag);
+  const captionFiltered = !!(query || purposeLocked || section === 'items' && (library?.directories ? !allDirectories : kind) || tag);
   let currentText = value;
   if (whole && workspace) {
     const current = workspace.state;
@@ -272,9 +283,11 @@ export function PromptLibraryChooser({ value, onText, onClose, field = {}, initi
     <DirectoryStatus />
     {!onApplied && <><div className="flex flex-wrap gap-2" role="tablist" aria-label={t('提示词类型')}>{Object.entries(SECTION_LABELS).map(([key, label]) => <ToolbarButton key={key} role="tab" active={section === key} aria-selected={section === key} onClick={() => { setSection(key as PromptLibrarySection); setTag(key === 'saved' ? '' : field.purposeId || ''); setEntry(null); }}>{t(label)}</ToolbarButton>)}</div>
     <input type="search" aria-label={t('搜索提示词库')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('搜索名称、标签或提示词')} className={TOOLBAR_FIELD_CLASS} />
-    <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={value => { setAllDirectories(value); setUnclassified(false); }} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
-      <select aria-label={t(section === 'saved' ? '文件夹' : '用途 Tag')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{section === 'saved' ? tags.map(value => <option key={value} value={value}>{promptLibraryCategoryLabel(library?.categoryTree, value)}</option>) : PROMPT_PURPOSE_GROUPS.map(group => <optgroup key={group.id} label={t(group.label)}>{group.purposes.map(id => <option key={id} value={id}>{t(promptPurposeLabel(id))}</option>)}</optgroup>)}</select></div>
-    <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && (library?.chainsLoading || library?.chainsError ? <PromptLibraryReadStatus {...library} /> : <p className="text-sm text-gray-500">{t('没有匹配的条目')}</p>)}</div></>}
+    {purposeLocked
+      ? <p className="text-xs text-gray-500">{t('当前栏：{0}（只显示此用途）', [t(promptPurposeLabel(field.purposeId!))])}</p>
+      : <div className="flex gap-2">{section === 'items' && library?.directories && <PromptLibraryDirectoryPicker state={library.directories} selectedIds={directoryIds} onChange={ids => { setDirectoryIds(ids); setUnclassified(false); }} includeAll allSelected={allDirectories} onAllChange={value => { setAllDirectories(value); setUnclassified(false); }} includeUnclassified unclassifiedSelected={unclassified} onUnclassifiedChange={value => { setUnclassified(value); setAllDirectories(false); setDirectoryIds([]); }} />}{section === 'items' && !library?.directories && <select aria-label={t('用途类别')} value={kind} onChange={event => setKind(event.target.value as PromptFragmentKind | '')} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部')}</option>{Object.entries(FRAGMENT_LABELS).map(([key, label]) => <option key={key} value={key}>{t(label)}</option>)}</select>}
+      <select aria-label={t(section === 'saved' ? '文件夹' : '用途 Tag')} value={tag} onChange={event => setTag(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部标签')}</option>{section === 'saved' ? tags.map(value => <option key={value} value={value}>{promptLibraryCategoryLabel(library?.categoryTree, value)}</option>) : PROMPT_PURPOSE_GROUPS.map(group => <optgroup key={group.id} label={t(group.label)}>{group.purposes.map(id => <option key={id} value={id}>{t(promptPurposeLabel(id))}</option>)}</optgroup>)}</select></div>}
+    <div className="max-h-52 space-y-1 overflow-y-auto">{shown.map(item => <button key={item.id} type="button" aria-pressed={entry?.id === item.id} onClick={() => { setEntry(item); setRoleIndex(-1); setError(''); }} className={`w-full rounded-lg border p-2 text-left ${entry?.id === item.id ? 'border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}><span className="block truncate font-semibold">{item.name}</span><span className="line-clamp-2 break-words font-mono text-xs text-gray-500">{libraryEntryText(item, field)}</span></button>)}{!shown.length && (library?.chainsLoading || library?.chainsError ? <PromptLibraryReadStatus {...library} /> : <p className="text-sm text-gray-500">{t(purposeLocked ? '没有此用途的片段' : '没有匹配的条目')}</p>)}</div></>}
     {onApplied && entry && <p className="text-sm font-semibold">{entry.name}</p>}
     {entry && <>
       <div role="group" aria-label={t('应用方式')} className="flex gap-2">{Object.entries(MODE_LABELS).map(([key, label]) => <ToolbarButton key={key} active={mode === key} onClick={() => setMode(key as PromptApplyMode)}>{t(label)}</ToolbarButton>)}</div>

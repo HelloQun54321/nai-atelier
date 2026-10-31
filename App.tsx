@@ -16,7 +16,7 @@ import { useAgentCommand } from './services/agentCommands';
 import { listGenerationSeriesSessions, stopGenerationSeriesSession } from './services/generationSeries';
 import { cancelGenerationQueue, getGenerationQueue, setGenerationQueuePaused } from './services/generationTask';
 import { useCollectorAppearance } from './services/collectorAppearance';
-import { LAB_DEFAULT_PARAMS, mergePromptSections, resolvePromptSections } from './services/labWorkspace';
+import { createBlankLabCharacter, LAB_DEFAULT_PARAMS, mergePromptSections, resolvePromptSections } from './services/labWorkspace';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
@@ -709,7 +709,8 @@ const App = () => {
       negativePrompt: '',
       modules: [],
       params: {
-        width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4, characters: []
+        width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', seed: undefined, qualityToggle: true, ucPreset: 4,
+        characters: [createBlankLabCharacter()],
       },
       variableValues: { subject: '' },
       type: 'style',

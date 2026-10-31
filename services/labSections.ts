@@ -24,13 +24,16 @@ export interface LabZoneDefinition {
 
 export const PICTURE_ZONES: readonly LabZoneDefinition[] = [
   { id: 'subject', label: '主体', defaults: ['purpose:identity', 'purpose:appearance', 'purpose:clothing'], optional: ['purpose:creature', 'purpose:object', 'purpose:vehicle'] },
-  { id: 'scene', label: '场景', defaults: ['purpose:place', 'purpose:nature'], optional: ['purpose:time', 'purpose:interaction'] },
-  { id: 'frame', label: '构图与镜头', defaults: ['purpose:composition', 'purpose:camera'], optional: ['purpose:text'] },
+  // 场景页只挂环境＋取景（地点／自然／时间／构图／镜头／文字）；互动挂角色页共用栏。
+  { id: 'scene', label: '场景', defaults: ['purpose:place', 'purpose:nature', 'purpose:time', 'purpose:composition', 'purpose:camera', 'purpose:text'], optional: [] },
+  // 构图分区无默认空框；有旧内容仍显示在场景页下方。
+  { id: 'frame', label: '构图与镜头', defaults: [], optional: ['purpose:composition', 'purpose:camera', 'purpose:text'] },
 ];
 
 export const CHARACTER_ZONE: LabZoneDefinition = {
   id: 'character',
   label: '这个角色',
+  // 角色页默认人物核心 5 类；生物／物品／载具按需添加。
   defaults: ['purpose:identity', 'purpose:appearance', 'purpose:clothing', 'purpose:pose', 'purpose:expression'],
   optional: ['purpose:creature', 'purpose:object', 'purpose:vehicle'],
 };
@@ -220,6 +223,12 @@ export const readPictureBoard = (sections?: PromptSections | null, layout?: LabS
     zone.facets.push(viewOf(id, zoneId, sections, storedLabel, removable));
   };
   for (const zone of PICTURE_ZONES) for (const id of zone.defaults) place(id, zone.id, false);
+  // 已有正文的用途栏即使已不在 defaults 里也要显示，避免收束默认框后旧稿栏位消失。
+  for (const zone of PICTURE_ZONES) {
+    for (const id of [...zone.defaults, ...zone.optional]) {
+      if (hasFacetContent(sections, id)) place(id, zone.id, !zone.defaults.includes(id));
+    }
+  }
   for (const facet of stored.facets) place(facet.id, facet.zoneId, true, facet.label);
   for (const [id, meta] of Object.entries(LEGACY_PICTURE)) if (hasFacetContent(sections, id)) place(id, meta.zoneId, false, meta.label);
   for (const key of getGlobalPromptSectionKeys(sections)) {
@@ -255,6 +264,10 @@ export const readCharacterBoard = (character: CharacterParams, layout?: LabSecti
     facets.push(viewOf(id, CHARACTER_ZONE.id, asSections, storedLabel, removable));
   };
   for (const id of CHARACTER_ZONE.defaults) add(id, false);
+  for (const id of CHARACTER_ZONE.optional) {
+    const sections = character.sections as Record<string, string> | undefined;
+    if (text(sections?.[id]).trim() || text((character.sectionNegatives as Record<string, string> | undefined)?.[id]).trim()) add(id, true);
+  }
   for (const facet of stored.characterFacets) add(facet.id, true, facet.label);
   for (const [id, label] of Object.entries(LEGACY_CHARACTER)) {
     const sections = character.sections as Record<string, string> | undefined;
