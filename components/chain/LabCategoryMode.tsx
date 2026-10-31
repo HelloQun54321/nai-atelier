@@ -4,7 +4,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MapPin, MoreHorizontal, Save, UserRound } from 'lucide-react';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { PromptLibraryRandomButton } from '../PromptLibraryAccess';
+import { PromptLibraryFieldActions, PromptLibraryRandomButton } from '../PromptLibraryAccess';
 import { PromptCopyButton } from './PresetSourceBadges';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -155,18 +155,20 @@ function FacetField({ facet, disabled, tagAssist, negativeLocked, roleId, focuse
   const slot = useRef<HTMLSpanElement>(null);
   const [negativeOpen, setNegativeOpen] = useState(Boolean(facet.negative.trim()));
   const purposes = facet.purposeId ? [facet.purposeId] as const : undefined;
+  const libraryField = { purposeId: facet.purposeId, roleId };
   return <div role="group" aria-label={t(facet.label)} className={`lab-category-zone group/zone ${insetClass} flex min-w-0 flex-col gap-1.5`} onFocus={() => onFocus()}>
     <div className="flex min-h-8 items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t(facet.label)}{facet.sourceName ? <span className="ml-1 text-xs font-normal text-gray-500">{t('来源：{0}', [facet.sourceName])}</span> : null}</span>
       <div className="flex shrink-0 items-center gap-1 text-gray-400">
+        <PromptLibraryFieldActions value={facet.text} onText={value => onText(value)} field={libraryField} disabled={disabled} />
         <span ref={slot} className="flex items-center gap-1" />
         <button type="button" className="mobile-touch rounded px-1.5 py-0.5 text-xs hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" onClick={() => setNegativeOpen(open => !open)}>{t(negativeOpen ? '收起负面' : '负面')}</button>
         {onRemove && <button type="button" className="mobile-touch rounded px-1.5 py-0.5 text-xs hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-200" onClick={onRemove}>{t('移除')}</button>}
       </div>
     </div>
-    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} libraryField={{ purposeId: facet.purposeId, roleId }} tagAssistEnabled={tagAssist} showTranslations={Boolean(facet.text.trim())} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
+    <TagAutocompleteTextarea aria-label={t(facet.label)} clearActionSlotRef={slot} promptLibraryActions={false} libraryField={libraryField} tagAssistEnabled={tagAssist} showTranslations={Boolean(facet.text.trim())} disabled={disabled} value={facet.text} onValueChange={onText} onFocus={onFocus} placeholder={t(facetHint(facet))} className={`${fieldClass} min-h-16`} />
     {purposes && focused && <PromptLibraryRandomButton purposes={purposes} roleId={roleId} variant="menu" disabled={disabled} />}
-    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ purposeId: facet.purposeId, roleId, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(facet.negative.trim())} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
+    {negativeOpen && <TagAutocompleteTextarea aria-label={t('{0} 的负面', [t(facet.label)])} libraryField={{ ...libraryField, negative: true }} tagAssistEnabled={tagAssist && !negativeLocked} showTranslations={Boolean(facet.negative.trim())} disabled={disabled || negativeLocked} value={facet.negative} onValueChange={onNegative} onFocus={onFocus} placeholder={t('这一栏不想要的内容，可选')} className={`${fieldClass} min-h-14 text-xs`} />}
   </div>;
 }
 

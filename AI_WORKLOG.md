@@ -4,7 +4,13 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-11-01
+- **Cursor (Composer)**：修复提示词库使用流程四处摩擦——组合含补充、分类栏用途就地绑定、保存并继续清用途、分类栏可取组合；同步决策／验证文档／回归。
+
 ## 2026-10-31
+- **Cursor (Composer)**：验证续：画风 `1girl,solo` 改 `2girls` 后重发生成，请求与成图均见双人；文档补记。
+- **Cursor (Composer)**：续写 `docs/PROMPT_LIBRARY_UX_VALIDATION.md`：多角色请求双 caption 核对、风格串 `1girl,solo` 干扰、组合保存丢补充（琵琶）与分类栏取不进组合。
+- **Cursor (Composer)**：新建 `docs/PROMPT_LIBRARY_UX_VALIDATION.md`，记录提示词库／实验室实机验证摩擦与进度；不改产品宪法。
 - **Cursor (Composer)**：使用提示词弹窗去掉原文范围，分类有用途栏隐藏范围切换；补回归与决策说明。
 - **Cursor (Composer)**：修复角色库引用弹窗 SmartImage 容器默认撑满导致头像巨大；尺寸改写在 containerClassName。
 - **Cursor (Composer)**：分类全局「画风」栏挂上画风配方用途，使用提示词与其它分类栏同样锁定。

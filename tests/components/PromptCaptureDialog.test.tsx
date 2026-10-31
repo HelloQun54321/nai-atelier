@@ -81,7 +81,7 @@ it('可选择六类分类，保存时传入分类并在成功后恢复不分类'
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('');
 });
 
-it('保存并继续清空正文和名称，保留分类与标签；失败时保留输入', async () => {
+it('保存并继续清空正文、名称与用途 Tag，保留分类与标签；失败时保留输入', async () => {
   const onSave = vi.fn().mockResolvedValueOnce('one').mockRejectedValueOnce(new Error('稍后重试'));
   const onSaved = vi.fn(); const onClose = vi.fn();
   render(<PromptCaptureDialog open onSave={onSave} onSaved={onSaved} onClose={onClose} />);
@@ -94,8 +94,9 @@ it('保存并继续清空正文和名称，保留分类与标签；失败时保�
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('');
   expect((screen.getByRole('textbox', { name: '名称（可选）' }) as HTMLInputElement).value).toBe('');
   expect((screen.getByRole('combobox', { name: '分类' }) as HTMLSelectElement).value).toBe('scene');
-  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true');
+  openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('false');
   fireEvent.change(screen.getByRole('textbox', { name: '提示词原文' }), { target: { value: '新文本' } });
+  fireEvent.click(screen.getByRole('button', { name: '时间与季节' }));
   fireEvent.click(screen.getByRole('button', { name: '保存并继续' }));
   await screen.findByRole('alert');
   expect((screen.getByRole('textbox', { name: '提示词原文' }) as HTMLTextAreaElement).value).toBe('新文本');

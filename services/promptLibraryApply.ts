@@ -80,7 +80,7 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
     .map(([key, row]) => [key, { ...row, scope: target.mode === 'global' ? 'global' : 'character' }]));
   else if (field.directoryId) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => rollSectionKey(key) === 'directory:' + field.directoryId));
   else if (field.kind) picks = Object.fromEntries(Object.entries(picks).filter(([key]) => key === field.kind));
-  else if (field.roleId && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[key]?.scope) === 'character'));
+  else if (field.roleId && !kind) picks = Object.fromEntries(Object.entries(picks).filter(([key, row]) => (row.scope || META[rollSectionKey(key)]?.scope || META[key]?.scope) === 'character'));
   const params = { ...before.params, _promptSections: resolvePromptSections(before.params._promptSections, before.subject) };
   const plan = planContentRollApply(picks, params, target);
   for (const row of plan.rows) {
@@ -96,12 +96,15 @@ export function planLibrarySelection(state: PromptLibraryWorkspaceState, entry: 
     const roleWrite = row.targetScope === 'global' ? undefined : plan.roleWrites.find(write => write.kind === row.kind);
     if (roleWrite) {
       roleWrite.text = row.next;
-      const old = params.characters?.find(role => role.id === plan.roleId)?.sectionNegatives?.[roleWrite.kind] || '';
+      const role = params.characters?.find(item => item.id === plan.roleId);
+      const old = roleWrite.kind === 'extra'
+        ? role?.negativePrompt || ''
+        : (role?.sectionNegatives as Record<string, string> | undefined)?.[roleWrite.kind] || '';
       roleWrite.negative = mode === 'append' ? applyLibraryText(old, roleWrite.negative, mode) : roleWrite.negative;
       roleWrite.meta.source = 'library';
     } else {
       plan.globalSections[row.kind] = row.next;
-      const old = params._promptSections.sectionNegatives?.[row.kind] || '';
+      const old = (params._promptSections.sectionNegatives as Record<string, string> | undefined)?.[row.kind] || '';
       plan.globalNegatives[row.kind] = mode === 'append' ? applyLibraryText(old, plan.globalNegatives[row.kind] || '', mode) : plan.globalNegatives[row.kind] || '';
       plan.globalMeta[row.kind].source = 'library';
     }

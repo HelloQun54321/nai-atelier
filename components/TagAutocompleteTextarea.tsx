@@ -46,6 +46,8 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   allowAiTranslation?: boolean;
   libraryField?: PromptLibraryField;
   libraryEnabled?: boolean;
+  /** 为 false 时不渲染「使用／收录提示词」（由外层标题旁自行放置，避免 portal 错绑用途）。 */
+  promptLibraryActions?: boolean;
 }
 type PromptSuggestion = TagSuggestion & { libraryEntry?: PromptChain };
 const PromptTagLibraryInfo = React.lazy(() => import('./PromptTagLibraryInfo').then(module => ({ default: module.PromptTagLibraryInfo })));
@@ -102,6 +104,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   allowAiTranslation = true,
   libraryField,
   libraryEnabled = true,
+  promptLibraryActions = true,
   disabled,
   readOnly,
   onFocus,
@@ -835,7 +838,10 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }}
       className={`mobile-touch inline-flex min-h-10 cursor-text rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--nai-accent)] ${index === currentTranslations.length ? 'min-w-3 flex-1' : 'w-3 shrink-0'}`} />;
   };
-  const promptActions = <>{personalLibrary && <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
+  const libraryAction = personalLibrary && promptLibraryActions !== false
+    ? <PromptLibraryFieldActions value={value} onText={commitValue} field={libraryField} disabled={!editable} />
+    : null;
+  const promptActions = <>{libraryAction}{clearAction}<PromptHeightHandle targetRef={textareaRef} label={t('调整输入框高度')} alwaysVisible={inputAutoHeight} onManualResize={() => { inputManualHeightRef.current = true; }} /></>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -860,7 +866,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
-      {clearActionSlotRef && clearActionTarget ? createPortal(personalLibrary ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
+      {clearActionSlotRef && clearActionTarget ? createPortal(libraryAction ? <span className="flex items-center gap-1">{promptActions}</span> : promptActions, clearActionTarget) : <div className="mb-1 flex justify-end gap-1">{promptActions}</div>}
       {librarySelection && <PromptLibraryChooser value={value} onText={commitValue} field={libraryField} initialEntry={librarySelection.entry} completion={librarySelection.edit} onClose={() => setLibrarySelection(null)} />}
       <div className="relative min-w-0">
       <textarea

@@ -10,8 +10,8 @@ import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, getPromptL
 export type PromptFragmentKind = PromptLibraryKind | 'general';
 export type PromptLibrarySection = 'items' | 'saved' | 'originals';
 export const isLibraryOnlyQuery = (query: string): boolean => /^@(?=[\p{L}\p{N}])/u.test(query);
-export const FRAGMENT_LABELS: Record<PromptFragmentKind, string> = {
-  appearance: '外貌', wardrobe: '服饰', pose: '动作', expression: '表情', scene: '场景', camera: '镜头', general: '通用',
+export const FRAGMENT_LABELS: Record<string, string> = {
+  appearance: '外貌', wardrobe: '服饰', pose: '动作', expression: '表情', scene: '场景', camera: '镜头', general: '通用', extra: '补充',
 };
 /** 有目录上下文时展示真实归属；旧固定分类仅用于无目录的兼容入口。 */
 export function promptLibraryEntryLabel(chain: PromptChain, directories?: PromptLibraryTreeState): string {
@@ -149,6 +149,24 @@ export function workspacePicks(params: Partial<NAIParams>, roleId?: string, dire
   }
   const presentation = params._promptSections?.presentation;
   if (presentation?.trim()) picks.presentation = { kind: 'presentation', scope: 'global', filled: true, text: presentation, negative: params._promptSections?.sectionNegatives?.presentation || '', meta: params._promptSections?.sectionMeta?.presentation };
+  const globalExtra = params._promptSections?.extra;
+  if (typeof globalExtra === 'string' && globalExtra.trim()) {
+    picks[rollItemKey('extra', 'global')] = {
+      kind: 'extra', scope: 'global', filled: true, text: globalExtra,
+      negative: params._promptSections?.sectionNegatives?.extra || '',
+      directoryName: '补充', directoryPath: ['补充'],
+    };
+  }
+  if (role) {
+    const characterExtra = String(role.prompt || '').trim();
+    if (characterExtra) {
+      picks[rollItemKey('extra', 'character')] = {
+        kind: 'extra', scope: 'character', filled: true, text: characterExtra,
+        negative: String(role.negativePrompt || ''),
+        directoryName: '补充', directoryPath: ['补充'],
+      };
+    }
+  }
   return picks;
 }
 

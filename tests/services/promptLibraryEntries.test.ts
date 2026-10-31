@@ -68,7 +68,27 @@ describe('提示词库的对象边界与定向取用', () => {
   it('保存组合只读所选角色和已知分栏，不猜测整段正文', () => {
     const params = state().params;
     expect(workspacePicks(params, 'two').wardrobe.text).toBe('old dress');
-    expect(workspacePicks(params, 'one')).toEqual({});
+    expect(workspacePicks(params, 'two')['character:extra'].text).toBe('second');
+    expect(workspacePicks(params, 'one')).toEqual({ 'character:extra': expect.objectContaining({ text: 'first', scope: 'character' }) });
+  });
+  it('组合快照纳入角色补充与全局补充，取用写回 prompt／extra', () => {
+    const params = {
+      _promptSections: { extra: 'global leftover', sectionNegatives: { extra: 'global bad' } },
+      characters: [{ id: 'one', prompt: 'pipa_(instrument)', negativePrompt: 'broken instrument', sections: { 'purpose:identity': '2b' } }],
+    } as unknown as NAIParams;
+    const picks = workspacePicks(params, 'one');
+    expect(picks['character:extra']).toMatchObject({ text: 'pipa_(instrument)', negative: 'broken instrument', scope: 'character' });
+    expect(picks['global:extra']).toMatchObject({ text: 'global leftover', negative: 'global bad', scope: 'global' });
+    const saved = chain(createCombinationData('含补充', picks));
+    expect(libraryEntryText(saved)).toContain('pipa_(instrument)');
+    expect(combinationPicks(saved)['character:extra']).toMatchObject({ text: 'pipa_(instrument)', scope: 'character' });
+    const after = applyLibrarySelection(planLibrarySelection({
+      classified: true, sectioned: true, base: 'style', subject: '', negative: '',
+      params: { model: 'nai-diffusion-4-5-full', characters: [{ id: 'one', prompt: '', x: 0.5, y: 0.5, sections: {} }] } as NAIParams,
+    }, saved, { mode: 'existing', id: 'one' }, 'replace', { roleId: 'one' }));
+    expect(after.params.characters![0].prompt).toBe('pipa_(instrument)');
+    expect(after.params.characters![0].negativePrompt).toBe('broken instrument');
+    expect((after.params.characters![0].sections as any)['purpose:identity']).toBe('2b');
   });
   it('组合编辑再保存保留来源和分类负面，新建角色不改动已有角色分栏', () => {
     const original = chain(createCombinationData('白裙', { wardrobe: { kind: 'wardrobe', id: 'dress', name: '白裙片段', filled: true, text: 'white dress', negative: 'red dress', constraintNotes: '保留备注' } }));
@@ -107,8 +127,8 @@ it('同一目录同时存于全局和所选角色时分别保存，保留两份�
 
 const scopedCombination = () => {
   const params = { _promptSections: { 'purpose:clothing': 'global cape', sectionNegatives: { 'purpose:clothing': 'global negative' } }, characters: [
-    { id: 'one', prompt: 'keep one', sections: { 'purpose:clothing': 'one dress' } },
-    { id: 'two', prompt: 'keep two', sections: { 'purpose:clothing': 'two dress' }, sectionNegatives: { 'purpose:clothing': 'two negative' } },
+    { id: 'one', prompt: '', sections: { 'purpose:clothing': 'one dress' } },
+    { id: 'two', prompt: '', sections: { 'purpose:clothing': 'two dress' }, sectionNegatives: { 'purpose:clothing': 'two negative' } },
   ] } as unknown as NAIParams;
   return chain(createCombinationData('同用途两个落点', workspacePicks(params, 'two')));
 };

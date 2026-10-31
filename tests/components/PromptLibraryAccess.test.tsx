@@ -30,21 +30,30 @@ it('取用目录范围从未归类或具体目录切回全部时包含两种片�
   expect(screen.getByText('未归类候选')).toBeTruthy(); expect(screen.getByText('目录内候选')).toBeTruthy();
 });
 
-it('从分类栏打开时按该栏用途筛选，不展示整库目录选择', () => {
+it('从分类栏打开时按该栏用途筛选片段，仍可切到组合；不展示整库目录选择', () => {
   const directories = { revision: 1, nodes: [{ id: 'person-appearance', parentId: null, name: '外貌与身体' }, { id: 'person-wardrobe', parentId: null, name: '服饰与配件' }] };
+  const combo = { ...promptEntry, id: 'combo', name: '红发白裙', ...createCombinationData('红发白裙', {
+    'character:purpose:appearance': { kind: 'purpose:appearance', scope: 'character' as const, filled: true, text: 'red hair' },
+    'character:purpose:clothing': { kind: 'purpose:clothing', scope: 'character' as const, filled: true, text: 'white dress' },
+  }) };
   const entries: PromptChain[] = [
     { ...promptEntry, id: 'hair', name: '红发', basePrompt: 'red hair', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: ['appearance'] } },
     { ...promptEntry, id: 'dress', name: '白裙', basePrompt: 'white dress', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-wardrobe'], _promptLibraryPurposes: ['clothing'] } },
     { ...promptEntry, id: 'untagged', name: '未标注外貌夹', basePrompt: 'blue eyes', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['person-appearance'], _promptLibraryPurposes: [] } },
+    combo,
   ];
-  render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'appearance' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
-  expect(screen.getByText(/当前栏：外貌与身体/)).toBeTruthy();
-  expect(screen.queryByRole('tablist', { name: '提示词类型' })).toBeNull();
+  render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'appearance', roleId: 'role' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
+  expect(screen.getByText(/当前栏：外貌与身体（只显示此用途片段）/)).toBeTruthy();
+  expect(screen.getByRole('tab', { name: '片段' })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: '组合' })).toBeTruthy();
   expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
   expect(screen.queryByRole('combobox', { name: '用途 Tag' })).toBeNull();
   expect(screen.getByText('红发')).toBeTruthy();
   expect(screen.queryByText('白裙')).toBeNull();
   expect(screen.queryByText('未标注外貌夹')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: '组合' }));
+  expect(screen.getByText(/组合整套写入本角色/)).toBeTruthy();
+  expect(screen.getByText('红发白裙')).toBeTruthy();
 });
 
 it('使用提示词与主浏览一致，只提供片段与组合', () => {
@@ -62,7 +71,7 @@ it('全局画风栏锁定画风配方，旧细项用途也归并进来', () => {
     { ...promptEntry, id: 'pose', name: '站立', basePrompt: 'standing', params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: ['style-root'], _promptLibraryPurposes: ['pose'] } },
   ];
   render(<PromptLibraryContext.Provider value={{ chains: entries, directories, save: vi.fn() }}><PromptLibraryChooser value="" field={{ purposeId: 'style' }} onText={vi.fn()} onClose={vi.fn()} /></PromptLibraryContext.Provider>);
-  expect(screen.getByText(/当前栏：画风配方/)).toBeTruthy();
+  expect(screen.getByText(/当前栏：画风配方（只显示此用途片段）/)).toBeTruthy();
   expect(screen.queryByRole('checkbox', { name: '全部目录' })).toBeNull();
   expect(screen.getByText('水彩配方')).toBeTruthy();
   expect(screen.getByText('旧光照')).toBeTruthy();

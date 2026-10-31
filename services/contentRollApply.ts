@@ -73,7 +73,7 @@ export interface ContentRollApplyRow {
 
 /** 一栏要写进角色分栏的内容（含内容负面与来源快照）。 */
 export interface ContentRollRoleWrite {
-  kind: keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey;
+  kind: keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey | 'extra';
   text: string;
   negative: string;
   meta: { entryId?: string; entryName?: string; notes?: string; source?: string; directoryName?: string; directoryPath?: string[] };
@@ -186,7 +186,7 @@ export const planContentRollApply = (
     const isGlobal = kind === 'presentation' || target.mode === 'global' || (row?.scope || meta.scope) === 'global';
     const current = isGlobal
       ? String(globalSectionsMap[kind] || '')
-      : String(sections[kind] || '');
+      : kind === 'extra' ? promptText : String(sections[kind] || '');
     const action: 'replace' | 'keep' = next ? 'replace' : 'keep';
     if (next) {
       written.push(itemId);
@@ -202,7 +202,7 @@ export const planContentRollApply = (
           existingWrite.text = [existingWrite.text, next].filter(Boolean).join(', ');
           existingWrite.negative = [existingWrite.negative, negative].filter(Boolean).join(', ');
         } else roleWrites.push({
-          kind: kind as keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey,
+          kind: kind as keyof CharacterSectionContent | `directory:${string}` | PurposeSectionKey | 'extra',
           text: next,
           negative,
           meta: {
@@ -210,7 +210,7 @@ export const planContentRollApply = (
             entryName: String(row?.name || '') || undefined,
             notes: row?.constraintNotes || row?.constraints?.notes || undefined,
             source: row?.reason || undefined,
-            ...(isCreativeSectionKey(kind) ? { directoryName: row?.directoryName, directoryPath: row?.directoryPath } : {}),
+            ...(isCreativeSectionKey(kind) || kind === 'extra' ? { directoryName: row?.directoryName || (kind === 'extra' ? '补充' : undefined), directoryPath: row?.directoryPath || (kind === 'extra' ? ['补充'] : undefined) } : {}),
           },
         });
       }
@@ -293,6 +293,15 @@ export const applyContentRollToParams = (
     characters.forEach((character, index) => {
       if (character.enabled === false) return;
       for (const write of plan.roleWrites) {
+        if (write.kind === 'extra') {
+          characters[index] = {
+            ...characters[index],
+            prompt: write.text,
+            negativePrompt: write.negative || '',
+          };
+          written.push('character:' + String(character.id) + ':extra');
+          continue;
+        }
         /* 与单目标分支同一规则：新内容没有负面 = 这一栏不再有负面，必须删掉旧值 */
         const negatives = { ...(characters[index].sectionNegatives || {}) };
         if (write.negative) negatives[write.kind] = write.negative;
@@ -321,6 +330,12 @@ export const applyContentRollToParams = (
     if (index >= 0) {
       const character = characters[index];
       for (const write of plan.roleWrites) {
+        if (write.kind === 'extra') {
+          character.prompt = write.text;
+          character.negativePrompt = write.negative || '';
+          written.push('character:' + String(character.id) + ':extra');
+          continue;
+        }
         character.sections = { ...(character.sections || {}), [write.kind]: write.text };
         /* 替换分类时旧负面必须一起清掉：新内容没有负面就说明这一栏不再有负面，留着旧值会被编译进请求 */
         const negatives = { ...(character.sectionNegatives || {}) };

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LabCategoryMode, labCategoryTabOptions } from '../../../components/chain/LabCategoryMode';
+import { PromptLibraryContext } from '../../../components/PromptLibraryAccess';
 import type { CharacterParams, NAIParams, PromptSections } from '../../../types';
 
 const sections = { appearance: '', wardrobe: '', pose: '', scene: 'rainy street', camera: '', extra: '' } as PromptSections;
@@ -130,6 +131,22 @@ describe('分类模式分页', () => {
     expect(screen.getByRole('textbox', { name: '互动与关系' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: '动物与生物' })).toHaveProperty('value', 'cat ears');
     expect(screen.getByRole('textbox', { name: '物品与道具' })).toHaveProperty('value', 'sword');
+  });
+
+  it('各分类栏「使用提示词」就地绑定本栏用途，不串到邻栏', () => {
+    const empty = { id: 'c1', prompt: '', x: 0.5, y: 0.5 } as CharacterParams;
+    render(<PromptLibraryContext.Provider value={{ chains: [], save: vi.fn() }}>
+      <LabCategoryMode tab="character" base="" negative="" sections={sections} characters={[empty]} tagAssist={false} negativeLocked={false} onBase={vi.fn()} onNegative={vi.fn()} onSections={vi.fn()} onLayout={vi.fn()} onCopy={vi.fn()} onAddCharacter={vi.fn()} onUpdateCharacter={vi.fn()} onRemoveCharacter={vi.fn()} />
+    </PromptLibraryContext.Provider>);
+    const identity = screen.getByRole('group', { name: '人物设定' });
+    const appearance = screen.getByRole('group', { name: '外貌与身体' });
+    expect(within(identity).getByRole('button', { name: '使用提示词' })).toBeTruthy();
+    expect(within(appearance).getByRole('button', { name: '使用提示词' })).toBeTruthy();
+    fireEvent.click(within(identity).getByRole('button', { name: '使用提示词' }));
+    expect(screen.getByText(/当前栏：人物设定/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    fireEvent.click(within(appearance).getByRole('button', { name: '使用提示词' }));
+    expect(screen.getByText(/当前栏：外貌与身体/)).toBeTruthy();
   });
 
   it('场景已有天气正文时仍显示自然与天气栏', () => {
