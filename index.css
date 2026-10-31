@@ -1133,6 +1133,8 @@ html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='tr
   /* 把手已占顶栏左列，与右侧第一排控件垂直居中（随密度与安全区变化），不再单独预留一行。 */
   .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { margin-top: calc(env(safe-area-inset-top) + (var(--workspace-toolbar-height) - 2.75rem) / 2); }
   .content-library > .workspace-chrome > [data-workspace-topbar-toggle][aria-expanded='true'] { align-self: center; margin-top: 0; }
+  /* 收起后把手停在左上角，实验室分区条让出把手宽度，「全局」不再被把手压住。 */
+  html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='true'] { margin-left: 2.75rem; }
 
   /* 顶栏放不下时整排横向滑动，不换行、不新增工具行；两侧还有控件时在该侧边缘淡出提示。 */
   .workspace-toolbar-scroll { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }

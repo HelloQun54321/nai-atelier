@@ -895,11 +895,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
           </div>
         )}
         {showFavOnly && !collectionReady && (variantBackfillError
-          ? <p role="alert" className="text-sm text-red-500">{t(variantBackfillError)}<button type="button" onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</button></p>
+          ? <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-500">{t(variantBackfillError)}<ToolbarButton onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</ToolbarButton></p>
           : <p role="status" className="text-sm text-gray-500">{t('加载中…')}</p>)}
-        {resultError && <p role="alert" className="text-sm text-red-500">{t(resultError)}<button type="button" onClick={() => customSource ? onRetryChains?.() : setCatalogRetry(value => value + 1)}>{t('重试')}</button></p>}
+        {/* 目录与分组常因同一词库缺失同时失败，合并为一行，重试同时重新读取两者。 */}
+        {(resultError || !customSource && groupError) && <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-500">{t(resultError || '角色 Tag 目录加载失败')}<ToolbarButton onClick={() => {
+          if (resultError) { if (customSource) onRetryChains?.(); else setCatalogRetry(value => value + 1); }
+          if (!customSource && groupError) setGroupRetry(value => value + 1);
+        }}>{t('重试')}</ToolbarButton></p>}
         {isLoading && (customSource || !groupLoading) && <p role="status">{t('加载中…')}</p>}
-        {!customSource && groupError && <p role="alert" className="text-sm text-red-500">{t('角色 Tag 目录加载失败')}<ToolbarButton onClick={() => setGroupRetry(value => value + 1)}>{t("重试")}</ToolbarButton></p>}
         {!customSource && !groupCatalogReady && !groupError && <p role="status">{t("正在加载更多角色…")}</p>}
         {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready) && (customSource || groupCatalogReady && !groupError) && visibleCards.length === 0 && (
           <EmptyState

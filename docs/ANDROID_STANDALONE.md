@@ -44,7 +44,7 @@
 
 ## 构建与验证
 
-需要 Node.js 22+、JDK 21、Android SDK 36 与 Build Tools 36.0.0，使用 `JAVA_HOME` 和 `ANDROID_HOME` 指定位置；本机脚本默认复用 `.android-build/sdk` 与已安装的 Zulu 21。Gradle wrapper 与 Java 源码入库，SDK、构建物、签名和日志忽略入库。
+需要 Node.js 22+、JDK 21、Android SDK 36 与 Build Tools 36.0.0，使用 `JAVA_HOME` 和 `ANDROID_HOME` 指定位置（系统另设 `ANDROID_SDK_ROOT` 时须指向同一目录，否则 Gradle 拒绝构建；JDK 22 亦已实测可用）；本机脚本默认复用 `.android-build/sdk` 与已安装的 Zulu 21。Gradle wrapper 与 Java 源码入库，SDK、构建物、签名和日志忽略入库。
 
 ```powershell
 npm ci

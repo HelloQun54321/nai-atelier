@@ -19193,6 +19193,18 @@
     "利用可能なバージョン v{0}",
     "사용 가능한 버전 v{0}"
   ],
+  "尚未下载 Tag 词库，请在全局设置「数据与维护」中更新 Tag 补全词库": [
+    "尚未下載 Tag 詞庫，請在全局設定「資料與維護」中更新 Tag 補全詞庫",
+    "Tag dictionary not downloaded yet. Update it under Global settings → Data and maintenance.",
+    "タグ辞書がまだダウンロードされていません。全体設定の「データとメンテナンス」で更新してください。",
+    "태그 사전이 아직 다운로드되지 않았습니다. 전체 설정의 「데이터 및 유지보수」에서 업데이트하세요."
+  ],
+  "Tag 词库读取失败（{0}），请稍后重试": [
+    "Tag 詞庫讀取失敗（{0}），請稍後重試",
+    "Failed to load the tag dictionary ({0}). Please try again later.",
+    "タグ辞書の読み込みに失敗しました（{0}）。しばらくしてから再試行してください。",
+    "태그 사전을 불러오지 못했습니다({0}). 잠시 후 다시 시도하세요."
+  ],
   "画师目录不可用，请在全局设置更新 Tag 词库。": [
     "畫師目錄不可用，請在全局設定更新 Tag 詞庫。",
     "Artist catalog unavailable. Update the tag dictionary in global settings.",

@@ -156,3 +156,16 @@ it('手机把手与顶栏第一排控件垂直居中，横滑只在手机断点�
   for (const file of ['components/ChainList.tsx', 'components/InspirationGallery.tsx', 'components/CharacterLibrary.tsx']) expect(readFileSync(file, 'utf8'), file).toContain('max-md:min-w-[8.75rem]');
   expect(readFileSync('components/ContentLibraryPage.tsx', 'utf8')).toContain('<WorkspaceToolbar scrollable={false}');
 });
+
+it('收起后把手层级高于实验室分区条，手机分区条让出把手宽度', () => {
+  // 曾因顶栏与分区条同为 z-30、分区条在后，收起后把手被「全局」盖住，顶栏再也展开不了。
+  const { container } = render(<div><WorkspaceChrome><header>顶栏</header></WorkspaceChrome><nav className="workspace-mode-tabs relative z-30">分区</nav></div>);
+  const chrome = container.querySelector('.workspace-chrome')!;
+  expect(chrome.classList.contains('z-30')).toBe(true);
+  fireEvent.click(container.querySelector('[data-workspace-topbar-toggle]')!);
+  expect(chrome.classList.contains('z-[31]')).toBe(true);
+  expect(chrome.classList.contains('z-30')).toBe(false);
+  const css = readFileSync('index.css', 'utf8');
+  const mobile = css.slice(css.indexOf('@media (max-width: 767px) {'));
+  expect(mobile).toContain("html:root .chain-editor-workspace .workspace-mode-tabs[data-topbar-collapsed='true'] { margin-left: 2.75rem; }");
+});

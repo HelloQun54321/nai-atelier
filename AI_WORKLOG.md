@@ -5,7 +5,9 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-10-31
-
+- **Claude Code (Opus 5.5)**：按用户「再优化一下手机端的 UI 然后提 PR」，用开启 WebView 调试的 debug 包在隔离模拟器逐页巡检（遮挡、溢出脚本加截图），并修复：Android 系统栏让出区域改用页面底色、图标明暗按底色亮度跟随工坊主题（mobile/systemBars.ts + AtelierPlugin.systemBars，系统深色切换后在 Capacitor 复位之后重放）；实验室全局正面提示词在同名分区内隐藏重复标题（保留读屏名称，操作右对齐）；角色库目录与分组同时失败合并为一行并统一重试按钮；词库清单 404 改为中文指引并补四语译文。新增 4 组回归（角色库与重复标题两项实测先红后绿），相关单测通过，i18n 覆盖测试仅剩既有的 ContentRollWorkspace「固定」缺译。版本 1.153.0 → 1.153.1，Android 构建号 1051004 → 1051005，正式包在模拟器明暗两种模式复核；未在真机验证本轮改动。
+- **Claude Code (Opus 5.5)**：按用户反馈「APK 全屏状态下会遮挡上下栏」（Pixel 10 Pro XL 截图），在隔离 Android 16 模拟器（emulator-5560）复现：手机实验室收起顶栏后，展开把手与实验室分区条同为 z-30、分区条在后，把手被「全局」盖住，顶栏再也展开不了。修复为收起时顶栏容器抬到 z-[31]，手机断点分区条收起时左让 2.75rem；新增 1 项回归（WorkspaceChrome 9 项通过），重新打包构建号 1051003 → 1051004 并在模拟器复核把手可见、点按可展开。PR #18 已按用户要求关闭。系统栏底色仍为窗口默认灰色、未做全面屏延伸，未在真机验证；不提交。
+- **Claude Code (Opus 5.5)**：按用户「基于现在的手机 UI 版本做一个 APK」在 `.android-build/sdk` 补装官方 cmdline-tools、android-36 平台、build-tools 36.0.0 与 platform-tools，Android 构建号 1051002 → 1051003，以 JDK 22 执行 `npm run build:android` 产出 `release/NAI-Atelier-1.149.2-android-arm64.apk`（23,898,090 字节，arm64-v8a，minSdk 26）。本机未找到旧发布签名，首次正式构建生成新签名 `CN=NAI Atelier`（证书 SHA-256 f2405230…f8f5a），无法覆盖此前用旧签名安装的包；系统 ANDROID_SDK_ROOT 指向其他 SDK 会让 Gradle 拒绝构建，需与 ANDROID_HOME 指向同一目录，已写入 Android 文档。仅用 apksigner／aapt 校验签名与版本，未跑模拟器回归或真机安装；显示版本不变、不提交。
 - **DeepSeek Harness（deepseek-flash）**：中文片段仍留在翻译区并直接显示原文，只是不再标记「待翻译」、也不发起翻译请求（`source: 'native'`）；判断由 `isNativePromptText` 统一提供，批量补译与草稿预览同样跳过请求。新增组件回归，翻译相关 162 项通过。
 - **DeepSeek Harness（deepseek-flash）**：角色切换按钮移到页头下方独立一行（名字 max-w 截断），角色标题改为可就地改名（回车／失焦保存、Esc 取消、清空回退编号），普通模式同步；普通模式角色顶栏加 `character-card-header` 稳定类名并更新相关测试结构查询。
 - **DeepSeek Harness（deepseek-flash）**：分类编辑的角色改成页头切换按钮，一次只渲染一个角色的编辑区（新增／引用后自动切到该角色，删除后回退第一个）；`CharacterParams` 新增可选 `name`，从角色库引用时带入并在卡片标题显示，普通模式同步。补切换与命名回归，类型检查通过。

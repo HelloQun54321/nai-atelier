@@ -114,7 +114,8 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       else host.style.removeProperty('--workspace-chrome-height');
     };
   }, [collapsed]);
-  return <div ref={ref} className="workspace-chrome relative z-30 grid flex-none grid-cols-[2.75rem_minmax(0,1fr)] md:flex md:flex-col">
+  // 收起后只剩把手，抬高一层，避免被同为 z-30 的后续兄弟（实验室分区条）盖住而无法展开。
+  return <div ref={ref} className={`workspace-chrome relative ${collapsed ? 'z-[31]' : 'z-30'} grid flex-none grid-cols-[2.75rem_minmax(0,1fr)] md:flex md:flex-col`}>
     {/* 手机展开时独占左列；电脑保留顶边中央把手和原有布局。 */}
     <button
       type="button"
