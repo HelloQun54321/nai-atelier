@@ -17,16 +17,18 @@ const tree = (): PromptLibraryTreeState => ({ revision: 0, nodes: [
 describe('用户完整掌控的提示词目录树', () => {
   it('预设只是两层起点，每次创建独立对象；空树照常保留', () => {
     const state = readPromptLibraryTree(createDefaultPromptLibraryTree());
-    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(6);
+    expect(state.nodes.filter(node => node.parentId === null)).toHaveLength(5);
     expect(state.nodes.filter(node => node.parentId === null).map(node => [node.name, state.nodes.filter(child => child.parentId === node.id).map(child => child.name)])).toEqual([
-      ['人物', ['外貌与身体', '服饰与配件', '动作与姿态', '表情与情绪']],
-      ['其他主体', ['动物与生物', '物品与道具', '载具与机械']],
-      ['场景环境', ['地点与布景', '自然与天气', '时间与季节']],
-      ['互动与关系', ['人物互动', '与物品及环境互动']],
-      ['构图与镜头', ['视角与景别', '构图与布局']],
+      ['人物', ['人物设定', '外貌与身体', '服饰与配件', '动作与姿态', '表情与情绪']],
+      ['生物与物品', ['动物与生物', '物品与道具']],
+      ['场景环境', ['地点与布景', '天气与时段']],
+      ['构图与镜头', ['视角与景别', '画面形式', '文字与标识']],
       ['画风配方', []],
     ]);
-    expect(getPromptLibraryDefaultSelection(state)).toContain('style');
+    expect(getPromptLibraryDefaultSelection(state)).toEqual(expect.arrayContaining([
+      'person-identity', 'person-pose', 'environment-climate', 'composition-camera', 'composition-format', 'style',
+    ]));
+    expect(state.nodes.some(node => ['interaction', 'subjects-machines', 'environment-nature', 'environment-time', 'composition-layout'].includes(node.id))).toBe(false);
     expect(Math.max(...flattenPromptLibraryDirectories(state).map(node => node.depth))).toBe(1);
     state.nodes[0].name = '已更名';
     expect(createDefaultPromptLibraryTree().nodes[0].name).not.toBe('已更名');

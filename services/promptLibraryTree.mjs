@@ -6,13 +6,19 @@ export const LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS = Object.freeze({
 });
 
 export function createDefaultPromptLibraryTree() {
+  // 场景：地点与布景／天气与时段。构图：视角与景别／画面形式／文字。载具并进物品；人与人进动作；画风为叶子。
   const groups = [
-    ['person', '人物', 'character', [['person-appearance', '外貌与身体'], ['person-wardrobe', '服饰与配件'], ['person-pose', '动作与姿态'], ['person-expression', '表情与情绪']]],
-    ['subjects', '其他主体', 'global', [['subjects-creatures', '动物与生物'], ['subjects-objects', '物品与道具'], ['subjects-machines', '载具与机械']]],
-    ['environment', '场景环境', 'global', [['environment-scene', '地点与布景'], ['environment-nature', '自然与天气'], ['environment-time', '时间与季节']]],
-    ['interaction', '互动与关系', 'global', [['interaction-people', '人物互动'], ['interaction-object', '与物品及环境互动']]],
-    ['composition', '构图与镜头', 'global', [['composition-camera', '视角与景别'], ['composition-layout', '构图与布局']]],
-    // 画风配方默认不拆子夹：整段正负一体收纳，避免按细项随机拼出鬼图；用户仍可自行细分。生图参数归风格串。
+    ['person', '人物', 'character', [
+      ['person-identity', '人物设定'], ['person-appearance', '外貌与身体'], ['person-wardrobe', '服饰与配件'],
+      ['person-pose', '动作与姿态'], ['person-expression', '表情与情绪'],
+    ]],
+    ['subjects', '生物与物品', 'global', [['subjects-creatures', '动物与生物'], ['subjects-objects', '物品与道具']]],
+    ['environment', '场景环境', 'global', [
+      ['environment-scene', '地点与布景'], ['environment-climate', '天气与时段'],
+    ]],
+    ['composition', '构图与镜头', 'global', [
+      ['composition-camera', '视角与景别'], ['composition-format', '画面形式'], ['composition-text', '文字与标识'],
+    ]],
     ['style', '画风配方', 'global', []],
   ];
   return { revision: 0, nodes: groups.flatMap(([id, name, target, children]) => [

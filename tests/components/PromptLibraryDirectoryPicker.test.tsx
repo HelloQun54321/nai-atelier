@@ -87,7 +87,7 @@ it('默认全选可切成单目录，选择父目录后取消子目录会保留�
   fireEvent.click(screen.getByRole('checkbox', { name: '人物' }));
   expect(change).toHaveBeenLastCalledWith(['person']);
   fireEvent.click(screen.getByRole('checkbox', { name: '人物 / 外貌与身体' }));
-  expect(change).toHaveBeenLastCalledWith(['person-wardrobe', 'person-pose', 'person-expression']);
+  expect(change).toHaveBeenLastCalledWith(['person-identity', 'person-wardrobe', 'person-pose', 'person-expression']);
   view.unmount();
 });
 

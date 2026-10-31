@@ -1,4 +1,4 @@
-import { openPurposeGroup } from '../support/promptPurposeGroups';
+﻿import { openPurposeGroup } from '../support/promptPurposeGroups';
 import { PromptLibraryContext, PromptLibraryWorkspace, PromptLibraryRandomButton, PromptLibraryFieldActions } from '../../components/PromptLibraryAccess';
 import { normalizeAppearancePreferences, saveAppearancePreferences } from '../../services/appearancePreferences';
 // @vitest-environment jsdom
