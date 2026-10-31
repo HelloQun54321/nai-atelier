@@ -68,6 +68,13 @@ describe('NovelAI generation payload', () => {
     expect(params.characters[0].prompt).toBe('smile');
   });
 
+  it('噪声调度默认 karras，可传 exponential／polyexponential，native 回落 karras', () => {
+    expect(buildNaiGenerationPayload('1girl', '', baseParams).parameters.noise_schedule).toBe('karras');
+    expect(buildNaiGenerationPayload('1girl', '', { ...baseParams, noiseSchedule: 'exponential' }).parameters.noise_schedule).toBe('exponential');
+    expect(buildNaiGenerationPayload('1girl', '', { ...baseParams, noiseSchedule: 'polyexponential' }).parameters.noise_schedule).toBe('polyexponential');
+    expect(buildNaiGenerationPayload('1girl', '', { ...baseParams, noiseSchedule: 'native' as any }).parameters.noise_schedule).toBe('karras');
+  });
+
   it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated'])('%s 普通与流式将透明及质量标签放在 Text: 前，并发送同一权重', model => {
     for (const stream of [false, true]) {
       const prompt = '1girl, 0::transparent background::, Text: Hello\n\nWorld';

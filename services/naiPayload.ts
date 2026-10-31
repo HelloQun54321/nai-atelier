@@ -5,6 +5,7 @@ import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } f
 import { compileCharacterContent, withGenerationCharacters } from './characterPrompts';
 import { getGlobalPromptSectionKeys } from './promptUtils';
 import { joinNaiTextPrompt, splitNaiTextPrompt, withTransparentPromptTags } from './transparentBackground.mjs';
+import { normalizeNoiseSchedule } from './naiNoiseSchedule.mjs';
 export { withTransparentPromptTags } from './transparentBackground.mjs';
 
 export interface NaiPayloadOptions {
@@ -135,7 +136,7 @@ export const buildNaiGenerationPayload = (
     legacy: false,
     add_original_image: true,
     uncond_scale: 1,
-    noise_schedule: 'karras',
+    noise_schedule: normalizeNoiseSchedule(params.noiseSchedule),
     negative_prompt: finalNegative,
     v4_prompt: {
       caption: { base_caption: finalPrompt, char_captions: charCaptions },

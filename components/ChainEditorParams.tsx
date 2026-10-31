@@ -6,6 +6,7 @@ import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getNaiModelFixedSettings, get
 import { getNaiRuntimeModelCapability, useNaiRuntime } from '../services/naiRuntime';
 import { getActiveCharacters } from '../services/characterPrompts';
 import { normalizeTransparentWeight, resolveTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX, TRANSPARENT_WEIGHT_STEP } from '../services/transparentBackground.mjs';
+import { DEFAULT_NOISE_SCHEDULE, NAI_NOISE_SCHEDULES, NOISE_SCHEDULE_LABELS, normalizeNoiseSchedule, type NaiNoiseSchedule } from '../services/naiNoiseSchedule.mjs';
 import {
     BUILTIN_ASPECT_RATIOS,
     calculateDimensionsForRatio,
@@ -301,14 +302,14 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
             )}
 
-            {/* 采样器、步数与 Seed 在窄面板中自然换行。 */}
-            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-3 md:gap-4">
-                <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
+            {/* 采样器／噪声调度／步数／种子：步数只占数字宽度，采样器与调度分摊剩余。 */}
+            <div className="chain-editor-param-grid mb-4 grid grid-cols-1 gap-3 border-b border-gray-100 pb-4 dark:border-gray-800 sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_5.75rem_minmax(0,1.2fr)] md:gap-4">
+                <div className={`flex min-w-0 flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">{t("采样器")}</label>
                     <select
                         aria-label={t("采样器")}
                         disabled={!canEdit || Boolean(fixedSettings)}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        className="w-full min-w-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         value={effectiveParams.sampler || 'k_euler_ancestral'}
                         onChange={(e) => {
                             setParams({ ...params, sampler: e.target.value });
@@ -324,13 +325,32 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     </select>
                 </div>
 
-                <div className={`flex flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
+                <div className="flex min-w-0 flex-col gap-1">
+                    <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">{t("噪声调度")}</label>
+                    <select
+                        aria-label={t("噪声调度")}
+                        disabled={!canEdit}
+                        className="w-full min-w-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        value={normalizeNoiseSchedule(params.noiseSchedule ?? DEFAULT_NOISE_SCHEDULE)}
+                        onChange={(e) => {
+                            setParams({ ...params, noiseSchedule: normalizeNoiseSchedule(e.target.value) });
+                            markChange();
+                        }}
+                    >
+                        {NAI_NOISE_SCHEDULES.map((schedule: NaiNoiseSchedule) => (
+                            <option key={schedule} value={schedule}>{NOISE_SCHEDULE_LABELS[schedule]}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className={`flex min-w-0 flex-col gap-1 ${fixedSettings ? 'nai-model-locked' : ''}`} title={fixedSettings ? t('Medium 固定此设置') : undefined}>
                     <label className="flex h-6 items-center text-xs text-gray-500 dark:text-gray-500 font-medium">
-                        <span className="flex w-full items-center justify-between">
-                            {t("生成步数")}{!fixedSettings && !enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
+                        <span className="flex w-full min-w-0 items-center justify-between gap-1">
+                            <span className="truncate">{t("生成步数")}</span>
+                            {!fixedSettings && !enforceFreeStepLimit && <InfoPopover label={t("步数上限说明")} content={t("已在全局设置中解除免费步数上限，超出免费门槛的步数将消耗 Anlas。")} className="shrink-0 text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">{t("已解除上限")}</InfoPopover>}
                         </span>
                     </label>
-                    <input type="number" aria-label={t("生成步数")} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                    <input type="number" aria-label={t("生成步数")} className="w-full min-w-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-2 py-2 text-xs md:px-3 md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit || Boolean(fixedSettings)}
                         value={effectiveParams.steps ?? Math.min(maxSteps, 28)}
                         max={maxSteps}
@@ -342,7 +362,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     />
                 </div>
 
-                <div className="flex flex-col gap-1">
+                <div className="flex min-w-0 flex-col gap-1">
                     <div className="flex h-6 min-w-0 items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-500 font-medium">
                         <span className="min-w-0 truncate">{t("种子")}</span>
                         <button
@@ -364,7 +384,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                     <input
                         type="number"
                         aria-label={t("种子")}
-                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        className="w-full min-w-0 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                         disabled={!canEdit || forceEmptySeed}
                         placeholder={forceEmptySeed ? t("已强制置空 (随机)") : t("随机")}
                         value={forceEmptySeed ? '' : (params.seed === undefined || params.seed === null ? '' : params.seed)}

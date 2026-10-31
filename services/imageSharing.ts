@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { beginImageClipboardCopy, rememberCopiedImage, type ImageGenerationData } from './imageClipboardContext';
 import { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
+import { normalizeNoiseSchedule } from './naiNoiseSchedule.mjs';
 import { beginExportTarget, saveExportBlob } from './exportLocation';
 
 export const IMAGE_SHARING_STORAGE_KEY = 'nai_clean_shared_images';
@@ -151,7 +152,16 @@ const sharingParameters = (rawSources: (string | null)[]) => {
         if (match && match[1].trim() && Number.isFinite(Number(match[1]))) value[key] = Number(match[1]);
       }
       const sampler = parameters.match(/Sampler:\s*([^,]+)/)?.[1].trim();
-      if (sampler) value.sampler = sampler;
+      if (sampler) {
+        // 仅提示词清洗保留原文采样器；有括号日程时拆出 noise_schedule，避免粘进采样器名。
+        const scheduled = sampler.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+        if (scheduled) {
+          value.sampler = scheduled[1].trim();
+          value.noise_schedule = normalizeNoiseSchedule(scheduled[2]);
+        } else {
+          value.sampler = sampler;
+        }
+      }
       const size = parameters.match(/Size:\s*(\d+)x(\d+)/);
       if (size) { value.width = Number(size[1]); value.height = Number(size[2]); }
       sources.push(value);

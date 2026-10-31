@@ -102,7 +102,7 @@ V4 模型引入了分离式 Prompt 结构，用于支持多角色控制。
 | `legacy` | `false` | 是否使用旧版处理 |
 | `add_original_image` | `true` | 是否包含原图 (图生图相关) |
 | `uncond_scale` | `1` | 无条件 Scale |
-| `noise_schedule` | `"karras"` | 噪声调度器 |
+| `noise_schedule` | `"karras"`（默认） | 噪声调度；实验室可选 `karras`／`exponential`／`polyexponential`。V4+ 不接受 `native`，导入时回落 `karras` |
 | `deliberate_euler_ancestral_bug` | `false` | 修复 Euler A 特定 Bug |
 | `prefer_brownian` | `true` | 布朗噪声偏好 |
 

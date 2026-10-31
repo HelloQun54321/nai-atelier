@@ -24,8 +24,9 @@ describe('用户完整掌控的提示词目录树', () => {
       ['场景环境', ['地点与布景', '自然与天气', '时间与季节']],
       ['互动与关系', ['人物互动', '与物品及环境互动']],
       ['构图与镜头', ['视角与景别', '构图与布局']],
-      ['画风配方', ['画师引用', '画风与技法', '质量与细节', '光照与色彩']],
+      ['画风配方', []],
     ]);
+    expect(getPromptLibraryDefaultSelection(state)).toContain('style');
     expect(Math.max(...flattenPromptLibraryDirectories(state).map(node => node.depth))).toBe(1);
     state.nodes[0].name = '已更名';
     expect(createDefaultPromptLibraryTree().nodes[0].name).not.toBe('已更名');

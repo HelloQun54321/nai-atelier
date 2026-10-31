@@ -5,6 +5,7 @@ import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate, compileCharacterContent } from './characterPrompts';
 import { getEditableGlobalNegative, getGlobalPromptSectionKeys } from './promptUtils';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
+import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule } from './naiNoiseSchedule.mjs';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from './appearancePreferences';
 import { createUuid } from './id';
 
@@ -22,6 +23,7 @@ export const LAB_DEFAULT_PARAMS: NAIParams = {
     steps: getDefaultStepsForModel(),
     scale: 5,
     sampler: 'k_euler_ancestral',
+    noiseSchedule: DEFAULT_NOISE_SCHEDULE,
     seed: undefined,
     qualityToggle: true,
     ucPreset: 4,
@@ -96,6 +98,7 @@ export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams =
     steps: Number(safe.steps) || LAB_DEFAULT_PARAMS.steps,
     scale: Number(safe.scale) || LAB_DEFAULT_PARAMS.scale,
     sampler: safe.sampler || LAB_DEFAULT_PARAMS.sampler,
+    noiseSchedule: normalizeNoiseSchedule(safe.noiseSchedule ?? LAB_DEFAULT_PARAMS.noiseSchedule),
     useCoords: safe.useCoords === true,
     characters: Array.isArray(safe.characters) ? safe.characters.map(character => ({ ...character,
       x: clampCharacterCoordinate(character.x), y: clampCharacterCoordinate(character.y),

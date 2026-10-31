@@ -15,6 +15,7 @@ import { createUuid } from './id';
 import { joinNaiTextPrompt, resolveTransparentWeight, splitNaiTextPrompt } from './transparentBackground.mjs';
 import { resolveNaiMetadataModel } from './naiModels';
 import { extractPngMetadata } from './pngMetadata.mjs';
+import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule, parseSamplerWithSchedule } from './naiNoiseSchedule.mjs';
 export { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
 
 // ========== 类型定义 ==========
@@ -183,6 +184,7 @@ export const parseNovelAIMetadata = (
         variety: false,
         cfgRescale: 0,
         ...baseParams,
+        noiseSchedule: normalizeNoiseSchedule(baseParams?.noiseSchedule ?? DEFAULT_NOISE_SCHEDULE),
     };
 
     let prompt: string = rawMetadata;
@@ -201,7 +203,14 @@ export const parseNovelAIMetadata = (
             if (json.steps != null) newParams.steps = json.steps;
             if (json.scale != null) newParams.scale = json.scale;
             if (json.seed != null && json.seed !== 0) newParams.seed = json.seed;
-            if (json.sampler) newParams.sampler = json.sampler;
+            if (json.sampler) {
+                const parsed = parseSamplerWithSchedule(json.sampler);
+                if (parsed.sampler) newParams.sampler = parsed.sampler;
+                if (parsed.noiseSchedule) newParams.noiseSchedule = parsed.noiseSchedule;
+            }
+            if (json.noise_schedule != null || json.noiseSchedule != null) {
+                newParams.noiseSchedule = normalizeNoiseSchedule(json.noise_schedule ?? json.noiseSchedule);
+            }
             // 官方图片通常只记录模型展示名与哈希；精确映射由网关从官方前端同步。
             const importedModel = resolveNaiMetadataModel(json, metadataModelMappings);
             if (importedModel) newParams.model = importedModel;
@@ -317,7 +326,11 @@ export const parseNovelAIMetadata = (
             const size = getVal('Size');
 
             if (steps) newParams.steps = parseInt(steps);
-            if (sampler) newParams.sampler = sampler.toLowerCase().replace(/ /g, '_');
+            if (sampler) {
+                const parsed = parseSamplerWithSchedule(sampler);
+                if (parsed.sampler) newParams.sampler = parsed.sampler;
+                if (parsed.noiseSchedule) newParams.noiseSchedule = parsed.noiseSchedule;
+            }
             if (scale) newParams.scale = parseFloat(scale);
             if (seed) newParams.seed = parseInt(seed);
             if (size) {

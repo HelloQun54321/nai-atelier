@@ -420,5 +420,16 @@ describe('ChainEditorParams', () => {
     renderParams({ params: {} as any });
     expect(screen.getByRole('combobox', { name: '图片画幅比例' })).toBeDefined();
     expect(screen.getByRole('combobox', { name: '采样器' })).toBeDefined();
+    expect(screen.getByRole('combobox', { name: '噪声调度' })).toBeDefined();
+  });
+
+  it('噪声调度默认 Karras，可改为 Exponential，Medium 不锁定该下拉', () => {
+    const setParams = vi.fn();
+    renderParams({ params: { ...params, model: 'nai-diffusion-5-full-medium', noiseSchedule: 'karras' }, setParams });
+    const schedule = screen.getByRole('combobox', { name: '噪声调度' }) as HTMLSelectElement;
+    expect(schedule.value).toBe('karras');
+    expect(schedule.disabled).toBe(false);
+    fireEvent.change(schedule, { target: { value: 'exponential' } });
+    expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ noiseSchedule: 'exponential' }));
   });
 });

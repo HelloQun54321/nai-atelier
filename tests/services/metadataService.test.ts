@@ -9,6 +9,25 @@ import {
 
 const encoder = new TextEncoder();
 
+describe('噪声调度导入', () => {
+  it('读取 JSON noise_schedule，并把 Sampler 括号日程拆开', () => {
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl', steps: 23, scale: 5, sampler: 'k_dpmpp_2m', noise_schedule: 'exponential', width: 832, height: 1216,
+    })).params).toMatchObject({ sampler: 'k_dpmpp_2m', noiseSchedule: 'exponential' });
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl', sampler: 'k_dpmpp_2m (polyexponential)', width: 832, height: 1216, steps: 23, scale: 5,
+    })).params).toMatchObject({ sampler: 'k_dpmpp_2m', noiseSchedule: 'polyexponential' });
+    expect(parseNovelAIMetadata(JSON.stringify({
+      prompt: '1girl', sampler: 'k_euler_ancestral', noise_schedule: 'native', width: 832, height: 1216, steps: 23, scale: 5,
+    })).params.noiseSchedule).toBe('karras');
+  });
+
+  it('Legacy 文本 Sampler: name (schedule) 拆出日程，不把括号粘进采样器', () => {
+    const parsed = parseNovelAIMetadata('1girl\nNegative prompt: lowres\nSteps: 23, Sampler: k_dpmpp_2m (exponential), CFG scale: 5, Seed: 1, Size: 832x1216');
+    expect(parsed.params).toMatchObject({ sampler: 'k_dpmpp_2m', noiseSchedule: 'exponential', steps: 23, seed: 1 });
+  });
+});
+
 describe('全局为空的分角色元数据', () => {
   it.each(['', 'obsolete global prompt'])('空 base_caption 覆盖顶层文本 %s，角色正负词与位置完整保留', prompt => {
     const parsed = parseNovelAIMetadata(JSON.stringify({ prompt, uc: 'obsolete negative',

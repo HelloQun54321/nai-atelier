@@ -5,6 +5,7 @@ import { ChevronDown, Copy } from 'lucide-react';
 import { ImageEditMetadata, NAIParams } from '../types';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { copyTagText } from '../services/externalImageTags';
+import { DEFAULT_NOISE_SCHEDULE, NOISE_SCHEDULE_LABELS, normalizeNoiseSchedule } from '../services/naiNoiseSchedule.mjs';
 import { InfoPopover } from './InfoPopover';
 import { PromptLibraryCaptureButton } from './PromptLibraryAccess';
 
@@ -37,12 +38,12 @@ const ParamItem = ({ label, value }: { label: string; value: React.ReactNode }) 
  * 通用 NovelAI 生成参数详情面板
  *
  * 展示所有非 Boilerplate 的生成参数，包括：
- * - 分辨率、步数、Scale、采样器、种子
+ * - 分辨率、步数、Scale、采样器、噪声调度、种子
  * - Quality Tags 开关、UC Preset
  * - Variety+、CFG Rescale、坐标模式
  * - 多角色列表（含坐标与专属负面）
  *
- * Boilerplate 参数（sm, sm_dyn, noise_schedule 等）不展示。
+ * Boilerplate 参数（sm, sm_dyn 等）不展示；噪声调度已是可选项，需展示。
  */
 interface ParamsViewerProps {
     /** 收藏详情按实验室顺序分区展示；其他入口仍展示全部。 */
@@ -135,6 +136,10 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     <ParamItem
                         label={t("采样器")}
                         value={typeof params.sampler === 'string' && params.sampler ? params.sampler.replace(/_/g, ' ') : '-'}
+                    />
+                    <ParamItem
+                        label={t("噪声调度")}
+                        value={NOISE_SCHEDULE_LABELS[normalizeNoiseSchedule(params.noiseSchedule ?? DEFAULT_NOISE_SCHEDULE)]}
                     />
                     <ParamItem label={t("种子")} value={params.seed ?? '随机'} />
                     <ParamItem

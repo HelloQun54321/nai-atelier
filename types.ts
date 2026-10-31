@@ -132,6 +132,8 @@ export interface NAIParams {
   steps: number;
   scale: number; // CFG Scale
   sampler: string;
+  /** 噪声调度；缺省按 karras，旧资料不迁移。 */
+  noiseSchedule?: import('./services/naiNoiseSchedule').NaiNoiseSchedule;
   seed?: number;
   // NovelAI 质量/UC 预设：新数据保存 ID，旧数据仍读取下面两个兼容字段。
   qualityPresetId?: string;

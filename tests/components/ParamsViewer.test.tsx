@@ -22,8 +22,9 @@ it('历史参考参数不把当前估算价格冒充当时的实际扣费', () =
   expect(screen.queryByText(/Anlas/)).toBeNull();
 });
 it('手机可点按完整采样器和种子，内容在浮层中换行，原参数不变化', () => {
-  const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'custom_very_long_sampler_name', seed: 987654321, qualityToggle: true, ucPreset: 4 };
+  const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'custom_very_long_sampler_name', noiseSchedule: 'exponential' as const, seed: 987654321, qualityToggle: true, ucPreset: 4 };
   const snapshot = JSON.stringify(params); render(<ParamsViewer params={params} />);
+  expect(screen.getByText('Exponential')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '查看采样器完整值' }));
   expect(within(screen.getByRole('dialog', { name: '查看采样器完整值' })).getByText('custom very long sampler name')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));

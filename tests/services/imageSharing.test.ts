@@ -138,6 +138,8 @@ describe('独立图片分享副本', () => {
     const base = encode({ width: 1, height: 1, data: new Uint8Array([1, 2, 3, 255]) });
     const legacy = insert(base, chunk('tEXt', join(encoder.encode('Comment'), new Uint8Array(1), encoder.encode('secret style\nNegative prompt: secret uc\nSteps: 12, Sampler: Euler a, CFG scale: 0, Seed: 0, Size: 640x832'))));
     expect(readComment(await cleanPngForSharing(legacy, '', 'prompts'))).toEqual({ steps: 12, sampler: 'Euler a', scale: 0, seed: 0, width: 640, height: 832 });
+    const withSchedule = insert(base, chunk('tEXt', join(encoder.encode('Comment'), new Uint8Array(1), encoder.encode('style\nNegative prompt: uc\nSteps: 23, Sampler: k_dpmpp_2m (exponential), CFG scale: 5, Seed: 1, Size: 832x1216'))));
+    expect(readComment(await cleanPngForSharing(withSchedule, '', 'prompts'))).toMatchObject({ steps: 23, sampler: 'k_dpmpp_2m', noise_schedule: 'exponential', scale: 5, seed: 1, width: 832, height: 1216 });
     for (const raw of ['{"prompt":"secret"}', '{"prompt":broken}', '{"node":{"text":"secret"}}', 'secret arbitrary']) {
       const source = insert(base, chunk('tEXt', join(encoder.encode('Comment'), new Uint8Array(1), encoder.encode(raw))));
       const cleaned = await cleanPngForSharing(source, '', 'prompts');

@@ -718,8 +718,13 @@ test('prompt agent keeps advanced generation fields when changing one parameter'
   assert.equal(draft.params.transparent, true);
   assert.equal(draft.params.transparentWeight, 2.1);
   assert.equal(tool.parameters.properties.transparentWeight.maximum, 3);
+  assert.ok(tool.parameters.properties.noiseSchedule);
   await tool.execute('weight', { transparentWeight: 9 });
   assert.equal(draft.params.transparentWeight, 3);
+  await tool.execute('schedule', { noiseSchedule: 'exponential' });
+  assert.equal(draft.params.noiseSchedule, 'exponential');
+  await tool.execute('native', { noiseSchedule: 'native' });
+  assert.equal(draft.params.noiseSchedule, 'karras');
 });
 
 test('prompt agent reads a complete chain and safely merges partial stored params', async () => {

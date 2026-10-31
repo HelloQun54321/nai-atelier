@@ -12,7 +12,8 @@ export function createDefaultPromptLibraryTree() {
     ['environment', '场景环境', 'global', [['environment-scene', '地点与布景'], ['environment-nature', '自然与天气'], ['environment-time', '时间与季节']]],
     ['interaction', '互动与关系', 'global', [['interaction-people', '人物互动'], ['interaction-object', '与物品及环境互动']]],
     ['composition', '构图与镜头', 'global', [['composition-camera', '视角与景别'], ['composition-layout', '构图与布局']]],
-    ['style', '画风配方', 'global', [['style-artist', '画师引用'], ['style-medium', '画风与技法'], ['style-quality', '质量与细节'], ['style-light', '光照与色彩']]],
+    // 画风配方默认不拆子夹：整段正负一体收纳，避免按细项随机拼出鬼图；用户仍可自行细分。生图参数归风格串。
+    ['style', '画风配方', 'global', []],
   ];
   return { revision: 0, nodes: groups.flatMap(([id, name, target, children]) => [
     { id, parentId: null, name, target }, ...children.map(([childId, childName]) => ({ id: childId, parentId: id, name: childName })),

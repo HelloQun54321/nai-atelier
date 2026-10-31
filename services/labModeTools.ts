@@ -50,6 +50,7 @@ export const mergePresetSettings = (current: NAIParams, imported?: Partial<NAIPa
   steps: imported?.steps ?? current.steps,
   scale: imported?.scale ?? current.scale,
   sampler: imported?.sampler ?? current.sampler,
+  noiseSchedule: imported?.noiseSchedule ?? current.noiseSchedule,
   width: imported?.width ?? current.width,
   height: imported?.height ?? current.height,
   qualityToggle: imported?.qualityToggle ?? current.qualityToggle,

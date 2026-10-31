@@ -29,6 +29,7 @@ import { dirname, join } from 'path';
 import { fetch as undiciFetch, getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
+import { DEFAULT_NOISE_SCHEDULE, normalizeNoiseSchedule } from '../services/naiNoiseSchedule.mjs';
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
 
 import { agentLanguagePolicy } from '../locales/index.mjs';
@@ -688,6 +689,7 @@ const sanitizeParams = raw => {
     steps: Math.round(clamp(value.steps, 1, 50, 28)),
     scale: clamp(value.scale, 0, 10, 5),
     sampler: text(value.sampler || 'k_euler_ancestral').slice(0, 80),
+    noiseSchedule: normalizeNoiseSchedule(value.noiseSchedule ?? DEFAULT_NOISE_SCHEDULE),
     qualityToggle: value.qualityToggle !== false,
     ucPreset: Math.round(clamp(value.ucPreset, 0, 4, 4)),
     useCoords: value.useCoords === true,
@@ -4772,7 +4774,7 @@ export class PromptAgentService {
         parameters: Type.Object({
           model: Type.Optional(Type.String({ description: '真实历史或工坊模型清单中的模型 ID；不选择退役模型' })),
           width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()), steps: Type.Optional(Type.Number()), scale: Type.Optional(Type.Number()),
-          sampler: Type.Optional(Type.String()), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()), qualityPresetId: Type.Optional(Type.String()), ucPresetId: Type.Optional(Type.String()),
+          sampler: Type.Optional(Type.String()), noiseSchedule: Type.Optional(Type.String({ description: '噪声调度：karras／exponential／polyexponential，缺省 karras' })), seed: Type.Optional(Type.Number()), qualityToggle: Type.Optional(Type.Boolean()), ucPreset: Type.Optional(Type.Number()), qualityPresetId: Type.Optional(Type.String()), ucPresetId: Type.Optional(Type.String()),
           useCoords: Type.Optional(Type.Boolean()), variety: Type.Optional(Type.Boolean()), cfgRescale: Type.Optional(Type.Number()),
           transparent: Type.Optional(Type.Boolean()),
           transparentWeight: Type.Optional(Type.Number({ minimum: TRANSPARENT_WEIGHT_MIN, maximum: TRANSPARENT_WEIGHT_MAX })),
