@@ -169,7 +169,10 @@ it.each([['global', LAB_PICTURE_PURPOSES], ['existing', LAB_SUBJECT_PURPOSES]] a
   const picks = Object.fromEntries(PROMPT_PURPOSES.map(purpose => [`purpose:${purpose.id}`, { kind: `purpose:${purpose.id}`, scope, filled: true, text: `old_${purpose.id}`, negative: `negative_${purpose.id}` }]));
   const seedRecord = { picks, seed: '完整旧组合', seeds: {} };
   const target = mode === 'global' ? { mode: 'global' as const } : { mode: 'existing' as const, id: 'target' };
-  const params = { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'target', prompt: '', x: .5, y: .5 }] };
+  /* 全局画面含互动：至少两名启用角色，互动才默认参与，断言才能覆盖全部 allowed 用途 */
+  const params = { ...LAB_DEFAULT_PARAMS, characters: mode === 'global'
+    ? [{ id: 'one', prompt: '', x: .5, y: .5 }, { id: 'two', prompt: '', x: .5, y: .5 }]
+    : [{ id: 'target', prompt: '', x: .5, y: .5 }] };
   render(<ContentRollWorkspace active entryTarget={target} allowedPurposes={allowed} chains={entries} notify={vi.fn()}
     playgroundParams={params} seedRecord={seedRecord} onApplyRoll={apply} onSaveRoll={save} />);
   document.querySelectorAll<HTMLButtonElement>('[data-prompt-purpose-group] > button').forEach(button => fireEvent.click(button));
@@ -198,6 +201,62 @@ it.each([['global', LAB_PICTURE_PURPOSES], ['existing', LAB_SUBJECT_PURPOSES]] a
   expect(Object.keys(save.mock.calls[0][1]).sort()).toEqual(allowed.map(id => `purpose:${id}`).sort());
   const stored = JSON.parse(localStorage.getItem('nai-content-roll')!);
   expect(stored.history.find((record: { seed: string }) => record.seed === seedRecord.seed).picks['purpose:style'].text).toBe('old_style');
+});
+
+it('实验室启用角色不足两人时互动默认不参与，可手动勾回；两人及以上或无数门禁时默认参与', () => {
+  const solo = { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'solo', prompt: '', x: .5, y: .5 }] };
+  const duo = { ...LAB_DEFAULT_PARAMS, characters: [
+    { id: 'one', prompt: '', x: .5, y: .5 },
+    { id: 'two', prompt: '', x: .5, y: .5 },
+    { id: 'off', prompt: '', x: .5, y: .5, enabled: false },
+  ] };
+  const props = { active: true, embedded: true, entryTarget: { mode: 'global' as const }, allowedPurposes: LAB_PICTURE_PURPOSES, chains: [] as PromptChain[], notify: vi.fn() };
+  const interaction = () => screen.getByRole('checkbox', { name: '参与「互动与关系」的抽取' }) as HTMLInputElement;
+  const place = () => screen.getByRole('checkbox', { name: '参与「地点与布景」的抽取' }) as HTMLInputElement;
+  render(<ContentRollWorkspace {...props} playgroundParams={solo} />);
+  expect(interaction().checked).toBe(false);
+  expect(place().checked).toBe(true);
+  expect(document.querySelector('[data-content-roll-interaction-gate]')).toBeTruthy();
+  fireEvent.click(interaction());
+  expect(interaction().checked).toBe(true);
+  expect(document.querySelector('[data-content-roll-interaction-gate]')).toBeNull();
+  cleanup();
+  render(<ContentRollWorkspace {...props} playgroundParams={duo} />);
+  expect(interaction().checked).toBe(true);
+  expect(document.querySelector('[data-content-roll-interaction-gate]')).toBeNull();
+  cleanup();
+  render(<ContentRollWorkspace {...props} />);
+  expect(interaction().checked).toBe(true);
+  cleanup();
+  render(<ContentRollWorkspace {...props} playgroundParams={{ ...LAB_DEFAULT_PARAMS, characters: [] }} />);
+  expect(interaction().checked).toBe(false);
+  expect(document.querySelector('[data-content-roll-row="purpose:interaction"]')?.getAttribute('data-content-roll-on')).toBe('false');
+});
+
+it('实验室入口不把人数门禁的默认关闭写死进历史，重开多人时互动重新默认参与', () => {
+  const entries = [
+    { ...chains[0], id: 'place-1', type: 'preset' as const, name: '湖边', basePrompt: 'lakeside',
+      params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['place'] } },
+    { ...chains[0], id: 'inter-1', type: 'preset' as const, name: '牵手', basePrompt: 'holding hands',
+      params: { ...LAB_DEFAULT_PARAMS, _promptLibraryDirectoryIds: [], _promptLibraryPurposes: ['interaction'] } },
+  ] as PromptChain[];
+  const solo = { ...LAB_DEFAULT_PARAMS, characters: [{ id: 'solo', prompt: '', x: .5, y: .5 }] };
+  const duo = { ...LAB_DEFAULT_PARAMS, characters: [
+    { id: 'one', prompt: '', x: .5, y: .5 }, { id: 'two', prompt: '', x: .5, y: .5 },
+  ] };
+  const props = { active: true, embedded: true, entryTarget: { mode: 'global' as const }, allowedPurposes: LAB_PICTURE_PURPOSES, chains: entries, directories, notify: vi.fn() };
+  const interaction = () => screen.getByRole('checkbox', { name: '参与「互动与关系」的抽取' }) as HTMLInputElement;
+  render(<ContentRollWorkspace {...props} playgroundParams={solo} />);
+  expect(interaction().checked).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  expect(document.querySelector('[data-content-roll-row="purpose:place"]')?.getAttribute('data-filled')).toBe('true');
+  expect(document.querySelector('[data-content-roll-row="purpose:interaction"]')?.getAttribute('data-filled')).toBe('false');
+  cleanup();
+  render(<ContentRollWorkspace {...props} playgroundParams={duo} />);
+  expect(interaction().checked).toBe(true);
+  expect(document.querySelector('[data-content-roll-interaction-gate]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /抽一次|再抽未固定项/ }));
+  expect(document.querySelector('[data-content-roll-row="purpose:interaction"]')?.getAttribute('data-filled')).toBe('true');
 });
 
 it('受限用途组标题匹配实际内容，自由搭配保留完整组名', () => {

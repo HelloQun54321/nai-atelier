@@ -1,6 +1,18 @@
 import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey } from './promptPurposes.mjs';
 import type { NAIParams, PromptChain, PromptSections } from '../types';
 import { applyContentRollToParams, planContentRollApply, type ContentRollTarget } from './contentRollApply';
+import {
+  interactionAttributionWrites,
+  mergeAttributionText,
+  planInteractionAttribution,
+  readInteractionPick,
+  INTERACTION_POSE_KIND,
+} from './contentRollInteraction';
+
+const interactionSeedOf = (picks: Record<string, RollRow>) => {
+  const row = readInteractionPick(picks);
+  return String(row?.id || row?.text || 'interaction');
+};
 import { combinationPicks, applyLibraryText, fragmentKindOf, type PromptLibraryField } from './promptLibraryEntries';
 import { mergePromptSections, resolvePromptSections } from './labWorkspace';
 import { isStyleSectionKey, projectSectionedNegative, projectSectionedPrompt, readLabSectionLayout, subjectFromSections } from './labSections';
@@ -198,6 +210,21 @@ export function applySectionedRoll(
       pictureChanged = true;
     }
   }
+  if (target.mode === 'global' || target.mode === 'all-enabled') {
+    const attribution = planInteractionAttribution(picks, state.params, interactionSeedOf(picks));
+    for (const write of interactionAttributionWrites(attribution)) {
+      const role = characters.find(item => item.id === write.characterId);
+      if (!role) continue;
+      const field = facetField(role.id, write.kind, false);
+      const current = textOf((role.sections as Record<string, string> | undefined)?.[write.kind]);
+      const previous = previousReceipt?.fields[field];
+      if (previous && current !== previous.after) { conflicts.push(field); continue; }
+      const before = previous ? previous.before : current;
+      const after = mergeAttributionText(before, write.text);
+      receipt.fields[field] = { before, after, parts: { ...(previous?.parts || {}), [write.kind]: write.text } };
+      role.sections = { ...role.sections, [write.kind]: after };
+    }
+  }
   sections.sectionNegatives = sectionNegatives;
   next.params = { ...next.params, _promptSections: sections, characters };
   if (pictureChanged) next.subject = subjectFromSections(sections, readLabSectionLayout(next.params._labSectionLayout));
@@ -235,6 +262,12 @@ export function applyRollSelection(
     for (const id of ids) {
       add(id, false, kind, row.text || '');
       add(id, true, kind, row.negative || '');
+    }
+  }
+  if (target.mode === 'global' || target.mode === 'all-enabled') {
+    const attribution = planInteractionAttribution(picks, state.params, interactionSeedOf(picks));
+    for (const write of interactionAttributionWrites(attribution)) {
+      add(write.characterId, false, INTERACTION_POSE_KIND, write.text);
     }
   }
   const next = { ...state, classified: false, params: { ...state.params } };

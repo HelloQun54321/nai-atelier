@@ -17,6 +17,7 @@ import type { ContentRollScope } from '../services/contentRollApply';
 import { planRollToChain } from '../services/contentRollToChain';
 import type { RollToChainScope, RollToChainSourceRow } from '../services/contentRollToChain';
 import type { NAIParams } from '../types';
+import { countRollLabCharacters, defaultPurposeRollParticipation } from '../services/labPromptLayout';
 import { IconButton, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { getPromptLibraryDirectoryLegacyKind, getPromptLibraryDirectoryPath, getPromptLibraryDirectoryTarget, normalizePromptLibraryDirectorySelection, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryDirectories';
 import { PromptLibraryDirectoryPicker } from './PromptLibraryDirectoryPicker';
@@ -206,10 +207,12 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   };
   const rollChains = [...sourceEntries, ...Object.entries(current?.picks || {}).filter(([kind, row]) => locked[kind] && row.id?.startsWith('manual-')).map(([kind, row]) => ({ id: row.id!, type: kind, basePrompt: row.text || '', negativePrompt: row.negative || '', name: row.name || '' } as PromptChain))];
 
-  /* 每次从实验室打开都重新选择参与项；旧记录不能改写入口指定的目标。 */
+  /* 实验室入口打开时按当前人数重算默认参与，不沿用历史里物化过的门禁结果。 */
+  const skipHistoryParticipationOnce = useRef(false);
   useEffect(() => {
     setConfirming(false);
     if (!entryTarget) return;
+    skipHistoryParticipationOnce.current = true;
     setChecks({});
     setLocked({});
   }, [entryTarget]);
@@ -232,9 +235,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     for (const kind of KINDS) out[kind] = range === 'global' ? META[kind].scope === 'global' : META[kind].scope !== 'global';
     return out;
   }, [range, entryTarget, purposeMode, units]);
+  const labCharacterCount = useMemo(() => countRollLabCharacters(playgroundParams), [playgroundParams]);
+  const participationOf = useCallback((kind: string) => (
+    checks[kind] === undefined ? defaultPurposeRollParticipation(kind, labCharacterCount) : checks[kind] !== false
+  ), [checks, labCharacterCount]);
   const effectiveChecks = useMemo(() => purposeMode ? Object.fromEntries([...new Set([...units.map(unit => unit.id), ...Object.keys(current?.picks || {})])].map(kind => [kind,
-    units.some(unit => unit.id === kind) && checks[kind] !== false || !isPurposeSectionKey(rollSectionKey(kind)) && !!current?.picks[kind]?.filled && checks[kind] !== false && (entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range),
-  ])) : Object.fromEntries(KINDS.map(kind => [kind, scopeChecks[kind] !== false && checks[kind] !== false])), [scopeChecks, checks, purposeMode, units, current, entryTarget, range]);
+    units.some(unit => unit.id === kind) && participationOf(kind) || !isPurposeSectionKey(rollSectionKey(kind)) && !!current?.picks[kind]?.filled && participationOf(kind) && (entryTarget ? scopeFor(kind) === (entryTarget.mode === 'global' ? 'global' : 'character') : range === 'all' || scopeFor(kind) === range),
+  ])) : Object.fromEntries(KINDS.map(kind => [kind, scopeChecks[kind] !== false && checks[kind] !== false])), [scopeChecks, checks, purposeMode, units, current, entryTarget, range, participationOf]);
 
   /* 会话草稿只留在本机：刷新后仍能看到上次这一组，但不会写库 */
   useEffect(() => {
@@ -276,21 +283,38 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
   useEffect(() => {
     const record = historyRef.current[cursor];
     if (!record) return;
+    if (skipHistoryParticipationOnce.current) {
+      skipHistoryParticipationOnce.current = false;
+      setLocked(record.locked || {});
+      if (directories) setDirectoryIds(record.directoryIds ?? null);
+      if (record.scope) setRange(record.scope);
+      return;
+    }
     setChecks(record.checks || {});
     setLocked(record.locked || {});
     if (directories) setDirectoryIds(record.directoryIds ?? null);
     if (record.scope) setRange(record.scope);
-  }, [cursor]);
+  }, [cursor, directories]);
 
+  /* 实验室入口写入实际参与快照，但不把「人数门禁默认关闭互动」写成显式 false */
   const commit = useCallback((record: RollRecord) => {
     setHistory(previous => {
       const kept = previous.slice(0, cursor + 1);
       const scope: ContentRollScope = entryTarget ? entryTarget.mode === 'global' ? 'all' : 'character' : range;
-      const next = [...kept, { ...record, directoryIds: directories ? directoryIds ?? undefined : undefined, scope, checks: entryTarget ? { ...effectiveChecks } : record.checks }].slice(-HISTORY_LIMIT);
+      let storedChecks = record.checks;
+      if (entryTarget) {
+        storedChecks = { ...effectiveChecks };
+        if (purposeMode) {
+          for (const kind of Object.keys(storedChecks)) {
+            if (rollSectionKey(kind) === purposeSectionKey('interaction') && checks[kind] === undefined) delete storedChecks[kind];
+          }
+        }
+      }
+      const next = [...kept, { ...record, directoryIds: directories ? directoryIds ?? undefined : undefined, scope, checks: storedChecks }].slice(-HISTORY_LIMIT);
       setCursor(next.length - 1);
       return next;
     });
-  }, [cursor, range, entryTarget, effectiveChecks, directories, directoryIds]);
+  }, [cursor, range, entryTarget, effectiveChecks, purposeMode, checks, directories, directoryIds]);
 
   const rollOnce = useCallback(() => {
     setBusy(true);
@@ -383,7 +407,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     () => (current ? pickByParticipation(entryTarget ? current.picks : filterPicksByScope(current.picks, range), effectiveChecks) : {}),
     [current, range, effectiveChecks, entryTarget],
   );
-  const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget) : null;
+  const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget, { seed: current.seed || 'content-roll' }) : null;
 
   const doApply = async () => {
     if (!current || !onApplyRoll || !plan || !canApply) return;
@@ -500,6 +524,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
     const checked = effectiveChecks[kind] !== false, filled = !!row?.filled && !!(row.text?.trim() || row.negative?.trim());
     const pool = poolFor(kind), count = countsPending && !pool.length ? '—' : pool.length;
     const constraint = row?.constraints?.notes || row?.constraintNotes;
+    const interactionGateHint = rollSectionKey(kind) === purposeSectionKey('interaction') && labCharacterCount !== null && labCharacterCount < 2 && !checked;
     return <article key={kind} data-content-roll-row={kind} data-content-roll-on={checked} data-filled={filled} data-locked={!!locked[kind]} className="content-roll-row border-b border-gray-200 dark:border-gray-800">
       <label className="content-roll-purpose mobile-touch flex min-w-0 items-center gap-2 text-sm font-semibold">
         <input type="checkbox" checked={checked} disabled={scopeChecks[kind] === false || applying || saving} onChange={() => { toggleCheck(kind); setConfirming(false); }} aria-label={t('参与「{0}」的抽取', [t(meta.title)])} className="h-4 w-4 shrink-0 accent-indigo-500" /><span className="truncate" title={t(meta.title)}>{t(meta.title)}</span>
@@ -510,6 +535,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ dire
           {locked[kind] && <span className="shrink-0 text-xs text-indigo-600 dark:text-indigo-300">{t('已固定')}</span>}
           {constraint && <span data-content-roll-constraint={kind}><InfoPopover label="说明" content={constraint} /></span>}
         </div>
+        {interactionGateHint && <p data-content-roll-interaction-gate className="text-xs leading-5 text-amber-700 dark:text-amber-300">{t('当前启用角色不足 2 人，互动默认不参与；可手动勾选')}</p>}
         <p className="truncate font-mono text-xs leading-6 text-gray-500 dark:text-gray-400">{filled ? row?.text || row?.negative : t('可手写或选择片段')}</p>
       </div>
       <div className="content-roll-row-actions flex items-center justify-end gap-1">

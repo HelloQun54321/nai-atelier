@@ -1,8 +1,15 @@
 import { isCreativeSectionKey, type PurposeSectionKey } from './promptPurposes.mjs';
-﻿import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
+import type { CharacterParams, CharacterSectionContent, NAIParams, PromptSections, PromptSectionSource } from '../types';
 import { KINDS, META, rollSectionKey, isRollSectionKey } from './contentRoll';
 import type { RollRow } from './contentRoll';
 import { CHARACTER_SECTION_KEYS } from './characterPrompts';
+import {
+  interactionAttributionWrites,
+  mergeAttributionText,
+  planInteractionAttribution,
+  type InteractionAttribution,
+  type InteractionCharacterWrite,
+} from './contentRollInteraction';
 
 /**
  * 一键 Roll → 实验室的「应用计划」。
@@ -88,10 +95,19 @@ export interface ContentRollApplyPlan {
   globalMeta: Record<string, PromptSectionSource>;
   /** 角色四类的分栏写入载荷 */
   roleWrites: ContentRollRoleWrite[];
+  /** 全局互动在多人时的 source／target／mutual 归属 */
+  interactionAttribution?: InteractionAttribution | null;
+  /** 按角色拆开的互动归属写入（与 roleWrites 独立，可落在不同角色） */
+  characterAttributions?: InteractionCharacterWrite[];
   /** 实际会改动的落点 */
   written: string[];
   /** 未提供内容的栏位（保持原值），用于界面说明 */
   kept: string[];
+}
+
+export interface PlanContentRollApplyOptions {
+  /** 决定同一互动抽到哪一对角色；缺省用互动正文 */
+  seed?: string;
 }
 
 const splitTags = (value: unknown): string[] =>
@@ -134,6 +150,7 @@ export const planContentRollApply = (
   picks: Record<string, RollRow>,
   params: NAIParams | null | undefined,
   target: ContentRollTarget,
+  options: PlanContentRollApplyOptions = {},
 ): ContentRollApplyPlan => {
   const safeParams = params || {} as NAIParams;
   const characters = charactersOf(safeParams);
@@ -152,6 +169,10 @@ export const planContentRollApply = (
   const globalMeta: Record<string, PromptSectionSource> = {};
   const written: string[] = [];
   const kept: string[] = [];
+  const interactionAttribution = target.mode === 'global' || target.mode === 'all-enabled'
+    ? planInteractionAttribution(picks, safeParams, options.seed || 'content-roll')
+    : null;
+  const characterAttributions = interactionAttributionWrites(interactionAttribution);
 
   const legacyKeys = [...(target.mode === 'global' ? GLOBAL_ROLL_KINDS : KINDS), ...(picks.presentation ? ['presentation'] : [])];
   const keys = Object.keys(picks).some(isRollSectionKey)
@@ -206,6 +227,22 @@ export const planContentRollApply = (
     if (row.action !== 'replace') continue;
     row.next = row.targetScope === 'global' ? globalSections[row.kind] : roleWrites.find(write => write.kind === row.kind)?.text || row.next;
   }
+  for (const write of characterAttributions) {
+    const character = characters.find(item => String(item.id) === write.characterId);
+    const current = String(character?.sections?.[write.kind as keyof CharacterSectionContent] || character?.prompt || '');
+    const next = mergeAttributionText(current, write.text);
+    rows.push({
+      itemId: `attribution:${write.characterId}:${write.kind}`,
+      targetScope: 'character',
+      kind: write.kind,
+      title: `互动归属 · ${write.label}`,
+      current,
+      next,
+      action: 'replace',
+      note: interactionAttribution?.mode === 'mutual' ? '对等互动，双方 mutual#' : '单向互动，source#／target#',
+    });
+    written.push(`attribution:${write.characterId}:${write.kind}`);
+  }
   return {
     target,
     roleId: existing ? String(existing.id) : '',
@@ -219,6 +256,8 @@ export const planContentRollApply = (
     globalNegatives,
     globalMeta,
     roleWrites,
+    interactionAttribution,
+    characterAttributions,
     written,
     kept,
   };
@@ -293,7 +332,28 @@ export const applyContentRollToParams = (
       }
     }
   }
-  if (plan.roleWrites.length && characters.length) next.characters = characters;
+  for (const write of plan.characterAttributions || []) {
+    const index = characters.findIndex(item => String(item.id) === write.characterId);
+    if (index < 0) continue;
+    const character = characters[index];
+    const kind = write.kind as keyof CharacterSectionContent;
+    const current = String(character.sections?.[kind] || '');
+    const text = mergeAttributionText(current, write.text);
+    characters[index] = {
+      ...character,
+      sections: { ...(character.sections || {}), [kind]: text },
+      sectionMeta: {
+        ...(character.sectionMeta || {}),
+        [kind]: {
+          ...(character.sectionMeta?.[kind] || {}),
+          source: 'roll',
+          notes: plan.interactionAttribution?.mode === 'mutual' ? '互动归属 mutual#' : '互动归属 source#／target#',
+        },
+      },
+    };
+    written.push('attribution:' + write.characterId + ':' + write.kind);
+  }
+  if ((plan.roleWrites.length || plan.characterAttributions?.length) && characters.length) next.characters = characters;
 
   const globalWrites = plan.globalSections || {};
   if (Object.keys(globalWrites).length) {

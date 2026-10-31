@@ -12,7 +12,8 @@ import { parsePromptLibraryTags, applyLibraryText, createCombinationData, create
 import { applyLibrarySelection, applyRollSelection, planLibrarySelection, type LibraryCompletionEdit, type PromptLibraryWorkspaceState, type RollApplyReceipt } from '../services/promptLibraryApply';
 import { prepareCollectedPrompt } from '../services/collectedPrompt';
 import type { PromptApplyMode } from '../services/promptApply';
-import type { ContentRollTarget, ContentRollEntryTarget } from '../services/contentRollApply';
+import { planContentRollApply, type ContentRollTarget, type ContentRollEntryTarget } from '../services/contentRollApply';
+import { readInteractionPick } from '../services/contentRollInteraction';
 import { IconButton, ToolbarButton, ToolbarActionRow, WorkspacePageState, PageSpinner } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageActivityContext } from './SmartImage';
@@ -380,14 +381,27 @@ export function PromptLibraryRandomButton({ roleId, purposes, disabled, fallback
       playgroundParams={params} entryTarget={entryTarget} allowedPurposes={purposes ?? (roleId ? LAB_SUBJECT_PURPOSES : LAB_PICTURE_PURPOSES)}
       renderApplyPreview={(picks, target) => {
         const result = applyRollSelection(workspace.state, picks, target, workspace.rollReceipt);
+        const interaction = readInteractionPick(picks);
+        const plan = planContentRollApply(picks, params, target, { seed: String(interaction?.id || interaction?.text || 'content-roll') });
         const blocks = roleId ? workspace.state.params.characters?.filter(role => role.id === roleId).flatMap(role => {
           const next = result.state.params.characters?.find(item => item.id === role.id);
           const before = compileCharacterContent(role);
-          return [{ key: `${role.id}:positive`, label: t('角色提示词'), before: before.prompt ?? '', after: next?.prompt || '' },
-            { key: `${role.id}:negative`, label: t('角色负面提示词'), before: before.negativePrompt ?? '', after: next?.negativePrompt || '' }];
+          const after = compileCharacterContent(next || role);
+          return [{ key: `${role.id}:positive`, label: t('角色提示词'), before: before.prompt ?? '', after: after.prompt || '' },
+            { key: `${role.id}:negative`, label: t('角色负面提示词'), before: before.negativePrompt ?? '', after: after.negativePrompt || '' }];
         }) || [] : [{ key: 'global:positive', label: t('全局正面提示词'), before: getEditableGlobalPrompt(workspace.state.base, workspace.state.subject), after: getEditableGlobalPrompt(result.state.base, result.state.subject) },
           { key: 'global:negative', label: t('全局负面提示词'), before: getEditableGlobalNegative(workspace.state.negative, workspace.state.params._promptSections), after: result.state.negative }];
-        return <>{blocks.map(block => <div key={block.key} data-content-roll-apply-row={block.key} className="min-w-0"><span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{block.label}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800 dark:text-gray-100">{block.after ? diffPromptText(block.before, block.after).filter(part => part.kind !== 'delete').map((part, index) => <span key={index} data-roll-insert={part.kind === 'insert' || undefined} className={part.kind === 'insert' ? 'text-indigo-600 dark:text-indigo-300' : undefined}>{part.text}</span>) : t('空白')}</p></div>)}{result.conflicts.length > 0 && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t('已保留手动修改的内容')}</p>}</>;
+        if (!roleId) {
+          for (const write of plan.characterAttributions || []) {
+            const beforeRole = workspace.state.params.characters?.find(role => role.id === write.characterId);
+            const afterRole = result.state.params.characters?.find(role => role.id === write.characterId);
+            if (!beforeRole && !afterRole) continue;
+            const before = compileCharacterContent(beforeRole || afterRole!);
+            const after = compileCharacterContent(afterRole || beforeRole!);
+            blocks.push({ key: `attribution:${write.characterId}`, label: t('互动归属 · {0}', [write.label]), before: before.prompt ?? '', after: after.prompt || '' });
+          }
+        }
+        return <>{blocks.map(block => <div key={block.key} data-content-roll-apply-row={block.key} className="min-w-0"><span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{block.label}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800 dark:text-gray-100">{block.after ? diffPromptText(block.before, block.after).filter(part => part.kind !== 'delete').map((part, index) => <span key={index} data-roll-insert={part.kind === 'insert' || undefined} className={part.kind === 'insert' ? 'text-indigo-600 dark:text-indigo-300' : undefined}>{part.text}</span>) : t('空白')}</p></div>)}{plan.interactionAttribution && <p data-content-roll-interaction-attribution className="text-xs text-gray-500 dark:text-gray-400">{t(plan.interactionAttribution.mode === 'mutual' ? '对等互动：{0} 与 {1} 均写 {2}' : '单向互动：{0} → {2}；{1} → {3}', [plan.interactionAttribution.sourceLabel, plan.interactionAttribution.targetLabel, plan.interactionAttribution.sourceBinding, plan.interactionAttribution.targetBinding])}</p>}{result.conflicts.length > 0 && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t('已保留手动修改的内容')}</p>}</>;
       }}
       onApplyRoll={async (_plan, picks) => {
         if (!workspace.applyRoll) return false;

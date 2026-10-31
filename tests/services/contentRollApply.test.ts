@@ -319,3 +319,25 @@ it('scoped目录预览从项目身份读取标题与作用范围，不回退为�
   expect(plan.globalSections['directory:shared']).toBe('global prop');
   expect(plan.roleWrites).toEqual([expect.objectContaining({ kind: 'directory:shared', text: 'character prop' })]);
 });
+
+it('全局互动在两人及以上时写入 source／target 归属到不同角色姿态栏', () => {
+  const params = {
+    ...baseParams(),
+    characters: [
+      { id: 'c1', prompt: 'girl a', x: 0.3, y: 0.5, sections: { 'purpose:pose': 'standing' } },
+      { id: 'c2', prompt: 'girl b', x: 0.7, y: 0.5 },
+    ],
+  } as NAIParams;
+  const picks = { 'purpose:interaction': { ...row('purpose:interaction', 'kissing, intimate'), scope: 'global' as const } };
+  const plan = planContentRollApply(picks, params, { mode: 'global' }, { seed: 'kiss-seed' });
+  expect(plan.globalSections['purpose:interaction']).toBe('kissing, intimate');
+  expect(plan.interactionAttribution?.mode).toBe('directed');
+  expect(plan.characterAttributions).toHaveLength(2);
+  expect(plan.characterAttributions?.[0].characterId).not.toBe(plan.characterAttributions?.[1].characterId);
+  const next = applyContentRollToParams(params, plan, () => 'unused').params;
+  const source = next.characters?.find(item => item.id === plan.interactionAttribution?.sourceId);
+  const target = next.characters?.find(item => item.id === plan.interactionAttribution?.targetId);
+  expect(source?.sections?.['purpose:pose']).toContain('source#kissing');
+  expect(target?.sections?.['purpose:pose']).toContain('target#kissing');
+  expect(planContentRollApply(picks, { ...params, characters: [params.characters![0]] }, { mode: 'global' }).characterAttributions).toEqual([]);
+});
