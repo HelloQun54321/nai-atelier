@@ -298,16 +298,39 @@ const readLimitedImageBody = async (response: Response) => {
     return output;
 };
 
+const MANAGED_IMAGE_EXTENSIONS: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+};
+
+/** 上游偶发把真图标成 octet-stream；按文件头识别受管 PNG／JPEG／WebP。 */
+export const sniffManagedImageType = (bytes: Uint8Array): { extension: string; contentType: string } | null => {
+    if (bytes.length < 12) return null;
+    const head = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+    if (head(0, 4) === 'RIFF' && head(8, 12) === 'WEBP') return { extension: 'webp', contentType: 'image/webp' };
+    if (bytes[0] === 0x89 && head(1, 4) === 'PNG') return { extension: 'png', contentType: 'image/png' };
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return { extension: 'jpg', contentType: 'image/jpeg' };
+    return null;
+};
+
+const resolveManagedImageType = (declared: string, bytes: Uint8Array) => {
+    const contentType = declared.split(';')[0].trim().toLowerCase();
+    const extension = MANAGED_IMAGE_EXTENSIONS[contentType];
+    if (extension) return { extension, contentType };
+    return sniffManagedImageType(bytes);
+};
+
 const copyChainCover = async (env: Env, source: R2ObjectBody, id: string, imageType = '') => {
     const headers = new Headers();
     source.writeHttpMetadata(headers);
     if (imageType) headers.set('content-type', imageType);
-    const contentType = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-    const extension = ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' } as Record<string, string>)[contentType];
-    if (!extension) throw new Error('封面不是支持的 PNG、JPEG 或 WebP 图片');
+    const declared = (headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
     const bytes = await readLimitedImageBody(new Response(source.body, { headers }));
-    const target = `covers/${id}_${Date.now()}.${extension}`;
-    await env.BUCKET!.put(target, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType } });
+    const resolved = resolveManagedImageType(declared, bytes);
+    if (!resolved) throw new Error('封面不是支持的 PNG、JPEG 或 WebP 图片');
+    const target = `covers/${id}_${Date.now()}.${resolved.extension}`;
+    await env.BUCKET!.put(target, bytes.buffer as ArrayBuffer, { httpMetadata: { contentType: resolved.contentType } });
     return `/api/assets/${target}`;
 };
 
@@ -440,19 +463,17 @@ export async function fetchAndUploadImage(
         if (!response) throw new Error('外链图片重定向次数过多');
         if (!response.ok) throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
 
-        const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-        const extensionByType: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
-        const ext = extensionByType[contentType];
-        if (!ext) throw new Error('外链响应不是支持的 PNG、JPEG 或 WebP 图片');
+        const declared = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
         const bytes = await readLimitedImageBody(response);
-        const fileSize = bytes.byteLength;
-        
+        const resolved = resolveManagedImageType(declared, bytes);
+        if (!resolved) throw new Error('外链响应不是支持的 PNG、JPEG 或 WebP 图片');
+
         // Generate filename（id 来自请求体，净化为单段安全字符，防止拼接出任意前缀的 R2 key）
         const safeId = String(id).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'asset';
-        const filename = `${folder}/${safeId}_${Date.now()}.${ext}`;
+        const filename = `${folder}/${safeId}_${Date.now()}.${resolved.extension}`;
 
         await env.BUCKET.put(filename, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, {
-            httpMetadata: { contentType }
+            httpMetadata: { contentType: resolved.contentType }
         });
 
         return `/api/assets/${filename}`;
@@ -1098,12 +1119,14 @@ export const handleMediaRequest = async (request: Request, env: Env, url: URL) =
   const target = validated.internal ? new URL(validated.source, url.origin).toString() : validated.source;
   if (!validated.internal && CODEX_MEDIA_HOSTS.includes(new URL(target).hostname)) {
     const response = await fetch(target, { redirect: 'manual', headers: { Accept: 'image/*' }, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) });
-    const contentType = response.headers.get('content-type') || '';
-    if (!response.ok || !contentType.startsWith('image/')) {
+    const declared = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!response.ok) {
       await response.body?.cancel();
       return error('法典图片读取失败', response.status >= 400 ? response.status : 502);
     }
     const bytes = await readLimitedImageBody(response);
+    const contentType = declared.startsWith('image/') ? declared : (sniffManagedImageType(bytes)?.contentType || '');
+    if (!contentType) return error('法典图片读取失败', 502);
     return new Response(bytes, { headers: { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' } });
   }
   return new Response(null, {

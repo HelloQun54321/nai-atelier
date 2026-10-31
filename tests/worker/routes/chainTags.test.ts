@@ -222,6 +222,54 @@ describe('新建风格串的立即打开与封面保存（隔离 SQLite／R2）'
     expect(fetchMock).toHaveBeenCalledTimes(1); expect(b.put).toHaveBeenCalledTimes(1);
   });
 
+  it('octet-stream 的真实 WebP 按文件头认图后保存，纯文本仍拒绝', async () => {
+    const webp = new Uint8Array(12);
+    webp.set([0x52, 0x49, 0x46, 0x46], 0);
+    webp.set([0x57, 0x45, 0x42, 0x50], 8);
+    const b = bucketFixture(); const f = fixture(b.bucket);
+    const fetchMock = vi.fn(async () => new Response(webp, { headers: { 'Content-Type': 'application/octet-stream' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await f.invoke('/api/chains', 'POST', {
+      name: '法典 WebP', previewImage: 'https://assets.quicktagcloud.com/originals/synthetic/one.webp',
+    });
+    expect(result.status).toBe(200);
+    const created = await result.json() as any;
+    expect(created.chain.previewImage).toMatch(/^\/api\/assets\/covers\/.+\.webp$/);
+    expect(b.put).toHaveBeenCalledWith(expect.stringMatching(/^covers\/.+\.webp$/), expect.anything(), {
+      httpMetadata: { contentType: 'image/webp' },
+    });
+    expect(b.data.get(created.chain.previewImage.slice('/api/assets/'.length))).toEqual(webp);
+
+    fetchMock.mockResolvedValueOnce(new Response('plain text', { headers: { 'Content-Type': 'application/octet-stream' } }));
+    const rejected = await f.invoke('/api/chains', 'POST', {
+      name: '假图片', previewImage: 'https://assets.quicktagcloud.com/originals/synthetic/plain.txt',
+    });
+    expect(rejected.status).toBe(422);
+    expect(await rejected.text()).toMatch(/外链响应不是支持的/);
+    expect(f.sqlite.prepare('SELECT COUNT(*) AS count FROM chains').get()?.count).toBe(1);
+  });
+
+  it('本地缓存封面 MIME 标错时按文件头校正扩展名', async () => {
+    const webp = new Uint8Array(12);
+    webp.set([0x52, 0x49, 0x46, 0x46], 0);
+    webp.set([0x57, 0x45, 0x42, 0x50], 8);
+    const b = bucketFixture();
+    b.data.set('aitag/mislabeled.webp', webp);
+    const get = vi.fn(async (key: string) => b.data.has(key) ? {
+      body: new Response(b.data.get(key)!.slice().buffer as ArrayBuffer).body!, httpEtag: 'synthetic',
+      writeHttpMetadata(headers: Headers) { headers.set('content-type', 'application/octet-stream'); },
+    } : null);
+    const put = vi.fn(async (key: string, body: ArrayBuffer, options?: { httpMetadata?: { contentType?: string } }) => {
+      b.data.set(key, new Uint8Array(body));
+      expect(options?.httpMetadata?.contentType).toBe('image/webp');
+    });
+    const bucket = { get, put, delete: b.del } as unknown as import('../../../worker/routes/types').R2Bucket;
+    const f = fixture(bucket);
+    const result = await f.invoke('/api/chains', 'POST', { name: '错 MIME 封面', previewImage: '/api/assets/aitag/mislabeled.webp' });
+    expect(result.status).toBe(200);
+    expect((await result.json() as any).chain.previewImage).toMatch(/^\/api\/assets\/covers\/.+\.webp$/);
+  });
+
   it('图床要求防盗链头时仍能保存：缺少 Referer／浏览器 UA 的请求会返回 403', async () => {
     const b = bucketFixture(); const f = fixture(b.bucket, { LAN_ACCESS_SECRET: 'synthetic-internal-secret' });
     const fetchMock = vi.fn(async (_url: string, options: RequestInit) => {

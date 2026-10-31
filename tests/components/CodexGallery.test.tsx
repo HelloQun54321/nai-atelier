@@ -318,6 +318,31 @@ it('保存中不重复创建，失败保留详情并可重试；纯文本条目�
   expect(mocks.create.mock.calls[1][0].previewImage).toBeUndefined();
 });
 
+it('封面抓取失败时自动去掉封面重试，提示词仍保存并显示降级提示', async () => {
+  mocks.create
+    .mockRejectedValueOnce(new Error('Failed to fetch and store external image: 外链响应不是支持的 PNG、JPEG 或 WebP 图片'))
+    .mockResolvedValueOnce(undefined);
+  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: '保存到风格串' }));
+  await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+  expect(mocks.create.mock.calls[0][0].previewImage).toBe(entry.images[0].originalUrl);
+  expect(mocks.create.mock.calls[1][0].previewImage).toBeUndefined();
+  expect(mocks.create.mock.calls[1][0].basePrompt).toBe(metadata.prompt);
+  expect(mocks.notify).toHaveBeenCalledWith('封面未能保存，已只保存提示词到风格串');
+  expect(mocks.notify).not.toHaveBeenCalledWith(expect.stringContaining('外链响应不是支持的'), 'error');
+});
+
+it('非封面错误不自动去掉封面重试', async () => {
+  mocks.create.mockRejectedValueOnce(new Error('Forbidden'));
+  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
+  await ready();
+  fireEvent.click(screen.getByRole('button', { name: '保存到风格串' }));
+  await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('Forbidden', 'error'));
+  expect(mocks.create).toHaveBeenCalledOnce();
+  expect(mocks.create.mock.calls[0][0].previewImage).toBe(entry.images[0].originalUrl);
+});
+
 it.each(['admin', 'guest'] as const)('%s 查看当前图片独立展示词并取用同一页，访客不能保存', async role => {
   const perImage = { ...entry, images: entry.images.map((image, page) => ({ ...image, originalUrl: '', prompt: `page ${page}`, negative: `negative ${page}`, characters: [] })) };
   mocks.book.mockResolvedValue({ release: boot.release, entries: [perImage] });

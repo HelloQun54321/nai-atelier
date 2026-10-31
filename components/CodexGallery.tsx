@@ -197,12 +197,22 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
     const now = Date.now();
     const draft = { prompt: '', negativePrompt: '', params: { ...DEFAULT_PARAMS, qualityToggle: false } };
     const content = { ...draft, ...buildPromptFragmentPatch(draft, { ...importValue, replace: true }) };
+    const cover = selectedImage?.originalUrl || selectedImage?.url;
+    const payload = { id: createUuid(), userId: currentUser.id, username: currentUser.username, type: 'style' as const,
+      name: `${selected.title}${selected.images.length > 1 ? ` P${page + 1}` : ''}`, description: selected.sourceUrl, tags: [],
+      previewImage: cover, basePrompt: content.prompt, negativePrompt: content.negativePrompt,
+      modules: [], params: content.params, variableValues: { subject: '' }, createdAt: now, updatedAt: now };
     try {
-      await onCreateArtistChain({ id: createUuid(), userId: currentUser.id, username: currentUser.username, type: 'style',
-        name: `${selected.title}${selected.images.length > 1 ? ` P${page + 1}` : ''}`, description: selected.sourceUrl, tags: [],
-        previewImage: selectedImage?.originalUrl || selectedImage?.url, basePrompt: content.prompt, negativePrompt: content.negativePrompt,
-        modules: [], params: content.params, variableValues: { subject: '' }, createdAt: now, updatedAt: now });
-      notify(t('已保存到风格串'));
+      try {
+        await onCreateArtistChain(payload);
+        notify(t('已保存到风格串'));
+      } catch (cause) {
+        // 封面抓取失败不应阻断提示词保存；仅对封面相关错误降级重试。
+        const message = cause instanceof Error ? cause.message : '';
+        if (!cover || !/Failed to fetch and store external image|外链响应不是支持的|封面不是支持的|保存封面失败|封面地址无效|封面必须是|本地封面|外链图片|读取 AITag 封面失败/.test(message)) throw cause;
+        await onCreateArtistChain({ ...payload, previewImage: undefined });
+        notify(t('封面未能保存，已只保存提示词到风格串'));
+      }
     } catch (cause) { notify(cause instanceof Error ? cause.message : t('保存失败'), 'error'); }
     finally { savingRef.current = false; setSaving(false); }
   };
