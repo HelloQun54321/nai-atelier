@@ -37,12 +37,11 @@ import type { HistoryBrowseQuery } from './services/historyBrowse';
 import { ContentLibraryPage, type ContentLibrarySection } from './components/ContentLibraryPage';
 import { LibraryDialog, PromptLibraryContext, PromptLibraryRequestEnabledContext, PromptLibraryUseDialog, type WorkspaceAccess } from './components/PromptLibraryAccess';
 import { parsePromptLibraryTags, combinationPicks, createCombinationData, libraryPicksWithSources, librarySectionOf } from './services/promptLibraryEntries';
-import { PromptLibraryCategoryManager } from './components/PromptLibraryCategoryManager';
-import { promptLibraryCategoryNames } from './services/promptLibraryCategories';
+import { promptLibraryCategoryUpdates } from './services/promptLibraryCategories';
 import { PromptLibraryBrowser } from './components/PromptLibraryBrowser';
 import { PromptLibraryDirectoryDialog } from './components/PromptLibraryDirectoryDialog';
 import { loadPromptLibraryDirectories, removePromptLibraryDirectory, savePromptLibraryDirectories, PROMPT_LIBRARY_DIRECTORIES_CHANGED, type PromptLibraryTreeState } from './services/promptLibraryDirectories';
-import { loadPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, savePromptLibraryCategoryTree, type PromptLibraryCategoryTreeState } from './services/promptLibraryCategoryTree';
+import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, loadPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, type PromptLibraryCategoryTreeState } from './services/promptLibraryCategoryTree';
 import { PromptCaptureDialog } from './components/PromptCaptureDialog';
 import { ImagePreviewPortal } from './components/ImagePreviewPortal';
 import { ToolbarButton } from './components/DesignSystem';
@@ -209,21 +208,12 @@ const App = () => {
   const [libraryDirectoryCreateParent, setLibraryDirectoryCreateParent] = useState<string | null>();
   const [libraryDirectoryEditingId, setLibraryDirectoryEditingId] = useState<string>();
   const directoryLoadRevision = useRef(0);
-  const [libraryCategoriesOpen, setLibraryCategoriesOpen] = useState(false);
-  const [libraryCategoryCreateParent, setLibraryCategoryCreateParent] = useState<string | null>();
-  const [libraryCategoryEditingId, setLibraryCategoryEditingId] = useState<string>();
-  const [libraryCategoryDeletingId, setLibraryCategoryDeletingId] = useState<string>();
   const [movingLibraryDirectory, setMovingLibraryDirectory] = useState(false);
-  const [movingLibraryCategory, setMovingLibraryCategory] = useState(false);
   const libraryDirectoryMovePending = useRef(false);
-  const libraryCategoryMovePending = useRef(false);
   const [libraryCategoryChange, setLibraryCategoryChange] = useState<{ from: string; to: string; token: number }>();
   const categoryRevisionRef = useRef(0);
   const openLibraryDirectories = React.useCallback((parentId: string | null) => { setLibraryDirectoryEditingId(undefined); setLibraryDirectoryCreateParent(parentId); setLibraryDirectoriesOpen(true); }, []);
   const editLibraryDirectory = React.useCallback((id: string) => { setLibraryDirectoryCreateParent(undefined); setLibraryDirectoryEditingId(id); setLibraryDirectoriesOpen(true); }, []);
-  const openLibraryCategories = React.useCallback((parentId: string | null) => { setLibraryCategoryEditingId(undefined); setLibraryCategoryDeletingId(undefined); setLibraryCategoryCreateParent(parentId); setLibraryCategoriesOpen(true); }, []);
-  const editLibraryCategory = React.useCallback((id: string) => { setLibraryCategoryCreateParent(undefined); setLibraryCategoryDeletingId(undefined); setLibraryCategoryEditingId(id); setLibraryCategoriesOpen(true); }, []);
-  const deleteLibraryCategory = React.useCallback((id: string) => { setLibraryCategoryCreateParent(undefined); setLibraryCategoryEditingId(undefined); setLibraryCategoryDeletingId(id); setLibraryCategoriesOpen(true); }, []);
 
   const [libraryManageOpen, setLibraryManageOpen] = useState(false);
   const [libraryManageSection, setLibraryManageSection] = useState<ContentLibrarySection>('items');
@@ -344,22 +334,6 @@ const App = () => {
       await reloadLibraryDirectories().catch(() => {});
       notify(error instanceof Error ? t(error.message) : t('保存失败，请稍后重试'), 'error');
     } finally { libraryDirectoryMovePending.current = false; setMovingLibraryDirectory(false); }
-  });
-  const moveLibraryCategory = useCommittedCallback(async (id: string, parentId: string | null) => {
-    if (libraryCategoryMovePending.current || !libraryCategoryTree) return;
-    const current = projectPromptLibraryCategoryTree(chains, libraryCategoryNames || [], libraryCategoryTree);
-    const node = current.nodes.find(item => item.id === id);
-    if (!node || node.parentId === parentId) return;
-    libraryCategoryMovePending.current = true; setMovingLibraryCategory(true);
-    ++directoryLoadRevision.current;
-    try {
-      const saved = await savePromptLibraryCategoryTree({ ...current, nodes: current.nodes.map(item => item.id === id ? { ...item, parentId } : item) });
-      ++directoryLoadRevision.current; setLibraryCategoryTree(saved); setLibraryDirectoriesError('');
-      notify(t('已保存'));
-    } catch (error) {
-      await reloadLibraryDirectories().catch(() => {});
-      notify(error instanceof Error ? t(error.message) : t('保存失败，请稍后重试'), 'error');
-    } finally { libraryCategoryMovePending.current = false; setMovingLibraryCategory(false); }
   });
   const deleteLibraryDirectory = useCommittedCallback(async (id: string) => {
     const node = libraryDirectories?.nodes.find(item => item.id === id);
@@ -998,7 +972,22 @@ const App = () => {
 
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
     try {
+      const existing = chains.find(chain => chain.id === id);
+      const renamedCustomCharacter = existing?.type === 'character'
+        && !existing.tags?.includes('__character_catalog__')
+        && typeof updates.name === 'string'
+        && updates.name.trim()
+        && updates.name.trim() !== existing.name;
       await db.updateChain(id, updates);
+      if (renamedCustomCharacter) {
+        const from = existing!.name;
+        const to = updates.name!.trim();
+        for (const patch of promptLibraryCategoryUpdates(chains, from, to)) {
+          if (patch.id === id) continue;
+          await db.updateChain(patch.id, { tags: patch.tags });
+        }
+        setLibraryCategoryChange(previous => ({ from, to, token: (previous?.token || 0) + 1 }));
+      }
       await refreshData(true);
     } catch (e) {
       console.error('保存风格串失败', e);
@@ -1108,7 +1097,7 @@ const App = () => {
           onViewCaptured={setLibraryFocusId}
           browse={(toolbarSlot, actions) => <PromptLibraryBrowser chains={chains} {...chainReadState} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} toolbarSlot={toolbarSlot} notify={notify} onExtract={actions?.onExtract}
             directories={libraryDirectories} onCreateDirectory={openLibraryDirectories} onRenameDirectory={editLibraryDirectory} onDeleteDirectory={deleteLibraryDirectory} onMoveDirectory={moveLibraryDirectory} directoriesBusy={movingLibraryDirectory}
-            categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange} onCreateCategory={openLibraryCategories} onRenameCategory={editLibraryCategory} onDeleteCategory={deleteLibraryCategory} onMoveCategory={moveLibraryCategory} categoriesBusy={movingLibraryCategory || libraryCategoriesOpen}
+            categoryNames={libraryCategoryNames || []} categoryTree={libraryCategoryTree} categoryChange={libraryCategoryChange}
             onDelete={handleDeleteLibraryEntry}
             renderEntryEditor={(entry, controls) => <Suspense fallback={<div className="p-4 text-sm text-gray-500">{t('加载中…')}</div>}><PromptLibraryEntryEditor entry={entry} chains={chains} panel panelActionsRef={controls.actionsRef}
               onCreate={createLibraryChain} onUpdateChain={handleUpdateChain} onDelete={handleDelete} notify={notify} onClose={controls.onClose} /></Suspense>}
@@ -1342,7 +1331,7 @@ const App = () => {
   ]);
   const contentLibraryContent = useMemo(() => renderViewContent('content-library'), [
     view, chains, loading, chainsError, currentUser, contentLibrarySection, contentRollOpen, contentRollEntryTarget, contentRollEditId,
-    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, movingLibraryCategory, libraryCategoriesOpen, language,
+    playgroundChain, contentRollUndo, contentRollSeed, libraryFocusId, libraryCategoryNames, libraryCategoryChange, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, movingLibraryDirectory, language,
   ]);
   const saveLibraryEntry = useCommittedCallback(async (data: Partial<PromptChain>) => {
     if (data.id) { await handleUpdateChain(data.id, data); return; }
@@ -1353,7 +1342,9 @@ const App = () => {
   const clearLibraryRequest = React.useCallback(() => setLibraryEntryRequest(null), []);
   const promptLibrary = useMemo(() => ({ chains, chainsLoading: loading, chainsError, onRetryChains: retryChains, requestedEntry: libraryEntryRequest, clearRequest: clearLibraryRequest,
     directories: libraryDirectories, directoriesError: libraryDirectoriesError, reloadDirectories: reloadLibraryDirectories, onCreateDirectory: openLibraryDirectories, onRenameDirectory: editLibraryDirectory, onDeleteDirectory: deleteLibraryDirectory, onMoveDirectory: moveLibraryDirectory, directoriesBusy: movingLibraryDirectory,
-    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace, categoryNames: promptLibraryCategoryNames(chains, libraryCategoryNames || []), categoryTree: libraryCategoryTree,
+    save: saveLibraryEntry, useEntry: handleUseLibraryEntry, registerWorkspace: setLibraryWorkspace,
+    categoryNames: projectPromptLibraryCategoryTree(chains, libraryCategoryNames || [], libraryCategoryTree || emptyPromptLibraryCategoryTree(), listPromptLibraryCustomCharacters(chains)).nodes.map(node => node.name),
+    categoryTree: projectPromptLibraryCategoryTree(chains, libraryCategoryNames || [], libraryCategoryTree || emptyPromptLibraryCategoryTree(), listPromptLibraryCustomCharacters(chains)),
   }), [chains, loading, chainsError, retryChains, libraryEntryRequest, clearLibraryRequest, saveLibraryEntry, handleUseLibraryEntry, libraryCategoryNames, libraryCategoryTree, libraryDirectories, libraryDirectoriesError, reloadLibraryDirectories, openLibraryDirectories, editLibraryDirectory, deleteLibraryDirectory, moveLibraryDirectory, movingLibraryDirectory]);
 
   if (!currentUser && !dbConfigError) {
@@ -1435,11 +1426,6 @@ const App = () => {
       >
         <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-gray-500">{t("正在加载工作区…")}</div>}>
           {renderContent()}
-          {libraryCategoriesOpen && <PromptLibraryCategoryManager initialTree={libraryCategoryTree} initialParentId={libraryCategoryCreateParent} initialEditingId={libraryCategoryEditingId} initialDeletingId={libraryCategoryDeletingId} onClose={() => setLibraryCategoriesOpen(false)} onSnapshot={({ chains: latestChains, names, tree }) => {
-            categoryRevisionRef.current++; refreshDataSeqRef.current++;
-            if (tree) { ++directoryLoadRevision.current; setLibraryCategoryTree(tree); }
-            setChains(latestChains); setLibraryCategoryNames(names); setLastChainFetch(Date.now()); setLoading(false); setChainsError('');
-          }} onChanged={(from, to) => setLibraryCategoryChange(previous => ({ from, to, token: (previous?.token || 0) + 1 }))} />}
           {libraryUseEntry && (libraryWorkspace ? <PromptLibraryUseDialog entry={libraryUseEntry} state={libraryWorkspace.state}
             onChange={libraryWorkspace.change} onClose={() => setLibraryUseEntry(null)} onApplied={() => { void handleNavigate('playground'); }} />
             : <LibraryDialog title="使用" historyLayer={false} onClose={() => setLibraryUseEntry(null)}><p>{t('正在读取实验室草稿…')}</p></LibraryDialog>)}

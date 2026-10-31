@@ -202,49 +202,44 @@ test('目录损坏或词库不可用明确失败，不拿空或部分目录冒�
   await assert.rejects(missingCatalog.members({ scope: 'artists' }), /词库/);
 });
 
-test('组合分类使用完整投影API，保留旧标签、空分类、真实星号身份；CRUD与归属直接业务执行', async () => {
+test('组合分类只读「角色」树与归属；新建改名删除改走角色库', async () => {
   const { request, state, calls } = fixture();
   const endpoint = '/api/prompt-library-category-tree/actions';
-  let tree = { revision: 4, nodes: [{ id: '旧根', name: '旧根', parentId: null }, { id: '*', name: '*', parentId: '旧根' }, { id: '空分类', name: '空分类', parentId: null }] };
-  state['/api/chains'].push({ id: 'combination', name: '组合', tags: ['*', '__internal__', 'pixiv'], params: { _rollContentSnapshot: { format: 'nai-roll-content' } } }, { id: 'original', name: '原文', tags: ['*'], params: { _promptLibraryOriginal: true } });
+  const tree = { revision: 4, nodes: [{ id: '角色', name: '角色', parentId: null }, { id: '小铃', name: '小铃', parentId: '角色' }] };
+  state['/api/chains'].push(
+    { id: 'combination', name: '组合', tags: ['小铃', '__internal__'], params: { _rollContentSnapshot: { format: 'nai-roll-content' } } },
+    { id: 'char-1', name: '小铃', type: 'character', tags: [] },
+  );
   const actions = [];
   const api = createAgentDirectories(async (path, options) => {
     if (path !== endpoint) return request(path, options);
     if (!options) return { tree: clone(tree) };
     const body = options.body; actions.push(clone(body));
-    if (body.action === 'create') tree.nodes.push({ id: body.name, name: body.name, parentId: body.parentId ?? null });
-    if (body.action === 'update') tree.nodes = tree.nodes.map(value => value.id === body.id ? { id: body.name ?? value.id, name: body.name ?? value.name, parentId: body.parentId ?? null } : value);
-    if (body.action === 'delete') tree.nodes = tree.nodes.filter(value => value.id !== body.id);
     if (body.action === 'memberships') return { ok: true, completedIds: body.itemIds, failedItems: [] };
-    tree.revision++; return { ok: true, completedIds: [], failedItems: [], tree: clone(tree) };
+    throw new Error('unexpected action ' + body.action);
   });
-  assert.deepEqual((await api.list({ scope: 'combinations' })).items.map(value => value.id), ['旧根', '*', '空分类']);
-  assert.deepEqual((await api.members({ scope: 'combinations', directoryId: '*' })).items.map(value => value.id), ['combination']);
-  assert.deepEqual((await api.members({ scope: 'combinations', directoryId: '旧根' })).items[0].directoryIds, ['*']);
-  assert.equal((await api.members({ scope: 'combinations', directoryId: '空分类' })).total, 0);
-  const created = await api.create({ scope: 'combinations', name: '新增', parentId: '旧根' }); assert.equal(created.id, '新增');
-  await api.update({ scope: 'combinations', id: '新增', name: '改名', parentId: null });
-  await api.setMemberships({ scope: 'combinations', memberIds: ['combination'], addDirectoryIds: ['改名'] });
-  await api.remove({ scope: 'combinations', id: '改名' });
-  assert.deepEqual(actions.map(value => value.action), ['create', 'update', 'memberships', 'delete']);
+  assert.deepEqual((await api.list({ scope: 'combinations' })).items.map(value => value.id), ['角色', '小铃']);
+  assert.deepEqual((await api.members({ scope: 'combinations', directoryId: '小铃' })).items.map(value => value.id), ['combination']);
+  assert.equal((await api.members({ scope: 'combinations', directoryId: '角色' })).total, 1);
+  await api.setMemberships({ scope: 'combinations', memberIds: ['combination'], addDirectoryIds: ['角色'], removeDirectoryIds: ['小铃'] });
+  assert.deepEqual(actions.map(value => value.action), ['memberships']);
   assert.ok(calls.every(value => !value.method));
-  await assert.rejects(api.create({ scope: 'combinations', name: '错误', target: 'character' }), /target/);
-  const beforeConflict = actions.length;
-  await assert.rejects(api.update({ scope: 'combinations', id: '*', name: '旧根' }), /不能.*合并/);
-  assert.equal(actions.length, beforeConflict);
+  await assert.rejects(api.create({ scope: 'combinations', name: '自由分类' }), /自定义角色/);
+  await assert.rejects(api.update({ scope: 'combinations', id: '小铃', name: '改名' }), /自定义角色/);
+  await assert.rejects(api.remove({ scope: 'combinations', id: '小铃' }), /自定义角色/);
 });
 
-test('组合大量改名或删除的完整回执只在同次run的受控Map续读，不丢失部分完成范围', async () => {
-  const value = { ok: false, completedIds: Array.from({ length: 80 }, (_, index) => `done-${index}`), failedItems: [{ id: 'failed', status: 409, error: '并发变化' }], tree: { revision: 7, nodes: [{ id: '分类', name: '分类', parentId: null }] } };
-  const request = async (_path, options) => options ? clone(value) : { tree: { revision: 6, nodes: [{ id: '分类', name: '分类', parentId: null }] } };
-  const resultStore = new Map(), api = createAgentDirectories(request, { resultStore });
-  const result = await api.update({ scope: 'combinations', id: '分类', name: '新分类' });
-  assert.equal(result.completedCount, 80); assert.equal(result.partial, true); assert.ok(result.resultId);
+test('组合归属部分成功如实回执，CRUD 仍拒绝自由分类', async () => {
+  const memberIds = ['done-0', 'done-1', 'failed'];
+  const value = { ok: false, completedIds: ['done-0', 'done-1'], failedItems: [{ id: 'failed', status: 409, error: '并发变化' }], tree: { revision: 7, nodes: [{ id: '角色', name: '角色', parentId: null }] } };
+  const request = async (path, options) => {
+    if (path === '/api/chains') return memberIds.map(id => ({ id, name: id, tags: [], params: { _rollContentSnapshot: { format: 'nai-roll-content' } } }));
+    if (!options) return { tree: { revision: 6, nodes: [{ id: '角色', name: '角色', parentId: null }] } };
+    return clone(value);
+  };
+  const api = createAgentDirectories(request);
+  const result = await api.setMemberships({ scope: 'combinations', memberIds, addDirectoryIds: ['角色'] });
+  assert.equal(result.completedIds.length, 2); assert.equal(result.partial, true); assert.deepEqual(result.remainingIds, ['failed']);
   assert.deepEqual(JSON.parse(boundAgentToolResult({ content: [{ type: 'text', text: JSON.stringify(result) }] }).content[0].text), result);
-  const reopened = createAgentDirectories(request, { resultStore });
-  let offset = 0, content = '';
-  do { const chunk = await reopened.list({ scope: 'combinations', resultId: result.resultId, field: 'result', offset }); assert.deepEqual(JSON.parse(boundAgentToolResult({ content: [{ type: 'text', text: JSON.stringify(chunk) }] }).content[0].text), chunk); content += chunk.content; offset = chunk.nextOffset; } while (offset !== null);
-  assert.equal(JSON.parse(content).completedIds.length, 80); assert.deepEqual(JSON.parse(content).failedItems, value.failedItems);
-  await assert.rejects(createAgentDirectories(request, { resultStore: new Map() }).list({ scope: 'combinations', resultId: result.resultId, field: 'result' }), /不属于/);
-  await assert.rejects(reopened.list({ scope: 'chains', resultId: result.resultId, field: 'result' }), /不属于/);
+  await assert.rejects(api.create({ scope: 'combinations', name: '自由分类' }), /自定义角色/);
 });

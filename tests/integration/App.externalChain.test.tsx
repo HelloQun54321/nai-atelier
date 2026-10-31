@@ -162,6 +162,7 @@ const selectPromptScope = (scope: 'items' | 'saved') => {
   if (!screen.queryByRole('combobox', { name: '提示词库范围' })) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: scope } });
 };
+const customCharacter = (id: string, name: string) => ({ ...saved, id, type: 'character' as const, name, tags: [], basePrompt: '', description: '', previewImage: undefined } as PromptChain);
 
 const makeDataTransfer = () => {
   const values = new Map<string, string>();
@@ -219,15 +220,6 @@ it('当前目录读取失败时不以默认树开放写入，重试后才显示�
   expect(mocks.createChainWithData).not.toHaveBeenCalled();
 });
 
-const openCombinationCategories = async () => {
-  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
-  if (screen.queryByRole('button', { name: '展开目录' })) fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
-  const manager = await screen.findByRole('dialog', { name: '新建目录' });
-  await waitFor(() => expect((within(manager).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).disabled).toBe(false));
-  return manager;
-};
-
 it('文件夹内新建通过真实App回调广播保存回执，返回时保留新串', async () => {
   const folders = { revision: 1, folders: [{ id: 'synthetic-folder', name: '合成文件夹', parentId: null }], assignments: {} };
   const persisted = { ...folders, revision: 2, assignments: { [saved.id]: ['synthetic-folder'] } };
@@ -254,54 +246,53 @@ it('文件夹内新建通过真实App回调广播保存回执，返回时保留�
   }
 });
 
-it('助手直接改组合目录时同步回读名称，保留页面与搜索，迟到旧名称不复活分类', async () => {
-  mocks.getPromptLibraryTagNames.mockResolvedValue(['旧分类']);
-  await setup('prompts'); selectPromptScope('saved');
+it('助手改角色名后组合文件夹同步回读，保留页面与搜索，tag 名单独回读不复活旧文件夹', async () => {
+  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
+  const oldChar = customCharacter('old-char', '旧分类');
+  const combo = { ...saved, id: 'sync-combo', name: '同步组合', type: 'preset', tags: ['旧分类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
+  let records: PromptChain[] = [oldChar, combo];
+  mocks.getAllChains.mockImplementation(async () => records);
+  await setup('prompts');
+  selectPromptScope('saved');
   if (screen.queryByRole('button', { name: '展开目录' })) fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   await screen.findByRole('button', { name: '分类「旧分类」' });
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: '保持现场' } });
   let finishOld!: (value: string[]) => void;
   mocks.getPromptLibraryTagNames.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  records = [customCharacter('old-char', '新分类'), { ...combo, tags: ['新分类'] }];
   mocks.getPromptLibraryTagNames.mockResolvedValue(['新分类']);
-  act(() => window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'prompt_library_directories' } })));
-  await act(async () => { window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'prompt_library_directories' } })); });
-  await screen.findByRole('button', { name: '分类「新分类」' });
+  act(() => window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'chains' } })));
+  await waitFor(() => expect(screen.getByRole('button', { name: '分类「新分类」' })).toBeTruthy());
   expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
   await act(async () => { finishOld(['旧分类']); });
+  await act(async () => { await Promise.resolve(); });
   expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
   expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('保持现场');
   expect(screen.getByRole('combobox', { name: '提示词库范围' })).toHaveProperty('value', 'saved');
 });
 
-it('零条组合也能预建分类，冷回读后保存与详情均可选用', async () => {
+it('空自定义角色投影文件夹，冷回读后保存与详情均可选用角色标签', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
-  let directory: string[] = [];
-  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...directory]);
-  mocks.savePromptLibraryTagNames.mockImplementation(async (tags: string[]) => { directory = [...tags]; return [...directory]; });
+  const emptyChar = customCharacter('empty-char', '未来项目');
+  mocks.getAllChains.mockResolvedValue([emptyChar]);
   await setup('prompts');
-  const manager = await openCombinationCategories();
-  fireEvent.change(within(manager).getByRole('textbox', { name: '新分类名称' }), { target: { value: '未来项目' } });
-  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(directory).toEqual(['未来项目']));
-  expect(mocks.updateChain).not.toHaveBeenCalled();
-  expect(mocks.createChainWithData).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建目录' })).toBeNull());
+  selectPromptScope('saved');
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const row = await screen.findByRole('button', { name: '分类「未来项目」' });
   expect(row.textContent).toContain('0');
+  expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
   cleanup(); mocks.getAllChains.mockClear();
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
   const combo = { ...saved, id: 'empty-directory-combo', name: '准备分类的组合', type: 'preset', tags: [], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
-  mocks.getAllChains.mockResolvedValue([combo]);
+  mocks.getAllChains.mockResolvedValue([emptyChar, combo]);
   await setup('prompts');
   selectPromptScope('saved');
-  expect(mocks.getPromptLibraryTagNames.mock.calls.length).toBeGreaterThan(1);
   fireEvent.click(screen.getByRole('button', { name: '编辑准备分类的组合' }));
   const roll = await screen.findByRole('dialog', { name: '搭配' });
   await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night'));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
   const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
-  fireEvent.click(within(saveDialog).getByRole('button', { name: '选择已有标签' }));
-  fireEvent.click(await within(saveDialog).findByRole('button', { name: '#未来项目' }));
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '组合标签' }), { target: { value: '未来项目' } });
   expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('未来项目');
   fireEvent.click(within(saveDialog).getByRole('button', { name: '取消' }));
   fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
@@ -309,108 +300,58 @@ it('零条组合也能预建分类，冷回读后保存与详情均可选用', a
   const detail = await screen.findByLabelText('准备分类的组合', { selector: 'aside' });
   fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
   fireEvent.click(within(detail).getByRole('button', { name: '选择已有标签' }));
-  fireEvent.click(await within(detail).findByRole('button', { name: '#未来项目' }));
+  fireEvent.click(await within(detail).findByRole('button', { name: '#角色 / 未来项目' }));
   expect((within(detail).getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('未来项目');
 });
 
-it.each([false, true])('组合分类编辑只更新组合标签并同步已选筛选，合并=%s', async merge => {
-  let directory = ['来源类', '目标类'];
+it('组合范围不提供目录管理，筛选芯片只列角色投影文件夹', async () => {
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
-  let records = [
-    { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['来源类', '目标类', '保留'], params: { ...saved.params, seed: 42, _rollContentSnapshot: snapshot } },
-    { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['来源类', '另一标签'], params: { _rollContentSnapshot: snapshot } },
-    { ...saved, id: 'fragment-same', name: '同名片段标签', type: 'scene', tags: ['来源类'], basePrompt: 'forest' },
-    { ...saved, id: 'raw-same', name: '同名原文标签', type: 'preset', tags: ['来源类'], params: { _collectedPrompt: 1, _promptLibraryPurposes: [] }, basePrompt: 'raw forest' },
-  ] as unknown as PromptChain[];
-  const before = structuredClone(records);
-  mocks.getAllChains.mockImplementation(async () => records);
-  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...directory]);
-  mocks.savePromptLibraryTagNames.mockImplementation(async (tags: string[]) => { directory = [...tags]; return directory; });
-  mocks.updateChain.mockImplementation(async (id: string, updates: Partial<PromptChain>) => { records = records.map(chain => chain.id === id ? { ...chain, ...updates } : chain); });
-  try {
-    await setup('prompts');
-    selectPromptScope('items');
-    fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-    const fragmentNavigation = await screen.findByRole('complementary', { name: '提示词目录导航' });
-    fireEvent.click(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与布景' }));
-    expect(within(fragmentNavigation).getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
-
-    selectPromptScope('saved');
-    expect(screen.getByRole('button', { name: '展开目录' }).getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(await screen.findByRole('button', { name: '来源类' }));
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    const navigation = await screen.findByRole('complementary', { name: '组合分类导航' });
-    fireEvent.click(within(navigation).getByRole('button', { name: '分类「来源类」' }));
-    fireEvent.click(within(navigation).getByRole('button', { name: '重命名目录' }));
-    const manager = await screen.findByRole('dialog', { name: '编辑目录' });
-    await waitFor(() => expect((within(manager).getByRole('textbox', { name: '分类名称' }) as HTMLInputElement).disabled).toBe(false));
-    if (merge) fireEvent.click(within(manager).getByText('合并分类', { selector: 'summary' }));
-    const target = merge ? '目标类' : '新名称';
-    if (merge) fireEvent.change(within(manager).getByRole('combobox', { name: '目标分类' }), { target: { value: target } });
-    else fireEvent.change(within(manager).getByRole('textbox', { name: '分类名称' }), { target: { value: target } });
-    fireEvent.click(within(manager).getByRole('button', { name: merge ? '合并' : '保存' }));
-    await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(records[0].tags).toEqual(merge ? ['目标类', '保留'] : ['新名称', '目标类', '保留']));
-    expect(records[1].tags).toEqual([target, '另一标签']);
-    expect(mocks.updateChain.mock.calls.every(([, patch]) => Object.keys(patch).join(',') === 'tags')).toBe(true);
-    for (const item of records) expect({ ...item, tags: [] }).toEqual({ ...before.find(chain => chain.id === item.id), tags: [] });
-    expect(records[2].tags).toEqual(['来源类']); expect(records[3].tags).toEqual(['来源类']);
-    await waitFor(() => expect(directory.includes('来源类')).toBe(false));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑目录' })).toBeNull());
-    await waitFor(() => {
-      const nav = screen.getByRole('complementary', { name: '组合分类导航' });
-      const active = within(nav).getByRole('button', { name: `分类「${target}」` });
-      expect(active.getAttribute('aria-current')).toBe('page');
-      expect(active.textContent).toContain('2');
-    });
-    fireEvent.click(screen.getByRole('button', { name: '收起目录' }));
-    selectPromptScope('items');
-    expect(screen.getByRole('button', { name: '收起目录' }).getAttribute('aria-expanded')).toBe('true');
-    const restoredFragments = screen.getByRole('complementary', { name: '提示词目录导航' });
-    expect(within(restoredFragments).getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
-    selectPromptScope('saved');
-    expect(screen.getByRole('button', { name: '展开目录' }).getAttribute('aria-expanded')).toBe('false');
-    fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-    const restoredCategories = screen.getByRole('complementary', { name: '组合分类导航' });
-    expect(within(restoredCategories).getByRole('button', { name: `分类「${target}」` }).getAttribute('aria-current')).toBe('page');
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    expect((await screen.findByRole('button', { name: target })).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.queryByRole('button', { name: '来源类' })).toBeNull();
-    expect(screen.getByRole('button', { name: '查看源目标共存' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '查看仅源组合' })).toBeTruthy();
-  } finally { mocks.updateChain.mockReset().mockResolvedValue(undefined); }
+  const sourceChar = customCharacter('source', '来源类');
+  const targetChar = customCharacter('target', '目标类');
+  mocks.getAllChains.mockResolvedValue([
+    sourceChar, targetChar,
+    { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['来源类', '目标类'], params: { _rollContentSnapshot: snapshot } },
+    { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['来源类'], params: { _rollContentSnapshot: snapshot } },
+  ] as unknown as PromptChain[]);
+  await setup('prompts');
+  selectPromptScope('saved');
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  const navigation = await screen.findByRole('complementary', { name: '组合分类导航' });
+  expect(within(navigation).queryByRole('button', { name: '新建目录' })).toBeNull();
+  expect(within(navigation).queryByRole('button', { name: '重命名目录' })).toBeNull();
+  fireEvent.click(within(navigation).getByRole('button', { name: '分类「来源类」' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.getByRole('button', { name: '角色 / 来源类' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '来源类' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '角色 / 来源类' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.getByRole('button', { name: '查看源目标共存' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看仅源组合' })).toBeTruthy();
 });
 
-it('分类目录保存失败保留新增输入，不显示成功且不写组合', async () => {
-  mocks.savePromptLibraryTagNames.mockRejectedValueOnce(new Error('合成目录不可写'));
+it('组合范围不提供新建目录入口', async () => {
+  mocks.getAllChains.mockResolvedValue([customCharacter('empty', '空角色')]);
   await setup('prompts');
-  const manager = await openCombinationCategories();
-  fireEvent.change(within(manager).getByRole('textbox', { name: '新分类名称' }), { target: { value: '失败后保留' } });
-  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(mocks.savePromptLibraryTagNames).toHaveBeenCalledWith(['失败后保留']));
-  await waitFor(() => expect(manager.textContent).toContain('合成目录不可写'));
-  expect((within(manager).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).value).toBe('失败后保留');
-  expect(within(manager).queryByRole('button', { name: '重命名分类：失败后保留' })).toBeNull();
+  selectPromptScope('saved');
+  if (screen.queryByRole('button', { name: '展开目录' })) fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
+  expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
+  expect(mocks.savePromptLibraryTagNames).not.toHaveBeenCalled();
   expect(mocks.updateChain).not.toHaveBeenCalled();
 });
 
-it('真实App组合分类可建子类、按父类浏览、移父后删除空父类且组合内容与片段目录保持原样', async () => {
+it('真实App按角色投影浏览组合文件夹，片段目录与组合内容保持原样', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night garden', filled: true } } }, '2026-10-21')!;
-  const combo = { ...saved, id: 'nested-category-combo', name: '父子分类组合', type: 'preset', tags: ['父类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
+  const parentChar = customCharacter('parent-char', '父类');
+  const childChar = customCharacter('child-char', '子类');
+  const combo = { ...saved, id: 'nested-category-combo', name: '角色分类组合', type: 'preset', tags: ['父类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   const fragment = { ...saved, id: 'nested-category-fragment', name: '片段目录保留', type: 'scene', tags: ['片段标签'], basePrompt: 'night walk', params: { _promptLibraryDirectoryIds: ['environment-scene'] } } as unknown as PromptChain;
-  let records = [combo, fragment];
-  let names = ['父类'];
+  let records = [parentChar, childChar, combo, fragment];
   const originalSnapshot = structuredClone(snapshot), originalFragment = structuredClone(fragment);
-  const recordSnapshot = (chain: PromptChain) => (chain.params as unknown as Record<string, unknown>)._rollContentSnapshot;
   mocks.getAllChains.mockImplementation(async () => records);
   mocks.updateChain.mockImplementation(async (id: string, updates: Partial<PromptChain>) => {
     records = records.map(chain => chain.id === id ? { ...chain, ...updates } : chain);
   });
-  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...names]);
-  mocks.savePromptLibraryTagNames.mockImplementation(async (next: string[]) => { names = [...new Set(next)]; return names; });
 
   await setup('prompts');
   selectPromptScope('items');
@@ -422,85 +363,31 @@ it('真实App组合分类可建子类、按父类浏览、移父后删除空父�
   selectPromptScope('saved');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const categoryNav = screen.getByRole('complementary', { name: '组合分类导航' });
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「父类」' }));
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '新建目录' }));
-  let manager = await screen.findByRole('dialog', { name: '新建目录' });
-  await waitFor(() => expect(within(manager).getByRole('textbox', { name: '新分类名称' }).hasAttribute('disabled')).toBe(false));
-  expect((within(manager).getByRole('combobox', { name: '新分类上级' }) as HTMLSelectElement).value).toBe('父类');
-  fireEvent.change(within(manager).getByRole('textbox', { name: '新分类名称' }), { target: { value: '子类' } });
-  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建目录' })).toBeNull());
-  expect(categoryTree.nodes).toContainEqual({ id: '子类', name: '子类', parentId: '父类' });
-
-  fireEvent.click(await screen.findByRole('button', { name: '查看父子分类组合' }));
-  const detail = await screen.findByLabelText('父子分类组合', { selector: 'aside' });
-  fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
-  fireEvent.change(within(detail).getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '子类' } });
-  fireEvent.click(within(detail).getByRole('button', { name: '保存标签' }));
-  await waitFor(() => expect(records[0].tags).toEqual(['子类']));
-  expect(recordSnapshot(records[0])).toEqual(originalSnapshot);
-  fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
+  expect(within(categoryNav).queryByRole('button', { name: '新建目录' })).toBeNull();
   fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「父类」' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeTruthy();
-
   fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「子类」' }));
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '重命名目录' }));
-  manager = await screen.findByRole('dialog', { name: '编辑目录' });
-  await waitFor(() => expect((within(manager).getByRole('combobox', { name: '上级分类' }) as HTMLSelectElement).disabled).toBe(false));
-  fireEvent.change(within(manager).getByRole('combobox', { name: '上级分类' }), { target: { value: '' } });
-  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(categoryTree.nodes.find(node => node.id === '子类')?.parentId).toBeNull());
-  expect(records[0].tags).toEqual(['子类']);
-  expect(recordSnapshot(records[0])).toEqual(originalSnapshot);
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑目录' })).toBeNull());
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「父类」' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '全部' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeTruthy();
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「父类」' }));
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '删除目录' }));
-  await waitFor(() => expect(categoryTree.nodes.some(node => node.id === '父类')).toBe(false));
-  await waitFor(() => expect((within(categoryNav).getByRole('button', { name: '新建目录' }) as HTMLButtonElement).disabled).toBe(false));
 
   selectPromptScope('items');
   expect(screen.getByRole('button', { name: '场景环境 / 地点与布景' }).getAttribute('aria-current')).toBe('page');
-  expect(document.querySelector('[data-prompt-library-entry="nested-category-fragment"]')).toBeTruthy();
-  expect(records[1]).toEqual(originalFragment);
-  selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '全部' }));
-  expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeTruthy();
-  expect(recordSnapshot(records[0])).toEqual(originalSnapshot);
-  expect(records[0].tags).toEqual(['子类']);
-  expect(mocks.updateChain.mock.calls.map(([id]) => id)).toEqual([combo.id]);
+  expect(records.find(chain => chain.id === fragment.id)).toEqual(originalFragment);
+  expect((records.find(chain => chain.id === combo.id)?.params as any)._rollContentSnapshot).toEqual(originalSnapshot);
+  expect(mocks.saveCategoryTree).not.toHaveBeenCalled();
 });
 
-it('真实主导航拖放只移动组合与片段目录的父级，保留子树和条目内容', async () => {
+it('真实主导航拖放只移动片段目录的父级，保留子树和条目内容', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
-  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night garden', filled: true } } }, '2026-10-21')!;
-  const combo = { ...saved, id: 'drag-combo', name: '拖动组合', type: 'preset', tags: ['子类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   const fragment = { ...saved, id: 'drag-fragment', name: '拖动片段', type: 'scene', tags: ['片段标签'], basePrompt: 'night walk', params: { _promptLibraryDirectoryIds: ['片段子目录'] } } as unknown as PromptChain;
-  const originalCombo = structuredClone(combo), originalFragment = structuredClone(fragment);
-  mocks.getAllChains.mockResolvedValue([combo, fragment]);
-  mocks.getPromptLibraryTagNames.mockResolvedValue(['父类', '子类']);
-  categoryTree = { revision: 5, nodes: [
-    { id: '父类', name: '父类', parentId: null }, { id: '子类', name: '子类', parentId: '父类' }, { id: '孙类', name: '孙类', parentId: '子类' },
-  ] };
+  const originalFragment = structuredClone(fragment);
+  mocks.getAllChains.mockResolvedValue([fragment]);
   directoryTree = { revision: 8, nodes: [
     { id: '片段根目录', name: '片段根目录', parentId: null }, { id: '片段子目录', name: '片段子目录', parentId: '片段根目录' }, { id: '片段孙目录', name: '片段孙目录', parentId: '片段子目录' },
   ] };
 
   await setup('prompts');
-  selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  const categoryNav = screen.getByRole('complementary', { name: '组合分类导航' });
-  await dragDirectoryToRoot(categoryNav, '分类「子类」');
-  await waitFor(() => expect(mocks.saveCategoryTree).toHaveBeenCalledTimes(1));
-  expect(mocks.saveCategoryTree.mock.calls[0][0].nodes).toEqual([
-    { id: '父类', name: '父类', parentId: null }, { id: '子类', name: '子类', parentId: null }, { id: '孙类', name: '孙类', parentId: '子类' },
-  ]);
-  expect(combo.tags).toEqual(originalCombo.tags);
-  expect((combo.params as any)._rollContentSnapshot).toEqual((originalCombo.params as any)._rollContentSnapshot);
-
   selectPromptScope('items');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const fragmentNav = screen.getByRole('complementary', { name: '提示词目录导航' });
@@ -513,30 +400,17 @@ it('真实主导航拖放只移动组合与片段目录的父级，保留子树�
   expect(fragment.tags).toEqual(originalFragment.tags);
   expect(fragment.basePrompt).toBe(originalFragment.basePrompt);
   expect(mocks.updateChain).not.toHaveBeenCalled();
+  expect(mocks.saveCategoryTree).not.toHaveBeenCalled();
 });
 
-it('目录拖放遇到CAS冲突会重新读取真实树，不显示保存成功且不改组合或片段数据', async () => {
+it('片段目录拖放遇到CAS冲突会重新读取真实树，不显示保存成功且不改片段数据', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
-  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'quiet room', filled: true } } }, '2026-10-21')!;
-  const combo = { ...saved, id: 'cas-combo', name: '冲突组合', type: 'preset', tags: ['子类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   const fragment = { ...saved, id: 'cas-fragment', name: '冲突片段', type: 'scene', tags: ['保留标签'], basePrompt: 'quiet room', params: { _promptLibraryDirectoryIds: ['片段子目录'] } } as unknown as PromptChain;
-  mocks.getAllChains.mockResolvedValue([combo, fragment]);
-  mocks.getPromptLibraryTagNames.mockResolvedValue(['子类']);
-  categoryTree = { revision: 4, nodes: [{ id: '子类', name: '子类', parentId: '父类' }, { id: '父类', name: '父类', parentId: null }, { id: '远程组合父类', name: '远程组合父类', parentId: null }] };
+  mocks.getAllChains.mockResolvedValue([fragment]);
   directoryTree = { revision: 6, nodes: [{ id: '片段子目录', name: '片段子目录', parentId: '片段根目录' }, { id: '片段根目录', name: '片段根目录', parentId: null }, { id: '远程片段父目录', name: '远程片段父目录', parentId: null }] };
-  const originalRecords = structuredClone([combo, fragment]);
+  const originalFragment = structuredClone(fragment);
 
   await setup('prompts');
-  selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  mocks.saveCategoryTree.mockRejectedValueOnce(new Error('组合分类树已在其他窗口更新，请读取最新目录后重试'));
-  categoryTree = { revision: 7, nodes: [{ id: '子类', name: '子类', parentId: '远程组合父类' }, { id: '父类', name: '父类', parentId: null }, { id: '远程组合父类', name: '远程组合父类', parentId: null }] };
-  const categoryNav = screen.getByRole('complementary', { name: '组合分类导航' });
-  await dragDirectoryToRoot(categoryNav, '分类「子类」');
-  await waitFor(() => expect(screen.getByText('组合分类树已在其他窗口更新，请读取最新目录后重试', { selector: '[role="status"]' })).toBeTruthy());
-  await waitFor(() => expect(within(categoryNav).getByRole('button', { name: '分类「子类」' }).title).toBe('远程组合父类 / 子类'));
-  expect(document.querySelector('[role="status"][data-type="success"]')).toBeNull();
-
   selectPromptScope('items');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const fragmentNav = screen.getByRole('complementary', { name: '提示词目录导航' });
@@ -546,56 +420,22 @@ it('目录拖放遇到CAS冲突会重新读取真实树，不显示保存成功�
   await waitFor(() => expect(screen.getByText('提示词目录已在其他窗口更新，请读取最新目录后重试', { selector: '[role="status"]' })).toBeTruthy());
   await waitFor(() => expect(within(fragmentNav).getByRole('button', { name: '远程片段父目录 / 片段子目录' })).toBeTruthy());
   expect(document.querySelector('[role="status"][data-type="success"]')).toBeNull();
-  expect(combo.tags).toEqual(originalRecords[0].tags);
-  expect((combo.params as any)._rollContentSnapshot).toEqual((originalRecords[0].params as any)._rollContentSnapshot);
-  expect(fragment.params).toEqual(originalRecords[1].params);
-  expect(fragment.tags).toEqual(originalRecords[1].tags);
-  expect(fragment.basePrompt).toBe(originalRecords[1].basePrompt);
+  expect(fragment.params).toEqual(originalFragment.params);
+  expect(fragment.tags).toEqual(originalFragment.tags);
+  expect(fragment.basePrompt).toBe(originalFragment.basePrompt);
   expect(mocks.updateChain).not.toHaveBeenCalled();
 });
 
-it('共享导航新增目录沿用当前上级，全部视图新增根目录，组合与片段内容归属不变', async () => {
+it('共享导航新增目录沿用当前上级，全部视图新增根目录，片段内容归属不变', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
-  const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'soft rain', filled: true } } }, '2026-10-21')!;
-  const combo = { ...saved, id: 'create-child-combo', name: '新建测试组合', type: 'preset', tags: ['子分类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   const fragment = { ...saved, id: 'create-child-fragment', name: '新建测试片段', type: 'scene', tags: ['片段标签'], basePrompt: 'soft rain street', params: { _promptLibraryDirectoryIds: ['片段子目录'] } } as unknown as PromptChain;
-  const originalRecords = structuredClone([combo, fragment]);
-  mocks.getAllChains.mockResolvedValue([combo, fragment]);
-  let categoryNames = ['父分类', '子分类'];
-  mocks.getPromptLibraryTagNames.mockImplementation(async () => [...categoryNames]);
-  mocks.savePromptLibraryTagNames.mockImplementation(async (next: string[]) => { categoryNames = [...new Set(next)]; return categoryNames; });
-  categoryTree = { revision: 2, nodes: [
-    { id: '父分类', name: '父分类', parentId: null }, { id: '子分类', name: '子分类', parentId: '父分类' },
-  ] };
+  const originalFragment = structuredClone(fragment);
+  mocks.getAllChains.mockResolvedValue([fragment]);
   directoryTree = { revision: 3, nodes: [
     { id: 'fragment-root', name: '片段根目录', parentId: null }, { id: 'fragment-child', name: '片段子目录', parentId: 'fragment-root' },
   ] };
 
   await setup('prompts');
-  selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  const categoryNav = screen.getByRole('complementary', { name: '组合分类导航' });
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「子分类」' }));
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '新建目录' }));
-  let createDialog = await screen.findByRole('dialog', { name: '新建目录' });
-  await waitFor(() => expect((within(createDialog).getByRole('textbox', { name: '新分类名称' }) as HTMLInputElement).disabled).toBe(false));
-  expect((within(createDialog).getByRole('combobox', { name: '新分类上级' }) as HTMLSelectElement).value).toBe('子分类');
-  fireEvent.change(within(createDialog).getByRole('textbox', { name: '新分类名称' }), { target: { value: '孙分类' } });
-  fireEvent.click(within(createDialog).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(categoryTree.nodes).toContainEqual({ id: '孙分类', name: '孙分类', parentId: '子分类' }));
-  expect(combo.tags).toEqual(originalRecords[0].tags);
-  expect((combo.params as any)._rollContentSnapshot).toEqual((originalRecords[0].params as any)._rollContentSnapshot);
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建目录' })).toBeNull());
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '全部' }));
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '新建目录' }));
-  createDialog = await screen.findByRole('dialog', { name: '新建目录' });
-  await waitFor(() => expect((within(createDialog).getByRole('combobox', { name: '新分类上级' }) as HTMLSelectElement).disabled).toBe(false));
-  expect((within(createDialog).getByRole('combobox', { name: '新分类上级' }) as HTMLSelectElement).value).toBe('');
-  fireEvent.change(within(createDialog).getByRole('textbox', { name: '新分类名称' }), { target: { value: '根组合分类' } });
-  fireEvent.click(within(createDialog).getByRole('button', { name: '保存' }));
-  await waitFor(() => expect(categoryTree.nodes).toContainEqual({ id: '根组合分类', name: '根组合分类', parentId: null }));
-  await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建目录' })).toBeNull());
-
   selectPromptScope('items');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const fragmentNav = screen.getByRole('complementary', { name: '提示词目录导航' });
@@ -604,7 +444,6 @@ it('共享导航新增目录沿用当前上级，全部视图新增根目录，�
   let directoryDialog = await screen.findByRole('dialog', { name: '新建目录' });
   expect((within(directoryDialog).getByRole('combobox', { name: '上级目录' }) as HTMLSelectElement).value).toBe('fragment-child');
   fireEvent.change(within(directoryDialog).getByRole('textbox', { name: '名称' }), { target: { value: '片段孙目录' } });
-  expect((within(directoryDialog).getByRole('textbox', { name: '名称' }) as HTMLInputElement).value).toBe('片段孙目录');
   fireEvent.click(within(directoryDialog).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(directoryTree.nodes).toContainEqual(expect.objectContaining({ name: '片段孙目录', parentId: 'fragment-child' })));
   fireEvent.click(within(fragmentNav).getByRole('button', { name: '全部' }));
@@ -615,13 +454,11 @@ it('共享导航新增目录沿用当前上级，全部视图新增根目录，�
   fireEvent.click(within(directoryDialog).getByRole('button', { name: '保存' }));
   await waitFor(() => expect(directoryTree.nodes).toContainEqual(expect.objectContaining({ name: '片段根新目录', parentId: null })));
 
-  expect(categoryTree.nodes.find(node => node.id === '子分类')?.parentId).toBe('父分类');
-  expect(categoryNames).toEqual(['父分类', '子分类', '孙分类', '根组合分类']);
-  expect(fragment.params).toEqual(originalRecords[1].params);
-  expect(fragment.tags).toEqual(originalRecords[1].tags);
-  expect(fragment.basePrompt).toBe(originalRecords[1].basePrompt);
-  expect((combo.params as any)._rollContentSnapshot).toEqual((originalRecords[0].params as any)._rollContentSnapshot);
+  expect(fragment.params).toEqual(originalFragment.params);
+  expect(fragment.tags).toEqual(originalFragment.tags);
+  expect(fragment.basePrompt).toBe(originalFragment.basePrompt);
   expect(mocks.updateChain).not.toHaveBeenCalled();
+  expect(mocks.saveCategoryTree).not.toHaveBeenCalled();
 });
 
 it('主导航标题编辑可改名和上级，删除取消或保存失败时保留目录及片段归属', async () => {
@@ -705,7 +542,7 @@ it('片段目录独立导航保留搜索标签，其他范围不受目录限制�
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
   expect(screen.getByRole('button', { name: '查看夜间组合' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
-  expect(screen.getByRole('button', { name: '夜间' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.queryByRole('button', { name: '夜间' })).toBeNull();
   expect(screen.queryByRole('button', { name: '管理分类' })).toBeNull();
   expect(screen.queryByRole('combobox', { name: '片段用途' })).toBeNull();
   expect(mocks.updateChain).not.toHaveBeenCalled();
@@ -999,7 +836,10 @@ it('旧多人组合编辑先选择角色，所选角色另存新组合不覆盖�
 });
 
 it.each([[' 夜景，常用,夜景 ', ['夜景', '常用']], ['', []]] as const)('新组合保存标签 %s，创建回执可直接用于库页筛选', async (text, tags) => {
-  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene-fragment', name: '夜景片段', type: 'scene', basePrompt: 'night', params: { ...saved.params, _promptLibraryPurposes: ['place'] } }]);
+  mocks.getAllChains.mockResolvedValue([
+    customCharacter('night-char', '夜景'),
+    { ...saved, id: 'scene-fragment', name: '夜景片段', type: 'scene', basePrompt: 'night', params: { ...saved.params, _promptLibraryPurposes: ['place'] } },
+  ]);
   mocks.createChainWithData.mockImplementationOnce(async (name, description, data, type) => ({ ...saved, ...data, id: 'tagged-combination', name, description, type }));
   await setup('prompts');
   selectPromptScope('saved');
@@ -1019,7 +859,7 @@ it.each([[' 夜景，常用,夜景 ', ['夜景', '常用']], ['', []]] as const)
   expect(await screen.findByRole('button', { name: '查看带标签组合' })).toBeTruthy();
   if (tags.length) {
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('button', { name: '夜景' }));
+    fireEvent.click(screen.getByRole('button', { name: '角色 / 夜景' }));
     expect(screen.getByRole('button', { name: '查看带标签组合' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '查看夜景片段' })).toBeNull();
   }
@@ -1052,11 +892,14 @@ it.each([false, true])('编辑已有组合保存时继承标签，另存=%s', as
 it('组合详情只修改标签，保留全部内容与封面并即时进入更新后的标签筛选', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', negative: 'day', filled: true } } }, '2026-10-21')!;
-  const original = { ...saved, id: 'detail-combination', name: '详情标签组合', type: 'preset', tags: ['旧标签'],
+  const newChar = customCharacter('new-char', '新标签');
+  const commonChar = customCharacter('common-char', '常用');
+  let stored = { ...saved, id: 'detail-combination', name: '详情标签组合', type: 'preset', tags: ['旧标签'],
     params: { ...saved.params, seed: 42, _rollContentSnapshot: snapshot }, previewImage: '/api/assets/covers/keep.png' } as unknown as PromptChain;
-  mocks.getAllChains.mockResolvedValue([original]);
-  mocks.updateChain.mockImplementationOnce(async (_id: string, updates: Partial<PromptChain>) => {
-    mocks.getAllChains.mockResolvedValue([{ ...original, ...updates }]);
+  const original = stored;
+  mocks.getAllChains.mockImplementation(async () => [newChar, commonChar, stored]);
+  mocks.updateChain.mockImplementation(async (_id: string, updates: Partial<PromptChain>) => {
+    stored = { ...stored, ...updates };
   });
   await setup('prompts');
   selectPromptScope('saved');
@@ -1065,16 +908,16 @@ it('组合详情只修改标签，保留全部内容与封面并即时进入更�
   fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
   fireEvent.change(within(detail).getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '新标签，常用,新标签' } });
   fireEvent.click(within(detail).getByRole('button', { name: '保存标签' }));
-  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledExactlyOnceWith(original.id, { tags: ['新标签', '常用'] }));
-  await within(detail).findByRole('button', { name: '编辑标签' });
-  expect(within(detail).getByText('新标签')).toBeTruthy();
+  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledWith(original.id, { tags: ['新标签', '常用'] }));
+  await waitFor(() => expect(stored.tags).toEqual(['新标签', '常用']));
   expect(within(detail).getByText('night')).toBeTruthy();
   expect(decodeURIComponent(within(detail).getByRole('img', { name: '详情标签组合' }).getAttribute('src') || '')).toContain('/api/assets/covers/keep.png');
   fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(await screen.findByRole('button', { name: '新标签' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '角色 / 新标签' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: '角色 / 新标签' }));
   expect(screen.getByRole('button', { name: '查看详情标签组合' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '旧标签' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '角色 / 旧标签' })).toBeNull();
   expect(original.params).toEqual(expect.objectContaining({ _rollContentSnapshot: snapshot }));
   expect(original.tags).toEqual(['旧标签']);
   expect(mocks.createChainWithData).not.toHaveBeenCalled();

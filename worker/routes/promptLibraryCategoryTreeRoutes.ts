@@ -1,11 +1,11 @@
-import { emptyPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, readPromptLibraryCategoryTree, removePromptLibraryCategory, renamePromptLibraryCategory, type PromptLibraryCategoryTreeState } from '../../services/promptLibraryCategoryTree';
+import { defaultPromptLibraryCategoryTree, emptyPromptLibraryCategoryTree, normalizeStoredPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, readPromptLibraryCategoryTree, removePromptLibraryCategory, renamePromptLibraryCategory, type PromptLibraryCategoryTreeState } from '../../services/promptLibraryCategoryTree';
 import { getCustomChainTags } from '../../services/chainTags';
 import { isContentRecord } from '../../services/contentRoll';
 import { readPromptLibraryTagNames } from '../../services/promptLibraryTags';
 import type { PromptChain } from '../../types';
 import { error, json, type RouteContext } from './types';
 
-/** 侧存分类父子关系，读取不补写；旧值比较防止多窗口互相覆盖。 */
+/** 侧存分类父子关系，读取不补写；落库只保留根「角色」。旧值比较防止多窗口互相覆盖。 */
 export async function handlePromptLibraryCategoryTreeRoute(context: RouteContext): Promise<Response | null> {
   const { request, path, method, db, currentUser } = context;
   if (path === '/api/prompt-library-category-tree/actions') return handleCategoryAction(context);
@@ -19,12 +19,12 @@ export async function handlePromptLibraryCategoryTreeRoute(context: RouteContext
     row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
     stored = row ? readPromptLibraryCategoryTree(JSON.parse(row.value)) : emptyPromptLibraryCategoryTree();
   } catch { return error('组合分类树无法读取，请保留现有数据并检查备份', 503); }
-  if (method === 'GET') return json(stored, 200, { 'Cache-Control': 'no-store' });
+  if (method === 'GET') return json(stored.nodes.length ? stored : defaultPromptLibraryCategoryTree(stored.revision), 200, { 'Cache-Control': 'no-store' });
   let next: PromptLibraryCategoryTreeState;
   try {
     const text = await request.text();
     if (text.length > 1_000_000) return error('组合分类树资料过大', 413);
-    next = readPromptLibraryCategoryTree(JSON.parse(text));
+    next = normalizeStoredPromptLibraryCategoryTree(readPromptLibraryCategoryTree(JSON.parse(text)));
   } catch (cause) { return error(cause instanceof Error ? cause.message : '组合分类树无效', 400); }
   if (next.revision !== stored.revision || stored.revision === Number.MAX_SAFE_INTEGER) return error('组合分类树已在其他窗口更新，请读取最新目录后重试', 409);
   const saved = { ...next, revision: stored.revision + 1 };
@@ -42,15 +42,15 @@ async function handleCategoryAction({ request, method, db, currentUser }: RouteC
   if (method === 'POST' && (!currentUser?.id || currentUser.role === 'guest')) return error('Forbidden', 403);
   const treeKey = `prompt_library_category_tree_v1:${currentUser.id}`;
   const namesKey = `prompt_library_tags_v1:${currentUser.id}`;
-  type Entry = { id: string; tags: string | null; params: string | null };
+  type Entry = { id: string; tags: string | null; params: string | null; type: string | null; name: string | null };
   let treeRow: { value: string } | null, namesRow: { value: string } | null;
   let tree: PromptLibraryCategoryTreeState, names: string[], entries: Entry[];
-  const parseEntry = (entry: Entry) => ({ id: entry.id, tags: JSON.parse(entry.tags ?? '[]'), params: JSON.parse(entry.params ?? '{}') }) as PromptChain;
+  const parseEntry = (entry: Entry) => ({ id: entry.id, type: entry.type || undefined, name: entry.name || '', tags: JSON.parse(entry.tags ?? '[]'), params: JSON.parse(entry.params ?? '{}') }) as PromptChain;
   try {
     treeRow = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(treeKey).first<{ value: string }>();
     namesRow = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(namesKey).first<{ value: string }>();
     names = namesRow ? readPromptLibraryTagNames(JSON.parse(namesRow.value)) : [];
-    entries = (await db.prepare('SELECT id, tags, params FROM chains WHERE user_id = ?').bind(currentUser.id).all<Entry>()).results;
+    entries = (await db.prepare('SELECT id, tags, params, type, name FROM chains WHERE user_id = ?').bind(currentUser.id).all<Entry>()).results;
     tree = projectPromptLibraryCategoryTree(entries.map(parseEntry), names, treeRow ? readPromptLibraryCategoryTree(JSON.parse(treeRow.value)) : emptyPromptLibraryCategoryTree());
   } catch { return error('组合目录或条目无法读取，请保留现有数据并检查备份', 503); }
   if (method === 'GET') return json({ tree }, 200, { 'Cache-Control': 'no-store' });
@@ -68,11 +68,15 @@ async function handleCategoryAction({ request, method, db, currentUser }: RouteC
   let updates: { entry: Entry; tags: string[] }[] = [];
   try {
     if (!body || !['create', 'update', 'delete', 'memberships'].includes(body.action)) throw Error('组合目录操作无效');
+    if (body.action === 'create' || body.action === 'update' || body.action === 'delete') {
+      throw Error('组合文件夹仅与角色库自定义角色互通，请在角色库新建或改名；目录树只保留「角色」');
+    }
     if (body.action === 'memberships') {
       const validIds = (ids: unknown): ids is string[] => Array.isArray(ids) && ids.length <= 500 && ids.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200);
       if (!validIds(body.itemIds) || !body.itemIds.length || !validIds(body.addDirectoryIds ?? []) || !validIds(body.removeDirectoryIds ?? [])) throw Error('组合归属数据无效（每批最多500项）');
       const add = [...new Set<string>(body.addDirectoryIds ?? [])], remove = [...new Set<string>(body.removeDirectoryIds ?? [])];
-      if (!add.length && !remove.length || [...add, ...remove].some(id => !tree.nodes.some(node => node.id === id)) || add.some(id => remove.includes(id))) throw Error('请选择有效且不重复增减的组合目录');
+      // 新增必须是当前「角色」树中的夹（含自定义角色投影）；移除允许清掉旧自由标签残留。
+      if (!add.length && !remove.length || add.some(id => !tree.nodes.some(node => node.id === id)) || add.some(id => remove.includes(id))) throw Error('请选择有效且不重复增减的组合目录');
       for (const id of new Set<string>(body.itemIds)) {
         const entry = entries.find(item => item.id === id);
         if (!entry) { fail(id, 404, '组合不存在或不属于当前用户'); continue; }

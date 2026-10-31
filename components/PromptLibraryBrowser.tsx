@@ -26,7 +26,7 @@ import { ImageShareOverlay } from './ImageShareActions';
 import { createDefaultPromptLibraryTree, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
 import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection } from './PromptLibraryDirectoryNavigation';
 import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
-import { emptyPromptLibraryCategoryTree, projectPromptLibraryCategoryTree, promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
+import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, projectPromptLibraryCategoryTree, promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
 import { PromptLibraryCategoryNavigation } from './PromptLibraryCategoryNavigation';
 import { usePromptLibraryFavorites } from './usePromptLibraryFavorites';
 
@@ -65,10 +65,6 @@ export interface PromptLibraryBrowserProps extends PromptLibraryReadState {
   onUpdateTags?: (chain: PromptChain, tags: string[]) => Promise<void>;
   categoryNames?: string[];
   categoryTree?: PromptLibraryCategoryTreeState;
-  onRenameCategory?: (id: string) => void;
-  onDeleteCategory?: (id: string) => void;
-  onCreateCategory?: (parentId: string | null) => void;
-  onMoveCategory?: (id: string, parentId: string | null) => void;
   categoriesBusy?: boolean;
   directories?: PromptLibraryTreeState;
   onRenameDirectory?: (id: string) => void;
@@ -97,7 +93,7 @@ export const PromptBrowseHighlight: React.FC<{ text: string; query: string }> = 
 };
 
 /** 汇总只读卡片；详情与管理继续使用原有编辑组件。 */
-export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, onCreateCategory, onRenameCategory, onDeleteCategory, onMoveCategory, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
+export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
   useLanguage();
   const library = usePromptLibrary();
   const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
@@ -137,8 +133,10 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const favoritesSelected = memory.scope === 'saved' ? memory.combinationFavorites : memory.favorites;
   const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
   const combinationChains = useMemo(() => entries.filter(entry => entry.section === 'saved').map(entry => entry.chain), [entries]);
-  const categoryTree = useMemo(() => projectPromptLibraryCategoryTree(combinationChains, categoryNames, suppliedCategoryTree || emptyPromptLibraryCategoryTree()), [combinationChains, categoryNames, suppliedCategoryTree]);
+  const customCharacters = useMemo(() => listPromptLibraryCustomCharacters(chains), [chains]);
+  const categoryTree = useMemo(() => projectPromptLibraryCategoryTree(combinationChains, categoryNames, suppliedCategoryTree || emptyPromptLibraryCategoryTree(), customCharacters), [combinationChains, categoryNames, suppliedCategoryTree, customCharacters]);
   const selectedCategoryIds = useMemo(() => memory.combinationCategory === null ? null : getDirectoryDescendantIds(categoryTree.nodes, memory.combinationCategory), [categoryTree, memory.combinationCategory]);
+  const folderIds = useMemo(() => new Set(categoryTree.nodes.map(node => node.id)), [categoryTree]);
   const categoryLabel = (name: string) => promptLibraryCategoryLabel(categoryTree, name);
   const scopeTotal = useMemo(() => entries.filter(entry => entry.section === memory.scope).length, [entries, memory.scope]);
   const directoryEntries = useMemo(() => memory.scope !== 'items' ? entries : (() => {
@@ -146,9 +144,15 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     const included = new Set((memory.favorites ? fragments.filter(entry => favorites.ids?.has(entry.chain.id)).map(entry => entry.chain) : memory.allDirectories ? fragments.map(entry => entry.chain) : selectPromptLibraryDirectoryEntries(fragments.map(entry => entry.chain), directories, memory.directoryIds)).map(chain => chain.id));
     return entries.filter(entry => entry.section !== 'items' || included.has(entry.chain.id) || !memory.favorites && memory.unclassified && !getPromptLibraryEntryDirectoryIds(entry.chain, directories).length);
   })(), [entries, memory.scope, memory.allDirectories, memory.directoryIds, memory.unclassified, memory.favorites, favorites.ids, directories]);
-  const folderEntries = useMemo(() => memory.scope !== 'saved' ? directoryEntries : directoryEntries.filter(entry => memory.combinationFavorites ? favorites.ids?.has(entry.chain.id) : memory.combinationCategory !== null ? getCustomChainTags(entry.chain.tags).some(tag => selectedCategoryIds?.has(tag)) : !memory.combinationUnclassified || !getCustomChainTags(entry.chain.tags).length), [directoryEntries, memory.scope, memory.combinationCategory, memory.combinationUnclassified, memory.combinationFavorites, favorites.ids, selectedCategoryIds]);
+  const folderEntries = useMemo(() => memory.scope !== 'saved' ? directoryEntries : directoryEntries.filter(entry => {
+    if (memory.combinationFavorites) return favorites.ids?.has(entry.chain.id);
+    const tags = getCustomChainTags(entry.chain.tags);
+    if (memory.combinationCategory !== null) return tags.some(tag => selectedCategoryIds?.has(tag));
+    if (!memory.combinationUnclassified) return true;
+    return !tags.some(tag => folderIds.has(tag));
+  }), [directoryEntries, memory.scope, memory.combinationCategory, memory.combinationUnclassified, memory.combinationFavorites, favorites.ids, selectedCategoryIds, folderIds]);
   const shown = useMemo(() => filterPromptBrowseEntries(folderEntries, { ...memory, kind: '', query, tags: memory.scope === 'saved' ? tags : [], purposes: memory.scope === 'items' ? tags : [] }), [folderEntries, memory, query, tags]);
-  const combinationTags = useMemo(() => promptLibraryCategoryNames(chains, [...categoryNames, ...categoryTree.nodes.map(node => node.name)]), [chains, categoryNames, categoryTree]);
+  const combinationTags = useMemo(() => categoryTree.nodes.map(node => node.name), [categoryTree]);
   const selected = entries.find(entry => entry.chain.id === selectedId);
   const selectedRead = selected?.section === 'saved' ? contentRead((selected.chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot) : null;
   const finishClose = () => { selectionAnchor.preserveOnClose(); setSelectedId(''); };
@@ -281,7 +285,7 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [!shown.length && countsPending || favoritesSelected && favorites.status !== 'ready' ? '—' : shown.length, !scopeTotal && countsPending ? '—' : scopeTotal])}</ToolbarCountCaption>
   </>;
   return <>{toolbarSlot && createPortal(toolbar, toolbarSlot)}<div data-workspace-body className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row" style={{ '--workspace-chrome-height': '0px' } as React.CSSProperties}>
-    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} onRename={onRenameCategory} onDelete={onDeleteCategory} onCreate={onCreateCategory} onMove={onMoveCategory} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
+    {directoryScope ? <PromptLibraryDirectoryNavigation id={navigationId} state={directories} entries={libraryChains} countsPending={countsPending} selectedIds={memory.directoryIds} allSelected={memory.allDirectories} unclassified={memory.unclassified} favorites={memory.favorites} favoriteIds={favorites.ids} onSelect={updateDirectoryMemory} expanded={directoriesExpanded} onRename={onRenameDirectory} onDelete={onDeleteDirectory} onCreate={onCreateDirectory} onMove={onMoveDirectory} disabled={directoriesBusy} /> : <PromptLibraryCategoryNavigation id={navigationId} chains={combinationChains} customCharacters={customCharacters} countsPending={countsPending} names={categoryNames} tree={categoryTree} selected={memory.combinationCategory} unclassified={memory.combinationUnclassified} favorites={memory.combinationFavorites} favoriteIds={favorites.ids} expanded={categoriesExpanded} disabled={categoriesBusy} onSelect={selection => updateMemory({ ...memory, combinationCategory: selection.category, combinationUnclassified: selection.unclassified, combinationFavorites: selection.favorites === true })} />}
     <div className={`aitag-split relative grid min-h-0 min-w-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
     <div ref={scrollRef} onScroll={event => {
       selectionAnchor.onScroll();

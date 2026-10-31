@@ -125,11 +125,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   const create = async args => {
     const snapshot = await load(args.scope), id = randomUUID();
     if (args.target !== undefined && args.scope !== 'prompts') throw new Error('只有提示词目录支持 target');
-    if (args.scope === 'combinations') {
-      if (snapshot.nodes.some(value => value.id === args.name?.trim())) throw new Error('同名组合分类已存在');
-      const result = await requestJson(snapshot.spec.endpoint, { method: 'POST', body: { action: 'create', name: args.name, ...(args.parentId !== undefined ? { parentId: args.parentId } : {}) } });
-      return receipt({ ...result, scope: args.scope, id: args.name?.trim(), operation: 'create' });
-    }
+    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库新建角色；目录树只保留「角色」');
     const value = { id, name: typeof args.name === 'string' ? args.name.trim() : '', parentId: args.parentId ?? null, ...(args.target !== undefined ? { target: args.target } : {}) };
     validateNodes(args.scope, [...snapshot.nodes, value]);
     const result = args.scope === 'inspirations'
@@ -140,11 +136,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   const update = async args => {
     const snapshot = await load(args.scope); node(snapshot, args.id);
     if (args.target !== undefined && args.scope !== 'prompts') throw new Error('只有提示词目录支持 target');
-    if (args.scope === 'combinations') {
-      if (args.name !== undefined && args.name.trim() !== args.id && snapshot.nodes.some(value => value.id === args.name.trim())) throw new Error('同名组合分类已存在，不能通过改名静默合并');
-      const result = await requestJson(snapshot.spec.endpoint, { method: 'POST', body: { action: 'update', id: args.id, ...(args.name !== undefined ? { name: args.name } : {}), ...(args.parentId !== undefined ? { parentId: args.parentId } : {}) } });
-      return receipt({ ...result, scope: args.scope, id: args.name?.trim() ?? args.id, operation: 'update' });
-    }
+    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库改名；目录树只保留「角色」');
     const patch = {};
     if (args.name !== undefined) patch.name = typeof args.name === 'string' ? args.name.trim() : '';
     if (args.parentId !== undefined) patch.parentId = args.parentId;
@@ -187,10 +179,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   // 调用方必须先取得删除授权；这里只执行目录删除，绝不删除成员资料。
   const remove = async args => {
     const snapshot = await load(args.scope), current = node(snapshot, args.id);
-    if (args.scope === 'combinations') {
-      const result = await requestJson(snapshot.spec.endpoint, { method: 'POST', body: { action: 'delete', id: args.id } });
-      return receipt({ ...result, scope: args.scope, id: args.id, operation: 'delete', membersDeleted: false });
-    }
+    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库删除角色；目录树只保留「角色」');
     if (args.scope === 'inspirations') await requestJson(`${snapshot.spec.endpoint}/${pathOf(args.id)}`, { method: 'DELETE' });
     else if (args.scope === 'prompts') await save(args.scope, snapshot, removePromptLibraryDirectory(snapshot.state, args.id).nodes);
     else {
