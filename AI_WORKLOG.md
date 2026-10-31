@@ -5,6 +5,9 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-10-31
+- **Cursor (Composer)**：权重类型缩小圆角改只作用于 `.appearance-segmented.flex.h-8`，避免误伤实验室模式／分区 Tab 圆角。
+- **Cursor (Composer)**：权重类型分段补垂直居中——子钮改 inline-flex／leading-none，并覆盖 filled 主题写死的 34px 高度，避免矮工具栏内文字被裁切。
+- **Cursor (Composer)**：修复权重类型「括号／数值」分段被主题大圆角叠住的问题（小圆角＋间距，并限制 segmented 子按钮圆角）。
 - **Cursor (Composer)**：噪声调度列宽按内容重排（步数收窄），文案由「噪声日程」改为「噪声调度」并同步四语词条与相关说明。
 - **Cursor (Composer)**：实验室接上噪声调度可选项（默认 karras；payload／导入括号解析／参数详情／助手 set_generation_params）；旧资料不迁移；同步决策、CHANGELOG、四语词条与定向测试。
 - **Cursor (Composer)**：提示词库默认树「画风配方」去掉预设子目录（整段正负一体、生图参数归风格串，防细项随机拼鬼图）；保留用户自行细分；同步 README／决策／测试。

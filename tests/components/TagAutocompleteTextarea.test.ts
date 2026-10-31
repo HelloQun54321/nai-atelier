@@ -1370,6 +1370,14 @@ describe('TagAutocompleteTextarea 多选 Tag 权重操作', () => {
     const brackets = within(types).getByRole('button', { name: '括号' });
     const numeric = within(types).getByRole('button', { name: '数值' });
     expect(within(types).getAllByRole('button')).toHaveLength(2);
+    // 分段钮用小圆角与间距，避免主题大圆角把选中胶囊叠到相邻项上；文字在胶囊内垂直居中。
+    expect(types.className).toMatch(/\bgap-0\.5\b/);
+    expect(brackets.className).toMatch(/\brounded-sm\b/);
+    expect(numeric.className).toMatch(/\brounded-sm\b/);
+    expect(brackets.className).toMatch(/\bitems-center\b/);
+    expect(numeric.className).toMatch(/\bitems-center\b/);
+    expect(brackets.className).not.toMatch(/\bappearance-group\b/);
+    expect(numeric.className).not.toMatch(/\bappearance-group\b/);
     expect(brackets.getAttribute('aria-pressed')).toBe('true');
     expect(numeric.getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByLabelText('权重倍率').textContent).toBe('1.1025');

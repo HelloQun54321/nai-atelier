@@ -17,6 +17,15 @@ html[data-theme-details='true'] :is(button, label, legend, summary, select):wher
 html[data-theme-details='true'] :is(.settings-content, .chain-editor-main) :where(.text-xs.font-bold, .text-xs.font-semibold) { font-size: .8125rem; }
 html[data-theme-details='true'] .lucide { stroke-width: var(--nai-icon-stroke, revert-layer); }
 html[data-theme-details='true'] button:where(.rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl) { border-radius: var(--workspace-control-radius); }
+/* 仅矮工具栏分段（如权重类型）缩小选项圆角并吃满高度；模式／分区 Tab 仍用主题控件圆角，避免被一并压扁。 */
+html[data-theme-details='true'] .appearance-segmented.flex.h-8 > button {
+  border-radius: max(0.25rem, calc(var(--workspace-control-radius) * 0.35));
+}
+html[data-control-style='filled'] .appearance-segmented.flex.h-8 > button {
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+}
 html[data-theme-details='true'] [data-appearance='control'] {
   border-radius: var(--workspace-control-radius);
   height: var(--nai-control-height, revert-layer);
@@ -344,6 +353,7 @@ html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) {
 html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) > button {
   border: 0; background: transparent; color: var(--color-gray-500); box-shadow: none;
   min-height: 0; height: var(--nai-control-height, 34px); font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) > button:is([aria-selected='true'], [aria-pressed='true'], [aria-current]) {
   color: var(--color-gray-900); background: var(--nai-control-surface);

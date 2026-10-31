@@ -1041,18 +1041,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             </div> : <>
             <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
-              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 items-stretch overflow-hidden rounded-md bg-gray-100 px-0.5 ring-1 ring-inset ring-gray-300 max-md:h-11 dark:bg-gray-800 dark:ring-gray-600">
+              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex h-8 shrink-0 items-stretch gap-0.5 overflow-hidden rounded-md bg-gray-100 p-0.5 ring-1 ring-inset ring-gray-300 max-md:h-11 dark:bg-gray-800 dark:ring-gray-600">
               <button
                 type="button"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
-                className={`appearance-group mobile-touch h-full rounded px-1.5 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("括号")}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
-                className={`appearance-group mobile-touch h-full rounded px-1.5 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`mobile-touch inline-flex h-full shrink-0 items-center justify-center rounded-sm px-2.5 text-meta font-bold leading-none transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
               </div>
               <button
