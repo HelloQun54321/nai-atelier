@@ -19,7 +19,7 @@ export function useCollectorAppearance(preferences: AppearancePreferences, isDar
   const { themeMode, accentColor, motion, palette, surfaces, corners, details, activePresetId, workspaceBackgrounds, background } = preferences;
   useEffect(() => {
     if (!collectorIsLocal(window.location.hostname)) return;
-    const backgrounds = Object.fromEntries((['light', 'dark'] as const).map(mode => [mode, resolveWorkspaceBackground(workspaceBackgrounds, activePresetId || 'builtin-default', mode, background) ?? null]));
+    const backgrounds = Object.fromEntries((['light', 'dark'] as const).map(mode => [mode, resolveWorkspaceBackground(workspaceBackgrounds, activePresetId || 'builtin-cupertino-liquid-glass', mode, background) ?? null]));
     const appearance = { themeMode, accentColor, motion, isDark, language, surfaces, corners,
       ...(Object.values(backgrounds).some(Boolean) ? { backgrounds } : {}),
       accents: { light: details?.light?.accentColor || accentColor, dark: details?.dark?.accentColor || accentColor }, ...(palette || surfaces === 'translucent' ? { palette: { light: resolveThemePalette(palette, false), dark: resolveThemePalette(palette, true) } } : {}),

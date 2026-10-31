@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
+import cupertinoThemeFile from '../public/themes/cupertino-liquid-glass.json';
 import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalettes } from './themePalette';
 import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
-import { validateAppearancePreset } from './appearancePresets';
+import { appearanceValues, validateAppearancePreset } from './appearancePresets';
 import { applyThemeBackground, normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, type ThemeBackground, type WorkspaceBackgrounds } from './themeBackground';
 export { APPEARANCE_FORMAT_VERSION, appearanceValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
 
@@ -100,6 +101,7 @@ export interface AppearancePreset {
   background?: ThemeBackground;
 }
 
+/** 经典实色内置主题（石墨炭黑／晴空蓝）；出厂默认已改为液态玻璃深色，本项仍可选。 */
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   id: 'builtin-default',
   name: 'NAI Atelier 默认',
@@ -116,6 +118,17 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   galleryHoverFloat: true,
   gallerySelectionFocus: true,
 };
+
+/** 出厂默认选用的内置主题 ID（Cupertino Liquid Glass 深色）。 */
+export const DEFAULT_ACTIVE_APPEARANCE_PRESET_ID = 'builtin-cupertino-liquid-glass';
+
+/** 出厂视觉参数与公开 Cupertino JSON 共用，避免默认与内置预设分叉。 */
+const factoryVisuals = appearanceValues({
+  id: 'factory',
+  name: 'factory',
+  createdAt: 0,
+  ...(cupertinoThemeFile.presets[0] as Omit<AppearancePreset, 'id' | 'name' | 'createdAt'>),
+});
 
 export interface AppearancePreferences {
   designTheme: DesignTheme;
@@ -162,18 +175,10 @@ export interface AppearancePreferences {
 
 const STORAGE_KEY = 'nai_appearance_preferences';
 const LEGACY_THEME_KEY = 'nai_theme';
+/** 新安装出厂外观：Cupertino Liquid Glass 深色；已有本端保存的外观不被覆盖。 */
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   designTheme: 'nai-atelier',
-  themeMode: 'system',
-  accentColor: '#0ea5e9',
-  density: 'standard',
-  corners: 'standard',
-  surfaces: 'solid',
-  motion: 'full',
-  fontScale: 'standard',
-  galleryFrostedCaption: true,
-  galleryHoverFloat: true,
-  gallerySelectionFocus: true,
+  ...factoryVisuals,
   tagAssistEnabled: true,
   promptInputAutoHeight: true,
   labSectionedPrompt: false,
@@ -186,7 +191,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   enforceFreeStepLimit: true,
   labPageLayouts: cloneDefaultLabPageLayouts(),
   customPresets: [],
-  activePresetId: 'builtin-default',
+  activePresetId: DEFAULT_ACTIVE_APPEARANCE_PRESET_ID,
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
@@ -210,7 +215,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
   const input = value && typeof value === 'object' ? value as Partial<AppearancePreferences> & { labModuleCollapsed?: unknown } : {};
   const workspaceBackgrounds = normalizeWorkspaceBackgrounds(input.workspaceBackgrounds);
   const legacyBackground = normalizeThemeBackground(input.background);
-  const backgroundPresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim() || 'builtin-default';
+  const backgroundPresetId = typeof input.activePresetId === 'string' && input.activePresetId.trim() || DEFAULT_ACTIVE_APPEARANCE_PRESET_ID;
   if (legacyBackground && !Object.hasOwn(workspaceBackgrounds, backgroundPresetId)) workspaceBackgrounds[backgroundPresetId] = { light: legacyBackground, dark: legacyBackground };
   const persistedPageLayouts = input.labPageLayouts && typeof input.labPageLayouts === 'object'
     ? input.labPageLayouts as Partial<Record<LabPageId, unknown>>
@@ -284,7 +289,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
       : [],
     activePresetId: typeof input.activePresetId === 'string' && input.activePresetId.trim()
       ? input.activePresetId.trim()
-      : 'builtin-default',
+      : DEFAULT_ACTIVE_APPEARANCE_PRESET_ID,
   };
 };
 
@@ -300,11 +305,17 @@ export const loadAppearancePreferences = (): AppearancePreferences => {
   } catch {
     // 损坏或禁止读取的本地存储直接回退，初始化在错误边界挂载前也不能阻断启动。
   }
-  const preferences = normalizeAppearancePreferences(stored);
-  if (!hasStoredPreferences && isOneOf(legacyTheme, ['light', 'dark', 'system'])) {
-    preferences.themeMode = legacyTheme;
+  // 新安装直接使用出厂默认（含液态玻璃配色）；已有本端记录只规范化字段，不回填新默认配色。
+  if (!hasStoredPreferences) {
+    const preferences = {
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      labPageLayouts: cloneDefaultLabPageLayouts(),
+      generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
+    };
+    if (isOneOf(legacyTheme, ['light', 'dark', 'system'])) preferences.themeMode = legacyTheme;
+    return preferences;
   }
-  return preferences;
+  return normalizeAppearancePreferences(stored);
 };
 
 export const saveAppearancePreferences = (preferences: AppearancePreferences) => {
@@ -343,7 +354,7 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.style.setProperty('--nai-accent', accent);
   applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', accent);
   applyThemeDetails(root, preferences.details, preferences);
-  applyThemeBackground(root, resolveWorkspaceBackground(preferences.workspaceBackgrounds, preferences.activePresetId || 'builtin-default', isDark ? 'dark' : 'light', preferences.background));
+  applyThemeBackground(root, resolveWorkspaceBackground(preferences.workspaceBackgrounds, preferences.activePresetId || DEFAULT_ACTIVE_APPEARANCE_PRESET_ID, isDark ? 'dark' : 'light', preferences.background));
   root.style.colorScheme = isDark ? 'dark' : 'light';
 };
 

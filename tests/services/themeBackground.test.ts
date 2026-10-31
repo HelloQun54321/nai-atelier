@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyAppearancePreferences, appearanceMatchesPreset, BUILTIN_APPEARANCE_PRESET, DEFAULT_APPEARANCE_PREFERENCES, loadAppearancePreferences, readAppearancePresetImport, saveAppearancePreferences, serializeAppearancePresets } from '../../services/appearancePreferences';
+import { applyAppearancePreferences, appearanceMatchesPreset, appearanceValues, BUILTIN_APPEARANCE_PRESET, DEFAULT_APPEARANCE_PREFERENCES, loadAppearancePreferences, readAppearancePresetImport, saveAppearancePreferences, serializeAppearancePresets } from '../../services/appearancePreferences';
 import { normalizeThemeBackground, normalizeWorkspaceBackgrounds, resolveWorkspaceBackground, prepareThemeBackground, themeBackgroundStyle } from '../../services/themeBackground';
 
 const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
@@ -19,7 +19,7 @@ describe('自定义工作区背景', () => {
       const applied = document.documentElement.style.getPropertyValue('--nai-background-image');
       expect(applied).toContain(image); expect(Number(applied.match(/([\d.]+)%/)![1])).toBeCloseTo(isDark ? 10 : 30);
     }
-    expect(appearanceMatchesPreset({ ...reloaded, activePresetId: 'builtin-default' }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+    expect(appearanceMatchesPreset(reloaded, { ...BUILTIN_APPEARANCE_PRESET, ...appearanceValues(DEFAULT_APPEARANCE_PREFERENCES) })).toBe(true);
     expect(serializeAppearancePresets([{ ...BUILTIN_APPEARANCE_PRESET, ...reloaded }])).not.toContain('workspaceBackgrounds');
   });
   it('旧单背景沿用到当前预设的两个版本，显式移除优先于旧背景和配套壁纸', () => {
@@ -54,9 +54,12 @@ describe('自定义工作区背景', () => {
       expect(document.documentElement.style.getPropertyValue('--nai-background-size')).toBe('auto, 256px auto');
       expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toContain(image);
     }
-    applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
+    applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' }, true);
     expect(document.documentElement.dataset.themeBackground).toBe('false');
     expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toBe('');
+    applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
+    expect(document.documentElement.dataset.themeBackground).toBe('true');
+    expect(document.documentElement.style.getPropertyValue('--nai-background-image')).toContain('cupertino-night.webp');
     expect(readAppearancePresetImport('{"name":"旧主题"}')[0].background).toBeUndefined();
   });
   it('背景不接受外链、SVG、任意 CSS、过大图片或非法显示参数', () => {

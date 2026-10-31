@@ -4,7 +4,7 @@
     {
       "name": "Cupertino Liquid Glass",
       "accentColor": "#007aff",
-      "themeMode": "system",
+      "themeMode": "dark",
       "density": "standard",
       "corners": "soft",
       "surfaces": "translucent",

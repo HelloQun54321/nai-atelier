@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage, setLanguage, LANGUAGES, type Language } from '../services/i18n';
-import { BUILTIN_APPEARANCE_PRESETS } from '../services/builtinAppearancePresets';
+import { BUILTIN_APPEARANCE_PRESETS, DEFAULT_ACTIVE_APPEARANCE_PRESET } from '../services/builtinAppearancePresets';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
@@ -567,12 +567,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
 
   const resetThemeCustomization = () => {
-    applyPreset(BUILTIN_APPEARANCE_PRESET);
+    applyPreset(DEFAULT_ACTIVE_APPEARANCE_PRESET);
   };
 
   const customPresets = appearancePreferences.customPresets || [];
   const allPresets: AppearancePreset[] = [...BUILTIN_APPEARANCE_PRESETS, ...customPresets];
-  const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
+  const activePresetId = appearancePreferences.activePresetId || DEFAULT_ACTIVE_APPEARANCE_PRESET.id;
   const activePreset = allPresets.find(preset => preset.id === activePresetId);
   const appearanceModified = !activePreset || !appearanceMatchesPreset(appearancePreferences, activePreset);
 
@@ -619,7 +619,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       tone: 'danger',
     });
     if (confirmed) {
-      if (!await themeLibrary.change(() => sharedAppearancePresets.remove(preset.id), current => current.activePresetId === preset.id ? { ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' } : {})) return;
+      if (!await themeLibrary.change(() => sharedAppearancePresets.remove(preset.id), current => current.activePresetId === preset.id ? { ...appearanceValues(DEFAULT_ACTIVE_APPEARANCE_PRESET), activePresetId: DEFAULT_ACTIVE_APPEARANCE_PRESET.id } : {})) return;
       notify?.('已删除外观预设「' + preset.name + '」', 'success');
     }
   };
@@ -937,7 +937,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                   )}
                                 </div>
                                 <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                  {preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("默认出厂外观配置（石墨炭黑 / 晴空蓝）。") : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
+                                  {preset.id === DEFAULT_ACTIVE_APPEARANCE_PRESET.id ? t("当前出厂默认：液态玻璃深色。")
+                                    : preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("经典实色外观（石墨炭黑 / 晴空蓝）。")
+                                    : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
                                 </span>
                                 <span className="mt-1 block text-micro font-semibold text-indigo-600 dark:text-indigo-300">
                                   {isSelected ? t("当前使用（{0}）", [isDark ? t('深色版本') : t('浅色版本')]) : t("强调色：{0}", [presetAccent])}
@@ -1044,7 +1046,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 }} />
                 <AppearancePaletteEditor palette={appearancePreferences.palette} onChange={palette => updateAppearance({ palette })} />
                 <AppearanceDetailEditor details={appearancePreferences.details} onChange={details => updateAppearance({ details, ...(details?.material && details.material !== appearancePreferences.details?.material ? { surfaces: 'translucent' } : {}) })} />
-                <button type="button" onClick={resetThemeCustomization} className="appearance-group mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>
+                <button type="button" onClick={resetThemeCustomization} className="appearance-group mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复出厂默认外观")}</button>
               </div>
             </div>}
           </section>

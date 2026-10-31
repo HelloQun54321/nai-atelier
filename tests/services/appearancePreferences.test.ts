@@ -5,6 +5,7 @@ import {
   DEFAULT_GENERATION_MEMORY_PREFERENCES,
   DEFAULT_LAB_MODULE_COLLAPSED,
   DEFAULT_LAB_PAGE_LAYOUTS,
+  cloneDefaultLabPageLayouts,
   loadAppearancePreferences,
   normalizeAppearancePreferences,
   parseAppearancePresetsFromJson,
@@ -16,6 +17,7 @@ import {
   readAppearancePresetImport,
   serializeAppearancePresets,
 } from '../../services/appearancePreferences';
+import { CUPERTINO_LIQUID_GLASS_PRESET } from '../../services/builtinAppearancePresets';
 
 const localStorageValues = new Map<string, string>();
 beforeEach(() => {
@@ -75,7 +77,7 @@ describe('appearance preferences', () => {
       .not.toHaveProperty('promptInputAutoHeight');
     expect(validateAppearancePreset({ name: '主题', promptTranslationAutoHeight: true }))
       .not.toHaveProperty('promptTranslationAutoHeight');
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, promptInputAutoHeight: false }, CUPERTINO_LIQUID_GLASS_PRESET)).toBe(true);
   });
 
   it('读取旧实验室分类偏好时忽略，保存新偏好时不再写回', () => {
@@ -182,8 +184,9 @@ describe('appearance preferences', () => {
           },
         },
       },
+      labSectionedPrompt: false,
       customPresets: [],
-      activePresetId: 'builtin-default',
+      activePresetId: 'builtin-cupertino-liquid-glass',
     });
   });
 
@@ -201,7 +204,29 @@ describe('appearance preferences', () => {
       generationStreamPreview: 'sometimes',
       labModuleOrder: 'anything',
       labModuleCollapsed: null,
-    })).toEqual(DEFAULT_APPEARANCE_PREFERENCES);
+    })).toMatchObject({
+      designTheme: DEFAULT_APPEARANCE_PREFERENCES.designTheme,
+      themeMode: DEFAULT_APPEARANCE_PREFERENCES.themeMode,
+      accentColor: DEFAULT_APPEARANCE_PREFERENCES.accentColor,
+      density: DEFAULT_APPEARANCE_PREFERENCES.density,
+      corners: DEFAULT_APPEARANCE_PREFERENCES.corners,
+      surfaces: DEFAULT_APPEARANCE_PREFERENCES.surfaces,
+      motion: DEFAULT_APPEARANCE_PREFERENCES.motion,
+      fontScale: DEFAULT_APPEARANCE_PREFERENCES.fontScale,
+      activePresetId: DEFAULT_APPEARANCE_PREFERENCES.activePresetId,
+    });
+  });
+
+  it('无本地记录时直接使用出厂液态玻璃深色，不改写已有本端外观', () => {
+    expect(loadAppearancePreferences()).toEqual({
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      labPageLayouts: cloneDefaultLabPageLayouts(),
+      generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
+    });
+    saveAppearancePreferences({ ...BUILTIN_APPEARANCE_PRESET, designTheme: 'nai-atelier', tagAssistEnabled: true, promptInputAutoHeight: true, labSectionedPrompt: false, promptTranslationAutoHeight: true, generationStreamPreview: false, rememberGenerationSettings: true, generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES }, continuousGenerationEnabled: true, forceEmptySeed: false, enforceFreeStepLimit: true, labPageLayouts: cloneDefaultLabPageLayouts(), customPresets: [], activePresetId: 'builtin-default' });
+    expect(loadAppearancePreferences().activePresetId).toBe('builtin-default');
+    expect(loadAppearancePreferences().surfaces).toBe('solid');
+    expect(loadAppearancePreferences().palette).toBeUndefined();
   });
 
   it('忽略旧排序并保留有效的旧默认展开偏好，保存后不再写回排序', () => {
@@ -334,11 +359,12 @@ describe('appearance preferences', () => {
   });
 
   it('修改外观才标为修改，非外观偏好不影响主题身份，配色键顺序不影响比较', () => {
-    expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, BUILTIN_APPEARANCE_PRESET)).toBe(true);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, forceEmptySeed: true }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, BUILTIN_APPEARANCE_PRESET)).toBe(false);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light' }, BUILTIN_APPEARANCE_PRESET)).toBe(false);
-    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, palette: { light: { panel: '#ffffff', text: '#112233' } } }, { ...BUILTIN_APPEARANCE_PRESET, palette: { light: { text: '#112233', panel: '#ffffff' } } })).toBe(true);
+    const factory = { ...BUILTIN_APPEARANCE_PRESET, ...appearanceValues(DEFAULT_APPEARANCE_PREFERENCES), id: 'builtin-cupertino-liquid-glass', name: 'Cupertino Liquid Glass' };
+    expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, factory)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, forceEmptySeed: true }, factory)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, factory)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light' }, factory)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, palette: { light: { panel: '#ffffff', text: '#112233' } } }, { ...factory, palette: { light: { text: '#112233', panel: '#ffffff' } } })).toBe(true);
   });
 
   it('旧格式兼容；未知版本、无效选项和未支持的美化字段明确拒绝', () => {

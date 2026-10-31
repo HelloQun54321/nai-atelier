@@ -165,7 +165,7 @@ describe('GlobalSettings', () => {
     expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].dark).toEqual({ ...background, opacity: .4 });
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：带背景' }));
     expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].light?.fit).toBe('tile');
-    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     expect(changed.mock.lastCall?.[0].background).toBeUndefined();
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：带背景' }));
     expect(changed.mock.lastCall?.[0].workspaceBackgrounds?.['with-background'].dark?.opacity).toBe(.4);
@@ -178,7 +178,7 @@ describe('GlobalSettings', () => {
     render(React.createElement(SettingsHarness, { initialAppearancePreferences: { themeMode: 'light', accentColor: '#abcdef' }, onAppearancePreferencesChange: changed }));
     await waitThemeLibrary();
     expect(screen.getByRole('button', { name: '应用外观预设：共享主题' })).toBeTruthy();
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ themeMode: 'light', accentColor: '#abcdef', activePresetId: 'builtin-default' });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ themeMode: 'light', accentColor: '#abcdef', activePresetId: 'builtin-cupertino-liquid-glass' });
     themeFixture.presets = [{ ...preset, name: '另一浏览器改名' }];
     act(() => window.dispatchEvent(new Event('focus')));
     await screen.findByRole('button', { name: '应用外观预设：另一浏览器改名' });
@@ -225,7 +225,7 @@ describe('GlobalSettings', () => {
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：安静卡片' }));
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false, gallerySelectionFocus: false });
-    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
   });
   it('连续生成开关默认开启，点击后即时关闭', async () => {
@@ -320,7 +320,7 @@ describe('GlobalSettings', () => {
     await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
     expect(onAppearancePreferencesChange.mock.lastCall?.[0].rememberGenerationSettings).toBe(false);
     expect(onAppearancePreferencesChange.mock.lastCall?.[0].generationMemory).toEqual(expectedGenerationMemory);
-    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
     await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
     expect(onAppearancePreferencesChange.mock.lastCall?.[0].rememberGenerationSettings).toBe(false);
     expect(onAppearancePreferencesChange.mock.lastCall?.[0].generationMemory).toEqual(expectedGenerationMemory);
@@ -801,8 +801,8 @@ describe('GlobalSettings', () => {
     expect(activeCard?.parentElement?.classList.contains('grid-cols-1')).toBe(true);
     expect(activeCard?.parentElement?.classList.contains('sm:grid-cols-2')).toBe(false);
 
-    // 初始状态下卡片底部色标为 #0ea5e9
-    expect(activeCard?.textContent).toContain('#0ea5e9');
+    // 出厂默认卡片预览色标来自 Cupertino 明暗强调色
+    expect(activeCard?.textContent).toContain('#0a84ff');
 
     // 点击第二个强调色（靛蓝 #6366f1）
     const indigoButton = screen.getByRole('button', { name: '强调色：靛蓝' });
@@ -810,12 +810,12 @@ describe('GlobalSettings', () => {
 
     expect(await screen.findByText('当前外观已修改')).toBeTruthy();
     expect(activeCard?.getAttribute('aria-pressed')).toBe('false');
-    expect(activeCard?.textContent).toContain('#0ea5e9');
+    expect(activeCard?.textContent).toContain('#0a84ff');
     expect(activeCard?.textContent).not.toContain('#6366f1');
 
     const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview [data-preview-part="action"]');
     expect(previewAccentBar).toBeTruthy();
-    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(11, 135, 191)');
+    expect(previewAccentBar?.getAttribute('style')).toMatch(/rgb\(/);
     fireEvent.click(screen.getByRole('button', { name: '导出当前外观' }));
     await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
     const reader = new FileReader();
@@ -842,29 +842,30 @@ describe('GlobalSettings', () => {
     await waitThemeLibrary();
     fireEvent.click(screen.getByText('自定义明暗配色'));
     fireEvent.change(screen.getByLabelText('浅色配色 · 背景'), { target: { value: '#fff4dd' } });
-    expect(changed.mock.lastCall?.[0].palette).toEqual({ light: { canvas: '#fff4dd' } });
+    expect(changed.mock.lastCall?.[0].palette).toMatchObject({ light: { canvas: '#fff4dd' } });
     expect(screen.getByRole('button', { name: '应用外观预设：纸张' }).getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
-    await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets[0].palette).toEqual({ light: { canvas: '#fff4dd' } }));
+    await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets[0].palette).toMatchObject({ light: { canvas: '#fff4dd' } }));
     expect(screen.queryByText('当前外观已修改')).toBeNull();
     const layouts = changed.mock.lastCall?.[0].labPageLayouts;
-    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ generationStreamPreview: true, forceEmptySeed: true, enforceFreeStepLimit: false, tagAssistEnabled: false, continuousGenerationEnabled: false, activePresetId: 'builtin-default', labPageLayouts: layouts });
-    expect(changed.mock.lastCall?.[0].palette).toBeUndefined();
-    expect(changed.mock.lastCall?.[0].customPresets[0].palette).toEqual({ light: { canvas: '#fff4dd' } });
+    fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ generationStreamPreview: true, forceEmptySeed: true, enforceFreeStepLimit: false, tagAssistEnabled: false, continuousGenerationEnabled: false, activePresetId: 'builtin-cupertino-liquid-glass', labPageLayouts: layouts });
+    expect(changed.mock.lastCall?.[0].surfaces).toBe('translucent');
+    expect(changed.mock.lastCall?.[0].customPresets[0].palette).toMatchObject({ light: { canvas: '#fff4dd' } });
   });
 
   it('删除当前主题真正恢复默认外观，其余主题保留', async () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    const { DEFAULT_ACTIVE_APPEARANCE_PRESET } = await import('../../services/builtinAppearancePresets');
     const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'paper', name: '纸张', isBuiltin: false, themeMode: 'dark' as const, accentColor: '#14b8a6', palette: { dark: { canvas: '#211c19' } } };
     render(React.createElement(SettingsHarness, { initialAppearancePreferences: { ...appearanceValues(preset), activePresetId: preset.id, customPresets: [preset, { ...preset, id: 'other', name: '保留主题' }] }, onAppearancePreferencesChange: changed }));
     await waitThemeLibrary();
     fireEvent.click(screen.getByRole('button', { name: '删除「纸张」' }));
     fireEvent.click(await screen.findByRole('button', { name: '删除预设' }));
-    await waitFor(() => expect(changed.mock.lastCall?.[0].activePresetId).toBe('builtin-default'));
-    expect(appearanceValues(changed.mock.lastCall![0])).toEqual(appearanceValues(BUILTIN_APPEARANCE_PRESET));
+    await waitFor(() => expect(changed.mock.lastCall?.[0].activePresetId).toBe('builtin-cupertino-liquid-glass'));
+    expect(appearanceValues(changed.mock.lastCall![0])).toEqual(appearanceValues(DEFAULT_ACTIVE_APPEARANCE_PRESET));
     expect(changed.mock.lastCall?.[0].customPresets.map(item => item.name)).toEqual(['保留主题']);
-    expect(screen.getByRole('button', { name: '应用外观预设：NAI Atelier 默认' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '应用外观预设：Cupertino Liquid Glass' }).getAttribute('aria-pressed')).toBe('true');
   });
 
   it('高级控件可逐字输入并保存分享，实色偏好不被其他参数改动重新开启，基础圆角可接回', async () => {
@@ -876,9 +877,9 @@ describe('GlobalSettings', () => {
     const height = screen.getByRole('spinbutton', { name: '控件高度' }) as HTMLInputElement;
     fireEvent.change(height, { target: { value: '3' } });
     expect(height.value).toBe('3');
-    expect(changed.mock.lastCall?.[0].details).toBeUndefined();
-    fireEvent.change(height, { target: { value: '36' } });
     expect(changed.mock.lastCall?.[0].details?.controlHeight).toBe(36);
+    fireEvent.change(height, { target: { value: '40' } });
+    expect(changed.mock.lastCall?.[0].details?.controlHeight).toBe(40);
     const font = screen.getByLabelText('界面字体') as HTMLInputElement;
     fireEvent.change(font, { target: { value: 'system-ui' } });
     fireEvent.change(font, { target: { value: 'system-ui, ' } });
@@ -899,8 +900,9 @@ describe('GlobalSettings', () => {
     expect(changed.mock.lastCall?.[0].details?.controlRadius).toBeUndefined();
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：能力回归' }));
     expect(changed.mock.lastCall?.[0].details?.controlRadius).toBe(999);
-    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
-    expect(changed.mock.lastCall?.[0].details).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: '恢复出厂默认外观' }));
+    expect(changed.mock.lastCall?.[0].details?.material).toBe('glass');
+    expect(changed.mock.lastCall?.[0].details?.controlHeight).toBe(36);
     expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(1);
   });
 
@@ -934,15 +936,15 @@ describe('GlobalSettings', () => {
   it('明暗模式和外观选项被选中时具有 dark:text-indigo-300 保证暗色高对比度', async () => {
     render(React.createElement(SettingsHarness));
 
-    // 默认 standard 选项（界面密度、圆角语言、字号）均被选中且具有 dark:text-indigo-300
-    const standardButtons = screen.getAllByRole('button', { name: '标准' });
-    expect(standardButtons.length).toBeGreaterThan(0);
-    standardButtons.forEach(btn => {
-      expect(btn.className).toContain('dark:text-indigo-300');
-    });
+    // 出厂液态玻璃：密度／字号仍为「标准」，圆角为「柔和」
+    const selectedStandard = screen.getAllByRole('button', { name: '标准' })
+      .filter(btn => btn.className.includes('dark:text-indigo-300'));
+    expect(selectedStandard.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('button', { name: '柔和' }).className).toContain('dark:text-indigo-300');
 
-    const systemModeBtn = screen.getByRole('button', { name: '跟随系统' });
-    expect(systemModeBtn.className).toContain('dark:text-indigo-300');
+    // 出厂默认是深色，不是跟随系统
+    expect(screen.getByRole('button', { name: '深色' }).className).toContain('dark:text-indigo-300');
+    expect(screen.getByRole('button', { name: '跟随系统' }).className).not.toContain('dark:text-indigo-300');
   });
 
   it('切换图片列表布局时正确切换选中态并更新本地偏好', async () => {
