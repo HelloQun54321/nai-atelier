@@ -19,7 +19,7 @@ import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage } 
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { useArtistSampleActions, ArtistSampleGenerationStatus } from './useArtistSampleActions';
@@ -786,21 +786,23 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 {(groupBrowse || statusBrowse) && !gachaArtists && <>
                     {!statusReady ? statusLoad === 'error'
                         ? <div role="alert" className="py-4 text-sm text-red-500">{t('画师状态读取失败')}<button type="button" className="mobile-touch ml-2 underline" onClick={() => favoriteStatusPending ? setPreferredRetry(current => current + 1) : setBlockedRetry(current => current + 1)}>{t('重新加载')}</button></div>
-                        : <p role="status" className="py-4 text-sm text-gray-400">{t('正在读取画师状态…')}</p>
+                        : <PageSpinner />
                         : (groupBrowse && groups.error) || (onlySamples ? currentSampleError : sampleError) ? <div role="alert" className="py-4 text-sm text-red-500">{t(groupBrowse && groups.error || (onlySamples ? currentSampleError : sampleError))}<button type="button" className="mobile-touch ml-2 underline" onClick={() => { if (groupBrowse && groups.error) void groups.reload(); else setSampleRefresh(current => current + 1); }}>{t('重试')}</button></div>
-                        : groupBrowse && !groups.ready || sampleLoading ? <p role="status" className="py-4 text-sm text-gray-400">{t('正在加载画师…')}</p>
+                        : groupBrowse && !groups.ready || sampleLoading ? (filteredArtists.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner />)
                         : !filteredArtists.length ? <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">{t('没有匹配的画师')}{onlySamples && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>}</WorkspacePageState> : null}
                 </>}
                 {!groupBrowse && !statusBrowse && onlySamples && !filteredArtists.length && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
-                    {sampleLoading || currentSampleError ? sampleStatusText : usageFiltersActive ? t('没有匹配的画师') : currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
+                    {sampleLoading ? <PageSpinner /> : <>
+                    {currentSampleError ? sampleStatusText : usageFiltersActive ? t('没有匹配的画师') : currentPackStatus?.phase === 'ready' && isArtistSampleSourceForPack(samplePack, currentPackStatus) && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
                     {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
                     {hasSearch && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
                     {!hasSearch && <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
                         <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={openSampleSettings}>{t('下载样张图包')}</button>
                         <button type="button" className="mobile-touch rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => updateOnlySamples(false)}>{t('浏览全部画师')}</button>
                     </div>}
+                    </>}
                 </WorkspacePageState>}
-                {!groupBrowse && !statusBrowse && !onlySamples && (isCatalogLoading || localCatalogBrowse && sampleLoading) && <p role="status" className="py-4 text-sm text-gray-400">{t('正在加载画师…')}</p>}
+                {!groupBrowse && !statusBrowse && !onlySamples && (isCatalogLoading || localCatalogBrowse && sampleLoading) && (filteredArtists.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner />)}
                 {!groupBrowse && !statusBrowse && !onlySamples && filteredArtists.length > 0 && (searchError || catalogError) && <p role="alert" className="py-4 text-sm text-red-500">{searchError || catalogError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button></p>}
                 {!groupBrowse && !statusBrowse && !onlySamples && !filteredArtists.length && !isCatalogLoading && !(localCatalogBrowse && sampleLoading) && <WorkspacePageState role="status" className="py-12 text-center text-sm text-gray-400">
                     {searchError || catalogError ? <>

@@ -84,7 +84,7 @@ describe('共用角色编辑器', () => {
     };
     render(<LoadingHarness />);
     fireEvent.click(screen.getAllByRole('button', { name: '从角色库引用' })[0]);
-    expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toBe('加载中…');
+    expect(within(screen.getByRole('dialog')).getByRole('status').textContent).toContain('加载中…');
     expect(screen.queryByText('角色库中暂无自定义角色')).toBeNull();
     await act(async () => reject(new Error('角色库读取失败')));
     expect(screen.getByRole('alert').textContent).toContain('角色库读取失败');

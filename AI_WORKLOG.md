@@ -5,6 +5,26 @@
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
 ## 2026-11-01
+- **Cursor (Composer)**：瀑布流首帧同步量宽，避免风格串先闪「加载更多」再出卡片。
+- **Cursor (Composer)**：PageSpinner 锚定 `.app-workspace` 正中，避免顶栏挂载时圆圈上跳。
+- **Cursor (Composer)**：修正加载居中与文案：Suspense／首读同一套「加载中…」，去掉工作区→页面名二次闪现。
+- **Cursor (Composer)**：资源页统一 PageSpinner 首读与 InlineSpinner 后台刷新；同步决策／CHANGELOG／定向回归。
+- **Cursor (Composer)**：电脑侧栏主导航高度统一压矮，经典实色与液态玻璃疏密一致；同步决策／回归。
+- **Cursor (Composer)**：去掉提示词库筛选「管理提示词」套娃入口及管理窗；主浏览即管理面；同步决策／回归。
+- **Cursor (Composer)**：提示词库卡片去掉铅笔；组合详情完整展示并回退原文；同步决策／回归。
+- **Cursor (Composer)**：提示词库卡片去掉下载／复制图片，仅保留爱心；同步决策／回归。
+- **Cursor (Composer)**：提示词库卡片左上增加画师库式「删除当前封面」；同步决策／词典／回归。
+- **Cursor (Composer)**：提示词库卡片去掉悬停「复制提示词」；同步决策／CHANGELOG／回归。
+- **Cursor (Composer)**：提示词库独立封面生成模板 + 卡片常驻生成／写回 previewImage；同步决策／CHANGELOG／定向回归。
+- **Cursor (Composer)**：提示词库卡片名称贴标签上方并去掉路径徽章；同步决策／回归。
+- **Cursor (Composer)**：搭配面板再压一轮前端：空行旁注收进 title、折叠预览去前导逗号并三行截断；定向回归通过。
+- **Cursor (Composer)**：搭配面板前端再收：单行结果摘要、宽屏行操作降噪、预览默认只显新增并限高；同步决策／文案／回归。
+
+
+
+- **Cursor (Composer)**：提示词库卡片去掉封面上的「送到实验室」，仅保留详情顶栏取用；同步决策／回归。
+- **Cursor (Composer)**：角色↔组合双向互通——投影写回角色字段／封面、另存独立组合、挂「角色」新建落成角色；同步决策／README／CHANGELOG／回归。
+- **Cursor (Composer)**：自定义角色改为「角色」夹内组合投影卡片（非子文件夹），统一有／无封面卡片摘要占高；同步决策／README／回归。
 - **Cursor (Composer)**：组合文件夹只留「角色」并与自定义角色互通；新部署默认相同，落库归一、拒绝自由分类 CRUD；同步决策／README／回归与本机树清理。
 - **Cursor (Composer)**：组合分类改为「角色」根+自定义角色投影后，重写 `PromptLibraryBrowser` 组合相关回归并修导航从全库链取角色子夹；Harness 去掉已删 category CRUD props。
 - **Cursor (Composer)**：修复提示词库使用流程四处摩擦——组合含补充、分类栏用途就地绑定、保存并继续清用途、分类栏可取组合；同步决策／验证文档／回归。

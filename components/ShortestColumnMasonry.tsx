@@ -1,4 +1,4 @@
-import { Fragment, ReactNode, RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, ReactNode, RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 /**
@@ -177,11 +177,11 @@ export const ShortestColumnMasonry = <T,>({
   const committed = useRef({ count: 0, keys: [] as string[], indices: new Map<string, number>(), layout: [] as T[][], placement: new Map<string, number>(), heights: new Map<string, number>(), columnWidth: 0, resetKey });
   const viewedThrough = useRef(-1);
 
-  useEffect(() => {
+  // 首帧同步量宽：useEffect + ResizeObserver 会晚一拍，风格串等页会先闪「加载更多」再出卡片。
+  useLayoutEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(entries => {
-      const width = entries[0]?.contentRect.width ?? 0;
+    const applyWidth = (width: number) => {
       // 详情覆盖或 keep-alive 隐藏时宽度为 0；保留已有卡片，避免清空列表及滚动锚点。
       if (width <= 0) return;
       const firstMeasurement = latestWidth.current === 0;
@@ -191,9 +191,13 @@ export const ShortestColumnMasonry = <T,>({
       else if (!stableColumns) {
         setContainerWidth(previous => (Math.abs(previous - width) > 0.5 ? width : previous));
       }
+    };
+    applyWidth(element.clientWidth || element.getBoundingClientRect().width);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(entries => {
+      applyWidth(entries[0]?.contentRect.width ?? 0);
     });
-    observer.observe(element);
-    return () => observer.disconnect();
+    observer?.observe(element);
+    return () => observer?.disconnect();
   }, [stableColumns]);
 
   // 请求列数：决定网格轨道数与列宽，防御 NaN/Infinity/<1 后至少为 1

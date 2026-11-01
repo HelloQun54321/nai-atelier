@@ -758,6 +758,7 @@ describe('全局外观覆盖审计', () => {
     expect(declarations(`${root} [data-control-kind='icon']`, touch, detailCss)['min-width']).toBe('44px');
     expect(declarations(`${root} [data-appearance='control']`, touch, detailCss)['min-height']).toBe('44px');
     expect(declarations(`${root} .app-sidebar nav button`, touch, detailCss)['min-height']).toBe('44px');
+    expect(declarations('.app-sidebar nav button', '(min-width: 768px)', detailCss).height).toBe('max(34px, var(--nai-control-height, 36px))');
     expect(declarations(`${root} [data-appearance='control']`, undefined, detailCss).height).toBe('var(--nai-control-height, revert-layer)');
     expect(detailCss).toContain("@supports (backdrop-filter: url('#nai-glass-lens') blur(1px))");
     const filteredSelectors: string[] = [];

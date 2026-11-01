@@ -1,6 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useGlassRefraction } from './useGlassRefraction';
 import { toggleTopbarCollapsed, useTopbarCollapsed } from '../services/workspaceTopbar';
 import { ArrowLeft, ChevronDown, ChevronUp, Inbox, LoaderCircle, Search, X } from 'lucide-react';
@@ -36,14 +37,6 @@ export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; labe
   </button>
 );
 
-/** 页面级加载态：居中的旋转指示与文案。 */
-export const PageSpinner: React.FC<{ label?: string; className?: string }> = ({ label = '加载中…', className = '' }) => (
-  <div className={`flex flex-col items-center justify-center text-gray-400 ${className}`} role="status" aria-live="polite">
-    <LoaderCircle className="mb-3 h-8 w-8 animate-spin" />
-    <p>{t(label)}</p>
-  </div>
-);
-
 /** 空结果按整个页面正文居中；空间不足时仍留在滚动区内，避免压住目录。 */
 export const WorkspacePageState: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -67,6 +60,48 @@ export const WorkspacePageState: React.FC<React.HTMLAttributes<HTMLDivElement>> 
     <div className="max-w-full" style={{ transform: 'translateX(var(--workspace-state-offset, 0px))' }}>{children}</div>
   </div>;
 };
+
+/** 页面级加载态：锚在 `.app-workspace` 正中，懒加载与资料首读同一落点，顶栏出现不带动上跳；默认「加载中…」。弹层内用 fill={false}。 */
+export const PageSpinner: React.FC<{ label?: string; className?: string; fill?: boolean }> = ({ label = '加载中…', className = '', fill = true }) => {
+  useLanguage();
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [host, setHost] = useState<Element | null>(null);
+  useLayoutEffect(() => {
+    if (!fill) return;
+    const node = anchorRef.current?.closest('.app-workspace') || anchorRef.current?.closest('main') || anchorRef.current?.parentElement || null;
+    setHost(node);
+  }, [fill]);
+  const body = (
+    <>
+      <LoaderCircle className="mb-3 h-8 w-8 animate-spin" aria-hidden="true" />
+      <p>{t(label)}</p>
+    </>
+  );
+  if (!fill) {
+    return <div className={`flex flex-col items-center justify-center text-gray-400 ${className}`} role="status" aria-live="polite">{body}</div>;
+  }
+  const overlay = (
+    <div role="status" aria-live="polite" data-page-spinner="" className={`pointer-events-none absolute inset-0 z-[5] flex items-center justify-center text-gray-400 ${className}`}>
+      <div className="flex flex-col items-center justify-center">{body}</div>
+    </div>
+  );
+  return (
+    <>
+      <span ref={anchorRef} className="hidden" aria-hidden="true" />
+      {/* 仅占位，避免列表区塌缩；真正的圈圈通过 portal 钉在工作区，不跟顶栏抢流式布局。 */}
+      <div className="min-h-[min(24rem,calc(100dvh-10rem))] w-full flex-1" aria-hidden="true" />
+      {host ? createPortal(overlay, host) : null}
+    </>
+  );
+};
+
+/** 已有内容时的后台刷新指示：小圆圈 + 可选文案，不挡列表。 */
+export const InlineSpinner: React.FC<{ label?: string; className?: string }> = ({ label, className = '' }) => (
+  <div className={`inline-flex items-center justify-center gap-2 text-sm text-gray-500 ${className}`} role="status" aria-live="polite">
+    <LoaderCircle className="h-4 w-4 flex-none animate-spin" aria-hidden="true" />
+    {label != null && label !== '' ? <span>{t(label)}</span> : <span className="sr-only">{t('加载中…')}</span>}
+  </div>
+);
 
 /** 列表/网格空态：可带图标、标题、提示与主操作。 */
 export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?: string; action?: React.ReactNode; className?: string }> = ({ icon, title, hint, action, className = '' }) => (

@@ -162,6 +162,12 @@ const selectPromptScope = (scope: 'items' | 'saved') => {
   if (!screen.queryByRole('combobox', { name: '提示词库范围' })) fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: scope } });
 };
+/** 卡片已无铅笔：先打开详情，再点顶栏「编辑」。 */
+const openCombinationEditor = async (name: string) => {
+  fireEvent.click(screen.getByRole('button', { name: `查看${name}` }));
+  const detail = await screen.findByRole('complementary', { name });
+  fireEvent.click(within(detail).getByRole('button', { name: '编辑' }));
+};
 const customCharacter = (id: string, name: string) => ({ ...saved, id, type: 'character' as const, name, tags: [], basePrompt: '', description: '', previewImage: undefined } as PromptChain);
 
 const makeDataTransfer = () => {
@@ -246,40 +252,46 @@ it('文件夹内新建通过真实App回调广播保存回执，返回时保留�
   }
 });
 
-it('助手改角色名后组合文件夹同步回读，保留页面与搜索，tag 名单独回读不复活旧文件夹', async () => {
+it('助手改角色名后组合投影卡片同步回读，保留页面与搜索，不复活角色名文件夹', async () => {
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
   const oldChar = customCharacter('old-char', '旧分类');
-  const combo = { ...saved, id: 'sync-combo', name: '同步组合', type: 'preset', tags: ['旧分类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
+  const combo = { ...saved, id: 'sync-combo', name: '同步组合', type: 'preset', tags: ['角色'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   let records: PromptChain[] = [oldChar, combo];
   mocks.getAllChains.mockImplementation(async () => records);
   await setup('prompts');
   selectPromptScope('saved');
   if (screen.queryByRole('button', { name: '展开目录' })) fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  await screen.findByRole('button', { name: '分类「旧分类」' });
+  await screen.findByRole('button', { name: '分类「角色」' });
+  expect(screen.getByRole('button', { name: '查看旧分类' })).toBeTruthy();
   fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: '保持现场' } });
   let finishOld!: (value: string[]) => void;
   mocks.getPromptLibraryTagNames.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
-  records = [customCharacter('old-char', '新分类'), { ...combo, tags: ['新分类'] }];
-  mocks.getPromptLibraryTagNames.mockResolvedValue(['新分类']);
+  records = [customCharacter('old-char', '新分类'), { ...combo, tags: ['角色'] }];
+  mocks.getPromptLibraryTagNames.mockResolvedValue(['角色']);
   act(() => window.dispatchEvent(new CustomEvent('nai-project-data-changed', { detail: { resource: 'chains' } })));
-  await waitFor(() => expect(screen.getByRole('button', { name: '分类「新分类」' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('combobox', { name: '提示词库范围' })).toHaveProperty('value', 'saved'));
+  expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('保持现场');
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: '' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: '查看新分类' })).toBeTruthy());
+  expect(screen.queryByRole('button', { name: '查看旧分类' })).toBeNull();
   expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '分类「新分类」' })).toBeNull();
   await act(async () => { finishOld(['旧分类']); });
   await act(async () => { await Promise.resolve(); });
   expect(screen.queryByRole('button', { name: '分类「旧分类」' })).toBeNull();
-  expect((screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }) as HTMLInputElement).value).toBe('保持现场');
   expect(screen.getByRole('combobox', { name: '提示词库范围' })).toHaveProperty('value', 'saved');
 });
 
-it('空自定义角色投影文件夹，冷回读后保存与详情均可选用角色标签', async () => {
+it('空自定义角色投影为组合卡片，冷回读后保存与详情可选用「角色」标签', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
   const emptyChar = customCharacter('empty-char', '未来项目');
   mocks.getAllChains.mockResolvedValue([emptyChar]);
   await setup('prompts');
   selectPromptScope('saved');
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  const row = await screen.findByRole('button', { name: '分类「未来项目」' });
-  expect(row.textContent).toContain('0');
+  await screen.findByRole('button', { name: '分类「角色」' });
+  expect(screen.getByRole('button', { name: '查看未来项目' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '分类「未来项目」' })).toBeNull();
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
   cleanup(); mocks.getAllChains.mockClear();
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
@@ -287,31 +299,30 @@ it('空自定义角色投影文件夹，冷回读后保存与详情均可选用�
   mocks.getAllChains.mockResolvedValue([emptyChar, combo]);
   await setup('prompts');
   selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '编辑准备分类的组合' }));
+  await openCombinationEditor('准备分类的组合');
   const roll = await screen.findByRole('dialog', { name: '搭配' });
   await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night'));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
   const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
-  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '组合标签' }), { target: { value: '未来项目' } });
-  expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('未来项目');
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '组合标签' }), { target: { value: '角色' } });
+  expect((within(saveDialog).getByRole('textbox', { name: '组合标签' }) as HTMLInputElement).value).toBe('角色');
   fireEvent.click(within(saveDialog).getByRole('button', { name: '取消' }));
   fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
   fireEvent.click(screen.getByRole('button', { name: '查看准备分类的组合' }));
   const detail = await screen.findByLabelText('准备分类的组合', { selector: 'aside' });
   fireEvent.click(within(detail).getByRole('button', { name: '编辑标签' }));
   fireEvent.click(within(detail).getByRole('button', { name: '选择已有标签' }));
-  fireEvent.click(await within(detail).findByRole('button', { name: '#角色 / 未来项目' }));
-  expect((within(detail).getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('未来项目');
+  fireEvent.click(await within(detail).findByRole('button', { name: '#角色' }));
+  expect((within(detail).getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('角色');
 });
 
-it('组合范围不提供目录管理，筛选芯片只列角色投影文件夹', async () => {
+it('组合范围不提供目录管理，筛选芯片只列「角色」', async () => {
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
   const sourceChar = customCharacter('source', '来源类');
-  const targetChar = customCharacter('target', '目标类');
   mocks.getAllChains.mockResolvedValue([
-    sourceChar, targetChar,
-    { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['来源类', '目标类'], params: { _rollContentSnapshot: snapshot } },
-    { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['来源类'], params: { _rollContentSnapshot: snapshot } },
+    sourceChar,
+    { ...saved, id: 'both', name: '源目标共存', type: 'preset', tags: ['角色'], params: { _rollContentSnapshot: snapshot } },
+    { ...saved, id: 'source-only', name: '仅源组合', type: 'preset', tags: ['角色'], params: { _rollContentSnapshot: snapshot } },
   ] as unknown as PromptChain[]);
   await setup('prompts');
   selectPromptScope('saved');
@@ -319,14 +330,16 @@ it('组合范围不提供目录管理，筛选芯片只列角色投影文件夹'
   const navigation = await screen.findByRole('complementary', { name: '组合分类导航' });
   expect(within(navigation).queryByRole('button', { name: '新建目录' })).toBeNull();
   expect(within(navigation).queryByRole('button', { name: '重命名目录' })).toBeNull();
-  fireEvent.click(within(navigation).getByRole('button', { name: '分类「来源类」' }));
+  expect(within(navigation).queryByRole('button', { name: '分类「来源类」' })).toBeNull();
+  fireEvent.click(within(navigation).getByRole('button', { name: '分类「角色」' }));
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(screen.getByRole('button', { name: '角色 / 来源类' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '来源类' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 来源类' }));
+  expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '角色 / 来源类' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '角色' }));
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   expect(screen.getByRole('button', { name: '查看源目标共存' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '查看仅源组合' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看来源类' })).toBeTruthy();
 });
 
 it('组合范围不提供新建目录入口', async () => {
@@ -339,12 +352,12 @@ it('组合范围不提供新建目录入口', async () => {
   expect(mocks.updateChain).not.toHaveBeenCalled();
 });
 
-it('真实App按角色投影浏览组合文件夹，片段目录与组合内容保持原样', async () => {
+it('真实App按角色投影浏览组合夹，片段目录与组合内容保持原样', async () => {
   localStorage.setItem('nai_safe_mode_startup', 'false');
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night garden', filled: true } } }, '2026-10-21')!;
   const parentChar = customCharacter('parent-char', '父类');
   const childChar = customCharacter('child-char', '子类');
-  const combo = { ...saved, id: 'nested-category-combo', name: '角色分类组合', type: 'preset', tags: ['父类'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
+  const combo = { ...saved, id: 'nested-category-combo', name: '角色分类组合', type: 'preset', tags: ['角色'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   const fragment = { ...saved, id: 'nested-category-fragment', name: '片段目录保留', type: 'scene', tags: ['片段标签'], basePrompt: 'night walk', params: { _promptLibraryDirectoryIds: ['environment-scene'] } } as unknown as PromptChain;
   let records = [parentChar, childChar, combo, fragment];
   const originalSnapshot = structuredClone(snapshot), originalFragment = structuredClone(fragment);
@@ -364,10 +377,11 @@ it('真实App按角色投影浏览组合文件夹，片段目录与组合内容�
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const categoryNav = screen.getByRole('complementary', { name: '组合分类导航' });
   expect(within(categoryNav).queryByRole('button', { name: '新建目录' })).toBeNull();
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「父类」' }));
+  expect(within(categoryNav).queryByRole('button', { name: '分类「父类」' })).toBeNull();
+  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「角色」' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeTruthy();
-  fireEvent.click(within(categoryNav).getByRole('button', { name: '分类「子类」' }));
-  expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeNull();
+  expect(document.querySelector('[data-prompt-library-entry="parent-char"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="child-char"]')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '全部' }));
   expect(document.querySelector('[data-prompt-library-entry="nested-category-combo"]')).toBeTruthy();
 
@@ -376,6 +390,76 @@ it('真实App按角色投影浏览组合文件夹，片段目录与组合内容�
   expect(records.find(chain => chain.id === fragment.id)).toEqual(originalFragment);
   expect((records.find(chain => chain.id === combo.id)?.params as any)._rollContentSnapshot).toEqual(originalSnapshot);
   expect(mocks.saveCategoryTree).not.toHaveBeenCalled();
+});
+
+it('提示词库编辑角色投影写回同一角色；另存为独立组合；挂「角色」新建落成角色', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
+  let records: PromptChain[] = [
+    {
+      ...customCharacter('qun', 'Qun'),
+      basePrompt: 'boy, short hair',
+      negativePrompt: 'blurry',
+      previewImage: '/cover/qun.png',
+      params: { characters: [{ id: 'role', enabled: true, prompt: '', x: 0.5, y: 0.5, sections: { wardrobe: 'jacket' }, sectionNegatives: { wardrobe: 'dress' } }] },
+    } as PromptChain,
+    { ...saved, id: 'scene-fragment', name: '夜景片段', type: 'scene', basePrompt: 'night', params: { ...saved.params, _promptLibraryPurposes: ['place'] } } as PromptChain,
+  ];
+  mocks.getAllChains.mockImplementation(async () => records);
+  mocks.updateChain.mockImplementation(async (id: string, updates: Partial<PromptChain>) => {
+    records = records.map(chain => chain.id === id ? { ...chain, ...updates } as PromptChain : chain);
+  });
+  mocks.createChainWithData.mockImplementation(async (name, description, data, type) => {
+    const created = { ...saved, ...data, id: `created-${records.length}`, name, description, type } as PromptChain;
+    records = [created, ...records];
+    return created;
+  });
+
+  await setup('prompts');
+  selectPromptScope('saved');
+  await openCombinationEditor('Qun');
+  const roll = await screen.findByRole('dialog', { name: '搭配' });
+  await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:person-appearance"]')?.textContent).toContain('boy, short hair'));
+  fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
+  const saveDialog = await screen.findByRole('dialog', { name: '保存修改' });
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: '给这条记录起名' }), { target: { value: 'Qun 改' } });
+  fireEvent.click(within(saveDialog).getByRole('button', { name: '保存修改' }));
+  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledWith('qun', expect.objectContaining({
+    name: 'Qun 改', type: 'character', basePrompt: 'boy, short hair', previewImage: '/cover/qun.png',
+  })));
+  expect(mocks.createChainWithData).not.toHaveBeenCalled();
+  expect(records.find(item => item.id === 'qun')?.type).toBe('character');
+  fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
+
+  fireEvent.click(screen.getByRole('button', { name: '查看Qun 改' }));
+  const detail = await screen.findByLabelText('Qun 改', { selector: 'aside' });
+  fireEvent.click(within(detail).getByRole('button', { name: '另存为新组合' }));
+  const saveAsRoll = await screen.findByRole('dialog', { name: '搭配' });
+  fireEvent.click(within(saveAsRoll).getByRole('button', { name: '保存组合' }));
+  const saveAsDialog = await screen.findByRole('dialog', { name: '保存组合' });
+  fireEvent.change(within(saveAsDialog).getByRole('textbox', { name: '给这条记录起名' }), { target: { value: 'Qun 另存' } });
+  fireEvent.click(within(saveAsDialog).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('Qun 另存', expect.any(String), expect.objectContaining({
+    previewImage: '/cover/qun.png',
+  }), 'preset'));
+  expect(records.find(item => item.id === 'qun')?.name).toBe('Qun 改');
+  expect(records.some(item => item.type === 'preset' && item.name === 'Qun 另存')).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
+
+  fireEvent.click(screen.getByRole('button', { name: '搭配' }));
+  const freshRoll = await screen.findByRole('dialog', { name: '搭配' });
+  /* 面板可能仍保留上一组内容；有结果即可挂「角色」落成自定义角色。 */
+  const saveCombo = within(freshRoll).getByRole('button', { name: '保存组合' });
+  if (saveCombo.hasAttribute('disabled')) {
+    fireEvent.change(within(freshRoll).getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
+    fireEvent.click(within(freshRoll).getByRole('button', { name: /抽/ }));
+  }
+  fireEvent.click(within(freshRoll).getByRole('button', { name: '保存组合' }));
+  const createDialog = await screen.findByRole('dialog', { name: '保存组合' });
+  fireEvent.change(within(createDialog).getByRole('textbox', { name: '给这条记录起名' }), { target: { value: '新建角色' } });
+  fireEvent.change(within(createDialog).getByRole('textbox', { name: '组合标签' }), { target: { value: '角色' } });
+  fireEvent.click(within(createDialog).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalledWith('新建角色', expect.any(String), expect.objectContaining({ type: 'character' }), 'character'));
+  expect(records.some(item => item.type === 'character' && item.name === '新建角色')).toBe(true);
 });
 
 it('真实主导航拖放只移动片段目录的父级，保留子树和条目内容', async () => {
@@ -809,6 +893,7 @@ it('库页片段只维护资料，从实验室目标取用可撤销且不修改�
 });
 
 it('旧多人组合编辑先选择角色，所选角色另存新组合不覆盖旧组合', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
   const snapshot = contentSnapshotOf({ picks: { appearance: { kind: 'appearance', text: 'silver_hair', filled: true }, scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
   snapshot.roles = [ { ...snapshot.roles[0], key: 'one', name: '人物甲' }, { ...snapshot.roles[0], key: 'two', name: '人物乙', sections: { appearance: 'black_hair' } } ];
   const original = { ...saved, id: 'old-multiple', name: '双人旧组合', type: 'preset', tags: ['旧组合标签'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
@@ -816,7 +901,7 @@ it('旧多人组合编辑先选择角色，所选角色另存新组合不覆盖�
   mocks.createChainWithData.mockImplementationOnce(async (name, description, data, type) => ({ ...saved, ...data, id: 'new-combination', name, description, type }));
   await setup('prompts');
   selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '编辑双人旧组合' }));
+  await openCombinationEditor('双人旧组合');
   const dialog = await screen.findByRole('dialog', { name: '选择组合中的角色' });
   expect(screen.queryByRole('dialog', { name: '搭配' })).toBeNull();
   fireEvent.click(within(dialog).getByRole('button', { name: '人物乙' }));
@@ -858,21 +943,21 @@ it.each([[' 夜景，常用,夜景 ', ['夜景', '常用']], ['', []]] as const)
   selectPromptScope('saved');
   expect(await screen.findByRole('button', { name: '查看带标签组合' })).toBeTruthy();
   if (tags.length) {
-    fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-    fireEvent.click(screen.getByRole('button', { name: '角色 / 夜景' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: tags[0] } });
     expect(screen.getByRole('button', { name: '查看带标签组合' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '查看夜景片段' })).toBeNull();
   }
 });
 
 it.each([false, true])('编辑已有组合保存时继承标签，另存=%s', async copy => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
   const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21')!;
   const original = { ...saved, id: 'existing-combination', name: '有标签旧组合', type: 'preset', tags: ['夜景', '保留'], params: { _rollContentSnapshot: snapshot } } as unknown as PromptChain;
   mocks.getAllChains.mockResolvedValue([original]);
   mocks.createChainWithData.mockImplementationOnce(async (name, description, data, type) => ({ ...saved, ...data, id: 'copied-combination', name, description, type }));
   await setup('prompts');
   selectPromptScope('saved');
-  fireEvent.click(screen.getByRole('button', { name: '编辑有标签旧组合' }));
+  await openCombinationEditor('有标签旧组合');
   const roll = await screen.findByRole('dialog', { name: '搭配' });
   await waitFor(() => expect(roll.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night'));
   fireEvent.click(within(roll).getByRole('button', { name: '保存组合' }));
@@ -913,10 +998,11 @@ it('组合详情只修改标签，保留全部内容与封面并即时进入更�
   expect(within(detail).getByText('night')).toBeTruthy();
   expect(decodeURIComponent(within(detail).getByRole('img', { name: '详情标签组合' }).getAttribute('src') || '')).toContain('/api/assets/covers/keep.png');
   fireEvent.click(within(detail).getByRole('button', { name: '关闭' }));
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: '角色 / 新标签' })).toBeTruthy());
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 新标签' }));
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索名称、正文或标签' }), { target: { value: '新标签' } });
   expect(screen.getByRole('button', { name: '查看详情标签组合' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '角色 / 新标签' })).toBeNull();
   expect(screen.queryByRole('button', { name: '角色 / 旧标签' })).toBeNull();
   expect(original.params).toEqual(expect.objectContaining({ _rollContentSnapshot: snapshot }));
   expect(original.tags).toEqual(['旧标签']);
@@ -1026,24 +1112,26 @@ it('内容 Roll 保留旧手写正文与参数，使用统一确认后可完整�
 });
 
 it('旧组合库入口映射到组合库，载入打开面板，关闭保留原库和已载入组合', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
   mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'combo', type: 'preset', name: '已存夜景', params: {
     _rollContentSnapshot: contentSnapshotOf({ picks: { scene: { kind: 'scene', text: 'night', filled: true } } }, '2026-10-21'),
   } }]);
   await setup('prompts');
   selectPromptScope('saved');
   fireEvent.click(screen.getByRole('button', { name: 'content-roll-library' }));
-  fireEvent.click(await screen.findByRole('button', { name: /编辑(已存夜景|合成内容组合)/ }));
+  await openCombinationEditor('已存夜景');
   expect(await screen.findByRole('dialog', { name: '搭配' })).toBeTruthy();
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('saved');
   expect(document.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night');
   fireEvent.click(screen.getByRole('button', { name: '关闭搭配面板' }));
   expect(screen.queryByRole('dialog', { name: '搭配' })).toBeNull();
-  expect(screen.getByRole('button', { name: '编辑已存夜景' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看已存夜景' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '搭配' }));
   expect(document.querySelector('[data-content-roll-row="directory:environment-scene"]')?.textContent).toContain('night');
 });
 
 it('内容库 Roll 弹窗可将组合写入已有风格串并保留原主体', async () => {
+  localStorage.setItem('nai_safe_mode_startup', 'false');
   mocks.getAllChains.mockResolvedValue([
     { ...saved, variableValues: { subject: 'beside a red car' } },
     { ...saved, id: 'saved-content', type: 'preset', name: '合成内容组合', params: {
@@ -1053,10 +1141,10 @@ it('内容库 Roll 弹窗可将组合写入已有风格串并保留原主体', a
   await setup('prompts');
   selectPromptScope('saved');
   fireEvent.click(screen.getByRole('button', { name: 'content-roll-library' }));
-  fireEvent.click(await screen.findByRole('button', { name: /编辑(已存夜景|合成内容组合)/ }));
+  await openCombinationEditor('合成内容组合');
   await screen.findByRole('dialog', { name: '搭配' });
-  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的风格串' }), { target: { value: saved.id } });
   fireEvent.click(screen.getByRole('button', { name: '写入风格串…' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的风格串' }), { target: { value: saved.id } });
   fireEvent.click(screen.getByRole('button', { name: '写入这条风格串' }));
   await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledWith(saved.id, expect.objectContaining({
     variableValues: { subject: 'beside a red car, night' },
@@ -1068,15 +1156,19 @@ it('内容库 Roll 弹窗可将组合写入已有风格串并保留原主体', a
 it('提示词库创建使用完整回执并留在当前库，不重新下载整库或打开实验室', async () => {
   await setup('prompts');
   const readsBeforeCreate = mocks.getAllChains.mock.calls.length;
-  mocks.createChainWithData.mockResolvedValueOnce({ ...saved, id: 'new-wardrobe', type: 'wardrobe' });
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('button', { name: '管理提示词' }));
-  fireEvent.click(await screen.findByRole('button', { name: '新建合成服饰' }));
-  await waitFor(() => expect(screen.getByTestId('prompt-library-chains').textContent).toContain('new-wardrobe'));
-  expect(mocks.createChainWithData).toHaveBeenCalledWith('合成服饰', '', undefined, 'wardrobe');
+  mocks.createChainWithData.mockResolvedValueOnce({
+    ...saved, id: 'new-fragment', type: 'preset', name: '合成片段', basePrompt: 'synthetic fragment',
+    params: { _collectedPrompt: 1, _promptLibraryPurposes: [] },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '粘贴收录' }));
+  fireEvent.paste(screen.getByRole('textbox', { name: '提示词原文' }), { clipboardData: { getData: () => 'synthetic fragment' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存原文' }));
+  await waitFor(() => expect(mocks.createChainWithData).toHaveBeenCalled());
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '粘贴收录' })).toBeNull());
   expect(mocks.getAllChains).toHaveBeenCalledTimes(readsBeforeCreate);
   expect(screen.getByTestId('view').textContent).toBe('content-library');
   expect(screen.queryByTestId('editor')).toBeNull();
+  expect(screen.queryByRole('button', { name: '管理提示词' })).toBeNull();
 });
 
 it('普通风格串从原列表进入原编辑器，内容与封面仍保存原db并返回同一张卡', async () => {

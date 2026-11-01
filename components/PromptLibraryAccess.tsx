@@ -43,7 +43,7 @@ export interface PromptLibraryReadState {
 }
 
 export function PromptLibraryReadStatus({ chainsLoading, chainsError, onRetryChains }: PromptLibraryReadState) {
-  if (chainsLoading) return <WorkspacePageState className="py-8"><PageSpinner label={t('加载中…')} /></WorkspacePageState>;
+  if (chainsLoading) return <PageSpinner />;
   if (!chainsError) return null;
   return <WorkspacePageState role="alert" className="items-center gap-2 py-8 text-center text-sm text-gray-500"><span>{t(chainsError)}</span>{onRetryChains && <ToolbarButton onClick={onRetryChains}>{t('重试')}</ToolbarButton>}</WorkspacePageState>;
 }
@@ -450,7 +450,34 @@ export function PromptLibraryRandomButton({ roleId, purposes, disabled, fallback
             blocks.push({ key: `attribution:${write.characterId}`, label: t('互动归属 · {0}', [write.label]), before: before.prompt ?? '', after: after.prompt || '' });
           }
         }
-        return <>{blocks.map(block => <div key={block.key} data-content-roll-apply-row={block.key} className="min-w-0"><span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{block.label}</span><p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800 dark:text-gray-100">{block.after ? diffPromptText(block.before, block.after).filter(part => part.kind !== 'delete').map((part, index) => <span key={index} data-roll-insert={part.kind === 'insert' || undefined} className={part.kind === 'insert' ? 'text-indigo-600 dark:text-indigo-300' : undefined}>{part.text}</span>) : t('空白')}</p></div>)}{plan.interactionAttribution && <p data-content-roll-interaction-attribution className="text-xs text-gray-500 dark:text-gray-400">{t(plan.interactionAttribution.mode === 'mutual' ? '对等互动：{0} 与 {1} 均写 {2}' : '单向互动：{0} → {2}；{1} → {3}', [plan.interactionAttribution.sourceLabel, plan.interactionAttribution.targetLabel, plan.interactionAttribution.sourceBinding, plan.interactionAttribution.targetBinding])}</p>}{result.conflicts.length > 0 && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t('已保留手动修改的内容')}</p>}</>;
+        // 只展示有变化的行；主正面若未改也保留一行，避免取消参与后预览消失。
+        const visible = blocks.filter(block => {
+          if (block.after !== block.before) return true;
+          return block.key.endsWith(':positive');
+        });
+        return <>{visible.map(block => {
+          const parts = block.after
+            ? diffPromptText(block.before, block.after).filter(part => part.kind !== 'delete')
+            : [];
+          const inserts = parts.filter(part => part.kind === 'insert' && part.text.trim());
+          const kept = String(block.before || '').trim();
+          return <div key={block.key} data-content-roll-apply-row={block.key} data-roll-changed={inserts.length > 0 || undefined} data-roll-has-keep={kept ? 'true' : undefined} className="min-w-0">
+            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{block.label}</span>
+            {!block.after ? <p className="mt-1 font-mono text-sm text-gray-500">{t('空白')}</p>
+              : inserts.length ? <p className="mt-1 whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-gray-800 dark:text-gray-100">
+                {parts.map((part, index) => {
+                  if (part.kind !== 'insert') return <span key={index} className="content-roll-preview-keep" data-roll-keep="true">{part.text}</span>;
+                  // 折叠时旧文隐藏，新增段开头的连接逗号一并藏掉，避免预览以 ", xxx" 开头。
+                  const match = part.text.match(/^([\s,，]*)([\s\S]*)$/);
+                  const sep = match?.[1] || '';
+                  const body = match?.[2] ?? part.text;
+                  return <span key={index} data-roll-insert="true" className="text-indigo-600 dark:text-indigo-300">{sep ? <span className="content-roll-preview-sep" aria-hidden="true">{sep}</span> : null}{body}</span>;
+                })}
+                {kept ? <span className="content-roll-preview-keep-note ml-1 text-xs text-gray-500 dark:text-gray-400">{t('保留原有内容')}</span> : null}
+              </p>
+                : <p className="mt-1 truncate font-mono text-sm text-gray-500 dark:text-gray-400">{block.after || t('空白')}</p>}
+          </div>;
+        })}{plan.interactionAttribution && <p data-content-roll-interaction-attribution className="text-xs text-gray-500 dark:text-gray-400">{t(plan.interactionAttribution.mode === 'mutual' ? '对等互动：{0} 与 {1} 均写 {2}' : '单向互动：{0} → {2}；{1} → {3}', [plan.interactionAttribution.sourceLabel, plan.interactionAttribution.targetLabel, plan.interactionAttribution.sourceBinding, plan.interactionAttribution.targetBinding])}</p>}{result.conflicts.length > 0 && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t('已保留手动修改的内容')}</p>}</>;
       }}
       onApplyRoll={async (_plan, picks) => {
         if (!workspace.applyRoll) return false;

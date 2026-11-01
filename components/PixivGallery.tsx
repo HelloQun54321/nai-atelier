@@ -1069,7 +1069,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Pixiv 浏览足迹")} />
             )
           ) : loading && !items.length ? (
-            <PageSpinner label={t("正在读取 Pixiv…")} className="min-h-72" />
+            <PageSpinner />
           ) : items.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry

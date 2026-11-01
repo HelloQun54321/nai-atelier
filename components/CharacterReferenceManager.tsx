@@ -6,7 +6,7 @@ import { getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useConfirmDialog } from './ConfirmDialog';
 import { OriginalImage, SmartImage } from './SmartImage';
-import { SegmentedControl, BackButton, CloseButton, PageSpinner } from './DesignSystem';
+import { SegmentedControl, BackButton, CloseButton, InlineSpinner, PageSpinner } from './DesignSystem';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { useAssetManagerLayer } from './useAssetManagerLayer';
@@ -269,10 +269,10 @@ export const CharacterReferenceManager: React.FC<Props> = ({ params, setParams, 
             <main className="workspace-manager-split grid min-h-0 flex-1 ">
             <div className="workspace-manager-list overflow-y-auto p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5">
               {loadError && <p role="alert" className="mb-3 text-sm text-red-600">{t("资料库加载失败")} <button type="button" disabled={loading} onClick={() => void load()} className="mobile-touch rounded-lg px-3 font-bold disabled:opacity-40">{t("重试")}</button></p>}
-                {!loaded ? (loading ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : null) : loading && !allAssets.length ? <PageSpinner label={t("加载中…")} className="appearance-media py-20" /> : assets.length ? <div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = references.slots.some(slot => slot.assetId === asset.id); return <article key={asset.id} className={`appearance-group overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'}`}>
+                {!loaded ? (loading ? <PageSpinner /> : null) : loading && !allAssets.length ? <PageSpinner /> : assets.length ? <>{loading && <InlineSpinner className="mb-3 w-full" />}<div className="workspace-manager-grid grid gap-3">{assets.map(asset => { const selected = references.slots.some(slot => slot.assetId === asset.id); return <article key={asset.id} className={`appearance-group overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-900 ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 dark:border-gray-800'}`}>
                 <button type="button" onClick={() => archived ? showDetail(asset) : addAsset(asset)} className="block w-full text-left"><div className="appearance-media relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"><SmartImage src={asset.thumbnailUrl || asset.originalImageUrl} alt={asset.name} className="h-full w-full object-contain" />{selected && <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white shadow">✓</span>}</div><div className="p-3"><p className="truncate text-sm font-bold">{asset.name}</p><p className="mt-1 text-meta text-gray-500">{t("每次生图 {0} Anlas", [referenceCost])}</p></div></button>
                 <button type="button" onClick={() => showDetail(asset)} className="mobile-touch w-full border-t border-gray-100 text-xs font-medium text-gray-500 dark:border-gray-800">{t("详情")}</button>
-              </article>; })}</div> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? t("没有已归档的精准参考") : t("还没有精准参考图")}</p></div>}
+              </article>; })}</div></> : <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 text-center dark:border-gray-800"><p className="font-bold">{archived ? t("没有已归档的精准参考") : t("还没有精准参考图")}</p></div>}
             </div>
             <aside className="appearance-content workspace-manager-selection overflow-y-auto border-t border-gray-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-800 dark:bg-gray-900 md:border-l md:border-t-0 flex flex-col">
               <div>

@@ -12,6 +12,7 @@ import { handleVibeRoute } from './routes/vibeRoutes';
 import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
+import { handlePromptLibraryCoverRoute } from './routes/promptLibraryCoverRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import { handlePromptLibraryLinkRoute } from './routes/promptLibraryLinkRoutes';
 import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
@@ -205,6 +206,8 @@ export default {
 
       const artistSampleResult = await handleArtistSampleRoute(routeContext);
       if (artistSampleResult) return artistSampleResult;
+      const promptLibraryCoverResult = await handlePromptLibraryCoverRoute(routeContext);
+      if (promptLibraryCoverResult) return promptLibraryCoverResult;
 
       const styleRollResult = await handleStyleRollRoute(routeContext);
       if (styleRollResult) return styleRollResult;

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderView, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import { ContentRollLibrary } from '../../components/ContentRollLibrary';
+import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { contentSnapshotOf } from '../../services/contentRoll';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { LAB_DEFAULT_PARAMS } from '../../services/labWorkspace';
@@ -12,6 +13,7 @@ import { PromptLibraryContext } from '../../components/PromptLibraryAccess';
 
 vi.mock('../../components/HistoryImagePicker', () => ({ HistoryImagePicker: () => null }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+const render = (ui: React.ReactNode) => renderView(ui, { wrapper: ConfirmDialogProvider });
 const snapshot = contentSnapshotOf({ picks: { scene: { kind: 'scene', filled: true, name: '夜景', text: 'moonlight', negative: 'daylight', constraints: { notes: '保留月光' } } } }, '2026-10-21');
 const record = { id: 'saved', type: 'style', name: '夜游', tags: [], params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: snapshot }, updatedAt: 1 } as unknown as PromptChain;
 const props = () => ({ active: true, chains: [record], notify: vi.fn(), onLoad: vi.fn(), onRename: vi.fn(async () => {}), onDelete: vi.fn(async () => {}), onSetCover: vi.fn(async () => {}) });
@@ -56,15 +58,13 @@ it('组合分类候选显示完整路径，筛选仍使用原分类标签', () =
   expect(screen.queryByRole('button', { name: '查看夜游' })).toBeNull();
 });
 
-it('动态组合展示完整目录路径、正负词与备注，搜索和复制保留所有动态项', async () => {
+it('动态组合展示完整目录路径、正负词与备注，搜索保留所有动态项', async () => {
   const dynamic = contentSnapshotOf({ picks: {
     'directory:cloth': { kind: 'directory:cloth', directoryId: 'cloth', directoryName: '服装', directoryPath: ['人物', '服装'], scope: 'character', filled: true, text: 'white blouse', negative: 'red shirt', constraintNotes: '保留袖口' },
     'directory:light': { kind: 'directory:light', directoryId: 'light', directoryName: '光线', directoryPath: ['环境', '光线'], scope: 'global', filled: true, text: 'moonlight' },
   } }, '2026-10-27');
   const p = props(); const chain = { ...record, params: { ...LAB_DEFAULT_PARAMS, _rollContentSnapshot: dynamic } } as PromptChain;
   p.chains = [chain];
-  const writeText = vi.fn(async () => {});
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
   render(<ContentRollLibrary {...p} />);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: '保留袖口' } });
   fireEvent.click(screen.getByRole('button', { name: '查看夜游' }));
@@ -72,24 +72,20 @@ it('动态组合展示完整目录路径、正负词与备注，搜索和复制�
   expect(screen.getByText('环境 / 光线')).toBeTruthy();
   expect(screen.getByText('white blouse')).toBeTruthy();
   expect(screen.getByText(/red shirt/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '复制组合数据' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '编辑组合' }));
   expect(p.onLoad).toHaveBeenCalledWith(chain);
-  fireEvent.click(screen.getByRole('button', { name: '复制组合数据' }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify(dynamic, null, 2)));
 });
 
-it('原文与组合分区独立，可按原文搜索、查看与逐字复制，不载入抽取器', async () => {
+it('原文与组合分区独立，可按原文搜索与查看，不载入抽取器', async () => {
   const text = '  {{winter}}, 1.2::hair::\r\n[smile]  ';
   const collected = { ...record, ...prepareCollectedPrompt(text, '冬日'), type: 'preset', id: 'collected' } as PromptChain;
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
   const p = props(); p.chains.push(collected); render(<ContentRollLibrary {...p} section="originals" />);
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'winter' } });
   expect(screen.queryByRole('button', { name: '编辑组合' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看冬日' }));
   expect(document.querySelector('[data-content-roll-preview="collected"] p')?.textContent).toBe(text);
-  fireEvent.click(screen.getByRole('button', { name: '复制冬日' }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith(text));
+  expect(screen.queryByRole('button', { name: '复制冬日' })).toBeNull();
   expect(p.onLoad).not.toHaveBeenCalled();
 });
 

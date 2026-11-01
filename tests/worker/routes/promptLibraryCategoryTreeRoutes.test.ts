@@ -48,13 +48,13 @@ it('空树 GET 只读返回默认「角色」，不写入；PUT 归一为仅角�
   expect(sqlite.prepare('SELECT value FROM settings WHERE key=?').get('prompt_library_tags_v1:owner')!.value).toBe('["旧组合分类"]');
 });
 
-it('操作投影只含角色与自定义角色，拒绝自由新建／改名／删除', async () => {
+it('操作投影只含角色根，拒绝自由新建／改名／删除', async () => {
   insert('combo', ['小铃']); insertCharacter('char-1', '小铃'); insert('original', ['原文专有'], false);
   insertCharacter('catalog', '词库', 'owner');
   sqlite.prepare('UPDATE chains SET tags=? WHERE id=?').run(JSON.stringify(['__character_catalog__']), 'catalog');
   const response = await action();
   expect(await response.json()).toMatchObject({
-    tree: { nodes: [{ id: PROMPT_LIBRARY_CHARACTER_ROOT, parentId: null }, { id: '小铃', parentId: PROMPT_LIBRARY_CHARACTER_ROOT }] },
+    tree: { nodes: [{ id: PROMPT_LIBRARY_CHARACTER_ROOT, parentId: null }] },
   });
   for (const body of [
     { action: 'create', name: '自由分类' },
@@ -63,7 +63,7 @@ it('操作投影只含角色与自定义角色，拒绝自由新建／改名／�
   ]) {
     const denied = await action(body);
     expect(denied.status).toBe(400);
-    expect(await denied.text()).toMatch(/自定义角色/);
+    expect(await denied.text()).toMatch(/角色库/);
   }
 });
 
@@ -73,7 +73,7 @@ it('组合增减归属仍可用，只改组合标签；并发手改不丢失', a
   expect((await action({ action: 'memberships', itemIds: ['combo'], addDirectoryIds: ['未知'] })).status).toBe(400);
   expect((await action({ action: 'delete', id: '旧分类' }, 'guest')).status).toBe(403);
   beforeRun = sql => { if (sql.startsWith('UPDATE chains')) sqlite.prepare('UPDATE chains SET tags=? WHERE id=?').run('["手改"]', 'race'); };
-  const response = await action({ action: 'memberships', itemIds: ['combo', 'race', 'original', 'other'], addDirectoryIds: ['目标'], removeDirectoryIds: ['旧分类'] });
+  const response = await action({ action: 'memberships', itemIds: ['combo', 'race', 'original', 'other'], addDirectoryIds: [PROMPT_LIBRARY_CHARACTER_ROOT], removeDirectoryIds: ['旧分类'] });
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
     ok: false,
@@ -84,7 +84,7 @@ it('组合增减归属仍可用，只改组合标签；并发手改不丢失', a
       { id: 'other', status: 404, error: expect.any(String) },
     ]),
   });
-  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags).toBe('["保留","目标"]');
+  expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('combo')!.tags).toBe(`["保留","${PROMPT_LIBRARY_CHARACTER_ROOT}"]`);
   expect(sqlite.prepare('SELECT tags FROM chains WHERE id=?').get('race')!.tags).toBe('["手改"]');
 });
 
@@ -93,7 +93,7 @@ it('归属更新时间严格递增', async () => {
   insertCharacter('char-1', '空分类');
   const later = Date.now() + 100_000;
   sqlite.prepare('UPDATE chains SET updated_at=? WHERE id=?').run(later, 'combo');
-  expect(await (await action({ action: 'memberships', itemIds: ['combo'], addDirectoryIds: ['空分类'] })).json()).toMatchObject({ ok: true });
+  expect(await (await action({ action: 'memberships', itemIds: ['combo'], addDirectoryIds: [PROMPT_LIBRARY_CHARACTER_ROOT] })).json()).toMatchObject({ ok: true });
   expect(sqlite.prepare('SELECT updated_at FROM chains WHERE id=?').get('combo')!.updated_at).toBe(later + 1);
 });
 

@@ -15,7 +15,7 @@ import {
   PROMPT_LIBRARY_USAGE_PREVIEW_SIZE,
   type PromptLibraryUsageImage,
 } from '../services/promptLibraryUsage';
-import { ToolbarButton } from './DesignSystem';
+import { InlineSpinner, ToolbarButton } from './DesignSystem';
 import { ImageLightbox } from './ImageLightbox';
 import { SmartImage } from './SmartImage';
 
@@ -158,9 +158,8 @@ export const PromptLibraryUsageSection: React.FC<PromptLibraryUsageSectionProps>
     return (
       <div className={DETAIL_CARD_CLASS}>
         {header}
-        <div role="status" aria-live="polite" className="appearance-group mt-1.5 flex min-h-20 items-center justify-center gap-2 rounded-xl bg-gray-50 text-meta text-gray-400 dark:bg-gray-950/60 dark:text-gray-500">
-          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-          <span>{t('加载中…')}</span>
+        <div className="appearance-group mt-1.5 flex min-h-20 items-center justify-center rounded-xl bg-gray-50 text-meta text-gray-400 dark:bg-gray-950/60 dark:text-gray-500">
+          <InlineSpinner label={t('加载中…')} />
         </div>
       </div>
     );

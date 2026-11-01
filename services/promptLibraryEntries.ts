@@ -1,11 +1,13 @@
 import { getEntryPurposes, normalizePromptPurposeId, normalizePromptPurposeSectionKey, purposeSectionKey, isCreativeSectionKey, isPurposeSectionKey, promptPurposeLabel, type PromptPurposeId } from './promptPurposes.mjs';
 import { t } from './i18n';
-import type { NAIParams, PromptChain } from '../types';
-import { rollItemKey, rollSectionKey, contentRead, contentSnapshotOf, isContentRecord, KINDS, META, type RollRow } from './contentRoll';
+import type { CharacterParams, CharacterSectionContent, NAIParams, PromptChain } from '../types';
+import { rollItemKey, rollSectionKey, contentRead, contentSnapshotOf, isContentRecord, isDirectorySectionKey, KINDS, META, type RollRow } from './contentRoll';
+import { createUuid } from './id';
 import { collectedPromptText, prepareCollectedPrompt } from './collectedPrompt';
 import type { PromptLibraryKind } from './promptAgent';
 import { applyPromptText, type PromptApplyMode } from './promptApply';
 import { isPromptLibraryFragmentEntry, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, type PromptLibraryTreeState } from './promptLibraryDirectories';
+import { LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY } from './promptLibraryTree.mjs';
 
 export type PromptFragmentKind = PromptLibraryKind | 'general';
 export type PromptLibrarySection = 'items' | 'saved' | 'originals';
@@ -15,6 +17,7 @@ export const FRAGMENT_LABELS: Record<string, string> = {
 };
 /** 有目录上下文时展示真实归属；旧固定分类仅用于无目录的兼容入口。 */
 export function promptLibraryEntryLabel(chain: PromptChain, directories?: PromptLibraryTreeState): string {
+  if (isPromptLibraryCharacterProjection(chain)) return t('自定义角色');
   const section = librarySectionOf(chain);
   if (section !== 'items') return t(section === 'saved' ? '组合' : '原文');
   if (directories) {
@@ -22,6 +25,162 @@ export function promptLibraryEntryLabel(chain: PromptChain, directories?: Prompt
     return paths.join('、') || t('未归类');
   }
   return t(FRAGMENT_LABELS[fragmentKindOf(chain) || 'general']);
+}
+
+/** 角色库自定义角色在组合「角色」夹中的投影来源字段（同一实体，两边入口）。 */
+export const PROMPT_LIBRARY_CHARACTER_SOURCE_KEY = '_promptLibraryCharacterSourceId';
+
+const paramsBag = (params?: NAIParams): Record<string, unknown> => (params || {}) as unknown as Record<string, unknown>;
+
+export const isPromptLibraryCharacterProjection = (chain: PromptChain): boolean => typeof paramsBag(chain.params)[PROMPT_LIBRARY_CHARACTER_SOURCE_KEY] === 'string';
+
+export const promptLibraryCharacterSourceId = (chain: PromptChain): string | null => {
+  const value = paramsBag(chain.params)[PROMPT_LIBRARY_CHARACTER_SOURCE_KEY];
+  return typeof value === 'string' && value ? value : null;
+};
+
+const directoryWritebackKind = (key: string): string => {
+  if (!isDirectorySectionKey(key)) return key;
+  const directoryId = key.slice('directory:'.length);
+  const purpose = PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY[directoryId as keyof typeof PROMPT_LIBRARY_PURPOSE_FROM_DIRECTORY];
+  if (purpose) return purposeSectionKey(normalizePromptPurposeId(purpose));
+  const legacy = (Object.entries(LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS) as Array<[string, string]>).find(([, id]) => id === directoryId)?.[0];
+  return legacy || key;
+};
+
+/** 组合分栏写回角色库字段时的稳定落点；全局栏不写入角色本体。 */
+const characterWritebackTarget = (kind: string): 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'extra' | 'section' | null => {
+  const key = directoryWritebackKind(rollSectionKey(kind));
+  if (key === 'extra') return 'extra';
+  if (key === 'appearance' || key === purposeSectionKey('appearance') || key === purposeSectionKey('identity')) return 'appearance';
+  if (key === 'wardrobe' || key === purposeSectionKey('clothing')) return 'wardrobe';
+  if (key === 'pose' || key === purposeSectionKey('pose')) return 'pose';
+  if (key === 'expression' || key === purposeSectionKey('expression')) return 'expression';
+  if (META[key]?.scope === 'global') return null;
+  if (META[key]?.scope === 'character' || isCreativeSectionKey(key) || isDirectorySectionKey(key) || isPurposeSectionKey(key)) return 'section';
+  return null;
+};
+
+const isCharacterScopedPick = (kind: string, row: RollRow): boolean => {
+  if (row.scope === 'character') return true;
+  if (row.scope === 'global') return false;
+  return META[rollSectionKey(kind)]?.scope === 'character' || characterWritebackTarget(kind) !== null;
+};
+
+/**
+ * 把组合 picks 写回自定义角色字段（同一 id，不另存副本）。
+ * 封面 previewImage 由调用方原样保留；不写入组合快照，避免双事实源。
+ */
+export function applyCombinationPicksToCharacter(existing: PromptChain, name: string, picks: Record<string, RollRow>): Partial<PromptChain> {
+  const previous = existing.params?.characters?.find(item => item.enabled !== false) || existing.params?.characters?.[0];
+  const sections: CharacterSectionContent = { ...(previous?.sections || {}) };
+  const sectionNegatives: NonNullable<CharacterParams['sectionNegatives']> = { ...(previous?.sectionNegatives || {}) };
+  let basePrompt = String(existing.basePrompt || '');
+  let negativePrompt = String(existing.negativePrompt || '');
+  let extra = String(previous?.prompt || '');
+  let extraNegative = String(previous?.negativePrompt || '');
+  let hasAppearance = false;
+
+  for (const [key, row] of Object.entries(picks)) {
+    if (!row?.filled || !isCharacterScopedPick(key, row)) continue;
+    const text = String(row.text || '').trim();
+    const negative = String(row.negative || '').trim();
+    if (!text && !negative) continue;
+    const target = characterWritebackTarget(key);
+    const sectionKey = rollSectionKey(key);
+    if (target === 'appearance') {
+      hasAppearance = true;
+      if (text) { basePrompt = text; sections.appearance = text; }
+      if (negative) { negativePrompt = negative; sectionNegatives.appearance = negative; }
+      if (sectionKey.startsWith('purpose:') && text) sections[sectionKey as keyof CharacterSectionContent] = text;
+    } else if (target === 'wardrobe' || target === 'pose' || target === 'expression') {
+      if (text) sections[target] = text;
+      if (negative) sectionNegatives[target] = negative;
+      if (sectionKey.startsWith('purpose:') && text) sections[sectionKey as keyof CharacterSectionContent] = text;
+    } else if (target === 'extra') {
+      if (text) extra = text;
+      if (negative) extraNegative = negative;
+    } else if (target === 'section' && (text || negative)) {
+      if (text) sections[sectionKey as keyof CharacterSectionContent] = text;
+      if (negative) sectionNegatives[sectionKey as keyof CharacterSectionContent] = negative;
+    }
+  }
+  if (!hasAppearance && !basePrompt.trim()) basePrompt = name.trim() || existing.name || '未命名角色';
+
+  const role: CharacterParams = {
+    id: previous?.id || createUuid(),
+    name: name.trim() || existing.name || previous?.name,
+    enabled: previous?.enabled !== false,
+    prompt: extra,
+    negativePrompt: extraNegative || undefined,
+    x: previous?.x ?? 0.5,
+    y: previous?.y ?? 0.5,
+    sections,
+    sectionNegatives,
+    sectionMeta: previous?.sectionMeta,
+  };
+  const others = (existing.params?.characters || []).filter(item => item.id !== role.id);
+  return {
+    name: name.trim() || existing.name || '未命名角色',
+    type: 'character',
+    basePrompt,
+    negativePrompt,
+    previewImage: existing.previewImage,
+    variableValues: { ...(existing.variableValues || {}), subject: '' },
+    params: { ...existing.params, characters: [role, ...others] } as NAIParams,
+  };
+}
+
+/** 新建挂「角色」的组合时，直接落成自定义角色（出现在角色库）。 */
+export function createCharacterDataFromCombinationPicks(name: string, picks: Record<string, RollRow>, tags: string[] = []): Partial<PromptChain> {
+  const draft = applyCombinationPicksToCharacter({
+    id: '', type: 'character', name: name.trim() || '未命名角色', basePrompt: '', tags: [], params: { characters: [] } as unknown as NAIParams,
+  } as unknown as PromptChain, name, picks);
+  return {
+    ...draft,
+    tags: parsePromptLibraryTags(tags.join(',')).filter(tag => tag !== '角色'),
+  };
+}
+
+/**
+ * 把自定义角色投影成组合卡片：挂到「角色」夹，与角色库同一实体（含封面）。
+ * 外貌栏优先合并 basePrompt 与 subject；已有角色分栏照搬；无正文时用描述或名称兜底。
+ */
+export function projectCustomCharacterAsCombination(character: PromptChain, rootTag = '角色'): PromptChain {
+  const picks: Record<string, RollRow> = {};
+  const fallback = String(character.description || '').trim() || character.name?.trim() || '未命名角色';
+  const subject = String(character.variableValues?.subject || '').trim();
+  const appearance = [String(character.basePrompt || '').trim(), subject].filter(Boolean).join(', ');
+  const negative = String(character.negativePrompt || '').trim();
+  const role = (character.params?.characters || []).find(item => item.enabled !== false) || character.params?.characters?.[0];
+  for (const kind of ['appearance', 'wardrobe', 'pose', 'expression'] as const) {
+    const text = String(role?.sections?.[kind] || '').trim();
+    const sectionNegative = String(role?.sectionNegatives?.[kind] || '').trim();
+    if (!text && !(kind === 'appearance' && (appearance || negative))) continue;
+    // 仅有负面、无正向时用名称兜底，避免快照因空正文被判为「没有内容」。
+    const body = text || (kind === 'appearance' ? (appearance || fallback) : '');
+    if (!body.trim()) continue;
+    picks[kind] = {
+      kind, scope: 'character', filled: true,
+      text: body,
+      negative: sectionNegative || (kind === 'appearance' ? negative : ''),
+    };
+  }
+  if (!Object.keys(picks).length) {
+    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: appearance || fallback, negative };
+  } else if (!picks.appearance && (appearance || negative)) {
+    picks.appearance = { kind: 'appearance', scope: 'character', filled: true, text: appearance || fallback, negative };
+  }
+  const extra = String(role?.prompt || '').trim();
+  if (extra) picks[rollItemKey('extra', 'character')] = { kind: 'extra', scope: 'character', filled: true, text: extra, negative: String(role?.negativePrompt || ''), directoryName: '补充', directoryPath: ['补充'] };
+  const data = createCombinationData(character.name || '未命名角色', picks, [rootTag]);
+  return {
+    ...character,
+    type: 'preset',
+    tags: [rootTag],
+    basePrompt: appearance || character.basePrompt,
+    params: { ...data.params, [PROMPT_LIBRARY_CHARACTER_SOURCE_KEY]: character.id } as NAIParams,
+  } as PromptChain;
 }
 export const parsePromptLibraryTags = (text: string): string[] => [...new Set(text.split(/[,，\r\n]+/).map(tag => tag.trim()).filter(Boolean))];
 export interface PromptLibraryField {

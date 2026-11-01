@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { Suspense, useEffect, useId, useState } from 'react';
 import { ClipboardPaste, Dice5, Sparkles, X } from 'lucide-react';
-import { IconButton, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, PageSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptCaptureDialog } from './PromptCaptureDialog';
@@ -31,14 +31,14 @@ interface ContentLibraryPageProps {
   onCaptureSaved?: (id?: string) => void;
   onViewCaptured?: (id: string) => void;
   browse?: (toolbarSlot: HTMLElement | null, actions?: { onExtract?: () => void }) => React.ReactNode;
-  /** 分区按需挂载，只有当前分区把操作挂到共用顶栏。 */
-  items: (toolbarSlot: HTMLElement | null) => React.ReactNode;
+  /** 无 browse 时按分区挂载；主浏览模式不传。 */
+  items?: (toolbarSlot: HTMLElement | null) => React.ReactNode;
   roll: (toolbarSlot: HTMLElement | null) => React.ReactNode;
-  saved: (toolbarSlot: HTMLElement | null) => React.ReactNode;
+  saved?: (toolbarSlot: HTMLElement | null) => React.ReactNode;
   originals?: (toolbarSlot: HTMLElement | null) => React.ReactNode;
 }
 
-const Loading = () => <div className="flex flex-1 items-center justify-center text-sm text-gray-400">{t('加载中…')}</div>;
+const Loading = () => <PageSpinner />;
 
 const RollDialog: React.FC<{ open: boolean; title?: string; onClose: () => void; children: ContentLibraryPageProps['roll'] }> = ({ open, title = '随机搭配', onClose, children }) => {
   const dialogRef = useModalA11y<HTMLDivElement>(open);
@@ -119,8 +119,8 @@ export const ContentLibraryPage: React.FC<ContentLibraryPageProps> = ({ director
     </WorkspaceChrome>
     {/* 滚动由嵌入分区自己的 workspace-scroll-viewport 承担，这里只负责留出顶栏高度。 */}
     <div className="content-library-body flex min-h-0 flex-1 flex-col">
-      {browse ? browse(toolbarSlot, { onExtract: onExtractSave ? () => setExtractOpen(true) : undefined }) : <>{pane('items', () => items(section === 'items' ? toolbarSlot : null))}
-      {pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}</>}
+      {browse ? browse(toolbarSlot, { onExtract: onExtractSave ? () => setExtractOpen(true) : undefined }) : <>{items && pane('items', () => items(section === 'items' ? toolbarSlot : null))}
+      {saved && pane('saved', () => saved(section === 'saved' ? toolbarSlot : null))}</>}
     </div>
     {rollMounted && <ImagePreviewPortal><RollDialog title={rollLabel} open={active && rollOpen} onClose={() => onRollOpenChange(false)}>{roll}</RollDialog></ImagePreviewPortal>}
     {onCapture && <ImagePreviewPortal><PromptCaptureDialog directories={directories} open={active && captureOpen} onClose={() => setCaptureOpen(false)} onSave={onCapture} onSaved={id => { setCaptured({ id }); onCaptureSaved?.(id); }} /></ImagePreviewPortal>}

@@ -23,6 +23,12 @@ describe('共用图片分享操作', () => {
     fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
     await waitFor(() => expect(copySharedImage).toHaveBeenCalledWith('/sample.png', false));
   });
+  it('可关闭下载与复制，只保留爱心', () => {
+    render(React.createElement(ImageShareActions, { imageUrl: '/sample.png', filename: 'sample.png', showTransfer: false }));
+    expect(screen.getByRole('button', { name: '收藏' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '下载图片' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '复制图片' })).toBeNull();
+  });
   it('图片下载与复制的提示及无障碍名称随界面语言原位切换', () => {
     render(React.createElement(ImageShareActions, { imageUrl: '/synthetic.png', filename: 'synthetic.png', variant: 'card' }));
     for (const language of ['zh-TW', 'en', 'ja', 'ko'] as const) {

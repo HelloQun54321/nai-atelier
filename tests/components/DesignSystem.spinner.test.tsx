@@ -1,0 +1,44 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
+import { InlineSpinner, PageSpinner } from '../../components/DesignSystem';
+
+afterEach(() => cleanup());
+
+it('PageSpinner 钉在工作区正中，不随正文流式顶栏上跳', () => {
+  const { container } = render(
+    <div className="app-workspace relative flex min-h-0 flex-1 flex-col">
+      <header data-testid="chrome">顶栏</header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageSpinner />
+      </div>
+    </div>,
+  );
+  const status = screen.getByRole('status');
+  expect(status.hasAttribute('data-page-spinner')).toBe(true);
+  expect(status.className).toContain('absolute');
+  expect(status.className).toContain('inset-0');
+  expect(status.textContent).toContain('加载中…');
+  expect(status.parentElement?.classList.contains('app-workspace')).toBe(true);
+  expect(container.querySelector('.animate-spin')).toBeTruthy();
+});
+
+it('弹层内 PageSpinner 可关闭占满模式', () => {
+  render(<PageSpinner fill={false} className="py-8" />);
+  expect(screen.getByRole('status').hasAttribute('data-page-spinner')).toBe(false);
+  expect(screen.getByRole('status').textContent).toContain('加载中…');
+});
+
+it('InlineSpinner 用于已有内容时的轻量刷新，默认可读', () => {
+  const { container } = render(<InlineSpinner />);
+  expect(screen.getByRole('status').textContent).toContain('加载中…');
+  expect(container.querySelector('.animate-spin')).toBeTruthy();
+  expect(container.querySelector('.sr-only')).toBeTruthy();
+});
+
+it('InlineSpinner 可带可见文案', () => {
+  render(<InlineSpinner label="刷新中…" />);
+  expect(screen.getByRole('status').textContent).toContain('刷新中…');
+  expect(screen.getByRole('status').querySelector('.sr-only')).toBeNull();
+});

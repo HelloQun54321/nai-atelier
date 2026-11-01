@@ -8,7 +8,7 @@ import { normalizeArtistUsageKey } from '../../services/artistParticipation';
 import { db } from '../../services/dbService';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { ImageActivityContext, SmartImage } from '../SmartImage';
-import { IconButton, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
+import { IconButton, InlineSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
@@ -225,7 +225,7 @@ const ChainArtistContent: React.FC<Props> = ({ knownArtists, source, blocked, on
       {error && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{error}{!chains.length && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试')}</button>}</p>}
       {favOnly && favoriteStatus === 'error' && <p role="alert" className="px-3 pb-2 text-xs text-red-500">{favoriteError}<button type="button" className="mobile-touch ml-2 underline" onClick={() => setFavoriteRetry(value => value + 1)}>{t('重试')}</button></p>}
       <div ref={gallery} className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 400) setVisibleLimit(value => value + 60); }}>
-        {(loading || favoritePending && favoriteStatus !== 'error') && <p role="status" className="p-3 text-xs text-gray-500">{t('加载中…')}</p>}
+        {(loading || favoritePending && favoriteStatus !== 'error') && <InlineSpinner label={t('加载中…')} className="p-3 text-xs" />}
         {!favoritePending && (display.layout === 'masonry' ? <ShortestColumnMasonry items={visible} columns={columns} getItemKey={chain => chain.id} estimateItemHeight={(chain, width) => width / ratio(chain) + 48} renderItem={renderChain} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(display)} workspace-card-grid`} style={mobileGalleryStyle(display, columns)}>{visible.map(renderChain)}</div>)}
         {!favoritePending && filtered.length > visibleLimit && <ToolbarButton className="my-2 w-full" onClick={() => setVisibleLimit(value => value + 60)}>{t('加载更多')}</ToolbarButton>}
         {!loading && !favoritePending && !error && !filtered.length && <p className="p-5 text-center text-xs text-gray-500">{t('没有匹配的风格串')}</p>}

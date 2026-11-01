@@ -571,7 +571,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
               <EmptyState className="min-h-72 py-10" icon={<Clock className="h-8 w-8" />} title={t("暂无 Danbooru 浏览足迹")} />
             )
           ) : loading && !displayedItems.length ? (
-            <PageSpinner label={t("正在读取 Danbooru…")} className="min-h-72" />
+            <PageSpinner />
           ) : displayedItems.length ? (
             imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry

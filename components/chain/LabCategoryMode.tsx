@@ -9,7 +9,7 @@ import { PromptCopyButton } from './PresetSourceBadges';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { SmartImage } from '../SmartImage';
-import { ToolbarSearch } from '../DesignSystem';
+import { InlineSpinner, PageSpinner, ToolbarSearch } from '../DesignSystem';
 import { useModalA11y } from '../useModalA11y';
 import { compilePrompt } from '../../services/promptUtils';
 import { hasCharacterSections } from '../../services/characterPrompts';
@@ -226,7 +226,7 @@ function CharacterLibraryDialog({ action, chains, chainsLoading, chainsError, on
           {item.previewImage ? <SmartImage src={item.previewImage} alt="" containerClassName="relative h-12 w-12 flex-none overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800" className="h-full w-full object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
           <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
         </button>)}</div>
-        {chainsLoading && <p role="status" className="py-4 text-center text-sm text-gray-500">{t('加载中…')}</p>}
+        {chainsLoading && (characters.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner fill={false} className="py-8" />)}
         {!chainsLoading && chainsError && <div role="alert" className="flex items-center justify-center gap-3 py-4 text-sm text-red-600">{t(chainsError)}{onRetryChains && <button type="button" onClick={onRetryChains} className="mobile-touch rounded border border-current px-3 py-1">{t('重试')}</button>}</div>}
         {!chainsLoading && !chainsError && characters.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t('角色库中暂无自定义角色')}</p>}
         {!chainsLoading && !chainsError && characters.length > 0 && shown.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t('没有匹配的角色')}</p>}

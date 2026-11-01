@@ -69,13 +69,13 @@ async function handleCategoryAction({ request, method, db, currentUser }: RouteC
   try {
     if (!body || !['create', 'update', 'delete', 'memberships'].includes(body.action)) throw Error('组合目录操作无效');
     if (body.action === 'create' || body.action === 'update' || body.action === 'delete') {
-      throw Error('组合文件夹仅与角色库自定义角色互通，请在角色库新建或改名；目录树只保留「角色」');
+      throw Error('组合文件夹只保留「角色」；请在角色库新建或改名自定义角色，它会投影为夹内组合卡片');
     }
     if (body.action === 'memberships') {
       const validIds = (ids: unknown): ids is string[] => Array.isArray(ids) && ids.length <= 500 && ids.every(id => typeof id === 'string' && id.length > 0 && id.length <= 200);
       if (!validIds(body.itemIds) || !body.itemIds.length || !validIds(body.addDirectoryIds ?? []) || !validIds(body.removeDirectoryIds ?? [])) throw Error('组合归属数据无效（每批最多500项）');
       const add = [...new Set<string>(body.addDirectoryIds ?? [])], remove = [...new Set<string>(body.removeDirectoryIds ?? [])];
-      // 新增必须是当前「角色」树中的夹（含自定义角色投影）；移除允许清掉旧自由标签残留。
+      // 新增必须是当前目录树中的夹（现仅「角色」）；移除允许清掉旧自由／角色名标签残留。
       if (!add.length && !remove.length || add.some(id => !tree.nodes.some(node => node.id === id)) || add.some(id => remove.includes(id))) throw Error('请选择有效且不重复增减的组合目录');
       for (const id of new Set<string>(body.itemIds)) {
         const entry = entries.find(item => item.id === id);

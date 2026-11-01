@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
   Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
 } from 'lucide-react';
-import { EmptyState, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, InlineSpinner, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
@@ -695,7 +695,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             </div>
 
             <SectionCard title={t('创作资产')} hint={t('本地保存的配方、参考与实验')} action={<button type="button" onClick={onOpenRoll} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开 Roll 串')}</button>}>
-              {(assetsLoading || chainsLoading) && <p role="status" className="mb-3 text-sm text-gray-400">{t('加载中…')}</p>}
+              {(assetsLoading || chainsLoading) && <InlineSpinner label={t('加载中…')} className="mb-3" />}
               {assetsError && <p role="alert" className="mb-3 text-sm text-red-500">{assetsError} <button type="button" onClick={() => setReload(value => value + 1)} className="underline">{t('重试')}</button></p>}
               {chainsError && <p role="alert" className="mb-3 text-sm text-red-500">{t(chainsError)} {onRetryChains && <button type="button" onClick={onRetryChains} className="underline">{t('重试')}</button>}</p>}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">

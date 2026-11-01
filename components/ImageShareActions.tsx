@@ -22,10 +22,12 @@ interface Props {
   onFavoriteChange?: (active: boolean) => void;
   revealClassName?: string;
   showFavorite?: boolean;
+  /** 默认显示下载／复制；提示词库列表卡等只需爱心时关闭。 */
+  showTransfer?: boolean;
 }
 
 /** 收藏常驻，下载与复制仍按共用规则显露；所有页面共享收藏状态。 */
-export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md', showFavorite = true }) => {
+export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify, variant = 'toolbar', className = '', generationData, favorite, favoriteActive, favoritePending, onToggleFavorite, onFavoriteChange, revealClassName = 'hover-reveal-md', showFavorite = true, showTransfer = true }) => {
   useLanguage();
   const clean = useCleanSharedImages();
   const busyRef = useRef(false);
@@ -96,7 +98,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       {favoriteBusy || favoritePending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Heart className={`h-4 w-4 ${active ? 'fill-current' : ''}`} />}
       {!iconOnly && <span>{t('收藏')}</span>}
     </button>}
-    {actions.map(({ action, label, title, Icon }) => <button
+    {showTransfer && actions.map(({ action, label, title, Icon }) => <button
       key={action} type="button" title={t(title)} aria-label={t(title)}
       disabled={Boolean(busy)} onClick={() => void perform(action)}
       className={`${variant === 'card' ? revealClassName : ''} ${variant === 'overlay' || variant === 'card' ? '' : 'mobile-touch min-h-10'} inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}

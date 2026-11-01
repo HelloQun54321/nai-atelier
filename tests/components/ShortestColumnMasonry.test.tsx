@@ -29,6 +29,20 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const items = Array.from({ length: 60 }, (_, index) => String(index));
 const getItemKey = (item: string) => item;
 
+it('首帧同步量宽后立即分列，不先空出加载更多落点', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    disconnect() {}
+  });
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get(this: HTMLElement) { return this.classList.contains('chain-masonry') ? 800 : 0; },
+  });
+  const { container } = render(<ShortestColumnMasonry items={items.slice(0, 12)} columns={4} getItemKey={getItemKey} estimateItemHeight={() => 100} renderItem={item => <img alt={item} src={`/synthetic/${item}.png`} />} />);
+  expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(4);
+  expect(container.querySelectorAll('img')).toHaveLength(12);
+});
+
 it('侧栏连续伸缩时保留图片节点、所属列和滚动位置，不逐帧估高或渲染卡片', () => {
   const estimateItemHeight = vi.fn(() => 100);
   const renderItem = vi.fn((item: string) => <img alt={item} src={`/synthetic/${item}.png`} />);

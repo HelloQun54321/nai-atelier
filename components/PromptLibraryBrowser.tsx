@@ -5,9 +5,9 @@ import { createPortal, flushSync } from 'react-dom';
 import { Folder } from 'lucide-react';
 import type { PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { FRAGMENT_LABELS, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
+import { FRAGMENT_LABELS, isPromptLibraryCharacterProjection, projectCustomCharacterAsCombination, promptLibraryEntryLabel, type PromptFragmentKind } from '../services/promptLibraryEntries';
 import { filterPromptBrowseEntries, normalizeBrowseText, promptBrowseEntries, promptBrowseSummary, type PromptBrowseScope } from '../services/promptLibraryBrowse';
-import { EmptyState, ToolbarButton, ToolbarSearch } from './DesignSystem';
+import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch } from './DesignSystem';
 import { PromptLibraryReadStatus, usePromptLibrary, type PromptLibraryReadState } from './PromptLibraryAccess';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
@@ -26,9 +26,11 @@ import { ImageShareOverlay } from './ImageShareActions';
 import { createDefaultPromptLibraryTree, getPromptLibraryDirectoryPath, getPromptLibraryEntryDirectoryIds, isPromptLibraryFragmentEntry, LEGACY_PROMPT_LIBRARY_DIRECTORY_IDS, selectPromptLibraryDirectoryEntries, type PromptLibraryTreeState } from '../services/promptLibraryTree.mjs';
 import { PromptLibraryDirectoryNavigation, type PromptLibraryDirectorySelection } from './PromptLibraryDirectoryNavigation';
 import { getDirectoryDescendantIds } from '../services/directoryTree.mjs';
-import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, projectPromptLibraryCategoryTree, promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
+import { emptyPromptLibraryCategoryTree, listPromptLibraryCustomCharacters, PROMPT_LIBRARY_CHARACTER_ROOT, projectPromptLibraryCategoryTree, promptLibraryCategoryLabel, type PromptLibraryCategoryTreeState } from '../services/promptLibraryCategoryTree';
 import { PromptLibraryCategoryNavigation } from './PromptLibraryCategoryNavigation';
 import { usePromptLibraryFavorites } from './usePromptLibraryFavorites';
+import { usePromptLibraryCoverActions } from './usePromptLibraryCoverActions';
+import { promptLibraryCoverContent } from '../services/promptLibraryCoverTemplate';
 
 const SCOPES = [['items', '片段'], ['saved', '组合']] as const;
 const MEMORY_KEY = 'nai-prompt-library-browse';
@@ -59,8 +61,10 @@ export interface PromptLibraryBrowserProps extends PromptLibraryReadState {
   toolbarSlot: HTMLElement | null;
   onUse: (chain: PromptChain) => void;
   onOpen: (chain: PromptChain) => void;
+  /** 投影卡「另存为新组合」：载入搭配但不绑定原角色 id。 */
+  onSaveAs?: (chain: PromptChain) => void;
   onDelete?: (chain: PromptChain) => Promise<void>;
-  onManage?: () => void;
+  onClearCover?: (chain: PromptChain) => Promise<void>;
   onExtract?: () => void;
   onUpdateTags?: (chain: PromptChain, tags: string[]) => Promise<void>;
   categoryNames?: string[];
@@ -92,10 +96,12 @@ export const PromptBrowseHighlight: React.FC<{ text: string; query: string }> = 
   return <>{parts}</>;
 };
 
-/** 汇总只读卡片；详情与管理继续使用原有编辑组件。 */
-export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onDelete, onManage, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
+/** 汇总浏览卡片；角色投影与组合同夹，详情可写回或另存。 */
+export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chains, chainsLoading: suppliedChainsLoading, chainsError: suppliedChainsError, onRetryChains: suppliedRetryChains, renderEntryEditor, selectionFocusEnabled = true, toolbarSlot, onUse, onOpen, onSaveAs, onDelete, onClearCover, onExtract, onUpdateTags, categoryNames = [], categoryTree: suppliedCategoryTree, categoriesBusy, directories: suppliedDirectories, onCreateDirectory, onRenameDirectory, onDeleteDirectory, onMoveDirectory, directoriesBusy, categoryChange, focusEntryId, notify }) => {
   useLanguage();
   const library = usePromptLibrary();
+  const pageActive = React.useContext(ImageActivityContext);
+  const coverActions = usePromptLibraryCoverActions({ active: pageActive !== false, notify });
   const chainsLoading = suppliedChainsLoading ?? library?.chainsLoading;
   const chainsError = suppliedChainsError ?? library?.chainsError;
   const onRetryChains = suppliedRetryChains ?? library?.onRetryChains;
@@ -128,7 +134,15 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const scrollPositions = useRef(useMemo(readScroll, []));
-  const entries = useMemo(() => promptBrowseEntries(chains), [chains]);
+  const characterProjections = useMemo(() => listPromptLibraryCustomCharacters(chains)
+    .map(item => chains.find(chain => chain.id === item.id && chain.type === 'character'))
+    .filter((chain): chain is PromptChain => !!chain)
+    .map(chain => projectCustomCharacterAsCombination(chain, PROMPT_LIBRARY_CHARACTER_ROOT)), [chains]);
+  const entries = useMemo(() => {
+    const base = promptBrowseEntries(chains);
+    const seen = new Set(base.map(entry => entry.chain.id));
+    return [...base, ...promptBrowseEntries(characterProjections).filter(entry => !seen.has(entry.chain.id))];
+  }, [chains, characterProjections]);
   const favorites = usePromptLibraryFavorites(chains);
   const favoritesSelected = memory.scope === 'saved' ? memory.combinationFavorites : memory.favorites;
   const libraryChains = useMemo(() => entries.filter(entry => entry.section === 'items').map(entry => entry.chain), [entries]);
@@ -226,10 +240,6 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
   const directoryScope = memory.scope === 'items';
   const selectedDirectoryPath = favoritesSelected ? t('收藏') : memory.scope === 'saved' ? (memory.combinationCategory === null ? null : categoryLabel(memory.combinationCategory)) ?? t(memory.combinationUnclassified ? '未归类' : '全部') : memory.allDirectories ? t('全部') : memory.unclassified ? t('未归类') : memory.directoryIds.map(id => getPromptLibraryDirectoryPath(directories, id).map(node => node.name).join(' / ')).filter(Boolean).join('、');
   const filterIconOnly = mobile || !wide;
-  const copy = async (text: string, message = '已复制提示词') => {
-    try { await navigator.clipboard.writeText(text); notify(t(message)); }
-    catch { notify(t('复制失败：浏览器拒绝了剪贴板权限'), 'error'); }
-  };
   const remove = async (chain: PromptChain) => {
     if (!onDelete || deleting.current) return;
     deleting.current = true; setDeletingId(chain.id);
@@ -237,8 +247,8 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
     catch (cause) { notify(t('删除失败：{0}', [cause instanceof Error ? cause.message : String(cause)]), 'error'); }
     finally { deleting.current = false; setDeletingId(''); }
   };
-  const openManage = async (close: () => void, mobile: boolean, callback?: () => void) => {
-    // 沿用标签管理的返回顺序，避免手机筛选层的异步返回关闭新窗口。
+  const openFromFilter = async (close: () => void, mobile: boolean, callback?: () => void) => {
+    // 沿用筛选层返回顺序，避免手机异步返回关掉后续弹层。
     const returned = mobile && window.history.state?.__naiMobileLayer?.startsWith('sheet-')
       ? new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true })) : null;
     flushSync(close);
@@ -279,7 +289,8 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
       <label className="mt-4 block text-xs font-semibold text-gray-500">{t('排序')}<select aria-label={t('排序')} value={memory.sort} className={TOOLBAR_FIELD_CLASS}
         onChange={event => updateMemory({ ...memory, sort: event.target.value as 'updated' | 'name' })}><option value="updated">{t('最近更新')}</option><option value="name">{t('名称')}</option></select></label>
       <div className="mt-4 flex flex-wrap gap-2"><ToolbarButton onClick={() => { setTags([]); setQuery(''); updateMemory({ ...memory }); }}>{t('重置筛选')}</ToolbarButton>
-        {onManage && <ToolbarButton onClick={() => void openManage(close, mobile, onManage)}>{t('管理提示词')}</ToolbarButton>}{mobile && onExtract && <ToolbarButton onClick={() => void openManage(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
+        <ToolbarButton onClick={() => { close(); coverActions.openCoverSettings(); }}>{t('封面生成设置')}</ToolbarButton>
+        {mobile && onExtract && <ToolbarButton onClick={() => void openFromFilter(close, mobile, onExtract)}>{t('AI 提取分类')}</ToolbarButton>}</div>
       </>}
     </ToolbarPopover>
     <ToolbarCountCaption>{mobile ? `${t(SCOPES.find(([scope]) => scope === memory.scope)![1])} · ` : ''}{t('匹配 {0} 条 · 共 {1} 条', [!shown.length && countsPending || favoritesSelected && favorites.status !== 'ready' ? '—' : shown.length, !scopeTotal && countsPending ? '—' : scopeTotal])}</ToolbarCountCaption>
@@ -296,29 +307,35 @@ export const PromptLibraryBrowser: React.FC<PromptLibraryBrowserProps> = ({ chai
         const entry = shown.find(item => item.chain.id === chain.id)!;
         const name = chain.name?.trim() || entry.summary.split(/[\r\n]/)[0].slice(0, 48) || t('未命名');
         const summary = promptBrowseSummary(entry, query);
+        void coverActions.revision;
+        const coverGeneration = coverActions.getGeneration(chain.id);
+        const coverBusy = coverActions.isBusy(chain.id);
         return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, directories)} selected={selectedId === chain.id}
           dimmed={selectionFocusEnabled && !!selectedId && selectedId !== chain.id} busy={deletingId === chain.id} deleteDisabled={!!deletingId}
-          title={<PromptBrowseHighlight text={name} query={query} />} summary={!chain.previewImage || query.trim() ? <PromptBrowseHighlight text={summary || t('还没有提示词')} query={query} /> : undefined}
+          title={<PromptBrowseHighlight text={name} query={query} />} summary={<PromptBrowseHighlight text={summary || t('还没有提示词')} query={query} />}
           tagContent={(entry.section === 'items' ? getEntryPurposes(chain).map(id => t(promptPurposeLabel(id))) : getCustomChainTags(chain.tags)).slice(0, 3).map(tag => <span key={tag} className="gallery-card-badge max-w-24 truncate rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400"><PromptBrowseHighlight text={tag} query={query} /></span>)}
-          onOpen={() => void selectEntry(chain)} onEdit={() => { if (entry.section === 'items' && renderEntryEditor) void selectEntry(chain); else if (!editorActions.current) onOpen(chain); else void leaveDetail().then(leave => { if (leave) onOpen(chain); }); }} onUse={() => void handleUseEntry(chain)}
-          onDelete={onDelete ? () => void remove(chain) : undefined} notify={notify}
-          onCopy={() => void copy(entry.section === 'saved' ? JSON.stringify((chain.params as unknown as Record<string, unknown>)?._rollContentSnapshot, null, 2) : chain.basePrompt || entry.summary, entry.section === 'saved' ? '已复制这条记录的内容快照' : '已复制提示词')} />;
-      }} /> : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : <EmptyState title={t(favoritesSelected && favorites.status !== 'ready' ? favorites.status === 'error' ? '收藏库加载失败，请稍后重试' : '加载中…' : entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={favoritesSelected && favorites.status !== 'ready' ? undefined : t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
+          onOpen={() => void selectEntry(chain)}
+          onDelete={onDelete ? () => void remove(chain) : undefined}
+          onClearCover={onClearCover && chain.previewImage ? () => onClearCover(chain) : undefined} notify={notify}
+          coverGeneration={coverGeneration} coverBusy={coverBusy} coverDisabled={!promptLibraryCoverContent(chain)}
+          onGenerateCover={() => coverActions.requestCover(chain)} onManageCoverGeneration={coverActions.manageGeneration} />;
+      }} /> : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : favoritesSelected && favorites.status !== 'ready' ? favorites.status === 'error' ? <EmptyState title={t('收藏库加载失败，请稍后重试')} /> : <PageSpinner /> : <EmptyState title={t(entries.length ? '没有匹配的提示词' : '提示词库还是空的')} hint={t(entries.length ? '换个关键词，或清除筛选。' : '粘贴收录提示词。')} />}
     </div>
+    {coverActions.settingsDialog}
     {selected && (selected.section === 'items' && renderEntryEditor ? renderEntryEditor(selected.chain, { onClose: finishClose, actionsRef: editorActions }) : <DetailSidePanel open title={selected.chain.name || selected.summary.slice(0, 48) || t('未命名')} sensitiveTitle
       subInfo={promptLibraryEntryLabel(selected.chain, directories)}
-      onClose={closeDetail} onBack={closeDetail} headerActions={<><ToolbarButton onClick={() => onOpen(selected.chain)}>{t('编辑')}</ToolbarButton>{selected.section !== 'items' && <ToolbarButton tone="primary" onClick={() => onUse(selected.chain)}>{t('送到实验室')}</ToolbarButton>}</>}>
+      onClose={closeDetail} onBack={closeDetail} headerActions={<><ToolbarButton onClick={() => onOpen(selected.chain)}>{t('编辑')}</ToolbarButton>{isPromptLibraryCharacterProjection(selected.chain) && <ToolbarButton onClick={() => (onSaveAs || onOpen)(selected.chain)}>{t('另存为新组合')}</ToolbarButton>}{selected.section !== 'items' && <ToolbarButton tone="primary" onClick={() => onUse(selected.chain)}>{t('送到实验室')}</ToolbarButton>}</>}>
       {selected.chain.previewImage && <DetailImageStage pressResetKey={selected.chain.id}><ViewableImage src={selected.chain.previewImage} alt={selected.chain.name} notify={notify}
         favorite={{ imageUrl: selected.chain.previewImage, title: selected.chain.name, sourceType: 'other', sourceId: selected.chain.id }} className="block h-auto max-h-[40vh] w-full object-contain" />
         <ImageShareOverlay imageUrl={selected.chain.previewImage} filename={selected.chain.name + '.png'} notify={notify} favorite={{ imageUrl: selected.chain.previewImage, title: selected.chain.name, sourceType: 'other', sourceId: selected.chain.id }} />
       </DetailImageStage>}
-      {selected.section === 'saved' && onUpdateTags ? <PromptLibraryTagEditor key={selected.chain.id} tags={getCustomChainTags(selected.chain.tags)} suggestions={combinationTags} suggestionLabel={categoryLabel} onSave={tags => onUpdateTags(selected.chain, tags)} />
-        : <div className="mt-3 flex flex-wrap gap-1">{getEntryPurposes(selected.chain).map(id => t(promptPurposeLabel(id))).map(tag => <span key={tag} className="appearance-group rounded px-2 py-1 text-xs">{tag}</span>)}</div>}
-      {selectedRead ? <>
-        {selectedRead.items.map(item => <section key={item.unitId} className="mt-4"><h3 className="text-xs text-gray-500">{item.directoryPath.join(' / ') || item.directoryName}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.text}</p>{item.negative && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{item.negative}</p>}{item.constraintNotes && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{item.constraintNotes}</p>}</section>)}
-        {selectedRead.roles.map(role => <section key={role.key} className="mt-4"><h3 className="text-sm font-semibold">{role.name}</h3>{Object.entries(role.sections).map(([kind, text]) => <div key={kind} className="mt-3"><h4 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm">{text}</p>{role.negatives[kind]?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{role.negatives[kind].text}</p>}</div>)}</section>)}
-        {Object.entries(selectedRead.global).filter(([, field]) => field.provided).map(([kind, field]) => <section key={kind} className="mt-4"><h3 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{field.text}</p>{field.negative?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{field.negative.text}</p>}</section>)}
-      </> : <><h3 className="mt-4 text-xs text-gray-500">{t('提示词原文')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.basePrompt}</p>{bilingualOf(selected.chain) && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-500">{bilingualOf(selected.chain)}</p>}{selected.chain.negativePrompt && <><h3 className="mt-4 text-xs text-gray-500">{t('负面提示词')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.negativePrompt}</p></>}</>}
+      {selected.section === 'saved' && onUpdateTags && !isPromptLibraryCharacterProjection(selected.chain) ? <PromptLibraryTagEditor key={selected.chain.id} tags={getCustomChainTags(selected.chain.tags)} suggestions={combinationTags} suggestionLabel={categoryLabel} onSave={tags => onUpdateTags(selected.chain, tags)} />
+        : <div className="mt-3 flex flex-wrap gap-1">{(isPromptLibraryCharacterProjection(selected.chain) ? getCustomChainTags(selected.chain.tags) : getEntryPurposes(selected.chain).map(id => t(promptPurposeLabel(id)))).map(tag => <span key={tag} className="appearance-group rounded px-2 py-1 text-xs">{tag}</span>)}</div>}
+      {selectedRead?.ok ? <>
+        {selectedRead.items.map(item => <section key={item.itemId || `${item.scope}:${item.unitId}:${item.directoryPath.join('/')}`} className="mt-4"><h3 className="text-xs text-gray-500">{item.directoryPath.join(' / ') || item.directoryName || t(FRAGMENT_LABELS[item.unitId as PromptFragmentKind] || item.unitId)}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{item.text}</p>{item.negative && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{item.negative}</p>}{item.constraintNotes && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{item.constraintNotes}</p>}</section>)}
+        {selectedRead.roles.map(role => <section key={role.key} className="mt-4"><h3 className="text-sm font-semibold">{role.name}</h3>{Object.entries(role.sections).map(([kind, text]) => <div key={kind} className="mt-3"><h4 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm">{text}</p>{role.negatives[kind]?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{role.negatives[kind].text}</p>}{role.negatives[kind]?.note && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{role.negatives[kind].note}</p>}</div>)}</section>)}
+        {Object.entries(selectedRead.global).filter(([, field]) => field.provided).map(([kind, field]) => <section key={kind} className="mt-4"><h3 className="text-xs text-gray-500">{t(FRAGMENT_LABELS[kind as PromptFragmentKind] || kind)}</h3><p className="mt-1 whitespace-pre-wrap break-words text-sm">{field.text}</p>{field.negative?.text && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-500">{t('负面提示词')}：{field.negative.text}</p>}{field.negative?.note && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-500">{field.negative.note}</p>}</section>)}
+      </> : <><h3 className="mt-4 text-xs text-gray-500">{t('提示词原文')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.basePrompt || t('还没有提示词')}</p>{bilingualOf(selected.chain) && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-500">{bilingualOf(selected.chain)}</p>}{selected.chain.negativePrompt && <><h3 className="mt-4 text-xs text-gray-500">{t('负面提示词')}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm">{selected.chain.negativePrompt}</p></>}</>}
       {selected.chain.description && <p className="mt-4 whitespace-pre-wrap break-words text-sm text-gray-500">{selected.chain.description}</p>}
     </DetailSidePanel>)}
     </div>

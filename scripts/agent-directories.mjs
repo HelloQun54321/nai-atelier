@@ -78,7 +78,12 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
     if (scope === 'chains') return result.filter(value => !value.type || value.type === 'style').map(value => ({ id: String(value.id), name: value.name, directoryIds: snapshot.state.assignments[value.id] || [] }));
     if (scope === 'combinations') {
       const known = new Set(snapshot.nodes.map(value => value.id));
-      return result.filter(value => value.params?._rollContentSnapshot && typeof value.params._rollContentSnapshot === 'object' && !Array.isArray(value.params._rollContentSnapshot) && value.params._rollContentSnapshot.format === 'nai-roll-content').map(value => ({ id: String(value.id), name: value.name, directoryIds: [...new Set((value.tags || []).filter(id => known.has(id)))] }));
+      const roleRoot = known.has('角色') ? ['角色'] : [];
+      const combos = result.filter(value => value.params?._rollContentSnapshot && typeof value.params._rollContentSnapshot === 'object' && !Array.isArray(value.params._rollContentSnapshot) && value.params._rollContentSnapshot.format === 'nai-roll-content').map(value => ({ id: String(value.id), name: value.name, directoryIds: [...new Set((value.tags || []).filter(id => known.has(id)))] }));
+      const seen = new Set(combos.map(value => value.id));
+      // 自定义角色在「角色」夹内投影为组合成员，不另建子文件夹。
+      const projected = result.filter(value => value.type === 'character' && !value.tags?.includes('__character_catalog__') && String(value.name || '').trim() && !seen.has(String(value.id))).map(value => ({ id: String(value.id), name: value.name, directoryIds: roleRoot }));
+      return [...combos, ...projected];
     }
     if (scope === 'prompts') return result.filter(isPromptLibraryFragmentEntry).map(value => ({ id: String(value.id), name: value.name, directoryIds: getPromptLibraryEntryDirectoryIds(value, snapshot.state) }));
     if (!catalogMembers) throw new Error('目录词库服务不可用，不能把部分成员当成完整名单');
@@ -125,7 +130,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   const create = async args => {
     const snapshot = await load(args.scope), id = randomUUID();
     if (args.target !== undefined && args.scope !== 'prompts') throw new Error('只有提示词目录支持 target');
-    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库新建角色；目录树只保留「角色」');
+    if (args.scope === 'combinations') throw new Error('组合文件夹只保留「角色」；请在角色库新建自定义角色，它会投影为夹内组合卡片');
     const value = { id, name: typeof args.name === 'string' ? args.name.trim() : '', parentId: args.parentId ?? null, ...(args.target !== undefined ? { target: args.target } : {}) };
     validateNodes(args.scope, [...snapshot.nodes, value]);
     const result = args.scope === 'inspirations'
@@ -136,7 +141,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   const update = async args => {
     const snapshot = await load(args.scope); node(snapshot, args.id);
     if (args.target !== undefined && args.scope !== 'prompts') throw new Error('只有提示词目录支持 target');
-    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库改名；目录树只保留「角色」');
+    if (args.scope === 'combinations') throw new Error('组合文件夹只保留「角色」；请在角色库改名自定义角色，投影卡片名称会同步');
     const patch = {};
     if (args.name !== undefined) patch.name = typeof args.name === 'string' ? args.name.trim() : '';
     if (args.parentId !== undefined) patch.parentId = args.parentId;
@@ -179,7 +184,7 @@ export function createAgentDirectories(requestJson, { catalogMembers, resultStor
   // 调用方必须先取得删除授权；这里只执行目录删除，绝不删除成员资料。
   const remove = async args => {
     const snapshot = await load(args.scope), current = node(snapshot, args.id);
-    if (args.scope === 'combinations') throw new Error('组合文件夹仅与角色库自定义角色互通，请在角色库删除角色；目录树只保留「角色」');
+    if (args.scope === 'combinations') throw new Error('组合文件夹只保留「角色」；请在角色库删除自定义角色以移除其组合投影');
     if (args.scope === 'inspirations') await requestJson(`${snapshot.spec.endpoint}/${pathOf(args.id)}`, { method: 'DELETE' });
     else if (args.scope === 'prompts') await save(args.scope, snapshot, removePromptLibraryDirectory(snapshot.state, args.id).nodes);
     else {

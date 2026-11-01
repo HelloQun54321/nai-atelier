@@ -82,6 +82,7 @@ export const planRollToChain = (
 ): RollToChainPlan => {
   const scope: RollToChainScope = options.scope === 'extra' ? 'extra' : 'split';
   const include = Array.isArray(options.include) ? new Set(options.include) : null;
+  const sourceCharacters = Array.isArray(chain?.params?.characters) ? chain.params.characters : null;
   const params = normalizeParams((chain?.params || null) as NAIParams | null) as NAIParams & Record<string, unknown>;
   // 未分栏或与旧分栏不一致的主体，沿用编辑器规则保留在补充栏。
   const sections: Record<string, unknown> = { ...resolvePromptSections(params._promptSections,
@@ -89,8 +90,9 @@ export const planRollToChain = (
   const sectionNegatives = { ...(plainObject(sections.sectionNegatives) || {}) };
   const sourceMeta = plainObject(sections.sectionMeta);
   const sectionMeta: Record<string, unknown> = sourceMeta ? { ...sourceMeta } : {};
-  const characters: any[] = Array.isArray(params.characters)
-    ? params.characters.map((item: any) => ({
+  // 风格串若本来没有角色，不要沿用实验室空稿注入的空白槽，避免「新建角色」写成空槽＋新角色两份。
+  const characters: any[] = sourceCharacters
+    ? sourceCharacters.map((item: any) => ({
       ...item,
       sections: plainObject(item?.sections) ? { ...item.sections } : item?.sections,
       sectionNegatives: { ...(plainObject(item?.sectionNegatives) || {}) },
@@ -150,7 +152,9 @@ export const planRollToChain = (
   if (Object.keys(sectionNegatives).length) sections.sectionNegatives = sectionNegatives;
   else delete sections.sectionNegatives;
   params._promptSections = (Object.keys(sectionMeta).length ? { ...sections, sectionMeta } : sections) as NAIParams['_promptSections'];
-  if (characters.length) params.characters = characters;
+  // 源串未声明角色且本次也未新建时，清掉 normalizeParams 注入的实验室空槽。
+  if (sourceCharacters || characters.length) params.characters = characters;
+  else delete params.characters;
   const variableValues = {
     ...(plainObject(chain?.variableValues) || {}),
     subject: mergePromptSections(params._promptSections),

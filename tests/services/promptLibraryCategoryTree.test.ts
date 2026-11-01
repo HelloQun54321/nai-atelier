@@ -24,29 +24,26 @@ it('分类路径只用于显示，未知名称或未加载树时保持原标签'
   expect(promptLibraryCategoryLabel(undefined, '原标签')).toBe('原标签');
 });
 
-it('投影只保留角色根与自定义角色子夹，不把任意组合标签扩成文件夹', () => {
+it('投影只保留角色根，自定义角色不进目录树，也不把任意组合标签扩成文件夹', () => {
   const combo = { ...createCombinationData('组合', { scene: { kind: 'scene', text: 'night', filled: true } }), id: 'combo', tags: ['夜景', '旧分类'] } as PromptChain;
   const character = { id: 'char-1', type: 'character', name: '小铃', tags: [] } as unknown as PromptChain;
   const catalog = { id: 'catalog', type: 'character', name: '词库角色', tags: ['__character_catalog__'] } as unknown as PromptChain;
   const stored = { revision: 2, nodes: [node('测试'), node('双人')] };
   const before = structuredClone({ stored, combo });
   const projected = projectPromptLibraryCategoryTree([combo, character, catalog], ['测试', '夜景'], stored);
-  expect(projected).toEqual({
-    revision: 2,
-    nodes: [node(PROMPT_LIBRARY_CHARACTER_ROOT), node('小铃', PROMPT_LIBRARY_CHARACTER_ROOT)],
-  });
+  expect(projected).toEqual({ revision: 2, nodes: [node(PROMPT_LIBRARY_CHARACTER_ROOT)] });
   expect({ stored, combo }).toEqual(before);
   expect(listPromptLibraryCustomCharacters([character, catalog]).map(item => item.name)).toEqual(['小铃']);
   expect(normalizeStoredPromptLibraryCategoryTree(projected)).toEqual(defaultPromptLibraryCategoryTree(2));
   expect(projectPromptLibraryCategoryTree([], [], emptyPromptLibraryCategoryTree()).nodes).toEqual([node(PROMPT_LIBRARY_CHARACTER_ROOT)]);
 });
 
-it('同名自定义角色只投影一个子夹，非法名称跳过', () => {
+it('同名与非法名自定义角色仍可列出，但不生成子文件夹', () => {
   const a = { id: 'a', type: 'character', name: '同名', tags: [] } as unknown as PromptChain;
   const b = { id: 'b', type: 'character', name: '同名', tags: [] } as unknown as PromptChain;
   const bad = { id: 'c', type: 'character', name: '含,逗号', tags: [] } as unknown as PromptChain;
-  const projected = projectPromptLibraryCategoryTree([a, b, bad], [], emptyPromptLibraryCategoryTree());
-  expect(projected.nodes.map(item => item.id)).toEqual([PROMPT_LIBRARY_CHARACTER_ROOT, '同名']);
+  expect(projectPromptLibraryCategoryTree([a, b, bad], [], emptyPromptLibraryCategoryTree()).nodes.map(item => item.id)).toEqual([PROMPT_LIBRARY_CHARACTER_ROOT]);
+  expect(listPromptLibraryCustomCharacters([a, b, bad]).map(item => item.name)).toEqual(['同名', '同名']);
 });
 
 it('沿用标签合法名称并校验身份、全局唯一、缺父、循环和版本，允许一千层', () => {

@@ -5,7 +5,7 @@ import { db } from '../../services/dbService';
 import { getCustomChainTags, isCustomChainTag, normalizeChainTags } from '../../services/chainTags';
 import { t, useLanguage } from '../../services/i18n';
 import { useConfirmDialog } from '../ConfirmDialog';
-import { IconButton, ToolbarButton, ToolbarSearch, WorkspacePageState } from '../DesignSystem';
+import { IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspacePageState } from '../DesignSystem';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useMobileHistoryLayer } from '../MobileUI';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
@@ -103,7 +103,7 @@ const ChainTagPanel: React.FC<ChainTagManagerProps> = ({ chains, isLoading = fal
     <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('管理标签')} aria-busy={busy} className="appearance-panel ui-sheet-enter mobile-safe-bottom flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 md:rounded-2xl" onClick={event => event.stopPropagation()}>
       <header className="flex flex-none items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800"><h2 className="text-lg font-bold">{t('管理标签')}</h2><IconButton label={t('关闭')} disabled={busy} onClick={close}><X /></IconButton></header>
       <div className="flex-none p-3"><ToolbarSearch aria-label={t('搜索标签')} value={search} disabled={busy} onChange={event => setSearch(event.target.value)} placeholder={t('搜索标签')} /></div>
-      {readPending && <WorkspacePageState role={isLoading ? 'status' : 'alert'} className="px-3 pb-3 text-center text-sm text-gray-500">{isLoading ? t('加载中…') : t(loadError || '')}{!isLoading && <ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重试')}</ToolbarButton>}</WorkspacePageState>}
+      {readPending && (isLoading ? (visibleTags.length ? <InlineSpinner className="mx-auto mb-3" /> : <PageSpinner fill={false} className="py-6" />) : <WorkspacePageState role="alert" className="px-3 pb-3 text-center text-sm text-gray-500">{t(loadError || '')}<ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重试')}</ToolbarButton></WorkspacePageState>)}
       {needsReload && <div className="px-3 pb-3"><p role="alert" className="mb-2 text-xs text-red-500">{t('标签回读失败，请重新加载后再操作')}</p><ToolbarButton disabled={busy} onClick={() => void reload()}>{t('重新加载标签')}</ToolbarButton></div>}
       <ul className="min-h-0 overflow-y-auto px-3 pb-3">
         {visibleTags.map(([tag, count]) => <li key={tag} className="flex min-h-12 items-center gap-2 border-b border-gray-100 py-1 dark:border-gray-800">

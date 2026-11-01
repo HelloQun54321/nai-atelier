@@ -31,7 +31,7 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { Check, ChevronDown, Dice5, LoaderCircle, Pencil, Plus, Tag, Trash2, UserRound } from 'lucide-react';
-import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
+import { InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, EmptyState } from './DesignSystem';
 import { useModalA11y } from './useModalA11y';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
@@ -896,14 +896,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         )}
         {showFavOnly && !collectionReady && (variantBackfillError
           ? <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-500">{t(variantBackfillError)}<ToolbarButton onClick={() => { setVariantBackfillError(''); setVariantBackfillRetry(value => value + 1); }}>{t('重试')}</ToolbarButton></p>
-          : <p role="status" className="text-sm text-gray-500">{t('加载中…')}</p>)}
+          : visibleCards.length ? <InlineSpinner className="w-full py-2" /> : <PageSpinner />)}
         {/* 目录与分组常因同一词库缺失同时失败，合并为一行，重试同时重新读取两者。 */}
         {(resultError || !customSource && groupError) && <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-red-500">{t(resultError || '角色 Tag 目录加载失败')}<ToolbarButton onClick={() => {
           if (resultError) { if (customSource) onRetryChains?.(); else setCatalogRetry(value => value + 1); }
           if (!customSource && groupError) setGroupRetry(value => value + 1);
         }}>{t('重试')}</ToolbarButton></p>}
-        {isLoading && (customSource || !groupLoading) && <p role="status">{t('加载中…')}</p>}
-        {!customSource && !groupCatalogReady && !groupError && <p role="status">{t("正在加载更多角色…")}</p>}
+        {isLoading && (customSource || !groupLoading) && (visibleCards.length ? <InlineSpinner className="w-full py-2" /> : <PageSpinner />)}
+        {!customSource && !groupCatalogReady && !groupError && (visibleCards.length ? <InlineSpinner label={t('正在加载更多角色…')} className="w-full py-2" /> : <PageSpinner />)}
         {(!showFavOnly || collectionReady) && (!isLoading && !resultError) && (!grouped || groups.ready) && (customSource || groupCatalogReady && !groupError) && visibleCards.length === 0 && (
           <EmptyState
             title={t("没有找到符合条件的角色")}

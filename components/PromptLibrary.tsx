@@ -47,13 +47,13 @@ import type { ChainType, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { promptAgentService, type PromptLibraryItem, type PromptLibraryKind } from '../services/promptAgent';
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PromptLibraryCard, PromptLibraryGallery } from './PromptLibraryCard';
 import { ImageLightbox } from './ImageLightbox';
-import { SmartImage } from './SmartImage';
+import { ImageActivityContext, SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { PromptLibraryBundleDialog } from './PromptLibraryBundleDialog';
@@ -72,6 +72,8 @@ import type { CollectionTarget } from '../services/collectionFavorites';
 import { getPromptLibraryEntryDirectoryIds, getPromptLibraryDirectoryPath, selectPromptLibraryDirectoryEntries } from '../services/promptLibraryDirectories';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
+import { usePromptLibraryCoverActions } from './usePromptLibraryCoverActions';
+import { promptLibraryCoverContent } from '../services/promptLibraryCoverTemplate';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
@@ -239,6 +241,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const onRetryChains = suppliedRetryChains ?? library?.onRetryChains;
   const countsPending = !!(chainsLoading || chainsError);
   const confirmAction = useConfirmDialog();
+  const pageActive = React.useContext(ImageActivityContext);
+  const coverActions = usePromptLibraryCoverActions({ active: pageActive !== false, notify });
   const Icon = config.general ? Library : KIND_ICONS[config.kind];
   const generatorTitle = library?.directories ? 'AI 生成片段' : config.generateLabel.replace('✦ ', '');
 
@@ -724,10 +728,16 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const renderCard = (chain: PromptChain) => {
     const name = chain.name || t('未命名');
+    void coverActions.revision;
+    const coverGeneration = coverActions.getGeneration(chain.id);
+    const coverBusy = coverActions.isBusy(chain.id);
     return <PromptLibraryCard chain={chain} label={promptLibraryEntryLabel(chain, library?.directories)} openLabel={t('{0}：{1}', [t(config.itemNoun), name])}
-      busy={savingRename} onOpen={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }} onEdit={() => setDetail(draftFromChain(chain))}
-      onDelete={() => void removeChain(chain.id, name)} onCopy={() => void copyText(chainPrompt(chain), t('英文提示词'))}
+      busy={savingRename} onOpen={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }}
+      onDelete={() => void removeChain(chain.id, name)}
+      onClearCover={chain.previewImage ? async () => { await onUpdateChain(chain.id, { previewImage: '' }); } : undefined}
       notify={notify}
+      coverGeneration={coverGeneration} coverBusy={coverBusy} coverDisabled={!promptLibraryCoverContent(chain)}
+      onGenerateCover={() => coverActions.requestCover(chain)} onManageCoverGeneration={coverActions.manageGeneration}
       mediaInfo={<><PromptLibraryUsageBadge count={usageById.get(chain.id) || 0} />{chainReferences(chain).length > 0 && <span className="absolute bottom-2 left-2 z-10 rounded-full bg-black/60 px-2 py-0.5 text-micro text-white">{t('参考图 {0}', [chainReferences(chain).length])}</span>}</>}
       summary={!chain.previewImage ? chainBilingual(chain) || chainPrompt(chain) : undefined}
       title={renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
@@ -803,6 +813,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
             </div>
           )}
           {selectedTags.size > 1 && <p className="text-xs text-gray-400">{t('只显示同时包含全部所选标签的{0}', [t(config.itemNoun)])}</p>}
+          <div className="pt-1"><ToolbarButton onClick={() => coverActions.openCoverSettings()}>{t('封面生成设置')}</ToolbarButton></div>
         </div>
       </ToolbarPopover>
       <div className="relative min-w-0 flex-1">
@@ -824,7 +835,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const listBody = shown.length ? (
     <PromptLibraryGallery chains={shown} scrollRef={scrollRef} resetKey={JSON.stringify([query, sort, [...selectedTags], directorySelectionKey])} renderCard={renderCard} />
-  ) : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : (
+  ) : countsPending ? <PromptLibraryReadStatus chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={onRetryChains} /> : config.emptyTitle === '加载中…' ? (
+    <PageSpinner />
+  ) : (
     <EmptyState
       className="py-20"
       icon={<Icon className="h-8 w-8" aria-hidden="true" />}
@@ -1202,6 +1215,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     <HistoryImagePicker zIndex={library?.directories ? 1950 : undefined} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect}
       scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
     {viewerModal}
+    {coverActions.settingsDialog}
   </>;
   if (initialEntry && panel) return <>
     <DetailSidePanel open title={detail?.name || initialEntry.name} sensitiveTitle subInfo={draftDirty ? t('未保存') : promptLibraryEntryLabel(initialEntry, library?.directories)}
@@ -1211,6 +1225,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     </DetailSidePanel>
     {viewerModal}
     <HistoryImagePicker zIndex={2200} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+    {coverActions.settingsDialog}
   </>;
   if (initialEntry) return <>
     <LibraryDialog title={detail?.name || t('编辑')} wide className="max-w-5xl!" busy={savingDetail} headerActions={detailActions} onClose={() => { void closeDetail(); return false; }}>
@@ -1219,6 +1234,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     </LibraryDialog>
     {generator}{viewerModal}
     <HistoryImagePicker zIndex={2200} allowImportParams={false} open={picker !== null} onClose={() => setPicker(null)} onSelect={handleHistorySelect} scopeChainId={picker === 'cover' && detail?.id ? detail.id : null} />
+    {coverActions.settingsDialog}
   </>;
   if (embedded) return (
     <div className="flex min-h-0 flex-1 flex-col">

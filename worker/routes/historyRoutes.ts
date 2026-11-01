@@ -13,6 +13,7 @@ import type { Inspiration } from '../../types';
 import { collectionBoardTreeKey, projectCollectionBoardTree, readCollectionBoardTree, removeCollectionBoardTreeNode, type CollectionBoardTree } from '../../services/collectionBoardTree';
 import { readPromptLibraryTagNames } from '../../services/promptLibraryTags';
 import { archiveArtistSampleHistory } from './artistSampleRoutes';
+import { archivePromptLibraryCoverHistory } from './promptLibraryCoverRoutes';
 import {
   deletePromptLibraryLinksByHistory, ensurePromptLibraryLinkSchema, promptLibraryHistoryText, promptLibraryLinkHint,
   syncPromptLibraryCover, writePromptLibraryLinks, type PromptLibraryLinkHint,
@@ -1104,6 +1105,9 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       try { await archiveArtistSampleHistory(ctx, item, imageKey); }
       // 样张失败仍交付已保存的历史，前端仅重试入库，不能再次消费生成。
       catch (cause) { console.error('画师样张自动保存失败，生成历史已保留', cause); }
+      try { await archivePromptLibraryCoverHistory(ctx, item, imageKey); }
+      // 封面失败仍交付已保存的历史，前端仅重试写封面，不能再次消费生成。
+      catch (cause) { console.error('提示词库封面自动写入失败，生成历史已保留', cause); }
       return json({ item });
     }
 

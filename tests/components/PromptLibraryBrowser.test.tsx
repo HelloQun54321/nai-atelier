@@ -6,13 +6,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 beforeEach(() => vi.stubGlobal('ResizeObserver', class { constructor(private callback: ResizeObserverCallback) {} observe(target: Element) { if (target.classList.contains('chain-masonry')) this.callback([{ target, contentRect: { width: 800 } } as ResizeObserverEntry], this as unknown as ResizeObserver); } unobserve() {} disconnect() {} }));
 import type { PromptChain } from '../../types';
 import { PromptBrowseHighlight, PromptLibraryBrowser, type PromptLibraryBrowserProps } from '../../components/PromptLibraryBrowser';
+import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { createCombinationData, createFragmentData } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { longPress } from '../support/touchEvents';
 import { mockGalleryGeometry } from '../support/galleryGeometry';
+const wrap = (ui: React.ReactNode) => <ConfirmDialogProvider>{ui}</ConfirmDialogProvider>;
 
 vi.mock('../../components/SmartImage', async importOriginal => ({ ...await importOriginal<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className, containerClassName = 'relative h-full w-full overflow-hidden' }: { src: string; alt: string; className?: string; containerClassName?: string }) => <div className={containerClassName}><img src={src} alt={alt} className={className} /></div> }));
-vi.mock('../../components/ImageShareActions', async importOriginal => ({ ...await importOriginal<typeof import('../../components/ImageShareActions')>(), ImageShareActions: ({ favorite }: { favorite: { sourceType: string; sourceId: string } }) => <div data-card-action="true" data-testid="image-share" data-source-type={favorite.sourceType} data-source-id={favorite.sourceId} onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制图</button></div> }));
+vi.mock('../../components/ImageShareActions', async importOriginal => ({ ...await importOriginal<typeof import('../../components/ImageShareActions')>(), ImageShareActions: ({ favorite, showTransfer = true }: { favorite: { sourceType: string; sourceId: string }; showTransfer?: boolean }) => <div data-card-action="true" data-testid="image-share" data-source-type={favorite.sourceType} data-source-id={favorite.sourceId} data-show-transfer={showTransfer ? '1' : '0'} onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button>{showTransfer && <><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制图</button></>}</div> }));
 const entries = [
   { id: 'dress', ...createFragmentData('night dress', '礼服', 'wardrobe'), params: { _promptLibraryPurposes: ['clothing', 'time'] }, tags: ['晚间', '正式'] },
   { id: 'raw', ...prepareCollectedPrompt('night garden', '花园'), tags: ['晚间'] },
@@ -23,7 +25,7 @@ const use = vi.fn(); const edit = vi.fn();
 
 it('条目读取状态：主浏览延迟和失败不显示空库，成功空库与缓存刷新分别展示', () => {
   const retry = vi.fn();
-  const page = (chains: PromptChain[], chainsLoading = false, chainsError = '') => <PromptLibraryBrowser chains={chains} chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={retry} toolbarSlot={null} onUse={use} onOpen={edit} notify={vi.fn()} />;
+  const page = (chains: PromptChain[], chainsLoading = false, chainsError = '') => wrap(<PromptLibraryBrowser chains={chains} chainsLoading={chainsLoading} chainsError={chainsError} onRetryChains={retry} toolbarSlot={null} onUse={use} onOpen={edit} notify={vi.fn()} />);
   const view = render(page([], true));
   expect(screen.getByText('加载中…')).toBeTruthy();
   expect(screen.queryByText('提示词库还是空的')).toBeNull();
@@ -36,9 +38,9 @@ it('条目读取状态：主浏览延迟和失败不显示空库，成功空库�
   expect(screen.queryByText('加载中…')).toBeNull();
   view.rerender(page(entries, false, '读取提示词库失败')); expect(screen.getByRole('button', { name: '查看礼服' })).toBeTruthy();
 });
-const Harness = ({ chains = entries, notify = vi.fn(), ...props }: Partial<Pick<PromptLibraryBrowserProps, 'chains' | 'focusEntryId' | 'categoryNames' | 'categoryTree' | 'categoriesBusy' | 'onCreateDirectory' | 'onRenameDirectory' | 'onDeleteDirectory' | 'onMoveDirectory' | 'directoriesBusy' | 'onExtract' | 'categoryChange' | 'onUpdateTags' | 'onDelete' | 'notify'>>) => {
+const Harness = ({ chains = entries, notify = vi.fn(), ...props }: Partial<Pick<PromptLibraryBrowserProps, 'chains' | 'focusEntryId' | 'categoryNames' | 'categoryTree' | 'categoriesBusy' | 'onCreateDirectory' | 'onRenameDirectory' | 'onDeleteDirectory' | 'onMoveDirectory' | 'directoriesBusy' | 'onExtract' | 'categoryChange' | 'onUpdateTags' | 'onDelete' | 'onClearCover' | 'notify'>>) => {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-  return <><div ref={setSlot} data-toolbar-caption-host /><PromptLibraryBrowser {...props} chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={notify} /></>;
+  return wrap(<><div ref={setSlot} data-toolbar-caption-host /><PromptLibraryBrowser {...props} chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={notify} /></>);
 };
 const customCharacter = (id: string, name: string) => ({ id, type: 'character', name, tags: [] } as unknown as PromptChain);
 const categoryCombo = (id: string, name: string, tags: string[], prompt = 'night garden') => ({ id, ...createCombinationData(name, { scene: { kind: 'scene', text: prompt, filled: true } }, tags) }) as PromptChain;
@@ -113,7 +115,23 @@ it('新目录组合展示路径正文负面与约束，没有封面不预留图�
   render(<Harness chains={[combo]} focusEntryId="dynamic" />);
   const detail = screen.getByRole('complementary', { name: '目录组合' });
   expect(within(detail).queryByRole('img')).toBeNull();
+  expect(within(detail).queryByRole('button', { name: '编辑目录组合' })).toBeNull();
   for (const text of ['人物整体 / 服饰与配件', 'winter coat', '负面提示词：summer dress', '保留围巾', 'snowy street', '负面提示词：beach']) expect(within(detail).getByText(text)).toBeTruthy();
+  expect(within(detail).getByRole('button', { name: '编辑' })).toBeTruthy();
+});
+
+it('组合无可用快照内容时详情回退展示原文，不留空白侧栏', () => {
+  const combo = {
+    id: 'plain', name: '纯文组合', type: 'preset', basePrompt: 'moon garden, soft light', negativePrompt: 'blurry', description: '手写备注', tags: ['角色'],
+    params: { _rollContentSnapshot: { format: 'nai-roll-content', version: 1 } },
+  } as unknown as PromptChain;
+  render(<Harness chains={[combo]} />);
+  fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
+  fireEvent.click(screen.getByRole('button', { name: '查看纯文组合' }));
+  const detail = screen.getByRole('complementary', { name: '纯文组合' });
+  expect(within(detail).getByText('moon garden, soft light')).toBeTruthy();
+  expect(within(detail).getByText('blurry')).toBeTruthy();
+  expect(within(detail).getByText('手写备注')).toBeTruthy();
 });
 
 it.each(['auto', 4])('列数偏好%s：详情按剩余宽度减少列数，关闭恢复且不改偏好', desktopColumns => {
@@ -212,27 +230,15 @@ it('中英文多空白命中按原串范围高亮，保留正文且正则符号�
   expect(view.container.querySelector('mark')?.textContent).toBe('(dress)+');
 });
 
-it('管理入口先关闭筛选层，避免其遮挡后打开的管理对话框', () => {
-  const ManageHarness = () => {
-    const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-    const [open, setOpen] = useState(false);
-    return <><div ref={setSlot} /><PromptLibraryBrowser chains={entries} toolbarSlot={slot} onUse={use} onOpen={edit} notify={vi.fn()} onManage={() => setOpen(true)} />{open && <div role="dialog" aria-label="资料管理" />}</>;
-  };
-  render(<ManageHarness />);
-  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(screen.getByRole('dialog', { name: '筛选提示词库' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '管理提示词' }));
-  expect(screen.queryByRole('dialog', { name: '筛选提示词库' })).toBeNull();
-  expect(screen.getByRole('dialog', { name: '资料管理' })).toBeTruthy();
-});
-
-it('目录仅保留统一新建编辑删除，筛选与导航不再提供重复管理入口', () => {
+it('目录仅保留统一新建编辑删除，筛选不再套娃管理提示词', () => {
   render(<Harness onCreateDirectory={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.getByRole('button', { name: '新建目录' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: '管理目录' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   expect(screen.queryByRole('button', { name: '管理分类' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '管理提示词' })).toBeNull();
+  expect(screen.getByRole('button', { name: '封面生成设置' })).toBeTruthy();
 });
 
 it('主浏览片段目录拖动接入持久化回调，保存期间禁用拖动且不更改当前筛选', () => {
@@ -253,29 +259,29 @@ it('主浏览片段目录拖动接入持久化回调，保存期间禁用拖动�
   expect(screen.getByRole('button', { name: '人物 / 外貌与身体' }).getAttribute('draggable')).not.toBe('true');
 });
 
-it('手机管理等待筛选历史返回完成后才打开，避免迟到返回误关新窗口', async () => {
+it('手机从筛选打开 AI 提取时等待历史返回，避免迟到返回误关新窗口', async () => {
   const originalWidth = window.innerWidth;
   const originalMatchMedia = window.matchMedia;
   const originalState = window.history.state;
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
   window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList));
   const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
-  const manage = vi.fn();
+  const extract = vi.fn();
   const MobileHarness = () => {
     const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-    return <><div ref={setSlot} /><PromptLibraryBrowser chains={entries} toolbarSlot={slot} onUse={use} onOpen={edit} notify={vi.fn()} onManage={manage} /></>;
+    return wrap(<><div ref={setSlot} /><PromptLibraryBrowser chains={entries} toolbarSlot={slot} onUse={use} onOpen={edit} notify={vi.fn()} onExtract={extract} /></>);
   };
   const view = render(<MobileHarness />);
   try {
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     expect(window.history.state.__naiMobileLayer).toMatch(/^sheet-/);
-    fireEvent.click(screen.getByRole('button', { name: '管理提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: 'AI 提取分类' }));
     expect(screen.queryByRole('dialog', { name: '筛选提示词库' })).toBeNull();
     await waitFor(() => expect(back).toHaveBeenCalledTimes(1));
-    expect(manage).not.toHaveBeenCalled();
+    expect(extract).not.toHaveBeenCalled();
     window.history.replaceState(originalState, '');
     fireEvent(window, new PopStateEvent('popstate', { state: originalState }));
-    await waitFor(() => expect(manage).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(extract).toHaveBeenCalledTimes(1));
   } finally {
     view.unmount(); back.mockRestore();
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
@@ -284,18 +290,15 @@ it('手机管理等待筛选历史返回完成后才打开，避免迟到返回�
   }
 });
 
-it('组合详情只提交自定义标签，切换条目隔离草稿；组合筛选不显示预设用途且支持交集与清除', async () => {
-  const charA = customCharacter('char-a', '角色甲');
-  const charB = customCharacter('char-b', '角色乙');
-  const charCity = customCharacter('char-city', '城市');
-  const one = { id: 'one', ...createCombinationData('组合一', { scene: { kind: 'scene', filled: true, text: 'moon garden' } }, ['角色甲']) } as PromptChain;
-  const two = { id: 'two', ...createCombinationData('组合二', { scene: { kind: 'scene', filled: true, text: 'sun garden' } }, ['角色乙']) } as PromptChain;
+it('组合详情只提交自定义标签，切换条目隔离草稿；筛选芯片只列「角色」且支持交集与清除', async () => {
+  const one = { id: 'one', ...createCombinationData('组合一', { scene: { kind: 'scene', filled: true, text: 'moon garden' } }, ['角色']) } as PromptChain;
+  const two = { id: 'two', ...createCombinationData('组合二', { scene: { kind: 'scene', filled: true, text: 'sun garden' } }, ['夜景']) } as PromptChain;
   const update = vi.fn(async (_chain: PromptChain, _tags: string[]) => {});
   const TagHarness = () => {
-    const [chains, setChains] = useState([charA, charB, charCity, one, two]);
+    const [chains, setChains] = useState([one, two]);
     const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-    return <><div ref={setSlot} /><PromptLibraryBrowser chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={vi.fn()}
-      onUpdateTags={async (chain, tags) => { await update(chain, tags); setChains(previous => previous.map(item => item.id === chain.id ? { ...item, tags } : item)); }} /></>;
+    return wrap(<><div ref={setSlot} /><PromptLibraryBrowser chains={chains} toolbarSlot={slot} onUse={use} onOpen={edit} notify={vi.fn()}
+      onUpdateTags={async (chain, tags) => { await update(chain, tags); setChains(previous => previous.map(item => item.id === chain.id ? { ...item, tags } : item)); }} /></>);
   };
   render(<TagHarness />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
@@ -304,22 +307,23 @@ it('组合详情只提交自定义标签，切换条目隔离草稿；组合筛�
   fireEvent.change(screen.getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '另一条草稿' } });
   fireEvent.click(screen.getByRole('button', { name: '查看组合二' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
-  expect((screen.getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('角色乙');
+  expect((screen.getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('夜景');
   fireEvent.click(screen.getByRole('button', { name: '查看组合一' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
-  expect((screen.getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('角色甲');
-  fireEvent.change(screen.getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '角色乙，城市, 角色乙' } });
+  expect((screen.getByRole('textbox', { name: '编辑自定义标签' }) as HTMLInputElement).value).toBe('角色');
+  fireEvent.change(screen.getByRole('textbox', { name: '编辑自定义标签' }), { target: { value: '角色，夜景, 角色' } });
   fireEvent.click(screen.getByRole('button', { name: '保存标签' }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith(one, ['角色乙', '城市']));
+  await waitFor(() => expect(update).toHaveBeenCalledWith(one, ['角色', '夜景']));
   await waitFor(() => expect(screen.queryByRole('textbox', { name: '编辑自定义标签' })).toBeNull());
   const detail = screen.getByRole('complementary', { name: '组合一' });
   expect(within(detail).getByText('moon garden')).toBeTruthy();
-  expect(within(detail).getByText('角色 / 城市')).toBeTruthy();
+  expect(within(detail).getByText('角色')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   expect(screen.getByRole('dialog', { name: '筛选组合' })).toBeTruthy();
   expect(screen.queryByRole('combobox', { name: '片段用途' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 角色乙' }));
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 城市' }));
+  expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '夜景' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '角色' }));
   expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
   expect(document.querySelector('[data-prompt-library-entry="one"]')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '清除标签筛选' }));
@@ -411,35 +415,26 @@ it('展开偏好跨重挂载保留，旧多目录偏好在新点选前不被改�
   expect(JSON.parse(localStorage.getItem('nai-prompt-library-browse') || '{}').directoryIds).toEqual(['person-wardrobe']);
 });
 
-it('组合分类仅列角色投影目录，详情候选同源，重命名合并同步所选分类并去重', () => {
+it('组合分类与详情标签候选只列「角色」，筛选手填标签不长出文件夹', () => {
   const emptyChar = customCharacter('empty-char', '预建空角色');
-  const oldChar = customCharacter('old-char', '旧分类');
-  const targetChar = customCharacter('target-char', '目标分类');
-  const combo = categoryCombo('combo', '组合', ['旧分类', '目标分类']);
-  const chains = [...entries, emptyChar, oldChar, targetChar, combo];
-  const view = render(<Harness chains={chains} onUpdateTags={async () => {}} />);
+  const combo = categoryCombo('combo', '组合', ['旧分类', '角色']);
+  const chains = [...entries, emptyChar, combo];
+  render(<Harness chains={chains} onUpdateTags={async () => {}} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
   fireEvent.click(screen.getByRole('button', { name: '查看组合' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
-  expect(screen.getByRole('button', { name: '#角色 / 预建空角色' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '#角色 / 目标分类' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '#角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '#角色 / 预建空角色' })).toBeNull();
   expect(screen.queryByRole('button', { name: '#晚间' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(screen.getByRole('button', { name: '角色 / 预建空角色' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '角色 / 目标分类' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '晚间' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '正式' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 旧分类' }));
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 目标分类' }));
-  const merged = { ...combo, tags: ['目标分类'] };
-  view.rerender(<Harness chains={[...entries, emptyChar, targetChar, merged]} categoryChange={{ from: '旧分类', to: '目标分类', token: 1 }} onUpdateTags={async () => {}} />);
-  expect(screen.queryByRole('button', { name: '角色 / 旧分类' })).toBeNull();
-  expect(screen.getByRole('button', { name: '角色 / 目标分类' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '角色 / 预建空角色' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '旧分类' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '角色' }));
   expect(document.querySelector('[data-prompt-library-entry="combo"]')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '角色 / 目标分类' }));
-  expect(screen.queryByRole('button', { name: '清除标签筛选' })).toBeNull();
+  expect(document.querySelector('[data-prompt-library-entry="empty-char"]')).toBeTruthy();
 });
 
 it.each([390, 1280])('宽度%d组合范围无目录管理，片段范围保留新建目录', width => {
@@ -464,42 +459,42 @@ it.each([390, 1280])('宽度%d组合范围无目录管理，片段范围保留�
   } finally { view.unmount(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); }
 });
 
-it('组合详情仍使用角色投影标签候选，包含空自定义角色且排除片段原文标签', () => {
-  const emptyChar = customCharacter('empty-char', '预建空角色');
-  const taggedChar = customCharacter('tagged-char', '组合分类');
-  const combo = categoryCombo('combo', '组合', ['组合分类']);
-  render(<Harness chains={[...entries, emptyChar, taggedChar, combo]} onUpdateTags={async () => {}} />);
+it('自定义角色投影为组合卡片并可取用，详情不提供标签编辑', () => {
+  const emptyChar = { ...customCharacter('empty-char', '预建空角色'), basePrompt: 'boy, short hair' } as PromptChain;
+  const combo = categoryCombo('combo', '组合', ['角色']);
+  render(<Harness chains={[...entries, emptyChar, combo]} onUpdateTags={async () => {}} />);
   expect((screen.getByRole('combobox', { name: '提示词库范围' }) as HTMLSelectElement).value).toBe('items');
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
+  expect(document.querySelector('[data-prompt-library-entry="empty-char"]')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看预建空角色' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '查看预建空角色' }));
+  const detail = screen.getByRole('complementary', { name: '预建空角色' });
+  expect(within(detail).getByText('自定义角色')).toBeTruthy();
+  expect(within(detail).queryByRole('button', { name: '编辑标签' })).toBeNull();
+  expect(within(detail).getByRole('button', { name: '编辑' })).toBeTruthy();
+  expect(within(detail).getByRole('button', { name: '另存为新组合' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '查看组合' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
-  expect(screen.getByRole('button', { name: '#角色 / 预建空角色' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '#角色 / 组合分类' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '#晚间' })).toBeNull();
-  expect(screen.queryByRole('button', { name: '#正式' })).toBeNull();
+  expect(screen.getByRole('button', { name: '#角色' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '#角色 / 预建空角色' })).toBeNull();
 });
 
-it('组合筛选芯片只列角色投影文件夹，内部标记不进候选且不改原标签', () => {
-  const normalChar = customCharacter('normal', '普通分类');
-  const emptyChar = customCharacter('empty', '预建空角色');
-  const tagged = { id: 'tagged', ...createCombinationData('有分类组合', { scene: { kind: 'scene', filled: true, text: 'night sky' } }), tags: ['待实测', '__内部__', 'Pixiv', '普通分类'] } as PromptChain;
+it('组合筛选芯片只列「角色」，内部标记不进候选且不改原标签', () => {
+  const tagged = { id: 'tagged', ...createCombinationData('有分类组合', { scene: { kind: 'scene', filled: true, text: 'night sky' } }), tags: ['待实测', '__内部__', 'Pixiv', '角色'] } as PromptChain;
   const empty = categoryCombo('empty', '空分类组合', []);
   const before = JSON.stringify(tagged);
   const save = vi.fn(async () => {});
-  render(<Harness chains={[...entries, normalChar, emptyChar, tagged, empty]} onUpdateTags={save} />);
+  render(<Harness chains={[...entries, tagged, empty]} onUpdateTags={save} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(screen.getByRole('button', { name: '角色 / 普通分类' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '角色 / 预建空角色' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
   for (const name of ['待实测', '__内部__', 'Pixiv', '晚间', '正式']) expect(screen.queryByRole('button', { name })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.click(screen.getByRole('button', { name: '查看空分类组合' }));
   fireEvent.click(screen.getByRole('button', { name: '编辑标签' }));
   fireEvent.click(screen.getByRole('button', { name: '选择已有标签' }));
-  expect(screen.getByRole('button', { name: '#角色 / 普通分类' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: '#角色 / 预建空角色' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '#角色' })).toBeTruthy();
   for (const name of ['#待实测', '#__内部__', '#Pixiv', '#晚间']) expect(screen.queryByRole('button', { name })).toBeNull();
   expect(JSON.stringify(tagged)).toBe(before);
   expect(save).not.toHaveBeenCalled();
@@ -509,7 +504,7 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 1, desktopColumns: 3 }));
   const combo = { id: 'combo', ...createCombinationData('搭配', { scene: { kind: 'scene', filled: true, text: 'rainy garden' } }) } as PromptChain;
   const image = { ...entries[0], previewImage: 'data:image/png;base64,synthetic' };
-  render(<Harness chains={[image, { id: 'raw', ...createFragmentData('night garden', '花园', 'general') } as PromptChain, combo]} onDelete={async () => {}} />);
+  render(<Harness chains={[image, { id: 'raw', ...createFragmentData('night garden', '花园', 'general') } as PromptChain, combo]} onDelete={async () => {}} onClearCover={async () => {}} />);
   const grid = document.querySelector('.chain-masonry') as HTMLElement;
   expect(grid.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
   expect(grid.querySelector('.chain-masonry-column')).toBeTruthy();
@@ -527,11 +522,14 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
     const left = remove.closest('[data-image-action-left]')!;
     for (const value of ['hover-reveal-md', 'absolute', 'left-2', 'top-2', 'z-20']) expect(left.classList.contains(value)).toBe(true);
     for (const value of ['mobile-size-locked', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'bg-red-500']) expect(remove.classList.contains(value)).toBe(true);
-    expect(within(card).getByRole('button', { name: /^编辑/ }).closest('.image-card-actions')).toBeTruthy();
-    expect(within(card).getByRole('button', { name: /^复制(?:礼服|花园|组合数据)/ }).closest('.image-card-actions')).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: /^编辑/ })).toBeNull();
+    expect(within(card).queryByRole('button', { name: /^复制(?:礼服|花园|组合数据)/ })).toBeNull();
     expect(within(card).queryByRole('button', { name: '使用' })).toBeNull();
     expect(within(card).queryByRole('button', { name: '送到实验室' })).toBeNull();
   }
+  const covered = document.querySelector('[data-prompt-library-entry="dress"]') as HTMLElement;
+  expect(within(covered).getByRole('button', { name: '删除当前封面' }).closest('[data-image-action-left]')?.className).toMatch(/top-14|md:top-11/);
+  expect(within(document.querySelector('[data-prompt-library-entry="raw"]') as HTMLElement).queryByRole('button', { name: '删除当前封面' })).toBeNull();
   const raw = document.querySelector('[data-prompt-library-entry="raw"]') as HTMLElement;
   expect(raw.querySelector('.mobile-gallery-frame')?.classList.contains('dark:bg-gray-800')).toBe(true);
   expect(within(raw).getAllByText('night garden')).toHaveLength(1);
@@ -540,6 +538,9 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
   const share = screen.getByTestId('image-share');
   expect(share.dataset.sourceType).toBe('other');
   expect(share.dataset.sourceId).toBe('dress');
+  expect(share.dataset.showTransfer).toBe('0');
+  expect(within(share).queryByRole('button', { name: '下载图片' })).toBeNull();
+  expect(within(share).queryByRole('button', { name: '复制图片' })).toBeNull();
   expect(share.closest('[data-prompt-library-entry]')?.getAttribute('data-prompt-library-entry')).toBe('dress');
   expect(share.closest('.image-card-actions')).toBeTruthy();
   expect(share.closest('[data-image-action-left]')).toBeNull();
@@ -549,18 +550,11 @@ it('片段统一封面与caption卡片，空封面只展示一次摘要，真实
   for (const card of document.querySelectorAll<HTMLElement>('[data-prompt-library-entry]')) expect(card.style.display).toBe('grid');
 });
 
-it('片段编辑与复制不冒泡，正文保持原文，卡片及详情不提供使用', async () => {
+it('片段卡片不放铅笔或复制提示词，点卡片打开详情且不提供使用', async () => {
   use.mockClear(); edit.mockClear();
-  const writeText = vi.fn(async () => {});
-  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   render(<Harness chains={[entries[0]]} />);
-  fireEvent.click(screen.getByRole('button', { name: '编辑礼服' }));
-  expect(edit).toHaveBeenCalledWith(entries[0]);
-  expect(screen.queryByRole('complementary')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '复制礼服' }));
-  await waitFor(() => expect(writeText).toHaveBeenCalledWith('night dress'));
-  expect(screen.queryByRole('complementary')).toBeNull();
-  expect(use).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '编辑礼服' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '复制礼服' })).toBeNull();
   expect(screen.queryByRole('button', { name: '使用' })).toBeNull();
   expect(screen.queryByRole('button', { name: '送到实验室' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '查看礼服' }));
@@ -568,6 +562,7 @@ it('片段编辑与复制不冒泡，正文保持原文，卡片及详情不提�
   expect(within(detail).queryByRole('button', { name: '使用' })).toBeNull();
   expect(within(detail).queryByRole('button', { name: '送到实验室' })).toBeNull();
   expect(use).not.toHaveBeenCalled();
+  expect(edit).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -605,8 +600,8 @@ it('删除在途只提交一次，等待结束前卡片动作禁用，不提前�
   expect(remove).toHaveBeenCalledTimes(1);
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole('button', { name: '查看礼服' }).getAttribute('aria-busy')).toBe('true');
-  expect((screen.getByRole('button', { name: '编辑礼服' }) as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole('button', { name: '复制礼服' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole('button', { name: '编辑礼服' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '复制礼服' })).toBeNull();
   await act(async () => complete());
   expect((button as HTMLButtonElement).disabled).toBe(false);
   expect(screen.getByRole('button', { name: '查看礼服' })).toBeTruthy();
@@ -703,152 +698,136 @@ it('定位原文可独立打开详情并继续编辑取用，定位组合切到�
   expect(screen.getByRole('complementary', { name: '组合定位' })).toBeTruthy();
 });
 
-it('组合文件夹显示完整计数、空自定义角色与未归类，角色根汇总后代且叠加搜索标签', () => {
-  const nightChar = customCharacter('night', '夜景');
-  const formalChar = customCharacter('formal', '正式');
-  const emptyChar = customCharacter('empty', '空角色');
-  const first = categoryCombo('first', '礼服组合', ['夜景', '正式']);
-  const second = categoryCombo('second', '街景组合', ['夜景']);
-  const empty = { ...categoryCombo('empty', '无分类组合', []), tags: ['待实测', '__内部__', 'Pixiv'] };
-  const chains = [...entries, nightChar, formalChar, emptyChar, first, second, empty];
+it('组合「角色」夹计入真实组合与自定义角色投影，未归类不含投影', () => {
+  const qun = { ...customCharacter('qun', 'Qun'), basePrompt: 'boy' } as PromptChain;
+  const emptyChar = customCharacter('empty-char', '空角色');
+  const tagged = categoryCombo('tagged', '礼服组合', ['角色']);
+  const loose = categoryCombo('loose', '街景组合', ['夜景']);
+  const empty = { ...categoryCombo('empty-combo', '无分类组合', []), tags: ['待实测', '__内部__', 'Pixiv'] };
+  const chains = [...entries, qun, emptyChar, tagged, loose, empty];
   const before = JSON.stringify(chains);
   render(<Harness chains={chains} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } });
   fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   const nav = screen.getByRole('complementary', { name: '组合分类导航' });
-  expect(within(nav).getByRole('button', { name: '全部' }).textContent).toBe('全部3');
-  expect(within(nav).getByRole('button', { name: '未归类' }).textContent).toBe('未归类1');
-  expect(within(nav).getByRole('button', { name: '分类「角色」' }).textContent).toBe('角色2');
-  expect(within(nav).getByRole('button', { name: '分类「夜景」' }).textContent).toBe('夜景2');
-  expect(within(nav).getByRole('button', { name: '分类「空角色」' }).textContent).toBe('空角色0');
-  for (const name of ['待实测', '__内部__', 'Pixiv', '晚间']) expect(within(nav).queryByRole('button', { name: '分类「' + name + '」' })).toBeNull();
-  fireEvent.click(within(nav).getByRole('button', { name: '分类「角色」' })); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
-  fireEvent.click(within(nav).getByRole('button', { name: '分类「夜景」' })); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'night' } });
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '角色 / 正式' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
-  expect(within(nav).getByRole('button', { name: '分类「夜景」' }).textContent).toBe('夜景2');
-  fireEvent.click(screen.getByRole('button', { name: '查看礼服组合' }));
-  const detail = screen.getByRole('complementary', { name: '礼服组合' }), scroll = document.querySelector('.workspace-scroll-viewport') as HTMLDivElement;
-  scroll.scrollTop = 88; fireEvent.click(screen.getByRole('button', { name: '收起目录' }));
-  expect(screen.getByRole('complementary', { name: '礼服组合' })).toBe(detail); expect(scroll.scrollTop).toBe(88);
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); expect(screen.getByRole('button', { name: '分类「夜景」' }).getAttribute('aria-current')).toBe('page');
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '清除标签筛选' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  fireEvent.click(screen.getByRole('button', { name: '分类「空角色」' })); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(0);
-  fireEvent.click(screen.getByRole('button', { name: '未归类' })); expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeTruthy();
+  expect(within(nav).getByRole('button', { name: '全部' }).textContent).toBe('全部5');
+  expect(within(nav).getByRole('button', { name: '未归类' }).textContent).toBe('未归类2');
+  expect(within(nav).getByRole('button', { name: '分类「角色」' }).textContent).toBe('角色3');
+  for (const name of ['夜景', '空角色', 'Qun', '待实测', '__内部__', 'Pixiv']) expect(within(nav).queryByRole('button', { name: '分类「' + name + '」' })).toBeNull();
+  fireEvent.click(within(nav).getByRole('button', { name: '分类「角色」' }));
+  expect(document.querySelector('[data-prompt-library-entry="tagged"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="empty-char"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="loose"]')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '未归类' }));
+  expect(document.querySelector('[data-prompt-library-entry="empty-combo"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="loose"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeNull();
   expect(JSON.stringify(chains)).toBe(before);
 });
 
 it('片段与组合分别保留文件夹、展开偏好和会话标签，关键词继续共用', () => {
-  const folderChar = customCharacter('folder', '星夜');
-  const combo = categoryCombo('combo', '组合', ['星夜']);
-  render(<Harness chains={[...entries, folderChar, combo]} />);
+  const combo = categoryCombo('combo', '组合', ['角色']);
+  render(<Harness chains={[...entries, combo]} />);
   fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '人物 / 服饰与配件' }));
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.queryByRole('button', { name: '角色 / 星夜' })).toBeNull(); openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '时间与季节' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.queryByRole('button', { name: '角色' })).toBeNull(); openPurposeGroup('场景与环境'); fireEvent.click(screen.getByRole('button', { name: '时间与季节' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'night' } });
   const scope = screen.getByRole('combobox', { name: '提示词库范围' }); fireEvent.change(scope, { target: { value: 'saved' } });
   expect(screen.queryByRole('complementary', { name: '组合分类导航' })).toBeNull(); expect(screen.getByRole('button', { name: '展开目录' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '分类「星夜」' }));
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '角色 / 星夜' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '分类「角色」' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '角色' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.click(screen.getByRole('button', { name: '收起目录' }));
   fireEvent.change(scope, { target: { value: 'items' } }); expect(screen.getByRole('complementary', { name: '提示词目录导航' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '人物 / 服饰与配件' }).getAttribute('aria-current')).toBe('page');
   fireEvent.click(screen.getByRole('button', { name: '筛选' })); openPurposeGroup('场景与环境'); expect(screen.getByRole('button', { name: '时间与季节' }).getAttribute('aria-pressed')).toBe('true'); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   fireEvent.change(scope, { target: { value: 'saved' } }); expect(screen.queryByRole('complementary', { name: '组合分类导航' })).toBeNull();
   expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('night');
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); expect(screen.getByRole('button', { name: '分类「星夜」' }).getAttribute('aria-current')).toBe('page');
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.getByRole('button', { name: '角色 / 星夜' }).getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); expect(screen.getByRole('button', { name: '分类「角色」' }).getAttribute('aria-current')).toBe('page');
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.getByRole('button', { name: '角色' }).getAttribute('aria-pressed')).toBe('true');
 });
 
-it('组合分类改名与合并同步所选文件夹，不改片段同名标签筛选', () => {
+it('组合分类改名同步所选文件夹偏好，不改片段同名标签筛选', () => {
   const fragment = { ...entries[0], tags: ['旧分类'] };
-  const oldChar = customCharacter('old', '旧分类');
-  const newChar = customCharacter('new', '新分类');
-  const targetChar = customCharacter('target', '目标分类');
-  const first = categoryCombo('first', '组合一', ['旧分类', '目标分类']);
-  const second = categoryCombo('second', '组合二', ['目标分类']);
-  const view = render(<Harness chains={[fragment, oldChar, targetChar, first, second]} />);
+  const first = categoryCombo('first', '组合一', ['角色']);
+  const second = categoryCombo('second', '组合二', ['角色']);
+  const view = render(<Harness chains={[fragment, first, second]} />);
   fireEvent.click(screen.getByRole('button', { name: '筛选' })); openPurposeGroup('主体与外观'); fireEvent.click(screen.getByRole('button', { name: '服饰与配件' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
   const scope = screen.getByRole('combobox', { name: '提示词库范围' }); fireEvent.change(scope, { target: { value: 'saved' } });
-  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '分类「旧分类」' }));
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '角色 / 旧分类' })); fireEvent.click(screen.getByRole('button', { name: '角色 / 目标分类' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  const renamed = { ...first, tags: ['新分类', '目标分类'] };
-  view.rerender(<Harness chains={[fragment, oldChar, newChar, targetChar, renamed, second]} />);
-  expect(screen.getByRole('button', { name: '分类「旧分类」' }).getAttribute('aria-current')).toBe('page');
-  view.rerender(<Harness chains={[fragment, newChar, targetChar, renamed, second]} categoryChange={{ from: '旧分类', to: '新分类', token: 1 }} />);
-  expect(screen.getByRole('button', { name: '分类「新分类」' }).getAttribute('aria-current')).toBe('page'); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
-  const merged = { ...first, tags: ['目标分类'] };
-  view.rerender(<Harness chains={[fragment, targetChar, merged, second]} categoryChange={{ from: '新分类', to: '目标分类', token: 2 }} />);
-  expect(screen.getByRole('button', { name: '分类「目标分类」' }).getAttribute('aria-current')).toBe('page'); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '分类「角色」' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.click(screen.getByRole('button', { name: '角色' })); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  view.rerender(<Harness chains={[fragment, first, second]} categoryChange={{ from: '角色', to: '角色', token: 1 }} />);
+  expect(screen.getByRole('button', { name: '分类「角色」' }).getAttribute('aria-current')).toBe('page');
+  expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
   fireEvent.change(scope, { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
-  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('true'); expect(screen.queryByRole('button', { name: '角色 / 目标分类' })).toBeNull();
+  openPurposeGroup('主体与外观'); expect(screen.getByRole('button', { name: '服饰与配件' }).getAttribute('aria-pressed')).toBe('true'); expect(screen.queryByRole('button', { name: '角色' })).toBeNull();
   expect(document.querySelector('[data-prompt-library-entry="dress"]')).toBeTruthy(); expect(fragment.tags).toEqual(['旧分类']);
 });
 
-it('手机组合分类选择器区分星号与未归类等真实名称，空自定义角色保留独立选项', () => {
+it('手机组合分类选择器只有「角色」根，未归类与全部语义不变', () => {
   const originalWidth = window.innerWidth; Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-  const starChar = customCharacter('star-char', '*');
-  const namedChar = customCharacter('named-char', '未归类');
-  const emptyChar = customCharacter('empty-char', '空角色');
-  const star = categoryCombo('star', '星号组合', ['*']);
-  const named = categoryCombo('named', '具名未归类组合', ['未归类']);
+  const qun = { ...customCharacter('qun', 'Qun'), basePrompt: 'boy' } as PromptChain;
+  const tagged = categoryCombo('tagged', '已归类组合', ['角色']);
   const empty = categoryCombo('empty', '真正未归类组合', []);
-  const view = render(<Harness chains={[...entries, starChar, namedChar, emptyChar, star, named, empty]} />);
+  const view = render(<Harness chains={[...entries, qun, tagged, empty]} />);
   try {
     fireEvent.click(screen.getByRole('button', { name: '筛选' })); fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
     const select = screen.getByRole('combobox', { name: '选择组合分类' }) as HTMLSelectElement;
-    expect(select.classList.contains('md:hidden')).toBe(true); expect(Array.from(select.options).find(option => option.value === 'category:空角色')?.textContent).toBe('角色 / 空角色 (0)');
-    fireEvent.change(select, { target: { value: 'category:*' } }); expect(document.querySelector('[data-prompt-library-entry="star"]')).toBeTruthy(); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1);
-    fireEvent.change(select, { target: { value: 'category:未归类' } }); expect(document.querySelector('[data-prompt-library-entry="named"]')).toBeTruthy(); expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeNull();
-    fireEvent.change(select, { target: { value: '' } }); expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeTruthy(); expect(document.querySelector('[data-prompt-library-entry="named"]')).toBeNull();
-    fireEvent.change(select, { target: { value: 'category:空角色' } }); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(0);
-    fireEvent.change(select, { target: { value: '*' } }); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(3);
+    expect(select.classList.contains('md:hidden')).toBe(true);
+    expect(Array.from(select.options).find(option => option.value === 'category:角色')?.textContent).toBe('角色 (2)');
+    expect(Array.from(select.options).some(option => option.value === 'category:Qun')).toBe(false);
+    fireEvent.change(select, { target: { value: 'category:角色' } });
+    expect(document.querySelector('[data-prompt-library-entry="tagged"]')).toBeTruthy();
+    expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeTruthy();
+    expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeNull();
+    fireEvent.change(select, { target: { value: '' } });
+    expect(document.querySelector('[data-prompt-library-entry="empty"]')).toBeTruthy();
+    expect(document.querySelector('[data-prompt-library-entry="qun"]')).toBeNull();
+    fireEvent.change(select, { target: { value: '*' } });
+    expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(3);
   } finally { view.unmount(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth }); }
 });
 
 it('定位回执只清目标范围文件夹，不抹掉另一套选择', () => {
-  const nightChar = customCharacter('night', '夜景');
-  const combo = categoryCombo('combo', '目标组合', ['夜景']);
+  const combo = categoryCombo('combo', '目标组合', ['角色']);
   localStorage.setItem('nai-prompt-library-browse', JSON.stringify({ scope: 'items', directoryIds: ['person-pose'], allDirectories: false, unclassified: false }));
-  const view = render(<Harness chains={[...entries, nightChar, combo]} />);
+  const view = render(<Harness chains={[...entries, combo]} />);
   const scope = screen.getByRole('combobox', { name: '提示词库范围' }); fireEvent.change(scope, { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  fireEvent.click(screen.getByRole('button', { name: '分类「夜景」' }));
-  view.rerender(<Harness chains={[...entries, nightChar, combo]} focusEntryId="dress" />);
-  fireEvent.change(scope, { target: { value: 'saved' } }); expect(screen.getByRole('button', { name: '分类「夜景」' }).getAttribute('aria-current')).toBe('page');
+  fireEvent.click(screen.getByRole('button', { name: '分类「角色」' }));
+  view.rerender(<Harness chains={[...entries, combo]} focusEntryId="dress" />);
+  fireEvent.change(scope, { target: { value: 'saved' } }); expect(screen.getByRole('button', { name: '分类「角色」' }).getAttribute('aria-current')).toBe('page');
   fireEvent.change(scope, { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' })); fireEvent.click(screen.getByRole('button', { name: '人物 / 动作与姿态' }));
-  view.rerender(<Harness chains={[...entries, nightChar, combo]} focusEntryId="combo" />);
+  view.rerender(<Harness chains={[...entries, combo]} focusEntryId="combo" />);
   expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-current')).toBe('page');
   fireEvent.change(scope, { target: { value: 'items' } }); expect(screen.getByRole('button', { name: '人物 / 动作与姿态' }).getAttribute('aria-current')).toBe('page');
 });
 
-it('角色根汇总子角色组合并按组合去重，路径只影响展示', () => {
-  const bellChar = customCharacter('bell', '小铃');
-  const mingChar = customCharacter('ming', '小明');
-  const first = categoryCombo('first', '小铃组合', ['小铃']);
-  const second = categoryCombo('second', '小明组合', ['小明']);
+it('角色根只汇总挂「角色」标签的组合与角色投影，不生成角色名子夹', () => {
+  const bell = { ...customCharacter('bell', '小铃'), basePrompt: 'girl' } as PromptChain;
+  const first = categoryCombo('first', '小铃组合', ['角色']);
+  const second = categoryCombo('second', '旧标签组合', ['小铃']);
   const before = JSON.stringify([first, second]);
-  render(<Harness chains={[...entries, bellChar, mingChar, first, second]} />);
+  render(<Harness chains={[...entries, bell, first, second]} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.getByRole('button', { name: '分类「角色」' }).textContent).toBe('角色2');
-  fireEvent.click(screen.getByRole('button', { name: '分类「角色」' })); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(2);
-  const select = screen.getByRole('combobox', { name: '选择组合分类' }) as HTMLSelectElement;
-  expect(Array.from(select.options).find(option => option.value === 'category:小铃')?.textContent).toBe('角色 / 小铃 (1)');
-  fireEvent.change(select, { target: { value: 'category:小铃' } }); expect(document.querySelectorAll('[data-prompt-library-entry]')).toHaveLength(1); expect(screen.getByRole('button', { name: '收起目录' }).title).toContain('角色 / 小铃');
-  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.getByRole('button', { name: '角色 / 小铃' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '分类「角色」' }));
+  expect(document.querySelector('[data-prompt-library-entry="first"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="bell"]')).toBeTruthy();
+  expect(document.querySelector('[data-prompt-library-entry="second"]')).toBeNull();
+  expect(screen.queryByRole('button', { name: '分类「小铃」' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' })); expect(screen.getByRole('button', { name: '角色' })).toBeTruthy();
   expect(JSON.stringify([first, second])).toBe(before);
 });
 
 it('组合分类导航不提供拖动与目录管理，片段目录仍保留', () => {
-  const starChar = customCharacter('star', '*');
-  const combo = categoryCombo('combo', '星号组合', ['*']);
+  const combo = categoryCombo('combo', '星号组合', ['角色']);
   const onMoveDirectory = vi.fn();
-  render(<Harness chains={[...entries, starChar, combo]} onMoveDirectory={onMoveDirectory} onCreateDirectory={vi.fn()} />);
+  render(<Harness chains={[...entries, combo]} onMoveDirectory={onMoveDirectory} onCreateDirectory={vi.fn()} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
   expect(screen.queryByRole('button', { name: '重命名目录' })).toBeNull();
   expect(screen.queryByRole('group', { name: '移到根目录' })).toBeNull();
-  expect(screen.getByRole('button', { name: '分类「*」' }).getAttribute('draggable')).not.toBe('true');
+  expect(screen.getByRole('button', { name: '分类「角色」' }).getAttribute('draggable')).not.toBe('true');
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.getByRole('button', { name: '新建目录' })).toBeTruthy();
   expect(screen.getByRole('button', { name: '人物 / 外貌与身体' }).getAttribute('draggable')).toBe('true');
@@ -860,7 +839,7 @@ it('组合范围隐藏目录管理动作，片段范围保留新建目录', () =
   render(<Harness chains={[customCharacter('empty', '空角色')]} onCreateDirectory={onCreateDirectory} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
-  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:*' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:角色' } });
   expect(screen.queryByRole('button', { name: '新建目录' })).toBeNull();
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
   fireEvent.click(screen.getByRole('button', { name: '新建目录' }));
@@ -869,9 +848,9 @@ it('组合范围隐藏目录管理动作，片段范围保留新建目录', () =
 
 it('组合范围隐藏重命名删除，片段目录选中时仍透传片段动作', () => {
   const onRenameDirectory = vi.fn(), onDeleteDirectory = vi.fn();
-  render(<Harness chains={[customCharacter('star', '*')]} onRenameDirectory={onRenameDirectory} onDeleteDirectory={onDeleteDirectory} />);
+  render(<Harness chains={[customCharacter('star', '星夜')]} onRenameDirectory={onRenameDirectory} onDeleteDirectory={onDeleteDirectory} />);
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'saved' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));
-  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:*' } });
+  fireEvent.change(screen.getByRole('combobox', { name: '选择组合分类' }), { target: { value: 'category:角色' } });
   expect(screen.queryByRole('button', { name: '重命名目录' })).toBeNull();
   expect(screen.queryByRole('button', { name: '删除目录' })).toBeNull();
   fireEvent.change(screen.getByRole('combobox', { name: '提示词库范围' }), { target: { value: 'items' } }); fireEvent.click(screen.getByRole('button', { name: '展开目录' }));

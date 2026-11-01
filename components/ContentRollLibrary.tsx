@@ -71,13 +71,6 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
       .sort((a, b) => sort === 'name' ? a.chain.name.localeCompare(b.chain.name) : Number(b.chain.updatedAt || 0) - Number(a.chain.updatedAt || 0));
   }, [records, query, sort, tag]);
 
-  const copySnapshot = async (chain: PromptChain) => {
-    try {
-      const original = collectedPromptText(chain);
-      await navigator.clipboard.writeText(original ?? JSON.stringify((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot, null, 2));
-      notify(t(original !== null ? '已复制提示词原文' : '已复制这条记录的内容快照'));
-    } catch { notify(t('复制失败：浏览器拒绝了剪贴板权限'), 'error'); }
-  };
   const commitRename = async () => {
     if (!renaming || renamePending.current || renameCancelled.current) return;
     const target = records.find(item => item.chain.id === renaming.id)?.chain;
@@ -119,9 +112,10 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
           const { read, fields, original } = shown.find(record => record.chain.id === chain.id)!;
           const expanded = previewId === chain.id;
           return <article key={chain.id} data-content-roll-record={chain.id} data-safe-mode-work="true" className="min-w-0">
-            <PromptLibraryCard chain={chain} label={t(original !== null ? '原文' : '组合')} selected={expanded} busy={busy === chain.id} deleteDisabled={!!busy} editDisabled={!!busy || original === null && !read.ok} notify={notify}
-              onOpen={() => setPreviewId(expanded ? '' : chain.id)} onEdit={() => { if (original !== null || read.roles.length > 1) setPreviewId(chain.id); else if (read.ok) onLoad(chain); }}
-              onCopy={() => void copySnapshot(chain)} onDelete={() => void remove(chain)} onUse={library?.useEntry ? () => library.useEntry?.(chain) : undefined}
+            <PromptLibraryCard chain={chain} label={t(original !== null ? '原文' : '组合')} selected={expanded} busy={busy === chain.id} deleteDisabled={!!busy} notify={notify}
+              onOpen={() => setPreviewId(expanded ? '' : chain.id)}
+              onDelete={() => void remove(chain)}
+              onClearCover={chain.previewImage ? async () => { await onSetCover(chain, ''); } : undefined}
               summary={!chain.previewImage ? original || fields.map(field => field.text).join(', ') : undefined}
               actions={<button type="button" data-card-action disabled={!!busy} onClick={event => { event.stopPropagation(); setCoverFor(chain); }} data-content-roll-cover={chain.id} title={t('从历史选封面')} aria-label={t('从历史选封面')} className={`hover-reveal-md inline-flex items-center justify-center ${IMAGE_CARD_ACTION_CLASS}`}><ImagePlus className="h-4 w-4" /></button>} />
             {original === null && !read.ok && <p className="px-4 pb-3 text-xs text-amber-600 dark:text-amber-400">{t('这条记录不能按纯内容载入：{0}', [read.warnings[0] || ''])}</p>}
@@ -145,6 +139,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ section 
                   <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs leading-5 text-gray-600 dark:text-gray-300">{text}</p>
                   {negative && (negative.text || negative.note) && <p className="mt-1 break-words text-xs text-amber-600 dark:text-amber-400">{negative.text ? t('内容负面：') + negative.text : ''}{negative.text && negative.note ? '；' : ''}{negative.note}</p>}
                 </div>)}
+                {original === null && read.ok && !fields.length && <p className="whitespace-pre-wrap break-words text-xs text-gray-500">{chain.basePrompt || t('还没有提示词')}</p>}
               </div>
             </div>}
           </article>;

@@ -11,7 +11,7 @@ import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User
 import { createUuid } from '../services/id';
 import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionBoardIds, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { SearchFilterChips } from './SearchFilterChips';
 import { ToolbarCountCaption } from './ToolbarCountCaption';
@@ -425,7 +425,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       onDelete={currentUser.role === 'guest' ? undefined : id => { const board = boards.find(board => board.id === id); if (board) void deleteBoard(board); }}
       nodeLeading={id => { const board = boards.find(board => board.id === id); return board ? renderBoardHandle(board) : undefined; }}
       nodeProps={id => { const board = boards.find(board => board.id === id); return board ? { ...folderDropProps(id), 'data-collection-folder': id, 'aria-label': t('选择收藏夹：{0}', [board.name]), 'aria-pressed': boardId === id, style: { '--collection-folder-color': board.color || '#6366f1' } as React.CSSProperties, className: `[&>svg]:[color:var(--collection-folder-color)] ${boardDrag?.id === id ? 'opacity-50' : ''} ${boardDrag?.targetId === id && boardDrag.id !== id ? 'ring-2 ring-indigo-500' : ''} ${dropTarget === id ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20 dark:bg-indigo-950' : ''}` } : { 'aria-label': id === '*' ? `${t('全部')} ${counts.all}` : `${t('未整理')} ${counts.unorganized}`, 'aria-pressed': id === '*' ? collection === 'all' && !boardId && !sourceFilter : collection === 'unorganized' }; }}
-      header={<>{boardsLoading && <p role="status" className="mb-2 text-xs text-gray-400">{t('正在读取…')}</p>}{boardsError && <p role="alert" className="mb-2 text-xs text-red-500">{t(boardsError)} <button type="button" onClick={() => void loadBoards()} className="underline">{t('重试')}</button></p>}<p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div></>} />
+      header={<>{boardsLoading && <InlineSpinner label={t('正在读取…')} className="mb-2 text-xs" />}{boardsError && <p role="alert" className="mb-2 text-xs text-red-500">{t(boardsError)} <button type="button" onClick={() => void loadBoards()} className="underline">{t('重试')}</button></p>}<p className="mb-2 px-2 text-meta font-bold text-gray-400">{t('来源')}</p><div className="mb-4 space-y-1">{availableSources.map(source => { const Icon = sourceIcon(source); return <CollectionButton key={source} active={sourceFilter === source} count={sourceCounts[source] || 0} icon={<Icon />} label={t(sourceLabel(source))} onClick={() => { setSourceFilter(source); setBoardId(''); setCollection('all'); }} />; })}</div></>} />
   </div>;
   const renderFilterControls = (mobile: boolean, onManageTags: () => void) => <div className="grid grid-cols-2 gap-3">
     {mobile && <div className="col-span-2" role="group" aria-label={t('收藏筛选')}>{renderNavigation()}</div>}
@@ -512,7 +512,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
       <main ref={mainScrollRef} onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }} className={`${openedGroup ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-w-0 overflow-y-auto`}>
         <div ref={galleryContentRef} data-collection-focused={Boolean(selectionFocusEnabled && workGroup) || undefined} className="p-3 md:p-5">
         {loadError && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-red-500"><span>{t(loadError)}</span><ToolbarButton onClick={() => void onRefresh()}>{t('重试')}</ToolbarButton></div>}
-        {inspirationsData === null ? loadError ? null : <PageSpinner className="min-h-[45vh]" /> : filtered.length > 0 ? <>
+        {inspirationsData === null ? loadError ? null : <PageSpinner /> : filtered.length > 0 ? <>
           {imageDisplay.layout === 'masonry' ? (
             <ShortestColumnMasonry
               resetKey={resultKey}

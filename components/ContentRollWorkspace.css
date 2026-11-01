@@ -1,4 +1,4 @@
-/* 弹窗骨架不随抽取结果增减；只让正文滚动。 */
+/* 弹窗骨架不随抽取结果增减；只让正文滚动。主路径：抽 → 看行 → 填入。 */
 .content-roll-dialog {
   container: roll / inline-size;
   width: 100%;
@@ -17,90 +17,115 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
+  padding: 8px 20px;
 }
-.content-roll-directory { max-width: 260px; }
+.content-roll-directory { max-width: 280px; flex: 1 1 160px; min-width: 0; }
 .content-roll-directory > div,
 .content-roll-directory button { min-width: 0; max-width: 100%; }
 .content-roll-directory button > span,
 .content-roll-exclusions button > span { display: inline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.content-roll-scope { width: 140px; }
-.content-roll-draw { min-width: 154px; }
+.content-roll-scope { width: 132px; }
+.content-roll-draw { min-width: 132px; }
 .content-roll-scroll { scrollbar-gutter: stable; overscroll-behavior: contain; }
 .content-roll-columns,
 .content-roll-row {
   display: grid;
-  grid-template-columns: minmax(156px, 19%) 56px minmax(0, 1fr) 128px;
+  grid-template-columns: minmax(120px, 16%) 40px minmax(0, 1fr) 108px;
   align-items: center;
-  column-gap: 12px;
-  padding: 8px 20px;
+  column-gap: 10px;
+  padding: 4px 20px;
 }
-.content-roll-columns { min-height: 36px; }
-.content-roll-row { min-height: 56px; padding-top: 4px; padding-bottom: 4px; }
-.content-roll-purpose { min-height: 40px; }
-.content-roll-group { padding: 10px 20px 6px; }
-.content-roll-action-labels { display: grid; grid-template-columns: repeat(3, 40px); gap: 4px; text-align: center; }
+.content-roll-columns { min-height: 24px; padding-top: 8px; padding-bottom: 0; }
+.content-roll-row { min-height: 40px; }
+.content-roll-purpose { min-height: 36px; }
+.content-roll-group { padding: 8px 20px 2px; }
+.content-roll-result-line { line-height: 1.35; }
 .content-roll-row[data-locked='true'][data-content-roll-on='true'] {
   background: color-mix(in srgb, var(--nai-accent, #6366f1) 8%, transparent);
 }
-.content-roll-row[data-content-roll-on='false'] .content-roll-result { opacity: .55; }
+.content-roll-row[data-content-roll-on='false'] .content-roll-result { opacity: .5; }
 .content-roll-row-actions button {
-  height: 40px;
-  width: 40px;
-  min-height: 40px;
-  min-width: 40px;
+  height: 36px;
+  width: 36px;
+  min-height: 36px;
+  min-width: 36px;
   border-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;
+  opacity: .55;
 }
-.content-roll-row-actions button[aria-pressed='true'] { color: var(--nai-accent, #6366f1); }
-.content-roll-status { min-height: 48px; padding: 4px 20px; }
+.content-roll-row:hover .content-roll-row-actions button,
+.content-roll-row:focus-within .content-roll-row-actions button,
+.content-roll-row[data-locked='true'] .content-roll-row-actions button,
+.content-roll-row-actions button:hover,
+.content-roll-row-actions button:focus-visible {
+  opacity: 1;
+}
+.content-roll-row-actions button[aria-pressed='true'] { color: var(--nai-accent, #6366f1); opacity: 1; }
+.content-roll-status { min-height: 28px; padding: 4px 20px 6px; }
 .content-roll-exclusions button,
 .content-roll-undo { border-color: transparent !important; background: transparent !important; box-shadow: none !important; }
-.content-roll-preview { min-height: 164px; padding: 10px 20px; }
-.content-roll-preview-text p { line-height: 1.25rem; }
-.content-roll-preview-text [data-content-roll-apply-row] { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; }
+.content-roll-preview { padding: 10px 20px 12px; }
+.content-roll-preview[data-empty='true'] { padding-top: 8px; padding-bottom: 10px; }
+.content-roll-preview-empty { line-height: 1.4; }
+.content-roll-preview-text { max-height: 9.5rem; overflow: auto; }
+.content-roll-preview-text[data-expanded='true'] { max-height: min(40vh, 22rem); }
+.content-roll-preview-text p { line-height: 1.3rem; }
+.content-roll-preview-text [data-content-roll-apply-row] { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px; align-items: start; }
 .content-roll-preview-text [data-content-roll-apply-row] p { margin-top: 0; }
-.content-roll-preview-text[data-expanded='false'] p {
+/* 默认只显示新增词；展开全文才露出完整旧文与连接逗号。 */
+.content-roll-preview-text[data-expanded='false'] .content-roll-preview-keep { display: none; }
+.content-roll-preview-text[data-expanded='false'] .content-roll-preview-sep { display: none; }
+.content-roll-preview-text[data-expanded='false'] [data-roll-insert] { display: inline; }
+.content-roll-preview-text[data-expanded='false'] .content-roll-preview-keep-note { display: inline; }
+.content-roll-preview-text[data-expanded='true'] .content-roll-preview-keep-note { display: none; }
+.content-roll-preview-text[data-expanded='false'] [data-content-roll-apply-row]:not([data-roll-changed]) p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+}
+.content-roll-preview-text[data-expanded='false'] [data-content-roll-apply-row][data-roll-changed] p {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
-.content-roll-preview-text[data-expanded='false'] [data-content-roll-apply-row] p { height: 3.75rem; }
-.content-roll-preview-text[data-expanded='false'] [data-content-roll-apply-row$='negative'] p { -webkit-line-clamp: 1; height: 1.25rem; }
-.content-roll-footer { padding: 12px 20px 6px; }
+.content-roll-footer { padding: 8px 20px; }
 .content-roll-apply-button { min-width: 140px; }
-.content-roll-notice { min-height: 20px; margin-top: 4px; }
+.content-roll-notice { min-height: 0; margin-top: 2px; opacity: .85; }
 
 @container roll (max-width: 760px) {
-  .content-roll-participation { display: none; }
-  .content-roll-directory { max-width: 180px; }
+  .content-roll-directory { max-width: 200px; }
 }
 @container roll (max-width: 640px) {
   .content-roll-columns { display: none; }
-  .content-roll-dialog-tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 8px 12px; }
+  .content-roll-dialog-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 8px 12px; }
+  .content-roll-draw { grid-column: 1; min-width: 0; width: 100%; }
   .content-roll-directory { grid-column: 1 / -1; max-width: none; }
-  .content-roll-scope { width: 100%; }
-  .content-roll-scope + .content-roll-directory { grid-column: 2; }
-  .content-roll-history { grid-column: 1; margin-left: 0; }
-  .content-roll-draw { grid-column: 2; min-width: 144px; justify-self: end; }
+  .content-roll-scope { grid-column: 1; width: 100%; }
+  .content-roll-history { grid-column: 2; grid-row: 1; margin-left: 0; align-self: center; }
   .content-roll-row {
-    grid-template-columns: minmax(0, 1fr) 28px 140px;
+    grid-template-columns: minmax(0, 1fr) 28px 120px;
     gap: 0 6px;
-    padding: 6px 12px 10px;
-    min-height: 98px;
+    padding: 6px 12px 8px;
+    min-height: 72px;
   }
-  .content-roll-purpose { grid-column: 1; grid-row: 1; min-height: 44px; }
+  .content-roll-purpose { grid-column: 1; grid-row: 1; min-height: 40px; }
   .content-roll-count { grid-column: 2; grid-row: 1; text-align: right; }
   .content-roll-row-actions { grid-column: 3; grid-row: 1; }
   .content-roll-result { grid-column: 1 / -1; grid-row: 2; padding-left: 24px; }
-  .content-roll-row-actions button { height: 44px; width: 44px; min-height: 44px; min-width: 44px; }
+  .content-roll-row-actions button {
+    height: 40px;
+    width: 40px;
+    min-height: 40px;
+    min-width: 40px;
+    opacity: 1;
+  }
   .content-roll-preview, .content-roll-footer { padding-left: 12px; padding-right: 12px; }
-  .content-roll-preview-text [data-content-roll-apply-row] { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .content-roll-status { padding: 6px 12px; }
-  .content-roll-undo { width: 44px; min-width: 44px; padding: 0 !important; }
-  .content-roll-undo > span { display: none; }
+  .content-roll-preview-text [data-content-roll-apply-row] { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .content-roll-status { padding: 4px 12px; }
+  .content-roll-undo { width: 44px; min-height: 44px; }
   .content-roll-apply-button { min-width: 120px; }
 }
 @media (max-width: 639px) {

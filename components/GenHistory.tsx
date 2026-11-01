@@ -15,7 +15,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
+import { CloseButton, EmptyState, IconButton, InlineSpinner, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -1138,9 +1138,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             </WorkspaceChrome>
             <div ref={historyScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
-                {isLoading && items.length > 0 && <p role="status" className="mb-4 text-center text-sm text-gray-500">{t('加载中…')}</p>}
+                {isLoading && items.length > 0 && <InlineSpinner label={t('加载中…')} className="mb-4 w-full" />}
                 {isLoading && items.length === 0 ? (
-                    <PageSpinner label={t("加载中…")} className="h-full" />
+                    <PageSpinner />
                 ) : loadFailed && items.length === 0 ? null : items.length === 0 ? (
                     <EmptyState
                         className="h-full py-10"

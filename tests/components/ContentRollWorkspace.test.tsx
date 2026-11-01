@@ -37,6 +37,15 @@ const chains: PromptChain[] = KINDS.map(kind => ({ id: kind, type: kind as Promp
   params: LAB_DEFAULT_PARAMS, modules: [], tags: [], variableValues: {}, createdAt: 1, updatedAt: 1 }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 
+it('空结果时填入预览收成一行提示，不占大块空白', () => {
+  render(<ContentRollWorkspace active embedded entryTarget={{ mode: 'global' }} allowedPurposes={LAB_PICTURE_PURPOSES} chains={[]} notify={vi.fn()} />);
+  const preview = document.querySelector('[data-content-roll-apply]')!;
+  expect(preview.getAttribute('data-empty')).toBe('true');
+  expect(preview.textContent).toContain('抽一次后在此预览填入内容');
+  expect(screen.queryByRole('button', { name: '展开全文' })).toBeNull();
+  expect(preview.querySelectorAll('[data-content-roll-apply-row]')).toHaveLength(0);
+});
+
 it('零候选禁用抽取但保留勾选与手写，编辑浮层关闭后返回原按钮且不替换用途行', () => {
   render(<ContentRollWorkspace active embedded entryTarget={{ mode: 'global' }} allowedPurposes={LAB_PICTURE_PURPOSES} chains={[]} notify={vi.fn()} />);
   const rows = Array.from(document.querySelectorAll('[data-content-roll-row]'));
@@ -439,8 +448,8 @@ it('Roll 写入已有串保留未分栏主体，并传递角色与全局分类�
   };
   render(<ContentRollWorkspace active chains={[...chains, style]} notify={vi.fn()}
     seedRecord={{ picks, seed: 'saved', seeds: {} }} onSeedConsumed={vi.fn()} onWriteRollToChain={onWriteRollToChain} />);
-  fireEvent.change(editorControl('combobox', { name: '选择写入的风格串' }), { target: { value: 'style-1' } });
   fireEvent.click(screen.getByRole('button', { name: '写入风格串…' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '选择写入的风格串' }), { target: { value: 'style-1' } });
   fireEvent.click(screen.getByRole('button', { name: '写入这条风格串' }));
   await waitFor(() => expect(onWriteRollToChain).toHaveBeenCalledOnce());
   expect(onWriteRollToChain.mock.calls[0][0]).toMatchObject({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NAIParams, PromptChain } from '../../types';
-import { applyLibraryText, combinationPicks, createCombinationData, createFragmentData, librarySectionOf, libraryEntryText, searchLibraryEntries, workspacePicks, parsePromptLibraryTags } from '../../services/promptLibraryEntries';
+import { applyCombinationPicksToCharacter, applyLibraryText, combinationPicks, createCharacterDataFromCombinationPicks, createCombinationData, createFragmentData, isPromptLibraryCharacterProjection, librarySectionOf, libraryEntryText, projectCustomCharacterAsCombination, promptLibraryEntryLabel, searchLibraryEntries, workspacePicks, parsePromptLibraryTags, PROMPT_LIBRARY_CHARACTER_SOURCE_KEY } from '../../services/promptLibraryEntries';
 import { prepareCollectedPrompt } from '../../services/collectedPrompt';
 import { applyLibrarySelection, planLibrarySelection, type PromptLibraryWorkspaceState } from '../../services/promptLibraryApply';
 
@@ -31,6 +31,66 @@ describe('提示词库的对象边界与定向取用', () => {
     expect(librarySectionOf(chain(createFragmentData('a dress', '', 'wardrobe')))).toBe('items');
     expect(librarySectionOf(combo)).toBe('saved');
     expect(librarySectionOf(chain({ type: 'style', basePrompt: 'a dress' }))).toBeNull();
+  });
+  it('自定义角色投影为「角色」夹内组合卡片，同 id 含封面，不另存副本', () => {
+    const character = chain({
+      type: 'character', name: 'Qun', basePrompt: 'boy, short hair', negativePrompt: 'blurry',
+      previewImage: '/api/chains/agent-qun/image',
+      variableValues: { subject: 'green eyes' },
+      params: { characters: [{ id: 'role', enabled: true, sections: { wardrobe: 'jacket' }, sectionNegatives: { wardrobe: 'dress' } }] } as NAIParams,
+    }, 'agent-qun');
+    const projected = projectCustomCharacterAsCombination(character, '角色');
+    expect(isPromptLibraryCharacterProjection(projected)).toBe(true);
+    expect(projected.id).toBe('agent-qun');
+    expect(projected.type).toBe('preset');
+    expect(projected.previewImage).toBe('/api/chains/agent-qun/image');
+    expect(projected.tags).toEqual(['角色']);
+    expect((projected.params as unknown as Record<string, unknown>)[PROMPT_LIBRARY_CHARACTER_SOURCE_KEY]).toBe('agent-qun');
+    expect(librarySectionOf(projected)).toBe('saved');
+    expect(promptLibraryEntryLabel(projected)).toBe('自定义角色');
+    const picks = combinationPicks(projected);
+    expect(picks.appearance?.text).toBe('boy, short hair, green eyes');
+    expect(picks.appearance?.negative).toBe('blurry');
+    expect(picks.wardrobe?.text).toBe('jacket');
+    expect(picks.wardrobe?.negative).toBe('dress');
+    expect(character.type).toBe('character');
+    const empty = projectCustomCharacterAsCombination(chain({ type: 'character', name: '空角色', basePrompt: '', negativePrompt: 'only-negative', params: { characters: [] } as unknown as NAIParams }, 'empty'), '角色');
+    expect(librarySectionOf(empty)).toBe('saved');
+    expect(combinationPicks(empty).appearance?.text).toBe('空角色');
+    expect(combinationPicks(empty).appearance?.negative).toBe('only-negative');
+  });
+  it('组合 picks 写回同一自定义角色，封面保留；挂「角色」新建落成角色', () => {
+    const existing = chain({
+      type: 'character', name: 'Qun', basePrompt: 'old look', negativePrompt: 'old bad',
+      previewImage: '/cover/qun.png',
+      params: { characters: [{ id: 'role', enabled: true, prompt: 'old extra', sections: { wardrobe: 'old jacket' }, sectionNegatives: { wardrobe: 'dress' } }] } as NAIParams,
+    }, 'agent-qun');
+    const patched = applyCombinationPicksToCharacter(existing, 'Qun 改', {
+      'directory:person-appearance': { kind: 'directory:person-appearance', scope: 'character', filled: true, text: 'boy, short hair', negative: 'blurry' },
+      'directory:person-wardrobe': { kind: 'directory:person-wardrobe', scope: 'character', filled: true, text: 'jacket', negative: 'skirt' },
+      'character:extra': { kind: 'extra', scope: 'character', filled: true, text: 'holding book', negative: '' },
+      scene: { kind: 'scene', scope: 'global', filled: true, text: 'night city', negative: 'daylight' },
+    });
+    expect(patched).toMatchObject({
+      name: 'Qun 改', type: 'character', basePrompt: 'boy, short hair', negativePrompt: 'blurry',
+      previewImage: '/cover/qun.png',
+    });
+    expect(patched.params?.characters?.[0]).toMatchObject({
+      id: 'role', prompt: 'holding book',
+      sections: expect.objectContaining({ appearance: 'boy, short hair', wardrobe: 'jacket' }),
+      sectionNegatives: expect.objectContaining({ appearance: 'blurry', wardrobe: 'skirt' }),
+    });
+    expect(JSON.stringify(patched.params)).not.toContain('night city');
+    const created = createCharacterDataFromCombinationPicks('新角色', {
+      appearance: { kind: 'appearance', scope: 'character', filled: true, text: 'girl, long hair', negative: 'lowres' },
+      pose: { kind: 'pose', scope: 'character', filled: true, text: 'standing', negative: '' },
+    }, ['角色', '个人']);
+    expect(created).toMatchObject({ name: '新角色', type: 'character', basePrompt: 'girl, long hair', negativePrompt: 'lowres', tags: ['个人'] });
+    expect(created.params?.characters?.[0]?.sections).toMatchObject({ appearance: 'girl, long hair', pose: 'standing' });
+    const roundTrip = projectCustomCharacterAsCombination({ id: 'agent-qun', ...patched } as PromptChain, '角色');
+    expect(roundTrip.previewImage).toBe('/cover/qun.png');
+    expect(combinationPicks(roundTrip).appearance?.text).toBe('boy, short hair');
+    expect(combinationPicks(roundTrip).wardrobe?.text).toBe('jacket');
   });
   it('原文取用逐字保留换行和权重，不把已有原文重新拆词', () => {
     const original = '  {{snow}}\r\n1.2::hair, eyes::  ';

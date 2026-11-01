@@ -9,7 +9,7 @@ import { DirectoryTreeSelect } from './DirectoryTreeSelect';
 import { DirectoryTreeChecklist } from './DirectoryTreeChecklist';
 import { DirectoryNodeDialog } from './DirectoryNodeDialog';
 import { useCatalogGroups } from '../services/useCatalogGroups';
-import { IconButton, ToolbarButton } from './DesignSystem';
+import { IconButton, InlineSpinner, ToolbarButton } from './DesignSystem';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { useConfirmDialog } from './ConfirmDialog';
 import { ImageActivityContext } from './SmartImage';
@@ -136,7 +136,7 @@ export function useCatalogGroupBrowser(kind: CatalogGroupKind, selectedKeys: rea
       onMove={dragBlocked ? undefined : (id, parentId) => void move(id, parentId)}
       nodeProps={id => ({ onDragOver: event => hover(event, id), onDragLeave: () => setDragOver(current => current === id ? null : current), onDrop: event => void drop(event, id), className: dragOver === id ? 'ring-2 ring-indigo-500' : '' })}
       footer={<>
-        {!data.ready && !data.error && <p role="status" className="text-xs text-gray-500">{t('加载中…')}</p>}
+        {!data.ready && !data.error && <InlineSpinner label={t('加载中…')} className="text-xs" />}
         {(data.error || navigationError) && <p role="alert" className="text-xs text-red-500">{t(data.error || navigationError)}<button type="button" onClick={() => void data.reload()}>{t('重新加载')}</button></p>}
       </>} />,
   };

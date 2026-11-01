@@ -16,10 +16,14 @@ interface Props {
   value: RollTemplate; onChange: (value: RollTemplate) => void; disabled?: boolean; readOnly?: boolean;
   enforceFreeStepLimit?: boolean; recommendedTemplate?: RollTemplate; modelFilter?: (id: string) => boolean;
   onBusyChange?: (busy: boolean) => void;
+  /** 覆盖公共提示词标签；封面生成等场景改为说明 `{content}`。 */
+  promptLabel?: string;
+  /** 覆盖角色提示词辅助说明。 */
+  characterHint?: string;
 }
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
-export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, recommendedTemplate, modelFilter, onBusyChange }: Props) {
+export default function GenerationTemplateEditor({ value, onChange, disabled = false, readOnly = false, enforceFreeStepLimit = true, recommendedTemplate, modelFilter, onBusyChange, promptLabel, characterHint }: Props) {
   useLanguage();
   const runtime = useNaiRuntime();
   const confirm = useConfirmDialog();
@@ -88,8 +92,8 @@ export default function GenerationTemplateEditor({ value, onChange, disabled = f
             {presetLoading && <p role="status" className="text-xs text-gray-500">{t('正在读取生成预设…')}</p>}
             {presetError && <div role="alert" className="flex items-center gap-2 text-xs text-red-500"><span>{t(presetError)}</span><ToolbarButton disabled={disabled || presetBusy || presetLoading} onClick={() => void loadPresets()}>{t('重新读取预设')}</ToolbarButton></div>}
           </div>
-          <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
-          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t('自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
+          <label className="block text-xs font-semibold">{t(promptLabel || '公共提示词（{style} 为画风位置）')}<TagAutocompleteTextarea aria-label={t('公共提示词')} showTranslations={false} className={`${field} mt-1 min-h-28 font-mono`} value={value.prompt} disabled={editingBusy || readOnly} onValueChange={prompt => onChange({ ...value, prompt })} /></label>
+          <label className="block text-xs font-semibold">{t('角色提示词（可选）')}<TagAutocompleteTextarea libraryField={{ textOnly: true }} showTranslations={false} aria-label={t('角色提示词（可选）')} className={`${field} mt-1 min-h-20 font-mono`} value={value.characterPrompt || ''} disabled={editingBusy || readOnly} onValueChange={characterPrompt => onChange({ ...value, characterPrompt })} /><span className="mt-1 block text-micro font-normal text-gray-400">{t(characterHint || '自动接在画师串之后；也可在公共提示词里用 {character} 指定位置')}</span></label>
           <label className="block text-xs font-semibold">{t('负面提示词')}<TagAutocompleteTextarea libraryField={{ negative: true }} showTranslations={false} aria-label={t('负面提示词')} className={`${field} mt-1 min-h-20 font-mono`} value={value.negativePrompt} disabled={editingBusy || readOnly} onValueChange={negativePrompt => onChange({ ...value, negativePrompt })} /></label>
           <ChainEditorParams params={value.params} prompt={value.prompt} setParams={params => onChange({ ...value, params })} modelFilter={modelFilter} canEdit={!editingBusy && !readOnly} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
           {!readOnly && <div className="flex flex-wrap gap-2">

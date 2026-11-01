@@ -17,7 +17,7 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { SmartImage } from '../SmartImage';
 import { ToolbarPopover } from '../ToolbarPopover';
-import { ToolbarSearch } from '../DesignSystem';
+import { InlineSpinner, PageSpinner, ToolbarSearch } from '../DesignSystem';
 
 const SUBJECT_PURPOSES: readonly PromptPurposeId[] = ['identity', 'appearance', 'clothing', 'pose', 'expression', 'creature', 'object', 'vehicle'];
 
@@ -299,7 +299,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     {item.previewImage ? <SmartImage src={item.previewImage} alt="" containerClassName="relative h-12 w-12 flex-none overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800" className="h-full w-full object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
                     <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
                 </button>)}</div>
-                {chainsLoading && <p role="status" className="py-4 text-center text-sm text-gray-500">{t("加载中…")}</p>}
+                {chainsLoading && (characterChains.length ? <InlineSpinner className="w-full py-4" /> : <PageSpinner fill={false} className="py-8" />)}
                 {!chainsLoading && chainsError && <div role="alert" className="flex items-center justify-center gap-3 py-4 text-sm text-red-600 dark:text-red-400">{t(chainsError)}{onRetryChains && <button type="button" onClick={onRetryChains} className="mobile-touch rounded border border-current px-3 py-1">{t("重试")}</button>}</div>}
                 {!chainsLoading && !chainsError && characterChains.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
                 {!chainsLoading && !chainsError && characterChains.length > 0 && filteredCharacterChains.length === 0 && <p className="py-10 text-center text-sm text-gray-500">{t("没有匹配的角色")}</p>}

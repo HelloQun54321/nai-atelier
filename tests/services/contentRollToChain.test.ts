@@ -104,6 +104,12 @@ describe('planRollToChain', () => {
     expect(empty.variableValues.subject).toBe('旧主体');
   });
 
+  it('源串未声明角色时不注入实验室空槽，新建只生成一个角色', () => {
+    const plan = planRollToChain(chain(), [{ kind: 'wardrobe', text: 'white dress' }], { characterId: 'only', targetRoleId: 'new' });
+    expect(plan.params.characters).toHaveLength(1);
+    expect(plan.params.characters![0]).toMatchObject({ id: 'only', sections: { wardrobe: 'white dress' } });
+  });
+
   it('写入全局栏时记录来源快照（source=roll + 条目名）', () => {
     const plan = planRollToChain(chain(), rows, { include: [...ROLL_TO_CHAIN_GLOBAL_KINDS] });
     const sections: any = plan.params._promptSections;

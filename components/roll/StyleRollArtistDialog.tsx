@@ -20,7 +20,7 @@ import { ImageActivityContext } from '../SmartImage';
 import { ArtistSampleGenerationStatus, useArtistSampleActions } from '../useArtistSampleActions';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
 import { useImageRatios } from '../useImageRatios';
-import { IconButton, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
+import { IconButton, InlineSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect } from '../DesignSystem';
 import { AnchoredToolbarPopover, TOOLBAR_FIELD_CLASS } from '../ToolbarPopover';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
@@ -263,7 +263,7 @@ const ArtistDialog: React.FC<Props> = ({ library, loading, libraryError, pinned,
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       {groups.navigation}
       <div ref={gallery} data-roll-artist-gallery className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-4 pt-2 sm:px-5" onScroll={event => { const node = event.currentTarget; if (node.scrollHeight - node.scrollTop - node.clientHeight < 500) setLimit(current => Math.min(artists.length, current + 60)); }}>
-        {(loading || sampleLoading || groups.activeGroup !== '*' && !groups.ready && !groups.error || favoritesPending && collectionStatus === 'loading') && <p role="status" className="mb-3 text-xs text-gray-500">{t(favoritesPending ? '加载中…' : '正在读取画师样张…')}</p>}
+        {(loading || sampleLoading || groups.activeGroup !== '*' && !groups.ready && !groups.error || favoritesPending && collectionStatus === 'loading') && <InlineSpinner label={t(favoritesPending ? '加载中…' : '正在读取画师样张…')} className="mb-3 text-xs" />}
         {favoritesPending && collectionStatus === 'error' && <button type="button" className="mobile-touch text-xs underline" onClick={() => { setError(''); setCollectionRetry(value => value + 1); }}>{t('重新加载')}</button>}
         {!favoritesPending && (imageDisplay.layout === 'masonry' ? <ShortestColumnMasonry items={visibleArtists} columns={columns} getItemKey={artist => artist.name} estimateItemHeight={estimateCardHeight} renderItem={renderArtist} resetKey={resultKey} stableColumns /> : <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`} style={mobileGalleryStyle(imageDisplay, columns)}>{visibleArtists.map(renderArtist)}</div>)}
         <div ref={sentinel}>

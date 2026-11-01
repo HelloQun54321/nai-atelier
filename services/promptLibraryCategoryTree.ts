@@ -7,7 +7,7 @@ import { readPromptLibraryTagNames } from './promptLibraryTags';
 export interface PromptLibraryCategoryTreeNode { id: string; name: string; parentId: string | null }
 export interface PromptLibraryCategoryTreeState { revision: number; nodes: PromptLibraryCategoryTreeNode[] }
 
-/** 组合文件夹只保留这一根；子夹由角色库自定义角色投影，不另建自由分类。 */
+/** 组合文件夹只保留这一根；自定义角色投影为夹内组合卡片，不另建子文件夹。 */
 export const PROMPT_LIBRARY_CHARACTER_ROOT = '角色';
 
 export const emptyPromptLibraryCategoryTree = (): PromptLibraryCategoryTreeState => ({ revision: 0, nodes: [] });
@@ -17,14 +17,14 @@ export const defaultPromptLibraryCategoryTree = (revision = 0): PromptLibraryCat
   nodes: [{ id: PROMPT_LIBRARY_CHARACTER_ROOT, name: PROMPT_LIBRARY_CHARACTER_ROOT, parentId: null }],
 });
 
-/** 落库只保留根「角色」；自定义角色子夹每次由角色库只读投影。 */
+/** 落库只保留根「角色」。 */
 export const normalizeStoredPromptLibraryCategoryTree = (state: PromptLibraryCategoryTreeState): PromptLibraryCategoryTreeState => defaultPromptLibraryCategoryTree(state.revision);
 
 export const promptLibraryCategoryLabel = (tree: PromptLibraryCategoryTreeState | undefined, name: string): string => tree ? getDirectoryPath(tree.nodes, name).map(node => node.name).join(' / ') || name : name;
 
 const CHARACTER_CATALOG_MARKER = '__character_catalog__';
 
-/** 角色库自定义角色（排除词库覆写），名称可作为组合子文件夹身份。 */
+/** 角色库自定义角色（排除词库覆写），用于投影成「角色」夹内的组合卡片。 */
 export function listPromptLibraryCustomCharacters(chains: PromptChain[]): Array<{ id: string; name: string }> {
   return chains
     .filter(chain => chain.type === 'character' && !chain.guestHidden && !chain.tags?.includes(CHARACTER_CATALOG_MARKER))
@@ -48,28 +48,17 @@ export function readPromptLibraryCategoryTree(value: unknown): PromptLibraryCate
 }
 
 /**
- * 组合分类只读投影：固定根「角色」，其子夹来自自定义角色名称。
- * 不再把任意组合标签或旧自由分类投影为文件夹；`names` 仅保留调用兼容。
+ * 组合分类只读投影：固定唯一根「角色」。
+ * 自定义角色不进目录树，由浏览层投影为夹内组合卡片；`names` 仅保留调用兼容。
  */
 export function projectPromptLibraryCategoryTree(
-  chains: PromptChain[],
+  _chains: PromptChain[],
   _names: string[],
   stored: PromptLibraryCategoryTreeState,
-  customCharacters?: Array<{ id: string; name: string }>,
+  _customCharacters?: Array<{ id: string; name: string }>,
 ): PromptLibraryCategoryTreeState {
   const revision = Number.isSafeInteger(stored?.revision) && Number(stored.revision) >= 0 ? Number(stored.revision) : 0;
-  const characters = customCharacters ?? listPromptLibraryCustomCharacters(chains);
-  const nodes: PromptLibraryCategoryTreeNode[] = [
-    { id: PROMPT_LIBRARY_CHARACTER_ROOT, name: PROMPT_LIBRARY_CHARACTER_ROOT, parentId: null },
-  ];
-  const used = new Set([PROMPT_LIBRARY_CHARACTER_ROOT]);
-  for (const character of characters) {
-    const name = character.name.trim();
-    if (!name || used.has(name) || !isCustomChainTag(name) || /[,，\r\n]/.test(name)) continue;
-    nodes.push({ id: name, name, parentId: PROMPT_LIBRARY_CHARACTER_ROOT });
-    used.add(name);
-  }
-  return readPromptLibraryCategoryTree({ revision, nodes });
+  return defaultPromptLibraryCategoryTree(revision);
 }
 
 /** 合并到后代时先提升目标，随后将原节点的直接子项挂到目标，避免成环。 */
